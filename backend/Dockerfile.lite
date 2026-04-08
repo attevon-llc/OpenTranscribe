@@ -7,7 +7,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation
 # -----------------------------------------------------------------------------
-FROM python:3.13-slim-trixie AS builder
+FROM python:3.14-slim-trixie AS builder
 
 WORKDIR /build
 
@@ -31,7 +31,7 @@ RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements-
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime Stage - Minimal production image with non-root user
 # -----------------------------------------------------------------------------
-FROM python:3.13-slim-trixie
+FROM python:3.14-slim-trixie
 
 # OCI annotations for container metadata and compliance
 LABEL org.opencontainers.image.title="OpenTranscribe Backend Lite" \

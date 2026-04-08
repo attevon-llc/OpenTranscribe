@@ -59,7 +59,7 @@ faster-whisper>=1.1.1
 # ML/Data processing
 transformers>=4.48.0
 pandas>=2.2.3
-huggingface-hub<1.0.0
+huggingface-hub<2.0.0
 
 # Triton for optimized attention (Linux x86_64 only)
 triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'

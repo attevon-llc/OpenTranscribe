@@ -40,7 +40,7 @@ numpy>=2.1.0
 
 # PyTorch with CUDA 12.8 support (CVE-2025-32434 fixed in 2.6.0+)
 --extra-index-url https://download.pytorch.org/whl/cu128
-torch==2.8.0
+torch==2.11.0+cu128
 torchaudio==2.8.0
 
 # =============================================================================

@@ -42,7 +42,7 @@ numpy>=1.25.2
 # Use --extra-index-url so PyPI remains available for all other packages.
 # --index-url would replace PyPI entirely, breaking pyannote.audio and other deps.
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.8.0+cpu
+torch==2.11.0+cu128
 
 # PyAnnote (CPU-only, for speaker embedding extraction and cross-file speaker matching)
 pyannote.audio>=3.3.2

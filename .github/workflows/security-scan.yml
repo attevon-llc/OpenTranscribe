@@ -122,7 +122,7 @@ jobs:
           severity-cutoff: medium
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: backend-sbom
@@ -196,7 +196,7 @@ jobs:
           severity-cutoff: medium
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: frontend-sbom

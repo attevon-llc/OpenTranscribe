@@ -115,7 +115,7 @@ jobs:
           output-file: backend-sbom.spdx.json
 
       - name: Scan SBOM with Grype
-        uses: anchore/scan-action@v3
+        uses: anchore/scan-action@v7
         with:
           sbom: backend-sbom.spdx.json
           fail-build: false
@@ -189,7 +189,7 @@ jobs:
           output-file: frontend-sbom.spdx.json
 
       - name: Scan SBOM with Grype
-        uses: anchore/scan-action@v3
+        uses: anchore/scan-action@v7
         with:
           sbom: frontend-sbom.spdx.json
           fail-build: false

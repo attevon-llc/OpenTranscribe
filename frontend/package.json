@@ -28,7 +28,7 @@
     "svelte-eslint-parser": "^1.6.0",
     "svelte-range-slider-pips": "^4.1.0",
     "tslib": "^2.6.0",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.2",
     "vite": "^6.1.7",
     "vite-plugin-pwa": "^1.0.3"
   },

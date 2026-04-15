@@ -40,7 +40,7 @@
     "date-fns": "^4.1.0",
     "devalue": "^5.6.3",
     "dompurify": "^3.3.3",
-    "i18next": "^25.8.14",
+    "i18next": "^26.0.4",
     "i18next-browser-languagedetector": "^8.2.1",
     "imohash": "^1.0.3",
     "plyr": "^3.8.4",

@@ -74,6 +74,22 @@ files. This means small batch tests use cheaper short files (fast iteration), an
 | 15 | 4 | `28506325-0e30-40b1-a300-47f4ab6482e2` | 4h 13m | JRE #1769 — Jordan Peterson |
 | 16 | 4 | `3e313bbd-924f-4a4b-9584-fa24532b9a01` | 4h 44m | JRE #1907 — Protect Our Parks 6 (4+ spk) |
 
+### Corpus Profiles
+
+Select a profile with `--profile <name>`. Combine with `--shuffle` to randomise
+arrival order within the selected set (recommended for all real-world throughput tests).
+
+| Profile | `--batches 4` selects | Best for |
+|---------|----------------------|----------|
+| `by_duration` *(default)* | 4 shortest files (all Tier 1, 5–23 min) | VRAM ceiling tests — OOM fails fast |
+| `mixed` | 1 file from each tier (T1+T2+T3+T4) | Throughput / scheduler stress tests |
+| `mixed_hard` | Longest file from each tier (8.97 h total) | Quick 4-file real-world stress test |
+
+**Rule of thumb:**
+- VRAM / OOM tests → `--profile by_duration` (no shuffle needed — homogeneous files)
+- Throughput / scheduler tests → `--profile mixed --shuffle`
+- Quick stress check → `--profile mixed_hard --shuffle`
+
 ### Expected Throughput at Full Corpus (batch=16)
 
 At the whitepaper single-file RTF of 44.6×, the 4.73 h anchor file (longest) takes ~382 s.
@@ -229,29 +245,51 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compos
 # Step 3: Confirm worker started with right concurrency
 docker compose logs --tail=20 celery-worker | grep "concurrent_requests\|concurrency"
 
-# Step 4: Run benchmark with corpus (from host, venv activated)
+# Step 4a: VRAM ceiling test — by_duration profile, no shuffle (homogeneous files, OOM fails fast)
 BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
 python scripts/benchmark_parallel.py \
     --corpus-file docs/benchmark-corpus/corpus.json \
+    --profile by_duration \
     --batches N \
     --gpu-id 2 \
-    --output docs/engine-benchmark-results/parallel_conc${N}_$(date +%Y%m%d)/
+    --output docs/engine-benchmark-results/parallel_vram_conc${N}_$(date +%Y%m%d)/
+
+# Step 4b: Throughput / scheduler test — mixed profile, shuffled (real-world representative)
+BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
+python scripts/benchmark_parallel.py \
+    --corpus-file docs/benchmark-corpus/corpus.json \
+    --profile mixed --shuffle \
+    --batches N \
+    --gpu-id 2 \
+    --output docs/engine-benchmark-results/parallel_mixed_conc${N}_$(date +%Y%m%d)/
 
 # Step 5: Watch VRAM in another terminal during the run
 watch -n 1 "nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gpu \
     --format=csv,noheader | grep -E '^1,|^2,'"
 ```
 
-**Full-corpus run (all 16 files, requires conc=16):**
+**Full-corpus run (all 16 files, mixed profile, shuffled — whitepaper headline metric):**
 ```bash
 BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
 python scripts/benchmark_parallel.py \
     --corpus-file docs/benchmark-corpus/corpus.json \
+    --profile mixed --shuffle \
     --batches 16 \
     --gpu-id 2 \
     --output docs/engine-benchmark-results/parallel_fullcorpus_$(date +%Y%m%d)/
 ```
 The script prints `*** Full-corpus aggregate RTF ***` automatically when all 16 files complete.
+
+**Quick 4-file stress test (mixed_hard — 8.97 h total, one file per tier):**
+```bash
+BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
+python scripts/benchmark_parallel.py \
+    --corpus-file docs/benchmark-corpus/corpus.json \
+    --profile mixed_hard --shuffle \
+    --batches 4 \
+    --gpu-id 2 \
+    --output docs/engine-benchmark-results/parallel_stress4_$(date +%Y%m%d)/
+```
 
 ### Phase 3 — Duration Curve (sequential, one file at a time)
 
@@ -307,12 +345,13 @@ Run 10 consecutive batches at the identified max concurrency level. VRAM must no
 drift > 200 MB between batch 1 and batch 10 (confirms no memory leak).
 
 ```bash
-# Example: 10-batch soak at conc=12 on A6000, Tier 3+4 files (hardest 8)
+# Example: 10-batch soak at conc=12 on A6000, mixed profile shuffled (real-world queue)
 for i in $(seq 1 10); do
     echo "=== Soak batch $i ==="
     BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
     python scripts/benchmark_parallel.py \
         --corpus-file docs/benchmark-corpus/corpus.json \
+        --profile mixed --shuffle \
         --batches 12 \
         --gpu-id 2 \
         --cooldown 0 \
@@ -379,8 +418,8 @@ Also update `.env.example` GPU_CONCURRENT_REQUESTS comment with confirmed values
 | `backend/app/transcription/config.py` | `_auto_concurrent()` formula and cap |
 | `.env.example` | `GPU_CONCURRENT_REQUESTS` comment with measured values |
 | `scripts/benchmark_e2e.py` | Redis URL auto-loads from `.env` (fixed wrong port/auth) |
-| `scripts/benchmark_parallel.py` | Redis URL, `--corpus-file` support, GPU util% in summary |
-| `docs/benchmark-corpus/corpus.json` | Fixed 16-file corpus (28.67 h total audio) |
+| `scripts/benchmark_parallel.py` | Redis URL, `--corpus-file`, `--profile`, `--shuffle`, GPU util% in summary |
+| `docs/benchmark-corpus/corpus.json` | Fixed 16-file corpus (28.67 h total audio) with `profiles` section |
 | `docs/gpu-concurrency-soak-test-plan.md` | This file |
 
 Committed on branch `feat/engine-opimization` as of 2026-04-29.

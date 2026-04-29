@@ -16,6 +16,7 @@ docker-compose.override.yml     # Dev overrides: volume mounts, hot reload, Dock
 docker-compose.nas.yml          # NAS/NVMe bind mounts for minio, postgres, opensearch
 docker-compose.gpu.yml          # GPU access for default celery-worker
 docker-compose.gpu-scale.yml    # GPU-scaled worker (multiple parallel workers on one GPU)
+# gpu-split profile             # GPU split workers (gpu-transcribe + gpu-diarize) — in main yml
 ```
 
 **Key differences from prod:**
@@ -135,7 +136,8 @@ docker-compose.prod.yml         # Production image tags (davidamacey/opentranscr
 docker-compose.local.yml        # pull_policy: never (use local images, not Docker Hub)
 docker-compose.nas.yml          # NAS/NVMe bind mounts
 docker-compose.gpu.yml          # GPU access for default celery-worker
-docker-compose.gpu-scale.yml    # GPU-scaled worker
+docker-compose.gpu-scale.yml    # GPU-scaled worker (multiple parallel workers on one GPU)
+# gpu-split profile             # GPU split workers — in main yml, activated via COMPOSE_PROFILES=gpu-split
 ```
 
 **IMPORTANT**: When testing local code changes in prod mode, you MUST:

@@ -84,21 +84,35 @@ OpenTranscribe splits work across 6 specialized Celery workers (plus a scheduler
 
 **Unified 3-stage pipeline (v0.4.0):** Each transcription job runs as a Celery chain: `preprocess` → `gpu` → `postprocess`. The preprocess stage (audio extraction, format normalization) and postprocess stage (indexing, embedding, notifications) run on CPU workers, freeing the GPU worker to focus exclusively on AI inference.
 
-### Multi-GPU Scaling
+### Multi-GPU Options
 
-For systems with multiple GPUs, OpenTranscribe supports scaling GPU workers via `docker-compose.gpu-scale.yml`:
+Two independent GPU scaling modes are available:
+
+**GPU Scale** (`--gpu-scale`) — multiple parallel pipelines on one GPU:
 
 ```bash
 # .env configuration
 GPU_SCALE_ENABLED=true
 GPU_SCALE_DEVICE_ID=2      # Target GPU
-GPU_SCALE_WORKERS=4         # Parallel workers within one container
+GPU_SCALE_WORKERS=4        # Parallel workers within one container
 
-# Start with scaling
 ./opentr.sh start dev --gpu-scale
 ```
 
-This creates a single container with multiple Celery worker threads sharing one GPU (threads pool), allowing parallel transcription of multiple files without reloading the model.
+Creates a single container with multiple Celery worker threads sharing one GPU (`threads` pool). All threads share the loaded model — no reload overhead. Tasks route via the `gpu` queue as normal.
+
+**GPU Split** (`--with-gpu-split`) — transcription and diarization on separate GPUs:
+
+```bash
+# .env configuration
+GPU_TRANSCRIBE_DEVICE_ID=0   # GPU for WhisperX (Whisper model)
+GPU_DIARIZE_DEVICE_ID=1      # GPU for PyAnnote (diarization model)
+ENGINE_SHARED_VOLUME_PATH=/tmp/transcription
+
+./opentr.sh start dev --with-gpu-split
+```
+
+Starts two dedicated workers: `celery-worker-gpu-transcribe` (queue `gpu-transcribe`) and `celery-worker-gpu-diarize` (queue `gpu-diarize`). A single file's pipeline flows: CPU preprocess → GPU A (Whisper) → GPU B (PyAnnote) → CPU finalize. The shared `transcription-temp` volume carries the decoded WAV between containers. Workers are defined in `docker-compose.yml` under the `gpu-split` profile — no extra overlay file needed.
 
 ### Task Flow Example
 

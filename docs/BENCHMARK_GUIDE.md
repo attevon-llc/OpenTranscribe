@@ -318,6 +318,36 @@ python scripts/benchmark_parallel.py \
 - [ ] Dual-GPU benchmark completed
 - [ ] Record: **5-worker throughput**: ___ x
 
+### E2. GPU Split deployment (transcribe + diarize on separate GPUs)
+
+```bash
+./opentr.sh stop
+```
+
+Edit `.env`:
+
+```bash
+GPU_TRANSCRIBE_DEVICE_ID=0       # A6000 — WhisperX only
+GPU_DIARIZE_DEVICE_ID=1          # 3080 Ti — PyAnnote only
+ENGINE_SHARED_VOLUME_PATH=/tmp/transcription
+```
+
+```bash
+./opentr.sh start dev --with-gpu-split
+```
+
+```bash
+python scripts/benchmark_engine_single.py \
+  --audio benchmark/test_audio/0.5h_1899s.wav \
+  --runs 3 \
+  --output /tmp/engine_single_gpu_split.csv
+```
+
+- [ ] GPU split benchmark completed
+- [ ] Record: **Stage 2 GPU total (solo warm)**: ___ s
+- [ ] Record: **Realtime factor (warm)**: ___ x
+- [ ] Compare to standard (single-GPU) solo result from Phase 2
+
 ---
 
 ## Phase F: Final Projection
@@ -369,9 +399,11 @@ Fill in after all phases complete (v0.4.0 reference values from completed benchm
 
 # Restart with your preferred configuration
 ./opentr.sh stop
-./opentr.sh start dev            # single GPU
+./opentr.sh start dev                    # single GPU
 # or
-./opentr.sh start dev --gpu-scale  # multi-GPU
+./opentr.sh start dev --gpu-scale        # parallel workers on one GPU
+# or
+./opentr.sh start dev --with-gpu-split   # split transcribe/diarize across two GPUs
 ```
 
 - [ ] Profiling disabled

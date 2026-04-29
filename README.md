@@ -334,9 +334,11 @@ The `opentr.sh` script provides comprehensive management for all application ope
 ./opentr.sh logs [service]       # View logs (all or specific service)
 ```
 
-### **Multi-GPU Scaling (Optional)**
-For systems with multiple GPUs, enable parallel GPU workers for significantly increased transcription throughput:
+### **Multi-GPU Options (Optional)**
 
+Two independent scaling modes are available — choose based on your hardware and workload:
+
+**Option A — GPU Scale** (multiple parallel pipelines on one GPU):
 ```bash
 # Configure in .env
 GPU_SCALE_ENABLED=true      # Enable multi-GPU scaling
@@ -347,13 +349,22 @@ GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
 ./opentr.sh start dev --gpu-scale
 ./opentr.sh reset dev --gpu-scale
 
-# Example hardware setup:
-# GPU 0: LLM model (vLLM, Ollama)
-# GPU 1: Default single worker (disabled when scaling)
-# GPU 2: 4 parallel workers (processes 4 videos simultaneously)
+# Example: GPU 2 (A6000) runs 4 parallel workers; GPU 0/1 handle other tasks
 ```
+**Best for:** High file throughput — processes 4 videos simultaneously on one GPU.
 
-**Performance:** Process 4 transcriptions simultaneously on a high-end GPU, significantly reducing total processing time for batch uploads.
+**Option B — GPU Split** (transcription and diarization on separate GPUs):
+```bash
+# Configure in .env
+GPU_TRANSCRIBE_DEVICE_ID=0   # GPU for WhisperX (transcription)
+GPU_DIARIZE_DEVICE_ID=1      # GPU for PyAnnote (diarization)
+ENGINE_SHARED_VOLUME_PATH=/tmp/transcription  # shared volume mount path
+
+# Start with GPU split
+./opentr.sh start dev --with-gpu-split
+./opentr.sh reset dev --with-gpu-split
+```
+**Best for:** Two-GPU setups where you want dedicated VRAM per model — one GPU purely for Whisper, one purely for PyAnnote.
 
 ### **Development Workflow**
 ```bash

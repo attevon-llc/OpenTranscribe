@@ -126,7 +126,8 @@ docker build -t opentranscribe-backend-blackwell:latest \
 | `docker-compose.nginx.yml` | NGINX reverse proxy |
 | `docker-compose.pki.yml` | mTLS / PKI certificate auth |
 | `docker-compose.blackwell.yml` | Blackwell GPU (SM_121) |
-| `docker-compose.gpu-scale.yml` | Multi-GPU worker scaling |
+| `docker-compose.gpu-scale.yml` | Multi-GPU worker scaling (parallel workers on one GPU) |
+| *(profile: `gpu-split`)* | GPU split mode — transcribe/diarize workers in main `docker-compose.yml` |
 
 **PKI deployment** (requires NGINX):
 ```bash

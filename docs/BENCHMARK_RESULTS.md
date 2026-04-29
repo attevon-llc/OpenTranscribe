@@ -335,3 +335,76 @@
 | VAD dispatch jitter to prevent CPU thread stampede | Smoother CPU load at high concurrency | Low | Research |
 | NVIDIA Triton for dynamic batching at 10+ concurrency | 20-60% throughput at high concurrency | High | Research |
 | Quality tiers (beam_size=1 draft / beam_size=5 standard) | 35% faster for draft mode | Low | Planned |
+
+---
+
+## Engine v1 Benchmark — Phase 2 (2026-04-29)
+
+> **Branch**: `feat/engine-opimization` — Three-stage CPU→GPU→CPU engine (Engine package)
+> **Config**: `large-v3-turbo`, `int8_float16`, `batch_size=16` (pinned, Phase A), TF32 disabled (PyAnnote global), both models kept warm (transcriber + diarizer loaded simultaneously)
+> **Hardware**: RTX A6000 (GPU 0, 48 GB), isolated bench stack on fresh volumes, production stack stopped
+
+### Queue Throughput (concurrency=3, 5 files, RTX A6000)
+
+| File | Audio | Wall time | Realtime | VRAM peak (device) | Status |
+|------|-------|-----------|----------|--------------------|--------|
+| 0.5h_1899s.wav | 1,899 s | 119.7 s | **15.9×** | ~7.7 GB | OK |
+| 1.0h_3758s.wav | 3,758 s | 285.4 s | **13.2×** | ~7.7 GB | OK |
+| 2.2h_7998s.wav | 8,005 s | 555.2 s | **14.4×** | ~6.9 GB | OK |
+| 3.2h_11495s.wav | 11,508 s | 679.9 s | **16.9×** | ~6.0 GB | OK |
+| 4.7h_17044s.wav | 17,059 s | 845.7 s | **20.2×** | ~18.1 GB* | OK |
+| **Total / avg** | **42,229 s** | **2,486 s** | **16.1× avg / 17.0× agg** | — | — |
+
+\* The 4.7h run overlapped with the 3.2h diarization — two pipelines loaded simultaneously explain the higher device VRAM. PyTorch peak stayed ≤ 9,963 MB per pipeline.
+
+**Throughput**: 7.2 files/hour (concurrency=3, single GPU)
+
+### Per-Stage Breakdown (from queue data, 0.5h file)
+
+| Stage | Time | Realtime factor |
+|-------|------|-----------------|
+| Stage 1 preprocess (audio load + write) | ~2 s | — |
+| Stage 2 transcription (faster-whisper) | 32.6 s | **58× realtime** |
+| Stage 2 diarization (PyAnnote community-1) | 73.4 s | **25.9× realtime** |
+| Stage 3 finalize (cleanup, speaker assign) | ~0.3 s | — |
+| **Total (sequential, 0.5h)** | **~108 s** | **~17.6×** |
+
+### Comparison to v0.4.0 Pipeline (batch_size=32, TF32=on, concurrent=1)
+
+| Metric | v0.4.0 pipeline | Engine v1 (conc=3) | Engine v1 (0.5h solo est.) |
+|--------|-----------------|---------------------|----------------------------|
+| Transcription realtime | 84.6× | 58.2× (−31%) | ~58× |
+| Diarization realtime | 80.2× | 25.9× (−68%) | ~26× |
+| Combined single-file | **40.3×** | — | **~17.6×** |
+| Aggregate at conc=3–8 | **54.6×** (conc=8) | **17.0×** (conc=3) | — |
+
+**Explaining the gap:**
+
+- **batch_size 32→16**: Phase A locked diarization embedding batch at 16. Transcription slowdown is ~1.5× (84.6→58×). Diarization batch impact is negligible per Phase A measurements.
+- **TF32 disabled**: PyAnnote `community-1` disables TF32 globally at import. Affects diarization embedding matrix ops — likely responsible for most of the diarization 3× gap.
+- **Both models warm**: Engine keeps transcriber loaded through diarization. Higher combined VRAM but no reload overhead.
+- **concurrency=3 on one GPU**: Files serialize on the GPU; shorter files accumulate wait time from larger concurrent files. The 4.7h file (ran near-solo) hit 20.2× — close to the 20× gate.
+- **community-1 vs. old model**: The WeSpeaker-based community-1 model may have different embedding throughput than the prior model version used in v0.4.0 benchmarks.
+
+### Gate Criteria — Phase 2
+
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| Stage 1 preprocess | < 30 s | ~2 s | ✓ PASS |
+| Stage 2 GPU combined | ≥ 20× realtime | 17.0× agg (20.2× near-solo) | ⚠ BORDERLINE |
+| Stage 3 finalize | < 5 s | < 0.5 s | ✓ PASS |
+| GPU idle gap at conc=3 | < 5 s | ~0 s (continuous) | ✓ PASS |
+
+Single-file stage-latency data (per-stage CSV) pending re-run — the `benchmark_engine_single.py` script failed on first run due to a directory permission bug (`/tmp/transcription` → fixed to `/tmp`).
+
+### VRAM Profile (Engine v1, single pipeline)
+
+| Checkpoint | Device used | PyTorch peak |
+|---|---|---|
+| Baseline (pre-load) | 2,664 MB | 0 MB |
+| After transcriber load | 3,720 MB (+1,056 MB) | 0 MB |
+| During transcription | 6,096 MB | 31–376 MB |
+| During diarization (embedding peak) | 7,670 MB | **9,956 MB** |
+| After cleanup | ~4,060 MB | 47 MB |
+
+The 9,956 MB PyTorch peak during diarization reflects batch embedding inference with the transcriber also loaded. Device-level VRAM (7.7 GB) is higher than v0.4.0 (2.3 GB) because both models remain resident. Still well within A6000's 48 GB at any concurrency.

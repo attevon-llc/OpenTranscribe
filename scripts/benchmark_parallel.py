@@ -53,8 +53,33 @@ sys.stdout.reconfigure(line_buffering=True)
 # Configuration
 # ---------------------------------------------------------------------------
 BACKEND_URL = os.environ.get("BENCHMARK_BACKEND_URL", "http://localhost:5174")
-REDIS_URL = os.environ.get("BENCHMARK_REDIS_URL", "redis://:CHANGE_ME_auto_generated_on_install@localhost:5177/0")
 POLL_INTERVAL = 5.0  # seconds between status polls
+
+
+def _load_redis_url() -> str:
+    """Build Redis URL from BENCHMARK_REDIS_URL env var, then .env, then sensible default."""
+    explicit = os.environ.get("BENCHMARK_REDIS_URL", "")
+    if explicit:
+        return explicit
+    env_file = os.path.join(os.path.dirname(__file__), "..", ".env")
+    password = ""
+    port = "5177"
+    try:
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("REDIS_PASSWORD="):
+                    password = line.split("=", 1)[1].strip().strip("\"'")
+                elif line.startswith("REDIS_PORT=") and "already set" not in line:
+                    port = line.split("=", 1)[1].strip().strip("\"'")
+    except OSError:
+        pass
+    if password:
+        return f"redis://:{password}@localhost:{port}/0"
+    return f"redis://localhost:{port}/0"
+
+
+REDIS_URL = _load_redis_url()
 POLL_TIMEOUT = 14400  # 4 hours max for large batches
 VRAM_SAMPLE_INTERVAL = 2.0  # seconds between nvidia-smi samples
 GPU_DEVICE_ID = 2  # host GPU to monitor (the gpu-scaled worker GPU)
@@ -616,7 +641,7 @@ def write_reports(all_batches: list[BatchResult], output_dir: Path):
             "files_completed", "files_errored",
             "avg_file_wall_s", "min_file_wall_s", "max_file_wall_s",
             "avg_gpu_s", "min_gpu_s", "max_gpu_s",
-            "vram_peak_mb", "vram_avg_mb",
+            "vram_peak_mb", "vram_avg_mb", "gpu_util_pct_avg",
             "throughput_audio_hrs_per_wall_hr",
             "speedup_vs_single",
         ])
@@ -633,6 +658,10 @@ def write_reports(all_batches: list[BatchResult], output_dir: Path):
             if single_batch_wall is None:
                 single_batch_wall = batch.wall_elapsed
             speedup = (single_batch_wall * len(completed)) / batch.wall_elapsed if batch.wall_elapsed else 0
+            avg_util = (
+                sum(s.utilization_pct for s in batch.vram_samples) / len(batch.vram_samples)
+                if batch.vram_samples else 0
+            )
 
             writer.writerow([
                 batch.batch_size, f"{batch.wall_elapsed:.1f}",
@@ -642,7 +671,7 @@ def write_reports(all_batches: list[BatchResult], output_dir: Path):
                 f"{sum(gpus)/len(gpus):.1f}" if gpus else "",
                 f"{min(gpus):.1f}" if gpus else "",
                 f"{max(gpus):.1f}" if gpus else "",
-                batch.vram_peak_mb, f"{batch.vram_avg_mb:.0f}",
+                batch.vram_peak_mb, f"{batch.vram_avg_mb:.0f}", f"{avg_util:.0f}",
                 f"{throughput:.2f}", f"{speedup:.2f}",
             ])
     print(f"Summary CSV:  {summary_path}")
@@ -670,12 +699,12 @@ def write_reports(all_batches: list[BatchResult], output_dir: Path):
 
 def _print_final_summary(all_batches: list[BatchResult], single_wall: float | None):
     """Print the final scaling comparison."""
-    print(f"\n{'='*90}")
+    print(f"\n{'='*100}")
     print("PARALLEL SCALING SUMMARY")
-    print(f"{'='*90}")
+    print(f"{'='*100}")
     print(f"{'Batch':>6} {'Wall Time':>12} {'Avg/File':>12} {'GPU Avg':>12} "
-          f"{'VRAM Peak':>10} {'Throughput':>12} {'Speedup':>8}")
-    print(f"{'─'*6} {'─'*12} {'─'*12} {'─'*12} {'─'*10} {'─'*12} {'─'*8}")
+          f"{'VRAM Peak':>10} {'GPU Util%':>10} {'Throughput':>12} {'Speedup':>8}")
+    print(f"{'─'*6} {'─'*12} {'─'*12} {'─'*12} {'─'*10} {'─'*10} {'─'*12} {'─'*8}")
 
     for batch in all_batches:
         completed = [fr for fr in batch.file_results if fr.status == "completed"]
@@ -685,6 +714,10 @@ def _print_final_summary(all_batches: list[BatchResult], single_wall: float | No
         gpus = [fr.stages.get("3_gpu_transcribe", 0) for fr in completed if fr.stages]
         total_audio_s = sum(fr.duration_s for fr in completed)
         throughput = (total_audio_s / 3600) / (batch.wall_elapsed / 3600) if batch.wall_elapsed else 0
+        avg_util = (
+            sum(s.utilization_pct for s in batch.vram_samples) / len(batch.vram_samples)
+            if batch.vram_samples else 0
+        )
 
         speedup = ""
         if single_wall:
@@ -698,10 +731,11 @@ def _print_final_summary(all_batches: list[BatchResult], single_wall: float | No
               f"{_fmt_duration(sum(walls)/len(walls)):>12} "
               f"{avg_gpu:>12} "
               f"{batch.vram_peak_mb:>8}MB "
+              f"{avg_util:>9.0f}% "
               f"{throughput:>10.2f}x "
               f"{speedup:>8}")
 
-    print(f"{'='*90}")
+    print(f"{'='*100}")
     print(f"Throughput = audio hours processed per wall-clock hour")
     print(f"Speedup = ideal sequential time / actual batch time (linear=batch_size)")
 
@@ -837,8 +871,8 @@ def main():
         help="Seconds to wait between batches for GPU to settle (default: 30)",
     )
     parser.add_argument(
-        "--min-duration", type=int, default=10800,
-        help="Minimum file duration in seconds for selection (default: 10800 = 3 hours)",
+        "--min-duration", type=int, default=60,
+        help="Minimum file duration in seconds for selection (default: 60 = 1 minute)",
     )
     parser.add_argument(
         "--max-duration", type=int, default=0,
@@ -872,7 +906,6 @@ def main():
     print(f"GPU monitor:    GPU {args.gpu_id}")
     print(f"Output dir:     {output_dir}")
     print(f"Backend:        {BACKEND_URL}")
-    print(f"Worker conc:    5 (gpu-scaled)")
 
     # Get files — either from explicit UUIDs or auto-select from DB
     if args.file_uuids:

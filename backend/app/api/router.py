@@ -12,6 +12,7 @@ from .endpoints import combined_speaker_migration
 from .endpoints import comments
 from .endpoints import custom_vocabulary
 from .endpoints import embedding_migration
+from .endpoints import engine_settings
 from .endpoints import groups
 from .endpoints import llm_settings
 from .endpoints import llm_status
@@ -93,6 +94,9 @@ include_router_with_consistency(prompts.router, prefix="/prompts", tags=["prompt
 include_router_with_consistency(llm_settings.router, prefix="/llm-settings", tags=["llm-settings"])
 include_router_with_consistency(llm_status.router, prefix="/llm", tags=["llm-status"])
 include_router_with_consistency(asr_settings.router, prefix="/asr-settings", tags=["asr-settings"])
+include_router_with_consistency(
+    engine_settings.router, prefix="/admin/engine-settings", tags=["admin"]
+)
 include_router_with_consistency(
     custom_vocabulary.router, prefix="/custom-vocabulary", tags=["custom-vocabulary"]
 )

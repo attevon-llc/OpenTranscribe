@@ -34,6 +34,40 @@ class EngineConfig:
     _transcription_config: TranscriptionConfig | None = field(default=None, repr=False)
 
     @classmethod
+    def from_db_with_env_fallback(cls, db) -> EngineConfig:
+        """Read engine settings from SystemSettings DB, fall back to env vars."""
+        from app.services.system_settings_service import get_setting
+        from app.services.system_settings_service import get_setting_bool
+
+        return cls(
+            transcriber_backend=(
+                get_setting(db, "engine.transcriber_backend")
+                or os.getenv("ENGINE_TRANSCRIBER_BACKEND")
+                or "faster_whisper"
+            ),
+            diarizer_backend=(
+                get_setting(db, "engine.diarizer_backend")
+                or os.getenv("ENGINE_DIARIZER_BACKEND")
+                or "pyannote"
+            ),
+            gpu_split=get_setting_bool(
+                db,
+                "engine.gpu_split",
+                default=os.getenv("ENGINE_GPU_SPLIT", "false").lower() == "true",
+            ),
+            precompute_vad=get_setting_bool(
+                db,
+                "engine.precompute_vad",
+                default=os.getenv("ENGINE_PRECOMPUTE_VAD", "false").lower() == "true",
+            ),
+            shared_volume_path=(
+                get_setting(db, "engine.shared_volume_path")
+                or os.getenv("ENGINE_SHARED_VOLUME_PATH")
+                or "/tmp/transcription"  # noqa: S108  # nosec B108
+            ),
+        )
+
+    @classmethod
     def from_environment(cls, **overrides) -> EngineConfig:
         """Build EngineConfig from env vars, wrapping TranscriptionConfig."""
         from app.transcription.config import TranscriptionConfig

@@ -2,6 +2,8 @@
 
 Phase 1a: process() — combined entry (byte-identical to TranscriptionPipeline).
 Phase 1b: run_preprocess() / run_gpu_stage() / run_cpu_finalize() — split-stage.
+Phase 4:  run_transcribe_only() / run_diarize_only() — multi-GPU split
+          (ENGINE_GPU_SPLIT=true; transcription and diarization on separate GPUs).
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ if TYPE_CHECKING:
     from app.transcription.engine.job import JobSpec
     from app.transcription.engine.job import PreprocessResult
     from app.transcription.engine.job import RawInferenceResult
+    from app.transcription.engine.job import RawTranscriptResult
 
 from app.transcription.engine.config import EngineConfig
 from app.transcription.engine.metrics import MetricsCollector
@@ -132,6 +135,55 @@ class Engine:
         stage = _GpuRawStage()
         stage_config = EngineConfig.from_snapshot(pre.config_snapshot)
         return stage.run(pre, stage_config, adapt_legacy(progress_callback))
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Phase 4 — multi-GPU split entry points
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def run_transcribe_only(
+        self,
+        pre: PreprocessResult,
+        progress_callback: Callable[[float, str], None] | None = None,
+    ) -> RawTranscriptResult:
+        """Stage 2a (GPU-transcribe): transcription only, no diarization.
+
+        Args:
+            pre: PreprocessResult from run_preprocess(); must have local_wav_path set.
+            progress_callback: Optional legacy (float, str) callback.
+
+        Returns:
+            RawTranscriptResult carrying raw Whisper segments for Stage 2b.
+        """
+        from app.transcription.engine.config import EngineConfig
+        from app.transcription.engine.progress import adapt_legacy
+        from app.transcription.engine.stages import _TranscribeOnlyStage
+
+        stage = _TranscribeOnlyStage()
+        stage_config = EngineConfig.from_snapshot(pre.config_snapshot)
+        return stage.run(pre, stage_config, adapt_legacy(progress_callback))
+
+    def run_diarize_only(
+        self,
+        transcript: RawTranscriptResult,
+        progress_callback: Callable[[float, str], None] | None = None,
+    ) -> RawInferenceResult:
+        """Stage 2b (GPU-diarize): diarization only, no transcription.
+
+        Args:
+            transcript: RawTranscriptResult from run_transcribe_only().
+            progress_callback: Optional legacy (float, str) callback.
+
+        Returns:
+            RawInferenceResult with the same shape as run_gpu_stage() so that
+            the existing run_cpu_finalize() / postprocess chain is unaffected.
+        """
+        from app.transcription.engine.config import EngineConfig
+        from app.transcription.engine.progress import adapt_legacy
+        from app.transcription.engine.stages import _DiarizerOnlyStage
+
+        stage = _DiarizerOnlyStage()
+        stage_config = EngineConfig.from_snapshot(transcript.config_snapshot)
+        return stage.run(transcript, stage_config, adapt_legacy(progress_callback))
 
     def run_cpu_finalize(
         self,

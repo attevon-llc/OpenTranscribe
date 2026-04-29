@@ -1,7 +1,9 @@
 """Job dataclasses: spec, result, and inter-stage handoff types.
 
 JobSpec → run_preprocess() → PreprocessResult
-PreprocessResult → run_gpu_stage() → RawInferenceResult
+PreprocessResult → run_gpu_stage() → RawInferenceResult        (single-GPU)
+PreprocessResult → run_transcribe_only() → RawTranscriptResult (multi-GPU Stage 2a)
+RawTranscriptResult → run_diarize_only() → RawInferenceResult  (multi-GPU Stage 2b)
 RawInferenceResult → run_cpu_finalize() → JobResult
 """
 
@@ -168,3 +170,47 @@ class RawInferenceResult:
     @staticmethod
     def _json_size(payload: dict) -> int:
         return len(json.dumps(payload))
+
+
+@dataclass
+class RawTranscriptResult:
+    """Stage 2a (gpu-transcribe) → Stage 2b (gpu-diarize) handoff.
+
+    Carries the raw Whisper output so the diarize worker can reload the audio
+    and run PyAnnote without re-running transcription.  All fields are
+    JSON-safe (no numpy arrays at boundary).
+    """
+
+    task_id: str | None
+    audio_path: str  # empty string when shared-volume WAV was used
+    audio_duration_s: float
+    language: str
+    raw_segments: list[dict]  # from transcriber.transcribe()["segments"]
+    local_wav_path: str  # diarizer reloads audio from this path
+    config_snapshot: dict
+    stage_timings: dict[str, float]
+
+    def serialize(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "audio_path": self.audio_path,
+            "audio_duration_s": self.audio_duration_s,
+            "language": self.language,
+            "raw_segments": self.raw_segments,
+            "local_wav_path": self.local_wav_path,
+            "config_snapshot": self.config_snapshot,
+            "stage_timings": self.stage_timings,
+        }
+
+    @classmethod
+    def deserialize(cls, d: dict) -> RawTranscriptResult:
+        return cls(
+            task_id=d.get("task_id"),
+            audio_path=d.get("audio_path", ""),
+            audio_duration_s=d["audio_duration_s"],
+            language=d["language"],
+            raw_segments=d["raw_segments"],
+            local_wav_path=d["local_wav_path"],
+            config_snapshot=d.get("config_snapshot", {}),
+            stage_timings=d.get("stage_timings", {}),
+        )

@@ -1,13 +1,18 @@
 """Engine stage implementations.
 
-Three stages mirror the existing 3-stage Celery chain:
-- _PreprocessStage  → cpu queue Stage 1
-- _GpuStage         → gpu queue Stage 2
-- _FinalizeStage    → cpu queue Stage 3
+Stages mirror the existing Celery chain:
+- _PreprocessStage     → cpu queue Stage 1
+- _GpuStage            → gpu queue Stage 2 (Phase 1a combined)
+- _GpuRawStage         → gpu queue Stage 2 (Phase 1b split: transcribe + diarize together)
+- _TranscribeOnlyStage → gpu-transcribe queue Stage 2a (Phase 4 multi-GPU split)
+- _DiarizerOnlyStage   → gpu-diarize queue Stage 2b (Phase 4 multi-GPU split)
+- _FinalizeStage       → cpu queue Stage 3
 
 In Phase 1a, _GpuStage combines the full pipeline (identical to
 TranscriptionPipeline.process) so Engine.process() is byte-equal.
 Phase 1b splits preprocess and finalize into the proper stages.
+Phase 4 further splits Stage 2 so transcription and diarization run on
+separate GPUs (ENGINE_GPU_SPLIT=true).
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ if TYPE_CHECKING:
     from app.transcription.engine.job import JobSpec
     from app.transcription.engine.job import PreprocessResult
     from app.transcription.engine.job import RawInferenceResult
+    from app.transcription.engine.job import RawTranscriptResult
     from app.transcription.engine.progress import ProgressCallback
 
 logger = logging.getLogger(__name__)
@@ -520,6 +526,185 @@ class _FinalizeStage:
             overlap_info=result.get("overlap_info", {}),
             native_speaker_embeddings=result.get("native_speaker_embeddings"),
             stage_timings={"finalize": time.perf_counter() - t0},
+        )
+
+
+class _TranscribeOnlyStage:
+    """Stage 2a (GPU-transcribe): transcription only — no diarization.
+
+    Used when ENGINE_GPU_SPLIT=true to run Whisper on a dedicated GPU while
+    diarization is offloaded to a separate gpu-diarize worker (_DiarizerOnlyStage).
+    """
+
+    def run(
+        self,
+        pre: PreprocessResult,
+        config: EngineConfig,
+        callback: ProgressCallback | None = None,
+    ) -> RawTranscriptResult:
+        """Load WAV from shared volume, transcribe, return raw transcript without diarizing."""
+        import time
+
+        from app.transcription.engine.audio_loader import load_from_shared_volume
+        from app.transcription.engine.job import RawTranscriptResult
+        from app.transcription.engine.progress import emit
+        from app.transcription.model_manager import ModelManager
+        from app.utils.vram_profiler import VRAMProfiler
+
+        tc = config.transcription_config
+        pipeline_start = time.perf_counter()
+        profiler = VRAMProfiler()
+        manager = ModelManager.get_instance()
+
+        profiler.snapshot("pipeline_start")
+
+        emit(callback, 0.42, "Loading audio", "preprocess")
+
+        audio = load_from_shared_volume(pre.local_wav_path)
+        if audio is None:
+            raise RuntimeError(
+                f"Shared-volume WAV missing or unreadable: {pre.local_wav_path!r}. "
+                "Stage 1 must write the WAV before Stage 2a runs."
+            )
+
+        if tc.concurrent_requests > 1:
+            _wait_for_vram(1500, "transcriber_load")
+
+        with profiler.step("model_load_transcriber"):
+            transcriber = manager.get_transcriber(tc)
+
+        profiler.snapshot("after_transcriber_loaded")
+
+        emit(callback, 0.43, "Running AI transcription", "transcribe")
+        step_start = time.perf_counter()
+        with profiler.step("transcription"):
+            transcript = transcriber.transcribe(audio)
+        logger.info(
+            f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
+        )
+
+        # Release transcriber VRAM before the diarize worker claims the other GPU.
+        # Avoids the inter-process VRAM peak from both models being loaded simultaneously
+        # when the two workers share the same physical device (misconfigured split).
+        manager.release_transcriber()
+
+        elapsed = time.perf_counter() - pipeline_start
+        profiler.log_report()
+
+        return RawTranscriptResult(
+            task_id=pre.task_id,
+            audio_path="",
+            audio_duration_s=pre.audio_duration_s,
+            language=transcript.get("language", ""),
+            raw_segments=transcript.get("segments", []),
+            local_wav_path=pre.local_wav_path,
+            config_snapshot=pre.config_snapshot,
+            stage_timings={"transcribe_only": elapsed},
+        )
+
+
+class _DiarizerOnlyStage:
+    """Stage 2b (GPU-diarize): diarization only — no transcription.
+
+    Receives the raw Whisper output from _TranscribeOnlyStage via Redis,
+    reloads the audio from the shared volume, and runs PyAnnote diarization.
+    Returns a RawInferenceResult with the same shape as _GpuRawStage so the
+    existing _FinalizeStage / postprocess chain can run unchanged.
+    """
+
+    def run(
+        self,
+        transcript: RawTranscriptResult,
+        config: EngineConfig,
+        callback: ProgressCallback | None = None,
+    ) -> RawInferenceResult:
+        """Reload WAV, diarize, combine with raw segments — return RawInferenceResult."""
+        import time
+
+        from app.transcription.engine.audio_loader import load_from_shared_volume
+        from app.transcription.engine.job import RawInferenceResult
+        from app.transcription.engine.progress import emit
+        from app.transcription.model_manager import ModelManager
+        from app.utils.hardware_detection import detect_hardware
+        from app.utils.vram_profiler import VRAMProfiler
+
+        tc = config.transcription_config
+        pipeline_start = time.perf_counter()
+        profiler = VRAMProfiler()
+        hw = detect_hardware()
+        manager = ModelManager.get_instance()
+
+        profiler.snapshot("pipeline_start")
+
+        emit(callback, 0.52, "Preparing speaker analysis", "diarize")
+
+        audio = load_from_shared_volume(transcript.local_wav_path)
+        if audio is None:
+            raise RuntimeError(
+                f"Shared-volume WAV missing or unreadable: {transcript.local_wav_path!r}. "
+                "Stage 2a must retain the WAV for Stage 2b to consume."
+            )
+
+        diarize_records: list[dict] = []
+        overlap_info: dict = {}
+        native_embs_serialized: dict[str, list[float]] | None = None
+
+        if tc.enable_diarization:
+            if tc.concurrent_requests > 1:
+                _wait_for_vram(2000, "diarization")
+
+            emit(callback, 0.55, "Analyzing speaker patterns", "diarize")
+            step_start = time.perf_counter()
+            with profiler.step("diarization"):
+                diarizer = manager.get_diarizer(tc)
+                diarize_df, overlap_info, native_embeddings = diarizer.diarize(audio)
+            logger.info(
+                f"TIMING: diarization step completed in {time.perf_counter() - step_start:.3f}s"
+            )
+            profiler.snapshot("after_diarization")
+
+            diarize_records = diarize_df.to_records()
+            if native_embeddings:
+                native_embs_serialized = {
+                    k: v.tolist() if hasattr(v, "tolist") else list(v)
+                    for k, v in native_embeddings.items()
+                }
+
+        # Re-enable TF32 after PyAnnote (its fix_reproducibility disables it)
+        if tc.device == "cuda":
+            try:
+                import torch
+
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+            except Exception as e:
+                logger.debug(f"TF32 re-enable skipped: {e}")
+
+        hw.log_vram_usage("before final diarize-only cleanup")
+        del audio
+        hw.optimize_memory_usage()
+        hw.log_vram_usage("after final diarize-only cleanup")
+
+        elapsed = time.perf_counter() - pipeline_start
+        profiler.log_report()
+        if transcript.task_id:
+            num_speakers = len({r["speaker"] for r in diarize_records}) if diarize_records else 1
+            profiler.save_to_redis(transcript.task_id, transcript.audio_duration_s, num_speakers)
+
+        # Merge stage timings from both Stage 2a and 2b for observability
+        merged_timings = {**transcript.stage_timings, "diarize_only": elapsed}
+
+        return RawInferenceResult(
+            task_id=transcript.task_id or "",
+            audio_path=transcript.audio_path,
+            audio_duration_s=transcript.audio_duration_s,
+            language=transcript.language,
+            raw_segments=transcript.raw_segments,
+            diarize_records=diarize_records,
+            overlap_info=overlap_info,
+            native_speaker_embeddings=native_embs_serialized,
+            config_snapshot=transcript.config_snapshot,
+            stage_timings=merged_timings,
         )
 
 

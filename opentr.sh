@@ -1490,7 +1490,7 @@ case "$1" in
 
         echo ""
         echo "▶  [1/2] Per-stage latency (3 runs on 0.5h file)..."
-        docker exec "$WORKER" \
+        docker exec -e PYTHONPATH=/app "$WORKER" \
           python /app/scripts/benchmark_engine_single.py \
             --audio "$FAST_AUDIO" \
             --runs 3 \
@@ -1498,7 +1498,7 @@ case "$1" in
 
         echo ""
         echo "▶  [2/2] Queue throughput (concurrency=3, max 5 files)..."
-        docker exec "$WORKER" \
+        docker exec -e PYTHONPATH=/app "$WORKER" \
           python /app/scripts/benchmark_engine_queue.py \
             --audio-dir "$AUDIO_DIR" \
             --max-files 5 \

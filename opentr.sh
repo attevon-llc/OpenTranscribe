@@ -1458,10 +1458,22 @@ case "$1" in
           "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" \
           "${BENCH_VOLUME_PREFIX}_flower_bench_data" 2>/dev/null || true
 
-        # Build and start bench stack on current branch
-        echo "🚀 Building bench stack from current branch..."
+        # Build and start bench stack on current branch.
+        # Build only the services needed for engine benchmarks — skip docs/frontend
+        # (they don't affect AI processing and docs has an MDX build step that can
+        # fail on unrelated content changes).
+        echo "🚀 Building bench stack from current branch (backend + infra only)..."
         # shellcheck disable=SC2086
-        docker compose $BENCH_COMPOSE up -d --build
+        docker compose $BENCH_COMPOSE build \
+          backend celery-worker celery-download-worker celery-cpu-worker \
+          celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
+          celery-beat flower
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE up -d --no-build \
+          postgres redis minio opensearch \
+          backend celery-worker celery-download-worker celery-cpu-worker \
+          celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
+          celery-beat flower
 
         echo ""
         echo "⏳ Waiting 45 s for stack to be ready (DB migrations, model pre-load)..."

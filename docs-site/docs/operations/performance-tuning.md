@@ -89,7 +89,7 @@ For systems where the GPU cannot fit the full transcription model, OpenTranscrib
 
 **Auto-activation thresholds** (minimum batch=2 VRAM peak vs. 80% of GPU VRAM):
 
-| Model | Min Peak VRAM | Auto-hybrid if GPU < |
+| Model | Min Peak VRAM | Auto-hybrid if GPU &lt; |
 |-------|--------------|----------------------|
 | large-v3-turbo / large-v3 | 3,893 MB | ~4.9 GB |
 | medium | 3,829 MB | ~4.8 GB |

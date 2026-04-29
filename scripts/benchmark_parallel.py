@@ -43,6 +43,7 @@ import argparse
 import csv
 import json
 import os
+import random
 import subprocess
 import sys
 import threading
@@ -1053,7 +1054,25 @@ def main():
         help='Path to corpus JSON (e.g. docs/benchmark-corpus/corpus.json). '
         'Loads a fixed, ordered file list for repeatable whitepaper-quality runs. '
         'Overrides --file-uuids and auto-selection; --batches N takes the first N files '
-        'from the corpus ordered by duration ascending.',
+        'from the active profile.',
+    )
+    parser.add_argument(
+        '--profile',
+        default='by_duration',
+        help='Corpus profile to use when --corpus-file is set. '
+        'by_duration (default): duration-ascending, good for VRAM ceiling tests — '
+        'short files fail fast on OOM. '
+        'mixed: round-robin across tiers so --batches 4 = one file per tier; '
+        'best for real-world scheduler and throughput tests. '
+        'mixed_hard: hardest file from each tier, always 4 files. '
+        'Any custom profile name defined in the corpus JSON "profiles" section.',
+    )
+    parser.add_argument(
+        '--shuffle',
+        action='store_true',
+        help='Randomly shuffle the file order after profile selection. '
+        'Simulates a real-world queue where files arrive in unpredictable order — '
+        'no size bias. Combine with --profile mixed for the most realistic stress test.',
     )
     parser.add_argument(
         '--dry-run',
@@ -1083,13 +1102,29 @@ def main():
             sys.exit(1)
         with open(corpus_path) as fh:
             corpus = json.load(fh)
-        corpus_files = corpus['files']
-        total_h = corpus.get('total_audio_hours', sum(f['duration_s'] for f in corpus_files) / 3600)
+        corpus_files = list(corpus['files'])
+
+        # Apply profile ordering
+        profiles = corpus.get('profiles', {})
+        profile_name = args.profile
+        if profile_name in profiles:
+            profile = profiles[profile_name]
+            indices = profile['indices']
+            corpus_files = [corpus['files'][i] for i in indices]
+            profile_desc = profile.get('description', '')
+            print(f'  Profile: {profile_name} — {profile_desc[:80]}')
+        elif profile_name != 'by_duration':
+            print(
+                f'  WARNING: profile "{profile_name}" not found in corpus, '
+                'falling back to by_duration order',
+                file=sys.stderr,
+            )
+
+        total_h = sum(f['duration_s'] for f in corpus_files) / 3600
         print(
-            f'\nCorpus: {corpus_path.name}  —  {len(corpus_files)} files, '
-            f'{total_h:.1f}h total audio'
+            f'\nCorpus: {corpus_path.name}  —  {len(corpus_files)} files, {total_h:.2f}h total audio'
         )
-        tier_counts = {}
+        tier_counts: dict[int, int] = {}
         for f in corpus_files:
             tier_counts[f['tier']] = tier_counts.get(f['tier'], 0) + 1
         tier_info = corpus.get('tiers', {})
@@ -1097,7 +1132,8 @@ def main():
             label = tier_info.get(str(t), {}).get('label', f'tier {t}')
             rng = tier_info.get(str(t), {}).get('range', '')
             print(f'  Tier {t} ({label:10s} {rng}): {cnt} files')
-        # Map corpus fields to the internal format; preserve corpus order (duration asc)
+
+        # Map corpus fields to the internal format in profile order
         files = [
             {
                 'uuid': f['uuid'],
@@ -1108,6 +1144,10 @@ def main():
             }
             for f in corpus_files
         ]
+
+        if args.shuffle:
+            random.shuffle(files)
+            print('  Order: shuffled (random)')
     elif args.file_uuids:
         uuids = [u.strip() for u in args.file_uuids.split(',') if u.strip()]
         print(f'\nUsing {len(uuids)} specified files...')
@@ -1188,7 +1228,7 @@ def main():
         all_batches.append(batch_result)
 
     # Write reports
-    corpus_total_h = corpus.get('total_audio_hours') if args.corpus_file else None
+    corpus_total_h = sum(f['duration'] for f in files) / 3600 if args.corpus_file else None
     corpus_label = Path(args.corpus_file).name if args.corpus_file else None
     write_reports(
         all_batches, output_dir, corpus_total_audio_h=corpus_total_h, corpus_name=corpus_label

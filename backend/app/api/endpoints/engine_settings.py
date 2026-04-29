@@ -1,4 +1,4 @@
-"""Admin API endpoints for DB-backed engine settings."""
+"""Admin API endpoints for DB-backed engine settings and Redis-backed metrics."""
 
 from __future__ import annotations
 
@@ -126,3 +126,48 @@ def reset_engine_setting(
         db.delete(row)
         db.commit()
         logger.info("Admin %s reset engine setting %s to env/default", current_user.email, db_key)
+
+
+_METRICS_KEY_PREFIX = "engine:metrics:"
+
+
+@router.get("/metrics")
+def get_engine_metrics(
+    current_user: models.User = Depends(get_current_admin_user),
+) -> Any:
+    """Return live engine metrics from all active workers via Redis.
+
+    Each Celery GPU worker publishes counters under ``engine:metrics:<hostname>``
+    with a 120-second TTL. Returns a dict keyed by hostname. An empty dict
+    means no workers have reported metrics recently.
+    """
+    try:
+        from app.core.redis import get_redis
+
+        r = get_redis()
+        keys = r.keys(f"{_METRICS_KEY_PREFIX}*")
+    except Exception as exc:
+        logger.warning("engine-metrics: Redis unavailable: %s", exc)
+        return {}
+
+    result: dict[str, Any] = {}
+    for key in keys:
+        hostname = (key.decode() if isinstance(key, bytes) else key).removeprefix(
+            _METRICS_KEY_PREFIX
+        )
+        try:
+            raw = r.hgetall(key)
+            stage_durations = {
+                k.decode().removeprefix("last_").removesuffix("_s"): float(v)
+                for k, v in raw.items()
+                if k.startswith(b"last_") and k.endswith(b"_s")
+            }
+            result[hostname] = {
+                "gpu_ready_queue_depth": int(raw.get(b"gpu_ready_queue_depth", 0) or 0),
+                "gpu_in_flight": int(raw.get(b"gpu_in_flight", 0) or 0),
+                "gpu_idle_seconds": float(raw.get(b"gpu_idle_seconds", 0.0) or 0.0),
+                "last_stage_durations": stage_durations,
+            }
+        except Exception as exc:
+            logger.warning("engine-metrics: failed to read key %s: %s", key, exc)
+    return result

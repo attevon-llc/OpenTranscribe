@@ -2661,6 +2661,7 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
 
         result = job_result.to_pipeline_dict()
         result.setdefault("asr_provider", "local")
+        result.setdefault("asr_model", engine_config.transcription_config.model_name)
         result["diarization_disabled"] = disable_diarization
         result["diarization_source"] = diarization_source
 
@@ -2676,7 +2677,13 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
         gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
 
         benchmark_timing.mark(task_id, "gpu_end")
-        benchmark_timing.set_context(task_id, {"asr_provider": "local", "asr_model": None})
+        benchmark_timing.set_context(
+            task_id,
+            {
+                "asr_provider": "local",
+                "asr_model": engine_config.transcription_config.model_name,
+            },
+        )
 
         return gpu_result
 

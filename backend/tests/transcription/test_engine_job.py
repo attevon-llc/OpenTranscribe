@@ -15,6 +15,7 @@ from app.transcription.engine.job import JobResult
 from app.transcription.engine.job import JobSpec
 from app.transcription.engine.job import PreprocessResult
 from app.transcription.engine.job import RawInferenceResult
+from app.transcription.engine.job import RawTranscriptResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -441,3 +442,131 @@ class TestRawInferenceResult:
             config_snapshot={},
         )
         assert rir.stage_timings == {}
+
+
+# ---------------------------------------------------------------------------
+# TestRawTranscriptResult
+# ---------------------------------------------------------------------------
+
+
+def _make_raw_transcript_result(**overrides) -> RawTranscriptResult:
+    defaults: dict = {
+        "task_id": "task-abc-123",
+        "audio_path": "",
+        "audio_duration_s": 187.5,
+        "language": "en",
+        "raw_segments": [
+            {"start": 0.0, "end": 3.1, "text": "Hello world"},
+            {"start": 3.5, "end": 7.2, "text": "How are you"},
+        ],
+        "local_wav_path": "/tmp/task-abc-123.wav",  # noqa: S108
+        "config_snapshot": dict(_MINIMAL_CONFIG),
+        "stage_timings": {"transcribe_only": 8.4},
+    }
+    defaults.update(overrides)
+    return RawTranscriptResult(**defaults)
+
+
+class TestRawTranscriptResult:
+    """Tests for RawTranscriptResult.serialize() / deserialize() round-trips.
+
+    RawTranscriptResult is the Stage 2a → Stage 2b handoff in the Phase 4
+    multi-GPU split path (ENGINE_GPU_SPLIT=true).  Correct round-trip
+    serialization is critical: this object is passed through Celery/Redis
+    between the gpu-transcribe and gpu-diarize workers.
+    """
+
+    def test_serialize_deserialize_roundtrip(self):
+        original = _make_raw_transcript_result()
+        payload = original.serialize()
+        restored = RawTranscriptResult.deserialize(payload)
+
+        assert restored.task_id == original.task_id
+        assert restored.audio_path == original.audio_path
+        assert restored.audio_duration_s == pytest.approx(original.audio_duration_s)
+        assert restored.language == original.language
+        assert restored.raw_segments == original.raw_segments
+        assert restored.local_wav_path == original.local_wav_path
+        assert restored.config_snapshot == original.config_snapshot
+        assert restored.stage_timings == pytest.approx(original.stage_timings)
+
+    def test_serialize_produces_json_serializable_dict(self):
+        original = _make_raw_transcript_result()
+        payload = original.serialize()
+
+        json_str = json.dumps(payload)
+        assert isinstance(json_str, str)
+
+    def test_round_trip_through_json(self):
+        """Full JSON encode/decode cycle preserves all fields (Redis transport simulation)."""
+        original = _make_raw_transcript_result()
+        json_str = json.dumps(original.serialize())
+        restored = RawTranscriptResult.deserialize(json.loads(json_str))
+
+        assert restored.task_id == original.task_id
+        assert restored.language == original.language
+        assert restored.audio_duration_s == pytest.approx(original.audio_duration_s)
+        assert restored.raw_segments == original.raw_segments
+        assert restored.local_wav_path == original.local_wav_path
+        assert restored.config_snapshot == original.config_snapshot
+
+    def test_local_wav_path_preserved(self):
+        """local_wav_path must survive serialization — Stage 2b reloads audio from it."""
+        path = "/tmp/transcription/abc-123-def-456.wav"  # noqa: S108
+        original = _make_raw_transcript_result(local_wav_path=path)
+        restored = RawTranscriptResult.deserialize(original.serialize())
+
+        assert restored.local_wav_path == path
+
+    def test_config_snapshot_preserved(self):
+        """config_snapshot reconstructs EngineConfig in Stage 2b — must be exact."""
+        snapshot = {
+            "model_name": "large-v3",
+            "device": "cuda",
+            "enable_diarization": True,
+            "min_speakers": 2,
+            "max_speakers": 8,
+        }
+        original = _make_raw_transcript_result(config_snapshot=snapshot)
+        restored = RawTranscriptResult.deserialize(original.serialize())
+
+        assert restored.config_snapshot == snapshot
+
+    def test_merged_stage_timings_preserved(self):
+        """Stage 2a timing is preserved so Stage 2b can merge its own timing."""
+        timings = {"transcribe_only": 104.8}
+        original = _make_raw_transcript_result(stage_timings=timings)
+        restored = RawTranscriptResult.deserialize(original.serialize())
+
+        assert restored.stage_timings == pytest.approx(timings)
+
+    def test_deserialize_missing_optional_fields_use_defaults(self):
+        """Deserialize a minimal payload — optional fields fall back gracefully."""
+        minimal: dict = {
+            "audio_duration_s": 60.0,
+            "language": "fr",
+            "raw_segments": [],
+            "local_wav_path": "/tmp/x.wav",  # noqa: S108
+        }
+        restored = RawTranscriptResult.deserialize(minimal)
+
+        assert restored.task_id is None
+        assert restored.audio_path == ""
+        assert restored.config_snapshot == {}
+        assert restored.stage_timings == {}
+
+    def test_empty_segments_roundtrip(self):
+        """Empty segments (no-speech audio) must serialize without error."""
+        original = _make_raw_transcript_result(raw_segments=[])
+        payload = original.serialize()
+        restored = RawTranscriptResult.deserialize(payload)
+
+        assert restored.raw_segments == []
+
+    def test_none_task_id_roundtrip(self):
+        """task_id=None is valid for benchmark/script paths."""
+        original = _make_raw_transcript_result(task_id=None)
+        payload = original.serialize()
+        restored = RawTranscriptResult.deserialize(payload)
+
+        assert restored.task_id is None

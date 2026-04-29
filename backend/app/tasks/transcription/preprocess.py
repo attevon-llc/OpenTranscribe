@@ -134,7 +134,7 @@ def preprocess_for_transcription(
             try:
                 _shared_vol = os.environ.get(
                     "ENGINE_SHARED_VOLUME_PATH",
-                    "/tmp/transcription",  # noqa: S108  # nosec B108
+                    "/tmp",  # noqa: S108  # nosec B108
                 )
                 os.makedirs(_shared_vol, exist_ok=True)
                 _safe_task_id = re.sub(r"[^a-zA-Z0-9\-]", "_", task_id)

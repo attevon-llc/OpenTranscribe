@@ -9,6 +9,7 @@ Part of the 3-stage chain: preprocess (CPU) → transcribe (GPU) → postprocess
 import contextlib
 import logging
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -136,7 +137,8 @@ def preprocess_for_transcription(
                     "/tmp/transcription",  # noqa: S108  # nosec B108
                 )
                 os.makedirs(_shared_vol, exist_ok=True)
-                _wav_dest = os.path.join(_shared_vol, f"{task_id}.wav")
+                _safe_task_id = re.sub(r"[^a-zA-Z0-9\-]", "_", task_id)
+                _wav_dest = os.path.join(_shared_vol, f"{_safe_task_id}.wav")
                 shutil.copy2(temp_audio_path, _wav_dest)
                 local_wav_path = _wav_dest
                 logger.info(

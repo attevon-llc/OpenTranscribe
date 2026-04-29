@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 import numpy as np
 
@@ -50,7 +51,8 @@ def write_wav_to_shared_volume(
 
     try:
         os.makedirs(shared_volume_path, exist_ok=True)
-        wav_path = os.path.join(shared_volume_path, f"{task_id}.wav")
+        safe_id = re.sub(r"[^a-zA-Z0-9\-]", "_", task_id)
+        wav_path = os.path.join(shared_volume_path, f"{safe_id}.wav")
         import scipy.io.wavfile as wavfile  # type: ignore[import]
 
         # Convert float32 [-1, 1] to int16 for standard WAV

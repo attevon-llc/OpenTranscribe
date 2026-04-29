@@ -2462,6 +2462,11 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             # Process speakers, save to DB, release GPU
             gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
 
+            # Shared-volume WAV is no longer needed after GPU stage finishes
+            from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
+
+            cleanup_shared_volume_wav(local_wav_path)
+
             benchmark_timing.mark(task_id, "gpu_end")
             if isinstance(result, dict):
                 benchmark_timing.set_context(
@@ -2550,6 +2555,15 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             return gpu_result
 
     except Exception as e:
+        # Best-effort cleanup of shared-volume WAV on failure
+        _wav = locals().get("local_wav_path", "")
+        if _wav:
+            try:
+                from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
+
+                cleanup_shared_volume_wav(_wav)
+            except Exception as _cleanup_err:  # nosec B110
+                logger.debug("WAV cleanup on error skipped: %s", _cleanup_err)
         logger.error(f"GPU transcription failed for file {file_uuid}: {e}")
         error_message = _get_user_friendly_error_message(str(e))
         _handle_transcription_failure(ctx, task_id, error_message, "gpu_processing_error")
@@ -2640,6 +2654,11 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
         raw = engine.run_diarize_only(transcript, progress_callback=_progress)
         job_result = engine.run_cpu_finalize(raw)
 
+        # Shared-volume WAV has been read by both Stage 2a and 2b — clean up now
+        from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
+
+        cleanup_shared_volume_wav(transcript.local_wav_path)
+
         result = job_result.to_pipeline_dict()
         result.setdefault("asr_provider", "local")
         result["diarization_disabled"] = disable_diarization
@@ -2663,6 +2682,14 @@ def diarize_gpu_task(self, transcript_data: dict, preprocess_context: dict) -> d
 
     except Exception as e:
         logger.error(f"Diarize GPU task failed for file {file_uuid}: {e}")
+        # Best-effort cleanup on failure — WAV is no longer needed
+        try:
+            if "transcript" in dir() and hasattr(transcript, "local_wav_path"):
+                from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
+
+                cleanup_shared_volume_wav(transcript.local_wav_path)
+        except Exception as _cleanup_err:  # nosec B110
+            logger.debug("WAV cleanup on diarize error skipped: %s", _cleanup_err)
         error_message = _get_user_friendly_error_message(str(e))
         _handle_transcription_failure(ctx, task_id, error_message, "gpu_processing_error")
         raise

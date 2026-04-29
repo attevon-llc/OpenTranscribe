@@ -40,7 +40,8 @@ show_help() {
   echo "Start/Reset Options:"
   echo "  --build              - Build prod images locally (test before push)"
   echo "  --pull               - Force pull prod images from Docker Hub"
-  echo "  --gpu-scale          - Enable multi-GPU worker scaling"
+  echo "  --gpu-scale          - Enable multi-GPU worker scaling (multiple workers on one GPU)"
+  echo "  --with-gpu-split     - Enable GPU split: separate gpu-transcribe / gpu-diarize workers"
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
   echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
@@ -90,8 +91,9 @@ show_help() {
   echo ""
   echo "Examples:"
   echo "  ./opentr.sh start                            # Start in development mode"
-  echo "  ./opentr.sh start dev --gpu-scale            # Dev with multi-GPU scaling"
+  echo "  ./opentr.sh start dev --gpu-scale            # Dev with multi-GPU scaling (parallel workers)"
   echo "  ./opentr.sh start dev --gpu-scale --nas      # Multi-GPU + NAS/NVMe storage"
+  echo "  ./opentr.sh start dev --with-gpu-split       # Split transcribe/diarize across two GPUs"
   echo "  ./opentr.sh start dev --lite                 # Cloud-only ASR mode (no GPU)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
@@ -261,6 +263,7 @@ start_app() {
   # Parse optional flags
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
+  GPU_SPLIT_FLAG=""
   NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
@@ -280,6 +283,10 @@ start_app() {
         ;;
       --gpu-scale)
         GPU_SCALE_FLAG="--gpu-scale"
+        shift
+        ;;
+      --with-gpu-split)
+        GPU_SPLIT_FLAG="--with-gpu-split"
         shift
         ;;
       --nas)
@@ -321,14 +328,22 @@ start_app() {
     exit 1
   fi
 
-  if [ -n "$GPU_SCALE_FLAG" ]; then
+  if [ -n "$GPU_SCALE_FLAG" ] && [ -n "$GPU_SPLIT_FLAG" ]; then
+    export COMPOSE_PROFILES="gpu-scale,gpu-split"
+  elif [ -n "$GPU_SCALE_FLAG" ]; then
     export COMPOSE_PROFILES="gpu-scale"
+  elif [ -n "$GPU_SPLIT_FLAG" ]; then
+    export COMPOSE_PROFILES="gpu-split"
   fi
 
   echo "🚀 Starting OpenTranscribe in ${ENVIRONMENT} mode..."
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "🎯 Multi-GPU scaling enabled"
+  fi
+
+  if [ -n "$GPU_SPLIT_FLAG" ]; then
+    echo "🔀 GPU split enabled (transcribe → GPU_TRANSCRIBE_DEVICE_ID=${GPU_TRANSCRIBE_DEVICE_ID:-0}, diarize → GPU_DIARIZE_DEVICE_ID=${GPU_DIARIZE_DEVICE_ID:-1})"
   fi
 
   if [ -n "$LITE_FLAG" ]; then
@@ -405,6 +420,9 @@ start_app() {
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu-scale.yml"
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
   fi
+  # gpu-split workers (celery-worker-gpu-transcribe / celery-worker-gpu-diarize) are defined
+  # in docker-compose.yml with profiles: [gpu-split] and activated via COMPOSE_PROFILES above.
+  # No extra overlay file is needed.
 
   # Add NAS/NVMe storage overlay if requested via --nas flag
   # or auto-detect when storage path env vars are set
@@ -560,6 +578,9 @@ start_app() {
   echo "- Frontend logs: docker compose logs -f frontend"
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "- GPU scaled workers: docker compose logs -f celery-worker-gpu-scaled"
+  elif [ -n "$GPU_SPLIT_FLAG" ]; then
+    echo "- GPU transcribe worker: docker compose logs -f celery-worker-gpu-transcribe"
+    echo "- GPU diarize worker: docker compose logs -f celery-worker-gpu-diarize"
   elif [ -n "$LITE_FLAG" ]; then
     echo "- Cloud ASR worker logs: docker compose logs -f celery-cloud-worker"
   else
@@ -579,6 +600,7 @@ reset_and_init() {
   # Parse optional flags
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
+  GPU_SPLIT_FLAG=""
   NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
@@ -598,6 +620,10 @@ reset_and_init() {
         ;;
       --gpu-scale)
         GPU_SCALE_FLAG="--gpu-scale"
+        shift
+        ;;
+      --with-gpu-split)
+        GPU_SPLIT_FLAG="--with-gpu-split"
         shift
         ;;
       --nas)
@@ -639,14 +665,22 @@ reset_and_init() {
     exit 1
   fi
 
-  if [ -n "$GPU_SCALE_FLAG" ]; then
+  if [ -n "$GPU_SCALE_FLAG" ] && [ -n "$GPU_SPLIT_FLAG" ]; then
+    export COMPOSE_PROFILES="gpu-scale,gpu-split"
+  elif [ -n "$GPU_SCALE_FLAG" ]; then
     export COMPOSE_PROFILES="gpu-scale"
+  elif [ -n "$GPU_SPLIT_FLAG" ]; then
+    export COMPOSE_PROFILES="gpu-split"
   fi
 
   echo "🔄 Running reset and initialize for OpenTranscribe in ${ENVIRONMENT} mode..."
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "🎯 Multi-GPU scaling enabled"
+  fi
+
+  if [ -n "$GPU_SPLIT_FLAG" ]; then
+    echo "🔀 GPU split enabled (transcribe → GPU_TRANSCRIBE_DEVICE_ID=${GPU_TRANSCRIBE_DEVICE_ID:-0}, diarize → GPU_DIARIZE_DEVICE_ID=${GPU_DIARIZE_DEVICE_ID:-1})"
   fi
 
   if [ -n "$LITE_FLAG" ]; then
@@ -713,6 +747,9 @@ reset_and_init() {
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu-scale.yml"
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
   fi
+  # gpu-split workers (celery-worker-gpu-transcribe / celery-worker-gpu-diarize) are defined
+  # in docker-compose.yml with profiles: [gpu-split] and activated via COMPOSE_PROFILES above.
+  # No extra overlay file is needed.
 
   # Add NAS/NVMe storage overlay if requested via --nas flag
   # or auto-detect when storage path env vars are set

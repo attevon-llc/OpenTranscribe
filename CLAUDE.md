@@ -118,6 +118,47 @@ docker compose logs -f celery-worker-gpu-scaled
 
 **Scaling**: Simply change `GPU_SCALE_WORKERS` in your `.env` file to adjust the number of concurrent workers (e.g., 2, 4, 6, 8) based on your GPU's memory and processing capacity.
 
+### GPU Split Mode (Optional — Advanced)
+
+For systems with two dedicated GPUs, you can split transcription and diarization onto separate GPUs. This is different from `--gpu-scale`: instead of running multiple complete pipelines in parallel, it routes each stage of a single file's pipeline to a dedicated GPU.
+
+**Use Case**: You have two GPUs and want to dedicate one entirely to Whisper (transcription) and the other entirely to PyAnnote (diarization). Useful when VRAM is tight and you don't want the two models competing.
+
+**How It Works**:
+- `--with-gpu-split` activates the `gpu-split` Docker Compose profile
+- Starts `celery-worker-gpu-transcribe` (transcription only, `gpu-transcribe` queue)
+- Starts `celery-worker-gpu-diarize` (diarization only, `gpu-diarize` queue)
+- Each file flows: CPU preprocess → GPU A (Whisper) → GPU B (PyAnnote) → CPU finalize
+- The task routing checks `ENGINE_GPU_SPLIT=true` (set automatically in each worker's environment)
+
+**Configuration** (in `.env`):
+```bash
+GPU_TRANSCRIBE_DEVICE_ID=0   # CUDA device for transcription worker (WhisperX)
+GPU_DIARIZE_DEVICE_ID=1      # CUDA device for diarization worker (PyAnnote)
+ENGINE_SHARED_VOLUME_PATH=/tmp/transcription  # Must use shared volume mount for cross-container WAV handoff
+```
+
+**Usage**:
+```bash
+# Start with GPU split enabled
+./opentr.sh start dev --with-gpu-split
+
+# Reset with GPU split enabled
+./opentr.sh reset dev --with-gpu-split
+
+# View split worker logs
+docker compose logs -f celery-worker-gpu-transcribe
+docker compose logs -f celery-worker-gpu-diarize
+```
+
+**vs. `--gpu-scale`**:
+| Feature | `--gpu-scale` | `--with-gpu-split` |
+|---|---|---|
+| What it does | Multiple complete pipelines on one GPU | One pipeline split across two GPUs |
+| Best for | High file throughput (many files) | VRAM-constrained two-GPU setups |
+| Queue | `gpu` | `gpu-transcribe` + `gpu-diarize` |
+| Extra overlay | `docker-compose.gpu-scale.yml` | None (profile in main yml) |
+
 ### Authentication Method Deployment
 
 OpenTranscribe supports multiple authentication methods. Use these commands to deploy with specific auth configurations:

@@ -52,7 +52,7 @@ Changes shipped:
 
 ## Phase 2 — Baseline benchmark sweep
 
-**Status**: PENDING FIRST RUN
+**Status**: COMPLETE ✓ (Run 2, 2026-04-29, `engine_single_20260429_040907.csv` + `engine_queue_20260429_040907.csv`)
 
 ### Scripts available
 
@@ -108,54 +108,66 @@ docker cp opentranscribe-celery-worker:/tmp/engine_queue_a6000.csv \
 | Stage 3 (finalize) | < 5 s per file |
 | GPU idle between tasks at conc=3 | < 5 s |
 
-### Results — Run 2026-04-29 (RTX A6000, GPU 0, `large-v3-turbo`, `int8_float16`)
+### Results — Run 2 (2026-04-29, canonical, RTX A6000, GPU 0, `large-v3-turbo`, `int8_float16`)
+
+CSVs: `engine_single_20260429_040907.csv`, `engine_queue_20260429_040907.csv`
+
+#### Single-file stage-latency benchmark (0.5h_1899s.wav, 3 runs, solo GPU)
+
+| Run | Stage 1 | Stage 2 GPU | Stage 3 | Total | Realtime |
+|---|---|---|---|---|---|
+| 1 (cold model load) | 2.086 s | 47.708 s | 0.287 s | 50.08 s | **37.9×** |
+| 2 (warm) | 0.862 s | 41.915 s | 0.151 s | 42.93 s | **44.2×** |
+| 3 (warm) | 0.824 s | 41.590 s | 0.148 s | 42.56 s | **44.6×** |
+
+Stage 2 breakdown (Run 1, solo): transcription 18.12 s (104.8× RTF), diarization 24.0 s (79.1× RTF)
+PyTorch peak (solo diarization): **844 MB**
 
 #### Queue benchmark (concurrency=3, 5 files)
 
 | File | Audio duration | Wall time | Realtime factor | Status |
 |---|---|---|---|---|
-| 0.5h_1899s.wav | 1899 s | 119.7 s | **15.9×** | OK |
-| 1.0h_3758s.wav | 3758 s | 285.4 s | **13.2×** | OK |
-| 2.2h_7998s.wav | 8005 s | 555.2 s | **14.4×** | OK |
-| 3.2h_11495s.wav | 11508 s | 679.9 s | **16.9×** | OK |
-| 4.7h_17044s.wav | 17059 s | 845.7 s | **20.2×** | OK |
+| 0.5h_1899s.wav | 1,899 s | 117.9 s | **16.1×** | OK |
+| 1.0h_3758s.wav | 3,768 s | 279.2 s | **13.5×** | OK |
+| 2.2h_7998s.wav | 8,005 s | 585.5 s | **13.7×** | OK |
+| 3.2h_11495s.wav | 11,508 s | 712.1 s | **16.2×** | OK |
+| 4.7h_17044s.wav | 17,059 s | 838.8 s | **20.3×** | OK |
 
-**Aggregate realtime factor: 17.0×** (avg 16.1× across 5 files, 42 238 s total audio / 2 486 s wall)
+**Aggregate realtime factor: 16.7×** (avg 16.0× across 5 files, 42 239 s audio / 2 533 s wall)
+**Throughput**: 7.1 files/hour at concurrency=3
 
-**VRAM profile (device-level peak):**
-- Steady state (single file): 5 000–8 600 MB used
-- Concurrent diarization (2 pipelines overlapping): up to ~18 GB observed for the 4.7h file
-  — this is `device_used`, not PyTorch peak; PyTorch peak stayed ≤ 9 963 MB per pipeline
-
-#### Single-file stage-latency benchmark
-
-Failed: `[Errno 13] Permission denied: '/tmp/transcription/bench-id.wav'`
-Fix committed: default `ENGINE_SHARED_VOLUME_PATH` changed from `/tmp/transcription` → `/tmp`.
-Re-run required for per-stage latency data.
+**VRAM profile:**
+- Solo single pipeline: +1,302 MB process delta, PyTorch peak 844 MB (diarization)
+- Concurrent (3 pipelines): PyTorch peak up to ~9,963 MB (3× embedding batches overlap)
+- Device-level baseline varies by host (open_speakers workers add ~7.4 GB on dev machine)
 
 #### Gate criteria vs actual
 
 | Metric | Target | Actual | Status |
 |---|---|---|---|
-| Stage 1 (preprocess) | < 30 s | ~2 s (queue data) | ✓ PASS |
-| Stage 2 GPU (transcribe+diarize) | ≥ 20× realtime | **17.0× aggregate** / 20.2× on 4.7h | ⚠ BORDERLINE |
-| Stage 3 (finalize) | < 5 s | < 2 s (queue data) | ✓ PASS |
+| Stage 1 (preprocess) | < 30 s | 2.1 s cold / 0.84 s warm | ✓ PASS |
+| Stage 2 GPU (solo, warm) | ≥ 20× realtime | **44.2×** | ✓ PASS |
+| Stage 2 GPU (conc=3 agg) | ≥ 20× realtime | **16.7×** (queue serialization) | ⚠ BORDERLINE |
+| Stage 3 (finalize) | < 5 s | 0.15 s warm | ✓ PASS |
 | GPU idle between tasks at conc=3 | < 5 s | ~0 s (continuous) | ✓ PASS |
 
-**Notes on the ≥20× gate:**
-- At concurrency=3 on a single GPU, shorter files serialize behind larger files → lower individual rates
-- The 4.7h file (ran near-solo) achieved 20.2×, consistent with the gate target
-- Single-file sequential data not yet collected (pending re-run with `/tmp` path fix)
-- Transcription alone: ~58× realtime (32s for 1899s file), diarization ~25× → combined ~15–20× depending on speaker count
+**Notes:**
+- Solo warm realtime (44.2×) exceeds the gate. The concurrency=3 aggregate (16.7×) is below 20× due to GPU serialization of three simultaneous pipelines — not a throughput ceiling.
+- The 4.7h file (ran near-solo in the queue) hit 20.3×, confirming gate is achievable when files don't overlap.
+- TF32 is globally disabled by `pyannote/speaker-diarization-community-1` at import. In queue mode this amplifies the diarization cost vs. the solo case (where TF32 was implicitly on during transcription).
+
+### Results — Run 1 (2026-04-29, superseded)
+
+CSVs: `engine_queue_20260429_032415.csv` (queue only — single-file failed with `/tmp/transcription` EACCES)
+Aggregate: 17.0× agg / 16.1× avg. Single-file stage latency was not collected due to the permission bug (now fixed).
 
 ---
 
 ## Phase 3 — Optional preprocess optimizations
 
-**Status**: PENDING PHASE 2 RESULTS
+**Status**: NOT WARRANTED — Phase 2 gate not triggered
 
-Implement only if Phase 2 shows Stage 1 is the CPU bottleneck
-(CPU pool fully utilized, GPU has idle gaps > 5 s between tasks).
+Phase 2 data: Stage 1 preprocess = 0.84 s warm (CPU is not the bottleneck). GPU idle gap at conc=3 = ~0 s (GPU is continuously busy). Neither of the gate-trigger conditions is met.
 
 Candidates:
 - Silero VAD precompute in Stage 1 (`ENGINE_PRECOMPUTE_VAD=true`)

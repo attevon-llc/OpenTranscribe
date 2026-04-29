@@ -96,33 +96,64 @@ class Engine:
         job: JobSpec,
         progress_callback: Callable[[float, str], None] | None = None,
     ) -> PreprocessResult:
-        """Stage 1 (CPU): download audio, decode to WAV, write to shared volume.
+        """Stage 1 (CPU): decode audio to WAV and write to shared volume.
 
-        Not yet wired to Celery — implemented in Phase 1b.
+        Args:
+            job: Input spec with audio_path and task_id.
+            progress_callback: Optional legacy (float, str) callback.
+
+        Returns:
+            PreprocessResult with local_wav_path and audio metadata.
         """
-        raise NotImplementedError("run_preprocess() is implemented in Phase 1b")
+        from app.transcription.engine.progress import adapt_legacy
+        from app.transcription.engine.stages import _PreprocessStage
+
+        stage = _PreprocessStage()
+        return stage.run(job, self.config, adapt_legacy(progress_callback))
 
     def run_gpu_stage(
         self,
         pre: PreprocessResult,
         progress_callback: Callable[[float, str], None] | None = None,
     ) -> RawInferenceResult:
-        """Stage 2 (GPU): transcription + diarization, pure GPU compute.
+        """Stage 2 (GPU): transcription + diarization without speaker assignment.
 
-        Not yet wired to Celery — implemented in Phase 1b.
+        Args:
+            pre: PreprocessResult from run_preprocess(); must have local_wav_path set.
+            progress_callback: Optional legacy (float, str) callback.
+
+        Returns:
+            RawInferenceResult with raw segments and serialized diarization records.
         """
-        raise NotImplementedError("run_gpu_stage() is implemented in Phase 1b")
+        from app.transcription.engine.config import EngineConfig
+        from app.transcription.engine.progress import adapt_legacy
+        from app.transcription.engine.stages import _GpuRawStage
+
+        stage = _GpuRawStage()
+        stage_config = EngineConfig.from_snapshot(pre.config_snapshot)
+        return stage.run(pre, stage_config, adapt_legacy(progress_callback))
 
     def run_cpu_finalize(
         self,
         raw: RawInferenceResult,
         progress_callback: Callable[[float, str], None] | None = None,
     ) -> JobResult:
-        """Stage 3 (CPU): speaker assignment, dedup, segment cleanup.
+        """Stage 3 (CPU): dedup segments and assign speakers.
 
-        Not yet wired to Celery — implemented in Phase 1b.
+        Args:
+            raw: RawInferenceResult from run_gpu_stage().
+            progress_callback: Optional legacy (float, str) callback.
+
+        Returns:
+            JobResult with fully assigned segments and embeddings.
         """
-        raise NotImplementedError("run_cpu_finalize() is implemented in Phase 1b")
+        from app.transcription.engine.config import EngineConfig
+        from app.transcription.engine.progress import adapt_legacy
+        from app.transcription.engine.stages import _FinalizeStage
+
+        stage = _FinalizeStage()
+        stage_config = EngineConfig.from_snapshot(raw.config_snapshot)
+        return stage.run(raw, stage_config, adapt_legacy(progress_callback))
 
 
 def _set_cuda_alloc_conf() -> None:

@@ -219,6 +219,7 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       # Shared scratch — reads the preprocessed WAV that the CPU worker staged
       - pipeline_scratch:/scratch/opentranscribe
+      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -295,6 +296,7 @@ services:
     volumes:
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
+      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       - PRELOAD_CPU_WHISPER=true
       # Internal Docker network settings (same as backend)
@@ -482,6 +484,8 @@ services:
       - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
+    volumes:
+      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     tmpfs:
       - /app/temp:noexec,nosuid,size=20g,mode=1777
     depends_on:
@@ -561,6 +565,8 @@ volumes:
   # overlay (see docker-compose.scratch-tmpfs.yml) for RAM-backed speed.
   # See backend/app/utils/scratch_volume.py for the contract.
   pipeline_scratch:
+  transcription-temp:
+    driver: local
 
 networks:
   default:

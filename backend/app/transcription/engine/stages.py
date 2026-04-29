@@ -24,6 +24,8 @@ if TYPE_CHECKING:
     from app.transcription.engine.config import EngineConfig
     from app.transcription.engine.job import JobResult
     from app.transcription.engine.job import JobSpec
+    from app.transcription.engine.job import PreprocessResult
+    from app.transcription.engine.job import RawInferenceResult
     from app.transcription.engine.progress import ProgressCallback
 
 logger = logging.getLogger(__name__)
@@ -248,6 +250,277 @@ class _GpuStage:
             for word in seg.get("words", []):
                 word["speaker"] = "SPEAKER_00"
         return transcript, None
+
+
+class _PreprocessStage:
+    """Stage 1 (CPU): decode audio to 16kHz WAV and write to shared volume."""
+
+    def run(
+        self,
+        job: JobSpec,
+        config: EngineConfig,
+        callback: ProgressCallback | None = None,
+    ) -> PreprocessResult:
+        """Decode audio and write WAV to shared volume for Stage 2."""
+        import os
+        import time
+
+        from app.transcription.engine.audio_loader import write_wav_to_shared_volume
+        from app.transcription.engine.job import PreprocessResult
+        from app.transcription.engine.progress import emit
+
+        emit(callback, 0.10, "Decoding audio", "preprocess")
+        t0 = time.perf_counter()
+
+        from faster_whisper.audio import decode_audio  # type: ignore[import]
+
+        audio = decode_audio(job.audio_path, sampling_rate=16000)
+        elapsed_decode = time.perf_counter() - t0
+        audio_duration_s = len(audio) / 16000
+
+        task_id = job.task_id or os.path.basename(job.audio_path)
+        wav_path = write_wav_to_shared_volume(audio, config.shared_volume_path, task_id) or ""
+
+        return PreprocessResult(
+            task_id=job.task_id,
+            file_id=job.file_id,
+            user_id=job.user_id,
+            local_wav_path=wav_path,
+            minio_temp_object="",
+            audio_duration_s=audio_duration_s,
+            audio_sample_rate=16000,
+            audio_channels=1,
+            audio_size_bytes=audio.nbytes,
+            vad_regions=None,
+            config_snapshot=config.to_snapshot(),
+            stage1_timings={"decode": elapsed_decode},
+        )
+
+
+class _GpuRawStage:
+    """Stage 2 (GPU): transcription + diarization, returning raw results without speaker assignment."""
+
+    def run(
+        self,
+        pre: PreprocessResult,
+        config: EngineConfig,
+        callback: ProgressCallback | None = None,
+    ) -> RawInferenceResult:
+        """Load WAV, transcribe, diarize — return raw results without speaker assignment."""
+        import time
+
+        from app.transcription.engine.audio_loader import load_from_shared_volume
+        from app.transcription.engine.job import RawInferenceResult
+        from app.transcription.engine.progress import emit
+        from app.transcription.model_manager import ModelManager
+        from app.utils.hardware_detection import detect_hardware
+        from app.utils.vram_profiler import VRAMProfiler
+
+        tc = config.transcription_config
+        pipeline_start = time.perf_counter()
+        profiler = VRAMProfiler()
+        hw = detect_hardware()
+        manager = ModelManager.get_instance()
+
+        profiler.snapshot("pipeline_start")
+
+        emit(callback, 0.42, "Loading audio", "preprocess")
+
+        audio = load_from_shared_volume(pre.local_wav_path)
+        if audio is None:
+            raise RuntimeError(
+                f"Shared-volume WAV missing or unreadable: {pre.local_wav_path!r}. "
+                "Stage 1 must write the WAV before Stage 2 runs."
+            )
+
+        if tc.concurrent_requests > 1:
+            _wait_for_vram(1500, "transcriber_load")
+
+        with profiler.step("model_load_transcriber"):
+            transcriber = manager.get_transcriber(tc)
+
+        profiler.snapshot("after_transcriber_loaded")
+
+        diarizer_preload_thread: threading.Thread | None = None
+        if tc.enable_diarization and tc.concurrent_requests <= 1:
+
+            def _preload_diarizer() -> None:
+                try:
+                    manager.get_diarizer(tc)
+                except Exception as preload_err:
+                    logger.debug(f"Diarizer preload (non-fatal, will retry inline): {preload_err}")
+
+            diarizer_preload_thread = threading.Thread(
+                target=_preload_diarizer, name="diarizer-preload", daemon=True
+            )
+            diarizer_preload_thread.start()
+
+        emit(callback, 0.43, "Running AI transcription", "transcribe")
+        step_start = time.perf_counter()
+        with profiler.step("transcription"):
+            transcript = transcriber.transcribe(audio)
+        logger.info(
+            f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
+        )
+
+        if diarizer_preload_thread is not None:
+            diarizer_preload_thread.join()
+
+        if not transcript.get("segments"):
+            logger.warning("Transcription produced no segments")
+            return RawInferenceResult(
+                task_id=pre.task_id,
+                audio_path="",
+                audio_duration_s=pre.audio_duration_s,
+                language=transcript.get("language", ""),
+                raw_segments=[],
+                diarize_records=[],
+                overlap_info={},
+                native_speaker_embeddings=None,
+                config_snapshot=pre.config_snapshot,
+                stage_timings={"transcription": time.perf_counter() - pipeline_start},
+            )
+
+        diarize_records: list[dict] = []
+        overlap_info: dict = {}
+        native_embs_serialized: dict[str, list[float]] | None = None
+
+        if tc.enable_diarization:
+            hw.log_vram_usage("after transcription, before diarizer load")
+            total_vram_mb = _get_total_vram_mb()
+
+            profiler.snapshot("models_warm_no_inference")
+
+            if tc.concurrent_requests > 1:
+                logger.info(
+                    "Concurrent mode (concurrent_requests=%d): keeping transcriber loaded",
+                    tc.concurrent_requests,
+                )
+            elif total_vram_mb >= 16_000:
+                logger.info(
+                    "Keeping transcriber loaded (%dMB VRAM total, both models fit)",
+                    total_vram_mb,
+                )
+            else:
+                manager.release_transcriber()
+                hw.log_vram_usage("after transcriber release")
+                profiler.snapshot("diarizer_only_warm")
+
+            if tc.concurrent_requests > 1:
+                _wait_for_vram(2000, "diarization")
+
+            emit(callback, 0.55, "Analyzing speaker patterns", "diarize")
+            step_start = time.perf_counter()
+            with profiler.step("diarization"):
+                diarizer = manager.get_diarizer(tc)
+                diarize_df, overlap_info, native_embeddings = diarizer.diarize(audio)
+            logger.info(
+                f"TIMING: diarization step completed in {time.perf_counter() - step_start:.3f}s"
+            )
+            profiler.snapshot("after_diarization")
+
+            diarize_records = diarize_df.to_records()
+            if native_embeddings:
+                native_embs_serialized = {
+                    k: v.tolist() if hasattr(v, "tolist") else list(v)
+                    for k, v in native_embeddings.items()
+                }
+
+        if tc.device == "cuda":
+            try:
+                import torch
+
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+            except Exception as e:
+                logger.debug(f"TF32 re-enable skipped: {e}")
+
+        hw.log_vram_usage("before final pipeline cleanup")
+        del audio
+        hw.optimize_memory_usage()
+        hw.log_vram_usage("after final pipeline cleanup")
+
+        elapsed = time.perf_counter() - pipeline_start
+        profiler.log_report()
+        if pre.task_id:
+            num_speakers = len({r["speaker"] for r in diarize_records}) if diarize_records else 1
+            profiler.save_to_redis(pre.task_id, pre.audio_duration_s, num_speakers)
+
+        return RawInferenceResult(
+            task_id=pre.task_id,
+            audio_path="",
+            audio_duration_s=pre.audio_duration_s,
+            language=transcript.get("language", ""),
+            raw_segments=transcript.get("segments", []),
+            diarize_records=diarize_records,
+            overlap_info=overlap_info,
+            native_speaker_embeddings=native_embs_serialized,
+            config_snapshot=pre.config_snapshot,
+            stage_timings={"gpu_total": elapsed},
+        )
+
+
+class _FinalizeStage:
+    """Stage 3 (CPU): segment dedup and speaker assignment."""
+
+    def run(
+        self,
+        raw: RawInferenceResult,
+        config: EngineConfig,
+        callback: ProgressCallback | None = None,
+    ) -> JobResult:
+        """Reconstruct diarization result, dedup segments, assign speakers."""
+        import time
+
+        import numpy as np
+
+        from app.transcription.diarize_result import DiarizeResult
+        from app.transcription.engine.job import JobResult
+        from app.transcription.engine.progress import emit
+
+        t0 = time.perf_counter()
+        tc = config.transcription_config
+
+        transcript: dict = {"segments": raw.raw_segments, "language": raw.language}
+
+        if raw.diarize_records:
+            diarize_df = DiarizeResult(
+                start=np.array([r["start"] for r in raw.diarize_records]),
+                end=np.array([r["end"] for r in raw.diarize_records]),
+                speaker=np.array([r["speaker"] for r in raw.diarize_records]),
+            )
+
+            if tc.enable_dedup:
+                from app.utils.segment_dedup import clean_segments
+
+                transcript["segments"] = clean_segments(transcript["segments"])
+
+            emit(callback, 0.65, "Assigning speakers to transcript", "finalize")
+            from app.transcription.speaker_assigner import assign_speakers
+
+            result = assign_speakers(diarize_df, transcript)
+
+            if raw.overlap_info.get("count", 0) > 0:
+                result["overlap_info"] = raw.overlap_info
+            if raw.native_speaker_embeddings:
+                result["native_speaker_embeddings"] = raw.native_speaker_embeddings
+        else:
+            from app.utils.segment_dedup import clean_segments
+
+            transcript["segments"] = clean_segments(transcript["segments"])
+            for seg in transcript.get("segments", []):
+                seg["speaker"] = "SPEAKER_00"
+                for word in seg.get("words", []):
+                    word["speaker"] = "SPEAKER_00"
+            result = transcript
+
+        return JobResult(
+            segments=result.get("segments", []),
+            language=result.get("language", ""),
+            overlap_info=result.get("overlap_info", {}),
+            native_speaker_embeddings=result.get("native_speaker_embeddings"),
+            stage_timings={"finalize": time.perf_counter() - t0},
+        )
 
 
 def _wait_for_vram(min_free_mb: int, stage: str, timeout: int = 120) -> None:

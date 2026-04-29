@@ -907,6 +907,127 @@ def _run_transcription_pipeline(
     return raw_result
 
 
+def _run_engine_pipeline(
+    ctx: TranscriptionContext,
+    local_wav_path: str,
+    preprocess_context: dict,
+) -> dict:
+    """Engine split-stage fast path: skips MinIO download via shared-volume WAV.
+
+    Uses Engine.run_gpu_stage() + Engine.run_cpu_finalize() so that transcription
+    and diarization run in the GPU stage while speaker assignment runs in the CPU
+    finalize stage — identical output shape to _run_transcription_pipeline().
+
+    Args:
+        ctx: Transcription task context (task_id, file_id, user_id, …).
+        local_wav_path: Path to the pre-decoded WAV on the shared volume written
+            by the preprocess task.  Caller must verify the file exists.
+        preprocess_context: Raw dict forwarded from the preprocess task, used to
+            extract per-task overrides (speakers, language, model, …).
+
+    Returns:
+        dict compatible with _process_and_save_critical() — same shape as
+        _run_transcription_pipeline() with ``asr_provider`` and ``asr_model`` set.
+    """
+    from app.transcription import Engine
+    from app.transcription import EngineConfig
+    from app.transcription.engine.job import PreprocessResult
+
+    min_speakers = preprocess_context.get("min_speakers")
+    max_speakers = preprocess_context.get("max_speakers")
+    num_speakers = preprocess_context.get("num_speakers")
+    source_language = preprocess_context.get("source_language")
+    translate_to_english = preprocess_context.get("translate_to_english")
+    disable_diarization = preprocess_context.get("diarization_source") == "off"
+    whisper_model = preprocess_context.get("whisper_model")
+
+    source_language, translate_to_english = _resolve_language_settings(
+        ctx, source_language, translate_to_english
+    )
+
+    logger.info(
+        "Engine fast path: file=%d lang=%s translate=%s wav=%s",
+        ctx.file_id,
+        source_language,
+        translate_to_english,
+        local_wav_path,
+    )
+
+    with session_scope() as db:
+        user_settings = _get_user_transcription_settings(db, ctx.user_id)
+
+    overrides: dict = dict(
+        source_language=source_language,
+        translate_to_english=translate_to_english,
+        min_speakers=min_speakers if min_speakers is not None else user_settings["min_speakers"],
+        max_speakers=max_speakers if max_speakers is not None else user_settings["max_speakers"],
+        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        hf_token=settings.HUGGINGFACE_TOKEN,
+        vad_threshold=user_settings["vad_threshold"],
+        vad_min_silence_ms=user_settings["vad_min_silence_ms"],
+        vad_min_speech_ms=user_settings["vad_min_speech_ms"],
+        vad_speech_pad_ms=user_settings["vad_speech_pad_ms"],
+        hallucination_silence_threshold=user_settings["hallucination_silence_threshold"],
+        repetition_penalty=user_settings["repetition_penalty"],
+        enable_diarization=not disable_diarization,
+    )
+
+    # Honour admin-pinned model (same validation as _run_transcription_pipeline)
+    from app.transcription import TranscriptionConfig as _TranscriptionConfig
+
+    if whisper_model:
+        if whisper_model in LIGHTWEIGHT_MODELS:
+            logger.warning(
+                "Lightweight model '%s' reached engine fast path — should have been "
+                "routed to CPU. Using admin-pinned model instead.",
+                whisper_model,
+            )
+        elif whisper_model != _TranscriptionConfig._pinned_model_name:
+            logger.warning(
+                "Model override '%s' rejected in engine fast path — only the "
+                "admin-pinned model ('%s') is supported.",
+                whisper_model,
+                _TranscriptionConfig._pinned_model_name,
+            )
+
+    config = _TranscriptionConfig.from_environment(**overrides)
+    engine_config = EngineConfig.from_environment(**overrides)
+
+    engine = Engine(engine_config)
+
+    pre = PreprocessResult(
+        task_id=ctx.task_id,
+        file_id=ctx.file_id,
+        user_id=ctx.user_id,
+        local_wav_path=local_wav_path,
+        minio_temp_object="",
+        audio_duration_s=0.0,
+        audio_sample_rate=16000,
+        audio_channels=1,
+        audio_size_bytes=0,
+        vad_regions=None,
+        config_snapshot=engine_config.to_snapshot(),
+    )
+
+    with session_scope() as db:
+        update_task_status(db, ctx.task_id, "in_progress", progress=0.40)
+
+    send_progress_notification(ctx.user_id, ctx.file_id, 0.40, "Running AI transcription")
+
+    def _progress(progress: float, message: str) -> None:
+        with session_scope() as db:
+            update_task_status(db, ctx.task_id, "in_progress", progress=progress)
+        send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
+
+    raw = engine.run_gpu_stage(pre, progress_callback=_progress)
+    job_result = engine.run_cpu_finalize(raw)
+
+    raw_dict = job_result.to_pipeline_dict()
+    raw_dict.setdefault("asr_provider", "local")
+    raw_dict.setdefault("asr_model", config.model_name)
+    return raw_dict
+
+
 def _run_speaker_embeddings_with_retry(
     ctx: TranscriptionContext,
     result: dict,
@@ -2151,6 +2272,82 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
         with session_scope() as db:
             update_task_status(db, task_id, "in_progress", progress=0.22)
 
+        # ── Check for cloud ASR provider (needed in both code paths) ──────────
+        try:
+            from app.services.asr.factory import ASRProviderFactory
+
+            with session_scope() as db:
+                provider = ASRProviderFactory.create_for_user(user_id, db)
+        except Exception:
+            provider = None
+
+        # Read diarization settings (needed in both code paths)
+        diarization_source = preprocess_context.get("diarization_source", "provider")
+        disable_diarization = diarization_source == "off"
+        with session_scope() as db:
+            media_file = get_refreshed_object(db, MediaFile, file_id)
+            if media_file:
+                media_file.diarization_disabled = disable_diarization
+                db.commit()
+
+        whisper_model = preprocess_context.get("whisper_model")
+
+        # ── Phase 1b fast path: shared-volume WAV skips MinIO download ────────
+        # When the preprocess task wrote a WAV to the shared volume we can feed it
+        # directly to Engine.run_gpu_stage() without touching MinIO or creating a
+        # temp dir.  Cloud ASR always needs the MinIO download, so we only use
+        # this path for local ASR.
+        local_wav_path = preprocess_context.get("local_wav_path", "")
+        has_shared_wav = (
+            bool(local_wav_path)
+            and os.path.exists(local_wav_path)
+            and (provider is None or provider.provider_name == "local")
+        )
+
+        if has_shared_wav:
+            logger.info(
+                "GPU task: using engine fast path (shared WAV) for file %d — skipping "
+                "MinIO download",
+                file_id,
+            )
+            with benchmark_timing.stage(task_id, "gpu_audio_load"):
+                pass  # no download — file is already local; mark stage for timing parity
+
+            send_progress_notification(user_id, file_id, 0.25, "Starting AI transcription")
+
+            result = _run_engine_pipeline(ctx, local_wav_path, preprocess_context)
+
+            # Annotate result with diarization flags for downstream
+            if isinstance(result, dict):
+                result["diarization_disabled"] = disable_diarization
+                result["diarization_source"] = diarization_source
+
+            # Validate result
+            validation_error = _validate_transcription_result(result, ctx, task_id)
+            if validation_error:
+                return {
+                    "status": "error",
+                    "file_uuid": file_uuid,
+                    "file_id": file_id,
+                    "task_id": task_id,
+                }
+
+            # Process speakers, save to DB, release GPU
+            gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
+
+            benchmark_timing.mark(task_id, "gpu_end")
+            if isinstance(result, dict):
+                benchmark_timing.set_context(
+                    task_id,
+                    {
+                        "asr_provider": result.get("asr_provider", "local"),
+                        "asr_model": result.get("asr_model"),
+                    },
+                )
+
+            return gpu_result
+
+        # ── Fallback / cloud path: download from MinIO ────────────────────────
         with tempfile.TemporaryDirectory() as temp_dir:
             # Download preprocessed audio from MinIO temp
             step_start = time.perf_counter()
@@ -2163,26 +2360,6 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             )
 
             send_progress_notification(user_id, file_id, 0.25, "Starting AI transcription")
-
-            # Check for cloud ASR provider
-            try:
-                from app.services.asr.factory import ASRProviderFactory
-
-                with session_scope() as db:
-                    provider = ASRProviderFactory.create_for_user(user_id, db)
-            except Exception:
-                provider = None
-
-            # Read diarization settings
-            diarization_source = preprocess_context.get("diarization_source", "provider")
-            disable_diarization = diarization_source == "off"
-            with session_scope() as db:
-                media_file = get_refreshed_object(db, MediaFile, file_id)
-                if media_file:
-                    media_file.diarization_disabled = disable_diarization
-                    db.commit()
-
-            whisper_model = preprocess_context.get("whisper_model")
 
             if provider is not None and provider.provider_name != "local":
                 # Per-task model override is only for local ASR

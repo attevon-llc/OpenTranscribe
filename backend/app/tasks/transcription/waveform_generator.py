@@ -244,6 +244,55 @@ class WaveformGenerator:
 
         return [0] * target_samples
 
+    def generate_from_16khz_wav(self, wav_path: str) -> Optional[dict[str, Any]]:
+        """Generate waveform data from a pre-decoded 16kHz WAV (numpy resample, no FFmpeg).
+
+        Used by Phase 1b shared-volume path to avoid re-running FFmpeg on an already-decoded WAV.
+        Resamples 16kHz → 22050Hz using scipy.signal.resample_poly (ratio 441:320).
+
+        Args:
+            wav_path: Path to a 16kHz mono int16 WAV file.
+
+        Returns:
+            Waveform dict (same shape as generate_waveform_data), or None on failure.
+        """
+        try:
+            import scipy.io.wavfile as wavfile  # type: ignore[import]
+            from scipy.signal import resample_poly  # type: ignore[import]
+
+            source_rate, data = wavfile.read(wav_path)
+            if data.ndim > 1:
+                data = data[:, 0]
+            audio = data.astype(np.float32) / 32768.0
+
+            if source_rate != self.WAVEFORM_SAMPLE_RATE:
+                from math import gcd
+
+                g = gcd(self.WAVEFORM_SAMPLE_RATE, source_rate)
+                audio = resample_poly(audio, self.WAVEFORM_SAMPLE_RATE // g, source_rate // g)
+
+            waveform_cache: dict[str, Any] = {}
+            for resolution_name, samples in WAVEFORM_RESOLUTIONS.items():
+                waveform = self._compute_waveform_samples(audio, samples)
+                normalized = self._normalize_waveform(waveform, samples)
+                duration_s = len(audio) / self.WAVEFORM_SAMPLE_RATE
+                waveform_cache[f"waveform_{samples}"] = {
+                    "data": normalized,
+                    "samples": len(normalized),
+                    "duration": duration_s,
+                    "sample_rate": self.WAVEFORM_SAMPLE_RATE,
+                }
+                logger.debug(
+                    "Generated %s waveform from 16kHz WAV: %d samples", resolution_name, samples
+                )
+
+            return waveform_cache if waveform_cache else None
+        except Exception as e:
+            logger.warning(
+                "numpy-resample waveform failed (%s), caller should fall back to FFmpeg", e
+            )
+            return None
+
     def _extract_single_waveform(
         self, file_path: str, target_samples: int
     ) -> Optional[dict[str, Any]]:

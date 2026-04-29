@@ -78,7 +78,7 @@ def load_from_shared_volume(wav_path: str) -> np.ndarray | None:
         import scipy.io.wavfile as wavfile  # type: ignore[import]
 
         _, data = wavfile.read(wav_path, mmap=True)
-        audio = data.astype(np.float32) / 32767.0
+        audio: np.ndarray = data.astype(np.float32) / 32767.0
         logger.debug(f"mmap-loaded shared-volume WAV: {wav_path} ({len(audio)} samples)")
         return audio
     except Exception as e:

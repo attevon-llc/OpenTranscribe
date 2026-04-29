@@ -78,6 +78,7 @@ show_help() {
   echo "  bench stop                               - Stop bench stack (keep volumes)"
   echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
   echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"
+  echo "  bench engine                             - Run engine split-stage benchmarks (Phase 2 gate)"
   echo "  bench status                             - Show bench containers, GPU state, volumes"
   echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
   echo ""
@@ -1421,12 +1422,105 @@ case "$1" in
         python3 scripts/compare_baseline.py "$MASTER_CSV" "$BRANCH_CSV"
         ;;
 
+      engine)
+        # Run engine split-stage benchmarks on the current branch.
+        # Uses the bench stack (fresh named volumes — never touches NAS/prod data).
+        # Audio: benchmark/test_audio/ WAV files (mounted read-only inside container).
+        # Results: docs/engine-benchmark-results/*.csv
+        TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+        AUDIO_DIR="/app/benchmark/test_audio"
+        FAST_AUDIO="${AUDIO_DIR}/0.5h_1899s.wav"  # 30-minute file for single-stage timing
+        SINGLE_CSV="engine_single_${TIMESTAMP}.csv"
+        QUEUE_CSV="engine_queue_${TIMESTAMP}.csv"
+        RESULTS_DIR="docs/engine-benchmark-results"
+        WORKER="opentranscribe-celery-worker"
+
+        echo "🔬 Engine benchmark — branch: $(git branch --show-current)"
+        echo "   Using bench stack (fresh volumes, never touches NAS/prod data)"
+        echo ""
+
+        # GPU safety check
+        if ! nvidia-smi --query-gpu=index,name,memory.used,utilization.gpu \
+            --format=csv,noheader 2>/dev/null; then
+          echo "❌ nvidia-smi failed — check GPU state before benchmarking. Aborting."
+          exit 1
+        fi
+        echo ""
+
+        # Wipe bench volumes for a clean slate
+        echo "🗑  Wiping bench volumes for clean run..."
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE down --remove-orphans 2>/dev/null || true
+        docker volume rm \
+          "${BENCH_VOLUME_PREFIX}_postgres_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_minio_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_redis_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_flower_bench_data" 2>/dev/null || true
+
+        # Build and start bench stack on current branch
+        echo "🚀 Building bench stack from current branch..."
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE up -d --build
+
+        echo ""
+        echo "⏳ Waiting 45 s for stack to be ready (DB migrations, model pre-load)..."
+        sleep 45
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe
+
+        # Verify the worker is up
+        if ! docker ps --format '{{.Names}}' | grep -q "^${WORKER}$"; then
+          echo "❌ Worker container '${WORKER}' not running — check logs."
+          # shellcheck disable=SC2086
+          docker compose $BENCH_COMPOSE logs --tail=30 celery-worker
+          exit 1
+        fi
+
+        echo ""
+        echo "▶  [1/2] Per-stage latency (3 runs on 0.5h file)..."
+        docker exec "$WORKER" \
+          python /app/scripts/benchmark_engine_single.py \
+            --audio "$FAST_AUDIO" \
+            --runs 3 \
+            --output "/tmp/${SINGLE_CSV}"
+
+        echo ""
+        echo "▶  [2/2] Queue throughput (concurrency=3, max 5 files)..."
+        docker exec "$WORKER" \
+          python /app/scripts/benchmark_engine_queue.py \
+            --audio-dir "$AUDIO_DIR" \
+            --max-files 5 \
+            --concurrency 3 \
+            --output "/tmp/${QUEUE_CSV}"
+
+        # Copy results out
+        mkdir -p "$RESULTS_DIR"
+        docker cp "${WORKER}:/tmp/${SINGLE_CSV}" "${RESULTS_DIR}/${SINGLE_CSV}"
+        docker cp "${WORKER}:/tmp/${QUEUE_CSV}"  "${RESULTS_DIR}/${QUEUE_CSV}"
+
+        echo ""
+        echo "✅ Results saved to:"
+        echo "   ${RESULTS_DIR}/${SINGLE_CSV}"
+        echo "   ${RESULTS_DIR}/${QUEUE_CSV}"
+        echo ""
+        echo "📊 Gate criteria:"
+        echo "   Stage 1 (preprocess):            < 30 s per file"
+        echo "   Stage 2 GPU (transcribe+diarize): ≥ 20× realtime"
+        echo "   Stage 3 (finalize):              <  5 s per file"
+        echo "   GPU idle between tasks (conc=3):  <  5 s"
+        echo ""
+        echo "🛑 Stopping bench stack (volumes kept for inspection)..."
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE stop
+        ;;
+
       help|*)
         echo "🧪 Benchmark subcommands (isolated from NAS data):"
         echo "  bench start [master|branch]              - Wipe bench volumes, switch branch, start bench stack"
         echo "  bench stop                               - Stop bench stack (keep volumes)"
         echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
         echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"
+        echo "  bench engine                             - Run engine split-stage benchmarks (Phase 2 gate)"
         echo "  bench status                             - Show bench containers, GPU state, volumes"
         echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
         ;;

@@ -61,20 +61,29 @@ Changes shipped:
 | `scripts/benchmark_engine_single.py` | Per-stage latency: preprocess / GPU-inference / finalize |
 | `scripts/benchmark_engine_queue.py` | Throughput at queue_depth ≥ 3: files/hr, GPU idle time |
 
-### How to run
+### How to run (one command — fully isolated from NAS/prod data)
 
 ```bash
-# Start the stack first
-./opentr.sh start dev
+# Wipes bench volumes, builds from current branch, runs both scripts,
+# copies CSVs to docs/engine-benchmark-results/, stops bench stack.
+# Never touches the production DB, MinIO, or NAS data.
+./opentr.sh bench engine
+```
 
-# Single-file stage timing (run inside celery-worker container)
+Results land in `docs/engine-benchmark-results/engine_single_<timestamp>.csv`
+and `docs/engine-benchmark-results/engine_queue_<timestamp>.csv`.
+
+### Manual run (if bench stack is already up)
+
+```bash
+# Single-file stage timing
 docker exec -it opentranscribe-celery-worker \
   python /app/scripts/benchmark_engine_single.py \
-    --audio /app/benchmark/test_audio/sample.wav \
+    --audio /app/benchmark/test_audio/0.5h_1899s.wav \
     --runs 3 \
     --output /tmp/engine_single_a6000.csv
 
-# Queue throughput (run inside celery-worker container)
+# Queue throughput (concurrency=3, 5 files)
 docker exec -it opentranscribe-celery-worker \
   python /app/scripts/benchmark_engine_queue.py \
     --audio-dir /app/benchmark/test_audio \

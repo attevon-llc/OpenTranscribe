@@ -53,6 +53,7 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - ./benchmark/test_audio:/app/benchmark/test_audio:ro
+      - ./scripts:/app/scripts:ro
 
   celery-download-worker:
     image: opentranscribe-backend:bench

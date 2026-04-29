@@ -27,8 +27,8 @@ class EngineConfig:
     precompute_vad: bool = False  # Phase 3a — Silero VAD in Stage 1
     gpu_split: bool = False  # Phase 4 — separate gpu-transcribe / gpu-diarize queues
 
-    # Shared-volume handoff path (Opt-3A)
-    shared_volume_path: str = "/tmp/transcription"  # noqa: S108  # nosec B108
+    # Shared-volume handoff path (Opt-3A) — /tmp is always world-writable in containers
+    shared_volume_path: str = "/tmp"  # noqa: S108  # nosec B108
 
     # Internal: wrapped TranscriptionConfig (set by from_environment)
     _transcription_config: TranscriptionConfig | None = field(default=None, repr=False)
@@ -63,7 +63,7 @@ class EngineConfig:
             shared_volume_path=(
                 get_setting(db, "engine.shared_volume_path")
                 or os.getenv("ENGINE_SHARED_VOLUME_PATH")
-                or "/tmp/transcription"  # noqa: S108  # nosec B108
+                or "/tmp"  # noqa: S108  # nosec B108
             ),
         )
 

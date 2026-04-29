@@ -32,6 +32,61 @@ Results will be used to recalibrate `_auto_concurrent()` in
 
 ---
 
+## Benchmark Corpus
+
+**File:** `docs/benchmark-corpus/corpus.json`
+
+A fixed 16-file set sourced from existing MinIO deployment (no file copies — files are
+reprocessed in-place via the API). Designed for repeatable, whitepaper-quality results.
+
+### Corpus Design
+
+Files are ordered duration-ascending so that `--batches N` always selects the N shortest
+files. This means small batch tests use cheaper short files (fast iteration), and the full
+16-file run covers the complete duration spectrum.
+
+| Tier | Label | Range | Files | Audio |
+|------|-------|-------|-------|-------|
+| 1 | Short | 5–25 min | 4 | 1.14 h |
+| 2 | Medium | 31–60 min | 4 | 3.17 h |
+| 3 | Long | 1.5–3 h | 4 | 8.29 h |
+| 4 | Extra-long | 3 h+ | 4 | 16.06 h |
+| **Total** | | | **16** | **28.67 h** |
+
+### Corpus Files
+
+| # | Tier | UUID | Duration | File |
+|---|------|------|----------|------|
+| 1 | 1 | `5bbfb6cf-3e55-4cd6-8a5e-4f3312ad0019` | 11 min | PyTorch at Tesla — Andrej Karpathy |
+| 2 | 1 | `eb191ff0-4ad7-4686-8093-6e2eedb15834` | 15 min | Secret Airships Aviation Conspiracies |
+| 3 | 1 | `a196fce1-5393-4532-8270-1d2d6474ffc3` | 20 min | JRE #211 — Ari Shaffir (Part 2) |
+| 4 | 1 | `a6639bee-dad8-4910-83b0-5f88907772b7` | 23 min | JRE #124 — Michael Schiavello (Part 2) |
+| 5 | 2 | `ce471b5a-b4ae-45e5-8905-af7420d50f79` | 31 min | 0.5h_1899s.wav (synthetic baseline) |
+| 6 | 2 | `541b4bda-241a-4e2c-8831-20e8f3c31e53` | 43 min | JRE #13 — Eddie Bravo |
+| 7 | 2 | `126a9e15-e1b5-4630-b432-4a64b07812a9` | 56 min | JRE #140 — Brendon Walsh (Part 2) |
+| 8 | 2 | `bf5858cf-cf43-4f95-bd1d-a45cfb72ef62` | 60 min | JRE #94 — Joey Diaz (Part 4) |
+| 9 | 3 | `6089a8f2-0ef1-4e45-a3eb-7bf5fd031d32` | 1h 46m | JRE #1509 — Abigail Shrier |
+| 10 | 3 | `5d351168-af6f-4bb7-a3b6-3b77b8c1776e` | 1h 49m | JRE MMA Show #66 — Michelle Waterson |
+| 11 | 3 | `ce3965b9-4372-4643-a206-35cb6c6c9c9a` | 1h 51m | JRE #1362 — Lenny Clarke |
+| 12 | 3 | `ccee9e47-e879-4ba1-9b59-648c79a444a0` | 2h 51m | JRE #1461 — Owen Smith |
+| 13 | 4 | `4824a0ab-1a3c-41f4-98e9-9a4547f479f0` | 3h 24m | JRE #1609 — Elon Musk |
+| 14 | 4 | `7dc3ffbe-bdb3-4bc9-8d13-f78cd5d251ad` | 3h 42m | JRE #1393 — Game Changers Debate (3 spk) |
+| 15 | 4 | `28506325-0e30-40b1-a300-47f4ab6482e2` | 4h 13m | JRE #1769 — Jordan Peterson |
+| 16 | 4 | `3e313bbd-924f-4a4b-9584-fa24532b9a01` | 4h 44m | JRE #1907 — Protect Our Parks 6 (4+ spk) |
+
+### Expected Throughput at Full Corpus (batch=16)
+
+At the whitepaper single-file RTF of 44.6×, the 4.73 h anchor file (longest) takes ~382 s.
+All 16 files submit simultaneously; wall time ≈ the longest file's completion time.
+
+```
+Projected aggregate RTF = 28.67 h audio / (382 s / 3600) = ~270×
+```
+
+This headline metric will be printed automatically at the end of the benchmark run.
+
+---
+
 ## Known Baselines (existing benchmark data)
 
 From `docs/engine-benchmark-results/engine_single_20260429_040907.csv` (GPU 0, conc=1,
@@ -107,12 +162,12 @@ Run each concurrency level. Stop if OOM. Record peak VRAM via nvidia-smi.
 | # | Concurrency | Expected VRAM | Status | Peak VRAM | Avg RTF | GPU Util% | Stable? | Notes |
 |---|------------|--------------|--------|-----------|---------|-----------|---------|-------|
 | A | 1 | ~15 GB | TODO | | | | | Baseline |
-| B | 4 | ~23 GB | TODO | | | | | |
+| B | 4 | ~23 GB | TODO | | | | | Tier 1+2 corpus files |
 | C | 8 | ~39 GB | TODO | | | | | Whitepaper sweet-spot |
 | D | 10 | ~48.5 GB | TODO | | | | | Current auto ceiling |
 | E | 12 | ~50+ GB? | TODO | | | | | Above current cap |
 | F | 14 | ~55+ GB? | TODO | | | | | Stop here if E is OOM |
-| G | 16 | — | TODO | | | | | Only if F is stable |
+| G | 16 | — | TODO | | | | | Full corpus — only if F is stable |
 
 **Stop criteria:** GPU OOM error or peak VRAM > 48 GB (98% of 49 GB).
 
@@ -129,54 +184,57 @@ source backend/venv/bin/activate
 # 2. Confirm ENABLE_BENCHMARK_TIMING=true in .env (needed for e2e timing data)
 grep ENABLE_BENCHMARK_TIMING .env
 
-# 3. Check both GPUs are visible and idle
+# 3. Check GPUs are visible and idle
 nvidia-smi --query-gpu=index,name,memory.used,memory.total --format=csv
+
+# 4. Verify corpus files exist in the deployment (dry run)
+BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
+python scripts/benchmark_parallel.py \
+    --corpus-file docs/benchmark-corpus/corpus.json \
+    --batches 16 --dry-run
 ```
 
 ### Phase 1 — Single-File Latency Baseline (both GPUs)
 
-Run inside the Celery worker container (where app code is available):
+Run inside the Celery worker container:
 
 ```bash
-# A6000 (GPU 0 — primary worker, already in the container)
+# A6000 (GPU 0 — primary worker)
 docker exec opentranscribe-celery-worker \
     python /app/scripts/benchmark_engine_single.py \
     --audio /app/benchmark/test_audio/0.5h_1899s.wav \
-    --runs 5 \
-    --cuda-device 0 \
+    --runs 5 --cuda-device 0 \
     --output /app/docs/engine-benchmark-results/single_a6000_conc1_$(date +%Y%m%d).csv
 
-# 3080 Ti (GPU 1 — needs worker restarted on device 1 or run directly)
-# Option A: run in the existing worker with CUDA_VISIBLE_DEVICES override
+# 3080 Ti (GPU 1)
 docker exec -e CUDA_VISIBLE_DEVICES=1 opentranscribe-celery-worker \
     python /app/scripts/benchmark_engine_single.py \
     --audio /app/benchmark/test_audio/0.5h_1899s.wav \
-    --runs 5 \
-    --cuda-device 0 \
+    --runs 5 --cuda-device 0 \
     --output /app/docs/engine-benchmark-results/single_3080ti_conc1_$(date +%Y%m%d).csv
 ```
 
 ### Phase 2 — Concurrency Sweep via Queue Mode
 
-For each concurrency level in the matrix above:
+For each concurrency level N in the matrix above:
 
 ```bash
 # Step 1: Set concurrency in .env
 #   GPU_CONCURRENT_REQUESTS=N   (replace N with the level under test)
 
-# Step 2: Rebuild and restart the GPU worker with the new setting
+# Step 2: Restart GPU worker with the new setting
 docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.local.yml \
     up -d --no-deps --force-recreate celery-worker
 
-# Step 3: Confirm worker started with right concurrency (look for "concurrency=N" in logs)
-docker compose logs --tail=20 celery-worker
+# Step 3: Confirm worker started with right concurrency
+docker compose logs --tail=20 celery-worker | grep "concurrent_requests\|concurrency"
 
-# Step 4: Run the parallel benchmark (from host, venv activated)
+# Step 4: Run benchmark with corpus (from host, venv activated)
 BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
 python scripts/benchmark_parallel.py \
+    --corpus-file docs/benchmark-corpus/corpus.json \
     --batches N \
     --gpu-id 2 \
-    --min-duration 300 \
     --output docs/engine-benchmark-results/parallel_conc${N}_$(date +%Y%m%d)/
 
 # Step 5: Watch VRAM in another terminal during the run
@@ -184,16 +242,41 @@ watch -n 1 "nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gp
     --format=csv,noheader | grep -E '^1,|^2,'"
 ```
 
-### Phase 3 — E2E Stage Timing (single file, each concurrency level)
+**Full-corpus run (all 16 files, requires conc=16):**
+```bash
+BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
+python scripts/benchmark_parallel.py \
+    --corpus-file docs/benchmark-corpus/corpus.json \
+    --batches 16 \
+    --gpu-id 2 \
+    --output docs/engine-benchmark-results/parallel_fullcorpus_$(date +%Y%m%d)/
+```
+The script prints `*** Full-corpus aggregate RTF ***` automatically when all 16 files complete.
 
-Gives per-stage breakdown (preprocess / GPU / postprocess queue gaps) for fair comparison:
+### Phase 3 — Duration Curve (sequential, one file at a time)
+
+Produces RTF-vs-duration data for the whitepaper figure. Uses the corpus to ensure the
+same file set is measured sequentially and concurrently (allows fair comparison).
+
+```bash
+# Run each corpus file individually, in order, collecting RTF per duration tier
+BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
+python scripts/benchmark_parallel.py \
+    --corpus-file docs/benchmark-corpus/corpus.json \
+    --sequential \
+    --cooldown 15 \
+    --output docs/engine-benchmark-results/duration_curve_$(date +%Y%m%d)/
+```
+
+### Phase 4 — E2E Stage Timing (single file, each concurrency level)
+
+Per-stage breakdown (preprocess / GPU / postprocess / queue gaps):
 
 ```bash
 BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
 python scripts/benchmark_e2e.py \
-    --file-uuid <UUID_OF_0.5H_FILE> \
-    --iterations 3 \
-    --detailed \
+    --file-uuid ce471b5a-b4ae-45e5-8905-af7420d50f79 \
+    --iterations 3 --detailed \
     --output docs/engine-benchmark-results/e2e_conc${N}_$(date +%Y%m%d).csv
 ```
 
@@ -209,6 +292,7 @@ For each concurrency level on each GPU:
 | VRAM at model load (idle) | nvidia-smi before first task | Baseline drift check |
 | GPU utilisation % | nvidia-smi avg over batch | GPU saturation |
 | Aggregate RTF | benchmark_parallel.py summary | Throughput |
+| Full-corpus RTF (batch=16) | `*** Full-corpus aggregate RTF ***` line | Whitepaper headline metric |
 | Per-file wall time (avg/min/max) | parallel CSV | Latency variance |
 | GPU stage duration (avg) | e2e CSV | Inference bottleneck |
 | CPU→GPU queue gap (avg) | e2e CSV | Queue contention |
@@ -223,14 +307,15 @@ Run 10 consecutive batches at the identified max concurrency level. VRAM must no
 drift > 200 MB between batch 1 and batch 10 (confirms no memory leak).
 
 ```bash
-# Example: 10-batch soak at conc=12 on A6000
+# Example: 10-batch soak at conc=12 on A6000, Tier 3+4 files (hardest 8)
 for i in $(seq 1 10); do
     echo "=== Soak batch $i ==="
     BENCHMARK_EMAIL=admin@example.com BENCHMARK_PASSWORD=password \
     python scripts/benchmark_parallel.py \
+        --corpus-file docs/benchmark-corpus/corpus.json \
         --batches 12 \
         --gpu-id 2 \
-        --min-duration 300 \
+        --cooldown 0 \
         --output docs/engine-benchmark-results/soak_conc12_batch${i}_$(date +%Y%m%d_%H%M%S)/
     sleep 30  # allow GPU cooldown between batches
 done
@@ -265,6 +350,7 @@ done
 
 **Safe maximum:** ___
 **Throughput peak (RTF):** ___ at conc=___
+**Full-corpus aggregate RTF (batch=16):** ___ (projected ~270×)
 **VRAM plateau observed:** YES / NO, at conc=___
 
 ---
@@ -293,7 +379,8 @@ Also update `.env.example` GPU_CONCURRENT_REQUESTS comment with confirmed values
 | `backend/app/transcription/config.py` | `_auto_concurrent()` formula and cap |
 | `.env.example` | `GPU_CONCURRENT_REQUESTS` comment with measured values |
 | `scripts/benchmark_e2e.py` | Redis URL auto-loads from `.env` (fixed wrong port/auth) |
-| `scripts/benchmark_parallel.py` | Redis URL from `.env`, `--min-duration` default 10800→60, GPU util% in summary |
+| `scripts/benchmark_parallel.py` | Redis URL, `--corpus-file` support, GPU util% in summary |
+| `docs/benchmark-corpus/corpus.json` | Fixed 16-file corpus (28.67 h total audio) |
 | `docs/gpu-concurrency-soak-test-plan.md` | This file |
 
 Committed on branch `feat/engine-opimization` as of 2026-04-29.

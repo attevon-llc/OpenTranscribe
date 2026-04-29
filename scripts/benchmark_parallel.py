@@ -19,6 +19,14 @@ Usage:
     source backend/venv/bin/activate
     python scripts/benchmark_parallel.py [--batches 1,3,5] [--output benchmarks/]
 
+    # Recommended: use fixed corpus for repeatable whitepaper-quality results
+    python scripts/benchmark_parallel.py --corpus-file docs/benchmark-corpus/corpus.json \\
+        --batches 1,4,8,10,12,16 --gpu-id 2
+
+    # Duration curve (sequential, one file at a time, full corpus)
+    python scripts/benchmark_parallel.py --corpus-file docs/benchmark-corpus/corpus.json \\
+        --sequential --output benchmarks/duration_curve/
+
     # Single file first to find bottlenecks
     python scripts/benchmark_parallel.py --batches 1
 
@@ -52,40 +60,40 @@ sys.stdout.reconfigure(line_buffering=True)
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-BACKEND_URL = os.environ.get("BENCHMARK_BACKEND_URL", "http://localhost:5174")
+BACKEND_URL = os.environ.get('BENCHMARK_BACKEND_URL', 'http://localhost:5174')
 POLL_INTERVAL = 5.0  # seconds between status polls
 
 
 def _load_redis_url() -> str:
     """Build Redis URL from BENCHMARK_REDIS_URL env var, then .env, then sensible default."""
-    explicit = os.environ.get("BENCHMARK_REDIS_URL", "")
+    explicit = os.environ.get('BENCHMARK_REDIS_URL', '')
     if explicit:
         return explicit
-    env_file = os.path.join(os.path.dirname(__file__), "..", ".env")
-    password = ""
-    port = "5177"
+    env_file = os.path.join(os.path.dirname(__file__), '..', '.env')
+    password = ''
+    port = '5177'
     try:
         with open(env_file) as f:
             for line in f:
                 line = line.strip()
-                if line.startswith("REDIS_PASSWORD="):
-                    password = line.split("=", 1)[1].strip().strip("\"'")
-                elif line.startswith("REDIS_PORT=") and "already set" not in line:
-                    port = line.split("=", 1)[1].strip().strip("\"'")
+                if line.startswith('REDIS_PASSWORD='):
+                    password = line.split('=', 1)[1].strip().strip('"\'')
+                elif line.startswith('REDIS_PORT=') and 'already set' not in line:
+                    port = line.split('=', 1)[1].strip().strip('"\'')
     except OSError:
         pass
     if password:
-        return f"redis://:{password}@localhost:{port}/0"
-    return f"redis://localhost:{port}/0"
+        return f'redis://:{password}@localhost:{port}/0'
+    return f'redis://localhost:{port}/0'
 
 
 REDIS_URL = _load_redis_url()
 POLL_TIMEOUT = 14400  # 4 hours max for large batches
 VRAM_SAMPLE_INTERVAL = 2.0  # seconds between nvidia-smi samples
 GPU_DEVICE_ID = 2  # host GPU to monitor (the gpu-scaled worker GPU)
-DB_CONTAINER = "opentranscribe-postgres"
-DB_USER = "postgres"
-DB_NAME = "opentranscribe"
+DB_CONTAINER = 'opentranscribe-postgres'
+DB_USER = 'postgres'
+DB_NAME = 'opentranscribe'
 
 
 # ---------------------------------------------------------------------------
@@ -106,11 +114,11 @@ class FileResult:
     uuid: str
     filename: str
     duration_s: float
-    task_id: str = ""
+    task_id: str = ''
     wall_start: float = 0.0
     wall_end: float = 0.0
     wall_elapsed: float = 0.0
-    status: str = ""
+    status: str = ''
     stages: dict = field(default_factory=dict)
     vram_profile: dict | None = None
 
@@ -131,29 +139,29 @@ class BatchResult:
 # Auth
 # ---------------------------------------------------------------------------
 def get_auth_token() -> str:
-    email = os.environ.get("BENCHMARK_EMAIL", "admin@example.com")
-    password = os.environ.get("BENCHMARK_PASSWORD", "password")
+    email = os.environ.get('BENCHMARK_EMAIL', 'admin@example.com')
+    password = os.environ.get('BENCHMARK_PASSWORD', 'password')
     resp = requests.post(
-        f"{BACKEND_URL}/api/auth/token",
-        data={"username": email, "password": password},
+        f'{BACKEND_URL}/api/auth/token',
+        data={'username': email, 'password': password},
         timeout=15,
     )
     resp.raise_for_status()
-    return resp.json()["access_token"]
+    return resp.json()['access_token']
 
 
 # Token manager: auto-refreshes when token is near expiry
-_token_cache: dict[str, str | float] = {"token": "", "expires_at": 0.0}
+_token_cache: dict[str, str | float] = {'token': '', 'expires_at': 0.0}
 TOKEN_LIFETIME = 1200  # refresh every 20 min (tokens typically last 30 min)
 
 
 def get_valid_token() -> str:
     """Return a valid token, refreshing if needed."""
-    if time.time() < _token_cache["expires_at"]:
-        return str(_token_cache["token"])
+    if time.time() < _token_cache['expires_at']:
+        return str(_token_cache['token'])
     token = get_auth_token()
-    _token_cache["token"] = token
-    _token_cache["expires_at"] = time.time() + TOKEN_LIFETIME
+    _token_cache['token'] = token
+    _token_cache['expires_at'] = time.time() + TOKEN_LIFETIME
     return token
 
 
@@ -164,68 +172,81 @@ def db_query(sql: str) -> list[list[str]]:
     """Run a SQL query via docker exec and return rows."""
     result = subprocess.run(
         [
-            "docker", "exec", DB_CONTAINER,
-            "psql", "-U", DB_USER, "-d", DB_NAME, "-t", "-A", "-F", "\t", "-c", sql,
+            'docker',
+            'exec',
+            DB_CONTAINER,
+            'psql',
+            '-U',
+            DB_USER,
+            '-d',
+            DB_NAME,
+            '-t',
+            '-A',
+            '-F',
+            '\t',
+            '-c',
+            sql,
         ],
-        capture_output=True, text=True, timeout=15,
+        capture_output=True,
+        text=True,
+        timeout=15,
     )
     if result.returncode != 0:
-        print(f"  DB ERROR: {result.stderr.strip()}", file=sys.stderr)
+        print(f'  DB ERROR: {result.stderr.strip()}', file=sys.stderr)
         return []
     rows = []
-    for line in result.stdout.strip().split("\n"):
+    for line in result.stdout.strip().split('\n'):
         line = line.strip()
         if line:
-            rows.append(line.split("\t"))
+            rows.append(line.split('\t'))
     return rows
 
 
 def get_benchmark_files(
-    count: int, min_duration: int = 10800, max_duration: int = 0,
+    count: int,
+    min_duration: int = 10800,
+    max_duration: int = 0,
 ) -> list[dict]:
     """Get the N longest completed files with actual data in storage."""
-    duration_filter = f"duration >= {min_duration}"
+    duration_filter = f'duration >= {min_duration}'
     if max_duration > 0:
-        duration_filter += f" AND duration <= {max_duration}"
+        duration_filter += f' AND duration <= {max_duration}'
     rows = db_query(
-        f"SELECT uuid, filename, duration, file_size "
-        f"FROM media_file "
+        f'SELECT uuid, filename, duration, file_size '
+        f'FROM media_file '
         f"WHERE {duration_filter} AND file_size > 0 AND status = 'completed' "
-        f"ORDER BY duration DESC "
-        f"LIMIT {count}"
+        f'ORDER BY duration DESC '
+        f'LIMIT {count}'
     )
     files = []
     for row in rows:
-        files.append({
-            "uuid": row[0].strip(),
-            "filename": row[1].strip(),
-            "duration": float(row[2].strip()),
-            "file_size": int(row[3].strip()),
-        })
+        files.append(
+            {
+                'uuid': row[0].strip(),
+                'filename': row[1].strip(),
+                'duration': float(row[2].strip()),
+                'file_size': int(row[3].strip()),
+            }
+        )
     return files
 
 
 def get_active_task_id(file_uuid: str) -> str:
     """Get the active_task_id for a file from the database."""
-    rows = db_query(
-        f"SELECT active_task_id FROM media_file WHERE uuid = '{file_uuid}'"
-    )
+    rows = db_query(f"SELECT active_task_id FROM media_file WHERE uuid = '{file_uuid}'")
     if rows and rows[0][0].strip():
         return rows[0][0].strip()
-    return ""
+    return ''
 
 
 def get_task_timestamps(task_id: str) -> dict:
     """Get task created_at and completed_at from the task table."""
-    rows = db_query(
-        f"SELECT created_at, completed_at, status "
-        f"FROM task WHERE id = '{task_id}'"
-    )
+    rows = db_query(f"SELECT created_at, completed_at, status FROM task WHERE id = '{task_id}'")
     if rows:
         return {
-            "created_at": rows[0][0].strip() if rows[0][0].strip() else None,
-            "completed_at": rows[0][1].strip() if len(rows[0]) > 1 and rows[0][1].strip() else None,
-            "status": rows[0][2].strip() if len(rows[0]) > 2 else "",
+            'created_at': rows[0][0].strip() if rows[0][0].strip() else None,
+            'completed_at': rows[0][1].strip() if len(rows[0]) > 1 and rows[0][1].strip() else None,
+            'status': rows[0][2].strip() if len(rows[0]) > 2 else '',
         }
     return {}
 
@@ -237,17 +258,20 @@ def trigger_reprocess(token: str, file_uuid: str) -> bool:
     """Trigger full reprocessing of a file. Returns True on success."""
     try:
         resp = requests.post(
-            f"{BACKEND_URL}/api/files/{file_uuid}/reprocess",
-            headers={"Authorization": f"Bearer {token}"},
+            f'{BACKEND_URL}/api/files/{file_uuid}/reprocess',
+            headers={'Authorization': f'Bearer {token}'},
             json={},
             timeout=30,
         )
         if resp.status_code >= 400:
-            print(f"  REPROCESS FAILED for {file_uuid}: {resp.status_code} {resp.text[:200]}", file=sys.stderr)
+            print(
+                f'  REPROCESS FAILED for {file_uuid}: {resp.status_code} {resp.text[:200]}',
+                file=sys.stderr,
+            )
             return False
         return True
     except requests.RequestException as e:
-        print(f"  REPROCESS ERROR for {file_uuid}: {e}", file=sys.stderr)
+        print(f'  REPROCESS ERROR for {file_uuid}: {e}', file=sys.stderr)
         return False
 
 
@@ -255,15 +279,15 @@ def get_file_status(token: str, file_uuid: str) -> str:
     """Get current file status via API (uses info endpoint for lightweight response)."""
     try:
         resp = requests.get(
-            f"{BACKEND_URL}/api/files/{file_uuid}/info",
-            headers={"Authorization": f"Bearer {token}"},
+            f'{BACKEND_URL}/api/files/{file_uuid}/info',
+            headers={'Authorization': f'Bearer {token}'},
             timeout=10,
         )
         if resp.status_code == 200:
-            return resp.json().get("status", "unknown")
+            return resp.json().get('status', 'unknown')
     except requests.RequestException:
         pass
-    return "unknown"
+    return 'unknown'
 
 
 # ---------------------------------------------------------------------------
@@ -299,15 +323,17 @@ class VramMonitor:
         try:
             result = subprocess.run(
                 [
-                    "nvidia-smi",
-                    f"--id={self.gpu_id}",
-                    "--query-gpu=memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu",
-                    "--format=csv,noheader,nounits",
+                    'nvidia-smi',
+                    f'--id={self.gpu_id}',
+                    '--query-gpu=memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu',
+                    '--format=csv,noheader,nounits',
                 ],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if result.returncode == 0:
-                parts = [p.strip() for p in result.stdout.strip().split(",")]
+                parts = [p.strip() for p in result.stdout.strip().split(',')]
                 return VramSample(
                     timestamp=time.time(),
                     used_mb=int(parts[0]),
@@ -334,40 +360,40 @@ class VramMonitor:
 # ---------------------------------------------------------------------------
 def collect_benchmark_stages(r: redis.Redis, task_id: str) -> dict:
     """Collect pipeline stage timing from Redis benchmark hash."""
-    key = f"benchmark:{task_id}"
+    key = f'benchmark:{task_id}'
     raw = r.hgetall(key)
     if not raw:
         return {}
     data = {k.decode(): float(v.decode()) for k, v in raw.items()}
     stages = {}
-    dispatch = data.get("dispatch_timestamp")
-    pre_end = data.get("preprocess_end")
-    gpu_recv = data.get("gpu_received")
-    gpu_end = data.get("gpu_end")
-    post_recv = data.get("postprocess_received")
+    dispatch = data.get('dispatch_timestamp')
+    pre_end = data.get('preprocess_end')
+    gpu_recv = data.get('gpu_received')
+    gpu_end = data.get('gpu_end')
+    post_recv = data.get('postprocess_received')
 
     if dispatch and pre_end:
-        stages["1_preprocess"] = round(pre_end - dispatch, 3)
+        stages['1_preprocess'] = round(pre_end - dispatch, 3)
     if pre_end and gpu_recv:
-        stages["2_cpu_to_gpu_queue"] = round(gpu_recv - pre_end, 3)
+        stages['2_cpu_to_gpu_queue'] = round(gpu_recv - pre_end, 3)
     if gpu_recv and gpu_end:
-        stages["3_gpu_transcribe"] = round(gpu_end - gpu_recv, 3)
+        stages['3_gpu_transcribe'] = round(gpu_end - gpu_recv, 3)
     if gpu_end and post_recv:
-        stages["4_gpu_to_post_queue"] = round(post_recv - gpu_end, 3)
+        stages['4_gpu_to_post_queue'] = round(post_recv - gpu_end, 3)
     if dispatch and gpu_end:
-        stages["total_to_gpu_end"] = round(gpu_end - dispatch, 3)
+        stages['total_to_gpu_end'] = round(gpu_end - dispatch, 3)
     if dispatch and post_recv:
-        stages["total_to_postprocess"] = round(post_recv - dispatch, 3)
+        stages['total_to_postprocess'] = round(post_recv - dispatch, 3)
     # Store raw timestamps for cross-file analysis
-    stages["_dispatch"] = dispatch
-    stages["_gpu_recv"] = gpu_recv
-    stages["_gpu_end"] = gpu_end
+    stages['_dispatch'] = dispatch
+    stages['_gpu_recv'] = gpu_recv
+    stages['_gpu_end'] = gpu_end
     return stages
 
 
 def collect_vram_profile(r: redis.Redis, task_id: str) -> dict | None:
     """Collect VRAM profiler data from Redis."""
-    key = f"gpu:profile:{task_id}"
+    key = f'gpu:profile:{task_id}'
     raw = r.get(key)
     if raw:
         return json.loads(raw)
@@ -388,18 +414,20 @@ def run_batch(
     batch_files = files[:batch_size]
     result = BatchResult(batch_size=batch_size)
 
-    print(f"\n{'='*80}")
-    print(f"  BATCH SIZE: {batch_size} files")
-    print(f"  Files: {', '.join(f['filename'][:40] for f in batch_files)}")
-    print(f"{'='*80}")
+    print(f'\n{"=" * 80}')
+    print(f'  BATCH SIZE: {batch_size} files')
+    print(f'  Files: {", ".join(f["filename"][:40] for f in batch_files)}')
+    print(f'{"=" * 80}')
 
     # Initialize file results
     for f in batch_files:
-        result.file_results.append(FileResult(
-            uuid=f["uuid"],
-            filename=f["filename"],
-            duration_s=f["duration"],
-        ))
+        result.file_results.append(
+            FileResult(
+                uuid=f['uuid'],
+                filename=f['filename'],
+                duration_s=f['duration'],
+            )
+        )
 
     # Start VRAM monitoring
     vram_monitor = VramMonitor(gpu_id=gpu_id)
@@ -408,30 +436,30 @@ def run_batch(
     # Trigger all reprocesses
     result.wall_start = time.time()
     token = get_valid_token()
-    print(f"\n  [{_ts()}] Triggering {batch_size} reprocess requests...")
+    print(f'\n  [{_ts()}] Triggering {batch_size} reprocess requests...')
     for fr in result.file_results:
         fr.wall_start = time.time()
         success = trigger_reprocess(token, fr.uuid)
         if not success:
-            fr.status = "dispatch_failed"
+            fr.status = 'dispatch_failed'
         else:
-            fr.status = "dispatched"
+            fr.status = 'dispatched'
         # Small stagger to avoid overwhelming the API
         time.sleep(0.3)
 
     # Collect task IDs from DB (wait a moment for DB to be updated)
     time.sleep(3)
     for fr in result.file_results:
-        if fr.status == "dispatched":
+        if fr.status == 'dispatched':
             fr.task_id = get_active_task_id(fr.uuid)
             if fr.task_id:
-                print(f"    {fr.filename[:50]}: task_id={fr.task_id[:12]}...")
+                print(f'    {fr.filename[:50]}: task_id={fr.task_id[:12]}...')
             else:
-                print(f"    {fr.filename[:50]}: WARNING - no task_id found")
+                print(f'    {fr.filename[:50]}: WARNING - no task_id found')
 
     # Poll until all files complete
-    print(f"\n  [{_ts()}] Polling for completion (timeout: {POLL_TIMEOUT/60:.0f}min)...")
-    pending = {fr.uuid for fr in result.file_results if fr.status == "dispatched"}
+    print(f'\n  [{_ts()}] Polling for completion (timeout: {POLL_TIMEOUT / 60:.0f}min)...')
+    pending = {fr.uuid for fr in result.file_results if fr.status == 'dispatched'}
     completed = set()
     failed = set()
     last_status_print = time.time()
@@ -441,7 +469,7 @@ def run_batch(
         token = get_valid_token()
         for uuid in list(pending):
             status = get_file_status(token, uuid)
-            if status == "completed":
+            if status == 'completed':
                 pending.discard(uuid)
                 completed.add(uuid)
                 # Record wall_end for this file
@@ -449,20 +477,24 @@ def run_batch(
                     if fr.uuid == uuid:
                         fr.wall_end = time.time()
                         fr.wall_elapsed = fr.wall_end - fr.wall_start
-                        fr.status = "completed"
-                        print(f"    [{_ts()}] DONE: {fr.filename[:45]} "
-                              f"({_fmt_duration(fr.wall_elapsed)}) "
-                              f"[{len(completed)}/{batch_size}]")
-            elif status == "error":
+                        fr.status = 'completed'
+                        print(
+                            f'    [{_ts()}] DONE: {fr.filename[:45]} '
+                            f'({_fmt_duration(fr.wall_elapsed)}) '
+                            f'[{len(completed)}/{batch_size}]'
+                        )
+            elif status == 'error':
                 pending.discard(uuid)
                 failed.add(uuid)
                 for fr in result.file_results:
                     if fr.uuid == uuid:
                         fr.wall_end = time.time()
                         fr.wall_elapsed = fr.wall_end - fr.wall_start
-                        fr.status = "error"
-                        print(f"    [{_ts()}] ERROR: {fr.filename[:45]} "
-                              f"({_fmt_duration(fr.wall_elapsed)})")
+                        fr.status = 'error'
+                        print(
+                            f'    [{_ts()}] ERROR: {fr.filename[:45]} '
+                            f'({_fmt_duration(fr.wall_elapsed)})'
+                        )
             # Small delay between per-file status checks
             time.sleep(0.1)
 
@@ -470,8 +502,10 @@ def run_batch(
             # Print status every 60 seconds
             if time.time() - last_status_print > 60:
                 elapsed = time.time() - result.wall_start
-                print(f"    [{_ts()}] {len(completed)} done, {len(pending)} pending "
-                      f"({_fmt_duration(elapsed)} elapsed)")
+                print(
+                    f'    [{_ts()}] {len(completed)} done, {len(pending)} pending '
+                    f'({_fmt_duration(elapsed)} elapsed)'
+                )
                 last_status_print = time.time()
             time.sleep(POLL_INTERVAL)
 
@@ -484,21 +518,23 @@ def run_batch(
 
     # Mark timed-out files
     for fr in result.file_results:
-        if fr.status == "dispatched":
-            fr.status = "timeout"
+        if fr.status == 'dispatched':
+            fr.status = 'timeout'
             fr.wall_end = time.time()
             fr.wall_elapsed = fr.wall_end - fr.wall_start
 
     # Collect Redis benchmark data for each file
-    print(f"\n  [{_ts()}] Collecting benchmark data from Redis...")
+    print(f'\n  [{_ts()}] Collecting benchmark data from Redis...')
     time.sleep(2)  # Allow final writes to propagate
     for fr in result.file_results:
         if fr.task_id:
             fr.stages = collect_benchmark_stages(r, fr.task_id)
             fr.vram_profile = collect_vram_profile(r, fr.task_id)
             if not fr.stages:
-                print(f"    WARNING: No benchmark data for {fr.filename[:40]} "
-                      f"(task_id={fr.task_id[:12]})")
+                print(
+                    f'    WARNING: No benchmark data for {fr.filename[:40]} '
+                    f'(task_id={fr.task_id[:12]})'
+                )
 
     # Print batch summary
     _print_batch_summary(result)
@@ -510,63 +546,72 @@ def run_batch(
 # Display helpers
 # ---------------------------------------------------------------------------
 def _ts() -> str:
-    return datetime.now().strftime("%H:%M:%S")
+    return datetime.now().strftime('%H:%M:%S')
 
 
 def _fmt_duration(seconds: float) -> str:
     if seconds < 60:
-        return f"{seconds:.1f}s"
+        return f'{seconds:.1f}s'
     m, s = divmod(int(seconds), 60)
     if m < 60:
-        return f"{m}m{s:02d}s"
+        return f'{m}m{s:02d}s'
     h, m = divmod(m, 60)
-    return f"{h}h{m:02d}m{s:02d}s"
+    return f'{h}h{m:02d}m{s:02d}s'
 
 
 def _print_batch_summary(result: BatchResult):
     """Print summary for a single batch."""
-    completed = [fr for fr in result.file_results if fr.status == "completed"]
-    errored = [fr for fr in result.file_results if fr.status == "error"]
+    completed = [fr for fr in result.file_results if fr.status == 'completed']
+    errored = [fr for fr in result.file_results if fr.status == 'error']
 
-    print(f"\n  {'─'*70}")
-    print(f"  BATCH {result.batch_size} SUMMARY")
-    print(f"  {'─'*70}")
-    print(f"  Total wall time:  {_fmt_duration(result.wall_elapsed)}")
-    print(f"  Completed:        {len(completed)}/{result.batch_size}")
+    print(f'\n  {"─" * 70}')
+    print(f'  BATCH {result.batch_size} SUMMARY')
+    print(f'  {"─" * 70}')
+    print(f'  Total wall time:  {_fmt_duration(result.wall_elapsed)}')
+    print(f'  Completed:        {len(completed)}/{result.batch_size}')
     if errored:
-        print(f"  Errors:           {len(errored)}")
-    print(f"  VRAM peak:        {result.vram_peak_mb} MB")
-    print(f"  VRAM avg:         {result.vram_avg_mb:.0f} MB")
+        print(f'  Errors:           {len(errored)}')
+    print(f'  VRAM peak:        {result.vram_peak_mb} MB')
+    print(f'  VRAM avg:         {result.vram_avg_mb:.0f} MB')
 
     if completed:
         wall_times = [fr.wall_elapsed for fr in completed]
-        print(f"\n  Per-file wall time:")
-        print(f"    {'File':<45} {'Wall':>10} {'GPU':>10} {'Audio':>8}")
-        print(f"    {'─'*45} {'─'*10} {'─'*10} {'─'*8}")
+        print('\n  Per-file wall time:')
+        print(f'    {"File":<45} {"Wall":>10} {"GPU":>10} {"Audio":>8}')
+        print(f'    {"─" * 45} {"─" * 10} {"─" * 10} {"─" * 8}')
         for fr in completed:
-            gpu_dur = fr.stages.get("3_gpu_transcribe", 0)
+            gpu_dur = fr.stages.get('3_gpu_transcribe', 0)
             audio_hrs = fr.duration_s / 3600
-            print(f"    {fr.filename[:45]:<45} "
-                  f"{_fmt_duration(fr.wall_elapsed):>10} "
-                  f"{_fmt_duration(gpu_dur):>10} "
-                  f"{audio_hrs:.1f}h")
+            print(
+                f'    {fr.filename[:45]:<45} '
+                f'{_fmt_duration(fr.wall_elapsed):>10} '
+                f'{_fmt_duration(gpu_dur):>10} '
+                f'{audio_hrs:.1f}h'
+            )
 
         avg_wall = sum(wall_times) / len(wall_times)
-        print(f"\n    Avg wall time/file:   {_fmt_duration(avg_wall)}")
-        print(f"    Min:                  {_fmt_duration(min(wall_times))}")
-        print(f"    Max:                  {_fmt_duration(max(wall_times))}")
+        print(f'\n    Avg wall time/file:   {_fmt_duration(avg_wall)}')
+        print(f'    Min:                  {_fmt_duration(min(wall_times))}')
+        print(f'    Max:                  {_fmt_duration(max(wall_times))}')
 
         # GPU stage breakdown
-        gpu_times = [fr.stages.get("3_gpu_transcribe", 0) for fr in completed if fr.stages]
+        gpu_times = [fr.stages.get('3_gpu_transcribe', 0) for fr in completed if fr.stages]
         if gpu_times and any(gpu_times):
-            print(f"\n  Pipeline stage averages:")
-            stage_keys = ["1_preprocess", "2_cpu_to_gpu_queue", "3_gpu_transcribe", "4_gpu_to_post_queue"]
+            print('\n  Pipeline stage averages:')
+            stage_keys = [
+                '1_preprocess',
+                '2_cpu_to_gpu_queue',
+                '3_gpu_transcribe',
+                '4_gpu_to_post_queue',
+            ]
             for key in stage_keys:
                 vals = [fr.stages.get(key, 0) for fr in completed if fr.stages and key in fr.stages]
                 if vals:
                     avg = sum(vals) / len(vals)
-                    print(f"    {key:<25} avg={_fmt_duration(avg):>10}  "
-                          f"min={_fmt_duration(min(vals)):>10}  max={_fmt_duration(max(vals)):>10}")
+                    print(
+                        f'    {key:<25} avg={_fmt_duration(avg):>10}  '
+                        f'min={_fmt_duration(min(vals)):>10}  max={_fmt_duration(max(vals)):>10}'
+                    )
 
     # GPU queue contention analysis
     _print_queue_analysis(completed)
@@ -575,169 +620,264 @@ def _print_batch_summary(result: BatchResult):
 
 def _print_queue_analysis(completed: list[FileResult]):
     """Analyze GPU queue contention — how much time files spent waiting."""
-    files_with_gpu = [fr for fr in completed if fr.stages.get("_gpu_recv") and fr.stages.get("_gpu_end")]
+    files_with_gpu = [
+        fr for fr in completed if fr.stages.get('_gpu_recv') and fr.stages.get('_gpu_end')
+    ]
     if not files_with_gpu:
         return
 
     # Sort by GPU received time
-    files_with_gpu.sort(key=lambda f: f.stages["_gpu_recv"])
+    files_with_gpu.sort(key=lambda f: f.stages['_gpu_recv'])
 
-    print(f"\n  GPU scheduling timeline:")
-    print(f"    {'File':<35} {'Queue Wait':>10} {'GPU Start':>12} {'GPU End':>12} {'GPU Dur':>10}")
-    print(f"    {'─'*35} {'─'*10} {'─'*12} {'─'*12} {'─'*10}")
+    print('\n  GPU scheduling timeline:')
+    print(f'    {"File":<35} {"Queue Wait":>10} {"GPU Start":>12} {"GPU End":>12} {"GPU Dur":>10}')
+    print(f'    {"─" * 35} {"─" * 10} {"─" * 12} {"─" * 12} {"─" * 10}')
 
-    t0 = files_with_gpu[0].stages.get("_dispatch", files_with_gpu[0].stages["_gpu_recv"])
+    t0 = files_with_gpu[0].stages.get('_dispatch', files_with_gpu[0].stages['_gpu_recv'])
     for fr in files_with_gpu:
-        queue_wait = fr.stages.get("2_cpu_to_gpu_queue", 0)
-        gpu_start = fr.stages["_gpu_recv"] - t0
-        gpu_end = fr.stages["_gpu_end"] - t0
+        queue_wait = fr.stages.get('2_cpu_to_gpu_queue', 0)
+        gpu_start = fr.stages['_gpu_recv'] - t0
+        gpu_end = fr.stages['_gpu_end'] - t0
         gpu_dur = gpu_end - gpu_start
-        print(f"    {fr.filename[:35]:<35} "
-              f"{_fmt_duration(queue_wait):>10} "
-              f"{_fmt_duration(gpu_start):>12} "
-              f"{_fmt_duration(gpu_end):>12} "
-              f"{_fmt_duration(gpu_dur):>10}")
+        print(
+            f'    {fr.filename[:35]:<35} '
+            f'{_fmt_duration(queue_wait):>10} '
+            f'{_fmt_duration(gpu_start):>12} '
+            f'{_fmt_duration(gpu_end):>12} '
+            f'{_fmt_duration(gpu_dur):>10}'
+        )
 
 
 # ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
-def write_reports(all_batches: list[BatchResult], output_dir: Path):
+def write_reports(
+    all_batches: list[BatchResult],
+    output_dir: Path,
+    corpus_total_audio_h: float | None = None,
+    corpus_name: str | None = None,
+):
     """Write CSV reports and final summary."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
     # 1. Per-file details CSV
-    csv_path = output_dir / f"benchmark_files_{timestamp}.csv"
-    with open(csv_path, "w", newline="") as f:
+    csv_path = output_dir / f'benchmark_files_{timestamp}.csv'
+    with open(csv_path, 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow([
-            "batch_size", "file_uuid", "filename", "audio_duration_s", "audio_hours",
-            "wall_elapsed_s", "status", "task_id",
-            "preprocess_s", "cpu_to_gpu_queue_s", "gpu_transcribe_s",
-            "gpu_to_post_queue_s", "total_to_gpu_end_s", "total_to_postprocess_s",
-        ])
+        writer.writerow(
+            [
+                'batch_size',
+                'file_uuid',
+                'filename',
+                'audio_duration_s',
+                'audio_hours',
+                'wall_elapsed_s',
+                'status',
+                'task_id',
+                'preprocess_s',
+                'cpu_to_gpu_queue_s',
+                'gpu_transcribe_s',
+                'gpu_to_post_queue_s',
+                'total_to_gpu_end_s',
+                'total_to_postprocess_s',
+            ]
+        )
         for batch in all_batches:
             for fr in batch.file_results:
-                writer.writerow([
-                    batch.batch_size, fr.uuid, fr.filename, f"{fr.duration_s:.0f}",
-                    f"{fr.duration_s/3600:.2f}",
-                    f"{fr.wall_elapsed:.1f}", fr.status, fr.task_id,
-                    fr.stages.get("1_preprocess", ""),
-                    fr.stages.get("2_cpu_to_gpu_queue", ""),
-                    fr.stages.get("3_gpu_transcribe", ""),
-                    fr.stages.get("4_gpu_to_post_queue", ""),
-                    fr.stages.get("total_to_gpu_end", ""),
-                    fr.stages.get("total_to_postprocess", ""),
-                ])
-    print(f"\nPer-file CSV: {csv_path}")
+                writer.writerow(
+                    [
+                        batch.batch_size,
+                        fr.uuid,
+                        fr.filename,
+                        f'{fr.duration_s:.0f}',
+                        f'{fr.duration_s / 3600:.2f}',
+                        f'{fr.wall_elapsed:.1f}',
+                        fr.status,
+                        fr.task_id,
+                        fr.stages.get('1_preprocess', ''),
+                        fr.stages.get('2_cpu_to_gpu_queue', ''),
+                        fr.stages.get('3_gpu_transcribe', ''),
+                        fr.stages.get('4_gpu_to_post_queue', ''),
+                        fr.stages.get('total_to_gpu_end', ''),
+                        fr.stages.get('total_to_postprocess', ''),
+                    ]
+                )
+    print(f'\nPer-file CSV: {csv_path}')
 
     # 2. Batch summary CSV
-    summary_path = output_dir / f"benchmark_summary_{timestamp}.csv"
-    with open(summary_path, "w", newline="") as f:
+    summary_path = output_dir / f'benchmark_summary_{timestamp}.csv'
+    with open(summary_path, 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow([
-            "batch_size", "batch_wall_s", "batch_wall_fmt",
-            "files_completed", "files_errored",
-            "avg_file_wall_s", "min_file_wall_s", "max_file_wall_s",
-            "avg_gpu_s", "min_gpu_s", "max_gpu_s",
-            "vram_peak_mb", "vram_avg_mb", "gpu_util_pct_avg",
-            "throughput_audio_hrs_per_wall_hr",
-            "speedup_vs_single",
-        ])
+        writer.writerow(
+            [
+                'batch_size',
+                'batch_wall_s',
+                'batch_wall_fmt',
+                'files_completed',
+                'files_errored',
+                'avg_file_wall_s',
+                'min_file_wall_s',
+                'max_file_wall_s',
+                'avg_gpu_s',
+                'min_gpu_s',
+                'max_gpu_s',
+                'vram_peak_mb',
+                'vram_avg_mb',
+                'gpu_util_pct_avg',
+                'throughput_audio_hrs_per_wall_hr',
+                'speedup_vs_single',
+            ]
+        )
         single_batch_wall = None
         for batch in all_batches:
-            completed = [fr for fr in batch.file_results if fr.status == "completed"]
+            completed = [fr for fr in batch.file_results if fr.status == 'completed']
             if not completed:
                 continue
             walls = [fr.wall_elapsed for fr in completed]
-            gpus = [fr.stages.get("3_gpu_transcribe", 0) for fr in completed if fr.stages]
+            gpus = [fr.stages.get('3_gpu_transcribe', 0) for fr in completed if fr.stages]
             total_audio_s = sum(fr.duration_s for fr in completed)
-            throughput = (total_audio_s / 3600) / (batch.wall_elapsed / 3600) if batch.wall_elapsed else 0
+            throughput = (
+                (total_audio_s / 3600) / (batch.wall_elapsed / 3600) if batch.wall_elapsed else 0
+            )
 
             if single_batch_wall is None:
                 single_batch_wall = batch.wall_elapsed
-            speedup = (single_batch_wall * len(completed)) / batch.wall_elapsed if batch.wall_elapsed else 0
+            speedup = (
+                (single_batch_wall * len(completed)) / batch.wall_elapsed
+                if batch.wall_elapsed
+                else 0
+            )
             avg_util = (
                 sum(s.utilization_pct for s in batch.vram_samples) / len(batch.vram_samples)
-                if batch.vram_samples else 0
+                if batch.vram_samples
+                else 0
             )
 
-            writer.writerow([
-                batch.batch_size, f"{batch.wall_elapsed:.1f}",
-                _fmt_duration(batch.wall_elapsed),
-                len(completed), len([fr for fr in batch.file_results if fr.status == "error"]),
-                f"{sum(walls)/len(walls):.1f}", f"{min(walls):.1f}", f"{max(walls):.1f}",
-                f"{sum(gpus)/len(gpus):.1f}" if gpus else "",
-                f"{min(gpus):.1f}" if gpus else "",
-                f"{max(gpus):.1f}" if gpus else "",
-                batch.vram_peak_mb, f"{batch.vram_avg_mb:.0f}", f"{avg_util:.0f}",
-                f"{throughput:.2f}", f"{speedup:.2f}",
-            ])
-    print(f"Summary CSV:  {summary_path}")
+            writer.writerow(
+                [
+                    batch.batch_size,
+                    f'{batch.wall_elapsed:.1f}',
+                    _fmt_duration(batch.wall_elapsed),
+                    len(completed),
+                    len([fr for fr in batch.file_results if fr.status == 'error']),
+                    f'{sum(walls) / len(walls):.1f}',
+                    f'{min(walls):.1f}',
+                    f'{max(walls):.1f}',
+                    f'{sum(gpus) / len(gpus):.1f}' if gpus else '',
+                    f'{min(gpus):.1f}' if gpus else '',
+                    f'{max(gpus):.1f}' if gpus else '',
+                    batch.vram_peak_mb,
+                    f'{batch.vram_avg_mb:.0f}',
+                    f'{avg_util:.0f}',
+                    f'{throughput:.2f}',
+                    f'{speedup:.2f}',
+                ]
+            )
+    print(f'Summary CSV:  {summary_path}')
 
     # 3. VRAM timeline CSV
-    vram_path = output_dir / f"benchmark_vram_{timestamp}.csv"
-    with open(vram_path, "w", newline="") as f:
+    vram_path = output_dir / f'benchmark_vram_{timestamp}.csv'
+    with open(vram_path, 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(["batch_size", "elapsed_s", "used_mb", "total_mb", "free_mb", "util_pct", "temp_c"])
+        writer.writerow(
+            ['batch_size', 'elapsed_s', 'used_mb', 'total_mb', 'free_mb', 'util_pct', 'temp_c']
+        )
         for batch in all_batches:
             if batch.vram_samples:
                 t0 = batch.vram_samples[0].timestamp
                 for s in batch.vram_samples:
-                    writer.writerow([
-                        batch.batch_size,
-                        f"{s.timestamp - t0:.1f}",
-                        s.used_mb, s.total_mb, s.free_mb,
-                        s.utilization_pct, s.temp_c,
-                    ])
-    print(f"VRAM CSV:     {vram_path}")
+                    writer.writerow(
+                        [
+                            batch.batch_size,
+                            f'{s.timestamp - t0:.1f}',
+                            s.used_mb,
+                            s.total_mb,
+                            s.free_mb,
+                            s.utilization_pct,
+                            s.temp_c,
+                        ]
+                    )
+    print(f'VRAM CSV:     {vram_path}')
 
     # 4. Final comparison table
-    _print_final_summary(all_batches, single_batch_wall)
+    _print_final_summary(
+        all_batches,
+        single_batch_wall,
+        corpus_total_audio_h=corpus_total_audio_h,
+        corpus_name=corpus_name,
+    )
 
 
-def _print_final_summary(all_batches: list[BatchResult], single_wall: float | None):
+def _print_final_summary(
+    all_batches: list[BatchResult],
+    single_wall: float | None,
+    corpus_total_audio_h: float | None = None,
+    corpus_name: str | None = None,
+):
     """Print the final scaling comparison."""
-    print(f"\n{'='*100}")
-    print("PARALLEL SCALING SUMMARY")
-    print(f"{'='*100}")
-    print(f"{'Batch':>6} {'Wall Time':>12} {'Avg/File':>12} {'GPU Avg':>12} "
-          f"{'VRAM Peak':>10} {'GPU Util%':>10} {'Throughput':>12} {'Speedup':>8}")
-    print(f"{'─'*6} {'─'*12} {'─'*12} {'─'*12} {'─'*10} {'─'*10} {'─'*12} {'─'*8}")
+    print(f'\n{"=" * 100}')
+    print('PARALLEL SCALING SUMMARY')
+    if corpus_name:
+        print(f'Corpus: {corpus_name}  ({corpus_total_audio_h:.2f}h total audio)')
+    print(f'{"=" * 100}')
+    print(
+        f'{"Batch":>6} {"Wall Time":>12} {"Avg/File":>12} {"GPU Avg":>12} '
+        f'{"VRAM Peak":>10} {"GPU Util%":>10} {"Throughput":>12} {"Speedup":>8}'
+    )
+    print(f'{"─" * 6} {"─" * 12} {"─" * 12} {"─" * 12} {"─" * 10} {"─" * 10} {"─" * 12} {"─" * 8}')
 
     for batch in all_batches:
-        completed = [fr for fr in batch.file_results if fr.status == "completed"]
+        completed = [fr for fr in batch.file_results if fr.status == 'completed']
         if not completed:
             continue
         walls = [fr.wall_elapsed for fr in completed]
-        gpus = [fr.stages.get("3_gpu_transcribe", 0) for fr in completed if fr.stages]
+        gpus = [fr.stages.get('3_gpu_transcribe', 0) for fr in completed if fr.stages]
         total_audio_s = sum(fr.duration_s for fr in completed)
-        throughput = (total_audio_s / 3600) / (batch.wall_elapsed / 3600) if batch.wall_elapsed else 0
+        throughput = (
+            (total_audio_s / 3600) / (batch.wall_elapsed / 3600) if batch.wall_elapsed else 0
+        )
         avg_util = (
             sum(s.utilization_pct for s in batch.vram_samples) / len(batch.vram_samples)
-            if batch.vram_samples else 0
+            if batch.vram_samples
+            else 0
         )
 
-        speedup = ""
+        speedup = ''
         if single_wall:
             sp = (single_wall * len(completed)) / batch.wall_elapsed if batch.wall_elapsed else 0
-            speedup = f"{sp:.2f}x"
+            speedup = f'{sp:.2f}x'
 
-        avg_gpu = _fmt_duration(sum(gpus) / len(gpus)) if gpus else "N/A"
+        avg_gpu = _fmt_duration(sum(gpus) / len(gpus)) if gpus else 'N/A'
 
-        print(f"{batch.batch_size:>6} "
-              f"{_fmt_duration(batch.wall_elapsed):>12} "
-              f"{_fmt_duration(sum(walls)/len(walls)):>12} "
-              f"{avg_gpu:>12} "
-              f"{batch.vram_peak_mb:>8}MB "
-              f"{avg_util:>9.0f}% "
-              f"{throughput:>10.2f}x "
-              f"{speedup:>8}")
+        print(
+            f'{batch.batch_size:>6} '
+            f'{_fmt_duration(batch.wall_elapsed):>12} '
+            f'{_fmt_duration(sum(walls) / len(walls)):>12} '
+            f'{avg_gpu:>12} '
+            f'{batch.vram_peak_mb:>8}MB '
+            f'{avg_util:>9.0f}% '
+            f'{throughput:>10.2f}x '
+            f'{speedup:>8}'
+        )
 
-    print(f"{'='*100}")
-    print(f"Throughput = audio hours processed per wall-clock hour")
-    print(f"Speedup = ideal sequential time / actual batch time (linear=batch_size)")
+    print(f'{"=" * 100}')
+    print('Throughput = audio hours processed per wall-clock hour')
+    print('Speedup = ideal sequential time / actual batch time (linear=batch_size)')
+    if corpus_total_audio_h:
+        # Full-corpus aggregate RTF: the whitepaper headline metric
+        for batch in all_batches:
+            completed = [fr for fr in batch.file_results if fr.status == 'completed']
+            if not completed or not batch.wall_elapsed:
+                continue
+            submitted_audio_h = sum(fr.duration_s for fr in batch.file_results) / 3600
+            if abs(submitted_audio_h - corpus_total_audio_h) < 0.5:
+                full_rtf = corpus_total_audio_h / (batch.wall_elapsed / 3600)
+                print(
+                    f'\n*** Full-corpus aggregate RTF (batch={batch.batch_size}): '
+                    f'{full_rtf:.1f}x  '
+                    f'({corpus_total_audio_h:.1f}h audio in {_fmt_duration(batch.wall_elapsed)}) ***'
+                )
 
     # Reprocessing projection based on measured throughput
     _print_reprocess_projection(all_batches)
@@ -746,9 +886,9 @@ def _print_final_summary(all_batches: list[BatchResult], single_wall: float | No
 def _print_reprocess_projection(all_batches: list[BatchResult]):
     """Query DB for total audio hours and project reprocessing time."""
     rows = db_query(
-        "SELECT COUNT(*), COALESCE(SUM(duration), 0), "
-        "COALESCE(AVG(duration), 0), COALESCE(MIN(duration), 0), "
-        "COALESCE(MAX(duration), 0) "
+        'SELECT COUNT(*), COALESCE(SUM(duration), 0), '
+        'COALESCE(AVG(duration), 0), COALESCE(MIN(duration), 0), '
+        'COALESCE(MAX(duration), 0) '
         "FROM media_file WHERE status = 'completed' AND duration > 0"
     )
     if not rows:
@@ -764,43 +904,43 @@ def _print_reprocess_projection(all_batches: list[BatchResult]):
 
     # Get duration distribution
     dist_rows = db_query(
-        "SELECT "
-        "  CASE "
+        'SELECT '
+        '  CASE '
         "    WHEN duration < 300 THEN '< 5min' "
         "    WHEN duration < 1800 THEN '5-30min' "
         "    WHEN duration < 3600 THEN '30-60min' "
         "    WHEN duration < 7200 THEN '1-2hr' "
         "    WHEN duration < 10800 THEN '2-3hr' "
         "    ELSE '3hr+' "
-        "  END AS bucket, "
-        "  COUNT(*), SUM(duration) / 3600.0 "
-        "FROM media_file "
+        '  END AS bucket, '
+        '  COUNT(*), SUM(duration) / 3600.0 '
+        'FROM media_file '
         "WHERE status = 'completed' AND duration > 0 "
-        "GROUP BY 1 ORDER BY MIN(duration)"
+        'GROUP BY 1 ORDER BY MIN(duration)'
     )
 
-    print(f"\n{'='*90}")
-    print("REPROCESSING PROJECTION")
-    print(f"{'='*90}")
-    print(f"  Total completed files:     {total_files}")
-    print(f"  Total audio duration:      {total_hours:.1f} hours ({total_hours/24:.1f} days)")
-    print(f"  Average file duration:     {_fmt_duration(avg_duration_s)}")
+    print(f'\n{"=" * 90}')
+    print('REPROCESSING PROJECTION')
+    print(f'{"=" * 90}')
+    print(f'  Total completed files:     {total_files}')
+    print(f'  Total audio duration:      {total_hours:.1f} hours ({total_hours / 24:.1f} days)')
+    print(f'  Average file duration:     {_fmt_duration(avg_duration_s)}')
 
     if dist_rows:
-        print(f"\n  Duration Distribution:")
-        print(f"    {'Bucket':<12} {'Files':>8} {'Hours':>10}")
-        print(f"    {'─'*12} {'─'*8} {'─'*10}")
+        print('\n  Duration Distribution:')
+        print(f'    {"Bucket":<12} {"Files":>8} {"Hours":>10}')
+        print(f'    {"─" * 12} {"─" * 8} {"─" * 10}')
         for row in dist_rows:
             bucket = row[0].strip()
             count = int(row[1].strip())
             hours = float(row[2].strip())
-            print(f"    {bucket:<12} {count:>8} {hours:>9.1f}")
+            print(f'    {bucket:<12} {count:>8} {hours:>9.1f}')
 
     # Use best measured throughput for projections
     best_throughput = 0
     best_batch = 0
     for batch in all_batches:
-        completed = [fr for fr in batch.file_results if fr.status == "completed"]
+        completed = [fr for fr in batch.file_results if fr.status == 'completed']
         if not completed or batch.wall_elapsed == 0:
             continue
         total_audio_s = sum(fr.duration_s for fr in completed)
@@ -813,24 +953,28 @@ def _print_reprocess_projection(all_batches: list[BatchResult]):
     single_throughput = 0
     for batch in all_batches:
         if batch.batch_size == 1:
-            completed = [fr for fr in batch.file_results if fr.status == "completed"]
+            completed = [fr for fr in batch.file_results if fr.status == 'completed']
             if completed and batch.wall_elapsed > 0:
                 total_audio_s = sum(fr.duration_s for fr in completed)
                 single_throughput = (total_audio_s / 3600) / (batch.wall_elapsed / 3600)
             break
 
     if single_throughput > 0 or best_throughput > 0:
-        print(f"\n  Projected Reprocessing Times:")
-        print(f"    {'Config':<35} {'Throughput':>12} {'Est. Time':>12}")
-        print(f"    {'─'*35} {'─'*12} {'─'*12}")
+        print('\n  Projected Reprocessing Times:')
+        print(f'    {"Config":<35} {"Throughput":>12} {"Est. Time":>12}')
+        print(f'    {"─" * 35} {"─" * 12} {"─" * 12}')
 
         if single_throughput > 0:
             est_hrs = total_hours / single_throughput
-            print(f"    {'1 worker (measured)':35} {single_throughput:>10.1f}x {_fmt_duration(est_hrs * 3600):>12}")
+            print(
+                f'    {"1 worker (measured)":35} {single_throughput:>10.1f}x {_fmt_duration(est_hrs * 3600):>12}'
+            )
 
         if best_throughput > 0 and best_batch > 1:
             est_hrs = total_hours / best_throughput
-            print(f"    {f'{best_batch} workers (measured)':35} {best_throughput:>10.1f}x {_fmt_duration(est_hrs * 3600):>12}")
+            print(
+                f'    {f"{best_batch} workers (measured)":35} {best_throughput:>10.1f}x {_fmt_duration(est_hrs * 3600):>12}'
+            )
 
         # Extrapolate for higher worker counts (sub-linear scaling)
         if single_throughput > 0:
@@ -841,9 +985,11 @@ def _print_reprocess_projection(all_batches: list[BatchResult]):
                 eff = workers * (1 / (1 + 0.15 * (workers - 1)))
                 projected = single_throughput * eff
                 est_hrs = total_hours / projected
-                print(f"    {f'{workers} workers (projected)':35} {projected:>10.1f}x {_fmt_duration(est_hrs * 3600):>12}")
+                print(
+                    f'    {f"{workers} workers (projected)":35} {projected:>10.1f}x {_fmt_duration(est_hrs * 3600):>12}'
+                )
 
-    print(f"{'='*90}")
+    print(f'{"=" * 90}')
 
 
 # ---------------------------------------------------------------------------
@@ -851,111 +997,171 @@ def _print_reprocess_projection(all_batches: list[BatchResult]):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Progressive parallel transcription benchmark",
+        description='Progressive parallel transcription benchmark',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--batches", default="1,3,5,8,12,20",
-        help="Comma-separated batch sizes to test (default: 1,3,5,8,12,20)",
+        '--batches',
+        default='1,3,5,8,12,20',
+        help='Comma-separated batch sizes to test (default: 1,3,5,8,12,20)',
     )
     parser.add_argument(
-        "--output", default="benchmarks",
-        help="Output directory for CSV results (default: benchmarks/)",
+        '--output',
+        default='benchmarks',
+        help='Output directory for CSV results (default: benchmarks/)',
     )
     parser.add_argument(
-        "--gpu-id", type=int, default=GPU_DEVICE_ID,
-        help=f"Host GPU device ID to monitor VRAM (default: {GPU_DEVICE_ID})",
+        '--gpu-id',
+        type=int,
+        default=GPU_DEVICE_ID,
+        help=f'Host GPU device ID to monitor VRAM (default: {GPU_DEVICE_ID})',
     )
     parser.add_argument(
-        "--cooldown", type=int, default=30,
-        help="Seconds to wait between batches for GPU to settle (default: 30)",
+        '--cooldown',
+        type=int,
+        default=30,
+        help='Seconds to wait between batches for GPU to settle (default: 30)',
     )
     parser.add_argument(
-        "--min-duration", type=int, default=60,
-        help="Minimum file duration in seconds for selection (default: 60 = 1 minute)",
+        '--min-duration',
+        type=int,
+        default=60,
+        help='Minimum file duration in seconds for selection (default: 60 = 1 minute)',
     )
     parser.add_argument(
-        "--max-duration", type=int, default=0,
-        help="Maximum file duration in seconds (default: 0 = no limit). "
-             "Use with --min-duration to select files in a narrow range for fair comparison.",
+        '--max-duration',
+        type=int,
+        default=0,
+        help='Maximum file duration in seconds (default: 0 = no limit). '
+        'Use with --min-duration to select files in a narrow range for fair comparison.',
     )
     parser.add_argument(
-        "--file-uuids", default="",
-        help="Comma-separated UUIDs to use instead of auto-selecting from DB. "
-             "Ensures consistent file selection across test runs.",
+        '--file-uuids',
+        default='',
+        help='Comma-separated UUIDs to use instead of auto-selecting from DB. '
+        'Ensures consistent file selection across test runs.',
     )
     parser.add_argument(
-        "--sequential", action="store_true",
-        help="Process each file individually in sequence (for duration curve testing). "
-             "Ignores --batches and runs batch_size=1 for each file in the list.",
+        '--sequential',
+        action='store_true',
+        help='Process each file individually in sequence (for duration curve testing). '
+        'Ignores --batches and runs batch_size=1 for each file in the list.',
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Show what would be done without triggering reprocessing",
+        '--corpus-file',
+        default='',
+        help='Path to corpus JSON (e.g. docs/benchmark-corpus/corpus.json). '
+        'Loads a fixed, ordered file list for repeatable whitepaper-quality runs. '
+        'Overrides --file-uuids and auto-selection; --batches N takes the first N files '
+        'from the corpus ordered by duration ascending.',
+    )
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Show what would be done without triggering reprocessing',
     )
     args = parser.parse_args()
 
-    batch_sizes = [int(x.strip()) for x in args.batches.split(",")]
+    batch_sizes = [int(x.strip()) for x in args.batches.split(',')]
     max_files = max(batch_sizes)
     output_dir = Path(args.output)
+    corpus: dict = {}
 
-    print("=" * 80)
-    print("PARALLEL TRANSCRIPTION BENCHMARK")
-    print("=" * 80)
-    print(f"Batch sizes:    {batch_sizes}")
-    print(f"GPU monitor:    GPU {args.gpu_id}")
-    print(f"Output dir:     {output_dir}")
-    print(f"Backend:        {BACKEND_URL}")
+    print('=' * 80)
+    print('PARALLEL TRANSCRIPTION BENCHMARK')
+    print('=' * 80)
+    print(f'Batch sizes:    {batch_sizes}')
+    print(f'GPU monitor:    GPU {args.gpu_id}')
+    print(f'Output dir:     {output_dir}')
+    print(f'Backend:        {BACKEND_URL}')
 
-    # Get files — either from explicit UUIDs or auto-select from DB
-    if args.file_uuids:
-        uuids = [u.strip() for u in args.file_uuids.split(",") if u.strip()]
-        print(f"\nUsing {len(uuids)} specified files...")
+    # Get files — corpus file (preferred) > explicit UUIDs > auto-select from DB
+    if args.corpus_file:
+        corpus_path = Path(args.corpus_file)
+        if not corpus_path.exists():
+            print(f'ERROR: corpus file not found: {corpus_path}', file=sys.stderr)
+            sys.exit(1)
+        with open(corpus_path) as fh:
+            corpus = json.load(fh)
+        corpus_files = corpus['files']
+        total_h = corpus.get('total_audio_hours', sum(f['duration_s'] for f in corpus_files) / 3600)
+        print(
+            f'\nCorpus: {corpus_path.name}  —  {len(corpus_files)} files, '
+            f'{total_h:.1f}h total audio'
+        )
+        tier_counts = {}
+        for f in corpus_files:
+            tier_counts[f['tier']] = tier_counts.get(f['tier'], 0) + 1
+        tier_info = corpus.get('tiers', {})
+        for t, cnt in sorted(tier_counts.items()):
+            label = tier_info.get(str(t), {}).get('label', f'tier {t}')
+            rng = tier_info.get(str(t), {}).get('range', '')
+            print(f'  Tier {t} ({label:10s} {rng}): {cnt} files')
+        # Map corpus fields to the internal format; preserve corpus order (duration asc)
+        files = [
+            {
+                'uuid': f['uuid'],
+                'filename': f['filename'],
+                'duration': float(f['duration_s']),
+                'file_size': int(f.get('size_mb', 0)) * 1024 * 1024,
+                'tier': f.get('tier'),
+            }
+            for f in corpus_files
+        ]
+    elif args.file_uuids:
+        uuids = [u.strip() for u in args.file_uuids.split(',') if u.strip()]
+        print(f'\nUsing {len(uuids)} specified files...')
         uuid_list = "','".join(uuids)
         rows = db_query(
-            f"SELECT uuid, filename, duration, file_size "
+            f'SELECT uuid, filename, duration, file_size '
             f"FROM media_file WHERE uuid IN ('{uuid_list}') AND file_size > 0 "
-            f"ORDER BY duration DESC"
+            f'ORDER BY duration DESC'
         )
         files = []
         for row in rows:
-            files.append({
-                "uuid": row[0].strip(), "filename": row[1].strip(),
-                "duration": float(row[2].strip()), "file_size": int(row[3].strip()),
-            })
+            files.append(
+                {
+                    'uuid': row[0].strip(),
+                    'filename': row[1].strip(),
+                    'duration': float(row[2].strip()),
+                    'file_size': int(row[3].strip()),
+                }
+            )
     else:
-        dur_desc = f">= {args.min_duration}s"
+        dur_desc = f'>= {args.min_duration}s'
         if args.max_duration > 0:
-            dur_desc += f", <= {args.max_duration}s"
-        print(f"\nFetching {max_files} longest completed files ({dur_desc})...")
+            dur_desc += f', <= {args.max_duration}s'
+        print(f'\nFetching {max_files} longest completed files ({dur_desc})...')
         files = get_benchmark_files(
-            max_files, min_duration=args.min_duration, max_duration=args.max_duration,
+            max_files,
+            min_duration=args.min_duration,
+            max_duration=args.max_duration,
         )
     if len(files) < max_files:
-        print(f"WARNING: Only {len(files)} files available (need {max_files})")
+        print(f'WARNING: Only {len(files)} files available (need {max_files})')
         # Trim batch sizes to what we have
         batch_sizes = [b for b in batch_sizes if b <= len(files)]
 
-    print(f"Found {len(files)} files:")
+    print(f'Found {len(files)} files:')
     for i, f in enumerate(files):
-        hrs = f["duration"] / 3600
-        print(f"  {i+1:>2}. {f['filename'][:55]:<55} {hrs:.1f}h ({f['duration']:.0f}s)")
+        hrs = f['duration'] / 3600
+        print(f'  {i + 1:>2}. {f["filename"][:55]:<55} {hrs:.1f}h ({f["duration"]:.0f}s)')
 
     if args.dry_run:
-        print("\n[DRY RUN] Would run these batches:")
+        print('\n[DRY RUN] Would run these batches:')
         for bs in batch_sizes:
-            print(f"  Batch {bs}: {', '.join(f['filename'][:30] for f in files[:bs])}")
+            print(f'  Batch {bs}: {", ".join(f["filename"][:30] for f in files[:bs])}')
         return
 
     # Authenticate
-    print("\nAuthenticating...")
+    print('\nAuthenticating...')
     token = get_valid_token()
-    print("Authenticated.")
+    print('Authenticated.')
 
     # Connect to Redis
     r = redis.from_url(REDIS_URL, decode_responses=False)
     r.ping()
-    print("Redis connected.")
+    print('Redis connected.')
 
     # Sequential mode: process each file individually (for duration curve testing)
     if args.sequential:
@@ -966,12 +1172,12 @@ def main():
     file_offset = 0
     for i, batch_size in enumerate(batch_sizes):
         if i > 0:
-            print(f"\n  Cooling down {args.cooldown}s before next batch...")
+            print(f'\n  Cooling down {args.cooldown}s before next batch...')
             time.sleep(args.cooldown)
 
         # In sequential mode, advance through the file list one at a time
         if args.sequential:
-            batch_files = files[file_offset:file_offset + 1]
+            batch_files = files[file_offset : file_offset + 1]
             file_offset += 1
             if not batch_files:
                 break
@@ -982,10 +1188,14 @@ def main():
         all_batches.append(batch_result)
 
     # Write reports
-    write_reports(all_batches, output_dir)
+    corpus_total_h = corpus.get('total_audio_hours') if args.corpus_file else None
+    corpus_label = Path(args.corpus_file).name if args.corpus_file else None
+    write_reports(
+        all_batches, output_dir, corpus_total_audio_h=corpus_total_h, corpus_name=corpus_label
+    )
 
-    print(f"\nBenchmark complete at {_ts()}")
+    print(f'\nBenchmark complete at {_ts()}')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

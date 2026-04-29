@@ -1,0 +1,159 @@
+{
+  "version": "1",
+  "description": "OpenTranscribe GPU concurrency benchmark corpus. 16 files across 4 duration tiers, all sourced from existing MinIO deployment. UUIDs are stable identifiers; files are reprocessed in-place via the API — no copying required.",
+  "model": "large-v3-turbo",
+  "total_audio_seconds": 103197,
+  "total_audio_hours": 28.67,
+  "tiers": {
+    "1": {"label": "short",      "range": "5-25 min",  "count": 4},
+    "2": {"label": "medium",     "range": "31-60 min", "count": 4},
+    "3": {"label": "long",       "range": "1.5-3h",    "count": 4},
+    "4": {"label": "extra-long", "range": "3h+",       "count": 4}
+  },
+  "files": [
+    {
+      "tier": 1,
+      "uuid": "5bbfb6cf-3e55-4cd6-8a5e-4f3312ad0019",
+      "filename": "PyTorch at Tesla - Andrej Karpathy, Tesla",
+      "duration_s": 662,
+      "duration_h": 0.18,
+      "size_mb": 23,
+      "notes": "technical talk, single speaker"
+    },
+    {
+      "tier": 1,
+      "uuid": "eb191ff0-4ad7-4686-8093-6e2eedb15834",
+      "filename": "The Secret Airships That Could Go 200 mph and Other Aviation Conspiracies",
+      "duration_s": 901,
+      "duration_h": 0.25,
+      "size_mb": 40,
+      "notes": "documentary narration"
+    },
+    {
+      "tier": 1,
+      "uuid": "a196fce1-5393-4532-8270-1d2d6474ffc3",
+      "filename": "Joe Rogan Experience #211 - Ari Shaffir (Part 2)",
+      "duration_s": 1182,
+      "duration_h": 0.33,
+      "size_mb": 68,
+      "notes": "2 speakers, comedy podcast segment"
+    },
+    {
+      "tier": 1,
+      "uuid": "a6639bee-dad8-4910-83b0-5f88907772b7",
+      "filename": "Joe Rogan Experience #124 - Michael Schiavello (Part 2)",
+      "duration_s": 1382,
+      "duration_h": 0.38,
+      "size_mb": 69,
+      "notes": "2 speakers, interview"
+    },
+    {
+      "tier": 2,
+      "uuid": "ce471b5a-b4ae-45e5-8905-af7420d50f79",
+      "filename": "0.5h_1899s.wav",
+      "duration_s": 1889,
+      "duration_h": 0.52,
+      "size_mb": 57,
+      "notes": "synthetic benchmark anchor file, matches benchmark/test_audio/ baseline"
+    },
+    {
+      "tier": 2,
+      "uuid": "541b4bda-241a-4e2c-8831-20e8f3c31e53",
+      "filename": "Joe Rogan Experience #13 - Eddie Bravo",
+      "duration_s": 2589,
+      "duration_h": 0.72,
+      "size_mb": 70,
+      "notes": "2 speakers, early JRE"
+    },
+    {
+      "tier": 2,
+      "uuid": "126a9e15-e1b5-4630-b432-4a64b07812a9",
+      "filename": "Joe Rogan Experience #140 - Brendon Walsh (Part 2)",
+      "duration_s": 3369,
+      "duration_h": 0.94,
+      "size_mb": 185,
+      "notes": "2 speakers"
+    },
+    {
+      "tier": 2,
+      "uuid": "bf5858cf-cf43-4f95-bd1d-a45cfb72ef62",
+      "filename": "Joe Rogan Experience #94 - Joey Diaz (Part 4)",
+      "duration_s": 3579,
+      "duration_h": 0.99,
+      "size_mb": 174,
+      "notes": "2 speakers"
+    },
+    {
+      "tier": 3,
+      "uuid": "6089a8f2-0ef1-4e45-a3eb-7bf5fd031d32",
+      "filename": "Joe Rogan Experience #1509 - Abigail Shrier",
+      "duration_s": 6323,
+      "duration_h": 1.76,
+      "size_mb": 310,
+      "notes": "2 speakers, interviews"
+    },
+    {
+      "tier": 3,
+      "uuid": "5d351168-af6f-4bb7-a3b6-3b77b8c1776e",
+      "filename": "JRE MMA Show #66 with Michelle Waterson",
+      "duration_s": 6570,
+      "duration_h": 1.82,
+      "size_mb": 323,
+      "notes": "2 speakers, MMA interview"
+    },
+    {
+      "tier": 3,
+      "uuid": "ce3965b9-4372-4643-a206-35cb6c6c9c9a",
+      "filename": "Joe Rogan Experience #1362 - Lenny Clarke",
+      "duration_s": 6668,
+      "duration_h": 1.85,
+      "size_mb": 425,
+      "notes": "2 speakers"
+    },
+    {
+      "tier": 3,
+      "uuid": "ccee9e47-e879-4ba1-9b59-648c79a444a0",
+      "filename": "Joe Rogan Experience #1461 - Owen Smith",
+      "duration_s": 10277,
+      "duration_h": 2.85,
+      "size_mb": 320,
+      "notes": "2 speakers"
+    },
+    {
+      "tier": 4,
+      "uuid": "4824a0ab-1a3c-41f4-98e9-9a4547f479f0",
+      "filename": "Joe Rogan Experience #1609 - Elon Musk",
+      "duration_s": 12265,
+      "duration_h": 3.41,
+      "size_mb": 287,
+      "notes": "2 speakers, high-profile interview"
+    },
+    {
+      "tier": 4,
+      "uuid": "7dc3ffbe-bdb3-4bc9-8d13-f78cd5d251ad",
+      "filename": "Joe Rogan Experience #1393 - James Wilks & Chris Kresser - The Game Changers Debate",
+      "duration_s": 13329,
+      "duration_h": 3.70,
+      "size_mb": 673,
+      "notes": "3 speakers, debate format"
+    },
+    {
+      "tier": 4,
+      "uuid": "28506325-0e30-40b1-a300-47f4ab6482e2",
+      "filename": "Joe Rogan Experience #1769 - Jordan Peterson",
+      "duration_s": 15168,
+      "duration_h": 4.21,
+      "size_mb": 347,
+      "notes": "2 speakers, extended interview"
+    },
+    {
+      "tier": 4,
+      "uuid": "3e313bbd-924f-4a4b-9584-fa24532b9a01",
+      "filename": "Joe Rogan Experience #1907 - Protect Our Parks 6",
+      "duration_s": 17044,
+      "duration_h": 4.73,
+      "size_mb": 449,
+      "notes": "4+ speakers, group discussion — longest file in corpus"
+    }
+  ]
+}

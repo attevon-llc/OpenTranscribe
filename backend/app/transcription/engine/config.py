@@ -84,7 +84,7 @@ class EngineConfig:
             diarizer_backend=os.getenv("ENGINE_DIARIZER_BACKEND", "pyannote"),
             precompute_vad=os.getenv("ENGINE_PRECOMPUTE_VAD", "false").lower() == "true",
             gpu_split=os.getenv("ENGINE_GPU_SPLIT", "false").lower() == "true",
-            shared_volume_path=os.getenv("ENGINE_SHARED_VOLUME_PATH", "/tmp/transcription"),  # noqa: S108  # nosec B108
+            shared_volume_path=os.getenv("ENGINE_SHARED_VOLUME_PATH", "/tmp"),  # noqa: S108  # nosec B108
         )
         for k, v in engine_overrides.items():
             if hasattr(engine, k):
@@ -162,7 +162,7 @@ class EngineConfig:
             diarizer_backend=snapshot.get("diarizer_backend", "pyannote"),
             precompute_vad=snapshot.get("precompute_vad", False),
             gpu_split=snapshot.get("gpu_split", False),
-            shared_volume_path=snapshot.get("shared_volume_path", "/tmp/transcription"),  # noqa: S108  # nosec B108
+            shared_volume_path=snapshot.get("shared_volume_path", "/tmp"),  # noqa: S108  # nosec B108
         )
         engine._transcription_config = tc
         return engine

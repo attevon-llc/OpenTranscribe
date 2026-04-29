@@ -1,0 +1,285 @@
+"""Engine stage implementations.
+
+Three stages mirror the existing 3-stage Celery chain:
+- _PreprocessStage  → cpu queue Stage 1
+- _GpuStage         → gpu queue Stage 2
+- _FinalizeStage    → cpu queue Stage 3
+
+In Phase 1a, _GpuStage combines the full pipeline (identical to
+TranscriptionPipeline.process) so Engine.process() is byte-equal.
+Phase 1b splits preprocess and finalize into the proper stages.
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+import time
+from typing import TYPE_CHECKING
+from typing import Any
+
+import numpy as np
+
+if TYPE_CHECKING:
+    from app.transcription.engine.config import EngineConfig
+    from app.transcription.engine.job import JobResult
+    from app.transcription.engine.job import JobSpec
+    from app.transcription.engine.progress import ProgressCallback
+
+logger = logging.getLogger(__name__)
+
+
+class _GpuStage:
+    """Combined GPU + CPU stage (Phase 1a).
+
+    Replicates TranscriptionPipeline.process() exactly to guarantee
+    byte-identical output. Phase 1b will split this into three separate stages.
+    """
+
+    def run(
+        self,
+        job: JobSpec,
+        config: EngineConfig,
+        progress_callback: ProgressCallback | None = None,
+    ) -> JobResult:
+        """Run the full pipeline on a single file, producing a JobResult."""
+        from app.transcription.engine.job import JobResult
+        from app.transcription.engine.progress import emit
+        from app.transcription.model_manager import ModelManager
+        from app.utils.hardware_detection import detect_hardware
+        from app.utils.vram_profiler import VRAMProfiler
+
+        tc = config.transcription_config
+        pipeline_start = time.perf_counter()
+        profiler = VRAMProfiler()
+        hw = detect_hardware()
+        manager = ModelManager.get_instance()
+
+        profiler.snapshot("pipeline_start")
+
+        # Steps 1+2: Load audio and ensure model is warm in parallel
+        emit(progress_callback, 0.42, "Loading audio", "preprocess")
+        audio_result: list = [None]
+        audio_error: list = [None]
+
+        def _load_audio():
+            try:
+                from app.transcription.audio import load_audio
+
+                audio_result[0] = load_audio(job.audio_path)
+            except Exception as e:
+                audio_error[0] = e
+
+        audio_thread = threading.Thread(target=_load_audio, name="audio-load", daemon=True)
+        audio_thread.start()
+
+        if tc.concurrent_requests > 1:
+            _wait_for_vram(1500, "transcriber_load")
+
+        with profiler.step("model_load_transcriber"):
+            transcriber = manager.get_transcriber(tc)
+        audio_thread.join()
+
+        if audio_error[0]:
+            raise audio_error[0]
+        audio: np.ndarray = audio_result[0]
+
+        profiler.snapshot("after_transcriber_loaded")
+
+        # Overlap diarizer load with transcription when single-request mode
+        diarizer_preload_thread: threading.Thread | None = None
+        if tc.enable_diarization and tc.concurrent_requests <= 1:
+
+            def _preload_diarizer() -> None:
+                try:
+                    manager.get_diarizer(tc)
+                except Exception as preload_err:
+                    logger.debug(f"Diarizer preload (non-fatal, will retry inline): {preload_err}")
+
+            diarizer_preload_thread = threading.Thread(
+                target=_preload_diarizer, name="diarizer-preload", daemon=True
+            )
+            diarizer_preload_thread.start()
+
+        # Transcribe
+        emit(progress_callback, 0.43, "Running AI transcription", "transcribe")
+        step_start = time.perf_counter()
+        with profiler.step("transcription"):
+            transcript = transcriber.transcribe(audio)
+        logger.info(
+            f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
+        )
+
+        if diarizer_preload_thread is not None:
+            diarizer_preload_thread.join()
+
+        if not transcript.get("segments"):
+            logger.warning("Transcription produced no segments")
+            return JobResult(
+                segments=[],
+                language=transcript.get("language", ""),
+                stage_timings={"transcription": time.perf_counter() - pipeline_start},
+            )
+
+        if tc.enable_diarization:
+            result_dict, diarize_df = self._run_diarization(
+                audio, transcript, profiler, hw, tc, manager, progress_callback
+            )
+        else:
+            result_dict, diarize_df = self._skip_diarization(transcript, tc)
+
+        # Re-enable TF32 after diarization (PyAnnote's fix_reproducibility disables it)
+        if tc.device == "cuda":
+            try:
+                import torch
+
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+            except Exception as e:
+                logger.debug(f"TF32 re-enable skipped: {e}")
+
+        # Cleanup
+        hw.log_vram_usage("before final pipeline cleanup")
+        audio_duration = len(audio) / 16000 if audio is not None else 0.0
+        if diarize_df is not None and len(diarize_df) > 0:
+            num_speakers = int(np.unique(diarize_df.speaker).size)
+        else:
+            num_speakers = 1 if not tc.enable_diarization else 0
+        del diarize_df, audio
+        hw.optimize_memory_usage()
+        hw.log_vram_usage("after final pipeline cleanup")
+
+        profiler.log_report()
+        if job.task_id:
+            profiler.save_to_redis(job.task_id, audio_duration, num_speakers)
+
+        elapsed = time.perf_counter() - pipeline_start
+        logger.info(
+            f"TIMING: Engine._GpuStage.run TOTAL completed in {elapsed:.3f}s - "
+            f"{len(result_dict.get('segments', []))} segments, "
+            f"language={result_dict.get('language', 'unknown')}"
+        )
+
+        return JobResult(
+            segments=result_dict.get("segments", []),
+            language=result_dict.get("language", ""),
+            overlap_info=result_dict.get("overlap_info", {}),
+            native_speaker_embeddings=result_dict.get("native_speaker_embeddings"),
+            stage_timings={"total": elapsed},
+        )
+
+    def _run_diarization(
+        self, audio, transcript, profiler, hw, tc, manager, progress_callback
+    ) -> tuple[dict, Any]:
+        from app.transcription.engine.progress import emit
+
+        emit(progress_callback, 0.52, "Preparing speaker analysis", "diarize")
+        hw.log_vram_usage("after transcription, before diarizer load")
+        total_vram_mb = _get_total_vram_mb()
+
+        profiler.snapshot("models_warm_no_inference")
+
+        if tc.concurrent_requests > 1:
+            logger.info(
+                "Concurrent mode (concurrent_requests=%d): keeping transcriber loaded",
+                tc.concurrent_requests,
+            )
+        elif total_vram_mb >= 16_000:
+            logger.info(
+                "Keeping transcriber loaded (%dMB VRAM total, both models fit)", total_vram_mb
+            )
+        else:
+            manager.release_transcriber()
+            hw.log_vram_usage("after transcriber release")
+            profiler.snapshot("diarizer_only_warm")
+
+        if tc.concurrent_requests > 1:
+            _wait_for_vram(2000, "diarization")
+
+        emit(progress_callback, 0.55, "Analyzing speaker patterns", "diarize")
+        step_start = time.perf_counter()
+        with profiler.step("diarization"):
+            diarizer = manager.get_diarizer(tc)
+            diarize_df, overlap_info, native_embeddings = diarizer.diarize(audio)
+        logger.info(
+            f"TIMING: diarization step completed in {time.perf_counter() - step_start:.3f}s"
+        )
+        profiler.snapshot("after_diarization")
+
+        # Step 5: Segment dedup BEFORE speaker assignment
+        if tc.enable_dedup:
+            step_start = time.perf_counter()
+            from app.utils.segment_dedup import clean_segments
+
+            original_count = len(transcript.get("segments", []))
+            transcript["segments"] = clean_segments(transcript["segments"])
+            logger.info(
+                f"TIMING: segment_dedup completed in "
+                f"{time.perf_counter() - step_start:.3f}s - "
+                f"{original_count} -> {len(transcript['segments'])} segments"
+            )
+
+        # Step 6: Assign speakers
+        emit(progress_callback, 0.65, "Assigning speakers to transcript", "finalize")
+        step_start = time.perf_counter()
+        with profiler.step("speaker_assignment"):
+            from app.transcription.speaker_assigner import assign_speakers
+
+            result = assign_speakers(diarize_df, transcript)
+        logger.info(
+            f"TIMING: speaker assignment completed in {time.perf_counter() - step_start:.3f}s"
+        )
+
+        if overlap_info.get("count", 0) > 0:
+            result["overlap_info"] = overlap_info
+        if native_embeddings:
+            result["native_speaker_embeddings"] = native_embeddings
+
+        return result, diarize_df
+
+    @staticmethod
+    def _skip_diarization(transcript: dict, tc) -> tuple[dict, None]:
+        from app.utils.segment_dedup import clean_segments
+
+        logger.info("Diarization disabled — assigning SPEAKER_00 to all segments")
+        transcript["segments"] = clean_segments(transcript["segments"])
+        for seg in transcript.get("segments", []):
+            seg["speaker"] = "SPEAKER_00"
+            for word in seg.get("words", []):
+                word["speaker"] = "SPEAKER_00"
+        return transcript, None
+
+
+def _wait_for_vram(min_free_mb: int, stage: str, timeout: int = 120) -> None:
+    """Block until the GPU has enough free VRAM. Mirrors TranscriptionPipeline._wait_for_vram."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return
+        deadline = time.perf_counter() + timeout
+        while time.perf_counter() < deadline:
+            free_mb = torch.cuda.mem_get_info(0)[0] / (1024**2)
+            if free_mb >= min_free_mb:
+                return
+            logger.info(
+                f"VRAM gate [{stage}]: {free_mb:.0f}MB free < {min_free_mb}MB required, waiting..."
+            )
+            time.sleep(2)
+        free_mb = torch.cuda.mem_get_info(0)[0] / (1024**2)
+        logger.warning(
+            f"VRAM gate [{stage}]: timeout after {timeout}s, proceeding with {free_mb:.0f}MB free"
+        )
+    except Exception as e:
+        logger.debug(f"VRAM gate check skipped: {e}")
+
+
+def _get_total_vram_mb() -> int:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return int(torch.cuda.get_device_properties(0).total_memory / (1024**2))
+    except Exception as e:
+        logger.debug(f"VRAM query failed: {e}")
+    return 0

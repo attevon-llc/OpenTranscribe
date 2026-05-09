@@ -1,0 +1,49 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./opentr.sh:*)",
+      "Bash(./opentranscribe.sh:*)",
+      "Bash(./scripts/*.sh:*)",
+      "Bash(./scripts/**/*.sh:*)",
+      "Bash(./scripts/frontend-check.sh:*)",
+      "Bash(./scripts/docker-build-push.sh:*)",
+      "Bash(./scripts/fix-model-permissions.sh:*)",
+      "Bash(./scripts/download-models.sh:*)",
+      "Bash(USE_REMOTE_BUILDER=true ./scripts/docker-build-push.sh:*)",
+      "Bash(SKIP_SECURITY_SCAN=true ./scripts/docker-build-push.sh:*)",
+      "Bash(PLATFORMS=* ./scripts/docker-build-push.sh:*)",
+      "Bash(DISPLAY=:11 *)",
+      "Bash(DISPLAY=:13 *)",
+      "Bash(CUDA_VISIBLE_DEVICES=* *)",
+      "Bash(source backend/venv/bin/activate *)",
+      "Bash(source backend/venv/bin/activate)",
+      "Bash(./backend/venv/bin/python *)",
+      "Bash(./backend/venv/bin/pip *)",
+      "Bash(./backend/venv/bin/pytest *)",
+      "Bash(./backend/venv/bin/ruff *)",
+      "Bash(./backend/venv/bin/mypy *)",
+      "Bash(./backend/venv/bin/pre-commit *)",
+      "Bash(docker compose exec backend *)",
+      "Bash(docker compose exec frontend *)",
+      "Bash(docker compose exec postgres *)",
+      "Bash(docker compose exec celery-worker *)",
+      "Bash(docker compose -f docker-compose.yml *)",
+      "Bash(npm run check)",
+      "Bash(npm run build)",
+      "Bash(npm run dev)",
+      "Read(/mnt/nvm/repos/transcribe-app/**)",
+      "Read(/mnt/nvm/repos/transcribe-app/.env.example)",
+      "Edit(/mnt/nvm/repos/transcribe-app/.env.example)",
+      "Write(/mnt/nvm/repos/transcribe-app/.env.example)"
+    ],
+    "deny": [
+      "Read(/mnt/nvm/repos/transcribe-app/.env)",
+      "Read(/mnt/nvm/repos/transcribe-app/.env.local)",
+      "Read(/mnt/nvm/repos/transcribe-app/.env.production)",
+      "Read(/mnt/nvm/repos/transcribe-app/scripts/pki/test-certs/clients/*.p12)",
+      "Read(/mnt/nvm/repos/transcribe-app/scripts/pki/test-certs/clients/*.key)",
+      "Read(/mnt/nvm/repos/transcribe-app/scripts/pki/**/*.key)",
+      "Read(/mnt/nvm/repos/transcribe-app/scripts/pki/**/*.pem)"
+    ]
+  }
+}

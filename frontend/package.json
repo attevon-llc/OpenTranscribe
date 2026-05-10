@@ -23,7 +23,7 @@
     "@typescript-eslint/parser": "^8.58.2",
     "eslint": "^9.37.0",
     "eslint-plugin-svelte": "^3.15.0",
-    "svelte": "^5.55.2",
+    "svelte": "^5.55.5",
     "svelte-check": "^4.4.4",
     "svelte-eslint-parser": "^1.6.0",
     "svelte-range-slider-pips": "^4.1.0",

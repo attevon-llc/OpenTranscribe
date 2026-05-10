@@ -1,5 +1,5 @@
 fastapi>=0.103.1
-uvicorn[standard]>=0.23.2
+uvicorn[standard]>=0.46.0
 websockets>=11.0.3
 sqlalchemy>=2.0.20
 alembic>=1.12.0

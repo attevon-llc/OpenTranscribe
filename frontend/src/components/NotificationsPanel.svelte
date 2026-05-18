@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { derived } from 'svelte/store';
   import { goto } from '$app/navigation';
   import { token } from '../stores/auth';
@@ -15,15 +16,10 @@
     showPanel = value;
   });
 
-  // Reactive statement to manage body scroll when panel state changes
-  $: {
-    if (typeof document !== 'undefined') {
-      if (showPanel) {
-        document.body.style.overflow = 'hidden';
-      } else {
-        document.body.style.overflow = '';
-      }
-    }
+  let _panelWasOpen = false;
+  $: if (typeof document !== 'undefined' && showPanel !== _panelWasOpen) {
+    showPanel ? lockScroll() : unlockScroll();
+    _panelWasOpen = showPanel;
   }
 
   /** @type {Date} */
@@ -221,14 +217,9 @@
   });
 
   onDestroy(() => {
-    // Remove event listener when component is destroyed
     document.removeEventListener('click', handleClickOutside);
     unsubscribePanel();
-
-    // Restore scroll when component is destroyed
-    if (typeof document !== 'undefined') {
-      document.body.style.overflow = '';
-    }
+    if (_panelWasOpen) unlockScroll();
   });
 </script>
 

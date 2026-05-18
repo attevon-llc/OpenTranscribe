@@ -15,6 +15,7 @@
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { lockScroll, unlockScroll } from '$lib/scrollLock';
 
   export let isOpen = false;
   export let title = '';
@@ -22,18 +23,14 @@
   export let zIndex = 1300;
   export let onClose: () => void = () => {};
 
-  // Lock page scroll when modal is open
-  $: if (typeof document !== 'undefined') {
-    const lock = isOpen ? 'hidden' : '';
-    document.documentElement.style.overflow = lock;
-    document.body.style.overflow = lock;
+  let _wasOpen = false;
+  $: if (typeof document !== 'undefined' && isOpen !== _wasOpen) {
+    isOpen ? lockScroll() : unlockScroll();
+    _wasOpen = isOpen;
   }
 
   onDestroy(() => {
-    if (typeof document !== 'undefined') {
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
-    }
+    if (_wasOpen) unlockScroll();
   });
 
   function handleBackdropClick(event: MouseEvent) {

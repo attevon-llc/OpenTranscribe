@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { page } from '$app/stores';
   import { user as userStore, authStore, fetchUserInfo } from '$stores/auth';
   import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
@@ -273,9 +274,7 @@
     document.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.removeEventListener('reindex-complete', handleReindexCompleteStats);
-    // Re-enable scroll when component is destroyed
-    document.documentElement.style.overflow = '';
-    document.body.style.overflow = '';
+    if (previousOpenState) unlockScroll();
   });
 
   // Track previous open state to detect when modal opens
@@ -285,8 +284,7 @@
   $: {
     if (isOpen && !previousOpenState) {
       // Modal just opened — prevent background scroll
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.overflow = 'hidden';
+      lockScroll();
 
       // Load data for the active section when modal opens
       if (activeSection === 'system-statistics') {
@@ -300,8 +298,7 @@
       previousOpenState = true;
     } else if (!isOpen && previousOpenState) {
       // Modal just closed — restore background scroll
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
+      unlockScroll();
       previousOpenState = false;
     }
   }

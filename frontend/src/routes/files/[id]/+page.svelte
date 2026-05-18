@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate } from 'svelte';
+  import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { writable, get } from 'svelte/store';
   import axiosInstance from '$lib/axios';
   import { websocketStore } from '$stores/websocket';
@@ -136,6 +137,22 @@
 
   // Speaker profile confirmation modal state
   let showSpeakerProfileConfirmation = false;
+
+  // Scroll lock for the two custom .modal-overlay modals on this page
+  let _prevTxtExport = false;
+  let _prevSpeakerConfirm = false;
+  $: {
+    if (showTxtExportOptions !== _prevTxtExport) {
+      showTxtExportOptions ? lockScroll() : unlockScroll();
+      _prevTxtExport = showTxtExportOptions;
+    }
+  }
+  $: {
+    if (showSpeakerProfileConfirmation !== _prevSpeakerConfirm) {
+      showSpeakerProfileConfirmation ? lockScroll() : unlockScroll();
+      _prevSpeakerConfirm = showSpeakerProfileConfirmation;
+    }
+  }
   let pendingSpeakerUpdate = null;
   let profileUpdateMessage = '';
   let profileUpdateTitle = '';
@@ -2287,6 +2304,10 @@
 
     // Clear the transcript store when leaving the page
     transcriptStore.clear();
+
+    // Release any scroll locks held by the custom modals on this page
+    if (_prevTxtExport) unlockScroll();
+    if (_prevSpeakerConfirm) unlockScroll();
   });
 
   afterUpdate(() => {
@@ -2606,7 +2627,8 @@
 
 <!-- TXT Export Options Modal -->
 {#if showTxtExportOptions}
-  <div class="modal-overlay">
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="modal-overlay" on:wheel|stopPropagation on:touchmove|stopPropagation>
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
@@ -2658,7 +2680,8 @@
 
 <!-- Speaker Profile Confirmation Modal -->
 {#if showSpeakerProfileConfirmation}
-  <div class="modal-overlay">
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="modal-overlay" on:wheel|stopPropagation on:touchmove|stopPropagation>
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
@@ -3074,6 +3097,8 @@
     justify-content: center;
     z-index: 1300;
     padding: 1rem;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   .modal-dialog {

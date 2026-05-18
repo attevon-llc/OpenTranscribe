@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
+  import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults } from '../../lib/api/llmSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
@@ -446,14 +447,18 @@
     }
   }
 
-  // Modal overflow management - prevent main page scrolling
+  let _llmConfigModalWasOpen = false;
   $: {
-    if (show || showUnsavedChangesModal) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+    const _anyOpen = show || showUnsavedChangesModal;
+    if (_anyOpen !== _llmConfigModalWasOpen) {
+      _anyOpen ? lockScroll() : unlockScroll();
+      _llmConfigModalWasOpen = _anyOpen;
     }
   }
+
+  onDestroy(() => {
+    if (_llmConfigModalWasOpen) unlockScroll();
+  });
 
   function getProviderDisplayName(provider: string): string {
     const displayNames: Record<string, string> = {

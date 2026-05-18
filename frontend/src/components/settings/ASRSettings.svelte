@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import Spinner from '../ui/Spinner.svelte';
   import {
     ASRSettingsApi,
@@ -290,10 +291,13 @@
 
   $: localModelChanged = selectedLocalModel && selectedLocalModel !== activeLocalModel;
 
-  $: if (showConfigModal || showDeleteModal || showDeleteAllModal) {
-    document.body.style.overflow = 'hidden';
-  } else {
-    document.body.style.overflow = '';
+  let _asrModalWasOpen = false;
+  $: {
+    const _anyOpen = showConfigModal || showDeleteModal || showDeleteAllModal;
+    if (_anyOpen !== _asrModalWasOpen) {
+      _anyOpen ? lockScroll() : unlockScroll();
+      _asrModalWasOpen = _anyOpen;
+    }
   }
 </script>
 

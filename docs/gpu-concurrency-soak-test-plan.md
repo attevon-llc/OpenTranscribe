@@ -131,31 +131,83 @@ conc=10+ (VRAM plateau observed, not linear beyond that point).
 
 ---
 
-## Current Auto Formula
+## Shared Weight Architecture
 
-```python
-# backend/app/transcription/config.py — _auto_concurrent()
-concurrent = int((total_vram - 7000) // 4000)
-return max(1, min(concurrent, 12))
+The `ModelManager` singleton (`backend/app/transcription/model_manager.py`) loads Whisper
+and PyAnnote **once per worker process** and shares those weights across all concurrent
+Celery threads:
+
+```
+Worker process (1 Python process, N Celery threads via --pool=threads):
+  └─ ModelManager._instance
+       ├─ Transcriber   ← CTranslate2 CUDA weights, loaded once (~5-6 GB)
+       └─ SpeakerDiarizer ← PyAnnote weights, loaded once (~1-2 GB)
+            ↑ all N threads share the same tensors in VRAM
+     Each thread allocates only activation / KV-cache buffers per inference.
 ```
 
-| GPU | total_vram | Result |
-|-----|-----------|--------|
-| 3080 Ti 12 GB | 12 288 MB | **1** |
-| A6000 49 GB | 50 176 MB | **10** |
+This means VRAM does **not** scale linearly with concurrency after the model baseline.
+Per-task overhead is activation buffers only — measured at roughly 3–5 GB per task at
+low concurrency, then VRAM plateaus once CTranslate2's activation pool saturates.
+
+---
+
+## Current Auto Formula (in code — needs updating after this test)
+
+```python
+# backend/app/transcription/config.py — _auto_concurrent()  (current code)
+concurrent = int((total_mb - 6000) // 1000)
+return max(1, min(concurrent, 4))   # cap=4 is the binding constraint
+```
+
+| GPU | total_vram | Uncapped result | Actual cap |
+|-----|-----------|-----------------|------------|
+| 3080 Ti 12 GB | 12 288 MB | 6 | **4** |
+| A6000 49 GB | 50 176 MB | 44 | **4** |
+
+The cap of 4 predates the shared-weight `ModelManager` and has not been raised since.
+Existing benchmark data (see below) shows conc=12 is **already stable** on the A6000.
+This test extends that to find the true ceiling and derive a correct post-shared-weights
+formula.
+
+---
+
+## Measured VRAM Data — A6000, existing (`docs/BENCHMARK_RESULTS.md`)
+
+Pre-existing data from GPU 0 (A6000), ~2.7 h matched files, `large-v3-turbo`:
+
+| Concurrency | Peak VRAM | ∆ from prev | Aggregate RTF | Notes |
+|-------------|-----------|-------------|--------------|-------|
+| 1 | 8 909 MB | — | 39.3× | Baseline |
+| 2 | 19 157 MB | +10 248 MB | 47.4× | |
+| 4 | 31 301 MB | +12 144 MB | 51.3× | |
+| 6 | 34 263 MB | +2 962 MB | 52.4× | Plateau starting |
+| 8 | 44 199 MB | +9 936 MB | **54.6×** | **Throughput peak** |
+| 10 | 48 535 MB | +4 336 MB | 51.6× | VRAM plateau |
+| 12 | 48 519 MB | −16 MB | 52.5× | **Confirmed stable** |
+
+Key observations:
+- VRAM plateaus at ~48.5 GB from conc=10 onward — shared weights confirmed
+- Throughput peaks at conc=8, slight regression beyond (SM contention, not OOM)
+- conc=12 holds the same VRAM as conc=10 → conc=14, 16, 20+ may also fit
+
+**Unknown:** Does the plateau hold at conc=14, 16, 20, 24? Does SM contention cause a
+hard throughput floor, or a soft regression? That is what this soak test answers.
 
 ---
 
 ## Hypothesis
 
-**3080 Ti:** The 4 GB/task overhead was measured during *high* concurrency on the A6000
-where many tasks compete for activation buffers. At conc=2 on a lightly-loaded 3080 Ti,
-per-task overhead may be lower (2–3 GB). If so, conc=2 may be stable with ~12 GB:
-7 GB baseline + 2 × 2.5 GB = 12 GB.
+**A6000:** With the VRAM plateau proven stable at conc=10–12, conc=14–24 should remain
+within 49 GB (model weights already loaded, no new allocation at steady-state). The risk
+is SM execution serialisation, not OOM. Throughput may regress modestly but the GPU
+should not crash. New formula target: `cap = 16` or `cap = 20`, formula coefficient
+based on measured per-task overhead at the new stable ceiling.
 
-**A6000:** The 48.5 GB VRAM plateau at conc=10+ suggests CTranslate2 pre-allocates a
-fixed activation pool. If plateau holds at conc=12–14, we have headroom within 49 GB.
-We must confirm OOM does not occur before increasing the cap.
+**3080 Ti:** With shared weights and ~9 GB model baseline (scaled from A6000 measurements),
+12 GB leaves ~3 GB for activation buffers — enough for conc=2 or 3. Current cap of 4
+is probably too high for 12 GB (would require only 0.75 GB/task). Test conc=2, 3, 4.
+Expected result: conc=2 stable, conc=3 marginal, conc=4 OOM.
 
 ---
 
@@ -163,29 +215,36 @@ We must confirm OOM does not occur before increasing the cap.
 
 ### GPU 1 — RTX 3080 Ti (12 GB, `CUDA_VISIBLE_DEVICES=1`)
 
-Run each concurrency level. Stop if OOM. Record peak VRAM via nvidia-smi.
+Run each level. Stop on OOM. Use `--profile by_duration` (Tier 1 files, 11–23 min each).
 
-| # | Concurrency | Expected VRAM | Status | Peak VRAM | Avg RTF | Stable? | Notes |
-|---|------------|--------------|--------|-----------|---------|---------|-------|
-| A | 1 | ~15 GB → likely caps at 12 GB (safe) | TODO | | | | Baseline |
-| B | 2 | ~12–14 GB | TODO | | | | Target |
-| C | 3 | ~14–18 GB | TODO | | | | Stretch — likely OOM |
+| # | Conc | Expected VRAM | Status | Peak VRAM | Avg RTF | Stable? | Notes |
+|---|------|--------------|--------|-----------|---------|---------|-------|
+| A | 1 | ~9 GB (model baseline) | TODO | | | | Baseline |
+| B | 2 | ~11 GB | TODO | | | | Target — likely fits |
+| C | 3 | ~12 GB | TODO | | | | Marginal |
+| D | 4 | ~13+ GB | TODO | | | | Likely OOM — current cap |
 
-**Stop criteria:** GPU OOM error or VRAM utilisation > 95% of 12 GB (11.7 GB).
+**Stop criteria:** OOM error or peak VRAM > 11.5 GB (95% of 12 GB).
 
 ### GPU 2 — RTX A6000 (49 GB, `CUDA_VISIBLE_DEVICES=2`)
 
-| # | Concurrency | Expected VRAM | Status | Peak VRAM | Avg RTF | GPU Util% | Stable? | Notes |
-|---|------------|--------------|--------|-----------|---------|-----------|---------|-------|
-| A | 1 | ~15 GB | TODO | | | | | Baseline |
-| B | 4 | ~23 GB | TODO | | | | | Tier 1+2 corpus files |
-| C | 8 | ~39 GB | TODO | | | | | Whitepaper sweet-spot |
-| D | 10 | ~48.5 GB | TODO | | | | | Current auto ceiling |
-| E | 12 | ~50+ GB? | TODO | | | | | Above current cap |
-| F | 14 | ~55+ GB? | TODO | | | | | Stop here if E is OOM |
-| G | 16 | — | TODO | | | | | Full corpus — only if F is stable |
+Levels 1–12 have prior data (shown for reference); levels 14–24 are new.
+Use `--profile mixed --shuffle` for levels 8+ to test realistic scheduler behaviour.
 
-**Stop criteria:** GPU OOM error or peak VRAM > 48 GB (98% of 49 GB).
+| # | Conc | Expected VRAM | Status | Peak VRAM | Avg RTF | GPU Util% | Stable? | Notes |
+|---|------|--------------|--------|-----------|---------|-----------|---------|-------|
+| A | 1 | 8 909 MB ✓ | KNOWN | 8 909 | 39.3× | | Yes | From BENCHMARK_RESULTS.md |
+| B | 4 | 31 301 MB ✓ | KNOWN | 31 301 | 51.3× | | Yes | From BENCHMARK_RESULTS.md |
+| C | 8 | 44 199 MB ✓ | KNOWN | 44 199 | **54.6×** | | Yes | **Peak throughput** |
+| D | 10 | 48 535 MB ✓ | KNOWN | 48 535 | 51.6× | | Yes | VRAM plateau begins |
+| E | 12 | 48 519 MB ✓ | KNOWN | 48 519 | 52.5× | | Yes | Plateau confirmed |
+| F | 14 | ~48.5 GB | TODO | | | | | **First new level** |
+| G | 16 | ~48.5 GB | TODO | | | | | Full corpus size |
+| H | 20 | ~48.5 GB? | TODO | | | | | Stretch — SM contention |
+| I | 24 | ~48.5 GB? | TODO | | | | | Hard limit or regression |
+
+**Stop criteria:** OOM error, peak VRAM > 48.5 GB (new allocation = plateau broken),
+or aggregate RTF drops below 40× (severe SM contention — no throughput benefit).
 
 ---
 
@@ -394,20 +453,39 @@ done
 
 ---
 
+## Automated Sweep Script
+
+`scripts/benchmark_concurrency_sweep.sh` already automates the full A6000 sweep
+(set concurrency in `.env` → restart worker → run parallel benchmark → record VRAM).
+
+**Note:** The script uses old hardcoded file UUIDs from before the fixed corpus was
+created. Before running, update the `FILES_*` variables at the top of the script to use
+corpus UUIDs, or use `benchmark_parallel.py --corpus-file` directly (preferred).
+
+The sweep script's concurrency levels (`1 2 4 6 8 10 12`) only go to 12 — extend
+`CONCURRENCY_LEVELS` to `"1 2 4 6 8 10 12 14 16 20 24"` before running.
+
+---
+
 ## Formula Update Criteria
 
 After testing, update `_auto_concurrent()` in `backend/app/transcription/config.py`:
 
 ```python
-# New formula (to be filled in after testing):
-# Baseline: ___ MB (measured model idle footprint)
-# Per-task overhead: ___ MB (measured at safe max concurrency)
-# Cap: ___ (measured max safe concurrency on A6000)
+# New formula (fill in after testing):
+# Baseline: ___ MB (model idle footprint from Phase 1 baseline VRAM)
+# Per-task overhead: ___ MB (∆ VRAM per additional task at low concurrency)
+# Cap: ___ (last conc level with stable VRAM plateau and RTF ≥ 40×)
 concurrent = int((total_vram - ___) // ___)
 return max(1, min(concurrent, ___))
 ```
 
-Also update `.env.example` GPU_CONCURRENT_REQUESTS comment with confirmed values.
+Expected new cap: **16–20** for A6000 (if plateau holds), **2** for 3080 Ti (12 GB).
+
+Also update:
+- `.env.example` — `GPU_CONCURRENT_REQUESTS` comment with confirmed values
+- `docs/BENCHMARK_RESULTS.md` — append new rows to the concurrency table
+- `docs/gpu-concurrency-soak-test-plan.md` — fill in the TODO cells in the test matrix above
 
 ---
 

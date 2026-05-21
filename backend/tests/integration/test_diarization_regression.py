@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import wave
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -80,7 +81,7 @@ def _load_audio(path: Path) -> dict:
     }
 
 
-def _read_rttm(rttm_path: Path) -> object:
+def _read_rttm(rttm_path: Path) -> Any:
     from pyannote.core import Annotation
     from pyannote.core import Segment
 

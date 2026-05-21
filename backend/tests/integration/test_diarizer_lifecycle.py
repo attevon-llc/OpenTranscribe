@@ -78,7 +78,7 @@ def _nvml_used_mb() -> float:
 
         mem = _Mem()
         lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem))
-        return mem.used / (1024**2)
+        return float(mem.used) / (1024**2)
     except Exception:
         return 0.0
 

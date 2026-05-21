@@ -115,6 +115,29 @@ is_blackwell_gpu() {
     [[ "$compute_cap" == 12.* ]]
 }
 
+# force_cpu_mode_requested: returns success (0) when the user opted out of
+# GPU acceleration at install time (setup-opentranscribe.sh --cpu, or the
+# OPENTRANSCRIBE_FORCE_CPU env var), which persisted FORCE_CPU_MODE=true to
+# .env. When true, get_compose_files skips the GPU overlay(s) regardless of
+# whether Docker reports an nvidia runtime. This is the authoritative signal
+# because Docker's runtime presence is a necessary but not sufficient
+# condition for a working GPU (e.g. WSL2 with toolkit installed but no
+# adapter passthrough still advertises the runtime). Also honors
+# OPENTRANSCRIBE_FORCE_CPU set in the current shell for one-off overrides.
+force_cpu_mode_requested() {
+    if [ -n "${OPENTRANSCRIBE_FORCE_CPU:-}" ]; then
+        return 0
+    fi
+    if [ -f .env ]; then
+        local value
+        value=$(grep '^FORCE_CPU_MODE=' .env 2>/dev/null \
+            | cut -d'=' -f2 | tr -d ' "' | head -1)
+        [ "$value" = "true" ]
+        return
+    fi
+    return 1
+}
+
 get_compose_files() {
     local compose_files="-f docker-compose.yml"
 
@@ -123,10 +146,15 @@ get_compose_files() {
         compose_files="$compose_files -f docker-compose.prod.yml"
     fi
 
-    # Add GPU overlay if NVIDIA runtime is available and overlay exists
+    # Add GPU overlay if NVIDIA runtime is available and overlay exists,
+    # unless the user explicitly chose CPU-only mode at install time.
     local docker_runtime
     docker_runtime=$(detect_nvidia_runtime)
-    if [ "$docker_runtime" = "nvidia" ]; then
+    if force_cpu_mode_requested; then
+        if [ "$docker_runtime" = "nvidia" ]; then
+            echo -e "${BLUE}🧮 CPU-only mode (FORCE_CPU_MODE=true in .env) — skipping GPU overlay despite nvidia runtime being available${NC}" >&2
+        fi
+    elif [ "$docker_runtime" = "nvidia" ]; then
         if is_blackwell_gpu && [ -f docker-compose.blackwell.yml ]; then
             compose_files="$compose_files -f docker-compose.blackwell.yml"
             echo -e "${BLUE}Blackwell GPU overlay enabled (SM_12x detected)${NC}" >&2

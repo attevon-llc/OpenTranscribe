@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import type { Speaker, Segment } from '$lib/types/speaker';
   import { t } from '$stores/locale';
@@ -70,7 +71,7 @@
   // Cleanup on destroy
   onDestroy(() => {
     if (isOpen) {
-      document.body.style.overflow = '';
+      unlockScroll();
     }
     if (portalContainer) {
       document.body.removeChild(portalContainer);
@@ -83,7 +84,7 @@
   function closeDropdown() {
     if (isOpen) {
       isOpen = false;
-      document.body.style.overflow = '';
+      unlockScroll();
       document.removeEventListener('click', handleGlobalClick, true);
       window.removeEventListener('resize', closeDropdown);
       renderPortal();
@@ -104,11 +105,11 @@
     isOpen = !isOpen;
 
     if (isOpen) {
-      document.body.style.overflow = 'hidden';
+      lockScroll();
       document.addEventListener('click', handleGlobalClick, true);
       window.addEventListener('resize', closeDropdown);
     } else {
-      document.body.style.overflow = '';
+      unlockScroll();
       document.removeEventListener('click', handleGlobalClick, true);
       window.removeEventListener('resize', closeDropdown);
     }

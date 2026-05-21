@@ -1,6 +1,7 @@
 """System endpoints accessible to all authenticated users."""
 
 import logging
+import os
 import platform
 from typing import Any
 
@@ -24,6 +25,41 @@ from app.services.protected_media_providers import get_protected_media_auth_conf
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compute the CPU/GPU device-mode summary surfaced by /system/stats.
+
+    The frontend uses these fields to render the CPU-only mode advisory
+    banner in Settings → System Statistics. Distinguishes "user opted out
+    via FORCE_CPU_MODE" from "host has no working GPU" so the UI can
+    show the right reason text.
+    """
+    force_cpu = os.getenv("FORCE_CPU_MODE", "false").strip().lower() == "true"
+    first_gpu = gpu_stats[0] if gpu_stats else {}
+    gpu_available = first_gpu.get("available") is True
+    # On fresh GPU-host startup, get_gpu_usage() returns
+    # {"available": False, "loading": True} until the worker pushes its
+    # first stats. Treat that transient state as "unknown — assume GPU"
+    # so the CPU banner doesn't flash on every cold start.
+    gpu_loading = first_gpu.get("loading") is True
+
+    if force_cpu:
+        device_mode = "cpu"
+    elif gpu_available or gpu_loading:
+        device_mode = "cuda"
+    else:
+        # No FORCE_CPU_MODE flag and no usable GPU — auto-fallback CPU.
+        # MPS isn't currently surfaced via get_gpu_usage(); leave that
+        # to a follow-up if Apple-Silicon visibility becomes a need.
+        device_mode = "cpu"
+
+    return {
+        "device_mode": device_mode,
+        "force_cpu_mode": force_cpu,
+        "whisper_model": os.getenv("WHISPER_MODEL", "large-v3-turbo"),
+        "diarization_enabled": os.getenv("ENABLE_DIARIZATION", "true").strip().lower() == "true",
+    }
 
 
 @router.get("/stats", response_model=dict[str, Any])
@@ -131,6 +167,7 @@ async def get_system_stats(
                 "gpus": system_stats["gpu"],  # list of GPU stat dicts
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
+                **_device_mode_info(system_stats["gpu"]),
             },
             "tasks": {**task_stats, "recent": recent},
             "throughput": throughput,

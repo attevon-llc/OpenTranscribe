@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { page } from '$app/stores';
   import { user as userStore, authStore, fetchUserInfo } from '$stores/auth';
   import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
@@ -275,9 +276,7 @@
     document.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
     window.removeEventListener('reindex-complete', handleReindexCompleteStats);
-    // Re-enable scroll when component is destroyed
-    document.documentElement.style.overflow = '';
-    document.body.style.overflow = '';
+    if (previousOpenState) unlockScroll();
   });
 
   // Track previous open state to detect when modal opens
@@ -287,8 +286,7 @@
   $: {
     if (isOpen && !previousOpenState) {
       // Modal just opened — prevent background scroll
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.overflow = 'hidden';
+      lockScroll();
 
       // Load data for the active section when modal opens
       if (activeSection === 'system-statistics') {
@@ -302,8 +300,7 @@
       previousOpenState = true;
     } else if (!isOpen && previousOpenState) {
       // Modal just closed — restore background scroll
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
+      unlockScroll();
       previousOpenState = false;
     }
   }
@@ -1291,6 +1288,43 @@
                   <p>{$t('settings.statistics.loadingMessage')}</p>
                 </div>
               {:else}
+                {#if stats.system?.device_mode === 'cpu'}
+                  <!-- CPU-only mode advisory: shown when the backend reports
+                       device_mode=cpu (either FORCE_CPU_MODE=true or no GPU
+                       detected on host). Distinguishes the two reasons so
+                       the user can act on it. -->
+                  <div class="cpu-mode-banner" role="alert">
+                    <div class="cpu-mode-banner-header">
+                      <span class="cpu-mode-icon" aria-hidden="true">🧮</span>
+                      <strong>{$t('settings.statistics.cpuMode.title')}</strong>
+                    </div>
+                    <div class="cpu-mode-banner-reason">
+                      {stats.system?.force_cpu_mode
+                        ? $t('settings.statistics.cpuMode.reasonForced')
+                        : $t('settings.statistics.cpuMode.reasonAuto')}
+                    </div>
+                    <ul class="cpu-mode-banner-list">
+                      <li>
+                        <strong>{$t('settings.statistics.cpuMode.modelLabel')}:</strong>
+                        <code>{stats.system?.whisper_model || '—'}</code>
+                        {#if ['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en'].includes(stats.system?.whisper_model)}
+                          — {$t('settings.statistics.cpuMode.modelHintGood')}
+                        {:else}
+                          — {$t('settings.statistics.cpuMode.modelHintHeavy')}
+                        {/if}
+                      </li>
+                      <li>
+                        <strong>{$t('settings.statistics.cpuMode.diarizationLabel')}:</strong>
+                        {stats.system?.diarization_enabled
+                          ? $t('settings.statistics.cpuMode.diarizationOn')
+                          : $t('settings.statistics.cpuMode.diarizationOff')}
+                      </li>
+                    </ul>
+                    <div class="cpu-mode-banner-footer">
+                      {$t('settings.statistics.cpuMode.howToFix')}
+                    </div>
+                  </div>
+                {/if}
                 <div class="stats-grid" class:stats-refreshing={statsRefreshing}>
                   <!-- User Stats -->
                   <div class="stat-card">
@@ -1775,6 +1809,57 @@
 />
 
 <style>
+  .cpu-mode-banner {
+    background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.08);
+    border: 1px solid var(--warning-color, #f59e0b);
+    border-left: 4px solid var(--warning-color, #f59e0b);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    color: var(--text-color);
+  }
+
+  .cpu-mode-banner-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1rem;
+    margin-bottom: 4px;
+  }
+
+  .cpu-mode-icon {
+    font-size: 1.15rem;
+  }
+
+  .cpu-mode-banner-reason {
+    font-size: 0.85rem;
+    color: var(--text-secondary, #6b7280);
+    margin-bottom: 10px;
+  }
+
+  .cpu-mode-banner-list {
+    margin: 0 0 10px 0;
+    padding-left: 22px;
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+
+  .cpu-mode-banner-list code {
+    background: var(--surface-color, rgba(0, 0, 0, 0.06));
+    border: 1px solid var(--border-color, rgba(0, 0, 0, 0.1));
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 0.85em;
+  }
+
+  .cpu-mode-banner-footer {
+    font-size: 0.82rem;
+    color: var(--text-secondary, #6b7280);
+    border-top: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+    padding-top: 8px;
+    margin-top: 4px;
+  }
+
   .settings-modal-backdrop {
     position: fixed;
     top: 0;

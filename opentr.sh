@@ -44,6 +44,7 @@ show_help() {
   echo "  --with-gpu-split     - Enable GPU split: separate gpu-transcribe / gpu-diarize workers"
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
+  echo "  --cpu                - CPU-only mode (local transcription, no GPU overlay)"
   echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
   echo "  --with-ldap-test     - Start LDAP test container (dev or prod)"
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod)"
@@ -95,6 +96,7 @@ show_help() {
   echo "  ./opentr.sh start dev --gpu-scale --nas      # Multi-GPU + NAS/NVMe storage"
   echo "  ./opentr.sh start dev --with-gpu-split       # Split transcribe/diarize across two GPUs"
   echo "  ./opentr.sh start dev --lite                 # Cloud-only ASR mode (no GPU)"
+  echo "  ./opentr.sh start dev --cpu                  # Local CPU-only (skip GPU overlay)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
@@ -270,6 +272,7 @@ start_app() {
   WITH_LDAP_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
   LITE_FLAG=""
+  CPU_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -295,6 +298,10 @@ start_app() {
         ;;
       --lite)
         LITE_FLAG="--lite"
+        shift
+        ;;
+      --cpu)
+        CPU_FLAG="--cpu"
         shift
         ;;
       --with-pki)
@@ -350,18 +357,26 @@ start_app() {
     echo "☁️  Lite mode enabled (cloud-only ASR, no GPU required)"
   fi
 
+  if [ -n "$CPU_FLAG" ]; then
+    echo "🧮 CPU-only mode enabled (local CPU transcription, no GPU overlay)"
+  fi
+
   # Ensure Docker is running
   check_docker
 
-  # Detect and configure hardware (skipped in lite mode — no GPU needed)
-  if [ -z "$LITE_FLAG" ]; then
-    detect_and_configure_hardware
-  else
-    echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
+  # Detect and configure hardware (skipped in lite/cpu modes — no GPU needed)
+  if [ -n "$CPU_FLAG" ] || [ -n "$LITE_FLAG" ]; then
+    if [ -n "$CPU_FLAG" ]; then
+      echo "ℹ️  Skipping GPU detection (--cpu mode: local CPU transcription only)"
+    else
+      echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
+    fi
     export DOCKER_RUNTIME=""
     export TORCH_DEVICE="cpu"
     export COMPUTE_TYPE="int8"
     export USE_GPU="false"
+  else
+    detect_and_configure_hardware
   fi
 
   # Set build environment
@@ -607,6 +622,7 @@ reset_and_init() {
   WITH_LDAP_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
   LITE_FLAG=""
+  CPU_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -632,6 +648,10 @@ reset_and_init() {
         ;;
       --lite)
         LITE_FLAG="--lite"
+        shift
+        ;;
+      --cpu)
+        CPU_FLAG="--cpu"
         shift
         ;;
       --with-pki)
@@ -687,18 +707,26 @@ reset_and_init() {
     echo "☁️  Lite mode enabled (cloud-only ASR, no GPU required)"
   fi
 
+  if [ -n "$CPU_FLAG" ]; then
+    echo "🧮 CPU-only mode enabled (local CPU transcription, no GPU overlay)"
+  fi
+
   # Ensure Docker is running
   check_docker
 
-  # Detect and configure hardware (skipped in lite mode — no GPU needed)
-  if [ -z "$LITE_FLAG" ]; then
-    detect_and_configure_hardware
-  else
-    echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
+  # Detect and configure hardware (skipped in lite/cpu modes — no GPU needed)
+  if [ -n "$CPU_FLAG" ] || [ -n "$LITE_FLAG" ]; then
+    if [ -n "$CPU_FLAG" ]; then
+      echo "ℹ️  Skipping GPU detection (--cpu mode: local CPU transcription only)"
+    else
+      echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
+    fi
     export DOCKER_RUNTIME=""
     export TORCH_DEVICE="cpu"
     export COMPUTE_TYPE="int8"
     export USE_GPU="false"
+  else
+    detect_and_configure_hardware
   fi
 
   # Set build environment

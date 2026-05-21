@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import axiosInstance from '../lib/axios';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import { user } from '../stores/auth';
@@ -260,8 +261,7 @@
       const response = await axiosInstance.get(`/my-files/${fileId}/status`);
       detailedStatus = response.data;
       selectedFile = fileId;
-      // Disable scrolling when modal opens
-      document.body.style.overflow = 'hidden';
+      lockScroll();
     } catch (err: any) {
       console.error('Error fetching detailed status:', err);
       error = err.response?.data?.detail || $t('fileStatus.detailsLoadFailed');
@@ -271,8 +271,7 @@
   function closeModal() {
     detailedStatus = null;
     selectedFile = null;
-    // Re-enable scrolling when modal closes
-    document.body.style.overflow = '';
+    unlockScroll();
   }
 
   async function retryFile(fileId: any) {
@@ -401,8 +400,7 @@
       unsubscribeWebSocket();
     }
     window.removeEventListener('cache-invalidated', handleCacheInvalidation);
-    // Ensure scrolling is restored if component is destroyed while modal is open
-    document.body.style.overflow = '';
+    if (selectedFile !== null) unlockScroll();
   });
 </script>
 

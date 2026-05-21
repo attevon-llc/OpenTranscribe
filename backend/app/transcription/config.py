@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 # These are routed to the CPU worker instead of GPU.
 LIGHTWEIGHT_MODELS = frozenset({"tiny", "tiny.en", "base", "base.en"})
 
+# Module-level guard so the CPU-mode misconfiguration warning fires at most
+# once per worker process — without this, every transcription task would
+# re-emit the same advice into the worker logs.
+_CPU_MODE_WARNING_EMITTED = False
+
 
 def _parse_optional_float(value: str) -> float | None:
     """Parse a string to float, returning None for empty/whitespace."""
@@ -171,7 +176,47 @@ class TranscriptionConfig:
             f"concurrent_requests={config.concurrent_requests}"
         )
 
+        cls._maybe_warn_cpu_mode_misconfigured(config)
+
         return config
+
+    @staticmethod
+    def _maybe_warn_cpu_mode_misconfigured(config: "TranscriptionConfig") -> None:
+        """Warn once when running on CPU with a heavy model or diarization on.
+
+        PyAnnote diarization requires CUDA; running it on CPU will fail or
+        be unusably slow. Whisper large-* on CPU runs >10x realtime. If we
+        detect either condition, log a single advisory so admins can
+        adjust ``WHISPER_MODEL`` / ``ENABLE_DIARIZATION`` in ``.env``.
+        Does not block startup — the user may have intentional reasons.
+        """
+        global _CPU_MODE_WARNING_EMITTED
+        if _CPU_MODE_WARNING_EMITTED or config.device != "cpu":
+            return
+
+        heavy_model = config.model_name not in LIGHTWEIGHT_MODELS
+        if not heavy_model and not config.enable_diarization:
+            return
+
+        issues: list[str] = []
+        if heavy_model:
+            issues.append(
+                f"WHISPER_MODEL={config.model_name} on CPU runs >10x realtime "
+                "(recommend WHISPER_MODEL=base or small)"
+            )
+        if config.enable_diarization:
+            issues.append(
+                "ENABLE_DIARIZATION=true on CPU is not supported by PyAnnote "
+                "(recommend ENABLE_DIARIZATION=false on CPU-only deployments)"
+            )
+
+        logger.warning(
+            "CPU-only mode detected with a configuration intended for GPU: %s. "
+            "Edit .env and restart workers to apply CPU-friendly defaults. "
+            "See docs/CPU_MODE_TESTING.md for the full guidance.",
+            "; ".join(issues),
+        )
+        _CPU_MODE_WARNING_EMITTED = True
 
     @classmethod
     def for_cpu_lightweight(cls, **overrides) -> "TranscriptionConfig":

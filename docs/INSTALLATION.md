@@ -43,6 +43,37 @@ curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/s
 curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
+## 🧮 CPU-Only Installation (Opt-Out of GPU)
+
+Auto-detection enables GPU acceleration whenever it finds a working NVIDIA
+setup. If you **know** you want to run on CPU only — either because you have
+no NVIDIA GPU, or because the NVIDIA Container Toolkit is installed but GPU
+passthrough is not functional (a common situation on WSL2 without a
+WSL-capable Windows driver) — pass `--cpu` to skip GPU detection entirely:
+
+```bash
+# Piped install: forward --cpu with `bash -s --`
+curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
+
+# Or via env var (useful in CI / unattended installs)
+OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+
+# Or after downloading the script
+./setup-opentranscribe.sh --cpu
+```
+
+When `--cpu` is active the installer:
+
+- Skips `nvidia-smi` and NVIDIA Container Toolkit probing.
+- Writes `FORCE_CPU_MODE=true`, `DETECTED_DEVICE=cpu`, and CPU-optimized
+  precision (`int8`) / batch-size defaults into `.env`.
+- Causes `opentranscribe.sh start` (and subsequent `restart`/`stop` calls) to
+  skip the `docker-compose.gpu.yml` / `docker-compose.blackwell.yml`
+  overlays. You do **not** need to re-pass `--cpu` on every run.
+
+To switch a CPU-only install back to GPU later, re-run the installer without
+`--cpu` (or set `FORCE_CPU_MODE=false` in `.env` and restart).
+
 ## 📋 Prerequisites
 
 **Required (automatically checked):**

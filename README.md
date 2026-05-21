@@ -257,6 +257,18 @@ Then follow the on-screen instructions. The setup script will:
 - **Automatically download and cache AI models (~2.9GB)** if token is provided
 - Set up the management script (`opentranscribe.sh`)
 
+**💻 CPU-only install:** If you don't have an NVIDIA GPU, or you're on WSL2 with the NVIDIA Container Toolkit installed but GPU passthrough disabled, pass `--cpu` to skip GPU detection and avoid the `nvidia-container-cli` adapter error at container start:
+
+```bash
+# Piped install
+curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
+
+# Unattended / CI equivalent
+OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+```
+
+The CPU-only choice is persisted to `.env` as `FORCE_CPU_MODE=true` so subsequent `./opentranscribe.sh start`/`restart` calls continue to skip the GPU overlay automatically.
+
 **⚠️ IMPORTANT - HuggingFace Setup:**
 The script will prompt you for your HuggingFace token during setup. **BEFORE running the installer:**
 

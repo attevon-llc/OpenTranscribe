@@ -5,6 +5,13 @@ All notable changes to OpenTranscribe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **CPU-only install flag (`--cpu`)**: `setup-opentranscribe.sh`, `opentranscribe.sh`, and `opentr.sh` now accept a `--cpu` flag (and honor `OPENTRANSCRIBE_FORCE_CPU=1` for unattended installs) to explicitly opt out of the GPU compose overlay. Required on hosts where the NVIDIA Container Toolkit is detected by Docker but GPU passthrough is non-functional — e.g. WSL2 without a WSL-capable Windows NVIDIA driver, where auto-detection would otherwise enable the GPU overlay and cause celery-worker / celery-cpu-worker to fail at container start with `nvidia-container-cli: initialization error: WSL environment detected but no adapters were found`. The choice is persisted to `.env` as `FORCE_CPU_MODE=true`, so `./opentranscribe.sh start/restart/stop` continues to skip the GPU overlay without re-passing the flag. Default behaviour for GPU users is unchanged.
+- **CPU-mode safe defaults and visibility**: builds on the `--cpu` flag with end-to-end CPU-mode awareness. The installer now writes `ENABLE_DIARIZATION=false` to `.env` whenever `DETECTED_DEVICE=cpu` (PyAnnote requires CUDA), prints a "CPU-Only Mode — Performance Notes" advisory in the install summary, and leaves the existing `select_whisper_model()` recommendation of `base` for CPU intact. The backend logs a single startup warning when a worker boots in CPU mode with a heavyweight Whisper model or diarization enabled. `GET /system/stats` now returns `device_mode`, `force_cpu_mode`, `whisper_model`, and `diarization_enabled` so the Settings → System Statistics panel renders a CPU-only advisory banner with the right "forced via flag" vs "no GPU detected — automatic fallback" subtitle. All 8 UI locales (en, es, fr, de, pt, ru, zh, ja) include the new strings. End-to-end testing plan documented at `docs/CPU_MODE_TESTING.md`.
+
 ## [0.4.1] - 2026-04-14
 
 ### Overview

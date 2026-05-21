@@ -109,7 +109,7 @@ nltk>=3.9.1  # Required by whisperx>=3.7.6, also for SnowballStemmer
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
-deepgram-sdk>=6.0.0
+deepgram-sdk>=6.1.1
 assemblyai>=0.30.0
 google-cloud-speech>=2.24.0
 azure-cognitiveservices-speech>=1.35.0

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse, type UserLLMConfigurationsList } from '../../lib/api/llmSettings';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import LLMConfigModal from './LLMConfigModal.svelte';
@@ -53,9 +54,8 @@
     await Promise.allSettled(loads);
   });
 
-  // Cleanup on destroy
   onDestroy(() => {
-    // Cleanup if needed
+    if (_llmModalWasOpen) unlockScroll();
   });
 
   async function loadData() {
@@ -433,12 +433,12 @@
     return displayNames[provider] || provider;
   }
 
-  // Modal overflow management - prevent main page scrolling when any modal is open
+  let _llmModalWasOpen = false;
   $: {
-    if (showConfigModal || showDeleteConfigModal || showDeleteAllModal) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+    const _anyOpen = showConfigModal || showDeleteConfigModal || showDeleteAllModal;
+    if (_anyOpen !== _llmModalWasOpen) {
+      _anyOpen ? lockScroll() : unlockScroll();
+      _llmModalWasOpen = _anyOpen;
     }
   }
 

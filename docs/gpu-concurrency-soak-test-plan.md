@@ -152,23 +152,27 @@ low concurrency, then VRAM plateaus once CTranslate2's activation pool saturates
 
 ---
 
-## Current Auto Formula (in code — needs updating after this test)
+## Current Auto Formula (in code — may need updating after this test)
 
 ```python
 # backend/app/transcription/config.py — _auto_concurrent()  (current code)
-concurrent = int((total_mb - 6000) // 1000)
-return max(1, min(concurrent, 4))   # cap=4 is the binding constraint
+# Calibrated from whitepaper: ~7 GB shared model baseline, ~4 GB/task overhead
+concurrent = int((total_mb - 7000) // 4000)
+return max(1, min(concurrent, 12))
 ```
 
-| GPU | total_vram | Uncapped result | Actual cap |
-|-----|-----------|-----------------|------------|
-| 3080 Ti 12 GB | 12 288 MB | 6 | **4** |
-| A6000 49 GB | 50 176 MB | 44 | **4** |
+| GPU | total_vram | Formula result | Capped to |
+|-----|-----------|----------------|-----------|
+| 3080 Ti 12 GB | 12 288 MB | 1 | **1** |
+| A6000 49 GB | 50 176 MB | 10 | **10** |
 
-The cap of 4 predates the shared-weight `ModelManager` and has not been raised since.
-Existing benchmark data (see below) shows conc=12 is **already stable** on the A6000.
-This test extends that to find the true ceiling and derive a correct post-shared-weights
-formula.
+The 4 GB/task coefficient was measured at conc=10 on A6000 (48.5 GB total / 10 tasks ≈
+4.15 GB/task after subtracting the 7 GB baseline). However, the VRAM plateau means this
+number is an average — actual marginal cost per additional task above conc=10 may be near
+zero (shared activation pool). The cap of 12 was set conservatively.
+
+This test checks whether cap=16–20 is safe and whether the 4 GB/task coefficient should
+be revised down now that the plateau behaviour is confirmed.
 
 ---
 

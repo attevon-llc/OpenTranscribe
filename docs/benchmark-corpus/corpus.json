@@ -10,6 +10,29 @@
     "3": {"label": "long",       "range": "1.5-3h",    "count": 4},
     "4": {"label": "extra-long", "range": "3h+",       "count": 4}
   },
+  "profiles": {
+    "by_duration": {
+      "description": "Duration-ascending order. --batches N picks the N shortest files. Best for VRAM ceiling tests — fail fast on OOM without waiting for 4-hour files.",
+      "indices": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+    },
+    "mixed": {
+      "description": "Round-robin across tiers: [T1,T2,T3,T4, T1,T2,T3,T4, ...]. --batches 4 = one file from each tier (real-world representative). --batches 8 = two per tier. Best for throughput and scheduler stress tests.",
+      "indices": [0,4,8,12, 1,5,9,13, 2,6,10,14, 3,7,11,15],
+      "batch_audio_hours": {
+        "4":  5.87,
+        "8":  12.37,
+        "12": 19.74,
+        "16": 28.67
+      }
+    },
+    "mixed_hard": {
+      "description": "One file from each tier, picking the hardest (longest) of each: 23 min + 1h + 2h51m + 4h44m = 8.97h total. Quick 4-file real-world stress test.",
+      "indices": [3,7,11,15],
+      "batch_audio_hours": {
+        "4": 8.97
+      }
+    }
+  },
   "files": [
     {
       "tier": 1,

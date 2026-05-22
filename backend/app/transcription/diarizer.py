@@ -62,10 +62,12 @@ class SpeakerDiarizer:
                 else:
                     msg = (
                         f"PyAnnote model '{PYANNOTE_V4_MODEL}' returned None. "
-                        "This usually means your HuggingFace token lacks access to this gated model. "
-                        "Please: 1) Create a token at https://huggingface.co/settings/tokens with Read permissions, "
-                        "2) Accept the model agreement at https://huggingface.co/pyannote/speaker-diarization-community-1, "
-                        "3) Set HUGGINGFACE_TOKEN in your .env file, and 4) Restart the containers."
+                        "Ensure: 1) HUGGINGFACE_TOKEN is set in .env, "
+                        "2) You accepted BOTH agreements: segmentation-3.0 "
+                        "(https://huggingface.co/pyannote/segmentation-3.0) AND "
+                        "speaker-diarization-community-1 "
+                        "(https://huggingface.co/pyannote/speaker-diarization-community-1), "
+                        "3) Restart the containers."
                     )
                 raise PermissionError(msg)
             self._model_name = PYANNOTE_V4_MODEL

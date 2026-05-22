@@ -890,6 +890,15 @@ prompt_huggingface_token() {
         return 0
     fi
 
+    # Re-run guard: skip if a valid token is already saved in .env
+    local _existing_token
+    _existing_token=$(grep '^HUGGINGFACE_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
+    if [[ "$_existing_token" =~ ^hf_ ]]; then
+        HUGGINGFACE_TOKEN="$_existing_token"
+        echo "✓ HuggingFace token already configured"
+        return 0
+    fi
+
     echo ""
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}🤗 HuggingFace Token Configuration${NC}"
@@ -917,7 +926,7 @@ prompt_huggingface_token() {
     echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
     echo ""
     echo "  2. Speaker Diarization Model:"
-    echo "     https://huggingface.co/pyannote/speaker-diarization-3.1"
+    echo "     https://huggingface.co/pyannote/speaker-diarization-community-1"
     echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
     echo ""
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -960,80 +969,158 @@ prompt_huggingface_token() {
         print_success "HuggingFace token configured!"
         echo ""
     fi
+
+    # Write token immediately so it's saved even if the script is interrupted later
+    if [ -f .env ]; then
+        sed -i.bak "s|HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|g" .env && rm -f .env.bak
+    fi
 }
+
+# Update an existing KEY= line in .env, or append KEY=VALUE if missing.
+_upsert_env() {
+    local key="$1" val="$2"
+    if grep -q "^${key}=" .env 2>/dev/null; then
+        sed -i.bak "s|^${key}=.*|${key}=${val}|" .env && rm -f .env.bak
+    else
+        echo "${key}=${val}" >> .env
+    fi
+}
+
+# Create .env from template and write all auto-generated credentials immediately.
+# Called only on a fresh install (no existing .env).
+_create_initial_env() {
+    cp .env.example .env
+
+    sed -i.bak "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|g" .env
+    sed -i.bak "s|MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD|g" .env
+    sed -i.bak "s|JWT_SECRET_KEY=.*|JWT_SECRET_KEY=$JWT_SECRET|g" .env
+    sed -i.bak "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$ENCRYPTION_KEY|g" .env
+    sed -i.bak "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=$REDIS_PASSWORD|g" .env
+    sed -i.bak "s|OPENSEARCH_PASSWORD=.*|OPENSEARCH_PASSWORD=$OPENSEARCH_PASSWORD|g" .env
+    sed -i.bak "s|FLOWER_PASSWORD=.*|FLOWER_PASSWORD=$FLOWER_PASSWORD|g" .env
+    sed -i.bak "s|MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=$MINIO_KMS_KEY|g" .env
+    sed -i.bak "s|BATCH_SIZE=.*|BATCH_SIZE=$BATCH_SIZE|g" .env
+    sed -i.bak "s|COMPUTE_TYPE=.*|COMPUTE_TYPE=$COMPUTE_TYPE|g" .env
+    sed -i.bak "s|MODEL_CACHE_DIR=.*|MODEL_CACHE_DIR=${MODEL_CACHE_DIR:-./models}|g" .env
+    rm -f .env.bak
+
+    print_success ".env created with secure credentials"
+}
+
+# Write (or re-write) hardware-detected values to .env.
+# Safe to call on both fresh installs and re-runs.
+_write_hardware_settings() {
+    case "$DETECTED_DEVICE" in
+        "cuda")
+            sed -i.bak "s|USE_GPU=.*|USE_GPU=true|g" .env
+            sed -i.bak "s|GPU_DEVICE_ID=.*|GPU_DEVICE_ID=${GPU_DEVICE_ID:-0}|g" .env
+            sed -i.bak "s|TORCH_DEVICE=.*|TORCH_DEVICE=cuda|g" .env
+            ;;
+        "mps")
+            sed -i.bak "s|USE_GPU=.*|USE_GPU=false|g" .env
+            sed -i.bak "s|TORCH_DEVICE=.*|TORCH_DEVICE=mps|g" .env
+            ;;
+        "cpu")
+            sed -i.bak "s|USE_GPU=.*|USE_GPU=false|g" .env
+            sed -i.bak "s|TORCH_DEVICE=.*|TORCH_DEVICE=cpu|g" .env
+            ;;
+    esac
+    rm -f .env.bak
+
+    _upsert_env "DETECTED_DEVICE" "${DETECTED_DEVICE}"
+    _upsert_env "USE_NVIDIA_RUNTIME" "${USE_GPU_RUNTIME}"
+    # FORCE_CPU_MODE: persisted opt-out signal read by opentranscribe.sh at
+    # start/restart time. When "true", the management script skips GPU overlays
+    # even if Docker reports an nvidia runtime.
+    _upsert_env "FORCE_CPU_MODE" "${FORCE_CPU}"
+
+    if [[ "$DETECTED_DEVICE" == "cpu" ]]; then
+        if grep -q '^ENABLE_DIARIZATION=' .env; then
+            sed -i.bak "s|^ENABLE_DIARIZATION=.*|ENABLE_DIARIZATION=${ENABLE_DIARIZATION_CPU_DEFAULT}|" .env && rm -f .env.bak
+        else
+            echo "ENABLE_DIARIZATION=${ENABLE_DIARIZATION_CPU_DEFAULT}" >> .env
+        fi
+    fi
+
+    echo "✓ Environment configured for $DETECTED_DEVICE with $COMPUTE_TYPE precision"
+}
+
+# Global: distinguishes a brand-new install (no prior .env) from a re-run.
+_FRESH_INSTALL="false"
 
 configure_environment() {
     echo -e "${BLUE}⚙️  Configuring environment...${NC}"
 
-    if [ -f .env ]; then
-        echo "ℹ️  Using existing .env file"
-        return
-    fi
+    if [ ! -f .env ]; then
+        _FRESH_INSTALL="true"
 
-    # Generate all secure secrets using openssl or python3 fallback
-    echo "🔒 Generating secure credentials..."
+        # Generate all secure secrets using openssl or python3 fallback
+        echo "🔒 Generating secure credentials..."
 
-    if command -v openssl &> /dev/null; then
-        # Use openssl for cryptographically secure random generation
-        POSTGRES_PASSWORD=$(openssl rand -hex 32)
-        MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
-        JWT_SECRET=$(openssl rand -hex 64)
-        # ENCRYPTION_KEY: Add prefix to make it invalid base64, forcing backend exception handler path
-        # This ensures backend uses the working derive-from-string logic
-        ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
-        REDIS_PASSWORD=$(openssl rand -hex 32)
-        OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
-        FLOWER_PASSWORD=$(openssl rand -hex 16)
-        # MinIO server-side encryption key (AES-256-GCM)
-        MINIO_KMS_KEY="opentranscribe-key:$(openssl rand -base64 32)"
-    elif command -v python3 &> /dev/null; then
-        # Fallback to Python's secrets module
-        POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-        MINIO_ROOT_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-        JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(64))")
-        # ENCRYPTION_KEY: Add prefix to force backend exception handler path
-        ENCRYPTION_KEY=$(python3 -c "import secrets, base64; print('opentranscribe_' + base64.b64encode(secrets.token_bytes(48)).decode())")
-        REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-        OPENSEARCH_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-        FLOWER_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(16))")
-        # MinIO server-side encryption key (AES-256-GCM)
-        MINIO_KMS_KEY=$(python3 -c "import secrets, base64; print('opentranscribe-key:' + base64.b64encode(secrets.token_bytes(32)).decode())")
+        if command -v openssl &> /dev/null; then
+            POSTGRES_PASSWORD=$(openssl rand -hex 32)
+            MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
+            JWT_SECRET=$(openssl rand -hex 64)
+            # ENCRYPTION_KEY: Add prefix to make it invalid base64, forcing backend exception handler path
+            ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
+            REDIS_PASSWORD=$(openssl rand -hex 32)
+            OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
+            FLOWER_PASSWORD=$(openssl rand -hex 16)
+            MINIO_KMS_KEY="opentranscribe-key:$(openssl rand -base64 32)"
+        elif command -v python3 &> /dev/null; then
+            POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            MINIO_ROOT_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(64))")
+            ENCRYPTION_KEY=$(python3 -c "import secrets, base64; print('opentranscribe_' + base64.b64encode(secrets.token_bytes(48)).decode())")
+            REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            OPENSEARCH_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            FLOWER_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(16))")
+            MINIO_KMS_KEY=$(python3 -c "import secrets, base64; print('opentranscribe-key:' + base64.b64encode(secrets.token_bytes(32)).decode())")
+        else
+            # Basic fallback (not recommended for production)
+            POSTGRES_PASSWORD="postgres_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+            MINIO_ROOT_PASSWORD="minio_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+            JWT_SECRET="jwt_secret_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+            ENCRYPTION_KEY="encryption_key_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+            REDIS_PASSWORD="redis_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+            OPENSEARCH_PASSWORD="opensearch_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+            FLOWER_PASSWORD="flower_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+            MINIO_KMS_KEY="opentranscribe-key:$(date +%s | md5sum | head -c 32 | base64)"
+            echo "⚠️  Using basic secrets - install openssl or python3 for cryptographically secure generation"
+        fi
+
+        print_success "Secure credentials generated (64-char JWT/encryption, 32-char passwords)"
+
+        # Write .env immediately so progress is saved even if the script is interrupted
+        _create_initial_env
     else
-        # Basic fallback (not recommended for production)
-        POSTGRES_PASSWORD="postgres_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-        MINIO_ROOT_PASSWORD="minio_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-        JWT_SECRET="jwt_secret_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-        ENCRYPTION_KEY="encryption_key_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-        REDIS_PASSWORD="redis_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-        OPENSEARCH_PASSWORD="opensearch_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-        FLOWER_PASSWORD="flower_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-        # MinIO KMS key (basic fallback)
-        MINIO_KMS_KEY="opentranscribe-key:$(date +%s | md5sum | head -c 32 | base64)"
-        echo "⚠️  Using basic secrets - install openssl or python3 for cryptographically secure generation"
+        echo "ℹ️  Existing .env found - checking for missing configuration..."
     fi
 
-    print_success "Secure credentials generated (64-char JWT/encryption, 32-char passwords)"
-
-    # Prompt for HuggingFace token
+    # Prompt functions self-guard: each reads .env and skips if already set
     prompt_huggingface_token
-
-    # Model selection based on hardware
     select_whisper_model
-
-    # OpenSearch neural search model selection
     select_opensearch_models
-
-    # GPU selection for multi-GPU systems
     select_gpu_device
-
-    # LLM configuration for AI features
     configure_llm_settings
 
-    # Create .env file
-    create_env_file
+    # Always re-write hardware settings (device may have changed since initial setup)
+    _write_hardware_settings
 }
 
 select_whisper_model() {
+    # Re-run guard: skip if already configured in .env (only on re-runs, not fresh installs
+    # where the template default "large-v3-turbo" would falsely match)
+    if [[ "$_FRESH_INSTALL" == "false" ]]; then
+        local _existing_model
+        _existing_model=$(grep '^WHISPER_MODEL=' .env 2>/dev/null | cut -d= -f2-)
+        if [[ -n "$_existing_model" ]]; then
+            WHISPER_MODEL="$_existing_model"
+            echo "✓ Whisper model already configured: $WHISPER_MODEL"
+            return 0
+        fi
+    fi
+
     echo -e "${YELLOW}🎤 Selecting Whisper Model based on hardware...${NC}"
     echo ""
 
@@ -1133,9 +1220,27 @@ select_whisper_model() {
         echo -e "${YELLOW}  Note: You selected a different model than recommended${NC}"
     fi
     echo ""
+
+    # Write immediately so the selection is saved even if the script is interrupted
+    if [ -f .env ]; then
+        sed -i.bak "s|WHISPER_MODEL=.*|WHISPER_MODEL=$WHISPER_MODEL|g" .env && rm -f .env.bak
+    fi
 }
 
 select_opensearch_models() {
+    # Re-run guard: skip if already configured in .env (only on re-runs)
+    if [[ "$_FRESH_INSTALL" == "false" ]]; then
+        local _existing_os_model
+        _existing_os_model=$(grep '^OPENSEARCH_NEURAL_MODEL=' .env 2>/dev/null | cut -d= -f2-)
+        if [[ -n "$_existing_os_model" ]]; then
+            OPENSEARCH_NEURAL_MODEL="$_existing_os_model"
+            # Derive short name for display
+            OPENSEARCH_MODELS=$(basename "$OPENSEARCH_NEURAL_MODEL")
+            echo "✓ OpenSearch neural model already configured: $OPENSEARCH_MODELS"
+            return 0
+        fi
+    fi
+
     echo -e "${YELLOW}🔍 Selecting OpenSearch Neural Search Models...${NC}"
     echo ""
 
@@ -1255,6 +1360,11 @@ select_opensearch_models() {
     echo ""
     echo -e "${GREEN}✓ Selected model: ${OPENSEARCH_MODELS}${NC}"
     echo ""
+
+    # Write immediately so the selection is saved even if the script is interrupted
+    if [ -f .env ] && [[ -n "$OPENSEARCH_NEURAL_MODEL" ]]; then
+        sed -i.bak "s|OPENSEARCH_NEURAL_MODEL=.*|OPENSEARCH_NEURAL_MODEL=$OPENSEARCH_NEURAL_MODEL|g" .env && rm -f .env.bak
+    fi
 }
 
 select_gpu_device() {
@@ -1331,6 +1441,17 @@ configure_llm_settings() {
         return 0
     fi
 
+    # Re-run guard: skip if a non-default provider is already fully configured in .env.
+    # vllm without a URL is the "not configured" default — still prompt in that case.
+    local _existing_provider _existing_vllm_url
+    _existing_provider=$(grep '^LLM_PROVIDER=' .env 2>/dev/null | cut -d= -f2-)
+    _existing_vllm_url=$(grep '^VLLM_BASE_URL=' .env 2>/dev/null | cut -d= -f2-)
+    if [[ -n "$_existing_provider" ]] && { [[ "$_existing_provider" != "vllm" ]] || [[ -n "$_existing_vllm_url" ]]; }; then
+        LLM_PROVIDER="$_existing_provider"
+        echo "✓ LLM already configured: $LLM_PROVIDER"
+        return 0
+    fi
+
     echo ""
     echo -e "${YELLOW}🤖 LLM Configuration for AI Features${NC}"
     echo "=================================================="
@@ -1378,6 +1499,13 @@ configure_llm_settings() {
                 read -p "Enter your model name [gpt-oss]: " vllm_model </dev/tty
                 VLLM_MODEL_NAME=${vllm_model:-"gpt-oss"}
                 echo "✓ vLLM configured: $VLLM_BASE_URL with model $VLLM_MODEL_NAME"
+                if [ -f .env ]; then
+                    sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
+                    sed -i.bak "s|VLLM_BASE_URL=.*|VLLM_BASE_URL=$VLLM_BASE_URL|g" .env
+                    [[ -n "$VLLM_API_KEY" ]] && sed -i.bak "s|VLLM_API_KEY=.*|VLLM_API_KEY=$VLLM_API_KEY|g" .env
+                    [[ -n "$VLLM_MODEL_NAME" ]] && sed -i.bak "s|VLLM_MODEL_NAME=.*|VLLM_MODEL_NAME=$VLLM_MODEL_NAME|g" .env
+                    rm -f .env.bak
+                fi
                 ;;
             2)
                 echo "✓ Configuring OpenAI"
@@ -1387,6 +1515,12 @@ configure_llm_settings() {
                 read -p "Enter OpenAI model [gpt-4o-mini]: " openai_model </dev/tty
                 OPENAI_MODEL_NAME=${openai_model:-"gpt-4o-mini"}
                 echo "✓ OpenAI configured with model $OPENAI_MODEL_NAME"
+                if [ -f .env ]; then
+                    sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
+                    sed -i.bak "s|# OPENAI_API_KEY=.*|OPENAI_API_KEY=$OPENAI_API_KEY|g" .env
+                    [[ -n "$OPENAI_MODEL_NAME" ]] && sed -i.bak "s|# OPENAI_MODEL_NAME=.*|OPENAI_MODEL_NAME=$OPENAI_MODEL_NAME|g" .env
+                    rm -f .env.bak
+                fi
                 ;;
             3)
                 echo "✓ Configuring Ollama"
@@ -1396,15 +1530,27 @@ configure_llm_settings() {
                 read -p "Enter Ollama model [llama2:7b-chat]: " ollama_model </dev/tty
                 OLLAMA_MODEL_NAME=${ollama_model:-"llama2:7b-chat"}
                 echo "✓ Ollama configured: $OLLAMA_BASE_URL with model $OLLAMA_MODEL_NAME"
+                if [ -f .env ]; then
+                    sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
+                    sed -i.bak "s|# OLLAMA_BASE_URL=.*|OLLAMA_BASE_URL=$OLLAMA_BASE_URL|g" .env
+                    [[ -n "$OLLAMA_MODEL_NAME" ]] && sed -i.bak "s|# OLLAMA_MODEL_NAME=.*|OLLAMA_MODEL_NAME=$OLLAMA_MODEL_NAME|g" .env
+                    rm -f .env.bak
+                fi
                 ;;
             4)
                 echo "✓ Configuring Anthropic Claude"
                 LLM_PROVIDER="anthropic"
                 read -p "Enter your Anthropic API key: " anthropic_key </dev/tty
                 ANTHROPIC_API_KEY=$anthropic_key
-                read -p "Enter Claude model [claude-3-haiku-20240307]: " anthropic_model </dev/tty
-                ANTHROPIC_MODEL_NAME=${anthropic_model:-"claude-3-haiku-20240307"}
+                read -p "Enter Claude model [claude-haiku-4-5-20251001]: " anthropic_model </dev/tty
+                ANTHROPIC_MODEL_NAME=${anthropic_model:-"claude-haiku-4-5-20251001"}
                 echo "✓ Anthropic Claude configured with model $ANTHROPIC_MODEL_NAME"
+                if [ -f .env ]; then
+                    sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
+                    sed -i.bak "s|# ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY|g" .env
+                    [[ -n "$ANTHROPIC_MODEL_NAME" ]] && sed -i.bak "s|# ANTHROPIC_MODEL_NAME=.*|ANTHROPIC_MODEL_NAME=$ANTHROPIC_MODEL_NAME|g" .env
+                    rm -f .env.bak
+                fi
                 ;;
             5)
                 echo "✓ Configuring OpenRouter"
@@ -1414,6 +1560,12 @@ configure_llm_settings() {
                 read -p "Enter OpenRouter model [anthropic/claude-3-haiku]: " openrouter_model </dev/tty
                 OPENROUTER_MODEL_NAME=${openrouter_model:-"anthropic/claude-3-haiku"}
                 echo "✓ OpenRouter configured with model $OPENROUTER_MODEL_NAME"
+                if [ -f .env ]; then
+                    sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
+                    sed -i.bak "s|# OPENROUTER_API_KEY=.*|OPENROUTER_API_KEY=$OPENROUTER_API_KEY|g" .env
+                    [[ -n "$OPENROUTER_MODEL_NAME" ]] && sed -i.bak "s|# OPENROUTER_MODEL_NAME=.*|OPENROUTER_MODEL_NAME=$OPENROUTER_MODEL_NAME|g" .env
+                    rm -f .env.bak
+                fi
                 ;;
             6|*)
                 echo "⏭️  Skipping LLM configuration - you can configure manually in .env file"
@@ -1433,128 +1585,6 @@ configure_llm_settings() {
     echo "• See .env.example for all available configuration options"
 }
 
-create_env_file() {
-    echo "✓ Creating .env file with optimized settings..."
-
-    # Copy example and update values
-    cp .env.example .env
-
-    # Update security credentials (auto-generated)
-    sed -i.bak "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|g" .env
-    sed -i.bak "s|MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD|g" .env
-    sed -i.bak "s|JWT_SECRET_KEY=.*|JWT_SECRET_KEY=$JWT_SECRET|g" .env
-    sed -i.bak "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$ENCRYPTION_KEY|g" .env
-    sed -i.bak "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=$REDIS_PASSWORD|g" .env
-    sed -i.bak "s|OPENSEARCH_PASSWORD=.*|OPENSEARCH_PASSWORD=$OPENSEARCH_PASSWORD|g" .env
-    sed -i.bak "s|FLOWER_PASSWORD=.*|FLOWER_PASSWORD=$FLOWER_PASSWORD|g" .env
-
-    # MinIO server-side encryption (data at rest)
-    sed -i.bak "s|MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=$MINIO_KMS_KEY|g" .env
-
-    # Update AI model configuration
-    sed -i.bak "s|HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|g" .env
-    sed -i.bak "s|WHISPER_MODEL=.*|WHISPER_MODEL=$WHISPER_MODEL|g" .env
-    sed -i.bak "s|BATCH_SIZE=.*|BATCH_SIZE=$BATCH_SIZE|g" .env
-    sed -i.bak "s|COMPUTE_TYPE=.*|COMPUTE_TYPE=$COMPUTE_TYPE|g" .env
-
-    # Update OpenSearch neural model configuration (if selected)
-    if [[ -n "$OPENSEARCH_NEURAL_MODEL" ]]; then
-        sed -i.bak "s|OPENSEARCH_NEURAL_MODEL=.*|OPENSEARCH_NEURAL_MODEL=$OPENSEARCH_NEURAL_MODEL|g" .env
-    fi
-
-    # Update LLM configuration
-    if [[ -n "$LLM_PROVIDER" ]]; then
-        sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
-    fi
-
-    # Provider-specific configurations
-    if [[ "$LLM_PROVIDER" == "vllm" && -n "$VLLM_BASE_URL" ]]; then
-        sed -i.bak "s|VLLM_BASE_URL=.*|VLLM_BASE_URL=$VLLM_BASE_URL|g" .env
-        if [[ -n "$VLLM_API_KEY" ]]; then
-            sed -i.bak "s|VLLM_API_KEY=.*|VLLM_API_KEY=$VLLM_API_KEY|g" .env
-        fi
-        if [[ -n "$VLLM_MODEL_NAME" ]]; then
-            sed -i.bak "s|VLLM_MODEL_NAME=.*|VLLM_MODEL_NAME=$VLLM_MODEL_NAME|g" .env
-        fi
-    elif [[ "$LLM_PROVIDER" == "openai" && -n "$OPENAI_API_KEY" ]]; then
-        sed -i.bak "s|# OPENAI_API_KEY=.*|OPENAI_API_KEY=$OPENAI_API_KEY|g" .env
-        if [[ -n "$OPENAI_MODEL_NAME" ]]; then
-            sed -i.bak "s|# OPENAI_MODEL_NAME=.*|OPENAI_MODEL_NAME=$OPENAI_MODEL_NAME|g" .env
-        fi
-    elif [[ "$LLM_PROVIDER" == "ollama" && -n "$OLLAMA_BASE_URL" ]]; then
-        sed -i.bak "s|# OLLAMA_BASE_URL=.*|OLLAMA_BASE_URL=$OLLAMA_BASE_URL|g" .env
-        if [[ -n "$OLLAMA_MODEL_NAME" ]]; then
-            sed -i.bak "s|# OLLAMA_MODEL_NAME=.*|OLLAMA_MODEL_NAME=$OLLAMA_MODEL_NAME|g" .env
-        fi
-    elif [[ "$LLM_PROVIDER" == "anthropic" && -n "$ANTHROPIC_API_KEY" ]]; then
-        sed -i.bak "s|# ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY|g" .env
-        if [[ -n "$ANTHROPIC_MODEL_NAME" ]]; then
-            sed -i.bak "s|# ANTHROPIC_MODEL_NAME=.*|ANTHROPIC_MODEL_NAME=$ANTHROPIC_MODEL_NAME|g" .env
-        fi
-    elif [[ "$LLM_PROVIDER" == "openrouter" && -n "$OPENROUTER_API_KEY" ]]; then
-        sed -i.bak "s|# OPENROUTER_API_KEY=.*|OPENROUTER_API_KEY=$OPENROUTER_API_KEY|g" .env
-        if [[ -n "$OPENROUTER_MODEL_NAME" ]]; then
-            sed -i.bak "s|# OPENROUTER_MODEL_NAME=.*|OPENROUTER_MODEL_NAME=$OPENROUTER_MODEL_NAME|g" .env
-        fi
-    fi
-
-    # Hardware-specific configurations
-    case "$DETECTED_DEVICE" in
-        "cuda")
-            sed -i.bak "s|USE_GPU=.*|USE_GPU=true|g" .env
-            sed -i.bak "s|GPU_DEVICE_ID=.*|GPU_DEVICE_ID=${GPU_DEVICE_ID:-0}|g" .env
-            sed -i.bak "s|TORCH_DEVICE=.*|TORCH_DEVICE=cuda|g" .env
-            ;;
-        "mps")
-            sed -i.bak "s|USE_GPU=.*|USE_GPU=false|g" .env
-            sed -i.bak "s|TORCH_DEVICE=.*|TORCH_DEVICE=mps|g" .env
-            ;;
-        "cpu")
-            sed -i.bak "s|USE_GPU=.*|USE_GPU=false|g" .env
-            sed -i.bak "s|TORCH_DEVICE=.*|TORCH_DEVICE=cpu|g" .env
-            ;;
-    esac
-
-    # Set model cache directory
-    MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-./models}"
-    sed -i.bak "s|MODEL_CACHE_DIR=.*|MODEL_CACHE_DIR=$MODEL_CACHE_DIR|g" .env
-
-    # Add Docker runtime configuration
-    echo "" >> .env
-    echo "# Hardware Configuration (Auto-detected)" >> .env
-    echo "DETECTED_DEVICE=${DETECTED_DEVICE}" >> .env
-    echo "USE_NVIDIA_RUNTIME=${USE_GPU_RUNTIME}" >> .env
-    # FORCE_CPU_MODE: persisted opt-out signal read by opentranscribe.sh at
-    # start/restart time. When "true", the management script skips the
-    # docker-compose.gpu.yml / docker-compose.blackwell.yml overlays even if
-    # Docker reports an nvidia runtime — ensuring the CPU-only choice made at
-    # install time survives subsequent start/stop/restart cycles without
-    # requiring the user to re-pass --cpu.
-    echo "FORCE_CPU_MODE=${FORCE_CPU}" >> .env
-
-    # CPU-friendly diarization default. When DETECTED_DEVICE=cpu (either
-    # because FORCE_CPU was set or because no GPU was found on the host),
-    # disable diarization in .env. PyAnnote requires CUDA — leaving it on
-    # would crash workers or run unusably slow. WHISPER_MODEL is already
-    # handled by select_whisper_model() (which recommends "base" for CPU
-    # and is written to .env above via WHISPER_MODEL=$WHISPER_MODEL). Users
-    # can flip ENABLE_DIARIZATION=true in .env if they have a reason.
-    if [[ "$DETECTED_DEVICE" == "cpu" ]]; then
-        if grep -q '^ENABLE_DIARIZATION=' .env; then
-            sed -i.bak "s|^ENABLE_DIARIZATION=.*|ENABLE_DIARIZATION=${ENABLE_DIARIZATION_CPU_DEFAULT}|" .env
-        else
-            echo "ENABLE_DIARIZATION=${ENABLE_DIARIZATION_CPU_DEFAULT}" >> .env
-        fi
-    fi
-
-    # Note: Database schema is managed by Alembic migrations on backend startup
-
-    # Clean up backup file
-    rm -f .env.bak
-
-    echo "✓ Environment configured for $DETECTED_DEVICE with $COMPUTE_TYPE precision"
-}
-
 configure_https_settings() {
     # Unattended: only configure HTTPS if NGINX_SERVER_NAME is pre-set in the environment
     if is_unattended; then
@@ -1566,6 +1596,20 @@ configure_https_settings() {
         fi
         ot_log_unattended "NGINX_SERVER_NAME=${NGINX_SERVER_NAME}; certificates must be generated out of band"
         SSL_CONFIGURED=false
+        return 0
+    fi
+
+    # Re-run guard: skip if NGINX_SERVER_NAME is already set in .env
+    local _existing_nginx
+    _existing_nginx=$(grep '^NGINX_SERVER_NAME=' .env 2>/dev/null | cut -d= -f2- | tr -d '"')
+    if [[ -n "$_existing_nginx" ]]; then
+        NGINX_SERVER_NAME="$_existing_nginx"
+        if [[ -f "nginx/ssl/server.crt" && -f "nginx/ssl/server.key" ]]; then
+            SSL_CONFIGURED=true
+        else
+            SSL_CONFIGURED=false
+        fi
+        echo "✓ HTTPS already configured ($NGINX_SERVER_NAME)"
         return 0
     fi
 
@@ -1583,6 +1627,12 @@ configure_https_settings() {
     echo "  • Microphone recording only works on localhost"
     echo "  • Other devices on your network can't use recording"
     echo ""
+
+    # On re-run where user previously said No, add context to avoid nagging
+    if [[ "$_FRESH_INSTALL" == "false" ]]; then
+        echo -e "${YELLOW}ℹ️  HTTPS was not configured during initial setup.${NC}"
+        echo ""
+    fi
 
     read -p "Do you want to set up HTTPS with self-signed certificates? (y/N) " -n 1 -r </dev/tty
     echo
@@ -1718,6 +1768,25 @@ download_ai_models() {
         return 0
     fi
 
+    # Load token from .env if the shell var is empty (handles re-run case)
+    if [[ -z "$HUGGINGFACE_TOKEN" ]]; then
+        HUGGINGFACE_TOKEN=$(grep '^HUGGINGFACE_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
+    fi
+
+    # Load whisper model from .env if shell var is empty (re-run case)
+    if [[ -z "$WHISPER_MODEL" ]]; then
+        WHISPER_MODEL=$(grep '^WHISPER_MODEL=' .env 2>/dev/null | cut -d= -f2-)
+    fi
+
+    # Skip if models were already successfully downloaded
+    local _model_cache
+    _model_cache=$(grep '^MODEL_CACHE_DIR=' .env 2>/dev/null | cut -d= -f2- | tr -d '"')
+    _model_cache="${_model_cache:-./models}"
+    if [ -f "$_model_cache/.download_complete" ]; then
+        echo "✓ AI models already downloaded ($(cat "$_model_cache/.download_complete"))"
+        return 0
+    fi
+
     echo "OpenTranscribe requires AI models (~2.9GB) for transcription, speaker diarization, and semantic search."
     echo ""
     echo "Configuration summary:"
@@ -1737,7 +1806,7 @@ download_ai_models() {
         echo "  1. HuggingFace token (Read permissions)"
         echo "  2. Accept BOTH gated model agreements:"
         echo "     • https://huggingface.co/pyannote/segmentation-3.0"
-        echo "     • https://huggingface.co/pyannote/speaker-diarization-3.1"
+        echo "     • https://huggingface.co/pyannote/speaker-diarization-community-1"
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
         read -p "Would you like to enter your HuggingFace token now? (y/N) " -n 1 -r </dev/tty
@@ -1764,7 +1833,7 @@ download_ai_models() {
                     echo ""
                     echo -e "${YELLOW}⚠️  FINAL REMINDER:${NC} Ensure you accepted BOTH model agreements:"
                     echo "   • pyannote/segmentation-3.0"
-                    echo "   • pyannote/speaker-diarization-3.1"
+                    echo "   • pyannote/speaker-diarization-community-1"
                     echo ""
                 else
                     print_warning "Token doesn't start with 'hf_' - this may not be valid"
@@ -1912,7 +1981,7 @@ download_ai_models() {
             echo ""
             echo "Quick fix steps:"
             echo "  1. Accept: https://huggingface.co/pyannote/segmentation-3.0"
-            echo "  2. Accept: https://huggingface.co/pyannote/speaker-diarization-3.1"
+            echo "  2. Accept: https://huggingface.co/pyannote/speaker-diarization-community-1"
             echo "  3. Wait 1-2 minutes"
             echo "  4. Run setup again"
             exit 1
@@ -2008,6 +2077,15 @@ pull_docker_images() {
 }
 
 display_summary() {
+    # Load key values from .env if shell vars are empty (re-run case)
+    [[ -z "$WHISPER_MODEL" ]]     && WHISPER_MODEL=$(grep '^WHISPER_MODEL=' .env 2>/dev/null | cut -d= -f2-)
+    [[ -z "$HUGGINGFACE_TOKEN" ]] && HUGGINGFACE_TOKEN=$(grep '^HUGGINGFACE_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
+    [[ -z "$LLM_PROVIDER" ]]      && LLM_PROVIDER=$(grep '^LLM_PROVIDER=' .env 2>/dev/null | cut -d= -f2-)
+    [[ -z "$NGINX_SERVER_NAME" ]] && NGINX_SERVER_NAME=$(grep '^NGINX_SERVER_NAME=' .env 2>/dev/null | cut -d= -f2- | tr -d '"')
+    [[ -z "$DETECTED_DEVICE" ]]   && DETECTED_DEVICE=$(grep '^DETECTED_DEVICE=' .env 2>/dev/null | cut -d= -f2-)
+    [[ -z "$COMPUTE_TYPE" ]]      && COMPUTE_TYPE=$(grep '^COMPUTE_TYPE=' .env 2>/dev/null | cut -d= -f2-)
+    [[ -z "$VLLM_BASE_URL" ]]     && VLLM_BASE_URL=$(grep '^VLLM_BASE_URL=' .env 2>/dev/null | cut -d= -f2-)
+
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}🎉  OpenTranscribe Setup Complete!${NC}"

@@ -25,7 +25,7 @@ CKPT="$STATE_DIR/checkpoint.txt"
 RESULTS="$STATE_DIR/results.tsv"
 LOG="$STATE_DIR/orchestrate.log"
 PY="backend/venv/bin/python"
-ANCHOR_UUID="ce471b5a-b4ae-45e5-8905-af7420d50f79"   # 0.5h synthetic anchor (if present)
+ANCHOR_UUID="77e78a8c-4e0a-4995-9aa1-c1e9e0db3e15"   # bench 0.5h synthetic (0.5h_1899s.wav)
 export BENCHMARK_EMAIL="${BENCHMARK_EMAIL:-admin@example.com}"
 export BENCHMARK_PASSWORD="${BENCHMARK_PASSWORD:-password}"
 

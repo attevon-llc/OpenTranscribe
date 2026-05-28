@@ -13,9 +13,13 @@ One self-contained orchestrator: `scripts/soak_orchestrate.sh`. Flow:
 ### Launch / resume (detached; survives session death)
 ```bash
 cd /mnt/nvm/repos/transcribe-app
-setsid bash scripts/soak_orchestrate.sh >/dev/null 2>&1 &
+setsid bash scripts/soak_orchestrate.sh >/dev/null 2>&1 &   # the run
+setsid bash scripts/soak_watchdog.sh    >/dev/null 2>&1 &   # auto-resumes it if it dies
 ```
-Re-running the same command resumes from the checkpoint (skips finished levels).
+Re-running the orchestrator resumes from the checkpoint (skips finished levels).
+The watchdog relaunches the orchestrator automatically on a crash (capped at 8
+restarts) and exits once the log shows `SOAK ORCHESTRATOR DONE`.
+Watchdog activity: `benchmarks/soak_state/watchdog.log`.
 
 ### Check progress (no tokens; run these yourself)
 ```bash

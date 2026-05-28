@@ -59,9 +59,10 @@ def _load_redis_url() -> str:
             for line in f:
                 line = line.strip()
                 if line.startswith('REDIS_PASSWORD='):
-                    password = line.split('=', 1)[1].strip().strip('"\'')
+                    password = line.split('=', 1)[1].split('#', 1)[0].strip().strip('"\'')
                 elif line.startswith('REDIS_PORT=') and 'already set' not in line:
-                    port = line.split('=', 1)[1].strip().strip('"\'')
+                    # Strip inline comments + whitespace (e.g. "5177  # debug").
+                    port = line.split('=', 1)[1].split('#', 1)[0].strip().strip('"\'')
     except OSError:
         pass
     if password:

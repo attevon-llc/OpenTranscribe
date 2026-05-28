@@ -25,7 +25,6 @@ CKPT="$STATE_DIR/checkpoint.txt"
 RESULTS="$STATE_DIR/results.tsv"
 LOG="$STATE_DIR/orchestrate.log"
 PY="backend/venv/bin/python"
-ANCHOR_UUID="77e78a8c-4e0a-4995-9aa1-c1e9e0db3e15"   # bench 0.5h synthetic (0.5h_1899s.wav)
 export BENCHMARK_EMAIL="${BENCHMARK_EMAIL:-admin@example.com}"
 export BENCHMARK_PASSWORD="${BENCHMARK_PASSWORD:-password}"
 
@@ -40,11 +39,104 @@ setenv(){ sed -i "s/^$1=.*/$1=$2/" .env; grep -q "^$1=" .env || echo "$1=$2" >> 
 
 n_corpus(){ "$PY" -c "import json;print(len(json.load(open('$CORPUS'))['files']))"; }
 
-# Restart the solo GPU worker (bench stack) and wait for model preload.
+RPW=$(grep -m1 '^REDIS_PASSWORD=' .env | cut -d= -f2 | tr -d ' ')
+redis_llen(){ docker exec opentranscribe-redis redis-cli -a "$RPW" --no-auth-warning LLEN "$1" 2>/dev/null | tr -d '[:space:]'; }
+psql_q(){ docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -t -A -c "$1" 2>/dev/null; }
+
+# Wait until all task queues are empty (no in-flight work), up to ~timeout sec.
+drain_queues(){
+  local timeout=${1:-180} t=0
+  while (( t < timeout )); do
+    local g c; g=$(redis_llen gpu); c=$(redis_llen cpu)
+    [[ "${g:-0}" == "0" && "${c:-0}" == "0" ]] && return 0
+    sleep 5; t=$((t+5))
+  done
+  log "WARN: queues not empty after ${timeout}s (gpu=$(redis_llen gpu) cpu=$(redis_llen cpu))"
+}
+
+# Reset any orphaned task/file state left by a prior interrupted run.
+reset_orphans(){
+  local n; n=$(psql_q "SELECT count(*) FROM task WHERE status IN ('pending','in_progress');")
+  if [[ "${n:-0}" != "0" ]]; then
+    log "resetting ${n} orphaned task rows + stuck files"
+    psql_q "UPDATE task SET status='failed' WHERE status IN ('pending','in_progress');
+            UPDATE media_file SET status='completed' WHERE status IN ('processing','pending');
+            UPDATE media_file SET active_task_id=NULL WHERE active_task_id IS NOT NULL;" >/dev/null
+  fi
+}
+
+# SAFETY: refuse any destructive op unless postgres AND minio are backed by the
+# bench named volumes. This makes it impossible to wipe the dev/NAS dataset even
+# if the wrong stack happens to be up.
+assert_bench_only(){
+  local pgvol mnvol
+  pgvol=$(docker inspect opentranscribe-postgres --format '{{range .Mounts}}{{.Name}} {{end}}' 2>/dev/null)
+  mnvol=$(docker inspect opentranscribe-minio    --format '{{range .Mounts}}{{.Name}} {{end}}' 2>/dev/null)
+  case "$pgvol" in *postgres_bench_data*) : ;; *)
+    log "FATAL SAFETY: postgres not on bench volume (mounts: $pgvol). Refusing to clear data."; exit 99 ;; esac
+  case "$mnvol" in *minio_bench_data*) : ;; *)
+    log "FATAL SAFETY: minio not on bench volume (mounts: $mnvol). Refusing to clear data."; exit 99 ;; esac
+}
+
+# Phase 0: load the corpus ONCE into the bench deployment (like a real user
+# uploading their files). If the bench DB already has completed files, just
+# rebuild corpus.json from them. No per-level DB wiping — every later level
+# REPROCESSES these same files (the app's normal feature), so duplicates never
+# happen and nothing locks the database.
+ensure_corpus(){
+  local cnt; cnt=$(psql_q "SELECT count(*) FROM media_file WHERE status='completed';"); cnt=${cnt:-0}
+  if [[ "$cnt" -lt 1 ]]; then
+    if done_u "phase0:upload"; then
+      log "Phase 0 marked done but DB empty — rerunning upload"
+    fi
+    log "Phase 0: bench DB empty — uploading corpus from benchmark/test_audio (one-time deployment load)"
+    setenv GPU_DEVICE_ID 0; setenv GPU_CONCURRENT_REQUESTS 1; setenv ENGINE_GPU_SPLIT false
+    setenv GPU_SCALE_ENABLED false; setenv GPU_SCALE_DEFAULT_WORKER 0
+    restart_solo
+    "$PY" scripts/soak_upload_corpus.py 2>&1 | tee -a "$LOG"
+    [[ "${PIPESTATUS[0]}" -ne 0 ]] && { log "FATAL: corpus upload failed"; exit 6; }
+    mark "phase0:upload"
+  else
+    log "Phase 0: bench DB has $cnt completed files — rebuilding corpus.json from current UUIDs"
+    "$PY" scripts/soak_rebuild_corpus.py 2>&1 | tee -a "$LOG" \
+      || log "WARN: corpus.json rebuild failed; using existing file"
+  fi
+}
+
+# Wipe the bench deployment (only *_bench_data volumes — dev/NAS data untouched).
+# Called at the very end, AFTER all metrics are saved to the host filesystem
+# (docs/engine-benchmark-results + benchmarks/soak_state are NOT in bench volumes).
+wipe_bench(){
+  assert_bench_only
+  log "Wiping bench deployment (all metrics already saved to host)"
+  docker compose $BENCH_COMPOSE down --remove-orphans >>"$LOG" 2>&1
+  for v in postgres minio redis opensearch flower; do
+    docker volume rm "transcribe-app_${v}_bench_data" >>"$LOG" 2>&1 || true
+  done
+  log "Bench deployment wiped."
+}
+
+# Block until the named GPU worker container answers a celery ping.
+wait_worker_ready(){
+  local container=$1 t=0
+  while (( t < 150 )); do
+    if docker exec "$container" celery -A app.core.celery inspect ping 2>/dev/null | grep -q pong; then
+      log "$container responds to celery ping"; return 0
+    fi
+    sleep 5; t=$((t+5))
+  done
+  log "FATAL: $container did not respond to celery ping within 150s"; return 1
+}
+
+# Restart the solo GPU worker cleanly: drain in-flight, reset orphans, recreate,
+# wait for broker re-attach + model preload. (Force-recreate mid-task is what
+# desynced the broker in the first failed run — drain first to prevent it.)
 restart_solo(){
+  drain_queues 120
   docker compose $BENCH_COMPOSE up -d --force-recreate --no-deps celery-worker >>"$LOG" 2>&1
-  log "worker recreated; waiting 75s for model preload"
-  sleep 75
+  wait_worker_ready opentranscribe-celery-worker || exit 4
+  log "waiting 45s for model preload"; sleep 45
+  reset_orphans
   docker exec opentranscribe-celery-worker env 2>/dev/null \
     | grep -E 'GPU_DEVICE_ID|GPU_CONCURRENT_REQUESTS|ENGINE_GPU_SPLIT' | tee -a "$LOG"
 }
@@ -82,6 +174,9 @@ oom_check(){
 }
 
 # run_level PHASE MODE CONC GPU PROFILE [extra parallel args...]
+# CONC = worker GPU_CONCURRENT_REQUESTS (the independent variable). Each level
+# clears bench data, uploads the FULL corpus (real user flow), and measures how
+# the backend processes 58h of audio at in-flight concurrency CONC.
 run_level(){
   local phase=$1 mode=$2 conc=$3 gpu=$4 profile=$5; shift 5
   local unit="${phase}:conc${conc}"
@@ -89,27 +184,26 @@ run_level(){
   setenv GPU_CONCURRENT_REQUESTS "$conc"
   restart_solo
   local outdir; outdir="$OUTROOT/${phase}_conc${conc}_$(date +%Y%m%d_%H%M%S)"
-  log "RUN $unit  mode=$mode gpu=$gpu profile=$profile -> $outdir"
+  log "RUN $unit  mode=$mode gpu=$gpu profile=$profile (reprocess full corpus, conc=$conc) -> $outdir"
   "$PY" scripts/benchmark_parallel.py --corpus-file "$CORPUS" --profile "$profile" \
-      --batches "$conc" --gpu-id "$gpu" --cooldown 0 --output "$outdir" "$@" \
+      --batches "$N" --gpu-id "$gpu" --cooldown 0 --output "$outdir" "$@" \
       2>&1 | tee -a "$LOG"
+  local rc=${PIPESTATUS[0]}
+  if [[ "$rc" -ne 0 ]]; then
+    log "ABORT: benchmark_parallel exited $rc at $unit — NOT checkpointing. Fix and resume."
+    exit 3
+  fi
   local stable=yes
   oom_check && { log "OOM detected at $unit"; stable=oom; }
-  read -r peak rtf util < <(parse_summary "$outdir" "$conc")
+  read -r peak rtf util < <(parse_summary "$outdir" "$N")
+  if [[ "$rtf" == "NA" || "$peak" == "NA" ]]; then
+    log "ABORT: no metrics parsed at $unit (rtf=$rtf peak=$peak) — pipeline likely not processing. NOT checkpointing."
+    exit 3
+  fi
   echo -e "${phase}\t${mode}\t${conc}\t${gpu}\t${peak}\t${rtf}\t${util}\t${stable}" >> "$RESULTS"
   log "result $unit  peak=${peak}MB rtf=${rtf} util=${util}% stable=${stable}"
   mark "$unit"
   [[ "$stable" == "oom" ]] && return 2 || return 0
-}
-
-run_e2e(){
-  local phase=$1 gpu=$2; local unit="${phase}:e2e"
-  if done_u "$unit"; then log "skip $unit"; return 0; fi
-  setenv GPU_CONCURRENT_REQUESTS 1; restart_solo
-  "$PY" scripts/benchmark_e2e.py --file-uuid "$ANCHOR_UUID" --iterations 3 --detailed \
-      --output "$OUTROOT/e2e_${phase}_$(date +%Y%m%d).csv" 2>&1 | tee -a "$LOG" || \
-      log "WARN: e2e baseline failed for $phase (anchor may be absent) — continuing"
-  mark "$unit"
 }
 
 best_from_results(){  # best_from_results PHASE MAX_VRAM MIN_RTF
@@ -128,21 +222,25 @@ print(best_conc)
 PY
 }
 
-# ── Preconditions ────────────────────────────────────────────────────────────
-[[ -f "$CORPUS" ]] || { log "FATAL: $CORPUS missing — run Phase 0 first."; exit 1; }
-N=$(n_corpus); log "==== SOAK ORCHESTRATOR START — corpus=$N files ===="
-
-# Always-true env
+# ── Preconditions + Phase 0 (one-time corpus load) ───────────────────────────
+# Always-true instrumentation env
 setenv ENABLE_BENCHMARK_TIMING true
 setenv ENABLE_VRAM_PROFILING true
 setenv WHISPER_MODEL large-v3-turbo
+
+log "preflight: checking backend health"
+curl -sf http://localhost:5174/health >/dev/null 2>&1 || { log "FATAL: backend not healthy — is the bench stack up?"; exit 1; }
+
+ensure_corpus
+[[ -f "$CORPUS" ]] || { log "FATAL: $CORPUS missing after Phase 0"; exit 1; }
+N=$(n_corpus); log "==== SOAK ORCHESTRATOR START — corpus=$N files ===="
+reset_orphans
 
 # ── Phase 1: A6000 solo (GPU 0) ──────────────────────────────────────────────
 if ! done_u "phase1:complete"; then
   log "===== PHASE 1: A6000 solo (GPU 0) ====="
   setenv GPU_SCALE_ENABLED false; setenv GPU_SCALE_DEFAULT_WORKER 0
   setenv ENGINE_GPU_SPLIT false; setenv GPU_DEVICE_ID 0
-  run_e2e phase1 0
   for c in 1 4 8 10 12 14 16 20 24; do
     [[ "$c" -gt "$N" ]] && { log "skip conc=$c (> corpus $N)"; continue; }
     run_level phase1 a6000_solo "$c" 0 mixed --shuffle || { log "Phase 1 stop at conc=$c"; break; }
@@ -155,7 +253,6 @@ A6000_BEST=$(best_from_results phase1 49500 40); log "A6000_BEST=$A6000_BEST"
 if ! done_u "phase2:complete"; then
   log "===== PHASE 2: 3080 Ti solo (GPU 1) ====="
   setenv GPU_SCALE_ENABLED false; setenv ENGINE_GPU_SPLIT false; setenv GPU_DEVICE_ID 1
-  run_e2e phase2 1
   for c in 1 2 3 4; do
     run_level phase2 ti_solo "$c" 1 by_duration --cooldown 10 || { log "Phase 2 stop at conc=$c"; break; }
   done
@@ -169,14 +266,24 @@ if ! done_u "phase3:complete"; then
   setenv GPU_SCALE_ENABLED true; setenv GPU_SCALE_DEFAULT_WORKER 1; setenv GPU_DEVICE_ID 1
   setenv GPU_CONCURRENT_REQUESTS "$TI_BEST"; setenv GPU_SCALE_DEVICE_ID 0
   setenv GPU_SCALE_WORKERS "$A6000_BEST"; setenv ENGINE_GPU_SPLIT false
+  drain_queues 120
   docker compose $BENCH_COMPOSE down --remove-orphans >>"$LOG" 2>&1
-  COMPOSE_PROFILES=gpu-scale docker compose $BENCH_COMPOSE -f docker-compose.gpu-scale.yml up -d >>"$LOG" 2>&1
-  sleep 80
-  docker ps --format '{{.Names}}' | grep -E '^opentranscribe-celery-worker' | tee -a "$LOG"
+  COMPOSE_PROFILES=gpu-scale docker compose $BENCH_COMPOSE -f docker-compose.gpu-scale.yml -f docker-compose.bench-gpu.yml up -d >>"$LOG" 2>&1
+  sleep 10
+  # The gpu-scaled service uses `scale:`, so Compose ignores container_name and
+  # names it <project>-celery-worker-gpu-scaled. Resolve the real name.
+  scaled_name=$(docker ps --format '{{.Names}}' | grep -m1 'celery-worker-gpu-scaled')
+  log "resolved gpu-scaled container: ${scaled_name:-NOT FOUND}"
+  wait_worker_ready "${scaled_name:-transcribe-app-celery-worker-gpu-scaled}" || exit 4
+  wait_worker_ready opentranscribe-celery-worker || exit 4
+  log "waiting 45s for model preload on both cards"; sleep 45; reset_orphans
+  docker ps --format '{{.Names}}' | grep -E 'celery-worker' | tee -a "$LOG"
   outdir="$OUTROOT/phase3_dual_scale_$(date +%Y%m%d_%H%M%S)"
   "$PY" scripts/benchmark_parallel.py --corpus-file "$CORPUS" --profile mixed --shuffle \
       --batches "$N" --gpu-id 0 --cooldown 0 --output "$outdir" 2>&1 | tee -a "$LOG"
+  [[ "${PIPESTATUS[0]}" -ne 0 ]] && { log "ABORT: phase3 benchmark failed"; exit 3; }
   read -r peak rtf util < <(parse_summary "$outdir" "$N")
+  [[ "$rtf" == "NA" ]] && { log "ABORT: phase3 produced no metrics"; exit 3; }
   echo -e "phase3\tdual_gpu_scale\t${N}\t0+1\t${peak}\t${rtf}\t${util}\tyes" >> "$RESULTS"
   mark "phase3:complete"
 fi
@@ -187,14 +294,19 @@ if ! done_u "phase4:complete"; then
   setenv GPU_SCALE_ENABLED false; setenv GPU_SCALE_DEFAULT_WORKER 0
   setenv ENGINE_GPU_SPLIT true; setenv GPU_TRANSCRIBE_DEVICE_ID 0; setenv GPU_DIARIZE_DEVICE_ID 1
   setenv GPU_CONCURRENT_REQUESTS "$TI_BEST"
+  drain_queues 120
   docker compose $BENCH_COMPOSE down --remove-orphans >>"$LOG" 2>&1
-  COMPOSE_PROFILES=gpu-split docker compose $BENCH_COMPOSE up -d >>"$LOG" 2>&1
-  sleep 80
+  COMPOSE_PROFILES=gpu-split docker compose $BENCH_COMPOSE -f docker-compose.bench-gpu.yml up -d >>"$LOG" 2>&1
+  wait_worker_ready opentranscribe-celery-worker-gpu-transcribe || exit 4
+  wait_worker_ready opentranscribe-celery-worker-gpu-diarize || exit 4
+  log "waiting 45s for model preload"; sleep 45; reset_orphans
   docker ps --format '{{.Names}}' | grep -E '^opentranscribe-celery-worker-gpu-' | tee -a "$LOG"
   outdir="$OUTROOT/phase4_gpusplit_$(date +%Y%m%d_%H%M%S)"
   "$PY" scripts/benchmark_parallel.py --corpus-file "$CORPUS" --profile mixed --shuffle \
       --batches "$N" --gpu-id 0 --cooldown 0 --output "$outdir" 2>&1 | tee -a "$LOG"
+  [[ "${PIPESTATUS[0]}" -ne 0 ]] && { log "ABORT: phase4 benchmark failed"; exit 3; }
   read -r peak rtf util < <(parse_summary "$outdir" "$N")
+  [[ "$rtf" == "NA" ]] && { log "ABORT: phase4 produced no metrics"; exit 3; }
   echo -e "phase4\tgpu_split\t${N}\t0+1\t${peak}\t${rtf}\t${util}\tyes" >> "$RESULTS"
   mark "phase4:complete"
 fi
@@ -204,15 +316,24 @@ if ! done_u "phase5:complete"; then
   log "===== PHASE 5: duration curve (GPU 0 solo, conc=1, sequential) ====="
   setenv ENGINE_GPU_SPLIT false; setenv GPU_SCALE_ENABLED false
   setenv GPU_SCALE_DEFAULT_WORKER 0; setenv GPU_DEVICE_ID 0; setenv GPU_CONCURRENT_REQUESTS 1
+  drain_queues 120
   docker compose $BENCH_COMPOSE down --remove-orphans >>"$LOG" 2>&1
-  docker compose $BENCH_COMPOSE up -d >>"$LOG" 2>&1; sleep 75
+  docker compose $BENCH_COMPOSE up -d >>"$LOG" 2>&1
+  wait_worker_ready opentranscribe-celery-worker || exit 4
+  log "waiting 45s for model preload"; sleep 45; reset_orphans
   outdir="$OUTROOT/phase5_duration_curve_$(date +%Y%m%d_%H%M%S)"
   "$PY" scripts/benchmark_parallel.py --corpus-file "$CORPUS" --profile by_duration --sequential \
       --gpu-id 0 --cooldown 10 --output "$outdir" 2>&1 | tee -a "$LOG"
+  [[ "${PIPESTATUS[0]}" -ne 0 ]] && { log "ABORT: phase5 benchmark failed"; exit 3; }
   mark "phase5:complete"
 fi
 
-log "==== SOAK ORCHESTRATOR COMPLETE ===="
+log "==== ALL PHASES COMPLETE — metrics captured ===="
 log "A6000_BEST=$A6000_BEST  TI_BEST=$TI_BEST"
 log "Results: $RESULTS"
+log "Raw CSVs: $OUTROOT/"
 column -t -s$'\t' "$RESULTS" | tee -a "$LOG"
+
+# Final step: wipe the bench deployment now that every metric is on the host.
+wipe_bench
+log "==== SOAK ORCHESTRATOR DONE ===="

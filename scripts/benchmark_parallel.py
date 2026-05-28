@@ -78,9 +78,10 @@ def _load_redis_url() -> str:
             for line in f:
                 line = line.strip()
                 if line.startswith('REDIS_PASSWORD='):
-                    password = line.split('=', 1)[1].strip().strip('"\'')
+                    password = line.split('=', 1)[1].split('#', 1)[0].strip().strip('"\'')
                 elif line.startswith('REDIS_PORT=') and 'already set' not in line:
-                    port = line.split('=', 1)[1].strip().strip('"\'')
+                    # Strip inline comments + whitespace (e.g. "5177  # debug").
+                    port = line.split('=', 1)[1].split('#', 1)[0].strip().strip('"\'')
     except OSError:
         pass
     if password:
@@ -291,6 +292,46 @@ def get_file_status(token: str, file_uuid: str) -> str:
     return 'unknown'
 
 
+def upload_file(token: str, path: str) -> str:
+    """Upload a fresh file via the real user flow (POST /api/files + X-File-Hash).
+
+    Returns the new MediaFile uuid (which auto-triggers the transcription
+    pipeline), or '' on failure. Used by --upload mode so each level simulates
+    a user uploading files rather than reprocessing existing ones.
+    """
+    import hashlib
+    import mimetypes
+
+    p = Path(path)
+    if not p.exists():
+        print(f'  UPLOAD FAILED: file not found {path}', file=sys.stderr)
+        return ''
+    h = hashlib.sha256()
+    with open(p, 'rb') as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b''):
+            h.update(chunk)
+    content_type = mimetypes.guess_type(p.name)[0] or 'application/octet-stream'
+    try:
+        with open(p, 'rb') as fh:
+            resp = requests.post(
+                f'{BACKEND_URL}/api/files',
+                headers={'Authorization': f'Bearer {token}', 'X-File-Hash': h.hexdigest()},
+                files={'file': (p.name, fh, content_type)},
+                timeout=3600,
+            )
+        if resp.status_code >= 400:
+            print(
+                f'  UPLOAD FAILED for {p.name}: {resp.status_code} {resp.text[:200]}',
+                file=sys.stderr,
+            )
+            return ''
+        j = resp.json()
+        return j.get('uuid') or j.get('id') or ''
+    except requests.RequestException as e:
+        print(f'  UPLOAD ERROR for {p.name}: {e}', file=sys.stderr)
+        return ''
+
+
 # ---------------------------------------------------------------------------
 # VRAM monitoring
 # ---------------------------------------------------------------------------
@@ -365,7 +406,14 @@ def collect_benchmark_stages(r: redis.Redis, task_id: str) -> dict:
     raw = r.hgetall(key)
     if not raw:
         return {}
-    data = {k.decode(): float(v.decode()) for k, v in raw.items()}
+    # The hash mixes float timestamps with non-numeric flags (e.g. 'true');
+    # keep only the float-convertible entries.
+    data = {}
+    for k, v in raw.items():
+        try:
+            data[k.decode()] = float(v.decode())
+        except (ValueError, AttributeError):
+            continue
     stages = {}
     dispatch = data.get('dispatch_timestamp')
     pre_end = data.get('preprocess_end')
@@ -410,6 +458,8 @@ def run_batch(
     files: list[dict],
     batch_size: int,
     gpu_id: int,
+    upload_mode: bool = False,
+    audio_dir: str = '',
 ) -> BatchResult:
     """Run a single batch of N files and collect all metrics."""
     batch_files = files[:batch_size]
@@ -434,17 +484,23 @@ def run_batch(
     vram_monitor = VramMonitor(gpu_id=gpu_id)
     vram_monitor.start()
 
-    # Trigger all reprocesses
+    # Trigger all files: upload fresh (real user flow) or reprocess existing.
     result.wall_start = time.time()
     token = get_valid_token()
-    print(f'\n  [{_ts()}] Triggering {batch_size} reprocess requests...')
+    action = 'upload' if upload_mode else 'reprocess'
+    print(f'\n  [{_ts()}] Triggering {batch_size} {action} requests...')
     for fr in result.file_results:
         fr.wall_start = time.time()
-        success = trigger_reprocess(token, fr.uuid)
-        if not success:
-            fr.status = 'dispatch_failed'
+        if upload_mode:
+            new_uuid = upload_file(token, str(Path(audio_dir) / fr.filename))
+            if new_uuid:
+                fr.uuid = new_uuid  # fresh uuid drives polling + task-id lookup
+                fr.status = 'dispatched'
+            else:
+                fr.status = 'dispatch_failed'
         else:
-            fr.status = 'dispatched'
+            success = trigger_reprocess(token, fr.uuid)
+            fr.status = 'dispatched' if success else 'dispatch_failed'
         # Small stagger to avoid overwhelming the API
         time.sleep(0.3)
 
@@ -1079,6 +1135,20 @@ def main():
         action='store_true',
         help='Show what would be done without triggering reprocessing',
     )
+    parser.add_argument(
+        '--upload',
+        action='store_true',
+        help='Upload fresh files (real user flow: POST /api/files) instead of reprocessing '
+        'existing UUIDs. Each file is read from --audio-dir/<filename> in the corpus. '
+        'Requires a clean DB (no duplicate hashes) — the soak orchestrator clears bench data '
+        'before each level. corpus.json UUIDs are ignored; fresh UUIDs come from the uploads.',
+    )
+    parser.add_argument(
+        '--audio-dir',
+        default='benchmark/test_audio',
+        help='Directory holding the source audio files (matched by corpus filename) for '
+        '--upload mode (default: benchmark/test_audio).',
+    )
     args = parser.parse_args()
 
     batch_sizes = [int(x.strip()) for x in args.batches.split(',')]
@@ -1224,7 +1294,10 @@ def main():
         else:
             batch_files = files
 
-        batch_result = run_batch(token, r, batch_files, batch_size, args.gpu_id)
+        batch_result = run_batch(
+            token, r, batch_files, batch_size, args.gpu_id,
+            upload_mode=args.upload, audio_dir=args.audio_dir,
+        )
         all_batches.append(batch_result)
 
     # Write reports

@@ -1,17 +1,35 @@
 # GPU Soak — Live Progress / Resume State
 
-**Single source of truth for resuming the soak if the Claude session dies.**
-The bench stack + bench DB are persistent named volumes, so uploaded files and
-transcripts survive a crash. Background jobs do NOT survive a session death —
-re-check this file, then relaunch the current phase's command with `setsid`.
+## HOW IT WORKS NOW (simple, no DB hacking)
+One self-contained orchestrator: `scripts/soak_orchestrate.sh`. Flow:
+1. **Phase 0 (once):** if the bench DB is empty, upload all 40 files from
+   `benchmark/test_audio/` (a normal user upload) and build `corpus.json`.
+2. **Phases 1-5 (back-to-back):** REPROCESS those same files at each GPU
+   concurrency level — the app's normal reprocess feature. No per-level DB
+   wiping, no TRUNCATE, nothing that can lock the database.
+3. **End:** wipe the bench deployment (only `*_bench_data` volumes). All metrics
+   are already saved to the host, so nothing is lost.
 
-- **Branch:** `feat/engine-opimization`
-- **Working dir:** `/mnt/nvm/repos/transcribe-app`
-- **Started:** 2026-05-27
-- **Plan:** full plan (~5-7h), all phases 0-5. Handoff doc: `docs/SOAK_TEST_HANDOFF_PROMPT.md`
-- **Bench compose:** `export BENCH_COMPOSE="-f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.bench.yml"`
-- **Auth:** admin@example.com / password (bench DB, role=admin)
-- **Corpus:** 40 files in `benchmark/test_audio/` (5 synthetic + 35 seeds, tiers 1-4). One `.part` excluded.
+### Launch / resume (detached; survives session death)
+```bash
+cd /mnt/nvm/repos/transcribe-app
+setsid bash scripts/soak_orchestrate.sh >/dev/null 2>&1 &
+```
+Re-running the same command resumes from the checkpoint (skips finished levels).
+
+### Check progress (no tokens; run these yourself)
+```bash
+cd /mnt/nvm/repos/transcribe-app
+tail -f benchmarks/soak_state/orchestrate.log       # live activity
+cat   benchmarks/soak_state/checkpoint.txt           # completed phases/levels
+column -t -s$'\t' benchmarks/soak_state/results.tsv  # captured metrics so far
+pgrep -af soak_orchestrate.sh                         # confirm still running
+```
+
+- **Branch:** `feat/engine-opimization`  ·  **Working dir:** `/mnt/nvm/repos/transcribe-app`
+- **Bench compose:** `-f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.bench.yml` (+ `-f docker-compose.bench-gpu.yml` for Phase 3/4)
+- **Auth:** admin@example.com / password (bench DB)
+- **Corpus:** 40 files in `benchmark/test_audio/` (tiers 1-4, 58h audio).
 
 ## DATA SAFETY GUARANTEE (verified)
 The bench stack is fully isolated from the real dataset:

@@ -117,15 +117,19 @@ wipe_bench(){
 }
 
 # Block until the named GPU worker container answers a celery ping.
+# NOTE: capture output to a var before grepping — under `set -o pipefail`,
+# `cmd | grep -q` reports failure when grep closes the pipe early and cmd dies
+# of SIGPIPE, which would make this loop never succeed.
 wait_worker_ready(){
-  local container=$1 t=0
-  while (( t < 150 )); do
-    if docker exec "$container" celery -A app.core.celery inspect ping 2>/dev/null | grep -q pong; then
+  local container=$1 t=0 out
+  while (( t < 200 )); do
+    out=$(docker exec "$container" celery -A app.core.celery inspect ping 2>/dev/null || true)
+    if printf '%s' "$out" | grep -q pong; then
       log "$container responds to celery ping"; return 0
     fi
     sleep 5; t=$((t+5))
   done
-  log "FATAL: $container did not respond to celery ping within 150s"; return 1
+  log "FATAL: $container did not respond to celery ping within 200s"; return 1
 }
 
 # Restart the solo GPU worker cleanly: drain in-flight, reset orphans, recreate,
@@ -169,8 +173,9 @@ PY
 }
 
 oom_check(){
-  if docker logs opentranscribe-celery-worker --tail=400 2>&1 | grep -iqE 'out of memory|cuda.*oom'; then
-    return 0; fi; return 1
+  local logs
+  logs=$(docker logs opentranscribe-celery-worker --tail=400 2>&1 || true)
+  printf '%s' "$logs" | grep -iqE 'out of memory|cuda.*oom'
 }
 
 # run_level PHASE MODE CONC GPU PROFILE [extra parallel args...]

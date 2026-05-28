@@ -76,7 +76,7 @@ show_help() {
   echo "  help                - Show this help menu"
   echo ""
   echo "Benchmark Commands (isolated from NAS data):"
-  echo "  bench start [master|branch]              - Wipe bench volumes, switch branch, start bench stack"
+  echo "  bench start [master|branch|current|<name>]- Wipe bench volumes, switch branch, start bench stack (default: current)"
   echo "  bench stop                               - Stop bench stack (keep volumes)"
   echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
   echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"
@@ -1333,19 +1333,27 @@ case "$1" in
 
     case "$BENCH_SUBCOMMAND" in
       start)
-        BENCH_TARGET="${3:-}"
-        if [[ -z "$BENCH_TARGET" ]]; then
-          echo "❌ Usage: ./opentr.sh bench start [master|branch]"
-          exit 1
-        fi
+        BENCH_TARGET="${3:-current}"
 
         if [[ "$BENCH_TARGET" == "master" ]]; then
           TARGET_BRANCH="master"
         elif [[ "$BENCH_TARGET" == "branch" ]]; then
+          # Legacy alias for the upload-speed benchmark — kept for back-compat.
           TARGET_BRANCH="feat/upload-speed-improvement"
+        elif [[ "$BENCH_TARGET" == "current" || "$BENCH_TARGET" == "." ]]; then
+          TARGET_BRANCH="$(git branch --show-current)"
+          if [[ -z "$TARGET_BRANCH" ]]; then
+            echo "❌ Could not determine current branch (detached HEAD?)"
+            exit 1
+          fi
         else
-          echo "❌ Unknown target '$BENCH_TARGET'. Use 'master' or 'branch'."
-          exit 1
+          # Treat as a literal branch name — verify it exists locally.
+          if git show-ref --verify --quiet "refs/heads/$BENCH_TARGET"; then
+            TARGET_BRANCH="$BENCH_TARGET"
+          else
+            echo "❌ Unknown target '$BENCH_TARGET'. Use 'master', 'branch', 'current', or a local branch name."
+            exit 1
+          fi
         fi
 
         echo "🧪 Preparing bench environment for: $BENCH_TARGET ($TARGET_BRANCH)"
@@ -1593,7 +1601,7 @@ case "$1" in
 
       help|*)
         echo "🧪 Benchmark subcommands (isolated from NAS data):"
-        echo "  bench start [master|branch]              - Wipe bench volumes, switch branch, start bench stack"
+        echo "  bench start [master|branch|current|<name>]- Wipe bench volumes, switch branch, start bench stack (default: current)"
         echo "  bench stop                               - Stop bench stack (keep volumes)"
         echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
         echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"

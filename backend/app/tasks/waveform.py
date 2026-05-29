@@ -108,6 +108,7 @@ def generate_waveform_task(
     file_uuid: str,
     task_id: str | None = None,
     prefer_temp_audio: bool = True,
+    local_wav_path: str | None = None,
 ):
     """
     Generate waveform visualization data for a media file.
@@ -135,6 +136,19 @@ def generate_waveform_task(
 
     try:
         logger.info(f"Starting waveform generation for file {file_id} ({file_uuid})")
+
+        # Fast path: use the already-decoded 16 kHz WAV from the shared volume.
+        # This avoids a second FFmpeg decode (waveform double-decode fix).
+        if local_wav_path and os.path.exists(local_wav_path):
+            waveform_generator = WaveformGenerator()
+            waveform_data = waveform_generator.generate_from_16khz_wav(local_wav_path)
+            if waveform_data:
+                logger.info(f"Waveform generated from shared-volume WAV for file {file_id}")
+                _save_waveform_data(file_id, waveform_data)
+                return {"success": True, "file_id": file_id, "resolutions": len(waveform_data)}
+            logger.warning(
+                "Shared-volume WAV waveform failed for file %d; falling back to FFmpeg", file_id
+            )
 
         if prefer_temp_audio:
             temp_file_path = _download_temp_audio_safe(file_uuid)

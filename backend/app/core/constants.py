@@ -40,6 +40,8 @@ class CeleryQueues:
     UTILITY = "utility"
     CLOUD_ASR = "cloud-asr"  # Dynamic: cloud ASR providers (CPU worker consumes)
     CPU_TRANSCRIBE = "cpu-transcribe"  # Dynamic: lightweight CPU transcription
+    GPU_TRANSCRIBE = "gpu-transcribe"  # Phase 4: transcription-only GPU worker
+    GPU_DIARIZE = "gpu-diarize"  # Phase 4: diarization-only GPU worker
     DEFAULT = "celery"  # Celery default queue (NLP worker consumes as fallback)
 
     ALL: list[str] = [
@@ -51,6 +53,8 @@ class CeleryQueues:
         UTILITY,
         CLOUD_ASR,
         CPU_TRANSCRIBE,
+        GPU_TRANSCRIBE,
+        GPU_DIARIZE,
         DEFAULT,
     ]
 

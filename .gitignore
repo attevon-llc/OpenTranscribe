@@ -9,6 +9,10 @@ benchmark/
 benchmarks/
 benchmark_thorough_*.json
 
+# Raw per-level benchmark data (large CSV timelines + per-run dirs). Keep only the
+# collated top-level summaries (results.tsv, master_results.csv, summary.md, README.md).
+docs/engine-benchmark-results/*/
+
 # Papers (unpublished — remove from gitignore when ready to release)
 docs/performance-whitepaper/
 docs/research-paper/

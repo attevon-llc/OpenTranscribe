@@ -312,18 +312,26 @@ class TranscriptionConfig:
     def _auto_concurrent() -> int:
         """Calculate max concurrent tasks from available VRAM.
 
-        Profiled model sizes (large-v3-turbo + PyAnnote v4):
-          - Shared model weights: ~6GB (CTranslate2 whisper + PyAnnote)
-          - Per-task inference overhead: ~1GB (activations, batch buffers)
-        Formula: (total_vram - 6000MB for models) // 1000MB per task, capped at 4.
+        Calibrated from whitepaper benchmarks (large-v3-turbo + PyAnnote v4,
+        diarization embedding batch pinned at 16):
+          - Shared model baseline: ~7 GB (Whisper weights + PyAnnote pipeline)
+          - Per-task VRAM overhead: ~4 GB (activation memory, CTranslate2 beam
+            buffers, diarization intermediate tensors — measured at 48.5 GB total
+            for 10 concurrent tasks on RTX A6000 49 GB)
+        Formula: (total_vram - 7000 MB) // 4000 MB per task, capped at 12.
+
+        Representative results:
+          RTX A6000  49 GB → 10 concurrent (matches whitepaper 54.6x peak at 8)
+          RTX 3090   24 GB →  4 concurrent
+          RTX 3080Ti 12 GB →  1 concurrent (safe floor)
         """
         try:
             import torch
 
             if torch.cuda.is_available():
                 total_mb = torch.cuda.get_device_properties(0).total_memory / (1024**2)
-                concurrent = int((total_mb - 6000) // 1000)
-                return max(1, min(concurrent, 4))
+                concurrent = int((total_mb - 7000) // 4000)
+                return max(1, min(concurrent, 12))
         except Exception as e:
             logger.debug(f"Auto-concurrent VRAM detection failed: {e}")
         return 1

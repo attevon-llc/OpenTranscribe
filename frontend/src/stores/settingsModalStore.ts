@@ -16,6 +16,7 @@ export type SettingsSection =
   | 'groups'
   | 'asr-provider'
   | 'custom-vocabulary'
+  | 'engine-settings'
   // System sections (visible to all users)
   | 'system-statistics'
   // Admin sections
@@ -54,6 +55,7 @@ const initialState: SettingsModalState = {
     groups: false,
     'asr-provider': false,
     'custom-vocabulary': false,
+    'engine-settings': false,
     'system-statistics': false,
     'admin-users': false,
     'admin-task-health': false,

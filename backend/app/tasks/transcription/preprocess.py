@@ -9,6 +9,8 @@ Part of the 3-stage chain: preprocess (CPU) → transcribe (GPU) → postprocess
 import contextlib
 import logging
 import os
+import re
+import shutil
 import tempfile
 import time
 
@@ -126,13 +128,38 @@ def preprocess_for_transcription(
             with benchmark_timing.stage(task_id, "temp_upload"):
                 audio_temp_path = upload_temp_audio(file_uuid, temp_audio_path)
 
+            # Phase 1b Opt-3A: copy WAV to shared volume so GPU task can mmap-load (sub-second)
+            # instead of downloading from MinIO (~2–5 s). Falls back to MinIO if write fails.
+            local_wav_path = ""
+            try:
+                _shared_vol = os.environ.get(
+                    "ENGINE_SHARED_VOLUME_PATH",
+                    "/tmp",  # noqa: S108  # nosec B108
+                )
+                os.makedirs(_shared_vol, exist_ok=True)
+                _safe_task_id = re.sub(r"[^a-zA-Z0-9\-]", "_", task_id)
+                _wav_dest = os.path.join(_shared_vol, f"{_safe_task_id}.wav")
+                shutil.copy2(temp_audio_path, _wav_dest)
+                local_wav_path = _wav_dest
+                logger.info(
+                    "Engine shared-volume WAV: %s (%d bytes)",
+                    _wav_dest,
+                    os.path.getsize(_wav_dest),
+                )
+            except Exception as _shv_err:
+                logger.warning(
+                    "Shared-volume WAV write failed, GPU task will use MinIO: %s", _shv_err
+                )
+
             # Dispatch waveform generation in parallel with the GPU task.
             # Previously fired from upload.py, which forced a full re-download
             # of the original media (Phase 2 PR #3 fix). Now it consumes the
             # preprocessed 16 kHz WAV we've just staged — ~10x less I/O.
             # Only runs for files that don't already have waveform_data
             # (skips reprocess runs).
-            _dispatch_waveform_if_missing(file_id, file_uuid, task_id)
+            _dispatch_waveform_if_missing(
+                file_id, file_uuid, task_id, local_wav_path=local_wav_path
+            )
 
         # Resolve diarization_source: explicit arg > legacy bool > user DB setting
         if diarization_source is None:
@@ -181,6 +208,7 @@ def preprocess_for_transcription(
             "disable_diarization": disable_diarization,
             "diarization_source": diarization_source,
             "whisper_model": whisper_model,
+            "local_wav_path": local_wav_path,
         }
 
     except Exception as e:
@@ -315,8 +343,6 @@ def _preprocess_audio(
 
     # If prepare returned a different path (e.g., input was already .wav), copy it
     if result_path != temp_audio_path:
-        import shutil
-
         shutil.copy2(result_path, temp_audio_path)
 
 
@@ -375,13 +401,18 @@ def _extract_metadata_best_effort(
             logger.warning(f"Metadata extraction failed for file {file_id} (non-fatal): {e}")
 
 
-def _dispatch_waveform_if_missing(file_id: int, file_uuid: str, task_id: str) -> None:
+def _dispatch_waveform_if_missing(
+    file_id: int,
+    file_uuid: str,
+    task_id: str,
+    local_wav_path: str = "",
+) -> None:
     """Fire waveform generation for files that don't have it yet.
 
     Fresh uploads skip this if ``MediaFile.waveform_data`` is populated;
-    reprocess runs hit that condition. The task reads the preprocessed WAV
-    we've just written to MinIO temp, so no extra download of the
-    original is needed.
+    reprocess runs hit that condition. When ``local_wav_path`` is provided
+    the waveform task uses the already-decoded 16 kHz WAV directly (numpy
+    resample, no FFmpeg), avoiding a second audio decode.
     """
     try:
         with session_scope() as db:
@@ -395,6 +426,7 @@ def _dispatch_waveform_if_missing(file_id: int, file_uuid: str, task_id: str) ->
             file_uuid=file_uuid,
             task_id=task_id,
             prefer_temp_audio=True,
+            local_wav_path=local_wav_path or None,
         )
         logger.info(f"Dispatched waveform task for file {file_id} from preprocess")
     except Exception as e:

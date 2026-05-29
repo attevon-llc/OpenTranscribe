@@ -1,0 +1,395 @@
+{
+  "version": "bench-soak-2026-05-27",
+  "tiers": {
+    "1": {
+      "label": "Short",
+      "range": "< 25 min"
+    },
+    "2": {
+      "label": "Medium",
+      "range": "25-60 min"
+    },
+    "3": {
+      "label": "Long",
+      "range": "1-3 h"
+    },
+    "4": {
+      "label": "Extra-long",
+      "range": "> 3 h"
+    }
+  },
+  "files": [
+    {
+      "uuid": "bb91a3c6-8a5d-4012-82f7-9dac074518db",
+      "filename": "seed_t1_305s_f90905ac_Watching_Obama_Trump_Joke_Around_Together_at_Jimmy_Carter_s_Funeral.mp4",
+      "duration_s": 305.96,
+      "size_mb": 49,
+      "tier": 1
+    },
+    {
+      "uuid": "a8e90f63-843e-4936-ae7e-62a7abd496e4",
+      "filename": "seed_t1_309s_846798e2_Joe_Asks_Trump_About_Ending_Military_Conflicts_and_Avoiding_WW3.mp4",
+      "duration_s": 309.58,
+      "size_mb": 39,
+      "tier": 1
+    },
+    {
+      "uuid": "f14b1f82-2036-401d-8ea8-4c2622948891",
+      "filename": "seed_t1_347s_3cc9247d_The_Race_to_Develop_Warp_Drive_and_AI_Passing_the_Turing_Test.mp4",
+      "duration_s": 347.24,
+      "size_mb": 45,
+      "tier": 1
+    },
+    {
+      "uuid": "fb21cb80-f5dc-4b98-9f86-77e7d5806d6e",
+      "filename": "seed_t1_520s_fa049b47_The_AI_Arms_Race_with_China.mp4",
+      "duration_s": 520.82,
+      "size_mb": 23,
+      "tier": 1
+    },
+    {
+      "uuid": "31638c26-d273-4cd7-80fb-d8cec9372e6d",
+      "filename": "seed_t1_531s_a536922c_Will_the_Gaza_Ceasefire_Hold.mp4",
+      "duration_s": 531.49,
+      "size_mb": 17,
+      "tier": 1
+    },
+    {
+      "uuid": "35ba344b-7f4d-49fa-b9e5-7f1d82340fe9",
+      "filename": "seed_t1_661s_5bbfb6cf_PyTorch_at_Tesla_-_Andrej_Karpathy_Tesla.mp4",
+      "duration_s": 661.82,
+      "size_mb": 23,
+      "tier": 1
+    },
+    {
+      "uuid": "5bdb3a2a-faa7-4a1d-82ca-47db849a2f54",
+      "filename": "seed_t1_668s_43ad347a_Nancy_Pelosi_s_Reaction_to_Insider_Trading_Question.mp4",
+      "duration_s": 667.74,
+      "size_mb": 82,
+      "tier": 1
+    },
+    {
+      "uuid": "4c1169a5-dadd-45b7-9ab1-cf473a98a6d7",
+      "filename": "seed_t1_899s_810a982a_DOGE_s_Findings_Elon_Musk_Protests_and_Medicare_Fraud.mp4",
+      "duration_s": 899.46,
+      "size_mb": 115,
+      "tier": 1
+    },
+    {
+      "uuid": "dc42eada-fbfc-4615-9361-ec4c523abd52",
+      "filename": "seed_t1_899s_40d403ee_DOGE_s_Findings_Elon_Musk_Protests_and_Medicare_Fraud.mp3",
+      "duration_s": 899.46,
+      "size_mb": 14,
+      "tier": 1
+    },
+    {
+      "uuid": "f43098dd-41ba-45f2-a1f7-f1942f805f5e",
+      "filename": "seed_t1_901s_eb191ff0_The_Secret_Airships_That_Could_Go_200_mph_and_Other_Aviation_Conspiracies.mp4",
+      "duration_s": 901.04,
+      "size_mb": 40,
+      "tier": 1
+    },
+    {
+      "uuid": "594c28dd-7684-4ee1-b669-cf8d0cd80771",
+      "filename": "seed_t1_941s_ac8f69f2_YOU_NEED_to_watch_this_before_driving_Tail_of_the_Dragon.mp4",
+      "duration_s": 941.38,
+      "size_mb": 126,
+      "tier": 1
+    },
+    {
+      "uuid": "0906b07f-4f3d-4111-969d-c9834941b1d7",
+      "filename": "seed_t1_1151s_07913df3_Joe_Rogan_Experience_93_-_Eddie_Bravo_Part_1.mp4",
+      "duration_s": 1151.55,
+      "size_mb": 58,
+      "tier": 1
+    },
+    {
+      "uuid": "17928abf-ecde-4b23-a9e4-c3212a5cae83",
+      "filename": "seed_t1_1381s_a6639bee_Joe_Rogan_Experience_124_-_Michael_Schiavello_Part_2.mp4",
+      "duration_s": 1381.13,
+      "size_mb": 69,
+      "tier": 1
+    },
+    {
+      "uuid": "fdf7d9fa-0fa8-4897-ae75-2168dfc9955c",
+      "filename": "seed_t2_1620s_18a287d0_Bridge_to_Space.mp3",
+      "duration_s": 1386.11,
+      "size_mb": 24,
+      "tier": 1
+    },
+    {
+      "uuid": "2cb7876a-1ec7-46af-a454-cb16c31aa0e2",
+      "filename": "seed_t2_1668s_1143dd2a_The_Eagle_Has_Landed_The_Flight_of_Apollo_11_1969.mp3",
+      "duration_s": 1667.96,
+      "size_mb": 26,
+      "tier": 2
+    },
+    {
+      "uuid": "78bd7f4a-f597-4791-bcd8-2e8bd9778973",
+      "filename": "seed_t2_1883s_31ba0be4_Joe_Rogan_Experience_126_-_Freddy_Lockhart_Part_1.mp4",
+      "duration_s": 1883.37,
+      "size_mb": 94,
+      "tier": 2
+    },
+    {
+      "uuid": "345911e9-6211-43d6-9d4a-160e8ef04f39",
+      "filename": "0.5h_1899s.wav",
+      "duration_s": 1888.65,
+      "size_mb": 57,
+      "tier": 2
+    },
+    {
+      "uuid": "8c9b27ad-1307-4a45-85b0-82a1c6a19c6c",
+      "filename": "seed_t2_1946s_6801460d_Dragon_audio.mp3",
+      "duration_s": 1946.02,
+      "size_mb": 59,
+      "tier": 2
+    },
+    {
+      "uuid": "cb134b98-8f48-416d-a4c0-acb46ba0b0f9",
+      "filename": "seed_t2_2306s_df7c8c09_Joe_Rogan_Experience_105_-_Bryan_Callen_Part_2.mp4",
+      "duration_s": 2305.46,
+      "size_mb": 117,
+      "tier": 2
+    },
+    {
+      "uuid": "192b88ed-3208-4391-953f-271973aba7ed",
+      "filename": "seed_t2_2588s_541b4bda_Joe_Rogan_Experience_13_-_Eddie_Bravo.mp4",
+      "duration_s": 2588.64,
+      "size_mb": 70,
+      "tier": 2
+    },
+    {
+      "uuid": "73f34c6e-a368-4629-8101-31aba8cf6cc1",
+      "filename": "seed_t2_3191s_4a636bf5_Joe_Rogan_Experience_264_-_Tom_Segura_Part_2.mp4",
+      "duration_s": 3191.46,
+      "size_mb": 127,
+      "tier": 2
+    },
+    {
+      "uuid": "7a404626-0723-4f8b-97fb-c486219b0755",
+      "filename": "seed_t2_3470s_858ea1e4_JRE_MMA_Show_72_with_Andy_Ruiz.mp4",
+      "duration_s": 3470.54,
+      "size_mb": 145,
+      "tier": 2
+    },
+    {
+      "uuid": "35bdefa1-4fa0-47d1-ad7c-2a4313423196",
+      "filename": "1.0h_3758s.wav",
+      "duration_s": 3758.29,
+      "size_mb": 114,
+      "tier": 3
+    },
+    {
+      "uuid": "b20f1ad3-9a2e-4a8e-83d0-08e35b64c5d4",
+      "filename": "seed_t3_4663s_91592ce3_Joe_Rogan_Experience_1397_-_S.C._Gwynne.mp4",
+      "duration_s": 4663.73,
+      "size_mb": 135,
+      "tier": 3
+    },
+    {
+      "uuid": "56770d7e-5176-4c45-92ba-975f20d0dfe2",
+      "filename": "seed_t3_6429s_b46a7204_Joe_Rogan_Experience_1344_-_Joseph_LeDoux.mp4",
+      "duration_s": 6430.14,
+      "size_mb": 322,
+      "tier": 3
+    },
+    {
+      "uuid": "8a8cc58d-0b16-417d-96c8-098403a6139e",
+      "filename": "seed_t3_7395s_9563d8b2_Joe_Rogan_Experience_1306_-_Wiz_Khalifa.mp4",
+      "duration_s": 7395.44,
+      "size_mb": 261,
+      "tier": 3
+    },
+    {
+      "uuid": "4bfe0566-fcb3-428e-8559-dab0a33c88a1",
+      "filename": "seed_t3_7898s_cf3b2641_Joe_Rogan_Experience_1309_-_Naval_Ravikant.mp4",
+      "duration_s": 7898.37,
+      "size_mb": 196,
+      "tier": 3
+    },
+    {
+      "uuid": "3ff57b4f-98af-45b7-a6ec-4bd80e9449de",
+      "filename": "2.2h_7998s.wav",
+      "duration_s": 7998.39,
+      "size_mb": 244,
+      "tier": 3
+    },
+    {
+      "uuid": "5bb224ba-89e7-4787-a417-341bcb4389f1",
+      "filename": "seed_t3_8955s_777a3c81_JRE_MMA_Show_115_with_Valentina_Schevchenko.mp4",
+      "duration_s": 8955.42,
+      "size_mb": 219,
+      "tier": 3
+    },
+    {
+      "uuid": "920e0dd7-0786-4b85-8d5e-4a6e81007bd0",
+      "filename": "seed_t3_10467s_afeb630b_Joe_Rogan_Experience_1640_-_Josh_Rogin.mp4",
+      "duration_s": 10467.34,
+      "size_mb": 433,
+      "tier": 3
+    },
+    {
+      "uuid": "fb132db2-9f57-4f7c-853f-b5bc793ada59",
+      "filename": "seed_t3_10573s_ffb6f3c8_Joe_Rogan_Experience_500_-_Doug_Stanhope_Tom_Rhodes.mp4",
+      "duration_s": 10573.26,
+      "size_mb": 504,
+      "tier": 3
+    },
+    {
+      "uuid": "b73ae7b5-20db-4ebd-9f9c-e3b73d948955",
+      "filename": "seed_t4_10831s_b9ce2cc4_Joe_Rogan_Experience_1928_-_Jimmy_Corsetti_Ben_van_Kerkwyk.mp4",
+      "duration_s": 10831.05,
+      "size_mb": 250,
+      "tier": 4
+    },
+    {
+      "uuid": "108fd008-64fd-47e8-bb38-11bd44249dfa",
+      "filename": "seed_t4_11300s_082a1c70_Joe_Rogan_Experience_2329_-_Ehsan_Ahmad.mp4",
+      "duration_s": 11300.26,
+      "size_mb": 287,
+      "tier": 4
+    },
+    {
+      "uuid": "0447d936-f987-412b-bc2d-2df3a4ffdb5d",
+      "filename": "3.2h_11495s.wav",
+      "duration_s": 11494.09,
+      "size_mb": 351,
+      "tier": 4
+    },
+    {
+      "uuid": "e5e1ef4a-59ec-42ca-a512-ef6533fd693c",
+      "filename": "seed_t4_11513s_f40c39ad_Joe_Rogan_Experience_1621_-_Jim_Breuer.mp4",
+      "duration_s": 11513.0,
+      "size_mb": 298,
+      "tier": 4
+    },
+    {
+      "uuid": "5f0caf31-2c1d-4373-96fd-7f40626eb8b4",
+      "filename": "seed_t4_11866s_c59a7983_Joe_Rogan_Experience_1926_-_Matt_McCusker_Shane_Gillis.mp4",
+      "duration_s": 11866.56,
+      "size_mb": 283,
+      "tier": 4
+    },
+    {
+      "uuid": "07af90de-a3ed-4baa-b18a-2b574f5f1cf2",
+      "filename": "seed_t4_12086s_8995a6b1_Joe_Rogan_Experience_2339_-_Luis_J._Gomez_Big_Jay_Oakerson.mp4",
+      "duration_s": 12072.8,
+      "size_mb": 531,
+      "tier": 4
+    },
+    {
+      "uuid": "54c61ef5-ab3f-4bea-b5e2-16bd5366f939",
+      "filename": "seed_t4_12136s_833bbf2e_Joe_Rogan_Experience_1808_-_Dan_Soder.mp4",
+      "duration_s": 12136.5,
+      "size_mb": 314,
+      "tier": 4
+    },
+    {
+      "uuid": "faa85a32-fd54-4520-9b15-1fbe9a7fe625",
+      "filename": "seed_t4_12680s_1acf5966_Joe_Rogan_Experience_1751_-_Brian_Simpson.mp4",
+      "duration_s": 12680.1,
+      "size_mb": 332,
+      "tier": 4
+    },
+    {
+      "uuid": "984e8881-54ea-4b53-ba25-dc337a3b3322",
+      "filename": "4.7h_17044s.wav",
+      "duration_s": 17044.08,
+      "size_mb": 520,
+      "tier": 4
+    }
+  ],
+  "profiles": {
+    "by_duration": {
+      "description": "Duration-ascending - VRAM ceiling tests fail fast.",
+      "indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39
+      ]
+    },
+    "mixed": {
+      "description": "Tier round-robin - realistic scheduler stress.",
+      "indices": [
+        0,
+        14,
+        22,
+        31,
+        1,
+        15,
+        23,
+        32,
+        2,
+        16,
+        24,
+        33,
+        3,
+        17,
+        25,
+        34,
+        4,
+        18,
+        26,
+        35,
+        5,
+        19,
+        27,
+        36,
+        6,
+        20,
+        28,
+        37,
+        7,
+        21,
+        29,
+        38,
+        8,
+        30,
+        39,
+        9,
+        10,
+        11,
+        12,
+        13
+      ]
+    }
+  }
+}

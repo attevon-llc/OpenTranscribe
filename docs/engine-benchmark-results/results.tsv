@@ -1,0 +1,8 @@
+phase	label	conc	gpu	rtf	vram_peak_mb	cpu_pct_avg	ram_mb_avg	gpu_util_pct_avg	stable
+a6000_solo	a6000_solo_conc1	1	0	38.98	5239	668.0	9861.0	54.0	yes
+a6000_solo	a6000_solo_conc4	4	0	45.93	35883	758.0	24314.0	85.0	yes
+a6000_solo	a6000_solo_conc8	8	0	39.19	48287	689.2	40508.0	90.0	yes
+a6000_solo	a6000_solo_conc10	10	0	39.23	44279	788.6	50953.0	91.0	yes
+a6000_solo	a6000_solo_conc12	12	0	39.53	46423	737.4	53628.0	92.0	yes
+a6000_solo	a6000_solo_conc16	16	0	30.83	46921	750.6	65688.0	93.0	yes
+dual_a6000	dual_a6000	4	0	81.27	35739	1489.9	40638.0	78.0	yes

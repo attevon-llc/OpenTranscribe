@@ -3389,5 +3389,21 @@
   "gallery.diarizationDisabledTooltip": "Speaker diarization was disabled for this file",
   "gallery.monologue": "Monologue",
   "reprocess.diarizationWasDisabled": "This file was processed without speaker diarization. Select \"Rediarize\" to enable speaker detection.",
-  "exportOptions.diarizationDisabledHint": "No speaker data available"
+  "exportOptions.diarizationDisabledHint": "No speaker data available",
+  "settings.engineSettings.title": "Engine Configuration",
+  "settings.engineSettings.description": "Advanced configuration for transcription and diarization engine backends. Changes take effect on the next processing task.",
+  "settings.engineSettings.transcriberBackend": "Transcriber Backend",
+  "settings.engineSettings.diarizerBackend": "Diarizer Backend",
+  "settings.engineSettings.gpuSplit": "Multi-GPU Split Mode",
+  "settings.engineSettings.gpuSplitHelp": "Routes transcription and diarization to separate GPU queues. Requires celery-worker-gpu-transcribe and celery-worker-gpu-diarize containers.",
+  "settings.engineSettings.precomputeVad": "Precompute VAD (Stage 1)",
+  "settings.engineSettings.precomputeVadHelp": "Runs Silero VAD on the CPU before the GPU stage. Enable only if benchmarks show Stage 2 VAD is a bottleneck.",
+  "settings.engineSettings.sharedVolumePath": "Shared Volume Path",
+  "settings.engineSettings.sharedVolumePathHelp": "Docker volume path shared between CPU and GPU workers for WAV file handoff.",
+  "settings.engineSettings.sourceDb": "DB override",
+  "settings.engineSettings.sourceEnv": "Env var",
+  "settings.engineSettings.sourceDefault": "Default",
+  "settings.engineSettings.resetKey": "Reset",
+  "settings.engineSettings.save": "Save",
+  "settings.engineSettings.saved": "Saved"
 }

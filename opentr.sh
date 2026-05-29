@@ -40,7 +40,8 @@ show_help() {
   echo "Start/Reset Options:"
   echo "  --build              - Build prod images locally (test before push)"
   echo "  --pull               - Force pull prod images from Docker Hub"
-  echo "  --gpu-scale          - Enable multi-GPU worker scaling"
+  echo "  --gpu-scale          - Enable multi-GPU worker scaling (multiple workers on one GPU)"
+  echo "  --with-gpu-split     - Enable GPU split: separate gpu-transcribe / gpu-diarize workers"
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
   echo "  --cpu                - CPU-only mode (local transcription, no GPU overlay)"
@@ -75,10 +76,11 @@ show_help() {
   echo "  help                - Show this help menu"
   echo ""
   echo "Benchmark Commands (isolated from NAS data):"
-  echo "  bench start [master|branch]              - Wipe bench volumes, switch branch, start bench stack"
+  echo "  bench start [master|branch|current|<name>]- Wipe bench volumes, switch branch, start bench stack (default: current)"
   echo "  bench stop                               - Stop bench stack (keep volumes)"
   echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
   echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"
+  echo "  bench engine                             - Run engine split-stage benchmarks (Phase 2 gate)"
   echo "  bench status                             - Show bench containers, GPU state, volumes"
   echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
   echo ""
@@ -90,8 +92,9 @@ show_help() {
   echo ""
   echo "Examples:"
   echo "  ./opentr.sh start                            # Start in development mode"
-  echo "  ./opentr.sh start dev --gpu-scale            # Dev with multi-GPU scaling"
+  echo "  ./opentr.sh start dev --gpu-scale            # Dev with multi-GPU scaling (parallel workers)"
   echo "  ./opentr.sh start dev --gpu-scale --nas      # Multi-GPU + NAS/NVMe storage"
+  echo "  ./opentr.sh start dev --with-gpu-split       # Split transcribe/diarize across two GPUs"
   echo "  ./opentr.sh start dev --lite                 # Cloud-only ASR mode (no GPU)"
   echo "  ./opentr.sh start dev --cpu                  # Local CPU-only (skip GPU overlay)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
@@ -262,6 +265,7 @@ start_app() {
   # Parse optional flags
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
+  GPU_SPLIT_FLAG=""
   NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
@@ -282,6 +286,10 @@ start_app() {
         ;;
       --gpu-scale)
         GPU_SCALE_FLAG="--gpu-scale"
+        shift
+        ;;
+      --with-gpu-split)
+        GPU_SPLIT_FLAG="--with-gpu-split"
         shift
         ;;
       --nas)
@@ -327,14 +335,22 @@ start_app() {
     exit 1
   fi
 
-  if [ -n "$GPU_SCALE_FLAG" ]; then
+  if [ -n "$GPU_SCALE_FLAG" ] && [ -n "$GPU_SPLIT_FLAG" ]; then
+    export COMPOSE_PROFILES="gpu-scale,gpu-split"
+  elif [ -n "$GPU_SCALE_FLAG" ]; then
     export COMPOSE_PROFILES="gpu-scale"
+  elif [ -n "$GPU_SPLIT_FLAG" ]; then
+    export COMPOSE_PROFILES="gpu-split"
   fi
 
   echo "🚀 Starting OpenTranscribe in ${ENVIRONMENT} mode..."
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "🎯 Multi-GPU scaling enabled"
+  fi
+
+  if [ -n "$GPU_SPLIT_FLAG" ]; then
+    echo "🔀 GPU split enabled (transcribe → GPU_TRANSCRIBE_DEVICE_ID=${GPU_TRANSCRIBE_DEVICE_ID:-0}, diarize → GPU_DIARIZE_DEVICE_ID=${GPU_DIARIZE_DEVICE_ID:-1})"
   fi
 
   if [ -n "$LITE_FLAG" ]; then
@@ -419,6 +435,9 @@ start_app() {
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu-scale.yml"
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
   fi
+  # gpu-split workers (celery-worker-gpu-transcribe / celery-worker-gpu-diarize) are defined
+  # in docker-compose.yml with profiles: [gpu-split] and activated via COMPOSE_PROFILES above.
+  # No extra overlay file is needed.
 
   # Add NAS/NVMe storage overlay if requested via --nas flag
   # or auto-detect when storage path env vars are set
@@ -574,6 +593,9 @@ start_app() {
   echo "- Frontend logs: docker compose logs -f frontend"
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "- GPU scaled workers: docker compose logs -f celery-worker-gpu-scaled"
+  elif [ -n "$GPU_SPLIT_FLAG" ]; then
+    echo "- GPU transcribe worker: docker compose logs -f celery-worker-gpu-transcribe"
+    echo "- GPU diarize worker: docker compose logs -f celery-worker-gpu-diarize"
   elif [ -n "$LITE_FLAG" ]; then
     echo "- Cloud ASR worker logs: docker compose logs -f celery-cloud-worker"
   else
@@ -593,6 +615,7 @@ reset_and_init() {
   # Parse optional flags
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
+  GPU_SPLIT_FLAG=""
   NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
@@ -613,6 +636,10 @@ reset_and_init() {
         ;;
       --gpu-scale)
         GPU_SCALE_FLAG="--gpu-scale"
+        shift
+        ;;
+      --with-gpu-split)
+        GPU_SPLIT_FLAG="--with-gpu-split"
         shift
         ;;
       --nas)
@@ -658,14 +685,22 @@ reset_and_init() {
     exit 1
   fi
 
-  if [ -n "$GPU_SCALE_FLAG" ]; then
+  if [ -n "$GPU_SCALE_FLAG" ] && [ -n "$GPU_SPLIT_FLAG" ]; then
+    export COMPOSE_PROFILES="gpu-scale,gpu-split"
+  elif [ -n "$GPU_SCALE_FLAG" ]; then
     export COMPOSE_PROFILES="gpu-scale"
+  elif [ -n "$GPU_SPLIT_FLAG" ]; then
+    export COMPOSE_PROFILES="gpu-split"
   fi
 
   echo "🔄 Running reset and initialize for OpenTranscribe in ${ENVIRONMENT} mode..."
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "🎯 Multi-GPU scaling enabled"
+  fi
+
+  if [ -n "$GPU_SPLIT_FLAG" ]; then
+    echo "🔀 GPU split enabled (transcribe → GPU_TRANSCRIBE_DEVICE_ID=${GPU_TRANSCRIBE_DEVICE_ID:-0}, diarize → GPU_DIARIZE_DEVICE_ID=${GPU_DIARIZE_DEVICE_ID:-1})"
   fi
 
   if [ -n "$LITE_FLAG" ]; then
@@ -740,6 +775,9 @@ reset_and_init() {
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu-scale.yml"
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
   fi
+  # gpu-split workers (celery-worker-gpu-transcribe / celery-worker-gpu-diarize) are defined
+  # in docker-compose.yml with profiles: [gpu-split] and activated via COMPOSE_PROFILES above.
+  # No extra overlay file is needed.
 
   # Add NAS/NVMe storage overlay if requested via --nas flag
   # or auto-detect when storage path env vars are set
@@ -1295,19 +1333,27 @@ case "$1" in
 
     case "$BENCH_SUBCOMMAND" in
       start)
-        BENCH_TARGET="${3:-}"
-        if [[ -z "$BENCH_TARGET" ]]; then
-          echo "❌ Usage: ./opentr.sh bench start [master|branch]"
-          exit 1
-        fi
+        BENCH_TARGET="${3:-current}"
 
         if [[ "$BENCH_TARGET" == "master" ]]; then
           TARGET_BRANCH="master"
         elif [[ "$BENCH_TARGET" == "branch" ]]; then
+          # Legacy alias for the upload-speed benchmark — kept for back-compat.
           TARGET_BRANCH="feat/upload-speed-improvement"
+        elif [[ "$BENCH_TARGET" == "current" || "$BENCH_TARGET" == "." ]]; then
+          TARGET_BRANCH="$(git branch --show-current)"
+          if [[ -z "$TARGET_BRANCH" ]]; then
+            echo "❌ Could not determine current branch (detached HEAD?)"
+            exit 1
+          fi
         else
-          echo "❌ Unknown target '$BENCH_TARGET'. Use 'master' or 'branch'."
-          exit 1
+          # Treat as a literal branch name — verify it exists locally.
+          if git show-ref --verify --quiet "refs/heads/$BENCH_TARGET"; then
+            TARGET_BRANCH="$BENCH_TARGET"
+          else
+            echo "❌ Unknown target '$BENCH_TARGET'. Use 'master', 'branch', 'current', or a local branch name."
+            exit 1
+          fi
         fi
 
         echo "🧪 Preparing bench environment for: $BENCH_TARGET ($TARGET_BRANCH)"
@@ -1449,14 +1495,154 @@ case "$1" in
         python3 scripts/compare_baseline.py "$MASTER_CSV" "$BRANCH_CSV"
         ;;
 
+      engine)
+        # Run engine split-stage benchmarks on the current branch.
+        # Uses the bench stack (fresh named volumes — never touches NAS/prod data).
+        # Audio: benchmark/test_audio/ WAV files (mounted read-only inside container).
+        # Results: docs/engine-benchmark-results/*.csv
+        TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+        AUDIO_DIR="/app/benchmark/test_audio"
+        FAST_AUDIO="${AUDIO_DIR}/0.5h_1899s.wav"  # 30-minute file for single-stage timing
+        SINGLE_CSV="engine_single_${TIMESTAMP}.csv"
+        QUEUE_CSV="engine_queue_${TIMESTAMP}.csv"
+        RESULTS_DIR="docs/engine-benchmark-results"
+        WORKER="opentranscribe-celery-worker"
+
+        echo "🔬 Engine benchmark — branch: $(git branch --show-current)"
+        echo "   Using bench stack (fresh volumes, never touches NAS/prod data)"
+        echo ""
+
+        # GPU safety check
+        if ! nvidia-smi --query-gpu=index,name,memory.used,utilization.gpu \
+            --format=csv,noheader 2>/dev/null; then
+          echo "❌ nvidia-smi failed — check GPU state before benchmarking. Aborting."
+          exit 1
+        fi
+        echo ""
+
+        # Wipe bench volumes for a clean slate
+        echo "🗑  Wiping bench volumes for clean run..."
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE down --remove-orphans 2>/dev/null || true
+        docker volume rm \
+          "${BENCH_VOLUME_PREFIX}_postgres_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_minio_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_redis_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_opensearch_bench_data" \
+          "${BENCH_VOLUME_PREFIX}_flower_bench_data" 2>/dev/null || true
+
+        # Build and start bench stack on current branch.
+        # Build only the services needed for engine benchmarks — skip docs/frontend
+        # (they don't affect AI processing and docs has an MDX build step that can
+        # fail on unrelated content changes).
+        echo "🚀 Building bench stack from current branch (backend + infra only)..."
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE build \
+          backend celery-worker celery-download-worker celery-cpu-worker \
+          celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
+          celery-beat flower
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE up -d --no-build \
+          postgres redis minio opensearch \
+          backend celery-worker celery-download-worker celery-cpu-worker \
+          celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
+          celery-beat flower
+
+        echo ""
+        echo "⏳ Waiting 45 s for stack to be ready (DB migrations, model pre-load)..."
+        sleep 45
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe
+
+        # Verify the worker is up
+        if ! docker ps --format '{{.Names}}' | grep -q "^${WORKER}$"; then
+          echo "❌ Worker container '${WORKER}' not running — check logs."
+          # shellcheck disable=SC2086
+          docker compose $BENCH_COMPOSE logs --tail=30 celery-worker
+          exit 1
+        fi
+
+        echo ""
+        echo "▶  [1/2] Per-stage latency (3 runs on 0.5h file)..."
+        docker exec -e PYTHONPATH=/app "$WORKER" \
+          python /app/scripts/benchmark_engine_single.py \
+            --audio "$FAST_AUDIO" \
+            --runs 3 \
+            --output "/tmp/${SINGLE_CSV}"
+
+        echo ""
+        echo "▶  [2/2] Queue throughput (concurrency=3, max 5 files)..."
+        docker exec -e PYTHONPATH=/app "$WORKER" \
+          python /app/scripts/benchmark_engine_queue.py \
+            --audio-dir "$AUDIO_DIR" \
+            --max-files 5 \
+            --concurrency 3 \
+            --output "/tmp/${QUEUE_CSV}"
+
+        # Copy results out
+        mkdir -p "$RESULTS_DIR"
+        docker cp "${WORKER}:/tmp/${SINGLE_CSV}" "${RESULTS_DIR}/${SINGLE_CSV}"
+        docker cp "${WORKER}:/tmp/${QUEUE_CSV}"  "${RESULTS_DIR}/${QUEUE_CSV}"
+
+        echo ""
+        echo "✅ Results saved to:"
+        echo "   ${RESULTS_DIR}/${SINGLE_CSV}"
+        echo "   ${RESULTS_DIR}/${QUEUE_CSV}"
+        echo ""
+        echo "📊 Gate criteria:"
+        echo "   Stage 1 (preprocess):            < 30 s per file"
+        echo "   Stage 2 GPU (transcribe+diarize): ≥ 20× realtime"
+        echo "   Stage 3 (finalize):              <  5 s per file"
+        echo "   GPU idle between tasks (conc=3):  <  5 s"
+        echo ""
+        echo "🛑 Stopping bench stack (volumes kept for inspection)..."
+        # shellcheck disable=SC2086
+        docker compose $BENCH_COMPOSE stop
+        ;;
+
+      all|phase)
+        # End-to-end engine benchmark orchestrator (scripts/run_benchmark.py).
+        # Fully self-contained: it stands up the isolated otbench stack, uploads
+        # the corpus like a user, collects metrics, and tears down per phase.
+        # Never touches dev/NAS data (project otbench, *_bench_data volumes only).
+        if ! nvidia-smi >/dev/null 2>&1; then
+          echo "❌ nvidia-smi failed — check GPU state before benchmarking. Aborting."
+          exit 1
+        fi
+        # Pass remaining args straight through (e.g. --smoke / --quick / --full / --phases / --conc).
+        ORCH_ARGS=("${@:3}")
+        if [[ "$BENCH_SUBCOMMAND" == "phase" ]]; then
+          PHASE_NAME="${3:-}"
+          if [[ -z "$PHASE_NAME" || "$PHASE_NAME" == --* ]]; then
+            echo "❌ Usage: ./opentr.sh bench phase <name> [--smoke|--quick|--full] [--conc N]"
+            exit 1
+          fi
+          ORCH_ARGS=(--phases "$PHASE_NAME" "${@:4}")
+        fi
+        echo "🧪 End-to-end engine benchmark — branch: $(git branch --show-current)"
+        backend/venv/bin/python scripts/run_benchmark.py "${ORCH_ARGS[@]}"
+        ;;
+
+      collate)
+        # Aggregate all per-level metrics.json into master + whitepaper tables.
+        backend/venv/bin/python scripts/collate_benchmark.py "${@:3}"
+        ;;
+
       help|*)
         echo "🧪 Benchmark subcommands (isolated from NAS data):"
-        echo "  bench start [master|branch]              - Wipe bench volumes, switch branch, start bench stack"
+        echo "  bench all [--smoke|--quick|--full] [--phases a,b]  - Full end-to-end run (all phases, all metrics)"
+        echo "  bench phase <name> [--smoke|--quick|--full]        - Run a single phase end-to-end"
+        echo "  bench collate                            - Aggregate metrics into master + whitepaper tables"
+        echo "  bench start [master|branch|current|<name>]- Wipe bench volumes, switch branch, start bench stack (default: current)"
         echo "  bench stop                               - Stop bench stack (keep volumes)"
         echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
         echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"
+        echo "  bench engine                             - Run engine split-stage benchmarks (Phase 2 gate)"
         echo "  bench status                             - Show bench containers, GPU state, volumes"
         echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
+        echo ""
+        echo "  Phases: a6000_solo, ti_solo, dual_gpu_scale, gpu_split, duration_curve"
+        echo "  Tiers:  --smoke (validate, minutes) -> --quick (~10-15h) -> --full (~58h, paper)"
+        echo "  Add --fresh to wipe prior results for a clean run; resume is automatic otherwise."
         ;;
     esac
     ;;

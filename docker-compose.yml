@@ -219,6 +219,7 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       # Shared scratch — reads the preprocessed WAV that the CPU worker staged
       - pipeline_scratch:/scratch/opentranscribe
+      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -295,8 +296,15 @@ services:
     volumes:
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
+      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       - PRELOAD_CPU_WHISPER=true
+      # ffmpeg preprocess threading (opt-in CPU-contention control; default off).
+      # Default 0 = ffmpeg auto/unbounded (no change). On low-core/co-tenant
+      # machines set FFMPEG_THREADS=auto (= cores // concurrency) or a small int
+      # to avoid oversubscription. Worker needs CPU_WORKER_CONCURRENCY for "auto".
+      - CPU_WORKER_CONCURRENCY=${CPU_WORKER_CONCURRENCY:-8}
+      - FFMPEG_THREADS=${FFMPEG_THREADS:-0}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -456,6 +464,102 @@ services:
       redis:
         condition: service_healthy
 
+  # ── Phase 4 multi-GPU split workers ──────────────────────────────────────
+  # Activated only with the gpu-split Docker Compose profile.
+  # Enable with ENGINE_GPU_SPLIT=true and start with:
+  #   docker compose --profile gpu-split up -d
+  # GPU device assignment is controlled via GPU_TRANSCRIBE_DEVICE_ID /
+  # GPU_DIARIZE_DEVICE_ID.  GPU reservation (deploy.resources.reservations)
+  # must be added via an overlay file (see docker-compose.gpu.yml pattern).
+
+  celery-worker-gpu-transcribe:
+    container_name: ${COMPOSE_PROJECT_NAME:-opentranscribe}-celery-worker-gpu-transcribe
+    profiles:
+      - gpu-split
+    restart: always
+    env_file: .env
+    security_opt:
+      - no-new-privileges:true
+    command: celery -A app.core.celery worker --loglevel=info -Q gpu-transcribe --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcribe@%h -E
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      - pipeline_scratch:/scratch/opentranscribe
+      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - MODELS_DIRECTORY=/app/models
+      - MODEL_BASE_DIR=/app/models
+      - TEMP_DIR=/app/temp
+      - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
+      - PRELOAD_GPU_MODELS=true
+      - CUDA_VISIBLE_DEVICES=${GPU_TRANSCRIBE_DEVICE_ID:-0}
+      - ENGINE_GPU_SPLIT=true
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcribe@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-worker-gpu-diarize:
+    container_name: ${COMPOSE_PROJECT_NAME:-opentranscribe}-celery-worker-gpu-diarize
+    profiles:
+      - gpu-split
+    restart: always
+    env_file: .env
+    security_opt:
+      - no-new-privileges:true
+    command: celery -A app.core.celery worker --loglevel=info -Q gpu-diarize --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-diarize@%h -E
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      - pipeline_scratch:/scratch/opentranscribe
+      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - MODELS_DIRECTORY=/app/models
+      - MODEL_BASE_DIR=/app/models
+      - TEMP_DIR=/app/temp
+      - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
+      - PRELOAD_GPU_MODELS=true
+      - CUDA_VISIBLE_DEVICES=${GPU_DIARIZE_DEVICE_ID:-1}
+      - ENGINE_GPU_SPLIT=true
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-diarize@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   # GPU Scaled Worker - Base definition
   # Activated only with --gpu-scale flag via docker-compose.gpu-scale.yml overlay
   # GPU configuration (deploy.resources.reservations) is provided by gpu-scale.yml
@@ -482,6 +586,8 @@ services:
       - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
+    volumes:
+      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     tmpfs:
       - /app/temp:noexec,nosuid,size=20g,mode=1777
     depends_on:
@@ -519,7 +625,7 @@ services:
       --auto_refresh=True
       --tasks_columns=name,uuid,state,received,started,runtime,worker,args
       --purge_offline_workers=600
-      --queues=gpu,download,cpu,nlp,embedding,utility,cloud-asr,cpu-transcribe,celery
+      --queues=gpu,gpu-transcribe,gpu-diarize,download,cpu,nlp,embedding,utility,cloud-asr,cpu-transcribe,celery
       --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower}
     ports:
       - "${FLOWER_PORT:-5175}:5555"
@@ -561,6 +667,8 @@ volumes:
   # overlay (see docker-compose.scratch-tmpfs.yml) for RAM-backed speed.
   # See backend/app/utils/scratch_volume.py for the contract.
   pipeline_scratch:
+  transcription-temp:
+    driver: local
 
 networks:
   default:

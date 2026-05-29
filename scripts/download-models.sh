@@ -145,7 +145,7 @@ check_huggingface_token() {
     echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
     echo ""
     echo -e "   ${YELLOW}• Speaker Diarization Model:${NC}"
-    echo "     https://huggingface.co/pyannote/speaker-diarization-3.1"
+    echo "     https://huggingface.co/pyannote/speaker-diarization-community-1"
     echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
     echo ""
     echo "3. Configure your token:"
@@ -226,7 +226,7 @@ download_models_docker() {
         -e WHISPER_MODEL="${whisper_model}" \
         -e USE_GPU="${use_gpu}" \
         -e COMPUTE_TYPE="${COMPUTE_TYPE:-float16}" \
-        -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \
+        -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}" \
         -e DOWNLOAD_ALL_OPENSEARCH_MODELS="${DOWNLOAD_ALL_OPENSEARCH_MODELS:-false}" \
         -e OPENSEARCH_MODELS="${OPENSEARCH_MODELS:-}" \
         -v "$(realpath "$MODEL_CACHE_DIR/huggingface"):/home/appuser/.cache/huggingface" \
@@ -273,7 +273,8 @@ download_models_docker() {
         if [ -d "$MODEL_CACHE_DIR/torch/pyannote" ]; then
             # Check if PyAnnote models exist
             if [ -d "$MODEL_CACHE_DIR/torch/pyannote/models--pyannote--segmentation-3.0" ] && \
-               [ -d "$MODEL_CACHE_DIR/torch/pyannote/models--pyannote--speaker-diarization-3.1" ]; then
+               { [ -d "$MODEL_CACHE_DIR/torch/pyannote/models--pyannote--speaker-diarization-community-1" ] || \
+                 [ -d "$MODEL_CACHE_DIR/torch/pyannote/models--pyannote--speaker-diarization-3.1" ]; }; then
                 has_pyannote_models=true
             fi
         fi
@@ -319,7 +320,7 @@ download_models_docker() {
         echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
         echo ""
         echo "  2. Speaker Diarization Model:"
-        echo "     https://huggingface.co/pyannote/speaker-diarization-3.1"
+        echo "     https://huggingface.co/pyannote/speaker-diarization-community-1"
         echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
         echo ""
         echo -e "${CYAN}After accepting BOTH agreements:${NC}"

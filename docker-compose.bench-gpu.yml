@@ -1,0 +1,84 @@
+# docker-compose.bench-gpu.yml
+# Bench-stack wiring for the multi-GPU worker variants.
+#
+# The base docker-compose.yml defines celery-worker-gpu-scaled / -gpu-transcribe /
+# -gpu-diarize but leaves image/build/GPU to an environment overlay (override.yml,
+# prod.yml). The bench overlay (docker-compose.bench.yml) does NOT cover them, so
+# Phase 3 (gpu-scale) and Phase 4 (gpu-split) fail to start ("neither an image nor
+# a build context"). This overlay supplies the :bench image + model caches, and
+# adds GPU device reservation for the gpu-split workers (the gpu-scaled worker gets
+# its reservation from docker-compose.gpu-scale.yml).
+#
+# Phase 3 (gpu-scale):
+#   COMPOSE_PROFILES=gpu-scale docker compose \
+#     -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.bench.yml \
+#     -f docker-compose.gpu-scale.yml -f docker-compose.bench-gpu.yml up -d
+# Phase 4 (gpu-split):
+#   COMPOSE_PROFILES=gpu-split docker compose \
+#     -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.bench.yml \
+#     -f docker-compose.bench-gpu.yml up -d
+
+services:
+  # Phase 3: parallel pipelines on the scaled GPU. GPU reservation + concurrency
+  # come from docker-compose.gpu-scale.yml; here we only provide image + caches.
+  celery-worker-gpu-scaled:
+    image: opentranscribe-backend:bench
+    pull_policy: never
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      # CRITICAL: base gpu-scaled omits pipeline_scratch — without it the worker
+      # can't read the WAV the CPU worker staged and the engine handoff fails
+      # (S3 NoSuchKey on temp/preprocess). Mount both shared scratch volumes.
+      - pipeline_scratch:/scratch/opentranscribe
+      - transcription-temp:/tmp/transcription
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+
+  # Phase 4: one pipeline split across both cards. Transcribe on the A6000.
+  celery-worker-gpu-transcribe:
+    image: opentranscribe-backend:bench
+    pull_policy: never
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    environment:
+      # Docker maps the reserved host GPU to index 0 inside the container.
+      - CUDA_VISIBLE_DEVICES=0
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU_TRANSCRIBE_DEVICE_ID:-0}"]
+              capabilities: [gpu]
+
+  # Phase 4: diarization on the 3080 Ti.
+  celery-worker-gpu-diarize:
+    image: opentranscribe-backend:bench
+    pull_policy: never
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU_DIARIZE_DEVICE_ID:-1}"]
+              capabilities: [gpu]

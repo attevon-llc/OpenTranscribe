@@ -31,6 +31,7 @@
   import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
   import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
   import ASRSettings from '$components/settings/ASRSettings.svelte';
+  import EngineSettings from '$components/settings/EngineSettings.svelte';
   import CustomVocabularySettings from '$components/settings/CustomVocabularySettings.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
@@ -185,6 +186,7 @@
       items: [
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
         { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic' },
+        ...(isAdmin ? [{ id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu' }] : []),
         { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' },
         { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list' },
         { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
@@ -1205,6 +1207,15 @@
               <h3 class="section-title">{$t('settings.asrProvider.sectionTitle')}</h3>
               <p class="section-description">{$t('settings.asrProvider.description')}</p>
               <ASRSettings {isAdmin} />
+            </div>
+          {/if}
+
+          <!-- Engine Configuration Section (admin only) -->
+          {#if activeSection === 'engine-settings' && isAdmin}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.engineSettings.title')}</h3>
+              <p class="section-description">{$t('settings.engineSettings.description')}</p>
+              <EngineSettings />
             </div>
           {/if}
 

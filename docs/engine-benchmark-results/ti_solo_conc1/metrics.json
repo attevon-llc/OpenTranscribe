@@ -1,6 +1,0 @@
-{
-  "run_label": "ti_solo_conc1",
-  "skipped": true,
-  "note": "Single-stream skipped by design: same GA102 arch as A6000 (covered by a6000_solo_conc1); quick run measured Ti conc1 RTF=32.88. Ti test focuses on the 12 GB concurrency ceiling (conc 2/3/4).",
-  "batches": []
-}

@@ -299,6 +299,12 @@ services:
       - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     environment:
       - PRELOAD_CPU_WHISPER=true
+      # ffmpeg preprocess threading (opt-in CPU-contention control; default off).
+      # Default 0 = ffmpeg auto/unbounded (no change). On low-core/co-tenant
+      # machines set FFMPEG_THREADS=auto (= cores // concurrency) or a small int
+      # to avoid oversubscription. Worker needs CPU_WORKER_CONCURRENCY for "auto".
+      - CPU_WORKER_CONCURRENCY=${CPU_WORKER_CONCURRENCY:-8}
+      - FFMPEG_THREADS=${FFMPEG_THREADS:-0}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432

@@ -38,7 +38,8 @@ REPO = Path(__file__).resolve().parent.parent
 PROJECT = 'otbench'
 CORPUS = REPO / 'docs' / 'benchmark-corpus' / 'corpus.json'
 AUDIO_DIR = REPO / 'benchmark' / 'test_audio'
-OUTROOT = REPO / 'docs' / 'engine-benchmark-results'
+# OUTROOT is overridable (BENCHMARK_OUTROOT) so A/B runs can write to separate dirs.
+OUTROOT = Path(os.environ.get('BENCHMARK_OUTROOT', str(REPO / 'docs' / 'engine-benchmark-results')))
 RESULTS_TSV = OUTROOT / 'results.tsv'
 PY = REPO / 'backend' / 'venv' / 'bin' / 'python'
 BACKEND_URL = os.environ.get('BENCHMARK_BACKEND_URL', 'http://localhost:5174')

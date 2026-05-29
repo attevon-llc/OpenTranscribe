@@ -11,6 +11,39 @@ logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[float, str], None] | None
 
 
+def _ffmpeg_threads() -> int:
+    """Resolve the ffmpeg -threads value (opt-in CPU-contention control).
+
+    The CPU worker runs up to CPU_WORKER_CONCURRENCY preprocess tasks at once, each
+    spawning an ffmpeg process. ffmpeg's default (-threads 0 = use all cores) can
+    oversubscribe cores on low-core / busy machines where OpenTranscribe co-tenants
+    with other services. Setting FFMPEG_THREADS lets such deployments cap it.
+
+    Default is unbounded (legacy behavior) — benchmarking on a 48-core server showed
+    capping yields no throughput or peak-CPU benefit there (preprocess is ~1-2% of
+    per-file work; the GPU is the bottleneck). The win is expected only on small
+    machines, so it is opt-in rather than a default behavior change.
+
+    FFMPEG_THREADS env:
+      unset / "0"     -> 0 = ffmpeg auto / unbounded (default, no change)
+      "auto"          -> cores // CPU_WORKER_CONCURRENCY (>=1): no oversubscription
+      <positive int>  -> explicit per-process cap (e.g. 2-4 on a laptop)
+    """
+    raw = os.environ.get("FFMPEG_THREADS", "0").strip().lower()
+    if raw in ("", "0"):
+        return 0
+    if raw.isdigit():
+        return int(raw)
+    if raw == "auto":
+        cores = os.cpu_count() or 4
+        try:
+            concurrency = max(1, int(os.environ.get("CPU_WORKER_CONCURRENCY", "8")))
+        except ValueError:
+            concurrency = 8
+        return max(1, cores // concurrency)
+    return 0  # unrecognized -> safe default (unbounded)
+
+
 def get_audio_file_extension(content_type: str, filename: str) -> str:
     """
     Determine the appropriate file extension based on content type and filename.
@@ -65,7 +98,12 @@ def extract_audio_from_video(  # noqa: C901
             progress_callback(0.2, "Processing video file...")
 
         ffmpeg.input(video_path).output(
-            output_path, acodec="pcm_s16le", ar="16000", ac=1, vn=None
+            output_path,
+            acodec="pcm_s16le",
+            ar="16000",
+            ac=1,
+            vn=None,
+            threads=_ffmpeg_threads(),
         ).run(quiet=True, overwrite_output=True)
 
         if progress_callback:
@@ -131,9 +169,9 @@ def convert_audio_format(  # noqa: C901
         if progress_callback:
             progress_callback(0.3, "Converting audio format...")
 
-        ffmpeg.input(input_path).output(output_path, acodec="pcm_s16le", ar="16000", ac=1).run(
-            quiet=True, overwrite_output=True
-        )
+        ffmpeg.input(input_path).output(
+            output_path, acodec="pcm_s16le", ar="16000", ac=1, threads=_ffmpeg_threads()
+        ).run(quiet=True, overwrite_output=True)
 
         if progress_callback:
             progress_callback(0.8, "Verifying converted audio...")

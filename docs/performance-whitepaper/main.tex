@@ -76,7 +76,10 @@ leaks resolved, single-worker VRAM peaks at just 2.3\,GB---leaving 96\% of
 the A6000 free for concurrent work. Against a production corpus of \num{1435}
 files (\num{3715} hours), full reprocessing completes in approximately
 68\,hours at 8$\times$ concurrency---at zero marginal cost compared to
-\$966--\$5,350 for equivalent cloud transcription.
+\$966--\$5,350 for equivalent cloud transcription. A latest-code validation on a
+mixed 58\,h corpus (Sec.~\ref{sec:mixedcorpus}) further shows dual-A6000 throughput of
+\textbf{81.3$\times$} (58\,h cleared in $\approx$43\,min) and characterises the
+batch-scheduling and per-file latency behaviour of heterogeneous real-world workloads.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -797,6 +800,87 @@ wall time reduction---holds at a perfect $N$$\times$ through 10 workers.
   at 10 workers) confirms this.}
 \label{fig:tradeoff}
 \end{figure}
+
+\subsection{Full Mixed-Corpus Validation (Latest Code, 2026)}
+\label{sec:mixedcorpus}
+
+The scaling results above (Table~\ref{tab:scaling}) used five \emph{duration-matched}
+files ($\approx$2.73\,h each) to isolate pure GPU concurrency behaviour. To validate the
+latest pipeline under a realistic, heterogeneous workload, we re-ran the benchmark on a
+\textbf{40-file, 58.0\,h corpus} spanning four duration tiers (5\,min to 4.7\,h), uploaded
+as a batch through the production API. Both result sets are retained here for direct
+comparison.
+
+\begin{table}[!t]
+\centering
+\caption{Single-A6000 Sweep --- Mixed 58\,h Corpus (Latest Code)}
+\label{tab:mixed}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+\textbf{Wkr} & \textbf{Thru-put} & \textbf{Speedup} & \textbf{VRAM} & \textbf{GPU} \\
+             & \textbf{(agg)}    & \textbf{vs c1}   & \textbf{Peak} & \textbf{Util} \\
+\midrule
+1  & 39.0$\times$ & 1.00$\times$ & \num{5239}\,MB  & 54\% \\
+\textbf{4}  & \textbf{45.9$\times$} & \textbf{1.18$\times$} & \num{35883}\,MB & 85\% \\
+8  & 39.2$\times$ & 1.01$\times$ & \num{48287}\,MB & 90\% \\
+10 & 39.2$\times$ & 1.01$\times$ & \num{44279}\,MB & 91\% \\
+12 & 39.5$\times$ & 1.01$\times$ & \num{46423}\,MB & 92\% \\
+16 & 30.8$\times$ & 0.79$\times$ & \num{46921}\,MB & 93\% \\
+\bottomrule
+\end{tabular}
+\\[4pt]
+{\footnotesize Aggregate throughput peaks at conc=4 (45.9$\times$) and declines beyond,
+  in contrast to the duration-matched run (Table~\ref{tab:scaling}: linear to conc=12,
+  54.6$\times$). Reconciled below.}
+\end{table}
+
+\paragraph{Reconciling the two corpora.}
+The duration-matched run scales linearly to twelve workers; the mixed corpus peaks at four
+and declines. \emph{These are not contradictory}---they measure different regimes. With
+matched files, all concurrent workers finish together and the GPU stays saturated. With a
+mixed batch, the short files drain quickly and workers then idle waiting on the few long
+files: a tail-limiting effect of batch scheduling, \emph{not} a GPU compute ceiling (VRAM
+still plateaus at the same $\approx$48\,GB, confirming the shared single-model design). The
+operating implication: \textbf{conc=6--8 for sustained, continuously-fed queues}
+(Table~\ref{tab:scaling}); \textbf{conc=4 for bursty, mixed-length uploads}
+(Table~\ref{tab:mixed}). \emph{[Two corpora retained for later reconciliation; values not
+yet publication-final.]}
+
+\paragraph{Per-file latency under load.}
+The mixed-corpus run also captures the multi-user latency tradeoff (Table~\ref{tab:latency}):
+an individual file's GPU-stage time inflates 3.9$\times$ at conc=4 and 6--12$\times$ at
+conc=8+ relative to the isolated (conc=1) baseline, because the shared GPU time-slices
+across requests. Per-file throughput nonetheless stays above realtime ($\geq$4.4$\times$) at
+all tested concurrencies. Latency-sensitive multi-user deployments should keep per-GPU
+concurrency modest and scale horizontally rather than stacking concurrency onto one card.
+
+\begin{table}[!t]
+\centering
+\caption{Per-File Latency \& Contention vs.\ Concurrency (Mixed Corpus)}
+\label{tab:latency}
+\begin{tabular}{@{}rrr@{}}
+\toprule
+\textbf{Workers} & \textbf{GPU Inflation vs c1} & \textbf{Per-File RTF (p50)} \\
+\midrule
+1  & 1.0$\times$  & 39.3$\times$ \\
+4  & 3.9$\times$  & 12.0$\times$ \\
+8  & 11.6$\times$ & 5.2$\times$  \\
+12 & 8.6$\times$  & 5.2$\times$  \\
+16 & 6.3$\times$  & 4.4$\times$  \\
+\bottomrule
+\end{tabular}
+\\[4pt]
+{\footnotesize GPU inflation = a file's GPU-stage time vs the conc=1 isolated baseline.
+  Per-file RTF = audio duration $/$ GPU-stage time.}
+\end{table}
+
+\paragraph{Dual-GPU throughput.}
+Running both A6000s (GPU\,0 + GPU\,2) at conc=4 each clears the full 58\,h corpus in
+\textbf{$\approx$43\,minutes} at \textbf{81.3$\times$ aggregate realtime}---\textbf{1.77$\times$}
+the single-card mixed-corpus result (45.9$\times$). The sub-linear factor reflects the shared
+CPU preprocessing stage feeding both GPUs (CPU averaged 1490\%, $\approx$15 cores); per-card
+VRAM peaked at \num{35739}\,MB. This confirms the architecture scales across physical GPUs
+with near-linear throughput.
 
 % ==============================================================================
 % VII. GPU OPTIMIZATIONS
@@ -1949,7 +2033,7 @@ however, regressed beyond the 1.0\,pp opt-in gate (1.45\,pp at step=2.0,
 reference file in both cases). The mechanism: PyAnnote's binarized segmentation
 derives each frame's label from the average of every overlapping chunk's
 posterior at that frame. At 90\% overlap a 2\,s turn by a minor speaker is
-covered by \about{20} chunks; at 70\% overlap it's only 6, and if a few of
+covered by ${\sim}20$ chunks; at 70\% overlap it's only 6, and if a few of
 those happen to fall near the model's less-accurate chunk edges the averaged
 posterior falls below the binarization threshold and the turn disappears
 entirely. The speaker is then dropped from the downstream clustering, which

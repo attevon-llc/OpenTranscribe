@@ -30,8 +30,18 @@ services:
   # used at build time is frozen into the image.
   # pull_policy: never prevents Docker from trying to pull opentranscribe-backend:bench
   # from Docker Hub (it's a local-only tag).
+  #
+  # container_name is overridden to otbench-* on EVERY service. The base
+  # docker-compose.yml hard-codes container_name: opentranscribe-* (Docker names
+  # are global, so the compose project name alone does NOT prevent a collision
+  # with the dev stack, and `docker exec opentranscribe-postgres` could hit the
+  # wrong container). otbench-* fully isolates the bench stack and makes teardown
+  # by project deterministic. The gpu-* worker variants already use
+  # ${COMPOSE_PROJECT_NAME}-* in the base file, so pinning COMPOSE_PROJECT_NAME=otbench
+  # namespaces those automatically.
   backend:
     image: opentranscribe-backend:bench
+    container_name: otbench-backend
     pull_policy: never
     build:
       context: ./backend
@@ -43,6 +53,7 @@ services:
 
   celery-worker:
     image: opentranscribe-backend:bench
+    container_name: otbench-celery-worker
     pull_policy: never
     build:
       context: ./backend
@@ -57,6 +68,7 @@ services:
 
   celery-download-worker:
     image: opentranscribe-backend:bench
+    container_name: otbench-celery-download-worker
     pull_policy: never
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
@@ -64,34 +76,41 @@ services:
 
   celery-cpu-worker:
     image: opentranscribe-backend:bench
+    container_name: otbench-celery-cpu-worker
     pull_policy: never
 
   celery-cloud-asr-worker:
     image: opentranscribe-backend:bench
+    container_name: otbench-celery-cloud-asr-worker
     pull_policy: never
 
   celery-nlp-worker:
     image: opentranscribe-backend:bench
+    container_name: otbench-celery-nlp-worker
     pull_policy: never
 
   celery-embedding-worker:
     image: opentranscribe-backend:bench
+    container_name: otbench-celery-embedding-worker
     pull_policy: never
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
 
   celery-beat:
     image: opentranscribe-backend:bench
+    container_name: otbench-celery-beat
     pull_policy: never
 
   flower:
     image: opentranscribe-backend:bench
+    container_name: otbench-flower
     pull_policy: never
     volumes:
       - flower_bench_data:/app
 
   frontend:
     image: opentranscribe-frontend:bench
+    container_name: otbench-frontend
     pull_policy: never
     build:
       context: ./frontend
@@ -107,6 +126,7 @@ services:
 
   docs:
     image: opentranscribe-docs:bench
+    container_name: otbench-docs
     pull_policy: never
     build:
       context: ./docs-site
@@ -115,18 +135,22 @@ services:
       - "${DOCS_PORT:-5183}:8080"
 
   postgres:
+    container_name: otbench-postgres
     volumes:
       - postgres_bench_data:/var/lib/postgresql/data/
 
   minio:
+    container_name: otbench-minio
     volumes:
       - minio_bench_data:/data
 
   redis:
+    container_name: otbench-redis
     volumes:
       - redis_bench_data:/data
 
   opensearch:
+    container_name: otbench-opensearch
     volumes:
       - opensearch_bench_data:/usr/share/opensearch/data
       - ${MODEL_CACHE_DIR:-./models}/opensearch-ml:/ml-models:ro

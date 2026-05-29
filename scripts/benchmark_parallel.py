@@ -90,10 +90,13 @@ def _load_redis_url() -> str:
 
 
 REDIS_URL = _load_redis_url()
-POLL_TIMEOUT = 14400  # 4 hours max for large batches
+POLL_TIMEOUT = int(os.environ.get('BENCHMARK_POLL_TIMEOUT', '14400'))  # 4 hours default
 VRAM_SAMPLE_INTERVAL = 2.0  # seconds between nvidia-smi samples
-GPU_DEVICE_ID = 2  # host GPU to monitor (the gpu-scaled worker GPU)
-DB_CONTAINER = 'opentranscribe-postgres'
+STATS_SAMPLE_INTERVAL = 2.0  # seconds between docker-stats CPU/RAM samples
+GPU_DEVICE_ID = 0  # host GPU to monitor (overridable via --gpu-id)
+# Container/DB names are overridable so the bench stack (otbench-*) and the dev
+# stack (opentranscribe-*) never get confused. The orchestrator sets these.
+DB_CONTAINER = os.environ.get('BENCHMARK_DB_CONTAINER', 'opentranscribe-postgres')
 DB_USER = 'postgres'
 DB_NAME = 'opentranscribe'
 
@@ -109,6 +112,15 @@ class VramSample:
     free_mb: int
     utilization_pct: int
     temp_c: int
+
+
+@dataclass
+class CpuSample:
+    """One docker-stats sample aggregated across the monitored worker containers."""
+
+    timestamp: float
+    cpu_pct: float  # summed CPU% across containers (100% == one core)
+    mem_mb: float  # summed RSS across containers
 
 
 @dataclass
@@ -135,6 +147,25 @@ class BatchResult:
     vram_samples: list[VramSample] = field(default_factory=list)
     vram_peak_mb: int = 0
     vram_avg_mb: float = 0.0
+    cpu_samples: list[CpuSample] = field(default_factory=list)
+    cpu_pct_peak: float = 0.0
+    cpu_pct_avg: float = 0.0
+    ram_mb_peak: float = 0.0
+    ram_mb_avg: float = 0.0
+
+
+def _percentile(values: list[float], pct: float) -> float:
+    """Linear-interpolation percentile (pct in 0..100). Empty -> 0.0."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    if len(s) == 1:
+        return s[0]
+    rank = (pct / 100.0) * (len(s) - 1)
+    lo = int(rank)
+    hi = min(lo + 1, len(s) - 1)
+    frac = rank - lo
+    return s[lo] + (s[hi] - s[lo]) * frac
 
 
 # ---------------------------------------------------------------------------
@@ -143,13 +174,21 @@ class BatchResult:
 def get_auth_token() -> str:
     email = os.environ.get('BENCHMARK_EMAIL', 'admin@example.com')
     password = os.environ.get('BENCHMARK_PASSWORD', 'password')
-    resp = requests.post(
-        f'{BACKEND_URL}/api/auth/token',
-        data={'username': email, 'password': password},
-        timeout=15,
-    )
-    resp.raise_for_status()
-    return resp.json()['access_token']
+    last_exc: Exception | None = None
+    for attempt in range(5):
+        try:
+            resp = requests.post(
+                f'{BACKEND_URL}/api/auth/token',
+                data={'username': email, 'password': password},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return resp.json()['access_token']
+        except requests.RequestException as e:
+            last_exc = e
+            if attempt < 4:
+                time.sleep(3)
+    raise RuntimeError(f'auth failed after retries: {last_exc}')
 
 
 # Token manager: auto-refreshes when token is near expiry
@@ -397,6 +436,109 @@ class VramMonitor:
         return self.samples, peak, avg
 
 
+class DockerStatsMonitor:
+    """Background thread sampling CPU% and RAM of the worker containers via `docker stats`.
+
+    Captures the host-side compute cost (CPU-bound preprocess/postprocess, RAM
+    pressure) alongside the GPU profile, so the whitepaper can attribute
+    bottlenecks. Sampling is a single short-lived `docker stats --no-stream`
+    call per interval — negligible overhead, never perturbs the pipeline.
+    """
+
+    def __init__(self, containers: list[str]):
+        self.containers = [c for c in containers if c]
+        self.samples: list[CpuSample] = []
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self):
+        if not self.containers:
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=8)
+
+    def _run(self):
+        while not self._stop.is_set():
+            sample = self._sample()
+            if sample:
+                self.samples.append(sample)
+            self._stop.wait(STATS_SAMPLE_INTERVAL)
+
+    def _sample(self) -> CpuSample | None:
+        try:
+            result = subprocess.run(
+                [
+                    'docker',
+                    'stats',
+                    '--no-stream',
+                    '--format',
+                    '{{.CPUPerc}}\t{{.MemUsage}}',
+                    *self.containers,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                return None
+            cpu_total = 0.0
+            mem_total = 0.0
+            for line in result.stdout.strip().split('\n'):
+                if not line.strip():
+                    continue
+                parts = line.split('\t')
+                if len(parts) < 2:
+                    continue
+                cpu_total += _parse_cpu_pct(parts[0])
+                mem_total += _parse_mem_usage(parts[1])
+            return CpuSample(timestamp=time.time(), cpu_pct=cpu_total, mem_mb=mem_total)
+        except Exception:
+            return None
+
+    def get_results(self) -> tuple[list[CpuSample], float, float, float, float]:
+        """Returns (samples, cpu_peak, cpu_avg, ram_peak_mb, ram_avg_mb)."""
+        if not self.samples:
+            return [], 0.0, 0.0, 0.0, 0.0
+        cpu_peak = max(s.cpu_pct for s in self.samples)
+        cpu_avg = sum(s.cpu_pct for s in self.samples) / len(self.samples)
+        ram_peak = max(s.mem_mb for s in self.samples)
+        ram_avg = sum(s.mem_mb for s in self.samples) / len(self.samples)
+        return self.samples, cpu_peak, cpu_avg, ram_peak, ram_avg
+
+
+def _parse_cpu_pct(text: str) -> float:
+    """'123.45%' -> 123.45."""
+    try:
+        return float(text.strip().rstrip('%'))
+    except ValueError:
+        return 0.0
+
+
+def _parse_mem_usage(text: str) -> float:
+    """'1.5GiB / 62GiB' -> 1536.0 (MB), taking the used side only."""
+    used = text.split('/')[0].strip()
+    num = ''.join(ch for ch in used if ch.isdigit() or ch == '.')
+    unit = used[len(num) :].strip().lower()
+    try:
+        val = float(num)
+    except ValueError:
+        return 0.0
+    if unit.startswith('gi') or unit.startswith('gb'):
+        return val * 1024
+    if unit.startswith('ki') or unit.startswith('kb'):
+        return val / 1024
+    if unit.startswith('b'):
+        return val / (1024 * 1024)
+    # mib / mb (and bare numbers) default to MB
+    return val
+
+
 # ---------------------------------------------------------------------------
 # Redis data collection
 # ---------------------------------------------------------------------------
@@ -460,6 +602,7 @@ def run_batch(
     gpu_id: int,
     upload_mode: bool = False,
     audio_dir: str = '',
+    stats_containers: list[str] | None = None,
 ) -> BatchResult:
     """Run a single batch of N files and collect all metrics."""
     batch_files = files[:batch_size]
@@ -480,9 +623,11 @@ def run_batch(
             )
         )
 
-    # Start VRAM monitoring
+    # Start VRAM + CPU/RAM monitoring
     vram_monitor = VramMonitor(gpu_id=gpu_id)
     vram_monitor.start()
+    stats_monitor = DockerStatsMonitor(stats_containers or [])
+    stats_monitor.start()
 
     # Trigger all files: upload fresh (real user flow) or reprocess existing.
     result.wall_start = time.time()
@@ -569,9 +714,17 @@ def run_batch(
     result.wall_end = time.time()
     result.wall_elapsed = result.wall_end - result.wall_start
 
-    # Stop VRAM monitoring
+    # Stop VRAM + CPU/RAM monitoring
     vram_monitor.stop()
     result.vram_samples, result.vram_peak_mb, result.vram_avg_mb = vram_monitor.get_results()
+    stats_monitor.stop()
+    (
+        result.cpu_samples,
+        result.cpu_pct_peak,
+        result.cpu_pct_avg,
+        result.ram_mb_peak,
+        result.ram_mb_avg,
+    ) = stats_monitor.get_results()
 
     # Mark timed-out files
     for fr in result.file_results:
@@ -630,6 +783,9 @@ def _print_batch_summary(result: BatchResult):
         print(f'  Errors:           {len(errored)}')
     print(f'  VRAM peak:        {result.vram_peak_mb} MB')
     print(f'  VRAM avg:         {result.vram_avg_mb:.0f} MB')
+    if result.cpu_samples:
+        print(f'  CPU peak/avg:     {result.cpu_pct_peak:.0f}% / {result.cpu_pct_avg:.0f}%')
+        print(f'  RAM peak/avg:     {result.ram_mb_peak:.0f} / {result.ram_mb_avg:.0f} MB')
 
     if completed:
         wall_times = [fr.wall_elapsed for fr in completed]
@@ -713,8 +869,9 @@ def write_reports(
     output_dir: Path,
     corpus_total_audio_h: float | None = None,
     corpus_name: str | None = None,
+    run_label: str = '',
 ):
-    """Write CSV reports and final summary."""
+    """Write CSV reports, machine-readable metrics.json, and final summary."""
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
@@ -762,8 +919,9 @@ def write_reports(
                 )
     print(f'\nPer-file CSV: {csv_path}')
 
-    # 2. Batch summary CSV
+    # 2. Batch summary CSV (+ per-stage p50/p95, CPU/RAM)
     summary_path = output_dir / f'benchmark_summary_{timestamp}.csv'
+    summary_rows: list[dict] = []
     with open(summary_path, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(
@@ -779,20 +937,41 @@ def write_reports(
                 'avg_gpu_s',
                 'min_gpu_s',
                 'max_gpu_s',
+                'preprocess_p50_s',
+                'preprocess_p95_s',
+                'cpu_to_gpu_p50_s',
+                'cpu_to_gpu_p95_s',
+                'gpu_transcribe_p50_s',
+                'gpu_transcribe_p95_s',
+                'gpu_to_post_p50_s',
+                'gpu_to_post_p95_s',
                 'vram_peak_mb',
                 'vram_avg_mb',
                 'gpu_util_pct_avg',
+                'cpu_pct_peak',
+                'cpu_pct_avg',
+                'ram_mb_peak',
+                'ram_mb_avg',
                 'throughput_audio_hrs_per_wall_hr',
                 'speedup_vs_single',
             ]
         )
         single_batch_wall = None
+        stage_keys = [
+            '1_preprocess',
+            '2_cpu_to_gpu_queue',
+            '3_gpu_transcribe',
+            '4_gpu_to_post_queue',
+        ]
         for batch in all_batches:
             completed = [fr for fr in batch.file_results if fr.status == 'completed']
             if not completed:
                 continue
             walls = [fr.wall_elapsed for fr in completed]
             gpus = [fr.stages.get('3_gpu_transcribe', 0) for fr in completed if fr.stages]
+            # Aggregate total-throughput RTF: ALL audio processed divided by the
+            # batch wall-clock window (first dispatch -> last completion). This is
+            # the steady-state system throughput, NOT a per-file end-to-end ratio.
             total_audio_s = sum(fr.duration_s for fr in completed)
             throughput = (
                 (total_audio_s / 3600) / (batch.wall_elapsed / 3600) if batch.wall_elapsed else 0
@@ -810,6 +989,37 @@ def write_reports(
                 if batch.vram_samples
                 else 0
             )
+            # Per-stage percentiles across completed files.
+            pct: dict[str, float] = {}
+            for key in stage_keys:
+                vals = [fr.stages[key] for fr in completed if fr.stages and key in fr.stages]
+                pct[f'{key}_p50'] = _percentile(vals, 50)
+                pct[f'{key}_p95'] = _percentile(vals, 95)
+
+            row = {
+                'batch_size': batch.batch_size,
+                'batch_wall_s': round(batch.wall_elapsed, 1),
+                'files_completed': len(completed),
+                'files_errored': len([fr for fr in batch.file_results if fr.status == 'error']),
+                'avg_file_wall_s': round(sum(walls) / len(walls), 1),
+                'min_file_wall_s': round(min(walls), 1),
+                'max_file_wall_s': round(max(walls), 1),
+                'avg_gpu_s': round(sum(gpus) / len(gpus), 1) if gpus else None,
+                'preprocess_p50_s': round(pct['1_preprocess_p50'], 1),
+                'preprocess_p95_s': round(pct['1_preprocess_p95'], 1),
+                'gpu_transcribe_p50_s': round(pct['3_gpu_transcribe_p50'], 1),
+                'gpu_transcribe_p95_s': round(pct['3_gpu_transcribe_p95'], 1),
+                'vram_peak_mb': batch.vram_peak_mb,
+                'vram_avg_mb': round(batch.vram_avg_mb, 0),
+                'gpu_util_pct_avg': round(avg_util, 0),
+                'cpu_pct_peak': round(batch.cpu_pct_peak, 1),
+                'cpu_pct_avg': round(batch.cpu_pct_avg, 1),
+                'ram_mb_peak': round(batch.ram_mb_peak, 0),
+                'ram_mb_avg': round(batch.ram_mb_avg, 0),
+                'throughput_audio_hrs_per_wall_hr': round(throughput, 2),
+                'speedup_vs_single': round(speedup, 2),
+            }
+            summary_rows.append(row)
 
             writer.writerow(
                 [
@@ -824,9 +1034,21 @@ def write_reports(
                     f'{sum(gpus) / len(gpus):.1f}' if gpus else '',
                     f'{min(gpus):.1f}' if gpus else '',
                     f'{max(gpus):.1f}' if gpus else '',
+                    f'{pct["1_preprocess_p50"]:.1f}',
+                    f'{pct["1_preprocess_p95"]:.1f}',
+                    f'{pct["2_cpu_to_gpu_queue_p50"]:.1f}',
+                    f'{pct["2_cpu_to_gpu_queue_p95"]:.1f}',
+                    f'{pct["3_gpu_transcribe_p50"]:.1f}',
+                    f'{pct["3_gpu_transcribe_p95"]:.1f}',
+                    f'{pct["4_gpu_to_post_queue_p50"]:.1f}',
+                    f'{pct["4_gpu_to_post_queue_p95"]:.1f}',
                     batch.vram_peak_mb,
                     f'{batch.vram_avg_mb:.0f}',
                     f'{avg_util:.0f}',
+                    f'{batch.cpu_pct_peak:.1f}',
+                    f'{batch.cpu_pct_avg:.1f}',
+                    f'{batch.ram_mb_peak:.0f}',
+                    f'{batch.ram_mb_avg:.0f}',
                     f'{throughput:.2f}',
                     f'{speedup:.2f}',
                 ]
@@ -857,7 +1079,39 @@ def write_reports(
                     )
     print(f'VRAM CSV:     {vram_path}')
 
-    # 4. Final comparison table
+    # 4. CPU/RAM timeline CSV (worker container compute cost)
+    cpu_path = output_dir / f'benchmark_cpu_{timestamp}.csv'
+    with open(cpu_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['batch_size', 'elapsed_s', 'cpu_pct', 'mem_mb'])
+        for batch in all_batches:
+            if batch.cpu_samples:
+                t0 = batch.cpu_samples[0].timestamp
+                for cs in batch.cpu_samples:
+                    writer.writerow(
+                        [
+                            batch.batch_size,
+                            f'{cs.timestamp - t0:.1f}',
+                            f'{cs.cpu_pct:.1f}',
+                            f'{cs.mem_mb:.0f}',
+                        ]
+                    )
+    print(f'CPU/RAM CSV:  {cpu_path}')
+
+    # 5. Machine-readable metrics.json — the collator's single source of truth.
+    metrics = {
+        'run_label': run_label,
+        'timestamp': timestamp,
+        'corpus_name': corpus_name,
+        'corpus_total_audio_h': corpus_total_audio_h,
+        'batches': summary_rows,
+    }
+    metrics_path = output_dir / 'metrics.json'
+    with open(metrics_path, 'w') as f:
+        json.dump(metrics, f, indent=2)
+    print(f'Metrics JSON: {metrics_path}')
+
+    # 6. Final comparison table
     _print_final_summary(
         all_batches,
         single_batch_wall,
@@ -1149,11 +1403,24 @@ def main():
         help='Directory holding the source audio files (matched by corpus filename) for '
         '--upload mode (default: benchmark/test_audio).',
     )
+    parser.add_argument(
+        '--stats-containers',
+        default=os.environ.get('BENCHMARK_STATS_CONTAINERS', ''),
+        help='Comma-separated container names to sample CPU%%/RAM from via docker stats '
+        '(e.g. otbench-celery-worker,otbench-celery-cpu-worker). Empty = skip CPU/RAM sampling.',
+    )
+    parser.add_argument(
+        '--run-label',
+        default='',
+        help='Label embedded in metrics.json identifying this run '
+        '(e.g. phase1_a6000_solo_conc8). Used by the collator.',
+    )
     args = parser.parse_args()
 
     batch_sizes = [int(x.strip()) for x in args.batches.split(',')]
     max_files = max(batch_sizes)
     output_dir = Path(args.output)
+    stats_containers = [c.strip() for c in args.stats_containers.split(',') if c.strip()]
     corpus: dict = {}
 
     print('=' * 80)
@@ -1295,8 +1562,14 @@ def main():
             batch_files = files
 
         batch_result = run_batch(
-            token, r, batch_files, batch_size, args.gpu_id,
-            upload_mode=args.upload, audio_dir=args.audio_dir,
+            token,
+            r,
+            batch_files,
+            batch_size,
+            args.gpu_id,
+            upload_mode=args.upload,
+            audio_dir=args.audio_dir,
+            stats_containers=stats_containers,
         )
         all_batches.append(batch_result)
 
@@ -1304,7 +1577,11 @@ def main():
     corpus_total_h = sum(f['duration'] for f in files) / 3600 if args.corpus_file else None
     corpus_label = Path(args.corpus_file).name if args.corpus_file else None
     write_reports(
-        all_batches, output_dir, corpus_total_audio_h=corpus_total_h, corpus_name=corpus_label
+        all_batches,
+        output_dir,
+        corpus_total_audio_h=corpus_total_h,
+        corpus_name=corpus_label,
+        run_label=args.run_label,
     )
 
     print(f'\nBenchmark complete at {_ts()}')

@@ -1,4 +1,0 @@
-run,audio_file,audio_duration_s,stage1_preprocess_s,stage2_gpu_s,stage3_finalize_s,total_s,realtime_factor,shared_vol_used,cuda_device,segments_count,language,hostname,timestamp
-1,0.5h_1899s.wav,1898.97,2.086,47.708,0.287,50.081,37.92,True,0,808,en,1e9bc7bd532a,2026-04-29T08:11:58.501229+00:00
-2,0.5h_1899s.wav,1898.97,0.862,41.915,0.151,42.928,44.24,True,0,808,en,1e9bc7bd532a,2026-04-29T08:12:41.430229+00:00
-3,0.5h_1899s.wav,1898.97,0.824,41.59,0.148,42.563,44.62,True,0,808,en,1e9bc7bd532a,2026-04-29T08:13:23.995480+00:00

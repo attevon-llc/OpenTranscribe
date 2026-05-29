@@ -1599,8 +1599,39 @@ case "$1" in
         docker compose $BENCH_COMPOSE stop
         ;;
 
+      all|phase)
+        # End-to-end engine benchmark orchestrator (scripts/run_benchmark.py).
+        # Fully self-contained: it stands up the isolated otbench stack, uploads
+        # the corpus like a user, collects metrics, and tears down per phase.
+        # Never touches dev/NAS data (project otbench, *_bench_data volumes only).
+        if ! nvidia-smi >/dev/null 2>&1; then
+          echo "❌ nvidia-smi failed — check GPU state before benchmarking. Aborting."
+          exit 1
+        fi
+        # Pass remaining args straight through (e.g. --smoke / --quick / --full / --phases / --conc).
+        ORCH_ARGS=("${@:3}")
+        if [[ "$BENCH_SUBCOMMAND" == "phase" ]]; then
+          PHASE_NAME="${3:-}"
+          if [[ -z "$PHASE_NAME" || "$PHASE_NAME" == --* ]]; then
+            echo "❌ Usage: ./opentr.sh bench phase <name> [--smoke|--quick|--full] [--conc N]"
+            exit 1
+          fi
+          ORCH_ARGS=(--phases "$PHASE_NAME" "${@:4}")
+        fi
+        echo "🧪 End-to-end engine benchmark — branch: $(git branch --show-current)"
+        backend/venv/bin/python scripts/run_benchmark.py "${ORCH_ARGS[@]}"
+        ;;
+
+      collate)
+        # Aggregate all per-level metrics.json into master + whitepaper tables.
+        backend/venv/bin/python scripts/collate_benchmark.py "${@:3}"
+        ;;
+
       help|*)
         echo "🧪 Benchmark subcommands (isolated from NAS data):"
+        echo "  bench all [--smoke|--quick|--full] [--phases a,b]  - Full end-to-end run (all phases, all metrics)"
+        echo "  bench phase <name> [--smoke|--quick|--full]        - Run a single phase end-to-end"
+        echo "  bench collate                            - Aggregate metrics into master + whitepaper tables"
         echo "  bench start [master|branch|current|<name>]- Wipe bench volumes, switch branch, start bench stack (default: current)"
         echo "  bench stop                               - Stop bench stack (keep volumes)"
         echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
@@ -1608,6 +1639,10 @@ case "$1" in
         echo "  bench engine                             - Run engine split-stage benchmarks (Phase 2 gate)"
         echo "  bench status                             - Show bench containers, GPU state, volumes"
         echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
+        echo ""
+        echo "  Phases: a6000_solo, ti_solo, dual_gpu_scale, gpu_split, duration_curve"
+        echo "  Tiers:  --smoke (validate, minutes) -> --quick (~10-15h) -> --full (~58h, paper)"
+        echo "  Add --fresh to wipe prior results for a clean run; resume is automatic otherwise."
         ;;
     esac
     ;;

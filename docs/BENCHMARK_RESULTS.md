@@ -414,3 +414,106 @@ The solo gate is met at 44.2×. The concurrency=3 aggregate (16.7×) falls below
 Process-level PyTorch measurements are accurate regardless of other GPU tenants. Device-level totals depend on host baseline (open_speakers workers add ~7.4 GB on this machine).
 
 The 9,956 MB PyTorch peak during diarization reflects batch embedding inference with the transcriber also loaded. Device-level VRAM (7.7 GB) is higher than v0.4.0 (2.3 GB) because both models remain resident. Still well within A6000's 48 GB at any concurrency.
+
+---
+
+## Engine Optimization Benchmark — Full-Corpus Run (2026-05-29)
+
+Re-run with the rebuilt, single-command benchmark harness (`./opentr.sh bench all`),
+which stands up an **isolated `otbench` stack** (throwaway `*_bench_data` volumes,
+never touches dev/NAS data), uploads the corpus **like a real user**, processes it,
+collects metrics, and tears down (`down -v`) per level. Corpus: **40 files / 58.0 h**
+of real audio spanning 4 duration tiers. Model: `large-v3-turbo`. Raw data + per-level
+`metrics.json` and CSVs under `docs/engine-benchmark-results/`; quick-tier regression
+run preserved in `docs/engine-benchmark-results/quick_run/`.
+
+> **RTF here = aggregate total throughput** = audio-hours processed ÷ wall-clock hours
+> over the whole corpus (steady-state), **not** a per-file end-to-end ratio.
+
+### A6000 concurrency sweep (single GPU, 58 h)
+
+| Conc | RTF (agg) | Speedup vs c1 | VRAM peak | GPU util % | Host RAM avg |
+|------|-----------|---------------|-----------|------------|--------------|
+| 1  | 38.98 | 1.00× | 5.2 GB | 54 | 9.9 GB |
+| 4  | **45.93** | **1.18×** | 35.9 GB | 85 | 24 GB |
+| 8  | 39.19 | 1.01× | **48.3 GB** | 90 | 41 GB |
+| 10 | 39.23 | 1.01× | 44.3 GB | 91 | 51 GB |
+| 12 | 39.53 | 1.01× | 46.4 GB | 92 | 54 GB |
+| 16 | 30.83 | 0.79× | 46.9 GB | 93 | 66 GB |
+
+**Throughput peaks at concurrency 4 (45.9×)**, is flat (~39×) through conc 12, and
+**declines** at conc 16 (30.8×). The engine is **compute-bound past conc 4**.
+
+**VRAM plateaus at ~44–48 GB** rather than scaling with concurrency — proof the model
+is **loaded once and shared** across worker threads (conc 1 = 5.2 GB is one model + one
+request), not replicated per task. conc 8 peaked at **48.3 GB of the 49 GB** card — the
+practical ceiling. Host RAM, by contrast, climbs steeply (66 GB at conc 16) as in-flight
+work buffers.
+
+### Latency & contention — multi-user serving view (A6000)
+
+Per-file behaviour as concurrency rises (GPU inflation = a file's GPU-stage time vs the
+conc-1 isolated baseline; per-file RTF = audio_s ÷ gpu_s):
+
+| Conc | GPU p50 (s) | GPU inflation vs c1 | Per-file RTF p50 |
+|------|-------------|---------------------|------------------|
+| 1  | 79.8  | 1.00× | 39.3× |
+| 4  | 310   | 3.89× | 12.0× |
+| 8  | 924   | 11.6× | 5.2× |
+| 12 | 688   | 8.6×  | 5.2× |
+| 16 | 506   | 6.3×  | 4.4× |
+
+**An individual file's processing slows significantly under concurrency** — ~3.9× at
+conc 4, ~6–12× at conc 8+ — because the shared GPU time-slices across requests rather
+than running them truly in parallel. But **per-file throughput stays above realtime**
+(≥4.4× even at conc 16), so files are always processed faster than they play. Combined
+with the aggregate-throughput plateau, this gives the operating guidance: **conc 4 is the
+sweet spot** (peak aggregate 45.9×, per-file still 12× realtime); beyond it you trade
+per-file latency for **zero** aggregate gain. Latency-sensitive multi-user serving should
+keep per-GPU concurrency low and **scale horizontally** (more GPU workers / cloud), not
+raise per-GPU concurrency.
+
+### Dual-A6000 (GPU 0 + GPU 2, 58 h)
+
+| Config | RTF (agg) | vs single-A6000 peak | Wall time for 58 h | VRAM peak/card | CPU avg |
+|--------|-----------|----------------------|--------------------|----------------|---------|
+| 2× A6000 @ conc 4 each | **81.27** | **1.77×** | **~43 min** | 35.7 GB | 1490% |
+
+Two A6000s clear the full 58 h corpus in **~43 minutes** at **81.3× aggregate realtime**.
+Scaling is **1.77×** (not a perfect 2×): the gap is **shared-CPU-preprocess contention** —
+a single CPU worker (concurrency 8) now feeds both GPUs, and at high CPU load (1490% avg)
+preprocess becomes a mild feed bottleneck. Still a strong near-linear multi-GPU result.
+
+### 3080 Ti (12 GB) — characterized via quick run
+
+The 3080 Ti is the **same GA102 (Ampere) silicon** as the A6000, differing mainly in VRAM
+(12 GB vs 49 GB). The quick run and full run agreed closely, so the full Ti sweep was
+skipped. Usable range is **conc 1–4** (conc 4 ≈ 11.8/12 GB — the VRAM ceiling); aggregate
+RTF ~33–36×. For 12 GB homelab cards, **conc 3–4** is the operating envelope.
+
+### CPU preprocess threading (`FFMPEG_THREADS`) — opt-in knob added
+
+An A/B (baseline unbounded vs capped) on this 48-core server showed **no throughput or
+peak-CPU benefit** from capping ffmpeg threads: preprocess is only **~1–2 % of per-file
+work** (p50 ~2.4 s vs ~120–190 s on the GPU), so the GPU dominates. Added `FFMPEG_THREADS`
+as an **off-by-default** knob (`auto` = cores ÷ concurrency, or an explicit int) for
+low-core / co-tenant laptop deployments where oversubscription would matter; default
+unbounded preserves server behaviour.
+
+### Deployment recommendations
+
+| Deployment | Recommended config | Expected |
+|------------|--------------------|----------|
+| Single A6000 (49 GB) | conc 4 | 45.9× agg; 58 h in ~1.3 h; per-file 12× realtime |
+| Dual A6000 | conc 4 / card | 81.3× agg; 58 h in ~43 min |
+| 12 GB card (3080 Ti / 4070 Ti) | conc 3–4 (VRAM-bound) | ~33–36× agg |
+| Multi-user, latency-sensitive | low per-GPU conc + horizontal scale | per-file latency stays low |
+
+### Methodology notes / reproducibility
+
+- Run end-to-end: `./opentr.sh bench all --full` (resumable; per-level `metrics.json`
+  skip). Single-phase: `./opentr.sh bench phase <name>`. Collate: `./opentr.sh bench collate`.
+- Metrics per level: aggregate RTF, per-stage p50/p95 (preprocess/queue/GPU), VRAM
+  (both cards via `gpu_all.csv`), worker CPU%/RAM (`docker stats`), and per-file detail.
+- Dual-A6000 is opt-in (`--phases dual_a6000`) and never runs in a plain `--full` since it
+  uses GPU 2 (normally the LLM card).

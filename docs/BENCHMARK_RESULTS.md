@@ -441,14 +441,25 @@ run preserved in `docs/engine-benchmark-results/quick_run/`.
 | 12 | 39.53 | 1.01× | 46.4 GB | 92 | 54 GB |
 | 16 | 30.83 | 0.79× | 46.9 GB | 93 | 66 GB |
 
-**Throughput peaks at concurrency 4 (45.9×)**, is flat (~39×) through conc 12, and
-**declines** at conc 16 (30.8×). The engine is **compute-bound past conc 4**.
+Aggregate throughput peaks at concurrency 4 (45.9×), is flat (~39×) through conc 12,
+and dips at conc 16 (30.8×).
+
+> **Important — this is a tail-limiting artifact of the mixed corpus, NOT a GPU compute
+> ceiling.** Each level uploads all 40 files at once; the corpus spans tiers 1–4 (one
+> 4.7 h file + many short ones). At high concurrency the short files drain quickly and
+> workers then idle waiting on the few long files (the "tail"), so aggregate RTF
+> plateaus. **Test 2** (above), run on **5 duration-matched files (~2.72 h each)**, shows
+> the GPU itself scales **linearly to conc 12** (54.6× peak at conc 8) with no tail to
+> wait on. The two runs are consistent once corpus shape is accounted for: a mixed
+> real-world *batch* is scheduling-bound around conc 4; a *full/uniform queue* scales to
+> conc 8–12. For **sustained, continuously-fed** workloads use **conc 6–8** (Test 2);
+> for **bursty mixed uploads**, conc 4 captures most of the benefit.
 
 **VRAM plateaus at ~44–48 GB** rather than scaling with concurrency — proof the model
 is **loaded once and shared** across worker threads (conc 1 = 5.2 GB is one model + one
 request), not replicated per task. conc 8 peaked at **48.3 GB of the 49 GB** card — the
-practical ceiling. Host RAM, by contrast, climbs steeply (66 GB at conc 16) as in-flight
-work buffers.
+practical ceiling, consistent with Test 2's ~48.5 GB at conc 8–12. Host RAM, by contrast,
+climbs steeply (66 GB at conc 16) as in-flight work buffers.
 
 ### Latency & contention — multi-user serving view (A6000)
 
@@ -465,13 +476,14 @@ conc-1 isolated baseline; per-file RTF = audio_s ÷ gpu_s):
 
 **An individual file's processing slows significantly under concurrency** — ~3.9× at
 conc 4, ~6–12× at conc 8+ — because the shared GPU time-slices across requests rather
-than running them truly in parallel. But **per-file throughput stays above realtime**
-(≥4.4× even at conc 16), so files are always processed faster than they play. Combined
-with the aggregate-throughput plateau, this gives the operating guidance: **conc 4 is the
-sweet spot** (peak aggregate 45.9×, per-file still 12× realtime); beyond it you trade
-per-file latency for **zero** aggregate gain. Latency-sensitive multi-user serving should
-keep per-GPU concurrency low and **scale horizontally** (more GPU workers / cloud), not
-raise per-GPU concurrency.
+than running them truly in parallel. (This per-file slowdown is real GPU sharing and is
+independent of the corpus tail effect on *aggregate* throughput above.) But **per-file
+throughput stays above realtime** (≥4.4× even at conc 16), so files are always processed
+faster than they play. Operating guidance for **latency-sensitive multi-user serving**:
+keep per-GPU concurrency modest (each extra concurrent file makes *every* in-flight file
+slower) and **scale horizontally** (more GPU workers / cloud) rather than piling
+concurrency onto one GPU. For **throughput-only batch** work, conc 6–8 maximizes
+aggregate (Test 2) at the cost of high per-file latency.
 
 ### Dual-A6000 (GPU 0 + GPU 2, 58 h)
 
@@ -504,8 +516,9 @@ unbounded preserves server behaviour.
 
 | Deployment | Recommended config | Expected |
 |------------|--------------------|----------|
-| Single A6000 (49 GB) | conc 4 | 45.9× agg; 58 h in ~1.3 h; per-file 12× realtime |
-| Dual A6000 | conc 4 / card | 81.3× agg; 58 h in ~43 min |
+| Single A6000 — sustained/queued batch | conc 6–8 (Test 2) | 52–55× agg; ~48 GB VRAM |
+| Single A6000 — bursty mixed uploads | conc 4 | 45.9× agg (tail-limited); per-file 12× realtime |
+| Dual A6000 | conc 4 / card | 81.3× agg; 58 h mixed corpus in ~43 min |
 | 12 GB card (3080 Ti / 4070 Ti) | conc 3–4 (VRAM-bound) | ~33–36× agg |
 | Multi-user, latency-sensitive | low per-GPU conc + horizontal scale | per-file latency stays low |
 

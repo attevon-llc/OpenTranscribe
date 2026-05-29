@@ -1,0 +1,11 @@
+batch_size,file_uuid,filename,audio_duration_s,audio_hours,wall_elapsed_s,status,task_id,preprocess_s,cpu_to_gpu_queue_s,gpu_transcribe_s,gpu_to_post_queue_s,total_to_gpu_end_s,total_to_postprocess_s
+10,eaeb04fe-b393-43b6-9824-cb89a5ebbcd7,seed_t1_305s_f90905ac_Watching_Obama___Trump_Joke_Around_Together_at_Jimmy_Carter_s_Funeral.mp4,306,0.08,40.6,completed,5f229b7b-c5fb-4b77-8e67-6cd39e1d6db5,1.104,0.045,37.213,0.016,38.362,38.378
+10,20f88db7-e413-4551-9dfa-bbd052dc84c1,seed_t1_309s_846798e2_Joe_Asks_Trump_About_Ending_Military_Conflicts_and_Avoiding_WW3.mp4,310,0.09,37.6,completed,ea37cf05-afbb-43b7-b60e-fa36ebfb9ca1,0.976,0.042,33.691,0.019,34.709,34.728
+10,38086ce0-ce2d-4bac-84f9-7c409aabdef5,seed_t1_347s_3cc9247d_The_Race_to_Develop_Warp_Drive_and_AI_Passing_the_Turing_Test.mp4,347,0.10,41.9,completed,eeb30f3e-3063-4120-97e3-63b79647d902,0.921,0.09,36.254,0.025,37.265,37.29
+10,f5ca4d43-4c4a-444e-a347-02b09bab6829,seed_t1_520s_fa049b47_The_AI_Arms_Race_with_China.mp4,521,0.14,50.9,completed,fc05d9d0-776b-4aa0-878f-fa2a17cd6e4a,2.284,0.163,46.564,0.021,49.011,49.032
+10,2bdfc1bd-4a3b-4e1d-aadd-10e4678d9722,seed_t2_1668s_1143dd2a_The_Eagle_Has_Landed__The_Flight_of_Apollo_11__1969.mp3,1668,0.46,124.4,completed,bebcb36f-ff01-43e9-8da1-97ecd2c1fd81,3.7,26.246,90.715,0.025,120.661,120.685
+10,d1472b2d-421b-4b10-a265-b6e0ae1d76bd,seed_t2_1883s_31ba0be4_Joe_Rogan_Experience_126_-_Freddy_Lockhart_Part_1_.mp4,1883,0.52,227.7,completed,2f51b01e-e935-4a5d-a9d7-284a8f9e9e90,4.799,25.934,191.925,0.066,222.658,222.724
+10,9a4aab41-58f9-499e-bf82-e241572331aa,0.5h_1899s.wav,1889,0.52,219.3,completed,342eb8c2-b15d-4ead-a99e-13187b8f9f44,2.056,22.86,188.629,0.093,213.544,213.638
+10,e8579c22-f378-45eb-af9e-82f283401887,1.0h_3758s.wav,3758,1.04,311.2,completed,2b486184-9ac9-4db6-b9fe-96662ab9313d,2.369,35.902,266.785,0.045,305.057,305.102
+10,e0f96eb6-ea7a-4023-a39c-82e44a343709,seed_t3_4663s_91592ce3_Joe_Rogan_Experience_1397_-_S.C._Gwynne.mp4,4664,1.30,202.4,error,dee35dda-cce0-4984-8617-082276007a53,7.412,101.261,,,,
+10,b6bf402c-66fe-4923-a0cc-104ed79abb71,seed_t4_10831s_b9ce2cc4_Joe_Rogan_Experience_1928_-_Jimmy_Corsetti_Ben_van_Kerkwyk.mp4,10831,3.01,570.3,completed,9f7ce46f-9293-4be2-8e38-8cf9eb463f96,16.616,173.664,375.496,0.089,565.776,565.865

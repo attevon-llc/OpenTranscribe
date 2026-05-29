@@ -1,0 +1,11 @@
+batch_size,file_uuid,filename,audio_duration_s,audio_hours,wall_elapsed_s,status,task_id,preprocess_s,cpu_to_gpu_queue_s,gpu_transcribe_s,gpu_to_post_queue_s,total_to_gpu_end_s,total_to_postprocess_s
+10,bc08df83-f61c-4c13-9d42-805b4a2cf4e9,seed_t3_4663s_91592ce3_Joe_Rogan_Experience_1397_-_S.C._Gwynne.mp4,4664,1.30,479.8,completed,f4bca844-8233-4923-b9ad-005a14d390a5,7.861,0.098,464.668,0.045,472.627,472.672
+10,c7dcf08c-d95d-46ad-b432-aa6143974607,seed_t2_1883s_31ba0be4_Joe_Rogan_Experience_126_-_Freddy_Lockhart_Part_1_.mp4,1883,0.52,174.2,completed,86f7b540-8674-4f24-82ff-6bb71e57e07c,4.561,0.043,165.193,0.031,169.797,169.827
+10,635346f6-3ae2-41dc-819c-c1ae2dada02e,seed_t2_1668s_1143dd2a_The_Eagle_Has_Landed__The_Flight_of_Apollo_11__1969.mp3,1668,0.46,137.4,completed,d24fbe54-c8fc-4d1b-afc9-28b04ca20c5d,3.973,0.094,133.736,0.157,137.803,137.96
+10,363f17e5-be47-4f78-a78c-ed00525cd8a3,seed_t1_347s_3cc9247d_The_Race_to_Develop_Warp_Drive_and_AI_Passing_the_Turing_Test.mp4,347,0.10,31.0,completed,6bc82989-9bd9-4afa-89a1-d7be7b1d10ff,1.304,0.079,25.974,0.053,27.357,27.41
+10,d8ee2a63-a05f-4761-be66-6770953a27f0,seed_t4_10831s_b9ce2cc4_Joe_Rogan_Experience_1928_-_Jimmy_Corsetti_Ben_van_Kerkwyk.mp4,10831,3.01,590.8,completed,c53f4dfa-3393-44a0-9323-4b455d7bd01a,22.088,21.698,538.087,0.089,581.873,581.962
+10,201ce075-3917-4da8-9560-db3b3a3fc844,seed_t1_305s_f90905ac_Watching_Obama___Trump_Joke_Around_Together_at_Jimmy_Carter_s_Funeral.mp4,306,0.08,40.5,completed,63df4712-22d4-4200-ac4d-f99f496db8f3,1.286,0.058,39.579,0.037,40.923,40.96
+10,a834eb08-7d41-4278-a855-101f2420150f,seed_t1_520s_fa049b47_The_AI_Arms_Race_with_China.mp4,521,0.14,74.2,completed,53c4663c-06fa-4ce9-a885-47f813297129,1.851,0.116,72.541,0.137,74.508,74.644
+10,5e270900-be61-43ec-aae0-cd46b0ffc31d,seed_t1_309s_846798e2_Joe_Asks_Trump_About_Ending_Military_Conflicts_and_Avoiding_WW3.mp4,310,0.09,49.5,completed,9793268a-90e7-42fc-85cc-53e8a53bf60b,1.383,0.156,43.447,0.015,44.987,45.002
+10,5c2d9d41-c12a-4252-8430-3065c6666326,1.0h_3758s.wav,3758,1.04,429.8,completed,c881b526-690e-49dd-b090-0ac99bc2c7d7,2.607,0.113,423.725,0.043,426.445,426.488
+10,ec3a7d87-cf35-4a20-aebc-00d56a744cee,0.5h_1899s.wav,1889,0.52,223.1,completed,e83308d5-6240-4c67-9d38-18a9e562d138,1.94,8.167,212.172,0.112,222.279,222.391

@@ -1,0 +1,125 @@
+{
+  "version": "bench-soak-2026-05-27",
+  "tiers": {
+    "1": {
+      "label": "Short",
+      "range": "< 25 min"
+    },
+    "2": {
+      "label": "Medium",
+      "range": "25-60 min"
+    },
+    "3": {
+      "label": "Long",
+      "range": "1-3 h"
+    },
+    "4": {
+      "label": "Extra-long",
+      "range": "> 3 h"
+    }
+  },
+  "files": [
+    {
+      "uuid": "bb91a3c6-8a5d-4012-82f7-9dac074518db",
+      "filename": "seed_t1_305s_f90905ac_Watching_Obama___Trump_Joke_Around_Together_at_Jimmy_Carter_s_Funeral.mp4",
+      "duration_s": 305.96,
+      "size_mb": 49,
+      "tier": 1
+    },
+    {
+      "uuid": "a8e90f63-843e-4936-ae7e-62a7abd496e4",
+      "filename": "seed_t1_309s_846798e2_Joe_Asks_Trump_About_Ending_Military_Conflicts_and_Avoiding_WW3.mp4",
+      "duration_s": 309.58,
+      "size_mb": 39,
+      "tier": 1
+    },
+    {
+      "uuid": "f14b1f82-2036-401d-8ea8-4c2622948891",
+      "filename": "seed_t1_347s_3cc9247d_The_Race_to_Develop_Warp_Drive_and_AI_Passing_the_Turing_Test.mp4",
+      "duration_s": 347.24,
+      "size_mb": 45,
+      "tier": 1
+    },
+    {
+      "uuid": "fb21cb80-f5dc-4b98-9f86-77e7d5806d6e",
+      "filename": "seed_t1_520s_fa049b47_The_AI_Arms_Race_with_China.mp4",
+      "duration_s": 520.82,
+      "size_mb": 23,
+      "tier": 1
+    },
+    {
+      "uuid": "2cb7876a-1ec7-46af-a454-cb16c31aa0e2",
+      "filename": "seed_t2_1668s_1143dd2a_The_Eagle_Has_Landed__The_Flight_of_Apollo_11__1969.mp3",
+      "duration_s": 1667.96,
+      "size_mb": 26,
+      "tier": 2
+    },
+    {
+      "uuid": "78bd7f4a-f597-4791-bcd8-2e8bd9778973",
+      "filename": "seed_t2_1883s_31ba0be4_Joe_Rogan_Experience_126_-_Freddy_Lockhart_Part_1_.mp4",
+      "duration_s": 1883.37,
+      "size_mb": 94,
+      "tier": 2
+    },
+    {
+      "uuid": "345911e9-6211-43d6-9d4a-160e8ef04f39",
+      "filename": "0.5h_1899s.wav",
+      "duration_s": 1888.65,
+      "size_mb": 57,
+      "tier": 2
+    },
+    {
+      "uuid": "35bdefa1-4fa0-47d1-ad7c-2a4313423196",
+      "filename": "1.0h_3758s.wav",
+      "duration_s": 3758.29,
+      "size_mb": 114,
+      "tier": 3
+    },
+    {
+      "uuid": "b20f1ad3-9a2e-4a8e-83d0-08e35b64c5d4",
+      "filename": "seed_t3_4663s_91592ce3_Joe_Rogan_Experience_1397_-_S.C._Gwynne.mp4",
+      "duration_s": 4663.73,
+      "size_mb": 135,
+      "tier": 3
+    },
+    {
+      "uuid": "b73ae7b5-20db-4ebd-9f9c-e3b73d948955",
+      "filename": "seed_t4_10831s_b9ce2cc4_Joe_Rogan_Experience_1928_-_Jimmy_Corsetti_Ben_van_Kerkwyk.mp4",
+      "duration_s": 10831.05,
+      "size_mb": 250,
+      "tier": 4
+    }
+  ],
+  "profiles": {
+    "by_duration": {
+      "description": "subset duration-ascending",
+      "indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    "mixed": {
+      "description": "subset tier round-robin",
+      "indices": [
+        0,
+        4,
+        7,
+        9,
+        1,
+        5,
+        8,
+        2,
+        6,
+        3
+      ]
+    }
+  }
+}

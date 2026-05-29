@@ -1,0 +1,11 @@
+batch_size,file_uuid,filename,audio_duration_s,audio_hours,wall_elapsed_s,status,task_id,preprocess_s,cpu_to_gpu_queue_s,gpu_transcribe_s,gpu_to_post_queue_s,total_to_gpu_end_s,total_to_postprocess_s
+10,e76d550c-7c5c-49d9-be46-020934e9ed73,seed_t1_309s_846798e2_Joe_Asks_Trump_About_Ending_Military_Conflicts_and_Avoiding_WW3.mp4,310,0.09,37.5,completed,,,,,,,
+10,52002a52-d492-4420-94d3-af73b00347e8,seed_t2_1668s_1143dd2a_The_Eagle_Has_Landed__The_Flight_of_Apollo_11__1969.mp3,1668,0.46,53.7,completed,908ab05a-6bea-419b-bea1-9b612d6d79a9,5.127,8.767,39.07,0.023,52.964,52.987
+10,959ed30c-e97f-4bbb-9b9c-20c0140d1cde,0.5h_1899s.wav,1889,0.52,105.6,completed,14a6f37e-6836-4331-b45f-0d01486b0fb5,1.916,47.031,51.207,0.028,100.154,100.181
+10,eb0e1c89-323b-4a72-8ece-c188ada746ba,seed_t4_10831s_b9ce2cc4_Joe_Rogan_Experience_1928_-_Jimmy_Corsetti_Ben_van_Kerkwyk.mp4,10831,3.01,623.5,completed,54a02cce-a3f5-41ba-be17-fc6d72a29e05,19.777,320.472,276.114,0.09,616.364,616.453
+10,32dba01a-02eb-4d26-b779-2e84dd7cda58,seed_t1_520s_fa049b47_The_AI_Arms_Race_with_China.mp4,521,0.14,112.8,completed,91fefec7-5918-48b8-a7c7-beefaf130383,1.424,91.625,19.505,0.017,112.555,112.571
+10,b09f9d49-9596-4cf0-a3b0-3d3415d8e020,seed_t3_4663s_91592ce3_Joe_Rogan_Experience_1397_-_S.C._Gwynne.mp4,4664,1.30,327.8,completed,b2bd0356-acab-4efc-8f2d-f70cf0703710,9.568,205.544,106.318,0.046,321.43,321.475
+10,c665793d-27f8-46a2-bc54-b0f43382a214,seed_t1_347s_3cc9247d_The_Race_to_Develop_Warp_Drive_and_AI_Passing_the_Turing_Test.mp4,347,0.10,125.2,completed,73e21f2c-41ce-4bfc-a6cb-935f26f23b81,1.183,104.901,14.758,0.016,120.842,120.858
+10,1afb04c8-d8d7-43aa-bf72-4a82b035fccd,1.0h_3758s.wav,3758,1.04,212.2,completed,e92b70cc-4d45-4df5-8c55-d30e8636f034,2.935,114.11,91.284,0.046,208.33,208.376
+10,0c1a9904-1a88-48a9-8883-95e4f0ada51d,seed_t1_305s_f90905ac_Watching_Obama___Trump_Joke_Around_Together_at_Jimmy_Carter_s_Funeral.mp4,306,0.08,328.2,completed,39e9f4d2-a088-4bd3-8735-338a6a243892,2.148,310.042,12.852,0.014,325.041,325.055
+10,fa50ff32-9f88-4828-9e7b-ad584bb959d0,seed_t2_1883s_31ba0be4_Joe_Rogan_Experience_126_-_Freddy_Lockhart_Part_1_.mp4,1883,0.52,659.1,completed,5403e614-ee5c-41df-852c-b30db3d0c7a3,4.118,593.341,56.691,0.029,654.149,654.178

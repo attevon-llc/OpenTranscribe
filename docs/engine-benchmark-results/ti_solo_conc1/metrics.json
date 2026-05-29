@@ -1,0 +1,31 @@
+{
+  "run_label": "ti_solo_conc1",
+  "timestamp": "20260528_213951",
+  "corpus_name": "corpus_quick.json",
+  "corpus_total_audio_h": 7.2712916666666665,
+  "batches": [
+    {
+      "batch_size": 10,
+      "batch_wall_s": 796.1,
+      "files_completed": 10,
+      "files_errored": 0,
+      "avg_file_wall_s": 234.1,
+      "min_file_wall_s": 35.4,
+      "max_file_wall_s": 772.7,
+      "avg_gpu_s": 85.9,
+      "preprocess_p50_s": 2.3,
+      "preprocess_p95_s": 14.2,
+      "gpu_transcribe_p50_s": 56.1,
+      "gpu_transcribe_p95_s": 235.9,
+      "vram_peak_mb": 3404,
+      "vram_avg_mb": 1400.0,
+      "gpu_util_pct_avg": 55.0,
+      "cpu_pct_peak": 4556.8,
+      "cpu_pct_avg": 674.0,
+      "ram_mb_peak": 15314.0,
+      "ram_mb_avg": 8856.0,
+      "throughput_audio_hrs_per_wall_hr": 32.88,
+      "speedup_vs_single": 10.0
+    }
+  ]
+}

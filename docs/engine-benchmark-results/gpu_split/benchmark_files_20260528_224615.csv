@@ -1,0 +1,11 @@
+batch_size,file_uuid,filename,audio_duration_s,audio_hours,wall_elapsed_s,status,task_id,preprocess_s,cpu_to_gpu_queue_s,gpu_transcribe_s,gpu_to_post_queue_s,total_to_gpu_end_s,total_to_postprocess_s
+10,2593bf2f-5cc2-4a8a-baaa-768eea34dcda,1.0h_3758s.wav,3758,1.04,325.0,completed,2bda237c-7f8c-4246-836f-6a231fbeebc5,2.422,0.047,316.56,0.041,319.028,319.07
+10,3c476a86-28fd-4187-a746-9d9211811d3a,0.5h_1899s.wav,1889,0.52,143.0,completed,594aa6c6-2518-4950-8b37-b16139c6415b,1.919,0.081,136.893,0.029,138.892,138.921
+10,450945d6-7dad-45f9-9c0b-30d022224952,seed_t1_520s_fa049b47_The_AI_Arms_Race_with_China.mp4,521,0.14,58.8,completed,4ac6b79f-b026-4285-beb5-2fd751df1ddd,2.441,0.043,54.074,0.058,56.558,56.615
+10,69708348-7356-4e42-b544-ab8012926c1b,seed_t1_347s_3cc9247d_The_Race_to_Develop_Warp_Drive_and_AI_Passing_the_Turing_Test.mp4,347,0.10,39.7,completed,4283d7b6-708a-43b3-89b3-5add2c35e13d,1.279,0.044,33.908,0.063,35.232,35.294
+10,99776281-4cb2-4efe-b213-73c3db7cfeec,seed_t3_4663s_91592ce3_Joe_Rogan_Experience_1397_-_S.C._Gwynne.mp4,4664,1.30,345.5,completed,ab6d6c53-2bb2-4721-a678-467fde66d00b,11.862,37.963,292.726,0.044,342.551,342.595
+10,752650e5-44ff-4aa6-9afa-d7cf47d8ac5a,seed_t1_309s_846798e2_Joe_Asks_Trump_About_Ending_Military_Conflicts_and_Avoiding_WW3.mp4,310,0.09,68.6,completed,774fa1a8-9fdb-44a9-8cf6-8ab01633ea5b,1.915,27.505,37.366,0.078,66.786,66.864
+10,d5d6f40f-36ab-4c6a-9208-ce77aa54a103,seed_t4_10831s_b9ce2cc4_Joe_Rogan_Experience_1928_-_Jimmy_Corsetti_Ben_van_Kerkwyk.mp4,10831,3.01,585.2,completed,feb2e076-d0ac-4fff-ae66-4f92459d4975,19.899,265.124,292.957,0.106,577.98,578.085
+10,d9675f3e-8149-4030-9f73-728ce1b632c3,seed_t2_1883s_31ba0be4_Joe_Rogan_Experience_126_-_Freddy_Lockhart_Part_1_.mp4,1883,0.52,285.2,completed,b17d6e42-e32a-4ea1-9952-5b7dd3dfc55e,5.488,87.805,190.475,0.029,283.768,283.797
+10,3dfe28e4-95c2-4780-b7fa-e09d4c4ff2f5,seed_t2_1668s_1143dd2a_The_Eagle_Has_Landed__The_Flight_of_Apollo_11__1969.mp3,1668,0.46,281.9,completed,d2275143-9e91-40b8-bf02-bef845e191e5,4.37,112.711,163.165,0.031,280.246,280.276
+10,0c853b90-8259-498f-a4bc-f8a5f1e09000,seed_t1_305s_f90905ac_Watching_Obama___Trump_Joke_Around_Together_at_Jimmy_Carter_s_Funeral.mp4,306,0.08,89.6,completed,9d2d9767-d6b9-41db-96a0-d112c5c6fc7f,1.409,52.299,36.018,0.018,89.726,89.745

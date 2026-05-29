@@ -1,0 +1,31 @@
+{
+  "run_label": "a6000_solo_conc12",
+  "timestamp": "20260529_151009",
+  "corpus_name": "corpus_full.json",
+  "corpus_total_audio_h": 58.03491666666667,
+  "batches": [
+    {
+      "batch_size": 40,
+      "batch_wall_s": 5284.7,
+      "files_completed": 40,
+      "files_errored": 0,
+      "avg_file_wall_s": 2208.9,
+      "min_file_wall_s": 172.5,
+      "max_file_wall_s": 5092.6,
+      "avg_gpu_s": 1228.0,
+      "preprocess_p50_s": 8.9,
+      "preprocess_p95_s": 40.3,
+      "gpu_transcribe_p50_s": 688.4,
+      "gpu_transcribe_p95_s": 3504.2,
+      "vram_peak_mb": 46423,
+      "vram_avg_mb": 19293.0,
+      "gpu_util_pct_avg": 92.0,
+      "cpu_pct_peak": 5007.1,
+      "cpu_pct_avg": 737.4,
+      "ram_mb_peak": 95912.0,
+      "ram_mb_avg": 53628.0,
+      "throughput_audio_hrs_per_wall_hr": 39.53,
+      "speedup_vs_single": 40.0
+    }
+  ]
+}

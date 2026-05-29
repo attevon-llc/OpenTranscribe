@@ -1,2 +1,2 @@
 batch_size,batch_wall_s,batch_wall_fmt,files_completed,files_errored,avg_file_wall_s,min_file_wall_s,max_file_wall_s,avg_gpu_s,min_gpu_s,max_gpu_s,preprocess_p50_s,preprocess_p95_s,cpu_to_gpu_p50_s,cpu_to_gpu_p95_s,gpu_transcribe_p50_s,gpu_transcribe_p95_s,gpu_to_post_p50_s,gpu_to_post_p95_s,vram_peak_mb,vram_avg_mb,gpu_util_pct_avg,cpu_pct_peak,cpu_pct_avg,ram_mb_peak,ram_mb_avg,throughput_audio_hrs_per_wall_hr,speedup_vs_single
-10,526.4,8m46s,10,0,197.4,28.4,521.0,163.6,27.0,439.6,2.6,17.5,17.7,153.7,147.1,381.0,0.0,0.1,32089,6406,76,5056.2,1340.8,18988,12145,49.73,10.00
+40,6777.4,1h52m57s,40,0,1904.0,144.2,6576.4,1120.2,102.1,3545.8,9.9,49.1,237.4,4641.3,506.2,3114.8,0.1,0.3,46921,22751,93,5342.8,750.6,103399,65688,30.83,40.00

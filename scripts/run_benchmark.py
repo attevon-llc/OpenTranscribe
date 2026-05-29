@@ -77,6 +77,15 @@ class Phase:
     sweep: list[int] = field(default_factory=list)  # solo concurrency sweep
     shuffle: bool = False
     sequential: bool = False
+    # gpu-scale device overrides (None -> defaults: scaled=GPU0, default-worker=GPU1).
+    scale_device_id: int | None = None
+    default_device_id: int | None = None
+    # homogeneous=True -> both cards run at the A6000 best concurrency (dual-A6000),
+    # else the default worker uses the Ti best (A6000+Ti mix).
+    homogeneous: bool = False
+    # default_run=False -> only runs when explicitly named in --phases (e.g. uses the
+    # LLM GPU, so it must never run in a plain --full sweep).
+    default_run: bool = True
 
 
 PHASES: list[Phase] = [
@@ -87,6 +96,19 @@ PHASES: list[Phase] = [
     Phase('dual_gpu_scale', 'gpu-scale', 'mixed', gpu_device=0, shuffle=True),
     Phase('gpu_split', 'gpu-split', 'mixed', gpu_device=0, shuffle=True),
     Phase('duration_curve', 'solo', 'by_duration', gpu_device=0, sequential=True),
+    # Dual-A6000 (GPU 0 + GPU 2): both big cards at the A6000 peak concurrency.
+    # GPU 2 is normally the LLM card, so this is opt-in only (--phases dual_a6000).
+    Phase(
+        'dual_a6000',
+        'gpu-scale',
+        'mixed',
+        gpu_device=0,
+        shuffle=True,
+        scale_device_id=2,
+        default_device_id=0,
+        homogeneous=True,
+        default_run=False,
+    ),
 ]
 
 
@@ -172,8 +194,7 @@ def cleanup_legacy() -> None:
     # Remove ONLY the old pre-rename bench volumes (exact *_bench_data names — never
     # the dev data volumes, which are named differently / are NAS bind mounts).
     for v in ('postgres', 'minio', 'redis', 'opensearch', 'flower'):
-        run(['docker', 'volume', 'rm', f'transcribe-app_{v}_bench_data'],
-            check=False, capture=True)
+        run(['docker', 'volume', 'rm', f'transcribe-app_{v}_bench_data'], check=False, capture=True)
 
 
 # ---------------------------------------------------------------------------
@@ -477,12 +498,19 @@ def phase_env(phase: Phase, conc: int, dual_a6000: int, dual_ti: int) -> dict:
         env['GPU_DEVICE_ID'] = str(phase.gpu_device)
         env['GPU_CONCURRENT_REQUESTS'] = str(conc)
     elif phase.mode == 'gpu-scale':
-        # Dual-GPU: scaled workers on the A6000 (GPU 0) + default worker on the Ti (GPU 1).
+        # Dual-GPU: a scaled worker on one card + the default worker on the other.
+        # Defaults: scaled=GPU0 (A6000), default-worker=GPU1 (Ti). dual_a6000 overrides
+        # to scaled=GPU2, default-worker=GPU0 (both A6000). dual_a6000 = scaled-worker
+        # concurrency, dual_ti = default-worker concurrency.
         env['GPU_SCALE_ENABLED'] = 'true'
         env['GPU_SCALE_DEFAULT_WORKER'] = '1'
-        env['GPU_SCALE_DEVICE_ID'] = '0'
+        env['GPU_SCALE_DEVICE_ID'] = str(
+            phase.scale_device_id if phase.scale_device_id is not None else 0
+        )
         env['GPU_SCALE_WORKERS'] = str(dual_a6000)
-        env['GPU_DEVICE_ID'] = '1'
+        env['GPU_DEVICE_ID'] = str(
+            phase.default_device_id if phase.default_device_id is not None else 1
+        )
         env['GPU_CONCURRENT_REQUESTS'] = str(dual_ti)
     elif phase.mode == 'gpu-split':
         env['ENGINE_GPU_SPLIT'] = 'true'
@@ -701,7 +729,12 @@ def main() -> None:
 
     tier_name = 'smoke' if args.smoke else 'full' if args.full else 'quick'
     only = {p.strip() for p in args.phases.split(',') if p.strip()}
-    selected = [p for p in PHASES if not only or p.name in only]
+    # Explicitly-named phases always run; an unfiltered run includes only default_run
+    # phases (excludes e.g. dual_a6000, which uses the LLM GPU).
+    if only:
+        selected = [p for p in PHASES if p.name in only]
+    else:
+        selected = [p for p in PHASES if p.default_run]
     if not selected:
         sys.exit(f'No phases matched {only}. Known: {[p.name for p in PHASES]}')
 
@@ -727,8 +760,14 @@ def main() -> None:
         elif phase.mode in ('gpu-scale', 'gpu-split'):
             a6 = 2 if tier_name == 'smoke' else best_conc('a6000_solo', A6000_VRAM_CEILING, 8)
             ti = 2 if tier_name == 'smoke' else best_conc('ti_solo', TI_VRAM_CEILING, 2)
-            conc = ti if phase.mode == 'gpu-scale' else (2 if tier_name == 'smoke' else a6)
-            run_level(phase, conc, corpus_path, n_files, a6, ti)
+            if phase.homogeneous:
+                # Both cards are A6000 -> run both at the A6000 best concurrency.
+                run_level(phase, a6, corpus_path, n_files, a6, a6)
+            elif phase.mode == 'gpu-scale':
+                run_level(phase, ti, corpus_path, n_files, a6, ti)
+            else:  # gpu-split
+                conc = 2 if tier_name == 'smoke' else a6
+                run_level(phase, conc, corpus_path, n_files, a6, ti)
         else:  # solo sequential (duration curve)
             run_level(phase, 1, corpus_path, n_files, 0, 0)
 

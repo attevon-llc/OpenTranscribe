@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Bulk subtitle export is now async + presigned**: `POST /api/files/bulk-export` (synchronous ZIP streamed through the API) is replaced by `POST /api/files/bulk-export/prepare` (returns a `job_id`) plus the SSE stream `GET /api/files/bulk-export-stream?job=<id>`. The ZIP is built on the `download` Celery worker, stored in MinIO, and delivered to the browser as a short-lived presigned URL — the API never proxies the archive bytes. This keeps bulk exports robust under concurrent users, backlog, and larger-than-expected batches, and reconnect-safe: a dropped EventSource still receives the result.
+
+### Removed
+
+- **Legacy byte-proxy media endpoints (breaking change)**: the deprecated `GET /api/files/{uuid}/video`, `/simple-video`, `/content`, `/download`, and `/download-with-token` endpoints have been removed. All media now streams directly from object storage via short-lived presigned MinIO URLs — playback uses `GET /api/files/{uuid}/stream-url` and downloads use `POST /api/files/{uuid}/prepare-download` (file-detail dropdown). Presigned URLs support HTTP range requests natively, so video seeking is unaffected. `GET /api/files/{uuid}/thumbnail` is retained as a resilient fallback for when presigned thumbnail minting fails. External API consumers that linked the removed routes should switch to the presigned-URL endpoints.
+
+### Fixed
+
+- **Video player presigned-URL refresh interval**: the file-detail and search-preview players refreshed the presigned playback URL on a hardcoded 5-minute timer regardless of the URL's real lifetime (`MEDIA_URL_EXPIRE_SECONDS`, 6h by default), needlessly re-fetching and re-setting the video `src` mid-playback. The players now use the URL's actual expiry returned by the backend.
+
 ### Added
 
 - **CPU-only install flag (`--cpu`)**: `setup-opentranscribe.sh`, `opentranscribe.sh`, and `opentr.sh` now accept a `--cpu` flag (and honor `OPENTRANSCRIBE_FORCE_CPU=1` for unattended installs) to explicitly opt out of the GPU compose overlay. Required on hosts where the NVIDIA Container Toolkit is detected by Docker but GPU passthrough is non-functional — e.g. WSL2 without a WSL-capable Windows NVIDIA driver, where auto-detection would otherwise enable the GPU overlay and cause celery-worker / celery-cpu-worker to fail at container start with `nvidia-container-cli: initialization error: WSL environment detected but no adapters were found`. The choice is persisted to `.env` as `FORCE_CPU_MODE=true`, so `./opentranscribe.sh start/restart/stop` continues to skip the GPU overlay without re-passing the flag. Default behaviour for GPU users is unchanged.

@@ -137,6 +137,7 @@ celery_app.conf.update(
         "download.media_url": {"queue": CeleryQueues.DOWNLOAD},
         "download.media_playlist": {"queue": CeleryQueues.DOWNLOAD},
         "download.prepare_media": {"queue": CeleryQueues.DOWNLOAD},
+        "download.prepare_bulk_subtitles": {"queue": CeleryQueues.DOWNLOAD},
         # CPU Queue - CPU-intensive parallel tasks (concurrency=8, no GPU)
         "media.generate_waveform": {"queue": CeleryQueues.CPU},
         "media.generate_waveform_data": {"queue": CeleryQueues.CPU},

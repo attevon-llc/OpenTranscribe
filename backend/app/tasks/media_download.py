@@ -110,3 +110,83 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
         return {"status": "error", "message": str(e)}
     finally:
         db.close()
+
+
+@celery_app.task(
+    name="download.prepare_bulk_subtitles",
+    bind=True,
+    priority=DownloadPriority.PLAYLIST,
+    max_retries=1,
+    retry_backoff=True,
+)
+def prepare_bulk_subtitles_task(
+    self, file_specs: list, subtitle_format: str, include_speakers: bool, job_id: str
+) -> dict:
+    """Build a ZIP of subtitles for a batch of files and push a presigned URL over SSE.
+
+    Args:
+        file_specs: ``[[file_id, base_filename], ...]`` — already permission-filtered
+            by the prepare endpoint (the worker does not re-authorize).
+        subtitle_format: ``srt`` | ``webvtt`` | ``txt``.
+        include_speakers: Whether to embed speaker labels.
+        job_id: Opaque per-request id keying the SSE channel + reconnect result cache.
+    """
+    import json
+
+    from app.core.redis import get_redis
+    from app.services.download_events import publish_bulk_event
+    from app.services.minio_service import get_presigned_download_url
+    from app.services.subtitle_service import SubtitleService
+
+    db = SessionLocal()
+    try:
+        publish_bulk_event(job_id, status="processing", message="Building subtitle archive…")
+        zip_bytes, exported, skipped = SubtitleService.build_subtitle_archive(
+            db,
+            [(int(fid), str(name)) for fid, name in file_specs],
+            subtitle_format,
+            include_speakers,
+        )
+        if exported == 0:
+            publish_bulk_event(
+                job_id, status="error", message="No files could be exported.", skipped=skipped
+            )
+            return {"status": "error", "skipped": skipped}
+
+        fmt = subtitle_format.lower()
+        key = f"bulk/{job_id}.zip"
+        # Instantiating VideoProcessingService ensures the processed-videos bucket exists.
+        service = VideoProcessingService(MinIOService())
+        service.minio_service.upload_bytes(service.cache_bucket, key, zip_bytes, "application/zip")
+        filename = f"transcripts_{fmt}.zip"
+        url = get_presigned_download_url(
+            key,
+            bucket_name=service.cache_bucket,
+            download_filename=filename,
+            content_type="application/zip",
+        )
+        # Reconnect-safe: an SSE client that connects after completion reads this instead
+        # of waiting forever on a pub/sub message it already missed.
+        get_redis().setex(
+            f"bulk_export_result:{job_id}",
+            900,
+            json.dumps(
+                {"url": url, "filename": filename, "exported": exported, "skipped": skipped}
+            ),
+        )
+        publish_bulk_event(
+            job_id,
+            status="completed",
+            message="Export ready.",
+            url=url,
+            filename=filename,
+            exported=exported,
+            skipped=skipped,
+        )
+        return {"status": "success", "exported": exported, "skipped": skipped}
+    except Exception as e:
+        logger.error(f"prepare_bulk_subtitles_task failed (job {job_id}): {e}")
+        publish_bulk_event(job_id, status="error", message="Failed to build export.")
+        return {"status": "error", "message": str(e)}
+    finally:
+        db.close()

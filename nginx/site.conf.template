@@ -105,7 +105,7 @@ server {
     # IMPORTANT: Must be defined BEFORE /api/ so the regex matches first.
     # SSE requires buffering OFF so progress/ready events reach the browser
     # immediately instead of being held until the response closes.
-    location ~ ^/api/files/.+/download-stream$ {
+    location ~ ^/api/files/(.+/download-stream|bulk-export-stream)$ {
         proxy_pass http://backend:8080;
         proxy_http_version 1.1;
         proxy_set_header Connection "";

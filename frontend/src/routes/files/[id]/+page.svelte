@@ -26,7 +26,7 @@
   import { transcriptStore, processedTranscriptSegments } from '$stores/transcriptStore';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
-  import { getMediaStreamUrl, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
+  import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import Spinner from '../../../components/ui/Spinner.svelte';
   import FileDetailSkeleton from '../../../components/FileDetailSkeleton.svelte';
 
@@ -580,14 +580,17 @@
       // Get presigned URL from backend (authenticated, time-limited)
       videoUrl = await getMediaStreamUrl(fileId, 'video');
 
-      // Set up automatic URL refresh for long videos
-      // Default expiration is 300 seconds (5 minutes)
+      // Set up automatic URL refresh for long videos, using the URL's real expiry
+      // (MEDIA_URL_EXPIRE_SECONDS) rather than a hardcoded interval — avoids needlessly
+      // re-fetching and re-setting the video src mid-playback.
+      const info = getCachedUrlInfo(fileId, 'video');
+      const expiresIn = info ? Math.max(60, Math.floor((info.expiresAt - Date.now()) / 1000)) : 300;
       urlRefresher = createUrlRefresher(
         fileId,
         (newUrl) => {
           videoUrl = newUrl;
         },
-        300 // 5 minute expiration
+        expiresIn
       );
 
       // Reset video element check flag to prompt afterUpdate to try initialization

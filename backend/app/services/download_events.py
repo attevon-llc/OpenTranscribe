@@ -20,6 +20,19 @@ def download_events_channel(file_uuid: str) -> str:
     return f"download_events:{file_uuid}"
 
 
+def bulk_export_channel(job_id: str) -> str:
+    """Redis pub/sub channel carrying bulk-export events for one job."""
+    return f"download_events:bulk:{job_id}"
+
+
+def _publish(channel: str, payload: dict) -> None:
+    """Fire-and-forget publish to a Redis channel. Failures are logged, never raised."""
+    try:
+        get_redis().publish(channel, json.dumps(payload))
+    except Exception as e:  # pragma: no cover - best-effort notification
+        logger.error(f"Failed to publish to {channel}: {e}")
+
+
 def publish_download_event(
     file_uuid: str,
     *,
@@ -45,7 +58,34 @@ def publish_download_event(
         payload["url"] = url
     if filename:
         payload["filename"] = filename
-    try:
-        get_redis().publish(download_events_channel(file_uuid), json.dumps(payload))
-    except Exception as e:  # pragma: no cover - best-effort notification
-        logger.error(f"Failed to publish download event for {file_uuid}: {e}")
+    _publish(download_events_channel(file_uuid), payload)
+
+
+def publish_bulk_event(
+    job_id: str,
+    *,
+    status: str,
+    message: str = "",
+    progress: int = 0,
+    url: str | None = None,
+    filename: str | None = None,
+    exported: int = 0,
+    skipped: int = 0,
+) -> None:
+    """Publish a bulk subtitle-export event (``processing`` | ``completed`` | ``error``).
+
+    ``completed`` events carry the presigned ZIP ``url`` + ``filename`` and the
+    ``exported``/``skipped`` counts the browser surfaces to the user.
+    """
+    payload: dict[str, object] = {
+        "status": status,
+        "message": message,
+        "progress": progress,
+        "exported": exported,
+        "skipped": skipped,
+    }
+    if url:
+        payload["url"] = url
+    if filename:
+        payload["filename"] = filename
+    _publish(bulk_export_channel(job_id), payload)

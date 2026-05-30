@@ -786,7 +786,21 @@
     }
   }
 
-  // Bulk export selected files as a single ZIP download
+  // EventSource for the in-flight bulk subtitle export (async + presigned ZIP)
+  let bulkExportStream: EventSource | null = null;
+
+  function triggerAnchorDownload(href: string, filename: string) {
+    const a = document.createElement('a');
+    a.href = href;
+    if (filename) a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  // Bulk export selected files as a single ZIP — built on the download worker and
+  // delivered as a presigned URL over SSE (no archive bytes proxied through the API).
   async function bulkExport(format: string) {
     const selected = $galleryState.selectedFiles;
     if (selected.size === 0) return;
@@ -802,50 +816,42 @@
 
     toastStore.info($t('gallery.bulk.exportStarted', { count: total, format: ext.toUpperCase() }));
 
-    let blobUrl = '';
     try {
-      const response = await axiosInstance.post('/files/bulk-export', {
+      const { data } = await axiosInstance.post('/files/bulk-export/prepare', {
         file_uuids: completed.map(f => f.uuid),
         subtitle_format: format,
         include_speakers: true,
-      }, {
-        responseType: 'blob',
-        timeout: 120000, // 2 minutes for large batches
       });
 
-      const exportedCount = parseInt(response.headers['x-exported-count'] || '0', 10);
-      const skippedCount = parseInt(response.headers['x-skipped-count'] || '0', 10);
+      bulkExportStream?.close();
+      const es = new EventSource(`/api/files/bulk-export-stream?job=${data.job_id}`);
+      bulkExportStream = es;
 
-      // Single ZIP download — no multi-download permission needed
-      blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/zip' }));
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.setAttribute('download', `transcripts_${format}.zip`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      es.addEventListener('ready', (e: MessageEvent) => {
+        const d = JSON.parse(e.data);
+        triggerAnchorDownload(d.url, d.filename ?? `transcripts_${format}.zip`);
+        toastStore.success($t('gallery.bulk.exportComplete', {
+          count: d.exported ?? total,
+          format: ext.toUpperCase(),
+        }));
+        if (d.skipped > 0) {
+          toastStore.warning($t('gallery.bulk.exportSkipped', { count: d.skipped }));
+        }
+        es.close();
+        bulkExportStream = null;
+      });
 
-      // Revoke after browser initiates download
-      setTimeout(() => {
-        window.URL.revokeObjectURL(blobUrl);
-      }, 1000);
-
-      if (skippedCount > 0) {
-        toastStore.success($t('gallery.bulk.exportComplete', { count: exportedCount, format: ext.toUpperCase() }));
-        toastStore.warning($t('gallery.bulk.exportSkipped', { count: skippedCount }));
-      } else {
-        toastStore.success($t('gallery.bulk.exportComplete', { count: exportedCount, format: ext.toUpperCase() }));
-      }
-    } catch (err: unknown) {
-      if (blobUrl) {
-        window.URL.revokeObjectURL(blobUrl);
-      }
-      const axErr = err as { response?: { status?: number; data?: Blob } };
-      let detail = '';
-      if (axErr.response?.data instanceof Blob) {
-        try { detail = await axErr.response.data.text(); } catch { /* ignore */ }
-      }
-      console.error(`Bulk export failed (HTTP ${axErr.response?.status ?? '?'}):`, detail || err);
+      // The browser fires 'error' for BOTH a server `event: error` (has e.data) and
+      // transient connection drops (no e.data). Only fail on a real payload or a closed stream.
+      es.addEventListener('error', (e: MessageEvent) => {
+        if (e.data || es.readyState === EventSource.CLOSED) {
+          toastStore.error($t('gallery.bulk.exportFailed', { count: total }));
+          es.close();
+          bulkExportStream = null;
+        }
+      });
+    } catch (err) {
+      console.error('Bulk export failed to start:', err);
       toastStore.error($t('gallery.bulk.exportFailed', { count: total }));
     }
     // Don't clear selection — user may want to export in multiple formats
@@ -1250,6 +1256,9 @@
       clearTimeout(timeoutId);
     });
     refreshTimeouts.clear();
+
+    // Close any in-flight bulk export SSE stream
+    bulkExportStream?.close();
   });
 
   // Set up store-based action triggers

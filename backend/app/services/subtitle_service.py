@@ -4,8 +4,10 @@ Handles movie-style formatting with proper line lengths and speaker labels.
 Supports overlapping speech display where multiple speakers talk simultaneously.
 """
 
+import io
 import re
 import textwrap
+import zipfile
 from collections import defaultdict
 
 from sqlalchemy.orm import Session
@@ -570,6 +572,55 @@ class SubtitleService:
             i = j
 
         return "\n\n".join(txt_lines)
+
+    @staticmethod
+    def build_subtitle_archive(
+        db: Session,
+        file_specs: list[tuple[int, str]],
+        subtitle_format: str,
+        include_speakers: bool,
+    ) -> tuple[bytes, int, int]:
+        """Build a ZIP of subtitle files for a batch of media files.
+
+        Args:
+            db: Database session.
+            file_specs: ``[(media_file_id, base_filename), ...]`` — already
+                permission-filtered by the caller.
+            subtitle_format: ``srt`` | ``webvtt`` | ``txt``.
+            include_speakers: Whether to embed speaker labels.
+
+        Returns:
+            ``(zip_bytes, exported, skipped)``. Files whose subtitle generation
+            fails or yields empty content are counted as skipped, never aborting
+            the batch.
+        """
+        fmt = subtitle_format.lower()
+        ext = "vtt" if fmt == "webvtt" else fmt
+        buf = io.BytesIO()
+        exported = skipped = 0
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_id, base_name in file_specs:
+                try:
+                    if fmt == "webvtt":
+                        content = SubtitleService.generate_webvtt_content(
+                            db, file_id, include_speakers
+                        )
+                    elif fmt == "txt":
+                        content = SubtitleService.generate_txt_content(
+                            db, file_id, include_speakers
+                        )
+                    else:
+                        content = SubtitleService.generate_srt_content(
+                            db, file_id, include_speakers
+                        )
+                    if not content.strip():
+                        skipped += 1
+                        continue
+                    zf.writestr(f"{base_name}.{ext}", content.encode("utf-8"))
+                    exported += 1
+                except Exception:  # noqa: BLE001 - one bad file shouldn't abort the batch
+                    skipped += 1
+        return buf.getvalue(), exported, skipped
 
     @staticmethod
     def validate_subtitle_timing(db: Session, media_file_id: int) -> list[str]:

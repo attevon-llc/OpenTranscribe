@@ -150,21 +150,15 @@ def set_file_urls(db_file: MediaFile) -> None:
     if db_file.storage_path:
         # Skip S3 operations in test environment
         if os.environ.get("SKIP_S3", "False").lower() == "true":
-            db_file.download_url = f"/api/files/{db_file.uuid}/download"
-            db_file.preview_url = f"/api/files/{db_file.uuid}/video"
+            db_file.download_url = f"/api/files/{db_file.uuid}/prepare-download"
             if db_file.thumbnail_path:
                 db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
             return
 
-        # Set URLs for frontend to use (using UUID)
-        db_file.download_url = f"/api/files/{db_file.uuid}/download"  # Download endpoint
-
-        # Video files use our video endpoint for optimized streaming
-        if db_file.content_type.startswith("video/"):
-            db_file.preview_url = f"/api/files/{db_file.uuid}/video"
-        else:
-            # Audio files can use the download endpoint
-            db_file.preview_url = f"/api/files/{db_file.uuid}/download"
+        # download_url is a presence/availability gate for the frontend download dropdown,
+        # which performs the actual download via the async prepare-download + presigned-URL
+        # flow (see TranscriptDisplay.downloadMedia). It is not a byte-proxy endpoint.
+        db_file.download_url = f"/api/files/{db_file.uuid}/prepare-download"
 
         # Set thumbnail URL as presigned URL (industry standard)
         # This allows <img> tags to load without auth headers

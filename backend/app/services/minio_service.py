@@ -692,7 +692,7 @@ class MinIOService:
             failed = 0
             for err in errors:
                 failed += 1
-                logger.warning(f"Failed to delete {err.object_name}: {err}")
+                logger.warning(f"Failed to delete {err.name}: {err.code} {err.message}")
             deleted = len(names) - failed
         except Exception as e:
             logger.warning(f"Could not delete prefix {bucket_name}/{prefix}: {e}")

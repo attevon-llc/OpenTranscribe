@@ -427,8 +427,8 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": False,
         "supports_translation": False,
         "description": "STT Orchestration — premium diarization + transcription in one API call",
-        "status": "experimental",
-        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
+        "status": "tested",
+        "status_note": "",
         "diarization_quality": "Excellent — premium cloud diarization from pyannote.ai",
         "models": [
             {

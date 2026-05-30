@@ -28,6 +28,9 @@ _POLL_INTERVAL = 2.0  # seconds between polls
 _POLL_TIMEOUT = 300.0  # 5 minutes max
 
 # Map user-facing model_name → (diarization model, transcription model).
+# Transcription model ids are pyannote.ai's transcriptionConfig.model enum values (verified
+# against the live API's 400 validation message — the published docs' "nvidia-" prefix is
+# WRONG). Diarization model is precision-2 (the only model that supports transcription).
 _MODEL_MAP: dict[str, tuple[str, str]] = {
     "parakeet": ("precision-2", "parakeet-tdt-0.6b-v3"),
     "whisper-large-v3-turbo": ("precision-2", "faster-whisper-large-v3-turbo"),
@@ -65,6 +68,20 @@ class PyAnnoteProvider(ASRProvider):
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
+
+    def _err_detail(self, exc: Exception) -> str:
+        """Sanitized error string, including the API response body for HTTP errors."""
+        import httpx
+
+        detail = str(exc)
+        if isinstance(exc, httpx.HTTPStatusError):
+            try:
+                body = exc.response.text.strip()
+            except Exception:  # noqa: BLE001
+                body = ""
+            if body:
+                detail = f"{detail} — {body[:500]}"
+        return self._sanitize_error(detail, self._api_key)
 
     def _resolve_models(self) -> tuple[str, str]:
         """Return (diarization_model, transcription_model) for the configured model_name."""
@@ -219,7 +236,7 @@ class PyAnnoteProvider(ASRProvider):
             job_data = resp.json()
             job_id = job_data["jobId"]
         except Exception as exc:
-            sanitized = self._sanitize_error(str(exc), self._api_key)
+            sanitized = self._err_detail(exc)
             logger.error("pyannote.ai job submission failed for file=%s: %s", filename, sanitized)
             raise RuntimeError(f"pyannote.ai job submission failed: {sanitized}") from exc
 
@@ -348,9 +365,11 @@ class PyAnnoteProvider(ASRProvider):
             ]
 
         # Index words by their start time for efficient assignment to turns.
+        # pyannote.ai's wordLevelTranscription entries use the key "text" for the token
+        # (per the get-job TranscriptionSegment schema); accept "word" as a fallback.
         asr_words = [
             ASRWord(
-                word=w.get("word", ""),
+                word=w.get("text") or w.get("word") or "",
                 start=w.get("start", 0.0),
                 end=w.get("end", 0.0),
                 confidence=w.get("confidence", 1.0),

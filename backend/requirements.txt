@@ -68,7 +68,7 @@ huggingface-hub<1.0.0
 # via ORT sessions when PYANNOTE_USE_ONNX=1. onnxruntime-gpu includes CUDA EP
 # (and TensorrtExecutionProvider when ENABLE_TENSORRT=1 per Phase 6.3).
 # ~350 MB install footprint, CUDA-bundled. onnx needed at export time only.
-onnx>=1.17.0
+onnx>=1.21.0
 # Pinned to the validated version (1.26.0) so --no-cache container builds and venv
 # setups are reproducible — an unpinned >= floor could resolve a newer release with
 # a different bundled CUDA at build time. onnxruntime-gpu and onnxruntime ship in

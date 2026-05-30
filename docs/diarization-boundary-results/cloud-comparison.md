@@ -18,22 +18,23 @@ This is the "bar to beat" measurement: can a fully local/offline stack match the
 - **Speed**: wall-clock to result and **realtime factor** (`audio_seconds / wall_seconds`).
 - **Harness**: `backend/scripts/compare_cloud_boundaries.py` (reproduce command at the bottom).
 
-## Results — local vs all five cloud providers
+## Results — local vs all six cloud providers
 
 Full run on the 10-min clip against the maintainer's hand labels (sorted by accuracy):
 
 | engine | words | spk | WSER ↓ | islands ↓ | time | realtime ↑ |
 |---|---:|---:|---:|---:|---:|---:|
-| **local — smoothed (smoother ON)** | 2257 | 2 | **0.27%** | 3 | 13.6 s | **44.2×** |
-| Gladia — `standard` | 2243 | 2 | **0.27%** | 1 | 26.8 s | 22.4× |
-| AssemblyAI — `universal-3-pro` | 2253 | 2 | 0.49% | 0 | 16.7 s | 36.0× |
-| AWS Transcribe — `standard` | 2347 | 2 | 0.69% | 0 | 61.8 s | 9.7× |
-| pyannote.ai — `parakeet` (precision-2) | 2331 | 2 | 0.70% | 4 | 21.7 s | 27.6× |
-| Deepgram — `nova-3` | 2259 | 2 | 5.75% | 0 | 4.2 s | **143.3×** |
-| local — uncorrected (smoother OFF) | 2257 | 2 | 1.15% | 13 | 13.6 s | 44.2× |
+| **local — smoothed (smoother ON)** | 2257 | 2 | **0.27%** | 3 | 14.5 s | 41.4× |
+| Gladia — `standard` | 2243 | 2 | **0.27%** | 1 | 26.1 s | 23.0× |
+| AssemblyAI — `universal-3-pro` | 2254 | 2 | 0.49% | 0 | 19.2 s | 31.2× |
+| Speechmatics — `standard` | 2306 | 2 | 0.53% | 0 | 38.0 s | 15.8× |
+| AWS Transcribe — `standard` | 2347 | 2 | 0.69% | 0 | 62.0 s | 9.7× |
+| pyannote.ai — `parakeet` (precision-2) | 2331 | 2 | 0.70% | 4 | 19.3 s | 31.0× |
+| Deepgram — `nova-3` | 2258 | 2 | 5.76% | 0 | 4.1 s | **145.7×** |
+| local — uncorrected (smoother OFF) | 2257 | 2 | 1.15% | 13 | 14.5 s | 41.4× |
 
 *(GPU: RTX A6000; local time is warm-model processing; cloud time is end-to-end API latency
-including upload + provider queue. All five cloud providers are configured via the admin UI with
+including upload + provider queue. All six cloud providers are configured via the admin UI with
 keys encrypted in the DB — no env vars.)*
 
 ## Interpretation
@@ -46,7 +47,9 @@ keys encrypted in the DB — no env vars.)*
   9.7× realtime (61.8 s for 10 min)** — the S3 upload + batch-job queue + polling overhead dominates.
   For "AWS as cloud infrastructure": you accept high latency + S3 plumbing for accuracy the local
   stack already matches and beats. Supports up to 30 speakers + multilingual code-switching.
-- **Gladia** (recurring free tier) is the cloud accuracy leader (0.27%), but slow (22.4×).
+- **Gladia** (recurring free tier) is the cloud accuracy leader (0.27%), but slow (23.0×).
+  **Speechmatics**, which markets best-in-class enterprise diarization, lands at 0.53% (clean,
+  0 islands, 15.8×) --- good, but the local engine still beats it.
   **AssemblyAI** is a strong all-rounder (0.49%, 36×). **pyannote.ai** still emits 4 boundary
   islands — confirming the issue-#193 bleed is *universal*, present even in best-in-class cloud
   diarization. **Deepgram** is the speed king (143×) but mislabels whole regions (5.75%).
@@ -87,6 +90,7 @@ All cloud providers below were verified end-to-end against live APIs (catalog `s
 | Deepgram | `nova-3` (+ medical, nova-2) | fastest; weaker speaker attribution |
 | AssemblyAI | `universal-3-pro`, `universal-2` | slam-1/nano rejected by the live API |
 | Gladia | `standard` | recurring 10 hr/month free tier |
+| Speechmatics | `standard` | 480 free min/month; `speechmatics-batch` SDK (async); strong diarization |
 | **AWS Transcribe** | `standard`, `multilingual`, `medical` | tested; up to 30 speakers; S3 + IAM; slowest (S3 + job queue) |
 
 ## Analysis notes
@@ -128,14 +132,14 @@ All cloud providers below were verified end-to-end against live APIs (catalog `s
 # A short 2-speaker clip + the labeled reference must be on the worker (/tmp here).
 docker compose exec -T celery-worker python -m scripts.compare_cloud_boundaries \
     --audio /tmp/karpathy_10m.wav --ref-rttm /tmp/karpathy_ref.rttm \
-    --cloud 849 --cloud 610 --cloud 850 --cloud 851 --cloud 852 \
+    --cloud 849 --cloud 610 --cloud 850 --cloud 851 --cloud 852 --cloud 853 \
     --min-speakers 2 --max-speakers 2
 # --cloud <id> = a row id in user_asr_settings (decrypts that provider's keys).
 # Karpathy clip rebuilt from MinIO: download_file_to_path('media/1/<uuid>.mp4') → ffmpeg 16k mono.
 ```
 
-Run date: 2026-05-30. All five cloud providers configured via the admin UI (keys encrypted in
-the DB): pyannote.ai (849), Deepgram (610), AssemblyAI (850), Gladia (851), AWS Transcribe (852).
+Run date: 2026-05-30. All six cloud providers configured via the admin UI (keys encrypted in
+the DB): pyannote.ai (849), Deepgram (610), AssemblyAI (850), Gladia (851), AWS Transcribe (852), Speechmatics (853).
 
 > Feeds the performance whitepaper (`docs/performance-whitepaper/main.tex`): the local-vs-cloud
 > accuracy/speed/cost table is the cloud-comparison section's primary data source.

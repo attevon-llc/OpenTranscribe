@@ -373,10 +373,10 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_diarization": True,
         "supports_vocabulary": True,
         "supports_translation": False,
-        "description": "Enterprise-grade with 55+ languages and 3 diarization modes",
-        "status": "experimental",
-        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
-        "diarization_quality": "Unknown — offers 3 diarization modes",
+        "description": "Enterprise-grade with 55+ languages and speaker diarization",
+        "status": "tested",
+        "status_note": "",
+        "diarization_quality": "Strong — enterprise speaker diarization",
         "models": [
             {
                 "id": "standard",

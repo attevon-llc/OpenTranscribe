@@ -15,13 +15,10 @@
   interface EngineSettingsResponse {
     transcriber_backend: EngineSettingValue<string>;
     diarizer_backend: EngineSettingValue<string>;
-    gpu_split: EngineSettingValue<boolean>;
-    precompute_vad: EngineSettingValue<boolean>;
     boundary_smoothing_enabled: EngineSettingValue<boolean>;
     boundary_acoustic_recheck_enabled: EngineSettingValue<boolean>;
     boundary_acoustic_cosine_margin: EngineSettingValue<number>;
     boundary_acoustic_max_word_dur: EngineSettingValue<number>;
-    shared_volume_path: EngineSettingValue<string>;
   }
 
   type EngineSettingKey = keyof EngineSettingsResponse;
@@ -36,13 +33,10 @@
   // Draft values (bound to form controls)
   let draftTranscriberBackend = 'faster_whisper';
   let draftDiarizerBackend = 'pyannote';
-  let draftGpuSplit = false;
-  let draftPrecomputeVad = false;
   let draftBoundarySmoothing = false;
   let draftAcousticRecheck = false;
   let draftAcousticCosineMargin = 0.05;
   let draftAcousticMaxWordDur = 1.0;
-  let draftSharedVolumePath = '/tmp/transcription';
 
   onMount(async () => {
     await loadData();
@@ -55,13 +49,10 @@
       settings = res.data;
       draftTranscriberBackend = settings.transcriber_backend.value;
       draftDiarizerBackend = settings.diarizer_backend.value;
-      draftGpuSplit = settings.gpu_split.value;
-      draftPrecomputeVad = settings.precompute_vad.value;
       draftBoundarySmoothing = settings.boundary_smoothing_enabled.value;
       draftAcousticRecheck = settings.boundary_acoustic_recheck_enabled.value;
       draftAcousticCosineMargin = settings.boundary_acoustic_cosine_margin.value;
       draftAcousticMaxWordDur = settings.boundary_acoustic_max_word_dur.value;
-      draftSharedVolumePath = settings.shared_volume_path.value;
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
       toastStore.error(typeof detail === 'string' ? detail : 'Failed to load engine settings', 5000);
@@ -78,13 +69,10 @@
     const payload: Partial<{
       transcriber_backend: string;
       diarizer_backend: string;
-      gpu_split: boolean;
-      precompute_vad: boolean;
       boundary_smoothing_enabled: boolean;
       boundary_acoustic_recheck_enabled: boolean;
       boundary_acoustic_cosine_margin: number;
       boundary_acoustic_max_word_dur: number;
-      shared_volume_path: string;
     }> = {};
 
     if (draftTranscriberBackend !== settings.transcriber_backend.value) {
@@ -92,12 +80,6 @@
     }
     if (draftDiarizerBackend !== settings.diarizer_backend.value) {
       payload.diarizer_backend = draftDiarizerBackend;
-    }
-    if (draftGpuSplit !== settings.gpu_split.value) {
-      payload.gpu_split = draftGpuSplit;
-    }
-    if (draftPrecomputeVad !== settings.precompute_vad.value) {
-      payload.precompute_vad = draftPrecomputeVad;
     }
     if (draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value) {
       payload.boundary_smoothing_enabled = draftBoundarySmoothing;
@@ -110,9 +92,6 @@
     }
     if (Number(draftAcousticMaxWordDur) !== settings.boundary_acoustic_max_word_dur.value) {
       payload.boundary_acoustic_max_word_dur = Number(draftAcousticMaxWordDur);
-    }
-    if (draftSharedVolumePath !== settings.shared_volume_path.value) {
-      payload.shared_volume_path = draftSharedVolumePath;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -162,13 +141,10 @@
   $: isDirty = settings !== null && (
     draftTranscriberBackend !== settings.transcriber_backend.value ||
     draftDiarizerBackend !== settings.diarizer_backend.value ||
-    draftGpuSplit !== settings.gpu_split.value ||
-    draftPrecomputeVad !== settings.precompute_vad.value ||
     draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value ||
     draftAcousticRecheck !== settings.boundary_acoustic_recheck_enabled.value ||
     Number(draftAcousticCosineMargin) !== settings.boundary_acoustic_cosine_margin.value ||
-    Number(draftAcousticMaxWordDur) !== settings.boundary_acoustic_max_word_dur.value ||
-    draftSharedVolumePath !== settings.shared_volume_path.value
+    Number(draftAcousticMaxWordDur) !== settings.boundary_acoustic_max_word_dur.value
   );
 </script>
 
@@ -257,80 +233,6 @@
           >
             <option value="pyannote">pyannote</option>
           </select>
-        </div>
-      </div>
-
-      <!-- GPU Split -->
-      <div class="form-row">
-        <div class="form-field">
-          <div class="field-label-row">
-            <span class="field-name">{$t('settings.engineSettings.gpuSplit')}</span>
-            <span class="source-badge {sourceClass(settings.gpu_split.source)}">
-              {sourceLabel(settings.gpu_split.source)}
-            </span>
-            {#if settings.gpu_split.source !== 'default'}
-              <button
-                class="reset-btn"
-                on:click={() => resetKey('gpu_split')}
-                disabled={resetInProgress === 'gpu_split' || saving}
-                title={$t('settings.engineSettings.resetKey')}
-              >
-                {#if resetInProgress === 'gpu_split'}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('settings.engineSettings.resetKey')}
-                {/if}
-              </button>
-            {/if}
-          </div>
-          <label class="toggle-label" for="gpu-split-input">
-            <input
-              id="gpu-split-input"
-              type="checkbox"
-              class="toggle-input"
-              bind:checked={draftGpuSplit}
-              disabled={saving || resetInProgress !== null}
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text help-text">{$t('settings.engineSettings.gpuSplitHelp')}</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- Precompute VAD -->
-      <div class="form-row">
-        <div class="form-field">
-          <div class="field-label-row">
-            <span class="field-name">{$t('settings.engineSettings.precomputeVad')}</span>
-            <span class="source-badge {sourceClass(settings.precompute_vad.source)}">
-              {sourceLabel(settings.precompute_vad.source)}
-            </span>
-            {#if settings.precompute_vad.source !== 'default'}
-              <button
-                class="reset-btn"
-                on:click={() => resetKey('precompute_vad')}
-                disabled={resetInProgress === 'precompute_vad' || saving}
-                title={$t('settings.engineSettings.resetKey')}
-              >
-                {#if resetInProgress === 'precompute_vad'}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('settings.engineSettings.resetKey')}
-                {/if}
-              </button>
-            {/if}
-          </div>
-          <label class="toggle-label" for="precompute-vad-input">
-            <input
-              id="precompute-vad-input"
-              type="checkbox"
-              class="toggle-input"
-              bind:checked={draftPrecomputeVad}
-              disabled={saving || resetInProgress !== null}
-            />
-            <span class="toggle-switch"></span>
-            <span class="toggle-text help-text">{$t('settings.engineSettings.precomputeVadHelp')}</span>
-          </label>
         </div>
       </div>
 
@@ -479,41 +381,6 @@
             disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
           />
           <p class="field-hint">{$t('settings.engineSettings.boundaryAcousticMaxWordDurHelp')}</p>
-        </div>
-      </div>
-
-      <!-- Shared Volume Path -->
-      <div class="form-row">
-        <div class="form-field">
-          <div class="field-label-row">
-            <label for="shared-volume-path">{$t('settings.engineSettings.sharedVolumePath')}</label>
-            <span class="source-badge {sourceClass(settings.shared_volume_path.source)}">
-              {sourceLabel(settings.shared_volume_path.source)}
-            </span>
-            {#if settings.shared_volume_path.source !== 'default'}
-              <button
-                class="reset-btn"
-                on:click={() => resetKey('shared_volume_path')}
-                disabled={resetInProgress === 'shared_volume_path' || saving}
-                title={$t('settings.engineSettings.resetKey')}
-              >
-                {#if resetInProgress === 'shared_volume_path'}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('settings.engineSettings.resetKey')}
-                {/if}
-              </button>
-            {/if}
-          </div>
-          <input
-            id="shared-volume-path"
-            type="text"
-            class="form-input"
-            bind:value={draftSharedVolumePath}
-            disabled={saving || resetInProgress !== null}
-            placeholder="/tmp/transcription"
-          />
-          <p class="field-hint">{$t('settings.engineSettings.sharedVolumePathHelp')}</p>
         </div>
       </div>
 

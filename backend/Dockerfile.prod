@@ -50,7 +50,7 @@ RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps whispe
 # ``--force-reinstall`` after everything else puts the GPU module files back
 # and ensures CUDAExecutionProvider is available at runtime.
 RUN pip install --user --no-cache-dir --force-reinstall --no-deps \
-    "onnxruntime-gpu>=1.22.0"
+    "onnxruntime-gpu==1.26.0"
 
 # triton removed: openai/triton is unrelated to NVIDIA TensorRT and is only used
 # by torch.compile(backend="inductor") JIT. torch.compile is opt-in and not on

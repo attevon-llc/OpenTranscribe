@@ -69,8 +69,12 @@ huggingface-hub<1.0.0
 # (and TensorrtExecutionProvider when ENABLE_TENSORRT=1 per Phase 6.3).
 # ~350 MB install footprint, CUDA-bundled. onnx needed at export time only.
 onnx>=1.17.0
-onnxruntime-gpu>=1.22.0; sys_platform == 'linux' and platform_machine == 'x86_64'
-onnxruntime>=1.22.0; sys_platform != 'linux' or platform_machine != 'x86_64'
+# Pinned to the validated version (1.26.0) so --no-cache container builds and venv
+# setups are reproducible — an unpinned >= floor could resolve a newer release with
+# a different bundled CUDA at build time. onnxruntime-gpu and onnxruntime ship in
+# lockstep, so both pin to the same version.
+onnxruntime-gpu==1.26.0; sys_platform == 'linux' and platform_machine == 'x86_64'
+onnxruntime==1.26.0; sys_platform != 'linux' or platform_machine != 'x86_64'
 # NOTE: `tensorrt` was added during Phase 6.3 spike but removed 2026-04-23.
 # ORT's TensorrtExecutionProvider hit rebuild storms on pyannote's variable
 # input shapes — 2 min CPU saturation, 0% GPU usage, no inference. Microbench

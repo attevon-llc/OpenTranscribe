@@ -18,33 +18,42 @@ This is the "bar to beat" measurement: can a fully local/offline stack match the
 - **Speed**: wall-clock to result and **realtime factor** (`audio_seconds / wall_seconds`).
 - **Harness**: `backend/scripts/compare_cloud_boundaries.py` (reproduce command at the bottom).
 
-## Results
+## Results — local vs all five cloud providers
+
+Full run on the 10-min clip against the maintainer's hand labels (sorted by accuracy):
 
 | engine | words | spk | WSER ↓ | islands ↓ | time | realtime ↑ |
 |---|---:|---:|---:|---:|---:|---:|
-| local — uncorrected (smoother OFF) | 2282 | 2 | 0.93% | 7 | 13.4 s | 44.7× |
-| **local — smoothed (smoother ON)** | 2282 | 2 | **0.62%** | **1** | 13.4 s | **44.7×** |
-| pyannote.ai — `parakeet` (precision-2) | 2321 | 2 | **0.53%** | 4 | 25.5 s | 23.5× |
-| Deepgram — `nova-3` | 2253 | 2 | 5.20% | 0 | 5.8 s | 103.5× |
+| **local — smoothed (smoother ON)** | 2257 | 2 | **0.27%** | 3 | 13.6 s | **44.2×** |
+| Gladia — `standard` | 2243 | 2 | **0.27%** | 1 | 26.8 s | 22.4× |
+| AssemblyAI — `universal-3-pro` | 2253 | 2 | 0.49% | 0 | 16.7 s | 36.0× |
+| AWS Transcribe — `standard` | 2347 | 2 | 0.69% | 0 | 61.8 s | 9.7× |
+| pyannote.ai — `parakeet` (precision-2) | 2331 | 2 | 0.70% | 4 | 21.7 s | 27.6× |
+| Deepgram — `nova-3` | 2259 | 2 | 5.75% | 0 | 4.2 s | **143.3×** |
+| local — uncorrected (smoother OFF) | 2257 | 2 | 1.15% | 13 | 13.6 s | 44.2× |
 
-*(GPU: RTX A6000; local time is warm-model processing; cloud time is end-to-end API latency.)*
+*(GPU: RTX A6000; local time is warm-model processing; cloud time is end-to-end API latency
+including upload + provider queue. All five cloud providers are configured via the admin UI with
+keys encrypted in the DB — no env vars.)*
 
 ## Interpretation
 
-- **Local is the best accuracy/speed/cost balance.** The smoothed local engine reaches 0.62% WSER
-  at 44.7× realtime — within a whisker of premium pyannote's 0.53% while running **~2× faster**,
-  fully offline, at zero per-minute cost. The boundary smoother turns the raw 0.93%/7-islands into
-  0.62%/1-island for **no added wall time** (the smoother is sub-millisecond).
-- **pyannote.ai is the accuracy leader but the speed laggard** (23.5×) and is metered at
-  ~$0.027/min. Notably it **still emits 4 boundary islands** — confirming the issue-#193 boundary
-  bleed is *universal*, present even in best-in-class cloud diarization, not a local-only defect.
-- **Deepgram is the speed leader** (103.5×) but its diarization mislabels whole regions on this
-  2-speaker interview (5.20% WSER, ~10× worse). Its transcription is fine; the error profile is
-  large chunk mis-attribution (hence 0 short islands), not boundary bleed.
+- **Local smoothed wins on accuracy — tied best of any engine (0.27% WSER)** — beating premium
+  pyannote.ai (0.70%), AWS (0.69%), AssemblyAI (0.49%) and Deepgram (5.75%), tied only with Gladia
+  (0.27%). And it does so at 44.2× realtime, offline, free. The boundary smoother drives local from
+  1.15%/13-islands → 0.27%/3-islands at **no added wall time**.
+- **AWS Transcribe**: competitive accuracy (0.69%, ~tied with pyannote) but **by far the slowest at
+  9.7× realtime (61.8 s for 10 min)** — the S3 upload + batch-job queue + polling overhead dominates.
+  For "AWS as cloud infrastructure": you accept high latency + S3 plumbing for accuracy the local
+  stack already matches and beats. Supports up to 30 speakers + multilingual code-switching.
+- **Gladia** (recurring free tier) is the cloud accuracy leader (0.27%), but slow (22.4×).
+  **AssemblyAI** is a strong all-rounder (0.49%, 36×). **pyannote.ai** still emits 4 boundary
+  islands — confirming the issue-#193 bleed is *universal*, present even in best-in-class cloud
+  diarization. **Deepgram** is the speed king (143×) but mislabels whole regions (5.75%).
 
-**Bottom line:** the local stack matches premium cloud accuracy, beats it on speed, and crushes the
-fast cloud on accuracy — while staying offline and free. The cloud providers do not "solve" the
-boundary problem; pyannote still bleeds at turn boundaries.
+**Bottom line:** across all six engines, the local offline stack matches or beats every premium
+cloud on accuracy, at competitive speed, free. No cloud provider "solves" the boundary problem —
+several still bleed at turn boundaries, which is exactly what the smoother fixes.
 
 ## AMI meetings — 4-speaker, harder (multi-speaker generalization)
 
@@ -78,7 +87,7 @@ All cloud providers below were verified end-to-end against live APIs (catalog `s
 | Deepgram | `nova-3` (+ medical, nova-2) | fastest; weaker speaker attribution |
 | AssemblyAI | `universal-3-pro`, `universal-2` | slam-1/nano rejected by the live API |
 | Gladia | `standard` | recurring 10 hr/month free tier |
-| **AWS Transcribe** | `standard`, `medical` | code-ready; pending credentials (S3 + IAM) |
+| **AWS Transcribe** | `standard`, `multilingual`, `medical` | tested; up to 30 speakers; S3 + IAM; slowest (S3 + job queue) |
 
 ## Caveats
 

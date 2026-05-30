@@ -590,13 +590,25 @@ class MinIOService:
         except Exception as e:
             raise Exception(f"Error creating bucket: {e}") from e
 
-    def ensure_prefix_expiry(self, bucket_name: str, prefix: str, days: int, rule_id: str) -> None:
+    def ensure_prefix_expiry(
+        self,
+        bucket_name: str,
+        prefix: str,
+        days: int,
+        rule_id: str,
+        *,
+        update_if_exists: bool = True,
+    ) -> None:
         """Ensure an object-expiration lifecycle rule exists for a bucket prefix.
 
         Idempotent and best-effort: used to auto-expire ephemeral artifacts (e.g.
         bulk-export ZIPs) so they don't accumulate in object storage. Never raises —
         a missing lifecycle rule must not block uploads. Only objects under ``prefix``
         are affected; other objects in the bucket are untouched.
+
+        ``update_if_exists=False`` only bootstraps a missing rule and leaves an existing
+        one untouched — used so per-instance construction never clobbers the authoritative
+        (admin/startup-set) retention value.
         """
         from minio.commonconfig import ENABLED
         from minio.commonconfig import Filter
@@ -609,9 +621,16 @@ class MinIOService:
             try:
                 current = self.client.get_bucket_lifecycle(bucket_name)
                 if current and current.rules:
-                    if any(r.rule_id == rule_id for r in current.rules):
-                        return  # already configured
-                    existing_rules = [r for r in current.rules if r.rule_id != rule_id]
+                    for r in current.rules:
+                        if r.rule_id == rule_id:
+                            # Already present: skip if unchanged, or if caller only wants to
+                            # bootstrap a missing rule (not override an existing/authoritative one).
+                            if not update_if_exists:
+                                return
+                            if r.expiration and r.expiration.days == days:
+                                return
+                        else:
+                            existing_rules.append(r)
             except Exception:
                 # No lifecycle config yet (S3 returns NoSuchLifecycleConfiguration).
                 existing_rules = []
@@ -628,3 +647,53 @@ class MinIOService:
             )
         except Exception as e:  # pragma: no cover - best-effort housekeeping
             logger.warning(f"Could not set lifecycle rule on {bucket_name}/{prefix}: {e}")
+
+    def remove_lifecycle_rule(self, bucket_name: str, rule_id: str) -> None:
+        """Remove a single lifecycle rule by id, preserving any others. Best-effort."""
+        from minio.lifecycleconfig import LifecycleConfig
+
+        try:
+            current = self.client.get_bucket_lifecycle(bucket_name)
+            if not current or not current.rules:
+                return
+            remaining = [r for r in current.rules if r.rule_id != rule_id]
+            if len(remaining) == len(current.rules):
+                return  # rule wasn't present
+            self.client.set_bucket_lifecycle(bucket_name, LifecycleConfig(remaining))
+            logger.info(f"Removed lifecycle rule '{rule_id}' from {bucket_name}")
+        except Exception as e:  # pragma: no cover - best-effort housekeeping
+            logger.warning(f"Could not remove lifecycle rule '{rule_id}' on {bucket_name}: {e}")
+
+    def prefix_stats(self, bucket_name: str, prefix: str) -> tuple[int, int]:
+        """Return ``(object_count, total_bytes)`` for all objects under a prefix."""
+        count = 0
+        total = 0
+        try:
+            for obj in self.client.list_objects(bucket_name, prefix=prefix, recursive=True):
+                count += 1
+                total += int(obj.size or 0)
+        except Exception as e:
+            logger.warning(f"Could not compute prefix stats for {bucket_name}/{prefix}: {e}")
+        return count, total
+
+    def delete_prefix(self, bucket_name: str, prefix: str) -> int:
+        """Delete every object under a prefix. Returns the number deleted. Best-effort."""
+        from minio.deleteobjects import DeleteObject
+
+        deleted = 0
+        try:
+            names = [
+                obj.object_name
+                for obj in self.client.list_objects(bucket_name, prefix=prefix, recursive=True)
+            ]
+            if not names:
+                return 0
+            errors = self.client.remove_objects(bucket_name, (DeleteObject(n) for n in names))
+            failed = 0
+            for err in errors:
+                failed += 1
+                logger.warning(f"Failed to delete {err.object_name}: {err}")
+            deleted = len(names) - failed
+        except Exception as e:
+            logger.warning(f"Could not delete prefix {bucket_name}/{prefix}: {e}")
+        return deleted

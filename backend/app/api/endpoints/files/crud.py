@@ -674,6 +674,16 @@ def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bo
         logger.warning(f"Error deleting file from storage: {e}")
         # Don't fail the entire operation if storage deletion fails
 
+    # Clear the file's derived cache (subtitle-embedded video + audio extracts) so those
+    # duplicates don't outlive the original. Best-effort — never block the delete.
+    try:
+        from app.services.minio_service import MinIOService
+        from app.services.video_processing_service import VideoProcessingService
+
+        VideoProcessingService(MinIOService()).clear_cache_for_media_file(db, file_id)
+    except Exception as cache_err:
+        logger.debug(f"Derived-cache cleanup after delete failed: {cache_err}")
+
     # Delete associated data from OpenSearch before deleting from database
     _cleanup_opensearch_data(db, file_id, str(db_file.uuid))
 

@@ -276,6 +276,11 @@ def _build_audio_extract_command(
 class VideoProcessingService:
     """Service for processing video files, including subtitle embedding."""
 
+    # Regenerable derived assets (subtitle-embedded videos + extracted audio) live under
+    # this prefix so one MinIO lifecycle rule can auto-expire them. Originals are the
+    # source of truth; these are duplicates re-created on demand.
+    DERIVED_CACHE_PREFIX = "derived/"
+
     def __init__(self, minio_service: MinIOService):
         self.minio_service = minio_service
         self.cache_bucket = "processed-videos"
@@ -353,17 +358,49 @@ class VideoProcessingService:
         self.minio_service.ensure_prefix_expiry(
             self.cache_bucket, prefix="bulk/", days=1, rule_id="expire-bulk-exports"
         )
+        # Bootstrap the derived-cache lifecycle rule from the env baseline ONLY if absent.
+        # The authoritative value is the admin/DB setting, re-applied on startup and on
+        # change via apply_derived_retention(); per-instance construction must never
+        # clobber it (this object is created per task/request).
+        if settings.DERIVED_CACHE_RETENTION_DAYS and settings.DERIVED_CACHE_RETENTION_DAYS > 0:
+            self.minio_service.ensure_prefix_expiry(
+                self.cache_bucket,
+                prefix=self.DERIVED_CACHE_PREFIX,
+                days=int(settings.DERIVED_CACHE_RETENTION_DAYS),
+                rule_id="expire-derived-cache",
+                update_if_exists=False,
+            )
+
+    def apply_derived_retention(self, days: int) -> None:
+        """Authoritatively (re)apply the lifecycle rule that expires the derived cache.
+
+        ``days <= 0`` removes the rule (keep derived assets forever). Best-effort.
+        """
+        if days and days > 0:
+            self.minio_service.ensure_prefix_expiry(
+                self.cache_bucket,
+                prefix=self.DERIVED_CACHE_PREFIX,
+                days=int(days),
+                rule_id="expire-derived-cache",
+                update_if_exists=True,
+            )
+        else:
+            self.minio_service.remove_lifecycle_rule(self.cache_bucket, "expire-derived-cache")
 
     def generate_cache_key(
         self, file_id: int, original_filename: str, include_speakers: bool = True
     ) -> str:
-        """Generate a cache key for processed video using original filename."""
+        """Generate a cache key for processed video using original filename.
+
+        Lives under the ``derived/`` prefix so a single MinIO lifecycle rule can
+        auto-expire the regenerable derived cache (see ``DERIVED_CACHE_PREFIX``).
+        """
         # Get base filename without extension
         base_name = (
             original_filename.rsplit(".", 1)[0] if "." in original_filename else original_filename
         )
         speaker_suffix = "_with_speakers" if include_speakers else "_no_speakers"
-        return f"{base_name}{speaker_suffix}.mp4"
+        return f"{self.DERIVED_CACHE_PREFIX}{base_name}{speaker_suffix}.mp4"
 
     def is_video_cached(self, cache_key: str) -> bool:
         """Check if a cached video exists."""
@@ -683,9 +720,9 @@ class VideoProcessingService:
         """
         base = self._audio_base(original_filename)
         if audio_format == "original":
-            return f"{base}_audio_original"
+            return f"{self.DERIVED_CACHE_PREFIX}{base}_audio_original"
         ext = "mp3" if audio_format == "mp3" else "wav"
-        return f"{base}_audio_{audio_format}.{ext}"
+        return f"{self.DERIVED_CACHE_PREFIX}{base}_audio_{audio_format}.{ext}"
 
     def peek_cached_audio(
         self, original_filename: str, audio_format: str
@@ -825,11 +862,16 @@ class VideoProcessingService:
                 logger.warning(f"Media file {file_id} not found for cache clearing")
                 return
 
-            # Clear both speaker variants
-            for include_speakers in [True, False]:
-                cache_key = self.generate_cache_key(
-                    file_id, str(db_file.filename), include_speakers
-                )
+            filename = str(db_file.filename)
+            # Clear both subtitle-embedded video variants and all audio extract variants.
+            cache_keys = [
+                self.generate_cache_key(file_id, filename, include_speakers=True),
+                self.generate_cache_key(file_id, filename, include_speakers=False),
+                self.audio_cache_key(filename, "mp3"),
+                self.audio_cache_key(filename, "wav"),
+                self.audio_cache_key(filename, "original"),
+            ]
+            for cache_key in cache_keys:
                 try:
                     self.minio_service.delete_object(self.cache_bucket, cache_key)
                     logger.info(f"Cleared cache for {cache_key}")

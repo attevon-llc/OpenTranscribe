@@ -1742,7 +1742,7 @@
             </div>
           {/if}
 
-          <!-- File Retention Section -->
+          <!-- File Retention Section (includes derived media cache) -->
           {#if activeSection === 'retention' && isAdmin}
             <div class="content-section">
               <RetentionSettings />

@@ -512,6 +512,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Speaker profile sync failed (non-fatal): {e}")
 
+    # Apply the admin-configured derived-cache retention (DB over env) so the MinIO
+    # lifecycle rule reflects UI changes after a restart — no redeploy needed.
+    try:
+        from app.db.base import SessionLocal
+        from app.services.cache_management_service import apply_retention
+
+        _db = SessionLocal()
+        try:
+            days = apply_retention(_db)
+            logger.info(f"Derived-cache retention applied: {days} day(s)")
+        finally:
+            _db.close()
+    except Exception as e:
+        logger.warning(f"Derived-cache retention setup failed (non-fatal): {e}")
+
     # Clear stale migration state from Redis (orphaned by unclean shutdown)
     try:
         _clear_stale_task_state()

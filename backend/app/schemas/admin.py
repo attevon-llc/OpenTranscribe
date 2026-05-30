@@ -212,3 +212,29 @@ class MediaSourcesList(BaseModel):
     """Response schema for the list of media sources."""
 
     sources: list[MediaSource]
+
+
+class CacheConfig(BaseModel):
+    """Derived-asset cache configuration and current usage."""
+
+    retention_days: int = Field(
+        ..., description="Days before derived assets auto-expire (0 = keep forever)"
+    )
+    bucket: str
+    prefix: str
+    object_count: int = Field(..., description="Number of cached derived objects")
+    total_bytes: int = Field(..., description="Total size of the derived cache in bytes")
+
+
+class CacheConfigUpdate(BaseModel):
+    """Request to change the derived-cache retention window."""
+
+    retention_days: int = Field(
+        ..., ge=0, le=3650, description="Days before derived assets auto-expire (0 = keep forever)"
+    )
+
+
+class CacheClearResponse(BaseModel):
+    """Result of a manual derived-cache purge."""
+
+    deleted: int = Field(..., description="Number of derived objects removed")

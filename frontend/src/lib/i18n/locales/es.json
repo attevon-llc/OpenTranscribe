@@ -3402,6 +3402,7 @@
   "search.filtersApplied": "Filtros aplicados a los resultados",
   "settings.asrProvider.diarizationQuality": "Diarización",
   "settings.asrProvider.experimentalWarning": "Este proveedor no ha sido completamente probado. La calidad de la transcripción y la precisión de la diarización pueden variar.",
+  "settings.asrProvider.experimentalShort": "experimental",
   "settings.asrProvider.statusExperimental": "Experimental",
   "settings.asrProvider.statusTested": "Probado",
   "settings.asrProvider.switchedToLocal": "Cambiado a transcripción GPU local",

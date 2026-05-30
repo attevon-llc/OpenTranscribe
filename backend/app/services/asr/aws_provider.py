@@ -183,7 +183,8 @@ class AWSTranscribeProvider(ASRProvider):
             settings_kw: dict = {}
             if config.enable_diarization:
                 settings_kw["ShowSpeakerLabels"] = True
-                settings_kw["MaxSpeakerLabels"] = min(config.max_speakers, 10)
+                # AWS Transcribe supports up to 30 speakers (per the diarization docs).
+                settings_kw["MaxSpeakerLabels"] = max(2, min(config.max_speakers, 30))
             if config.vocabulary:
                 # AWS Transcribe requires a pre-created custom vocabulary by name.
                 vocab_name = os.getenv("AWS_TRANSCRIBE_VOCABULARY_NAME")

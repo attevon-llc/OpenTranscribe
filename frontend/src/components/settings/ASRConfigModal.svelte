@@ -225,6 +225,7 @@
             {#each providers as p}
               <option value={p.provider}>
                 {ASRSettingsApi.getProviderDisplayName(p.provider)}
+                {#if p.status === 'experimental'} &#9888; ({$t('settings.asrProvider.experimentalShort')}){/if}
                 {#if !p.sdk_available} ({$t('settings.asrProvider.missingSDK')}){/if}
               </option>
             {/each}

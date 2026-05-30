@@ -331,7 +331,7 @@ ASR_PROVIDER_CATALOG: dict = {
         "status": "experimental",
         "status_note": "Configure an IAM user's Access Key ID + Secret Access Key with "
         "Amazon Transcribe + S3 permissions, plus a region.",
-        "diarization_quality": "Up to 10 speakers (MaxSpeakerLabels)",
+        "diarization_quality": "Supports up to 30 speakers",
         "models": [
             {
                 "id": "standard",

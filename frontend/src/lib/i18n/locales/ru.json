@@ -3392,6 +3392,7 @@
   "search.filtersApplied": "Фильтры применены к результатам",
   "settings.asrProvider.diarizationQuality": "Диаризация",
   "settings.asrProvider.experimentalWarning": "Этот провайдер не был полностью протестирован. Качество транскрипции и точность диаризации могут варьироваться.",
+  "settings.asrProvider.experimentalShort": "экспериментальный",
   "settings.asrProvider.statusExperimental": "Экспериментальный",
   "settings.asrProvider.statusTested": "Протестирован",
   "settings.asrProvider.switchedToLocal": "Переключено на локальную GPU-транскрипцию",

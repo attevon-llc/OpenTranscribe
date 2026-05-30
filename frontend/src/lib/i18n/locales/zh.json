@@ -3402,6 +3402,7 @@
   "search.filtersApplied": "已应用过滤条件",
   "settings.asrProvider.diarizationQuality": "说话人分离",
   "settings.asrProvider.experimentalWarning": "此提供商尚未完全测试。转录质量和说话人分离准确性可能有所不同。",
+  "settings.asrProvider.experimentalShort": "实验性",
   "settings.asrProvider.statusExperimental": "实验性",
   "settings.asrProvider.statusTested": "已测试",
   "settings.asrProvider.switchedToLocal": "已切换至本地 GPU 转录",

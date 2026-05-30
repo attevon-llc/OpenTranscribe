@@ -3402,6 +3402,7 @@
   "search.filtersApplied": "フィルターが結果に適用されています",
   "settings.asrProvider.diarizationQuality": "話者分離",
   "settings.asrProvider.experimentalWarning": "このプロバイダーは完全にテストされていません。文字起こしの品質と話者分離の精度は異なる場合があります。",
+  "settings.asrProvider.experimentalShort": "実験的",
   "settings.asrProvider.statusExperimental": "実験的",
   "settings.asrProvider.statusTested": "テスト済み",
   "settings.asrProvider.switchedToLocal": "ローカルGPU文字起こしに切り替えました",

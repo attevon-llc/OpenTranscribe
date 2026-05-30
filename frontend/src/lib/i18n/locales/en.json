@@ -2995,6 +2995,7 @@
   "settings.asrProvider.sharedByOthers": "Shared by Others",
   "settings.asrProvider.sharedBy": "Shared by {{name}}",
   "settings.asrProvider.experimentalWarning": "This provider has not been fully tested. Transcription quality and diarization accuracy may vary.",
+  "settings.asrProvider.experimentalShort": "experimental",
   "settings.asrProvider.diarizationQuality": "Diarization",
   "settings.asrProvider.statusTested": "Tested",
   "settings.asrProvider.statusExperimental": "Experimental",

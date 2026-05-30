@@ -60,6 +60,7 @@ celery_app = Celery(
         "app.tasks.utility",
         "app.tasks.recovery",
         "app.tasks.youtube_processing",
+        "app.tasks.media_download",
         "app.tasks.speaker_tasks",
         "app.tasks.speaker_identification_task",
         "app.tasks.speaker_update_task",
@@ -135,6 +136,7 @@ celery_app.conf.update(
         # Download Queue - Network I/O tasks (concurrency=3, no GPU)
         "download.media_url": {"queue": CeleryQueues.DOWNLOAD},
         "download.media_playlist": {"queue": CeleryQueues.DOWNLOAD},
+        "download.prepare_media": {"queue": CeleryQueues.DOWNLOAD},
         # CPU Queue - CPU-intensive parallel tasks (concurrency=8, no GPU)
         "media.generate_waveform": {"queue": CeleryQueues.CPU},
         "media.generate_waveform_data": {"queue": CeleryQueues.CPU},

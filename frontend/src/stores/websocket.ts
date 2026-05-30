@@ -853,7 +853,9 @@ function createWebSocketStore() {
     });
   };
 
-  // Handle download progress messages
+  // Handle download progress messages (legacy/global). Media downloads initiated
+  // from the file page are delivered over a dedicated SSE stream — see
+  // TranscriptDisplay's EventSource — so this only mirrors status into the store.
   const handleDownloadProgress = (data: any) => {
     const { file_id, status, progress, error } = data.data;
 

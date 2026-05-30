@@ -3,6 +3,7 @@ import io
 import logging
 import os
 from typing import BinaryIO
+from urllib.parse import quote
 
 import urllib3
 from minio import Minio
@@ -467,6 +468,53 @@ def cleanup_temp_audio(file_uuid: str) -> None:
         _logger.info(f"Cleaned up temp audio: {object_name}")
     except Exception as e:
         _logger.debug(f"Temp audio cleanup failed (non-fatal): {e}")
+
+
+def get_presigned_download_url(
+    object_name: str,
+    *,
+    bucket_name: str | None = None,
+    download_filename: str | None = None,
+    content_type: str | None = None,
+    expires: int = settings.MEDIA_URL_EXPIRE_SECONDS,
+) -> str:
+    """Generate a browser-reachable presigned GET URL that forces a download.
+
+    Adds S3 ``response-content-disposition`` / ``response-content-type`` overrides
+    so the browser saves the object under ``download_filename`` with the right MIME,
+    regardless of the underlying object key. The internal MinIO host is rewritten to
+    the browser-facing endpoint (``MINIO_PUBLIC_URL`` or the ``/s3`` proxy path) so
+    the same URL works in dev (Vite proxy) and prod (nginx).
+
+    Args:
+        object_name: Object key.
+        bucket_name: Bucket holding the object (defaults to the media bucket).
+        download_filename: Filename the browser should save as (Content-Disposition).
+        content_type: MIME type to report.
+        expires: URL lifetime in seconds.
+
+    Returns:
+        A presigned, browser-reachable download URL.
+    """
+    bucket = bucket_name or settings.MEDIA_BUCKET_NAME
+    response_headers: dict[str, str | list[str] | tuple[str]] = {}
+    if download_filename:
+        # RFC 6266 / 5987: ASCII fallback + UTF-8 form for non-ASCII names.
+        ascii_name = download_filename.encode("ascii", "ignore").decode("ascii") or "download"
+        quoted = quote(download_filename, safe="")
+        response_headers["response-content-disposition"] = (
+            f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}"
+        )
+    if content_type:
+        response_headers["response-content-type"] = content_type
+
+    url = minio_client.presigned_get_object(
+        bucket_name=bucket,
+        object_name=object_name,
+        expires=datetime.timedelta(seconds=max(60, int(expires))),
+        response_headers=response_headers or None,
+    )
+    return _rewrite_minio_host(str(url))
 
 
 def get_internal_presigned_url(object_name: str, expires: int = 3600) -> str:

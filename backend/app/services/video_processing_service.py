@@ -211,6 +211,11 @@ _AUDIO_ENCODE_PRESETS: dict[str, tuple[str, str, list[str]]] = {
     "wav": ("wav", "audio/wav", ["-c:a", "pcm_s16le"]),
 }
 
+# Reverse map for recovering an "original" download's extension from the cached
+# object's stored content type (cache key carries no extension).
+_CONTENT_TYPE_TO_EXT: dict[str, str] = {ct: ext for ext, ct in _AUDIO_COPY_CONTAINERS.values()}
+_CONTENT_TYPE_TO_EXT.update({"audio/mpeg": "mp3", "audio/wav": "wav", "audio/mp4": "m4a"})
+
 
 def _probe_audio_codec(media_path: str) -> str | None:
     """Return the codec name of the first audio stream, or None if there is none."""
@@ -656,14 +661,62 @@ class VideoProcessingService:
                 logger.error(f"Failed to process video {file_id}: {e}")
                 raise
 
-    def generate_audio_cache_key(
-        self, file_id: int, original_filename: str, audio_format: str, ext: str
-    ) -> str:
-        """Generate a cache key for an extracted audio file."""
-        base_name = (
+    @staticmethod
+    def _audio_base(original_filename: str) -> str:
+        return (
             original_filename.rsplit(".", 1)[0] if "." in original_filename else original_filename
         )
-        return f"{base_name}_audio_{audio_format}.{ext}"
+
+    def audio_cache_key(self, original_filename: str, audio_format: str) -> str:
+        """Deterministic cache key for an extracted audio file.
+
+        ``mp3``/``wav`` carry their extension; ``original`` uses an extension-less key
+        because the real extension depends on the (later-probed) source codec — it is
+        recovered from the cached object's stored content type.
+        """
+        base = self._audio_base(original_filename)
+        if audio_format == "original":
+            return f"{base}_audio_original"
+        ext = "mp3" if audio_format == "mp3" else "wav"
+        return f"{base}_audio_{audio_format}.{ext}"
+
+    def peek_cached_audio(
+        self, original_filename: str, audio_format: str
+    ) -> tuple[str, str, str] | None:
+        """Return ``(cache_key, ext, content_type)`` if already cached, else None.
+
+        Pure metadata lookup — never runs ffmpeg — so the API can hand back a
+        presigned URL instantly on a cache hit.
+        """
+        normalized = audio_format.lower()
+        if normalized not in ("mp3", "wav", "original"):
+            normalized = "mp3"
+        cache_key = self.audio_cache_key(original_filename, normalized)
+        if not self.is_video_cached(cache_key):
+            return None
+        if normalized in _AUDIO_ENCODE_PRESETS:
+            ext, content_type, _ = _AUDIO_ENCODE_PRESETS[normalized]
+            return cache_key, ext, content_type
+        # original: recover ext/content_type from the stored object metadata.
+        try:
+            stat = self.minio_service.stat_object(self.cache_bucket, cache_key)
+            content_type = getattr(stat, "content_type", None) or "audio/mpeg"
+        except Exception:
+            content_type = "audio/mpeg"
+        return cache_key, _CONTENT_TYPE_TO_EXT.get(content_type, "m4a"), content_type
+
+    def presigned_download_url(
+        self, cache_key: str, download_filename: str, content_type: str
+    ) -> str:
+        """Browser-reachable presigned GET URL for a cached object (forces download)."""
+        from app.services.minio_service import get_presigned_download_url
+
+        return get_presigned_download_url(
+            cache_key,
+            bucket_name=self.cache_bucket,
+            download_filename=download_filename,
+            content_type=content_type,
+        )
 
     def extract_audio(
         self,
@@ -698,6 +751,14 @@ class VideoProcessingService:
         if normalized not in ("mp3", "wav", "original"):
             normalized = "mp3"
 
+        # Fast path: already cached (no download, no ffmpeg).
+        cached = self.peek_cached_audio(original_filename, normalized)
+        if cached:
+            logger.info(f"Using cached audio for file {file_id} ({cached[0]})")
+            return cached
+
+        cache_key = self.audio_cache_key(original_filename, normalized)
+
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             original_path = temp_dir_path / "original_media"
@@ -722,12 +783,6 @@ class VideoProcessingService:
                 )
             else:
                 ext, content_type, codec_args = _AUDIO_ENCODE_PRESETS[normalized]
-
-            cache_key = self.generate_audio_cache_key(file_id, original_filename, normalized, ext)
-
-            if self.is_video_cached(cache_key):
-                logger.info(f"Using cached audio for file {file_id} ({cache_key})")
-                return cache_key, ext, content_type
 
             import shutil
 

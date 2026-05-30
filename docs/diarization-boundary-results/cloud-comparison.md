@@ -89,6 +89,26 @@ All cloud providers below were verified end-to-end against live APIs (catalog `s
 | Gladia | `standard` | recurring 10 hr/month free tier |
 | **AWS Transcribe** | `standard`, `multilingual`, `medical` | tested; up to 30 speakers; S3 + IAM; slowest (S3 + job queue) |
 
+## Analysis notes
+
+- **Are AWS and pyannote the same model?** No. Their near-identical scores (0.69% vs 0.70%) are a
+  coincidence of an *easy* clip — a clean 2-speaker interview is well within reach of any competent
+  diarizer, so the field bunches near the top. They are different proprietary stacks (Amazon's
+  in-house models vs the pyannote-audio lineage + `precision-2`). On harder content they diverge
+  (see the AMI table, where local and pyannote separate).
+- **Which models do the clouds use?** Only the *selected* model name is public (pyannote
+  `precision-2`+`parakeet`, Deepgram `nova-3`, AssemblyAI `universal-3-pro`, AWS `standard`). The
+  internal architectures are proprietary and undisclosed for Amazon, Deepgram, and Gladia; pyannote
+  is the most transparent (open lineage). Some responses carry a version field (AssemblyAI returns
+  `speech_model_used`); AWS returns no model identifier.
+- **Why is AWS the slowest (9.7×)?** We use AWS **batch** transcription: upload to S3 → start an
+  async job → the job waits in AWS's queue → poll → fetch the result from S3. The S3 round-trip +
+  queue wait dominate (most of the 61.8 s is *waiting*, not compute). The other clouds are async too
+  but take a direct upload/URL with shorter queues. AWS *does* offer real-time **streaming**
+  (`StartStreamTranscription`) which would bypass S3 + the batch queue and be far faster, but it is a
+  separate bidirectional-stream API (a meaningful rewrite) — not implemented here, and out of scope
+  while local already matches AWS accuracy at ~4× the speed.
+
 ## Caveats
 
 - **Single clip, 2 speakers.** Order-of-magnitude signal, not a leaderboard. Broaden with AMI /
@@ -98,7 +118,8 @@ All cloud providers below were verified end-to-end against live APIs (catalog `s
   actually waits). Both reflect real user-perceived latency for their deployment model.
 - **Cloud numbers are point-in-time.** Vendor models are versioned and change; record date + model
   with any published figure. Only the local pipeline is a deterministic, frozen baseline.
-- **Cost** (cloud, batch): pyannote.ai ≈ $0.027/min; Deepgram nova-3 ≈ $0.0043/min. Local = GPU
+- **Cost** (cloud, batch, approx/min): pyannote.ai $0.027 · Deepgram nova-3 $0.0043 · AssemblyAI
+  +diarization ~$0.0038 · Gladia $0.0–0.01 (10 hr/mo free tier) · AWS standard $0.024. Local = GPU
   amortization only.
 
 ## Reproduce
@@ -107,11 +128,14 @@ All cloud providers below were verified end-to-end against live APIs (catalog `s
 # A short 2-speaker clip + the labeled reference must be on the worker (/tmp here).
 docker compose exec -T celery-worker python -m scripts.compare_cloud_boundaries \
     --audio /tmp/karpathy_10m.wav --ref-rttm /tmp/karpathy_ref.rttm \
-    --cloud 849 --cloud 610 --max-speakers 2
-# --cloud <id> = a row id in user_asr_settings (decrypts that provider's key).
+    --cloud 849 --cloud 610 --cloud 850 --cloud 851 --cloud 852 \
+    --min-speakers 2 --max-speakers 2
+# --cloud <id> = a row id in user_asr_settings (decrypts that provider's keys).
+# Karpathy clip rebuilt from MinIO: download_file_to_path('media/1/<uuid>.mp4') → ffmpeg 16k mono.
 ```
 
-Run date: 2026-05-30. Providers: pyannote.ai `parakeet`/precision-2, Deepgram `nova-3`.
+Run date: 2026-05-30. All five cloud providers configured via the admin UI (keys encrypted in
+the DB): pyannote.ai (849), Deepgram (610), AssemblyAI (850), Gladia (851), AWS Transcribe (852).
 
 > Feeds the performance whitepaper (`docs/performance-whitepaper/main.tex`): the local-vs-cloud
 > accuracy/speed/cost table is the cloud-comparison section's primary data source.

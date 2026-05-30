@@ -720,6 +720,239 @@ def _process_audio_only_download(
     return StreamingResponse(content=file_stream, media_type=content_type, headers=headers)
 
 
+_DOWNLOAD_MODES = {
+    "video_subtitles",
+    "video_original",
+    "audio_mp3",
+    "audio_wav",
+    "audio_original",
+}
+
+
+def _audio_passthrough(db_file: MediaFile, mode: str) -> bool:
+    """True when an audio mode can serve the original bytes without ffmpeg."""
+    if not (db_file.content_type and db_file.content_type.startswith("audio/")):
+        return False
+    src_ext = _audio_source_extension(str(db_file.filename))
+    return (
+        mode == "audio_original"
+        or (mode == "audio_mp3" and src_ext == "mp3")
+        or (mode == "audio_wav" and src_ext == "wav")
+    )
+
+
+def _resolve_ready_download(db_file: MediaFile, mode: str) -> dict | None:
+    """Return ``{"url", "filename"}`` if the asset can be served now, else None.
+
+    "Ready" means a direct passthrough (original bytes) or an already-cached derived
+    asset — both yield an instant presigned URL with no ffmpeg work.
+    """
+    from app.services.minio_service import MinIOService
+    from app.services.minio_service import get_presigned_download_url
+    from app.services.video_processing_service import VideoProcessingService
+
+    filename = str(db_file.filename)
+    base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
+
+    if mode == "video_original" or _audio_passthrough(db_file, mode):
+        url = get_presigned_download_url(
+            str(db_file.storage_path),
+            download_filename=filename,
+            content_type=str(db_file.content_type) if db_file.content_type else None,
+        )
+        return {"url": url, "filename": filename}
+
+    service = VideoProcessingService(MinIOService())
+
+    if mode == "video_subtitles":
+        if db_file.status != "completed":
+            raise HTTPException(status_code=422, detail="Transcript is not ready yet.")
+        cache_key = service.generate_cache_key(int(db_file.id), filename, include_speakers=True)
+        if service.is_video_cached(cache_key):
+            dl_name = f"{base_name}_with_subtitles.mp4"
+            return {
+                "url": service.presigned_download_url(cache_key, dl_name, "video/mp4"),
+                "filename": dl_name,
+            }
+        return None
+
+    audio_format = mode.split("_", 1)[1]
+    cached = service.peek_cached_audio(filename, audio_format)
+    if cached:
+        cache_key, ext, content_type = cached
+        dl_name = f"{base_name}.{ext}"
+        return {
+            "url": service.presigned_download_url(cache_key, dl_name, content_type),
+            "filename": dl_name,
+        }
+    return None
+
+
+def _ensure_prepare_enqueued(db_file: MediaFile, user_id: int, mode: str) -> None:
+    """Queue the ffmpeg prep task at most once per (file, mode) in-flight window.
+
+    A short-lived Redis NX guard collapses duplicate requests (double-click, a POST
+    plus the SSE stream, multiple tabs) into a single worker task. Once cached, the
+    ready path short-circuits before reaching here.
+    """
+    from app.core.redis import get_redis
+    from app.tasks.media_download import prepare_media_download_task
+
+    guard_key = f"download:prep:{db_file.id}:{mode}"
+    try:
+        first = get_redis().set(guard_key, "1", nx=True, ex=900)
+    except Exception:
+        first = True  # Redis hiccup → don't block the download
+    if first:
+        prepare_media_download_task.delay(file_id=int(db_file.id), user_id=user_id, mode=mode)
+
+
+@router.post("/{file_uuid}/prepare-download")
+def prepare_download(
+    file_uuid: str,
+    mode: str = Query(
+        ..., description="video_subtitles|video_original|audio_mp3|audio_wav|audio_original"
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Prepare a media download.
+
+    Returns one of:
+    - ``{"status": "ready", "url": <presigned>, "filename": <name>}`` — passthrough or
+      cache hit; the browser downloads straight from object storage.
+    - ``{"status": "processing", "file_id": <uuid>}`` — ffmpeg work was queued on the
+      download worker; the client opens the SSE stream (``download-stream``) to receive
+      progress and the final presigned URL.
+    """
+    if mode not in _DOWNLOAD_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
+
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
+
+    ready = _resolve_ready_download(db_file, mode)
+    if ready:
+        return {"status": "ready", **ready}
+
+    _ensure_prepare_enqueued(db_file, int(current_user.id), mode)
+    return {"status": "processing", "file_id": str(db_file.uuid)}
+
+
+@router.get("/{file_uuid}/download-stream")
+async def download_stream(
+    file_uuid: str,
+    mode: str = Query(
+        ..., description="video_subtitles|video_original|audio_mp3|audio_wav|audio_original"
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Server-Sent Events stream that pushes download progress + the final URL.
+
+    The browser opens this (EventSource, cookie-authenticated) after a ``processing``
+    response. Events: ``progress`` (status text), ``ready`` (``{url, filename}``),
+    ``error`` (``{message}``). On (re)connect we re-check readiness first, so a dropped
+    connection still delivers once the worker has finished — no client polling.
+    """
+    import asyncio
+    import contextlib
+    import json as _json
+
+    import redis.asyncio as aioredis
+
+    from app.core.config import settings
+    from app.services.download_events import download_events_channel
+
+    if mode not in _DOWNLOAD_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
+
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
+    user_id = int(current_user.id)
+
+    def sse(event: str, payload: dict) -> str:
+        return f"event: {event}\ndata: {_json.dumps(payload)}\n\n"
+
+    async def event_stream():
+        # 1. Already available? deliver immediately (covers reconnects after completion).
+        try:
+            ready = _resolve_ready_download(db_file, mode)
+        except HTTPException as e:
+            yield sse("error", {"message": e.detail})
+            return
+        if ready:
+            yield sse("ready", ready)
+            return
+
+        # 2. Make sure the work is running, then stream its events.
+        _ensure_prepare_enqueued(db_file, user_id, mode)
+        yield sse("progress", {"message": "Preparing your download…", "progress": 0})
+
+        from redis.exceptions import RedisError
+        from redis.exceptions import TimeoutError as RedisTimeoutError
+
+        client = aioredis.from_url(
+            settings.REDIS_URL, health_check_interval=30, socket_keepalive=True
+        )
+        pubsub = client.pubsub()
+        await pubsub.subscribe(download_events_channel(file_uuid))
+        try:
+            while True:
+                try:
+                    msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
+                except (RedisTimeoutError, asyncio.TimeoutError):
+                    yield ": keepalive\n\n"  # benign idle read — keep the SSE open
+                    continue
+                except RedisError as e:
+                    logger.warning(f"Download SSE pubsub error for {file_uuid}: {e}")
+                    yield sse("error", {"message": "Connection interrupted."})
+                    return
+                if msg is None:
+                    yield ": keepalive\n\n"  # comment frame keeps proxies from closing
+                    continue
+                try:
+                    data = _json.loads(msg["data"])
+                except Exception:
+                    logger.debug("Skipping malformed download event payload")
+                    continue
+                if data.get("mode") != mode:
+                    continue
+                status = data.get("status")
+                if status == "completed" and data.get("url"):
+                    yield sse("ready", {"url": data["url"], "filename": data.get("filename", "")})
+                    return
+                if status == "error":
+                    yield sse("error", {"message": data.get("message", "Download failed.")})
+                    return
+                yield sse(
+                    "progress",
+                    {
+                        "message": data.get("message", ""),
+                        "progress": data.get("progress", 0),
+                    },
+                )
+        except asyncio.CancelledError:
+            raise
+        finally:
+            with contextlib.suppress(Exception):
+                await pubsub.unsubscribe(download_events_channel(file_uuid))
+                await pubsub.close()
+                await client.close()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # disable nginx buffering for SSE
+        },
+    )
+
+
 @router.get("/{file_uuid}/download")
 def download_media_file(
     file_uuid: str,

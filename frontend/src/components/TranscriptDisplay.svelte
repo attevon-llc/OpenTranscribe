@@ -12,6 +12,7 @@
   import { highlightTextWithMatches, type SearchMatch } from '$lib/utils/searchHighlight';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { updateSegmentSpeaker } from '$lib/api/transcripts';
+  import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import Spinner from './ui/Spinner.svelte';
@@ -472,7 +473,25 @@
     }
   }
 
-  type DownloadMode = 'video-subs' | 'video-original' | 'audio-mp3' | 'audio-wav' | 'audio-original';
+  // Server-side download modes (mirror backend prepare-download).
+  type DownloadMode =
+    | 'video_subtitles'
+    | 'video_original'
+    | 'audio_mp3'
+    | 'audio_wav'
+    | 'audio_original';
+
+  const DOWNLOAD_TYPE_BY_MODE: Record<DownloadMode, 'video_with_subtitles' | 'original_video' | 'audio'> = {
+    video_subtitles: 'video_with_subtitles',
+    video_original: 'original_video',
+    audio_mp3: 'audio',
+    audio_wav: 'audio',
+    audio_original: 'audio',
+  };
+
+  // Open SSE streams keyed by fileId so we can clean them up on completion/unmount.
+  const downloadStreams = new Map<string, EventSource>();
+  const DOWNLOAD_STREAM_TIMEOUT_MS = 5 * 60 * 1000;
 
   async function downloadMedia(mode: DownloadMode) {
     if (!file || !file.uuid) {
@@ -483,110 +502,104 @@
     const fileId = file.uuid.toString();
     const filename = file.filename;
 
-    // Check if download is already in progress
     if (isDownloading) {
       toastStore.warning($t('transcript.downloadAlreadyProcessing', { filename }));
       return;
     }
 
-    const baseName = filename.includes('.') ? filename.substring(0, filename.lastIndexOf('.')) : filename;
-    const extension = filename.includes('.') ? filename.substring(filename.lastIndexOf('.')) : '.mp4';
-
-    // Resolve URL, target filename, notification copy, and whether the server has to
-    // run ffmpeg (processed) vs. stream the bytes directly (instant).
-    let downloadUrl = `/api/files/${fileId}/download`;
-    let downloadFilename = filename;
-    let downloadType: 'video_with_subtitles' | 'original_video' | 'audio' = 'original_video';
-    let isProcessed = false;
-
-    switch (mode) {
-      case 'video-subs':
-        downloadUrl += '?include_speakers=true';
-        downloadFilename = `${baseName}_with_subtitles${extension}`;
-        downloadType = 'video_with_subtitles';
-        isProcessed = true;
-        break;
-      case 'video-original':
-        downloadUrl += '?original=true';
-        downloadFilename = filename;
-        downloadType = 'original_video';
-        break;
-      case 'audio-mp3':
-        downloadUrl += '?audio_only=true&audio_format=mp3';
-        downloadFilename = `${baseName}.mp3`;
-        downloadType = 'audio';
-        isProcessed = true;
-        break;
-      case 'audio-wav':
-        downloadUrl += '?audio_only=true&audio_format=wav';
-        downloadFilename = `${baseName}.wav`;
-        downloadType = 'audio';
-        isProcessed = true;
-        break;
-      case 'audio-original':
-        downloadUrl += '?audio_only=true&audio_format=original';
-        // Extension is decided server-side from the source codec; defer to the
-        // server's Content-Disposition filename by leaving download empty.
-        downloadFilename = '';
-        downloadType = 'audio';
-        isProcessed = true;
-        break;
-    }
-
-    // Start download tracking
-    const canStart = downloadStore.startDownload(fileId, filename, downloadType);
+    // Track the download (shows the button spinner) before asking the server to
+    // prepare it. The API returns either a ready presigned URL (passthrough /
+    // cache hit) or queues ffmpeg work; in the latter case the result + URL are
+    // pushed to us over an SSE stream (no polling).
+    const canStart = downloadStore.startDownload(fileId, filename, DOWNLOAD_TYPE_BY_MODE[mode]);
     if (!canStart) return;
 
     try {
-      if (!isProcessed) {
-        // Instant passthrough (original file): let the browser stream it to disk
-        // directly so large originals never sit in memory.
-        downloadStore.updateStatus(fileId, 'downloading');
-        triggerAnchorDownload(downloadUrl, downloadFilename);
-        setTimeout(() => downloadStore.updateStatus(fileId, 'completed'), 1500);
-        return;
-      }
-
-      // Processed downloads (ffmpeg subtitle embed / audio extraction): the server
-      // doesn't respond until processing + caching finishes, so fetch() keeps the
-      // button in its "processing" state for the whole wait and lets us surface real
-      // errors (e.g. 422 when a file has no audio track).
       downloadStore.updateStatus(fileId, 'processing');
+      const { data } = await axiosInstance.post(
+        `/files/${fileId}/prepare-download`,
+        null,
+        { params: { mode } }
+      );
 
-      const response = await fetch(downloadUrl, { credentials: 'same-origin' });
-      if (!response.ok) {
-        let detail = '';
-        try {
-          detail = (await response.json())?.detail ?? '';
-        } catch {
-          /* non-JSON error body */
-        }
-        throw new Error(detail || $t('transcript.downloadFailed'));
+      if (data.status === 'ready' && data.url) {
+        // Browser streams straight from object storage — never buffered in memory.
+        triggerAnchorDownload(data.url, data.filename ?? '');
+        downloadStore.updateStatus(fileId, 'completed');
+      } else {
+        openDownloadStream(fileId, mode);
       }
-
-      downloadStore.updateStatus(fileId, 'downloading');
-
-      // For audio-original the extension is decided server-side; honor the
-      // Content-Disposition filename when we didn't set one locally.
-      let outName = downloadFilename;
-      if (!outName) {
-        const disposition = response.headers.get('content-disposition') ?? '';
-        const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
-        outName = match ? decodeURIComponent(match[1]) : filename;
-      }
-
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      triggerAnchorDownload(objectUrl, outName);
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
-
-      downloadStore.updateStatus(fileId, 'completed');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Download error:', error);
-      const errorMessage = error instanceof Error ? error.message : $t('transcript.downloadFailed');
-      downloadStore.updateStatus(fileId, 'error', undefined, errorMessage);
+      const detail = error?.response?.data?.detail;
+      downloadStore.updateStatus(
+        fileId,
+        'error',
+        undefined,
+        detail || $t('transcript.downloadFailed')
+      );
     }
   }
+
+  // Subscribe to the server-pushed download stream. EventSource auto-reconnects on
+  // transient drops, and the backend re-checks readiness on each connect, so the
+  // file is still delivered even if the connection blips while ffmpeg runs.
+  function openDownloadStream(fileId: string, mode: DownloadMode) {
+    closeDownloadStream(fileId);
+    const es = new EventSource(`/api/files/${fileId}/download-stream?mode=${mode}`);
+    downloadStreams.set(fileId, es);
+
+    const timeout = setTimeout(() => {
+      closeDownloadStream(fileId);
+      downloadStore.updateStatus(fileId, 'error', undefined, $t('transcript.downloadFailed'));
+    }, DOWNLOAD_STREAM_TIMEOUT_MS);
+
+    es.addEventListener('progress', (e: MessageEvent) => {
+      try {
+        const d = JSON.parse(e.data);
+        downloadStore.updateStatus(fileId, 'processing', d.progress);
+      } catch {
+        downloadStore.updateStatus(fileId, 'processing');
+      }
+    });
+
+    es.addEventListener('ready', (e: MessageEvent) => {
+      clearTimeout(timeout);
+      closeDownloadStream(fileId);
+      try {
+        const d = JSON.parse(e.data);
+        triggerAnchorDownload(d.url, d.filename ?? '');
+        downloadStore.updateStatus(fileId, 'completed');
+      } catch {
+        downloadStore.updateStatus(fileId, 'error', undefined, $t('transcript.downloadFailed'));
+      }
+    });
+
+    es.addEventListener('error', (e: MessageEvent) => {
+      // A server-sent `error` event carries a real failure (has data); a native
+      // transport error has no data and EventSource will auto-reconnect.
+      if (e?.data) {
+        clearTimeout(timeout);
+        closeDownloadStream(fileId);
+        let msg = $t('transcript.downloadFailed');
+        try { msg = JSON.parse(e.data).message || msg; } catch {}
+        downloadStore.updateStatus(fileId, 'error', undefined, msg);
+      }
+    });
+  }
+
+  function closeDownloadStream(fileId: string) {
+    const es = downloadStreams.get(fileId);
+    if (es) {
+      es.close();
+      downloadStreams.delete(fileId);
+    }
+  }
+
+  onDestroy(() => {
+    downloadStreams.forEach((es) => es.close());
+    downloadStreams.clear();
+  });
 
   function triggerAnchorDownload(href: string, filename: string) {
     const link = document.createElement('a');
@@ -970,15 +983,15 @@
               <!-- svelte-ignore a11y-no-static-element-interactions -->
               <div class="export-dropdown-content" on:click|stopPropagation>
                 {#if canEmbedSubtitles}
-                  <button on:click={() => selectDownload('video-subs')}>{$t('transcript.downloadVideoSubtitles')}</button>
+                  <button on:click={() => selectDownload('video_subtitles')}>{$t('transcript.downloadVideoSubtitles')}</button>
                 {/if}
                 {#if isVideoFile}
-                  <button on:click={() => selectDownload('video-original')}>{$t('transcript.downloadOriginalVideo')}</button>
+                  <button on:click={() => selectDownload('video_original')}>{$t('transcript.downloadOriginalVideo')}</button>
                 {/if}
                 <div class="download-dropdown-label">{$t('transcript.downloadAudio')}</div>
-                <button on:click={() => selectDownload('audio-mp3')}>{$t('transcript.downloadAudioMp3')}</button>
-                <button on:click={() => selectDownload('audio-wav')}>{$t('transcript.downloadAudioWav')}</button>
-                <button on:click={() => selectDownload('audio-original')}>{$t('transcript.downloadAudioOriginal')}</button>
+                <button on:click={() => selectDownload('audio_mp3')}>{$t('transcript.downloadAudioMp3')}</button>
+                <button on:click={() => selectDownload('audio_wav')}>{$t('transcript.downloadAudioWav')}</button>
+                <button on:click={() => selectDownload('audio_original')}>{$t('transcript.downloadAudioOriginal')}</button>
               </div>
             {/if}
           </div>

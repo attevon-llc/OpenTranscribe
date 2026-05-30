@@ -173,13 +173,18 @@ class AWSTranscribeProvider(ASRProvider):
                 "OutputBucketName": bucket,
                 "OutputKey": result_key,
             }
-            # LanguageCode (BCP-47) and IdentifyLanguage are mutually exclusive — set exactly
-            # one. Unknown/auto → let AWS detect the language.
-            aws_lang = _aws_language_code(config.language)
-            if aws_lang:
-                job_kw["LanguageCode"] = aws_lang
+            # LanguageCode, IdentifyLanguage, and IdentifyMultipleLanguages are mutually
+            # exclusive — set exactly one. The "multilingual" model transcribes a file that
+            # mixes languages (code-switching); otherwise use the explicit language, or
+            # auto-detect a single dominant language.
+            if self._model_name == "multilingual":
+                job_kw["IdentifyMultipleLanguages"] = True
             else:
-                job_kw["IdentifyLanguage"] = True
+                aws_lang = _aws_language_code(config.language)
+                if aws_lang:
+                    job_kw["LanguageCode"] = aws_lang
+                else:
+                    job_kw["IdentifyLanguage"] = True
             settings_kw: dict = {}
             if config.enable_diarization:
                 settings_kw["ShowSpeakerLabels"] = True

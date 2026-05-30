@@ -335,12 +335,24 @@ ASR_PROVIDER_CATALOG: dict = {
         "models": [
             {
                 "id": "standard",
-                "display_name": "Standard",
-                "description": "General purpose",
+                "display_name": "Standard (single language)",
+                "description": "One language per file — uses your source language, or "
+                "auto-detects the dominant language when set to Auto",
                 "price_per_min_batch": 0.024,
+                "languages": 100,
                 "is_default": True,
                 "supports_diarization": True,
                 "supports_vocabulary": True,
+            },
+            {
+                "id": "multilingual",
+                "display_name": "Multilingual (code-switching)",
+                "description": "Multiple languages within one file — detects and transcribes "
+                "each language (e.g. a bilingual speaker switching mid-conversation)",
+                "price_per_min_batch": 0.024,
+                "languages": 100,
+                "supports_diarization": True,
+                "supports_vocabulary": False,
             },
             {
                 "id": "medical",

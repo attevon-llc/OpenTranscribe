@@ -328,9 +328,8 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "Standard and Medical transcription (HIPAA-eligible)",
-        "status": "experimental",
-        "status_note": "Configure an IAM user's Access Key ID + Secret Access Key with "
-        "Amazon Transcribe + S3 permissions, plus a region.",
+        "status": "tested",
+        "status_note": "",
         "diarization_quality": "Supports up to 30 speakers",
         "models": [
             {

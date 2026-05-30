@@ -155,6 +155,7 @@ def _run_cloud(
         provider_name, model_name = str(cfg.provider), str(cfg.model_name)
         region = str(cfg.region) if cfg.region else None
         api_key = decrypt_api_key(str(cfg.api_key)) if cfg.api_key else None
+        aws_akid = decrypt_api_key(str(cfg.access_key_id)) if cfg.access_key_id else None
 
     provider: Any
     if provider_name == "aws":
@@ -163,8 +164,8 @@ def _run_cloud(
         provider = AWSTranscribeProvider(
             region=str(region or os.getenv("AWS_REGION") or "us-east-1"),
             model_name=model_name,
-            access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            access_key_id=aws_akid or os.getenv("AWS_ACCESS_KEY_ID"),
+            secret_access_key=api_key or os.getenv("AWS_SECRET_ACCESS_KEY"),
         )
     elif not api_key:
         return (f"{provider_name} (no key)", [], 0.0)

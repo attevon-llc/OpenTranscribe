@@ -35,11 +35,12 @@ def main() -> None:
         model_name = args.model or str(cfg.model_name)
         region = str(cfg.region) if cfg.region else None
         api_key = decrypt_api_key(str(cfg.api_key)) if cfg.api_key else None
+        aws_akid = decrypt_api_key(str(cfg.access_key_id)) if cfg.access_key_id else None
 
     provider: ASRProvider
     if provider_name == "aws":
-        # AWS uses two creds (access key + secret) from the boto3 default chain — env vars
-        # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (local testing) or an IAM role (on AWS).
+        # AWS uses two creds: the UI-stored (encrypted) Access Key ID + Secret Access Key,
+        # falling back to the boto3 default chain (env vars / IAM role) when unset.
         import os
 
         from app.services.asr.aws_provider import AWSTranscribeProvider
@@ -47,8 +48,8 @@ def main() -> None:
         provider = AWSTranscribeProvider(
             region=str(region or os.getenv("AWS_REGION") or "us-east-1"),
             model_name=model_name,
-            access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            access_key_id=aws_akid or os.getenv("AWS_ACCESS_KEY_ID"),
+            secret_access_key=api_key or os.getenv("AWS_SECRET_ACCESS_KEY"),
         )
     elif not api_key:
         raise SystemExit(f"config id={args.config_id} ({provider_name}) has no API key")

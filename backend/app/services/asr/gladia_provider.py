@@ -44,6 +44,19 @@ class GladiaProvider(ASRProvider):
     def _hdr(self) -> dict:
         return {"x-gladia-key": self._api_key, "Content-Type": "application/json"}
 
+    def _err_detail(self, exc: Exception) -> str:
+        """Sanitized error including the API response body for HTTP errors."""
+        detail = str(exc)
+        resp = getattr(exc, "response", None)
+        if resp is not None:
+            try:
+                body = resp.text.strip()
+            except Exception:  # noqa: BLE001
+                body = ""
+            if body:
+                detail = f"{detail} — {body[:500]}"
+        return self._sanitize_error(detail, self._api_key)
+
     def validate_connection(self) -> tuple[bool, str, float]:
         """Test API key by hitting the /v2/live endpoint (lightweight, no audio needed)."""
         start = time.time()
@@ -86,16 +99,21 @@ class GladiaProvider(ASRProvider):
             progress_callback(0.1, "Uploading to Gladia…")
 
         try:
+            import mimetypes
+
+            content_type = mimetypes.guess_type(audio_path)[0] or "application/octet-stream"
             with open(audio_path, "rb") as f:
+                # The multipart part MUST carry a filename + content-type, else Gladia
+                # rejects with 400 "Missing audio file".
                 up = requests.post(
                     f"{self._BASE}/v2/upload",
                     headers={"x-gladia-key": self._api_key},
-                    files={"audio": f},
+                    files={"audio": (filename, f, content_type)},
                     timeout=300,
                 )
             up.raise_for_status()
         except Exception as exc:
-            sanitized = self._sanitize_error(str(exc), self._api_key)
+            sanitized = self._err_detail(exc)
             logger.error("Gladia upload failed for file=%s: %s", filename, sanitized)
             raise RuntimeError(f"Gladia upload failed: {sanitized}") from exc
 

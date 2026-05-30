@@ -71,6 +71,7 @@ def main() -> None:
     ap.add_argument("--audio", required=True)
     ap.add_argument("--ref-rttm", required=True)
     ap.add_argument("--cloud", type=int, action="append", default=[], help="user_asr_settings id")
+    ap.add_argument("--min-speakers", type=int, default=2)
     ap.add_argument("--max-speakers", type=int, default=2)
     args = ap.parse_args()
 
@@ -83,13 +84,13 @@ def main() -> None:
     rows: list[tuple[str, dict[str, Any], float]] = []  # (name, score, wall_seconds)
 
     # ── Local engine: real warm GPU run, timed ───────────────────────────────────
-    off, on, local_seconds = _run_local_timed(args.audio, args.max_speakers)
+    off, on, local_seconds = _run_local_timed(args.audio, args.min_speakers, args.max_speakers)
     rows.append(("local (uncorrected/OFF)", _score(_flatten_segments(off), turns), local_seconds))
     rows.append(("local (smoothed/ON)", _score(_flatten_segments(on), turns), local_seconds))
 
     # ── Cloud providers: end-to-end API latency ──────────────────────────────────
     for config_id in args.cloud:
-        name, words, secs = _run_cloud(config_id, args.audio, args.max_speakers)
+        name, words, secs = _run_cloud(config_id, args.audio, args.min_speakers, args.max_speakers)
         rows.append((name, _score(words, turns), secs))
 
     # ── Report ───────────────────────────────────────────────────────────────────
@@ -109,7 +110,9 @@ def main() -> None:
     print("local time is warm-model GPU processing; cloud time is end-to-end API latency.")
 
 
-def _run_local_timed(audio_path: str, max_speakers: int) -> tuple[list, list, float]:
+def _run_local_timed(
+    audio_path: str, min_speakers: int, max_speakers: int
+) -> tuple[list, list, float]:
     """Run the real local engine warm and time the GPU stage. Returns (off, on, seconds)."""
     from app.transcription.boundary_resolver import BoundarySmoothingConfig
     from app.transcription.engine.config import EngineConfig
@@ -118,7 +121,7 @@ def _run_local_timed(audio_path: str, max_speakers: int) -> tuple[list, list, fl
     from app.utils.segment_postprocess import finalize_segments
 
     cfg = EngineConfig.from_environment(
-        min_speakers=2, max_speakers=max_speakers, source_language="en"
+        min_speakers=min_speakers, max_speakers=max_speakers, source_language="en"
     )
     eng = Engine(cfg)
     pre = eng.run_preprocess(JobSpec(audio_path=audio_path, task_id="cmp-warm"))
@@ -136,7 +139,7 @@ def _run_local_timed(audio_path: str, max_speakers: int) -> tuple[list, list, fl
 
 
 def _run_cloud(
-    config_id: int, audio: str, max_speakers: int
+    config_id: int, audio: str, min_speakers: int, max_speakers: int
 ) -> tuple[str, list[dict[str, Any]], float]:
     from app.db.session_utils import session_scope
     from app.models.user_asr_settings import UserASRSettings
@@ -160,12 +163,26 @@ def _run_cloud(
         from app.services.asr.deepgram_provider import DeepgramProvider
 
         provider = DeepgramProvider(api_key, model_name)
+    elif provider_name == "assemblyai":
+        from app.services.asr.assemblyai_provider import AssemblyAIProvider
+
+        provider = AssemblyAIProvider(api_key, model_name)
+    elif provider_name == "gladia":
+        from app.services.asr.gladia_provider import GladiaProvider
+
+        provider = GladiaProvider(api_key, model_name)
     else:
         return (f"{provider_name} (unsupported)", [], 0.0)
 
     t0 = time.perf_counter()
     result = provider.transcribe(
-        audio, ASRConfig(language="en", max_speakers=max_speakers, enable_diarization=True)
+        audio,
+        ASRConfig(
+            language="en",
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            enable_diarization=True,
+        ),
     )
     seconds = time.perf_counter() - t0
     return (f"{provider_name}/{model_name}", _flatten_asr(result), seconds)

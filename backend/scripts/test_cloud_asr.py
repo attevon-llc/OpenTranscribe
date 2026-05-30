@@ -18,6 +18,7 @@ def main() -> None:
     ap.add_argument("--config-id", type=int, required=True)
     ap.add_argument("--audio", required=True)
     ap.add_argument("--max-speakers", type=int, default=2)
+    ap.add_argument("--model", default=None, help="override the config's model_name")
     args = ap.parse_args()
 
     from app.db.session_utils import session_scope
@@ -31,7 +32,7 @@ def main() -> None:
         if cfg is None:
             raise SystemExit(f"no user_asr_settings row with id={args.config_id}")
         provider_name = str(cfg.provider)
-        model_name = str(cfg.model_name)
+        model_name = args.model or str(cfg.model_name)
         api_key = decrypt_api_key(str(cfg.api_key)) if cfg.api_key else None
 
     if not api_key:
@@ -46,8 +47,16 @@ def main() -> None:
         from app.services.asr.deepgram_provider import DeepgramProvider
 
         provider = DeepgramProvider(api_key, model_name)
+    elif provider_name == "assemblyai":
+        from app.services.asr.assemblyai_provider import AssemblyAIProvider
+
+        provider = AssemblyAIProvider(api_key, model_name)
+    elif provider_name == "gladia":
+        from app.services.asr.gladia_provider import GladiaProvider
+
+        provider = GladiaProvider(api_key, model_name)
     else:
-        raise SystemExit(f"this harness only covers pyannote/deepgram, not {provider_name}")
+        raise SystemExit(f"unsupported provider {provider_name}")
 
     ok, msg, ms = provider.validate_connection()
     print(f"[{provider_name}/{model_name}] validate_connection: ok={ok} msg={msg!r} ({ms:.0f}ms)")

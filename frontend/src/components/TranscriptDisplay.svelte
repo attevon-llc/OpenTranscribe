@@ -538,62 +538,64 @@
     if (!canStart) return;
 
     try {
+      if (!isProcessed) {
+        // Instant passthrough (original file): let the browser stream it to disk
+        // directly so large originals never sit in memory.
+        downloadStore.updateStatus(fileId, 'downloading');
+        triggerAnchorDownload(downloadUrl, downloadFilename);
+        setTimeout(() => downloadStore.updateStatus(fileId, 'completed'), 1500);
+        return;
+      }
+
+      // Processed downloads (ffmpeg subtitle embed / audio extraction): the server
+      // doesn't respond until processing + caching finishes, so fetch() keeps the
+      // button in its "processing" state for the whole wait and lets us surface real
+      // errors (e.g. 422 when a file has no audio track).
       downloadStore.updateStatus(fileId, 'processing');
 
-      // For processed downloads, add a small delay so download state is initialized
-      // before the WebSocket 'completed' message can arrive.
-      if (isProcessed) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+      const response = await fetch(downloadUrl, { credentials: 'same-origin' });
+      if (!response.ok) {
+        let detail = '';
+        try {
+          detail = (await response.json())?.detail ?? '';
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(detail || $t('transcript.downloadFailed'));
       }
 
       downloadStore.updateStatus(fileId, 'downloading');
 
-      // Create download link (cookies are sent automatically)
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = downloadFilename;
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      if (!isProcessed) {
-        // Instant passthrough (original file) — mark complete shortly after.
-        setTimeout(() => {
-          downloadStore.updateStatus(fileId, 'completed');
-        }, 2000);
-      } else {
-        // Processed downloads: monitor until the browser starts receiving the file.
-        let checkCount = 0;
-        const checkInterval = setInterval(() => {
-          checkCount++;
-          const currentStatus = downloadStore.getDownloadStatus(fileId);
-
-          if (!currentStatus || currentStatus.status === 'completed' || currentStatus.status === 'error') {
-            clearInterval(checkInterval);
-            return;
-          }
-
-          // Cached results download almost immediately.
-          if (checkCount >= 3 && ['processing', 'downloading'].includes(currentStatus.status)) {
-            downloadStore.updateStatus(fileId, 'completed');
-            clearInterval(checkInterval);
-            return;
-          }
-
-          // Allow up to 60s for actual ffmpeg processing.
-          if (checkCount >= 60 && ['processing', 'downloading'].includes(currentStatus.status)) {
-            downloadStore.updateStatus(fileId, 'completed');
-            clearInterval(checkInterval);
-          }
-        }, 1000);
+      // For audio-original the extension is decided server-side; honor the
+      // Content-Disposition filename when we didn't set one locally.
+      let outName = downloadFilename;
+      if (!outName) {
+        const disposition = response.headers.get('content-disposition') ?? '';
+        const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+        outName = match ? decodeURIComponent(match[1]) : filename;
       }
 
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      triggerAnchorDownload(objectUrl, outName);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+
+      downloadStore.updateStatus(fileId, 'completed');
     } catch (error) {
       console.error('Download error:', error);
       const errorMessage = error instanceof Error ? error.message : $t('transcript.downloadFailed');
       downloadStore.updateStatus(fileId, 'error', undefined, errorMessage);
     }
+  }
+
+  function triggerAnchorDownload(href: string, filename: string) {
+    const link = document.createElement('a');
+    link.href = href;
+    if (filename) link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
 </script>

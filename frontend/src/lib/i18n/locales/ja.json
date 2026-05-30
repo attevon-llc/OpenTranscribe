@@ -2942,6 +2942,8 @@
   "settings.asrProvider.fields.provider": "プロバイダー",
   "settings.asrProvider.fields.model": "モデル",
   "settings.asrProvider.fields.apiKey": "APIキー",
+  "settings.asrProvider.fields.accessKeyId": "AWS アクセスキー ID",
+  "settings.asrProvider.fields.secretAccessKey": "AWS シークレットアクセスキー",
   "settings.asrProvider.fields.region": "リージョン",
   "settings.asrProvider.fields.baseUrl": "ベースURL",
   "settings.asrProvider.missingSDK": "SDKがインストールされていません",

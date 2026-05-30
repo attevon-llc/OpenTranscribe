@@ -2936,6 +2936,8 @@
   "settings.asrProvider.fields.provider": "Proveedor",
   "settings.asrProvider.fields.model": "Modelo",
   "settings.asrProvider.fields.apiKey": "Clave API",
+  "settings.asrProvider.fields.accessKeyId": "ID de clave de acceso de AWS",
+  "settings.asrProvider.fields.secretAccessKey": "Clave de acceso secreta de AWS",
   "settings.asrProvider.fields.region": "Región",
   "settings.asrProvider.fields.baseUrl": "URL base",
   "settings.asrProvider.missingSDK": "SDK no instalado",

@@ -2942,6 +2942,8 @@
   "settings.asrProvider.fields.provider": "提供商",
   "settings.asrProvider.fields.model": "模型",
   "settings.asrProvider.fields.apiKey": "API 密钥",
+  "settings.asrProvider.fields.accessKeyId": "AWS 访问密钥 ID",
+  "settings.asrProvider.fields.secretAccessKey": "AWS 私有访问密钥",
   "settings.asrProvider.fields.region": "区域",
   "settings.asrProvider.fields.baseUrl": "基础 URL",
   "settings.asrProvider.missingSDK": "SDK 未安装",

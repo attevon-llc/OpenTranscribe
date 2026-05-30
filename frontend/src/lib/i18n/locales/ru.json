@@ -2932,6 +2932,8 @@
   "settings.asrProvider.fields.provider": "Провайдер",
   "settings.asrProvider.fields.model": "Модель",
   "settings.asrProvider.fields.apiKey": "API-ключ",
+  "settings.asrProvider.fields.accessKeyId": "Идентификатор ключа доступа AWS",
+  "settings.asrProvider.fields.secretAccessKey": "Секретный ключ доступа AWS",
   "settings.asrProvider.fields.region": "Регион",
   "settings.asrProvider.fields.baseUrl": "Базовый URL",
   "settings.asrProvider.missingSDK": "SDK не установлен",

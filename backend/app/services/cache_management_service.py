@@ -81,3 +81,42 @@ def clear_derived_cache() -> int:
     )
     logger.info(f"Cleared {deleted} derived cache object(s)")
     return deleted
+
+
+def reclaim_legacy_derived_cache() -> int:
+    """One-time upgrade reclaim of pre-prefix derived assets.
+
+    Older versions wrote derived assets (``{base}_with_speakers.mp4``,
+    ``{base}_audio_*``) at the ``processed-videos`` bucket root. They are now keyed
+    under ``derived/`` and covered by the lifecycle rule — but the old root-level
+    objects are orphaned duplicates the rule never sees. This deletes every object at
+    the bucket root (no ``/`` in the key), leaving the managed ``derived/`` and
+    ``bulk/`` prefixes intact. Safe: these are regenerable. Returns the count removed.
+    """
+    from minio.deleteobjects import DeleteObject
+
+    service = VideoProcessingService(MinIOService())
+    client = service.minio_service.client
+    bucket = service.cache_bucket
+    try:
+        legacy = [
+            obj.object_name
+            for obj in client.list_objects(bucket, recursive=True)
+            if "/" not in (obj.object_name or "")
+        ]
+    except Exception as e:
+        logger.warning(f"Could not list legacy cache objects in {bucket}: {e}")
+        return 0
+    if not legacy:
+        return 0
+    failed = 0
+    try:
+        for err in client.remove_objects(bucket, (DeleteObject(n) for n in legacy)):
+            failed += 1
+            logger.warning(f"Failed to reclaim legacy object {err.name}: {err.code} {err.message}")
+    except Exception as e:
+        logger.warning(f"Legacy cache reclaim error in {bucket}: {e}")
+        return 0
+    deleted = len(legacy) - failed
+    logger.info(f"Reclaimed {deleted} legacy root-level derived cache object(s) from {bucket}")
+    return deleted

@@ -1,4 +1,3 @@
-import contextlib
 import logging
 import os
 from datetime import datetime
@@ -25,7 +24,6 @@ from app.schemas.media import MediaFileUpdate
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
-from app.services.minio_service import delete_file
 from app.services.opensearch_service import update_transcript_title
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.time_format import format_timestamp_simple as format_timestamp
@@ -538,86 +536,6 @@ def update_media_file(
     return db_file
 
 
-def _delete_speaker_embeddings_from_index(
-    client: Any, index_name: str, speaker_uuids: list[str], file_id: int
-) -> None:
-    """Delete speaker embedding documents from a single OpenSearch index."""
-    if not client.indices.exists(index=index_name):
-        return
-    deleted = 0
-    for speaker_uuid in speaker_uuids:
-        with contextlib.suppress(Exception):
-            client.delete(index=index_name, id=speaker_uuid)
-            deleted += 1
-    if deleted:
-        logger.info(
-            f"Deleted {deleted}/{len(speaker_uuids)} speaker embeddings "
-            f"from {index_name} for file {file_id}"
-        )
-
-
-def _cleanup_opensearch_data(db: Session, file_id: int, file_uuid: str) -> None:
-    """Clean up OpenSearch data for a file being deleted.
-
-    Cleans: speakers (v3), speakers_v4, transcripts, transcript_chunks,
-    transcript_summaries. Each step is non-fatal — errors are logged and
-    do not prevent subsequent cleanup steps.
-    """
-    try:
-        from app.services.opensearch_service import opensearch_client
-        from app.services.opensearch_service import settings
-
-        speaker_uuid_rows = db.query(Speaker.uuid).filter(Speaker.media_file_id == file_id).all()
-        speaker_uuids = [str(r[0]) for r in speaker_uuid_rows]
-
-        if not opensearch_client:
-            logger.warning("OpenSearch client not available for cleanup")
-            return
-
-        # Delete speaker embeddings from v3 and v4 indices
-        if speaker_uuids:
-            from app.core.constants import get_speaker_index
-            from app.core.constants import get_speaker_index_v4
-
-            for idx in [
-                get_speaker_index(),
-                get_speaker_index_v4(),
-            ]:
-                with contextlib.suppress(Exception):
-                    _delete_speaker_embeddings_from_index(
-                        opensearch_client, idx, speaker_uuids, file_id
-                    )
-
-        # Delete transcript document
-        with contextlib.suppress(Exception):
-            opensearch_client.delete(index=settings.OPENSEARCH_TRANSCRIPT_INDEX, id=str(file_uuid))
-            logger.info(f"Deleted transcript for file {file_uuid} from OpenSearch")
-
-        # Delete transcript chunks
-        with contextlib.suppress(Exception):
-            from app.services.search.indexing_service import TranscriptIndexingService
-
-            chunks_deleted = TranscriptIndexingService().delete_transcript_chunks(str(file_uuid))
-            if chunks_deleted:
-                logger.info(f"Deleted {chunks_deleted} transcript chunks for file {file_uuid}")
-
-        # Delete transcript summaries
-        with contextlib.suppress(Exception):
-            summary_index = settings.OPENSEARCH_SUMMARY_INDEX
-            if opensearch_client.indices.exists(index=summary_index):
-                resp = opensearch_client.delete_by_query(
-                    index=summary_index,
-                    body={"query": {"term": {"file_id": str(file_id)}}},
-                    refresh=True,
-                )
-                summary_deleted = resp.get("deleted", 0)
-                if summary_deleted:
-                    logger.info(f"Deleted {summary_deleted} summaries for file {file_id}")
-
-    except Exception as e:
-        logger.warning(f"Error cleaning up OpenSearch data for file {file_id}: {e}")
-
-
 def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bool = False) -> None:
     """
     Delete a media file and all associated data with safety checks.
@@ -664,95 +582,16 @@ def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bo
         # Refresh the file object
         db.refresh(db_file)
 
-    # Delete from MinIO (if exists)
-    storage_deleted = False
-    try:
-        delete_file(str(db_file.storage_path))
-        storage_deleted = True
-        logger.info(f"Successfully deleted file from storage: {db_file.storage_path}")
-    except Exception as e:
-        logger.warning(f"Error deleting file from storage: {e}")
-        # Don't fail the entire operation if storage deletion fails
+    # Delegate the actual destroy to the single canonical implementation so the
+    # interactive, bulk, retention, and orphan-cleanup paths all behave identically.
+    from app.services.file_cleanup_service import purge_media_file
 
-    # Clear the file's derived cache (subtitle-embedded video + audio extracts) so those
-    # duplicates don't outlive the original. Best-effort — never block the delete.
-    try:
-        from app.services.minio_service import MinIOService
-        from app.services.video_processing_service import VideoProcessingService
-
-        VideoProcessingService(MinIOService()).clear_cache_for_media_file(db, file_id)
-    except Exception as cache_err:
-        logger.debug(f"Derived-cache cleanup after delete failed: {cache_err}")
-
-    # Delete associated data from OpenSearch before deleting from database
-    _cleanup_opensearch_data(db, file_id, str(db_file.uuid))
-
-    try:
-        # Delete from database (cascade will handle related records)
-        owner_id = int(db_file.user_id)
-        db.delete(db_file)
-        db.commit()
-        logger.info(f"Successfully deleted file {file_id} from database")
-
-        # Invalidate caches — file list, tags, speakers, metadata all change
-        try:
-            from app.services.redis_cache_service import redis_cache
-
-            redis_cache.invalidate_all_for_user(owner_id)
-        except Exception as cache_err:
-            logger.debug(f"Cache invalidation after delete failed: {cache_err}")
-
-        # Clean up orphaned empty clusters (non-promoted) after CASCADE deletes speakers.
-        # CASCADE on speaker_cluster_member removes membership rows but does NOT
-        # decrement the denormalized member_count column, so we check actual
-        # remaining members via a NOT EXISTS subquery instead.
-        try:
-            from sqlalchemy import exists
-
-            from app.models.media import SpeakerCluster
-            from app.models.media import SpeakerClusterMember
-
-            has_members = (
-                exists()
-                .where(SpeakerClusterMember.cluster_id == SpeakerCluster.id)
-                .correlate(SpeakerCluster)
-            )
-            empty_clusters = (
-                db.query(SpeakerCluster)
-                .filter(
-                    SpeakerCluster.user_id == owner_id,
-                    ~has_members,
-                    SpeakerCluster.promoted_to_profile_id.is_(None),
-                )
-                .all()
-            )
-            if empty_clusters:
-                for cluster in empty_clusters:
-                    try:
-                        from app.services.opensearch_service import delete_cluster_embedding
-
-                        delete_cluster_embedding(str(cluster.uuid))
-                    except Exception as embed_err:
-                        logger.debug(f"Could not delete cluster embedding: {embed_err}")
-                    db.delete(cluster)
-                db.commit()
-                logger.info(f"Cleaned up {len(empty_clusters)} empty clusters after file deletion")
-        except Exception as e:
-            db.rollback()
-            logger.warning(f"Failed to clean up empty clusters: {e}")
-
-    except Exception as e:
-        logger.error(f"Failed to delete file {file_id} from database: {e}")
-        db.rollback()
-
-        # If we deleted from storage but DB deletion failed, that's a problem
-        if storage_deleted:
-            logger.error(f"File {file_id} deleted from storage but not from database - orphaned!")
-
+    result = purge_media_file(db, db_file)
+    if not result["deleted"]:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete file from database: {str(e)}",
-        ) from e
+            detail=f"Failed to delete file from database: {result.get('error')}",
+        )
 
 
 def update_single_transcript_segment(

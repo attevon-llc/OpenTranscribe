@@ -30,6 +30,11 @@ def _stub_object_storage(monkeypatch):
     monkeypatch.setattr(MinIOService, "delete_prefix", lambda self, b, p: 0)
     monkeypatch.setattr(MinIOService, "ensure_prefix_expiry", lambda self, *a, **k: None)
     monkeypatch.setattr(MinIOService, "remove_lifecycle_rule", lambda self, *a, **k: None)
+    monkeypatch.setattr(MinIOService, "delete_object", lambda self, b, k: None)
+    # Module-level delete_file is imported lazily inside the cleanup helper.
+    import app.services.minio_service as minio_mod
+
+    monkeypatch.setattr(minio_mod, "delete_file", lambda path: None)
 
 
 class TestDerivedCachePrefix:
@@ -144,3 +149,99 @@ class TestClearCacheOnDelete:
         assert "derived/talk_audio_mp3.mp3" in deleted
         assert "derived/talk_audio_wav.wav" in deleted
         assert "derived/talk_audio_original" in deleted
+
+
+class TestCanonicalDestroy:
+    """All delete paths funnel through one purge_media_file implementation."""
+
+    def _make_completed_file(self, db_session, test_user, name="purge.mp4"):
+        f = MediaFile(
+            uuid=str(uuid.uuid4()),
+            filename=name,
+            storage_path=f"media/test/{name}",
+            content_type="video/mp4",
+            file_size=1024,
+            user_id=test_user.id,
+            status="completed",
+            is_public=False,
+        )
+        db_session.add(f)
+        db_session.commit()
+        db_session.refresh(f)
+        return f
+
+    def test_purge_deletes_db_row(self, db_session, test_user):
+        from app.services import file_cleanup_service
+
+        f = self._make_completed_file(db_session, test_user)
+        fid = int(f.id)
+        result = file_cleanup_service.purge_media_file(db_session, f)
+        assert result["deleted"] is True
+        assert db_session.query(MediaFile).filter(MediaFile.id == fid).first() is None
+
+    def test_auto_delete_alias_destroys_via_canonical_path(self, db_session, test_user):
+        """The retention/orphan alias produces the same destroy as purge_media_file."""
+        from app.services import file_cleanup_service
+
+        f = self._make_completed_file(db_session, test_user, name="retention.mp4")
+        fid = int(f.id)
+        result = file_cleanup_service.auto_delete_media_file(db_session, f)
+        assert result["deleted"] is True
+        assert db_session.query(MediaFile).filter(MediaFile.id == fid).first() is None
+
+    def test_interactive_delete_routes_through_purge(self, db_session, test_user, monkeypatch):
+        """crud.delete_media_file (single/bulk/force) destroys via the canonical path."""
+        from app.api.endpoints.files import crud
+        from app.services import file_cleanup_service
+
+        f = self._make_completed_file(db_session, test_user, name="interactive.mp4")
+        fid = int(f.id)
+
+        called = {}
+        real_purge = file_cleanup_service.purge_media_file
+
+        def spy(db, file):
+            called["hit"] = True
+            return real_purge(db, file)
+
+        monkeypatch.setattr(crud, "purge_media_file", spy, raising=False)
+        # crud imports purge_media_file lazily inside the function; patch the source too.
+        monkeypatch.setattr(file_cleanup_service, "purge_media_file", spy)
+
+        crud.delete_media_file(db_session, str(f.uuid), test_user, force=True)
+        assert called.get("hit") is True
+        assert db_session.query(MediaFile).filter(MediaFile.id == fid).first() is None
+
+
+class TestLegacyReclaim:
+    """Upgrade reclaim removes pre-prefix root-level derived objects only."""
+
+    def test_reclaim_deletes_only_root_level_objects(self, monkeypatch):
+        import app.services.minio_service as minio_mod
+
+        class _Obj:
+            def __init__(self, name):
+                self.object_name = name
+
+        listed = [
+            _Obj("video_with_speakers.mp4"),  # legacy root → delete
+            _Obj("clip_audio_mp3.mp3"),  # legacy root → delete
+            _Obj("derived/new_with_speakers.mp4"),  # managed → keep
+            _Obj("bulk/job123.zip"),  # managed → keep
+        ]
+        removed = []
+
+        def fake_list(bucket, recursive=True):
+            return iter(listed)
+
+        def fake_remove(bucket, delete_objects):
+            for d in delete_objects:
+                removed.append(d.name)
+            return iter([])  # no errors
+
+        monkeypatch.setattr(minio_mod.minio_client, "list_objects", fake_list)
+        monkeypatch.setattr(minio_mod.minio_client, "remove_objects", fake_remove)
+
+        count = cache_management_service.reclaim_legacy_derived_cache()
+        assert count == 2
+        assert set(removed) == {"video_with_speakers.mp4", "clip_audio_mp3.mp3"}

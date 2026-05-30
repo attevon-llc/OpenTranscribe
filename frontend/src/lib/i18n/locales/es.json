@@ -3395,5 +3395,11 @@
   "settings.asrProvider.useLocal": "Usar Local",
   "settings.transcription.diarizationPyannoteConfigHint": "Configure su clave API de pyannote.ai en la pestaña de Configuración ASR para usar diarización en la nube.",
   "settings.engineSettings.boundarySmoothing": "Suavizado de límites",
-  "settings.engineSettings.boundarySmoothingHelp": "Elimina islas de 1 a 3 palabras con hablante incorrecto en los límites de cambio de turno (issue #193). Validado para reducir errores; es seguro dejarlo activado."
+  "settings.engineSettings.boundarySmoothingHelp": "Elimina islas de 1 a 3 palabras con hablante incorrecto en los límites de cambio de turno (issue #193). Validado para reducir errores; es seguro dejarlo activado.",
+  "settings.engineSettings.boundaryAcousticRecheck": "Reverificación acústica de muletillas",
+  "settings.engineSettings.boundaryAcousticRecheckHelp": "Reverifica muletillas breves absorbidas (\"sí\", \"ajá\") mediante huella vocal y reasigna el hablante correcto. Añade una pequeña pasada de GPU por cada palabra corta. Solo reetiqueta palabras existentes, nunca inventa voz. Experimental (issue #193).",
+  "settings.engineSettings.boundaryAcousticCosineMargin": "Margen de coseno de reverificación",
+  "settings.engineSettings.boundaryAcousticCosineMarginHelp": "Mejora mínima de similitud de huella vocal sobre el hablante actual antes de reasignar una palabra. Un valor más alto es más conservador (menos cambios). Predeterminado 0,05.",
+  "settings.engineSettings.boundaryAcousticMaxWordDur": "Duración máxima de palabra de reverificación (s)",
+  "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "Solo reverifica palabras con esta duración o menos, en segundos: las muletillas son breves. Predeterminado 1,0."
 }

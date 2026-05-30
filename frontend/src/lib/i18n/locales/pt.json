@@ -3395,5 +3395,11 @@
   "settings.asrProvider.useLocal": "Usar Local",
   "settings.transcription.diarizationPyannoteConfigHint": "Configure sua chave de API pyannote.ai na aba Configurações ASR para usar diarização na nuvem.",
   "settings.engineSettings.boundarySmoothing": "Suavização de limites",
-  "settings.engineSettings.boundarySmoothingHelp": "Elimina ilhas de 1 a 3 palavras com falante incorreto nos limites de troca de turno (issue #193). Validado para reduzir erros; é seguro deixar ativado."
+  "settings.engineSettings.boundarySmoothingHelp": "Elimina ilhas de 1 a 3 palavras com falante incorreto nos limites de troca de turno (issue #193). Validado para reduzir erros; é seguro deixar ativado.",
+  "settings.engineSettings.boundaryAcousticRecheck": "Reverificação acústica de marcadores",
+  "settings.engineSettings.boundaryAcousticRecheckHelp": "Reverifica marcadores de escuta curtos absorvidos (\"sim\", \"aham\") por impressão vocal e reatribui o falante correto. Adiciona uma pequena passagem de GPU por palavra curta. Apenas reetiqueta palavras existentes — nunca inventa fala. Experimental (issue #193).",
+  "settings.engineSettings.boundaryAcousticCosineMargin": "Margem de cosseno da reverificação",
+  "settings.engineSettings.boundaryAcousticCosineMarginHelp": "Melhoria mínima de similaridade de impressão vocal em relação ao falante atual antes de reatribuir uma palavra. Valores mais altos são mais conservadores (menos alterações). Padrão 0,05.",
+  "settings.engineSettings.boundaryAcousticMaxWordDur": "Duração máxima de palavra da reverificação (s)",
+  "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "Só reverifica palavras com esta duração ou menos, em segundos — os marcadores de escuta são curtos. Padrão 1,0."
 }

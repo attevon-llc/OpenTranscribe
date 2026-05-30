@@ -131,7 +131,7 @@ class _GpuStage:
 
         if tc.enable_diarization:
             result_dict, diarize_df = self._run_diarization(
-                audio, transcript, profiler, hw, tc, manager, progress_callback
+                audio, transcript, profiler, hw, tc, manager, progress_callback, config
             )
         else:
             result_dict, diarize_df = self._skip_diarization(transcript, tc)
@@ -177,7 +177,7 @@ class _GpuStage:
         )
 
     def _run_diarization(
-        self, audio, transcript, profiler, hw, tc, manager, progress_callback
+        self, audio, transcript, profiler, hw, tc, manager, progress_callback, config=None
     ) -> tuple[dict, Any]:
         from app.transcription.engine.progress import emit
 
@@ -242,6 +242,33 @@ class _GpuStage:
             result["overlap_info"] = overlap_info
         if native_embeddings:
             result["native_speaker_embeddings"] = native_embeddings
+
+        # Phase 3 (issue #193): acoustic re-check of short disputed/overlap words while
+        # audio + speaker centroids are still in memory. Off by default; DB-controlled via
+        # the admin Engine panel (engine.boundary_acoustic_*), injected through EngineConfig
+        # so the engine stays DB-free. Reassigns absorbed backchannels ("yeah"/"mm-hmm") by
+        # voiceprint — relabels existing words only, never fabricates. Flows to the core.py
+        # chokepoint before resegment/merge, so the corrected labels drive segmentation.
+        if native_embeddings and config is not None and config.boundary_acoustic_recheck_enabled:
+            from app.transcription.boundary_resolver import acoustic_recheck
+
+            words = [
+                w
+                for s in result.get("segments", [])
+                for w in s.get("words", []) or []
+                if "speaker" in w and "start" in w
+            ]
+            try:
+                acoustic_recheck(
+                    words,
+                    native_embeddings,
+                    lambda s, e: diarizer.embed_window(audio, s, e),
+                    overlap_regions=overlap_info.get("regions"),
+                    cosine_margin=config.boundary_acoustic_cosine_margin,
+                    max_word_dur=config.boundary_acoustic_max_word_dur,
+                )
+            except Exception:
+                logger.exception("acoustic_recheck failed; keeping max-overlap labels")
 
         return result, diarize_df
 

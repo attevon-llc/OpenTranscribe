@@ -7,8 +7,8 @@ then faithfully splits on the wrong label, producing a visible wrong-speaker isl
 
 This runs AFTER ``assign_speakers()`` and BEFORE ``resegment_by_speaker()`` (wired at the
 ``finalize_segments`` chokepoint in ``segment_postprocess``). It is a pure function of the
-word-level speaker labels + a small, legible config — no audio, no model. Off by default
-until the benchmark (issue #193) justifies enabling it.
+word-level speaker labels + a small, legible config — no audio, no model. On by default
+(the benchmark justified it: -32% WSER on the reporter's clip, AMI-regression-safe).
 
 Phase 1 (rules): collapse a short island of speaker B that is sandwiched between two
 longer runs of the SAME other speaker A, when there is no real pause at either seam.
@@ -34,7 +34,9 @@ class BoundarySmoothingConfig:
     """Config for the boundary smoother. DB ``engine.boundary_*`` → env → defaults.
 
     Attributes:
-        enabled: Master switch. Off by default.
+        enabled: Master switch. On by default — ships the validated issue #193 boundary fix
+            (-32% WSER on the reporter's clip, AMI-regression-safe). Toggle in the admin
+            Engine panel (DB) or ENGINE_BOUNDARY_SMOOTHING_ENABLED.
         max_island_words: Max length (words) of a wrong-speaker island to collapse.
         max_island_duration: Max wall-clock duration (s) of an island to collapse.
         min_flank_words: Each flanking same-speaker run must be at least this long.
@@ -45,12 +47,17 @@ class BoundarySmoothingConfig:
             (genuinely ambiguous). 0 disables Phase 2.
     """
 
-    enabled: bool = False
+    enabled: bool = True
     max_island_words: int = 3
     max_island_duration: float = 1.5
     min_flank_words: int = 3
     min_silent_gap: float = 0.4
     margin_threshold: float = 0.0
+    # Phase 3 acoustic re-check (runs in the GPU engine stage; off by default — adds an
+    # embedding pass per short disputed/overlap word).
+    acoustic_recheck_enabled: bool = False
+    acoustic_cosine_margin: float = 0.05
+    acoustic_max_word_dur: float = 1.0
 
     @classmethod
     def from_db_env(cls, db: Any = None) -> BoundarySmoothingConfig:
@@ -119,6 +126,23 @@ class BoundarySmoothingConfig:
                 "engine.boundary_margin_threshold",
                 "ENGINE_BOUNDARY_MARGIN_THRESHOLD",
                 defaults.margin_threshold,
+                float,
+            ),
+            acoustic_recheck_enabled=_bool(
+                "engine.boundary_acoustic_recheck_enabled",
+                "ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED",
+                defaults.acoustic_recheck_enabled,
+            ),
+            acoustic_cosine_margin=_num(
+                "engine.boundary_acoustic_cosine_margin",
+                "ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN",
+                defaults.acoustic_cosine_margin,
+                float,
+            ),
+            acoustic_max_word_dur=_num(
+                "engine.boundary_acoustic_max_word_dur",
+                "ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR",
+                defaults.acoustic_max_word_dur,
                 float,
             ),
         )

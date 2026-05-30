@@ -3395,5 +3395,11 @@
   "settings.transcription.diarizationPyannoteDesc": "Использовать облачный API pyannote.ai для премиальной диаризации. GPU не требуется.",
   "settings.transcription.diarizationSource": "Диаризация говорящих",
   "settings.engineSettings.boundarySmoothing": "Сглаживание границ",
-  "settings.engineSettings.boundarySmoothingHelp": "Устраняет островки из 1–3 слов с неверным говорящим на границах смены реплик (issue #193). Доказано снижает количество ошибок; можно безопасно оставлять включённым."
+  "settings.engineSettings.boundarySmoothingHelp": "Устраняет островки из 1–3 слов с неверным говорящим на границах смены реплик (issue #193). Доказано снижает количество ошибок; можно безопасно оставлять включённым.",
+  "settings.engineSettings.boundaryAcousticRecheck": "Акустическая перепроверка поддакиваний",
+  "settings.engineSettings.boundaryAcousticRecheckHelp": "Перепроверяет короткие поглощённые поддакивания (\"ага\", \"угу\") по голосовому отпечатку и переназначает правильного говорящего. Добавляет небольшой проход на GPU для каждого короткого слова. Только переразмечает существующие слова — никогда не выдумывает речь. Экспериментально (issue #193).",
+  "settings.engineSettings.boundaryAcousticCosineMargin": "Косинусный порог перепроверки",
+  "settings.engineSettings.boundaryAcousticCosineMarginHelp": "Минимальное улучшение сходства голосового отпечатка по сравнению с текущим говорящим перед переназначением слова. Большее значение более консервативно (меньше изменений). По умолчанию 0,05.",
+  "settings.engineSettings.boundaryAcousticMaxWordDur": "Макс. длительность слова для перепроверки (с)",
+  "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "Перепроверять только слова такой длительности или короче, в секундах — поддакивания короткие. По умолчанию 1,0."
 }

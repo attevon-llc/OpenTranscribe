@@ -3395,5 +3395,11 @@
   "settings.asrProvider.useLocal": "使用本地",
   "settings.transcription.diarizationPyannoteConfigHint": "在 ASR 设置选项卡中配置您的 pyannote.ai API 密钥以使用云端说话人分离。",
   "settings.engineSettings.boundarySmoothing": "边界平滑",
-  "settings.engineSettings.boundarySmoothingHelp": "消除说话人轮换边界处 1–3 个词的错误说话人片段（issue #193）。已验证可减少错误，可安全保持开启。"
+  "settings.engineSettings.boundarySmoothingHelp": "消除说话人轮换边界处 1–3 个词的错误说话人片段（issue #193）。已验证可减少错误，可安全保持开启。",
+  "settings.engineSettings.boundaryAcousticRecheck": "声学附和词复核",
+  "settings.engineSettings.boundaryAcousticRecheckHelp": "通过声纹复核被吸收的简短附和词（\"嗯\"、\"对\"），并重新分配正确的说话人。每个短词会增加一次小的 GPU 处理。仅重新标注现有词语，绝不凭空生成语音。实验性功能（issue #193）。",
+  "settings.engineSettings.boundaryAcousticCosineMargin": "复核余弦裕度",
+  "settings.engineSettings.boundaryAcousticCosineMarginHelp": "在重新分配某个词之前，声纹相似度相对当前说话人所需的最小提升幅度。数值越高越保守（改动越少）。默认 0.05。",
+  "settings.engineSettings.boundaryAcousticMaxWordDur": "复核最大词时长（秒）",
+  "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "仅复核时长不超过此秒数的词语——附和词都很短。默认 1.0。"
 }

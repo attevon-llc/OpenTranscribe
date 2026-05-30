@@ -18,6 +18,9 @@
     gpu_split: EngineSettingValue<boolean>;
     precompute_vad: EngineSettingValue<boolean>;
     boundary_smoothing_enabled: EngineSettingValue<boolean>;
+    boundary_acoustic_recheck_enabled: EngineSettingValue<boolean>;
+    boundary_acoustic_cosine_margin: EngineSettingValue<number>;
+    boundary_acoustic_max_word_dur: EngineSettingValue<number>;
     shared_volume_path: EngineSettingValue<string>;
   }
 
@@ -36,6 +39,9 @@
   let draftGpuSplit = false;
   let draftPrecomputeVad = false;
   let draftBoundarySmoothing = false;
+  let draftAcousticRecheck = false;
+  let draftAcousticCosineMargin = 0.05;
+  let draftAcousticMaxWordDur = 1.0;
   let draftSharedVolumePath = '/tmp/transcription';
 
   onMount(async () => {
@@ -52,6 +58,9 @@
       draftGpuSplit = settings.gpu_split.value;
       draftPrecomputeVad = settings.precompute_vad.value;
       draftBoundarySmoothing = settings.boundary_smoothing_enabled.value;
+      draftAcousticRecheck = settings.boundary_acoustic_recheck_enabled.value;
+      draftAcousticCosineMargin = settings.boundary_acoustic_cosine_margin.value;
+      draftAcousticMaxWordDur = settings.boundary_acoustic_max_word_dur.value;
       draftSharedVolumePath = settings.shared_volume_path.value;
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
@@ -72,6 +81,9 @@
       gpu_split: boolean;
       precompute_vad: boolean;
       boundary_smoothing_enabled: boolean;
+      boundary_acoustic_recheck_enabled: boolean;
+      boundary_acoustic_cosine_margin: number;
+      boundary_acoustic_max_word_dur: number;
       shared_volume_path: string;
     }> = {};
 
@@ -89,6 +101,15 @@
     }
     if (draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value) {
       payload.boundary_smoothing_enabled = draftBoundarySmoothing;
+    }
+    if (draftAcousticRecheck !== settings.boundary_acoustic_recheck_enabled.value) {
+      payload.boundary_acoustic_recheck_enabled = draftAcousticRecheck;
+    }
+    if (Number(draftAcousticCosineMargin) !== settings.boundary_acoustic_cosine_margin.value) {
+      payload.boundary_acoustic_cosine_margin = Number(draftAcousticCosineMargin);
+    }
+    if (Number(draftAcousticMaxWordDur) !== settings.boundary_acoustic_max_word_dur.value) {
+      payload.boundary_acoustic_max_word_dur = Number(draftAcousticMaxWordDur);
     }
     if (draftSharedVolumePath !== settings.shared_volume_path.value) {
       payload.shared_volume_path = draftSharedVolumePath;
@@ -144,6 +165,9 @@
     draftGpuSplit !== settings.gpu_split.value ||
     draftPrecomputeVad !== settings.precompute_vad.value ||
     draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value ||
+    draftAcousticRecheck !== settings.boundary_acoustic_recheck_enabled.value ||
+    Number(draftAcousticCosineMargin) !== settings.boundary_acoustic_cosine_margin.value ||
+    Number(draftAcousticMaxWordDur) !== settings.boundary_acoustic_max_word_dur.value ||
     draftSharedVolumePath !== settings.shared_volume_path.value
   );
 </script>
@@ -344,6 +368,117 @@
             <span class="toggle-switch"></span>
             <span class="toggle-text help-text">{$t('settings.engineSettings.boundarySmoothingHelp')}</span>
           </label>
+        </div>
+      </div>
+
+      <!-- Acoustic Backchannel Re-check -->
+      <div class="form-row">
+        <div class="form-field">
+          <div class="field-label-row">
+            <span class="field-name">{$t('settings.engineSettings.boundaryAcousticRecheck')}</span>
+            <span class="source-badge {sourceClass(settings.boundary_acoustic_recheck_enabled.source)}">
+              {sourceLabel(settings.boundary_acoustic_recheck_enabled.source)}
+            </span>
+            {#if settings.boundary_acoustic_recheck_enabled.source !== 'default'}
+              <button
+                class="reset-btn"
+                on:click={() => resetKey('boundary_acoustic_recheck_enabled')}
+                disabled={resetInProgress === 'boundary_acoustic_recheck_enabled' || saving}
+                title={$t('settings.engineSettings.resetKey')}
+              >
+                {#if resetInProgress === 'boundary_acoustic_recheck_enabled'}
+                  <Spinner size="small" />
+                {:else}
+                  {$t('settings.engineSettings.resetKey')}
+                {/if}
+              </button>
+            {/if}
+          </div>
+          <label class="toggle-label" for="boundary-acoustic-recheck-input">
+            <input
+              id="boundary-acoustic-recheck-input"
+              type="checkbox"
+              class="toggle-input"
+              bind:checked={draftAcousticRecheck}
+              disabled={saving || resetInProgress !== null}
+            />
+            <span class="toggle-switch"></span>
+            <span class="toggle-text help-text">{$t('settings.engineSettings.boundaryAcousticRecheckHelp')}</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Re-check Cosine Margin -->
+      <div class="form-row">
+        <div class="form-field">
+          <div class="field-label-row">
+            <label for="boundary-acoustic-cosine-margin">{$t('settings.engineSettings.boundaryAcousticCosineMargin')}</label>
+            <span class="source-badge {sourceClass(settings.boundary_acoustic_cosine_margin.source)}">
+              {sourceLabel(settings.boundary_acoustic_cosine_margin.source)}
+            </span>
+            {#if settings.boundary_acoustic_cosine_margin.source !== 'default'}
+              <button
+                class="reset-btn"
+                on:click={() => resetKey('boundary_acoustic_cosine_margin')}
+                disabled={resetInProgress === 'boundary_acoustic_cosine_margin' || saving}
+                title={$t('settings.engineSettings.resetKey')}
+              >
+                {#if resetInProgress === 'boundary_acoustic_cosine_margin'}
+                  <Spinner size="small" />
+                {:else}
+                  {$t('settings.engineSettings.resetKey')}
+                {/if}
+              </button>
+            {/if}
+          </div>
+          <input
+            id="boundary-acoustic-cosine-margin"
+            type="number"
+            step="0.01"
+            min="0"
+            max="1"
+            class="form-input"
+            bind:value={draftAcousticCosineMargin}
+            disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
+          />
+          <p class="field-hint">{$t('settings.engineSettings.boundaryAcousticCosineMarginHelp')}</p>
+        </div>
+      </div>
+
+      <!-- Re-check Max Word Duration -->
+      <div class="form-row">
+        <div class="form-field">
+          <div class="field-label-row">
+            <label for="boundary-acoustic-max-word-dur">{$t('settings.engineSettings.boundaryAcousticMaxWordDur')}</label>
+            <span class="source-badge {sourceClass(settings.boundary_acoustic_max_word_dur.source)}">
+              {sourceLabel(settings.boundary_acoustic_max_word_dur.source)}
+            </span>
+            {#if settings.boundary_acoustic_max_word_dur.source !== 'default'}
+              <button
+                class="reset-btn"
+                on:click={() => resetKey('boundary_acoustic_max_word_dur')}
+                disabled={resetInProgress === 'boundary_acoustic_max_word_dur' || saving}
+                title={$t('settings.engineSettings.resetKey')}
+              >
+                {#if resetInProgress === 'boundary_acoustic_max_word_dur'}
+                  <Spinner size="small" />
+                {:else}
+                  {$t('settings.engineSettings.resetKey')}
+                {/if}
+              </button>
+            {/if}
+          </div>
+          <input
+            id="boundary-acoustic-max-word-dur"
+            type="number"
+            step="0.1"
+            min="0.1"
+            max="5"
+            class="form-input"
+            bind:value={draftAcousticMaxWordDur}
+            disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
+          />
+          <p class="field-hint">{$t('settings.engineSettings.boundaryAcousticMaxWordDurHelp')}</p>
         </div>
       </div>
 

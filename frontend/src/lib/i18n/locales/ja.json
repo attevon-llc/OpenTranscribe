@@ -3395,5 +3395,11 @@
   "settings.asrProvider.useLocal": "ローカルを使用",
   "settings.transcription.diarizationPyannoteConfigHint": "クラウド話者分離を使用するには、ASR設定タブでpyannote.ai APIキーを設定してください。",
   "settings.engineSettings.boundarySmoothing": "境界スムージング",
-  "settings.engineSettings.boundarySmoothingHelp": "話者の交代境界で発生する1～3語の誤った話者ラベルの島を解消します（issue #193）。エラー削減が検証済みで、オンのままにしておいても安全です。"
+  "settings.engineSettings.boundarySmoothingHelp": "話者の交代境界で発生する1～3語の誤った話者ラベルの島を解消します（issue #193）。エラー削減が検証済みで、オンのままにしておいても安全です。",
+  "settings.engineSettings.boundaryAcousticRecheck": "音響的あいづち再チェック",
+  "settings.engineSettings.boundaryAcousticRecheckHelp": "埋もれた短いあいづち（「うん」「ふむふむ」）を声紋で再チェックし、正しい話者に再割り当てします。短い語ごとに小さなGPU処理が追加されます。既存の語のラベルを付け直すだけで、発話を生成することはありません。実験的機能（issue #193）。",
+  "settings.engineSettings.boundaryAcousticCosineMargin": "再チェックのコサインマージン",
+  "settings.engineSettings.boundaryAcousticCosineMarginHelp": "語を再割り当てする前に、現在の話者に対して必要な声紋類似度の最小改善量。値が大きいほど保守的になります（変更が少なくなります）。デフォルトは0.05。",
+  "settings.engineSettings.boundaryAcousticMaxWordDur": "再チェックの最大語長（秒）",
+  "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "この秒数以下の語のみを再チェックします。あいづちは短いためです。デフォルトは1.0。"
 }

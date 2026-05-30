@@ -166,3 +166,36 @@ def test_acoustic_recheck_skips_confident_non_overlap_words():
 def test_acoustic_recheck_noop_without_centroids():
     words = [{"word": "yeah", "start": 5.0, "end": 5.3, "speaker": "A", "_overlap_margin": 0.0}]
     assert acoustic_recheck(words, {}, lambda s, e: np.array([0.0, 1.0])) == 0
+
+
+def test_acoustic_recheck_respects_max_word_dur():
+    # A long word (2 s) is never a backchannel candidate even if disputed + in overlap.
+    words = [{"word": "however", "start": 5.0, "end": 7.0, "speaker": "A", "_overlap_margin": 0.0}]
+    n = acoustic_recheck(
+        words,
+        _centroids(),
+        lambda s, e: np.array([0.0, 1.0]),
+        overlap_regions=[{"start": 5.0, "end": 7.0}],
+        max_word_dur=1.0,
+    )
+    assert n == 0 and words[0]["speaker"] == "A"
+
+
+# ── from_db_env: acoustic flags resolve from env / defaults ─────────────────────
+
+
+def test_acoustic_config_defaults_off():
+    cfg = BoundarySmoothingConfig()
+    assert cfg.acoustic_recheck_enabled is False
+    assert cfg.acoustic_cosine_margin == 0.05
+    assert cfg.acoustic_max_word_dur == 1.0
+
+
+def test_acoustic_config_from_env(monkeypatch: Any) -> None:
+    monkeypatch.setenv("ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", "true")
+    monkeypatch.setenv("ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN", "0.12")
+    monkeypatch.setenv("ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR", "0.8")
+    cfg = BoundarySmoothingConfig.from_db_env(None)
+    assert cfg.acoustic_recheck_enabled is True
+    assert cfg.acoustic_cosine_margin == 0.12
+    assert cfg.acoustic_max_word_dur == 0.8

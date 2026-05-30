@@ -3395,5 +3395,11 @@
   "settings.asrProvider.useLocal": "Utiliser Local",
   "settings.transcription.diarizationPyannoteConfigHint": "Configurez votre clé API pyannote.ai dans l'onglet Paramètres ASR pour utiliser la diarisation cloud.",
   "settings.engineSettings.boundarySmoothing": "Lissage des limites",
-  "settings.engineSettings.boundarySmoothingHelp": "Supprime les îlots de 1 à 3 mots attribués au mauvais locuteur aux limites de changement de tour (issue #193). Validé pour réduire les erreurs ; peut être laissé activé sans risque."
+  "settings.engineSettings.boundarySmoothingHelp": "Supprime les îlots de 1 à 3 mots attribués au mauvais locuteur aux limites de changement de tour (issue #193). Validé pour réduire les erreurs ; peut être laissé activé sans risque.",
+  "settings.engineSettings.boundaryAcousticRecheck": "Revérification acoustique des marqueurs",
+  "settings.engineSettings.boundaryAcousticRecheckHelp": "Revérifie les courts marqueurs d'écoute absorbés (« ouais », « mm-hmm ») par empreinte vocale et réattribue le bon locuteur. Ajoute une petite passe GPU par mot court. Ne fait que réétiqueter des mots existants, n'invente jamais de parole. Expérimental (issue #193).",
+  "settings.engineSettings.boundaryAcousticCosineMargin": "Marge cosinus de revérification",
+  "settings.engineSettings.boundaryAcousticCosineMarginHelp": "Amélioration minimale de similarité d'empreinte vocale par rapport au locuteur actuel avant de réattribuer un mot. Une valeur plus élevée est plus prudente (moins de changements). Par défaut 0,05.",
+  "settings.engineSettings.boundaryAcousticMaxWordDur": "Durée maximale de mot pour la revérification (s)",
+  "settings.engineSettings.boundaryAcousticMaxWordDurHelp": "Ne revérifie que les mots dont la durée est inférieure ou égale à cette valeur en secondes — les marqueurs d'écoute sont courts. Par défaut 1,0."
 }

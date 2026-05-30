@@ -31,6 +31,37 @@ logger = logging.getLogger(__name__)
 _MAX_DUR = 30.0  # seconds — max segment duration before a forced split
 _MIN_GAP = 0.5  # seconds — silence gap that triggers a new segment
 
+# AWS Transcribe LanguageCode is BCP-47 (e.g. "en-US"), NOT a bare ISO-639 code ("en").
+# Map common ISO codes to a sensible AWS default; pass through codes already BCP-47.
+_AWS_LANGUAGE_MAP = {
+    "en": "en-US",
+    "es": "es-US",
+    "fr": "fr-FR",
+    "de": "de-DE",
+    "it": "it-IT",
+    "pt": "pt-BR",
+    "ja": "ja-JP",
+    "ko": "ko-KR",
+    "zh": "zh-CN",
+    "ru": "ru-RU",
+    "ar": "ar-SA",
+    "hi": "hi-IN",
+    "nl": "nl-NL",
+}
+
+
+def _aws_language_code(language: str) -> str | None:
+    """ISO-639 / BCP-47 → AWS LanguageCode, or None to use IdentifyLanguage.
+
+    "auto" and unknown codes return None so the caller sets IdentifyLanguage=True
+    (LanguageCode and IdentifyLanguage are mutually exclusive in AWS Transcribe).
+    """
+    if not language or language == "auto":
+        return None
+    if "-" in language:  # already BCP-47 (e.g. en-GB, pt-PT)
+        return language
+    return _AWS_LANGUAGE_MAP.get(language.lower())
+
 
 class AWSTranscribeProvider(ASRProvider):
     def __init__(
@@ -142,8 +173,11 @@ class AWSTranscribeProvider(ASRProvider):
                 "OutputBucketName": bucket,
                 "OutputKey": result_key,
             }
-            if config.language != "auto":
-                job_kw["LanguageCode"] = config.language
+            # LanguageCode (BCP-47) and IdentifyLanguage are mutually exclusive — set exactly
+            # one. Unknown/auto → let AWS detect the language.
+            aws_lang = _aws_language_code(config.language)
+            if aws_lang:
+                job_kw["LanguageCode"] = aws_lang
             else:
                 job_kw["IdentifyLanguage"] = True
             settings_kw: dict = {}

@@ -32,7 +32,8 @@ class UserASRSettings(Base):
 
     provider = Column(String(50), nullable=False, index=True)
     model_name = Column(String(100), nullable=False)
-    api_key = Column(Text, nullable=True)  # AES-256-GCM encrypted
+    api_key = Column(Text, nullable=True)  # AES-256-GCM encrypted (AWS: the secret access key)
+    access_key_id = Column(String(200), nullable=True)  # AES-256-GCM encrypted (AWS access key ID)
     base_url = Column(String(500), nullable=True)
     region = Column(String(50), nullable=True)  # For Azure / AWS
 

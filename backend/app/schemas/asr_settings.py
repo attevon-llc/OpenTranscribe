@@ -135,6 +135,7 @@ class ASRProviderInfo(BaseModel):
     id: str
     display_name: str
     requires_api_key: bool
+    requires_access_key_id: bool = False  # AWS-only: needs an Access Key ID + Secret
     requires_region: bool = False
     supports_custom_url: bool = False
     supports_diarization: bool
@@ -157,8 +158,16 @@ class UserASRSettingsBase(BaseModel):
     model_name: str
     base_url: str | None = None
     region: str | None = None
+    access_key_id: str | None = None  # AWS access key ID (an identifier, not a secret)
     is_active: bool = True
     is_shared: bool = False
+
+    @field_validator("access_key_id")
+    @classmethod
+    def validate_access_key_id(cls, v: str | None) -> str | None:
+        if v and len(v.strip()) > 200:
+            raise ValueError("access_key_id must not exceed 200 characters")
+        return v.strip() if v else v
 
     @field_validator("name")
     @classmethod
@@ -197,6 +206,7 @@ class UserASRSettingsUpdate(BaseModel):
     api_key: str | None = None
     base_url: str | None = None
     region: str | None = None
+    access_key_id: str | None = None
     is_active: bool | None = None
     is_shared: bool | None = None
 
@@ -240,6 +250,7 @@ class ASRSettingsList(BaseModel):
 class ASRConnectionTestRequest(BaseModel):
     provider: ASRProvider
     api_key: str | None = None
+    access_key_id: str | None = None  # AWS access key ID (Secret arrives via api_key)
     base_url: str | None = None
     region: str | None = None
     model_name: str | None = None

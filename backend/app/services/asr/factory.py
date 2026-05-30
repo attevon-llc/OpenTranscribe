@@ -320,7 +320,8 @@ ASR_PROVIDER_CATALOG: dict = {
     "aws": {
         "id": "aws",
         "display_name": "Amazon Transcribe",
-        "requires_api_key": False,
+        "requires_api_key": True,  # the AWS Secret Access Key (stored in api_key, encrypted)
+        "requires_access_key_id": True,  # the AWS Access Key ID (encrypted, AWS-only)
         "requires_region": True,
         "supports_custom_url": False,
         "supports_diarization": True,
@@ -328,8 +329,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_translation": False,
         "description": "Standard and Medical transcription (HIPAA-eligible)",
         "status": "experimental",
-        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
-        "diarization_quality": "Unknown — limited to 10 speakers maximum",
+        "status_note": "Configure an IAM user's Access Key ID + Secret Access Key with "
+        "Amazon Transcribe + S3 permissions, plus a region.",
+        "diarization_quality": "Up to 10 speakers (MaxSpeakerLabels)",
         "models": [
             {
                 "id": "standard",
@@ -642,8 +644,12 @@ class ASRProviderFactory:
         model: str | None = None,
         base_url: str | None = None,
         region: str | None = None,
+        access_key_id: str | None = None,
     ) -> ASRProvider:
-        """Create provider for connection testing (no DB lookup)."""
+        """Create provider for connection testing (no DB lookup).
+
+        ``access_key_id`` is AWS-only (the Secret Access Key arrives via ``api_key``).
+        """
         if provider == "local":
             return LocalASRProvider()
         if provider == "deepgram":
@@ -667,10 +673,17 @@ class ASRProviderFactory:
 
             return AzureASRProvider(api_key or "", region or "eastus", model or "whisper")
         if provider == "aws":
+            import os
+
             from .aws_provider import AWSTranscribeProvider
 
+            # UI creds take precedence; otherwise fall back to boto3's default chain
+            # (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY env vars, or an IAM role on AWS).
             return AWSTranscribeProvider(
-                region=region or "us-east-1", model_name=model or "standard"
+                region=region or os.getenv("AWS_REGION") or "us-east-1",
+                model_name=model or "standard",
+                access_key_id=access_key_id or os.getenv("AWS_ACCESS_KEY_ID"),
+                secret_access_key=api_key or os.getenv("AWS_SECRET_ACCESS_KEY"),
             )
         if provider == "speechmatics":
             from .speechmatics_provider import SpeechmaticsProvider

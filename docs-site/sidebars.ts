@@ -54,6 +54,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'features/transcription',
         'features/speaker-diarization',
+        'features/boundary-correction',
         'features/llm-integration',
         'features/authentication',
         'features/pipeline-optimization',
@@ -97,6 +98,7 @@ const sidebars: SidebarsConfig = {
       label: 'Developer Guide',
       items: [
         'developer-guide/architecture',
+        'developer-guide/diarization-boundary-correction',
         'developer-guide/contributing',
         'developer-guide/testing',
       ],

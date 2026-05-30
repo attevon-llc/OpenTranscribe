@@ -188,6 +188,14 @@ Fork: `davidamacey/pyannote-audio@gpu-optimizations` (pip-installable). Embeddin
 
 Diagnostics: `python -m app.scripts.diarization_diag`. Raw data: `docs/diarization-vram-profile/README.md`. PR: pyannote-audio#1992.
 
+#### Boundary correction (issue #193)
+
+Two post-processing stages fix speaker mislabeling at turn boundaries. **All settings are DB-backed and live in the admin UI → Settings → Engine Configuration** (no restart); env (`ENGINE_BOUNDARY_*`) is fallback-only — no required `.env` vars.
+
+- **Boundary smoothing** (default ON, pure-CPU): collapses 1–3 word "wrong-speaker islands" flanked by the same speaker with no real pause. Runs at the `finalize_segments()` chokepoint. -32% WSER on the reporter's clip, AMI-regression-safe. Code: `boundary_resolver.py` (`smooth_word_speakers`, `BoundarySmoothingConfig`), `utils/segment_postprocess.py`, called from `tasks/transcription/core.py`. Key: `boundary_smoothing_enabled`.
+- **Acoustic backchannel re-check** (default OFF, experimental, GPU): re-embeds short disputed/overlap words and reassigns by voiceprint cosine — relabels existing words only, never invents speech. +~15% WSER on top of the smoother, ~1.9 s / 10-min file. Code: `acoustic_recheck` (`boundary_resolver.py`), `diarizer.embed_window`, wired in `engine/stages.py`; carried on `EngineConfig` to keep the engine DB-free. Keys: `boundary_acoustic_recheck_enabled`, `boundary_acoustic_cosine_margin` (0.05), `boundary_acoustic_max_word_dur` (1.0).
+- Settings API: `api/endpoints/engine_settings.py`; UI: `frontend/src/components/settings/EngineSettings.svelte`. Metrics (WSER/island/DER): `utils/diarization_metrics.py`. Benchmark: `scripts/benchmark_boundary.py`. GPU-free regression: `tests/integration/test_boundary_regression.py` (fixtures: `tests/fixtures/boundary/`). Docs: `docs-site/docs/features/boundary-correction.md`, `docs-site/docs/developer-guide/diarization-boundary-correction.md`.
+
 ### LLM features (optional)
 
 Set `LLM_PROVIDER` in `.env` (vllm, openai, ollama, anthropic, openrouter) plus provider-specific keys/endpoints. Empty = transcription-only. Self-hosted vLLM/Ollama deployed separately. Model auto-discovery via OpenAI-compatible endpoints; edit mode reuses stored API keys.

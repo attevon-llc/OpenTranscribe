@@ -189,10 +189,13 @@ def test_fixture_regression(fixture_path: Path | None) -> None:
     assert on["islands"] <= off["islands"], (
         f"{fixture_path.name}: ON introduced islands ({off['islands']} -> {on['islands']})"
     )
-    # Collar-0 DER unchanged — smoothing only flips ≤3-word islands, not real boundaries.
+    # Word-derived collar-0 DER must not WORSEN. It is computed from hypothesis word labels,
+    # which the smoother legitimately changes when it collapses islands — so it improves or
+    # holds; it is NOT an invariant. (The raw diarization itself is untouched by construction:
+    # finalize_segments never receives diarize_records.)
     if off["der_c0"] is not None and on["der_c0"] is not None:
-        assert on["der_c0"] == pytest.approx(off["der_c0"], abs=1e-6), (
-            f"{fixture_path.name}: der_c0 moved {off['der_c0']:.6f} -> {on['der_c0']:.6f}"
+        assert on["der_c0"] <= off["der_c0"] + 1e-6, (
+            f"{fixture_path.name}: der_c0 worsened {off['der_c0']:.6f} -> {on['der_c0']:.6f}"
         )
 
     # If a frozen baseline is committed, gate against drift too.

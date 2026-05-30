@@ -11,6 +11,8 @@ from minio.error import S3Error
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
+
 # Disable urllib3 warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -587,3 +589,42 @@ class MinIOService:
             self.client.make_bucket(bucket_name)
         except Exception as e:
             raise Exception(f"Error creating bucket: {e}") from e
+
+    def ensure_prefix_expiry(self, bucket_name: str, prefix: str, days: int, rule_id: str) -> None:
+        """Ensure an object-expiration lifecycle rule exists for a bucket prefix.
+
+        Idempotent and best-effort: used to auto-expire ephemeral artifacts (e.g.
+        bulk-export ZIPs) so they don't accumulate in object storage. Never raises —
+        a missing lifecycle rule must not block uploads. Only objects under ``prefix``
+        are affected; other objects in the bucket are untouched.
+        """
+        from minio.commonconfig import ENABLED
+        from minio.commonconfig import Filter
+        from minio.lifecycleconfig import Expiration
+        from minio.lifecycleconfig import LifecycleConfig
+        from minio.lifecycleconfig import Rule
+
+        try:
+            existing_rules = []
+            try:
+                current = self.client.get_bucket_lifecycle(bucket_name)
+                if current and current.rules:
+                    if any(r.rule_id == rule_id for r in current.rules):
+                        return  # already configured
+                    existing_rules = [r for r in current.rules if r.rule_id != rule_id]
+            except Exception:
+                # No lifecycle config yet (S3 returns NoSuchLifecycleConfiguration).
+                existing_rules = []
+
+            rule = Rule(
+                ENABLED,
+                rule_filter=Filter(prefix=prefix),
+                rule_id=rule_id,
+                expiration=Expiration(days=days),
+            )
+            self.client.set_bucket_lifecycle(bucket_name, LifecycleConfig([*existing_rules, rule]))
+            logger.info(
+                f"Set lifecycle rule '{rule_id}' on {bucket_name}/{prefix} (expire {days}d)"
+            )
+        except Exception as e:  # pragma: no cover - best-effort housekeeping
+            logger.warning(f"Could not set lifecycle rule on {bucket_name}/{prefix}: {e}")

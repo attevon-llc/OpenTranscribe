@@ -347,6 +347,13 @@ class VideoProcessingService:
             logger.error(f"Failed to create cache bucket: {e}")
             raise
 
+        # Auto-expire ephemeral bulk-export ZIPs (presigned URLs are short-lived, so a
+        # fresh job_id is generated per request — the objects don't need to persist).
+        # Idempotent + best-effort; does not affect long-lived video/audio cache objects.
+        self.minio_service.ensure_prefix_expiry(
+            self.cache_bucket, prefix="bulk/", days=1, rule_id="expire-bulk-exports"
+        )
+
     def generate_cache_key(
         self, file_id: int, original_filename: str, include_speakers: bool = True
     ) -> str:

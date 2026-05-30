@@ -1,0 +1,22 @@
+{
+  "version": "diarization-boundary-2026-05-29",
+  "description": "Issue #193 boundary-fix corpus. Audio + rawinfer caches are gitignored; populate via each entry's download.sh + the labeling workflow in README.md.",
+  "roles": ["acceptance", "tune", "holdout", "regression", "stress"],
+  "files": [
+    {
+      "id": "karpathy_kwSVtQ7dziU",
+      "dataset": "karpathy",
+      "role": "acceptance",
+      "audio_path": "karpathy/karpathy_kwSVtQ7dziU/audio.wav",
+      "ref_words_json": "karpathy/karpathy_kwSVtQ7dziU/reference.words.json",
+      "ref_rttm": "karpathy/karpathy_kwSVtQ7dziU/reference.rttm",
+      "ref_turns_rttm": "karpathy/karpathy_kwSVtQ7dziU/reference.turns.rttm",
+      "source_url": "https://www.youtube.com/watch?v=kwSVtQ7dziU",
+      "sha256": "e3a6deb0992e8fb59b1e93d89e29d72520935820d53858b21bbe7bc527b71e16",
+      "n_speakers": 2,
+      "language": "en",
+      "has_overlap": false,
+      "note": "No Priors podcast w/ Andrej Karpathy. Reporter's clip. Hand-labeled — acceptance only, never a tuning input."
+    }
+  ]
+}

@@ -124,3 +124,8 @@ boto3>=1.28.0
 openai>=1.0.0
 # requests is pulled in by many packages but listed explicitly for Gladia REST calls
 requests>=2.31.0
+
+# Diarization-boundary benchmark (issue #193): cpWER metric. Lazily imported by
+# app.utils.diarization_metrics.cpwer + backend/scripts/benchmark_boundary.py — only
+# needed for accuracy benchmarking/tests, not the production transcription path.
+meeteval>=0.4.0

@@ -27,6 +27,7 @@ _KEYS = {
     "diarizer_backend": "engine.diarizer_backend",
     "gpu_split": "engine.gpu_split",
     "precompute_vad": "engine.precompute_vad",
+    "boundary_smoothing_enabled": "engine.boundary_smoothing_enabled",
     "shared_volume_path": "engine.shared_volume_path",
 }
 
@@ -35,16 +36,20 @@ _ENV_DEFAULTS: dict[str, Any] = {
     "diarizer_backend": ("ENGINE_DIARIZER_BACKEND", "pyannote"),
     "gpu_split": ("ENGINE_GPU_SPLIT", "false"),
     "precompute_vad": ("ENGINE_PRECOMPUTE_VAD", "false"),
+    "boundary_smoothing_enabled": ("ENGINE_BOUNDARY_SMOOTHING_ENABLED", "false"),
     "shared_volume_path": ("ENGINE_SHARED_VOLUME_PATH", "/tmp/transcription"),  # noqa: S108  # nosec B108
 }
 
-_BOOL_KEYS = {"gpu_split", "precompute_vad"}
+_BOOL_KEYS = {"gpu_split", "precompute_vad", "boundary_smoothing_enabled"}
 
 _DESCRIPTIONS = {
     "transcriber_backend": "Transcription backend (faster_whisper | whisperx | cloud)",
     "diarizer_backend": "Speaker diarization backend (pyannote)",
     "gpu_split": "Enable separate gpu-transcribe / gpu-diarize queues (Phase 4)",
     "precompute_vad": "Enable Silero VAD pre-computation in Stage 1 (Phase 3a)",
+    "boundary_smoothing_enabled": (
+        "Collapse 1-3 word wrong-speaker islands at turn boundaries (issue #193)"
+    ),
     "shared_volume_path": "Shared-volume handoff path for cross-stage WAV files",
 }
 
@@ -86,6 +91,7 @@ class _EngineSettingsUpdate(BaseModel):
     diarizer_backend: str | None = None
     gpu_split: bool | None = None
     precompute_vad: bool | None = None
+    boundary_smoothing_enabled: bool | None = None
     shared_volume_path: str | None = None
 
 

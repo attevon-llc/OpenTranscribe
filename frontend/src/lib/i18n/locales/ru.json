@@ -214,6 +214,10 @@
   "settings.transcription.sourceLanguageTooltipTimestamps": "Языки с временными метками на уровне слов отмечены галочкой.",
   "settings.transcription.commonLanguages": "Распространенные языки",
   "settings.transcription.allLanguages": "Все языки",
+  "settings.transcription.englishOnlyWarning": "Текущая модель поддерживает только английский язык. Для наилучших результатов выберите «Автоопределение» или «Английский».",
+  "settings.transcription.englishOptimizedWarning": "Текущая модель оптимизирована для английского языка. Точность для других языков может отличаться.",
+  "settings.transcription.translationUnavailableLocal": "Перевод недоступен с текущей моделью ({{model}}). Переключитесь на модель, поддерживающую перевод (например, large-v3, whisper-1).",
+  "settings.transcription.translationUnavailableProvider": "{{provider}} не поддерживает перевод.",
   "settings.transcription.translateToEnglish": "Перевести на английский",
   "settings.transcription.translateToEnglishDesc": "Если включено, аудио на иностранном языке будет транскрибировано и переведено на английский текст. Если отключено, транскрипция останется на языке оригинала.",
   "settings.transcription.aiSummaryLanguage": "Язык ИИ-сводки",
@@ -3389,5 +3393,7 @@
   "settings.transcription.diarizationProviderDesc": "Использовать встроенную диаризацию облачного ASR-провайдера. Качество зависит от провайдера.",
   "settings.transcription.diarizationPyannote": "pyannote.ai Облако",
   "settings.transcription.diarizationPyannoteDesc": "Использовать облачный API pyannote.ai для премиальной диаризации. GPU не требуется.",
-  "settings.transcription.diarizationSource": "Диаризация говорящих"
+  "settings.transcription.diarizationSource": "Диаризация говорящих",
+  "settings.engineSettings.boundarySmoothing": "Сглаживание границ",
+  "settings.engineSettings.boundarySmoothingHelp": "Устраняет островки из 1–3 слов с неверным говорящим на границах смены реплик (issue #193). Доказано снижает количество ошибок; можно безопасно оставлять включённым."
 }

@@ -76,7 +76,11 @@
   let asrCapabilities: ASRModelCapabilities | null = null;
   $: translationDisabled = asrCapabilities ? !asrCapabilities.supports_translation : false;
   $: isEnglishOptimized = asrCapabilities?.language_support === 'english_optimized';
-  $: isEnglishOnly = asrCapabilities?.languages === 1;
+  // English-only models (e.g. CrisperWhisper, cloud single-language models). Keyed off
+  // language_support first so local english_only models are covered even when the catalog
+  // omits a numeric languages count; falls back to languages === 1 for cloud providers.
+  $: isEnglishOnly =
+    asrCapabilities?.language_support === 'english_only' || asrCapabilities?.languages === 1;
   $: isNonEnglishSelected = sourceLanguage !== 'auto' && sourceLanguage !== 'en';
 
   // Validation
@@ -511,14 +515,13 @@
               {/each}
             </optgroup>
           </select>
-          {#if isEnglishOptimized && isNonEnglishSelected}
-            <p class="capability-warning warning-subtle">
-              The current model is optimized for English. Accuracy may vary for other languages.
-            </p>
-          {/if}
           {#if isEnglishOnly && isNonEnglishSelected}
             <p class="capability-warning">
-              The current model only supports English. Select "Auto-detect" or "English" for best results.
+              {$t('settings.transcription.englishOnlyWarning')}
+            </p>
+          {:else if isEnglishOptimized && isNonEnglishSelected}
+            <p class="capability-warning warning-subtle">
+              {$t('settings.transcription.englishOptimizedWarning')}
             </p>
           {/if}
         </div>
@@ -538,9 +541,9 @@
           {#if translationDisabled && asrCapabilities}
             <p class="capability-warning">
               {#if asrCapabilities.provider === 'local'}
-                Translation is not available with the current model ({asrCapabilities.model_id}). Switch to a model that supports translation (e.g., large-v3, whisper-1).
+                {$t('settings.transcription.translationUnavailableLocal', { model: asrCapabilities.model_id })}
               {:else}
-                Translation is not supported by {ASRSettingsApi.getProviderDisplayName(asrCapabilities.provider)}.
+                {$t('settings.transcription.translationUnavailableProvider', { provider: ASRSettingsApi.getProviderDisplayName(asrCapabilities.provider) })}
               {/if}
             </p>
           {/if}

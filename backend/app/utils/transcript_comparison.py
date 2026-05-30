@@ -56,6 +56,7 @@ def export_baseline(db, file_id: int, output_path: str) -> dict:
                 "text": s.text,
                 "speaker_name": speaker_map.get(s.speaker_id, "UNKNOWN"),
                 "is_overlap": s.is_overlap,
+                "words": s.words or [],
             }
             for s in segments
         ],
@@ -80,6 +81,84 @@ def export_baseline(db, file_id: int, output_path: str) -> dict:
         output_path,
     )
     return baseline
+
+
+def export_word_reference(
+    db,
+    file_id: int,
+    out_words_json: str,
+    out_rttm: str | None = None,
+) -> dict:
+    """Export a word-level diarization REFERENCE from a hand-corrected transcript (issue #193).
+
+    Each word inherits its (human-corrected) segment speaker, producing the parallel
+    word inventory used by WSER plus an optional RTTM for DER. Run in-container with a DB
+    session — the word JSONB is not exposed via the API. Words without start/end are
+    dropped (they cannot be timed against the diarization).
+
+    Args:
+        db: SQLAlchemy session.
+        file_id: Internal media file id.
+        out_words_json: Path for ``reference.words.json`` (``[{start,end,word,speaker}]``).
+        out_rttm: Optional path for ``reference.rttm`` (same-speaker words collapsed).
+
+    Returns:
+        Dict with ``word_count``, ``speaker_count``, and the written paths.
+    """
+    import json
+
+    from app.utils.diarization_metrics import words_to_rttm
+
+    segments = (
+        db.query(TranscriptSegment)
+        .filter(TranscriptSegment.media_file_id == file_id)
+        .order_by(TranscriptSegment.start_time)
+        .all()
+    )
+    speakers = (
+        db.query(Speaker.id, Speaker.name, Speaker.display_name)
+        .filter(Speaker.media_file_id == file_id)
+        .all()
+    )
+    speaker_map = {s.id: (s.display_name or s.name) for s in speakers}
+
+    words: list[dict] = []
+    for seg in segments:
+        spk = speaker_map.get(seg.speaker_id, "UNKNOWN")
+        for w in seg.words or []:
+            if w.get("start") is None or w.get("end") is None:
+                continue
+            words.append(
+                {
+                    "start": float(w["start"]),
+                    "end": float(w["end"]),
+                    "word": w.get("word", ""),
+                    "speaker": spk,
+                }
+            )
+
+    with open(out_words_json, "w") as f:
+        json.dump(words, f, indent=2)
+
+    uri = f"file_{file_id}"
+    if out_rttm:
+        with open(out_rttm, "w") as f:
+            f.write(words_to_rttm(words, uri=uri))
+
+    n_speakers = len({w["speaker"] for w in words})
+    logger.info(
+        "Exported word reference for file_id=%d: %d words, %d speakers -> %s",
+        file_id,
+        len(words),
+        n_speakers,
+        out_words_json,
+    )
+    return {
+        "word_count": len(words),
+        "speaker_count": n_speakers,
+        "words_json": out_words_json,
+        "rttm": out_rttm,
+    }
 
 
 def compare_transcripts(baseline: dict, current: dict) -> dict:

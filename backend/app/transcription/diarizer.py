@@ -8,6 +8,7 @@ import gc
 import logging
 import os
 import time
+from typing import Any
 from typing import ClassVar
 from typing import NoReturn
 
@@ -33,7 +34,7 @@ class SpeakerDiarizer:
 
     def __init__(self, config: TranscriptionConfig):
         self.config = config
-        self._pipeline = None
+        self._pipeline: Any = None
         self._model_name: str | None = None
 
     @property

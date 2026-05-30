@@ -265,9 +265,12 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "false").lower() == "true"
     MEDIA_BUCKET_NAME: str = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
 
-    # Presigned URL expiration settings (AWS/GCS best practices: shortest practical time)
-    # Video URLs: 5 minutes default - refreshed automatically for long playback
-    MEDIA_URL_EXPIRE_SECONDS: int = _int_env("MEDIA_URL_EXPIRE_SECONDS", 300)
+    # Presigned URL expiration settings.
+    # Video/audio URLs default to 6 hours: a single presigned URL must outlive a long
+    # viewing/labeling session of a multi-hour file (a 5-minute URL 403s mid-playback when
+    # the player issues a byte-range request after expiry — the <video> element keeps the
+    # stale URL even though the frontend refresher updates its variable). Override via env.
+    MEDIA_URL_EXPIRE_SECONDS: int = _int_env("MEDIA_URL_EXPIRE_SECONDS", 21600)
     # Thumbnail URLs: 15 minutes default - longer since they're static images
     THUMBNAIL_URL_EXPIRE_SECONDS: int = _int_env("THUMBNAIL_URL_EXPIRE_SECONDS", 900)
     # Public URL for presigned URLs (how browsers access MinIO)

@@ -223,6 +223,10 @@
   "settings.transcription.sourceLanguageTooltipTimestamps": "単語レベルのタイムスタンプがある言語にはチェックマークが付きます。",
   "settings.transcription.commonLanguages": "一般的な言語",
   "settings.transcription.allLanguages": "すべての言語",
+  "settings.transcription.englishOnlyWarning": "現在のモデルは英語のみに対応しています。最良の結果を得るには「自動検出」または「英語」を選択してください。",
+  "settings.transcription.englishOptimizedWarning": "現在のモデルは英語に最適化されています。他の言語では精度が変わる場合があります。",
+  "settings.transcription.translationUnavailableLocal": "現在のモデル（{{model}}）では翻訳を利用できません。翻訳に対応したモデル（例: large-v3、whisper-1）に切り替えてください。",
+  "settings.transcription.translationUnavailableProvider": "{{provider}} は翻訳に対応していません。",
   "settings.transcription.translateToEnglish": "英語に翻訳",
   "settings.transcription.translateToEnglishDesc": "有効にすると、外国語音声は文字起こしされ英語に翻訳されます。無効にすると、文字起こしは元の言語のままになります。",
   "settings.transcription.aiSummaryLanguage": "AI要約言語",
@@ -3389,5 +3393,7 @@
   "settings.asrProvider.statusTested": "テスト済み",
   "settings.asrProvider.switchedToLocal": "ローカルGPU文字起こしに切り替えました",
   "settings.asrProvider.useLocal": "ローカルを使用",
-  "settings.transcription.diarizationPyannoteConfigHint": "クラウド話者分離を使用するには、ASR設定タブでpyannote.ai APIキーを設定してください。"
+  "settings.transcription.diarizationPyannoteConfigHint": "クラウド話者分離を使用するには、ASR設定タブでpyannote.ai APIキーを設定してください。",
+  "settings.engineSettings.boundarySmoothing": "境界スムージング",
+  "settings.engineSettings.boundarySmoothingHelp": "話者の交代境界で発生する1～3語の誤った話者ラベルの島を解消します（issue #193）。エラー削減が検証済みで、オンのままにしておいても安全です。"
 }

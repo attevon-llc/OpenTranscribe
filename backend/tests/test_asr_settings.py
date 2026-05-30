@@ -14,6 +14,7 @@ from app import models
 from app.models.user_asr_settings import UserASRSettings
 from app.schemas.asr_settings import ASRProvider
 from app.schemas.asr_settings import UserASRSettingsCreate
+from app.schemas.media import VALID_LOCAL_WHISPER_MODELS
 from app.services.asr.factory import ASRProviderFactory
 
 # ---------------------------------------------------------------------------
@@ -756,6 +757,63 @@ class TestASRModelCapabilities:
         assert caps["supports_translation"] is True
         assert caps["language_support"] == "multilingual"
 
+    def test_crisperwhisper_ct2_english_only_no_translation(self):
+        """The CTranslate2 CrisperWhisper build is English-only and cannot translate."""
+        caps = ASRProviderFactory.get_model_capabilities(
+            "local", "nyrahealth/faster_CrisperWhisper"
+        )
+        assert caps["language_support"] == "english_only"
+        assert caps["supports_translation"] is False
+
+    def test_crisperwhisper_ct2_in_local_catalog(self):
+        """The local catalog lists only the loadable CTranslate2 CrisperWhisper build.
+
+        The PyTorch checkpoint nyrahealth/CrisperWhisper is intentionally excluded —
+        faster-whisper's WhisperModel cannot load a transformers safetensors repo, so a
+        catalog entry for it would crash on load.
+        """
+        catalog = ASRProviderFactory.get_provider_catalog()
+        local_model_ids = {m["id"] for m in catalog["local"]["models"]}
+        assert "nyrahealth/faster_CrisperWhisper" in local_model_ids
+        assert "nyrahealth/CrisperWhisper" not in local_model_ids
+
+    def test_crisperwhisper_ct2_in_valid_whisper_models(self):
+        """Only the loadable CT2 CrisperWhisper id is whitelisted for reprocessing."""
+        assert "nyrahealth/faster_CrisperWhisper" in VALID_LOCAL_WHISPER_MODELS
+        assert "nyrahealth/CrisperWhisper" not in VALID_LOCAL_WHISPER_MODELS
+
+    def test_crisperwhisper_short_names_resolve_to_ct2_repo(self):
+        """Custom short names resolve to the CTranslate2 repo id loadable by WhisperModel."""
+        from app.services.asr.model_discovery import resolve_loadable_model_name
+
+        for short in ("crisperwhisper", "faster_crisperwhisper"):
+            assert resolve_loadable_model_name(short) == "nyrahealth/faster_CrisperWhisper"
+
+    def test_resolve_leaves_builtin_short_names_unchanged(self):
+        """faster-whisper's own short names and repo ids pass through unchanged."""
+        from app.services.asr.model_discovery import resolve_loadable_model_name
+
+        for name in ("large-v3-turbo", "large-v3", "tiny.en", "distil-large-v3", "org/custom-ct2"):
+            assert resolve_loadable_model_name(name) == name
+
+    def test_english_only_dotted_en_variants(self):
+        """English-only '.en' Whisper variants are classified english_only, not multilingual.
+
+        Guards against the substring loop mis-matching 'tiny.en' to the multilingual
+        'tiny' catalog entry.
+        """
+        for model_id in ("tiny.en", "base.en", "small.en", "medium.en", "distil-small.en"):
+            caps = ASRProviderFactory.get_model_capabilities("local", model_id)
+            assert caps["language_support"] == "english_only", model_id
+            assert caps["supports_translation"] is False, model_id
+            assert caps["languages"] == 1, model_id
+
+    def test_multilingual_models_not_misclassified_english_only(self):
+        """Multilingual base models keep multilingual capabilities (regression guard)."""
+        for model_id in ("large-v3", "medium", "small", "tiny", "base"):
+            caps = ASRProviderFactory.get_model_capabilities("local", model_id)
+            assert caps["language_support"] == "multilingual", model_id
+
 
 # ===================================================================
 # Local model discovery
@@ -863,6 +921,39 @@ class TestAdminLocalModelControl:
             db_session.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").count()
         )
         assert count == 1
+
+    def test_set_local_model_remaps_pytorch_crisperwhisper_to_ct2(
+        self, client, admin_token_headers, db_session
+    ):
+        """The PyTorch CrisperWhisper checkpoint is remapped to the loadable CT2 build.
+
+        faster-whisper cannot load nyrahealth/CrisperWhisper (safetensors, no CT2
+        model.bin), so the endpoint stores the CTranslate2 build instead.
+        """
+        resp = client.post(
+            "/api/asr-settings/local-model/set",
+            json={"model_name": "nyrahealth/CrisperWhisper"},
+            headers=admin_token_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["model_name"] == "nyrahealth/faster_CrisperWhisper"
+
+        from app.models.system_settings import SystemSettings
+
+        setting = (
+            db_session.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
+        )
+        assert setting.value == "nyrahealth/faster_CrisperWhisper"
+
+    def test_set_local_model_resolves_crisperwhisper_short_name(self, client, admin_token_headers):
+        """The 'crisperwhisper' short name is stored as the loadable CT2 repo id."""
+        resp = client.post(
+            "/api/asr-settings/local-model/set",
+            json={"model_name": "crisperwhisper"},
+            headers=admin_token_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["model_name"] == "nyrahealth/faster_CrisperWhisper"
 
     def test_set_local_model_empty_name_rejected(self, client, admin_token_headers):
         """Empty model name is rejected."""

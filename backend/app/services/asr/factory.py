@@ -100,6 +100,20 @@ ASR_PROVIDER_CATALOG: dict = {
                 "supports_translation": True,
                 "language_support": "multilingual",
             },
+            {
+                # CTranslate2 build (config.json + model.bin) — the only CrisperWhisper
+                # variant that loads in faster-whisper's WhisperModel. The PyTorch
+                # checkpoint nyrahealth/CrisperWhisper is intentionally NOT in this
+                # catalog: it ships model.safetensors (no CT2 model.bin), so CTranslate2
+                # cannot load it and the whisperx transformers backend is still a stub.
+                "id": "nyrahealth/faster_CrisperWhisper",
+                "display_name": "CrisperWhisper (English)",
+                "description": "Precise verbatim word-level timestamps, English only, ~3 GB VRAM",
+                "price_per_min_batch": 0,
+                "supports_diarization": True,
+                "supports_translation": False,
+                "language_support": "english_only",
+            },
         ],
     },
     "deepgram": {
@@ -718,6 +732,18 @@ class ASRProviderFactory:
 
         # For local provider: substring match (most-specific first)
         if provider_id == "local":
+            # English-only Whisper ".en" variants (tiny.en, base.en, small.en, medium.en,
+            # distil-*.en) are not enumerated in the catalog but are English-only and cannot
+            # translate. Checked BEFORE the substring loop so "tiny.en" is not mis-matched to
+            # the multilingual "tiny" entry. Classified consistently with the catalog's
+            # english_only entries so the same UI guards and transcriber safety net apply.
+            if model_id.endswith(".en"):
+                return {
+                    "supports_translation": False,
+                    "language_support": "english_only",
+                    "languages": 1,
+                }
+
             sorted_models = sorted(models, key=lambda m: len(m["id"]), reverse=True)
             for m in sorted_models:
                 if m["id"] in model_id:

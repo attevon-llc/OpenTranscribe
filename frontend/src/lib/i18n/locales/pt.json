@@ -223,6 +223,10 @@
   "settings.transcription.sourceLanguageTooltipTimestamps": "Idiomas com timestamps no nível de palavras são marcados com um visto.",
   "settings.transcription.commonLanguages": "Idiomas Comuns",
   "settings.transcription.allLanguages": "Todos os Idiomas",
+  "settings.transcription.englishOnlyWarning": "O modelo atual só oferece suporte a inglês. Selecione «Detecção automática» ou «Inglês» para obter melhores resultados.",
+  "settings.transcription.englishOptimizedWarning": "O modelo atual é otimizado para inglês. A precisão pode variar para outros idiomas.",
+  "settings.transcription.translationUnavailableLocal": "A tradução não está disponível com o modelo atual ({{model}}). Mude para um modelo que ofereça suporte a tradução (por exemplo, large-v3, whisper-1).",
+  "settings.transcription.translationUnavailableProvider": "{{provider}} não oferece suporte a tradução.",
   "settings.transcription.translateToEnglish": "Traduzir para Inglês",
   "settings.transcription.translateToEnglishDesc": "Quando habilitado, áudio em idioma estrangeiro será transcrito e traduzido para inglês. Quando desabilitado, a transcrição permanece no idioma original.",
   "settings.transcription.aiSummaryLanguage": "Idioma do Resumo com IA",
@@ -3389,5 +3393,7 @@
   "settings.asrProvider.statusTested": "Testado",
   "settings.asrProvider.switchedToLocal": "Alterado para transcrição GPU local",
   "settings.asrProvider.useLocal": "Usar Local",
-  "settings.transcription.diarizationPyannoteConfigHint": "Configure sua chave de API pyannote.ai na aba Configurações ASR para usar diarização na nuvem."
+  "settings.transcription.diarizationPyannoteConfigHint": "Configure sua chave de API pyannote.ai na aba Configurações ASR para usar diarização na nuvem.",
+  "settings.engineSettings.boundarySmoothing": "Suavização de limites",
+  "settings.engineSettings.boundarySmoothingHelp": "Elimina ilhas de 1 a 3 palavras com falante incorreto nos limites de troca de turno (issue #193). Validado para reduzir erros; é seguro deixar ativado."
 }

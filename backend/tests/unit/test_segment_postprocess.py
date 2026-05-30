@@ -1,5 +1,9 @@
 """Tests for segment post-processing: resegmentation and merging."""
 
+from copy import deepcopy
+
+import pytest
+
 from app.utils.segment_postprocess import merge_consecutive_segments
 from app.utils.segment_postprocess import resegment_by_speaker
 
@@ -174,3 +178,113 @@ class TestPipelineIntegration:
         assert result[0]["text"] == "yes"
         assert result[1]["speaker"] == "SPEAKER_01"
         assert result[1]["text"] == "no maybe"
+
+
+def _import_finalize():
+    """Import finalize_segments or skip — the lead may not have committed it yet."""
+    try:
+        from app.utils.segment_postprocess import finalize_segments
+    except ImportError as exc:  # pragma: no cover - only when not yet committed
+        pytest.skip(f"finalize_segments not available yet: {exc}")
+    return finalize_segments
+
+
+def _import_smoothing_config():
+    """Import BoundarySmoothingConfig or skip — written by the lead."""
+    try:
+        from app.transcription.boundary_resolver import BoundarySmoothingConfig
+    except ImportError as exc:  # pragma: no cover - only when not yet committed
+        pytest.skip(f"BoundarySmoothingConfig not available yet: {exc}")
+    return BoundarySmoothingConfig
+
+
+def _mixed_segment() -> dict:
+    return {
+        "start": 0.0,
+        "end": 3.0,
+        "text": "I agree let's move on",
+        "speaker": "SPEAKER_00",
+        "confidence": 0.9,
+        "words": [
+            {"word": "I", "start": 0.0, "end": 0.3, "speaker": "SPEAKER_00"},
+            {"word": " agree", "start": 0.3, "end": 0.8, "speaker": "SPEAKER_00"},
+            {"word": " let's", "start": 1.0, "end": 1.5, "speaker": "SPEAKER_01"},
+            {"word": " move", "start": 1.5, "end": 2.0, "speaker": "SPEAKER_01"},
+            {"word": " on", "start": 2.0, "end": 2.5, "speaker": "SPEAKER_01"},
+        ],
+    }
+
+
+def _bleed_segment() -> dict:
+    """A run with a 2-word B-island flanked by A on both sides (smoother target).
+
+    0.4 s words on a 0.5 s grid keep the 2-word island under the smoother's 1.5 s
+    duration cap and seam gaps under min_silent_gap, so ON collapses it.
+    """
+    words = []
+    for i in range(10):
+        spk = "SPEAKER_01" if i in (4, 5) else "SPEAKER_00"
+        words.append({"word": f" w{i}", "start": i * 0.5, "end": i * 0.5 + 0.4, "speaker": spk})
+    return {
+        "start": 0.0,
+        "end": words[-1]["end"],
+        "text": "".join(str(w["word"]) for w in words).strip(),
+        "speaker": "SPEAKER_00",
+        "confidence": 0.9,
+        "words": words,
+    }
+
+
+class TestFinalizeSegmentsRefactorSafety:
+    """finalize_segments(segs, None) must equal the legacy resegment+merge pipeline."""
+
+    @pytest.mark.parametrize(
+        "segments",
+        [
+            [_mixed_segment()],
+            [
+                _mixed_segment(),
+                {
+                    "start": 3.0,
+                    "end": 4.0,
+                    "text": "maybe",
+                    "speaker": "SPEAKER_01",
+                    "confidence": 0.9,
+                    "words": [{"word": "maybe", "start": 3.0, "end": 3.5, "speaker": "SPEAKER_01"}],
+                },
+            ],
+        ],
+    )
+    def test_no_smoothing_matches_legacy_pipeline(self, segments):
+        finalize_segments = _import_finalize()
+        legacy = merge_consecutive_segments(resegment_by_speaker(deepcopy(segments)))
+        finalized = finalize_segments(deepcopy(segments), None)
+        # Byte-identical via JSON canonicalization (order + content must match exactly).
+        import json
+
+        assert json.dumps(finalized, sort_keys=True) == json.dumps(legacy, sort_keys=True)
+
+    def test_empty_input(self):
+        finalize_segments = _import_finalize()
+        assert finalize_segments([], None) == []
+
+
+class TestFinalizeSegmentsSmoothingIdempotent:
+    """Applying smoothing twice equals applying it once (stable fixed point)."""
+
+    def test_smoothing_idempotent(self):
+        finalize_segments = _import_finalize()
+        BoundarySmoothingConfig = _import_smoothing_config()  # noqa: N806  # class, not a value
+        cfg = BoundarySmoothingConfig(
+            enabled=True,
+            max_island_words=3,
+            max_island_duration=1.5,
+            min_flank_words=3,
+            min_silent_gap=0.4,
+        )
+        segments = [_bleed_segment()]
+        once = finalize_segments(deepcopy(segments), cfg)
+        twice = finalize_segments(deepcopy(once), cfg)
+        import json
+
+        assert json.dumps(twice, sort_keys=True) == json.dumps(once, sort_keys=True)

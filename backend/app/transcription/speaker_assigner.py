@@ -102,25 +102,30 @@ def assign_speakers(
         w_starts = np.array(word_starts_list, dtype=np.float64)
         w_ends = np.array(word_ends_list, dtype=np.float64)
 
-        word_speakers = _batch_assign(
+        word_speakers, word_margins = _batch_assign(
             w_starts,
             w_ends,
             d_starts,
             d_ends,
             speaker_matrix,
             unique_speakers,
+            return_margins=True,
         )
 
-        # Write results back to word dicts
+        # Write results back to word dicts. The transient "_overlap_margin" flags
+        # genuinely-ambiguous boundary words for the smoother (issue #193 Phase 2);
+        # it is stripped before persistence (storage only keeps word/start/end/score).
         for k, (si, wi) in enumerate(word_indices):
+            word = segments[si]["words"][wi]
+            word["_overlap_margin"] = word_margins[k]
             if word_speakers[k] is not None:
-                segments[si]["words"][wi]["speaker"] = word_speakers[k]
+                word["speaker"] = word_speakers[k]
             else:
                 # Fill nearest
                 word_mid = (w_starts[k] + w_ends[k]) / 2
                 mids = (d_starts + d_ends) / 2
                 nearest_idx = np.argmin(np.abs(mids - word_mid))
-                segments[si]["words"][wi]["speaker"] = str(d_speaker_labels[nearest_idx])
+                word["speaker"] = str(d_speaker_labels[nearest_idx])
 
     elapsed = time.perf_counter() - step_start
     n_words = len(word_starts_list)
@@ -139,7 +144,8 @@ def _batch_assign(
     d_ends: np.ndarray,
     speaker_matrix: np.ndarray,
     unique_speakers: np.ndarray,
-) -> list:
+    return_margins: bool = False,
+) -> list | tuple[list, list]:
     """Batch-assign speakers to query intervals using matrix multiply.
 
     Computes the overlap between each query interval and all diarization
@@ -153,12 +159,18 @@ def _batch_assign(
         d_ends: (M,) array of diarization end times
         speaker_matrix: (M, K) one-hot speaker indicator matrix
         unique_speakers: (K,) array of unique speaker labels
+        return_margins: When True, also return per-query top1-top2 overlap margins
+            (seconds). A small margin flags a boundary word as genuinely ambiguous
+            (issue #193 Phase 2). No overlap → margin 0.0.
 
     Returns:
-        List of N speaker labels (str or None if no overlap)
+        List of N speaker labels (str or None if no overlap), or
+        ``(speakers, margins)`` when ``return_margins`` is True.
     """
     n_queries = len(query_starts)
     results: list = [None] * n_queries
+    margins: list = [0.0] * n_queries if return_margins else []
+    n_speakers = speaker_matrix.shape[1]
 
     for chunk_start in range(0, n_queries, _CHUNK_SIZE):
         chunk_end = min(chunk_start + _CHUNK_SIZE, n_queries)
@@ -180,8 +192,20 @@ def _batch_assign(
         has_overlap = speaker_overlaps.max(axis=1) > 0
         best_idx = np.argmax(speaker_overlaps, axis=1)
 
+        if return_margins:
+            # top1 - top2 overlap: small => the seam word is genuinely ambiguous.
+            if n_speakers >= 2:
+                part = np.partition(speaker_overlaps, -2, axis=1)
+                chunk_margins = part[:, -1] - part[:, -2]
+            else:
+                chunk_margins = speaker_overlaps[:, 0]
+
         for i in range(chunk_end - chunk_start):
             if has_overlap[i]:
                 results[chunk_start + i] = str(unique_speakers[best_idx[i]])
+            if return_margins:
+                margins[chunk_start + i] = float(chunk_margins[i])
 
+    if return_margins:
+        return results, margins
     return results

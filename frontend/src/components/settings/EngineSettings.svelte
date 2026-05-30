@@ -17,6 +17,7 @@
     diarizer_backend: EngineSettingValue<string>;
     gpu_split: EngineSettingValue<boolean>;
     precompute_vad: EngineSettingValue<boolean>;
+    boundary_smoothing_enabled: EngineSettingValue<boolean>;
     shared_volume_path: EngineSettingValue<string>;
   }
 
@@ -34,6 +35,7 @@
   let draftDiarizerBackend = 'pyannote';
   let draftGpuSplit = false;
   let draftPrecomputeVad = false;
+  let draftBoundarySmoothing = false;
   let draftSharedVolumePath = '/tmp/transcription';
 
   onMount(async () => {
@@ -49,6 +51,7 @@
       draftDiarizerBackend = settings.diarizer_backend.value;
       draftGpuSplit = settings.gpu_split.value;
       draftPrecomputeVad = settings.precompute_vad.value;
+      draftBoundarySmoothing = settings.boundary_smoothing_enabled.value;
       draftSharedVolumePath = settings.shared_volume_path.value;
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
@@ -68,6 +71,7 @@
       diarizer_backend: string;
       gpu_split: boolean;
       precompute_vad: boolean;
+      boundary_smoothing_enabled: boolean;
       shared_volume_path: string;
     }> = {};
 
@@ -82,6 +86,9 @@
     }
     if (draftPrecomputeVad !== settings.precompute_vad.value) {
       payload.precompute_vad = draftPrecomputeVad;
+    }
+    if (draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value) {
+      payload.boundary_smoothing_enabled = draftBoundarySmoothing;
     }
     if (draftSharedVolumePath !== settings.shared_volume_path.value) {
       payload.shared_volume_path = draftSharedVolumePath;
@@ -136,6 +143,7 @@
     draftDiarizerBackend !== settings.diarizer_backend.value ||
     draftGpuSplit !== settings.gpu_split.value ||
     draftPrecomputeVad !== settings.precompute_vad.value ||
+    draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value ||
     draftSharedVolumePath !== settings.shared_volume_path.value
   );
 </script>
@@ -298,6 +306,43 @@
             />
             <span class="toggle-switch"></span>
             <span class="toggle-text help-text">{$t('settings.engineSettings.precomputeVadHelp')}</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Boundary Smoothing -->
+      <div class="form-row">
+        <div class="form-field">
+          <div class="field-label-row">
+            <span class="field-name">{$t('settings.engineSettings.boundarySmoothing')}</span>
+            <span class="source-badge {sourceClass(settings.boundary_smoothing_enabled.source)}">
+              {sourceLabel(settings.boundary_smoothing_enabled.source)}
+            </span>
+            {#if settings.boundary_smoothing_enabled.source !== 'default'}
+              <button
+                class="reset-btn"
+                on:click={() => resetKey('boundary_smoothing_enabled')}
+                disabled={resetInProgress === 'boundary_smoothing_enabled' || saving}
+                title={$t('settings.engineSettings.resetKey')}
+              >
+                {#if resetInProgress === 'boundary_smoothing_enabled'}
+                  <Spinner size="small" />
+                {:else}
+                  {$t('settings.engineSettings.resetKey')}
+                {/if}
+              </button>
+            {/if}
+          </div>
+          <label class="toggle-label" for="boundary-smoothing-input">
+            <input
+              id="boundary-smoothing-input"
+              type="checkbox"
+              class="toggle-input"
+              bind:checked={draftBoundarySmoothing}
+              disabled={saving || resetInProgress !== null}
+            />
+            <span class="toggle-switch"></span>
+            <span class="toggle-text help-text">{$t('settings.engineSettings.boundarySmoothingHelp')}</span>
           </label>
         </div>
       </div>

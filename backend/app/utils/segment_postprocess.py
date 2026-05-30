@@ -105,3 +105,27 @@ def _copy_segment(segment: dict[str, Any]) -> dict[str, Any]:
     if copied.get("words"):
         copied["words"] = list(copied["words"])
     return copied
+
+
+def finalize_segments(
+    segments: list[dict[str, Any]],
+    smoothing_config: Any = None,
+) -> list[dict[str, Any]]:
+    """Single post-diarization chokepoint: optional boundary smoothing → resegment → merge.
+
+    Pure function of segments + config. This is the one place every transcription path
+    (legacy pipeline, combined engine, split engine, multi-GPU) routes through for
+    speaker-boundary post-processing, and the benchmark harness (issue #193) calls it
+    verbatim. With ``smoothing_config`` disabled or ``None`` it is byte-identical to the
+    previous ``merge_consecutive_segments(resegment_by_speaker(segments))``.
+
+    Args:
+        segments: Word-level-labeled segments (each word carries a ``speaker``).
+        smoothing_config: A ``BoundarySmoothingConfig`` (or None). Smoothing only runs
+            when ``smoothing_config.enabled`` is truthy.
+    """
+    if smoothing_config is not None and getattr(smoothing_config, "enabled", False):
+        from app.transcription.boundary_resolver import smooth_word_speakers
+
+        segments = smooth_word_speakers(segments, smoothing_config)
+    return merge_consecutive_segments(resegment_by_speaker(segments))

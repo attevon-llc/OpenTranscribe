@@ -223,6 +223,10 @@
   "settings.transcription.sourceLanguageTooltipTimestamps": "支持词级时间戳的语言标有对勾。",
   "settings.transcription.commonLanguages": "常用语言",
   "settings.transcription.allLanguages": "所有语言",
+  "settings.transcription.englishOnlyWarning": "当前模型仅支持英语。为获得最佳效果，请选择“自动检测”或“英语”。",
+  "settings.transcription.englishOptimizedWarning": "当前模型针对英语进行了优化。其他语言的准确性可能会有所不同。",
+  "settings.transcription.translationUnavailableLocal": "当前模型（{{model}}）不支持翻译。请切换到支持翻译的模型（例如 large-v3、whisper-1）。",
+  "settings.transcription.translationUnavailableProvider": "{{provider}} 不支持翻译。",
   "settings.transcription.translateToEnglish": "翻译成英文",
   "settings.transcription.translateToEnglishDesc": "启用时，外语音频将被转录并翻译成英文。禁用时，转录保持原始语言。",
   "settings.transcription.aiSummaryLanguage": "AI摘要语言",
@@ -3389,5 +3393,7 @@
   "settings.asrProvider.statusTested": "已测试",
   "settings.asrProvider.switchedToLocal": "已切换至本地 GPU 转录",
   "settings.asrProvider.useLocal": "使用本地",
-  "settings.transcription.diarizationPyannoteConfigHint": "在 ASR 设置选项卡中配置您的 pyannote.ai API 密钥以使用云端说话人分离。"
+  "settings.transcription.diarizationPyannoteConfigHint": "在 ASR 设置选项卡中配置您的 pyannote.ai API 密钥以使用云端说话人分离。",
+  "settings.engineSettings.boundarySmoothing": "边界平滑",
+  "settings.engineSettings.boundarySmoothingHelp": "消除说话人轮换边界处 1–3 个词的错误说话人片段（issue #193）。已验证可减少错误，可安全保持开启。"
 }

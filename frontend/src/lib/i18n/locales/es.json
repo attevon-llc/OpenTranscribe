@@ -1629,6 +1629,10 @@
   "settings.transcription.aiSummaryLanguageHint": "Idioma usado para resúmenes y análisis con IA",
   "settings.transcription.aiSummaryLanguageTooltip": "Elige el idioma para resúmenes generados con IA, elementos de acción y análisis. Esta configuración es independiente del idioma de transcripción - puedes transcribir en español pero obtener resúmenes en inglés, o viceversa.",
   "settings.transcription.allLanguages": "Todos los Idiomas",
+  "settings.transcription.englishOnlyWarning": "El modelo actual solo admite inglés. Seleccione «Detección automática» o «Inglés» para obtener mejores resultados.",
+  "settings.transcription.englishOptimizedWarning": "El modelo actual está optimizado para inglés. La precisión puede variar para otros idiomas.",
+  "settings.transcription.translationUnavailableLocal": "La traducción no está disponible con el modelo actual ({{model}}). Cambie a un modelo que admita traducción (p. ej., large-v3, whisper-1).",
+  "settings.transcription.translationUnavailableProvider": "{{provider}} no admite traducción.",
   "settings.transcription.behavior": "Comportamiento",
   "settings.transcription.behaviorTooltipAlwaysAsk": "Siempre preguntar:",
   "settings.transcription.behaviorTooltipAlwaysAskDesc": "Mostrar diálogo de configuración de hablantes en cada carga o reprocesamiento.",
@@ -3389,5 +3393,7 @@
   "settings.asrProvider.statusTested": "Probado",
   "settings.asrProvider.switchedToLocal": "Cambiado a transcripción GPU local",
   "settings.asrProvider.useLocal": "Usar Local",
-  "settings.transcription.diarizationPyannoteConfigHint": "Configure su clave API de pyannote.ai en la pestaña de Configuración ASR para usar diarización en la nube."
+  "settings.transcription.diarizationPyannoteConfigHint": "Configure su clave API de pyannote.ai en la pestaña de Configuración ASR para usar diarización en la nube.",
+  "settings.engineSettings.boundarySmoothing": "Suavizado de límites",
+  "settings.engineSettings.boundarySmoothingHelp": "Elimina islas de 1 a 3 palabras con hablante incorrecto en los límites de cambio de turno (issue #193). Validado para reducir errores; es seguro dejarlo activado."
 }

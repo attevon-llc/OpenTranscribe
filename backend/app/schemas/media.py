@@ -29,6 +29,9 @@ VALID_LOCAL_WHISPER_MODELS = frozenset(
         "large-v2",
         "large-v3",
         "large-v3-turbo",
+        # CrisperWhisper: only the CTranslate2 build loads in faster-whisper.
+        # The PyTorch checkpoint (nyrahealth/CrisperWhisper) is deliberately omitted.
+        "nyrahealth/faster_CrisperWhisper",
     }
 )
 

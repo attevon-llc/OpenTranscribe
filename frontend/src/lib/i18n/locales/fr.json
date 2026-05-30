@@ -1629,6 +1629,10 @@
   "settings.transcription.aiSummaryLanguageHint": "Langue utilisée pour les résumés et l'analyse IA",
   "settings.transcription.aiSummaryLanguageTooltip": "Choisir la langue pour les résumés générés par l'IA, les actions et l'analyse. Ce paramètre est indépendant de la langue de transcription - vous pouvez transcrire en espagnol mais obtenir des résumés en anglais, ou vice versa.",
   "settings.transcription.allLanguages": "Toutes les Langues",
+  "settings.transcription.englishOnlyWarning": "Le modèle actuel ne prend en charge que l'anglais. Sélectionnez « Détection automatique » ou « Anglais » pour de meilleurs résultats.",
+  "settings.transcription.englishOptimizedWarning": "Le modèle actuel est optimisé pour l'anglais. La précision peut varier pour les autres langues.",
+  "settings.transcription.translationUnavailableLocal": "La traduction n'est pas disponible avec le modèle actuel ({{model}}). Passez à un modèle prenant en charge la traduction (p. ex. large-v3, whisper-1).",
+  "settings.transcription.translationUnavailableProvider": "La traduction n'est pas prise en charge par {{provider}}.",
   "settings.transcription.behavior": "Comportement",
   "settings.transcription.behaviorTooltipAlwaysAsk": "Toujours demander:",
   "settings.transcription.behaviorTooltipAlwaysAskDesc": "Afficher la boîte de dialogue des paramètres de locuteurs à chaque téléversement ou retraitement.",
@@ -3389,5 +3393,7 @@
   "settings.asrProvider.statusTested": "Testé",
   "settings.asrProvider.switchedToLocal": "Basculé vers la transcription GPU locale",
   "settings.asrProvider.useLocal": "Utiliser Local",
-  "settings.transcription.diarizationPyannoteConfigHint": "Configurez votre clé API pyannote.ai dans l'onglet Paramètres ASR pour utiliser la diarisation cloud."
+  "settings.transcription.diarizationPyannoteConfigHint": "Configurez votre clé API pyannote.ai dans l'onglet Paramètres ASR pour utiliser la diarisation cloud.",
+  "settings.engineSettings.boundarySmoothing": "Lissage des limites",
+  "settings.engineSettings.boundarySmoothingHelp": "Supprime les îlots de 1 à 3 mots attribués au mauvais locuteur aux limites de changement de tour (issue #193). Validé pour réduire les erreurs ; peut être laissé activé sans risque."
 }

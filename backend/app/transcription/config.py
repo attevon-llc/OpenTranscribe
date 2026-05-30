@@ -275,10 +275,17 @@ class TranscriptionConfig:
         2. SystemSettings DB key ``asr.local_model`` (admin-set)
         3. WHISPER_MODEL environment variable
         4. Hardcoded default ``large-v3-turbo``
+
+        The resolved name is passed through ``resolve_loadable_model_name`` so custom
+        short names (e.g. ``crisperwhisper``) become the HuggingFace repo id that
+        faster-whisper's ``WhisperModel`` can actually load. The pinned value is
+        already resolved at startup, so the fast path skips re-resolution.
         """
-        # Fast path: use pinned value from worker startup (no DB hit)
+        # Fast path: use pinned value from worker startup (no DB hit, already resolved)
         if cls._pinned_model_name is not None:
             return cls._pinned_model_name
+
+        raw = os.getenv("WHISPER_MODEL", "large-v3-turbo")
 
         # Startup path: read from DB (first call before pin_model is called)
         try:
@@ -290,11 +297,14 @@ class TranscriptionConfig:
                     db.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
                 )
                 if setting and setting.value:
-                    return str(setting.value)
+                    raw = str(setting.value)
         except Exception:  # noqa: S110  # nosec B110
             # DB not available (e.g., during testing, worker startup race) — fall back to env
             logger.debug("Could not read asr.local_model from DB, using env var")
-        return os.getenv("WHISPER_MODEL", "large-v3-turbo")
+
+        from app.services.asr.model_discovery import resolve_loadable_model_name
+
+        return resolve_loadable_model_name(raw)
 
     @staticmethod
     def _resolve_concurrent_requests() -> int:

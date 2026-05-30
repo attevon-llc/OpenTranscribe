@@ -30,6 +30,7 @@ from app.api.endpoints.auth import get_current_admin_user
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
 from app.db.base import get_db
+from app.schemas.media import VALID_LOCAL_WHISPER_MODELS
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
@@ -872,6 +873,17 @@ def get_active_local_model(
                 "language_support": m.get("language_support", "multilingual"),
             }
             break
+    # English-only ".en" variants (tiny.en, base.en, …) are not in the catalog but are
+    # English-only. Resolve them before the substring loop so they are not mis-matched to
+    # the multilingual base entry (e.g. "tiny.en" -> "tiny").
+    if not model_info and active_model.endswith(".en"):
+        model_info = {
+            "display_name": active_model,
+            "description": "English-only Whisper model",
+            "supports_translation": False,
+            "supports_diarization": True,
+            "language_support": "english_only",
+        }
     # Substring match for models like "large-v3-turbo" in custom repo names
     if not model_info:
         sorted_models = sorted(local_models, key=lambda x: len(x["id"]), reverse=True)
@@ -916,6 +928,39 @@ def set_active_local_model(
     model_name = body.model_name.strip()
     if not model_name:
         raise HTTPException(status_code=400, detail="model_name is required")
+    # Accept known short names (incl. distil variants from model_discovery), the reprocess
+    # whitelist (incl. CrisperWhisper), or any HuggingFace repo id (contains "/").
+    from app.services.asr.model_discovery import _SHORT_NAME_TO_REPO
+    from app.services.asr.model_discovery import resolve_loadable_model_name
+
+    # The PyTorch checkpoint nyrahealth/CrisperWhisper ships model.safetensors (no CT2
+    # model.bin), so faster-whisper's WhisperModel cannot load it. Transparently remap
+    # it to the CTranslate2 build, which is the only loadable CrisperWhisper variant.
+    if model_name == "nyrahealth/CrisperWhisper":
+        logger.info(
+            "Admin %s requested nyrahealth/CrisperWhisper (PyTorch checkpoint) — "
+            "remapping to the CTranslate2 build nyrahealth/faster_CrisperWhisper",
+            current_user.email,
+        )
+        model_name = "nyrahealth/faster_CrisperWhisper"
+
+    # Resolve custom short names (e.g. crisperwhisper) to the loadable repo id so the
+    # stored value is exactly what the GPU worker passes to WhisperModel.
+    model_name = resolve_loadable_model_name(model_name)
+
+    # Accept: reprocess whitelist + every short name and resolved repo id from the
+    # discovery map (covers distil-* short names and the CrisperWhisper repo id).
+    known_models = (
+        set(VALID_LOCAL_WHISPER_MODELS)
+        | set(_SHORT_NAME_TO_REPO)
+        | set(_SHORT_NAME_TO_REPO.values())
+    )
+    if model_name not in known_models and "/" not in model_name:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown model '{model_name}'. Provide a known faster-whisper model "
+            "(e.g. large-v3, large-v3-turbo, distil-large-v3) or a HuggingFace repo id.",
+        )
 
     from app.models.system_settings import SystemSettings
 

@@ -33,13 +33,26 @@ def main() -> None:
             raise SystemExit(f"no user_asr_settings row with id={args.config_id}")
         provider_name = str(cfg.provider)
         model_name = args.model or str(cfg.model_name)
+        region = str(cfg.region) if cfg.region else None
         api_key = decrypt_api_key(str(cfg.api_key)) if cfg.api_key else None
 
-    if not api_key:
-        raise SystemExit(f"config id={args.config_id} ({provider_name}) has no API key")
-
     provider: ASRProvider
-    if provider_name == "pyannote":
+    if provider_name == "aws":
+        # AWS uses two creds (access key + secret) from the boto3 default chain — env vars
+        # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (local testing) or an IAM role (on AWS).
+        import os
+
+        from app.services.asr.aws_provider import AWSTranscribeProvider
+
+        provider = AWSTranscribeProvider(
+            region=str(region or os.getenv("AWS_REGION") or "us-east-1"),
+            model_name=model_name,
+            access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        )
+    elif not api_key:
+        raise SystemExit(f"config id={args.config_id} ({provider_name}) has no API key")
+    elif provider_name == "pyannote":
         from app.services.asr.pyannote_provider import PyAnnoteProvider
 
         provider = PyAnnoteProvider(api_key, model_name)

@@ -141,6 +141,8 @@ def _run_local_timed(
 def _run_cloud(
     config_id: int, audio: str, min_speakers: int, max_speakers: int
 ) -> tuple[str, list[dict[str, Any]], float]:
+    import os
+
     from app.db.session_utils import session_scope
     from app.models.user_asr_settings import UserASRSettings
     from app.services.asr.types import ASRConfig
@@ -151,14 +153,25 @@ def _run_cloud(
         if cfg is None:
             return (f"cloud#{config_id} (missing)", [], 0.0)
         provider_name, model_name = str(cfg.provider), str(cfg.model_name)
+        region = str(cfg.region) if cfg.region else None
         api_key = decrypt_api_key(str(cfg.api_key)) if cfg.api_key else None
-    if not api_key:
-        return (f"{provider_name} (no key)", [], 0.0)
 
-    if provider_name == "pyannote":
+    provider: Any
+    if provider_name == "aws":
+        from app.services.asr.aws_provider import AWSTranscribeProvider
+
+        provider = AWSTranscribeProvider(
+            region=str(region or os.getenv("AWS_REGION") or "us-east-1"),
+            model_name=model_name,
+            access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        )
+    elif not api_key:
+        return (f"{provider_name} (no key)", [], 0.0)
+    elif provider_name == "pyannote":
         from app.services.asr.pyannote_provider import PyAnnoteProvider
 
-        provider: Any = PyAnnoteProvider(api_key, model_name)
+        provider = PyAnnoteProvider(api_key, model_name)
     elif provider_name == "deepgram":
         from app.services.asr.deepgram_provider import DeepgramProvider
 

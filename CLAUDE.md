@@ -2,6 +2,10 @@
 
 Guidance for Claude Code working in this repository. See `docs/` for in-depth references; this file is the index.
 
+## ⚠️ CRITICAL: Always use `./opentr.sh` for the stack — never bare `docker compose`
+
+**Start, stop, restart, shell, and logs go through `./opentr.sh` (e.g. `./opentr.sh start dev`).** It composes the correct overlay set (base + dev override + GPU/storage/etc.) so containers get the **correct database, MinIO storage, and env**. Bare `docker compose up/restart/exec` skips those overlays and can attach to a differently-configured stack — symptoms: a backend that ran migrations against the wrong DB, "table/relation does not exist" errors, or storage pointing at the wrong volume. If something looks schema-broken, first re-launch with `./opentr.sh start dev` (rebuilds + runs startup migrations against the right DB) before debugging further. Tests run against the **live stack**, so the stack must be up via `./opentr.sh start dev` (not bare compose) for backend integration/E2E tests to hit the correct DB/storage.
+
 ## ⚠️ CRITICAL: Local Code vs Docker Hub Images
 
 **Production/nginx/PKI overlays serve pre-built images from Docker Hub. Your local code changes are NOT included until you rebuild.** Symptom: 404s on new endpoints, missing UI features.

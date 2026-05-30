@@ -185,6 +185,10 @@ def _run_cloud(
         from app.services.asr.gladia_provider import GladiaProvider
 
         provider = GladiaProvider(api_key, model_name)
+    elif provider_name == "speechmatics":
+        from app.services.asr.speechmatics_provider import SpeechmaticsProvider
+
+        provider = SpeechmaticsProvider(api_key, model_name)
     else:
         return (f"{provider_name} (unsupported)", [], 0.0)
 

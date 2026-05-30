@@ -69,6 +69,10 @@ def main() -> None:
         from app.services.asr.gladia_provider import GladiaProvider
 
         provider = GladiaProvider(api_key, model_name)
+    elif provider_name == "speechmatics":
+        from app.services.asr.speechmatics_provider import SpeechmaticsProvider
+
+        provider = SpeechmaticsProvider(api_key, model_name)
     else:
         raise SystemExit(f"unsupported provider {provider_name}")
 

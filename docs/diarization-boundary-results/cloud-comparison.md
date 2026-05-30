@@ -128,14 +128,18 @@ All cloud providers below were verified end-to-end against live APIs (catalog `s
 
 ## Reproduce
 
+The test clips + how to stage them into the worker (and rebuild from MinIO if missing) are
+documented in **`benchmark/diarization-boundary/README.md` → "Cloud-provider testing"**. In
+short — the audio persists (gitignored) at `benchmark/diarization-boundary/karpathy/karpathy_kwSVtQ7dziU/`
+(`audio.wav`, `karpathy_10m.wav`, `clip30.wav`; `reference.rttm` is committed); `docker compose cp`
+them into the worker's `/tmp`, then:
+
 ```bash
-# A short 2-speaker clip + the labeled reference must be on the worker (/tmp here).
 docker compose exec -T celery-worker python -m scripts.compare_cloud_boundaries \
     --audio /tmp/karpathy_10m.wav --ref-rttm /tmp/karpathy_ref.rttm \
     --cloud 849 --cloud 610 --cloud 850 --cloud 851 --cloud 852 --cloud 853 \
     --min-speakers 2 --max-speakers 2
 # --cloud <id> = a row id in user_asr_settings (decrypts that provider's keys).
-# Karpathy clip rebuilt from MinIO: download_file_to_path('media/1/<uuid>.mp4') → ffmpeg 16k mono.
 ```
 
 Run date: 2026-05-30. All six cloud providers configured via the admin UI (keys encrypted in

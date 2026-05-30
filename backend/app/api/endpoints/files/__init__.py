@@ -656,18 +656,88 @@ def _process_video_download_with_subtitles(
         return None
 
 
+def _audio_source_extension(filename: str) -> str:
+    """Return the lowercase extension of a filename without the dot."""
+    return filename.rsplit(".", 1)[1].lower() if "." in filename else ""
+
+
+def _process_audio_only_download(
+    db: Session,
+    db_file: MediaFile,
+    audio_format: str,
+) -> StreamingResponse:
+    """Extract (or pass through) the audio track of a media file for download.
+
+    Re-encodes to MP3/WAV, or stream-copies the source codec for ``original``.
+    Audio sources already in the requested format are streamed as-is (no ffmpeg).
+    """
+    from app.services.minio_service import MinIOService
+    from app.services.video_processing_service import NoAudioTrackError
+    from app.services.video_processing_service import VideoProcessingService
+
+    normalized = audio_format.lower()
+    is_audio_source = bool(db_file.content_type and db_file.content_type.startswith("audio/"))
+    source_ext = _audio_source_extension(str(db_file.filename))
+
+    # Short-circuit: audio source already in the requested format -> serve original bytes.
+    if is_audio_source and (
+        normalized == "original"
+        or (normalized == "mp3" and source_ext == "mp3")
+        or (normalized == "wav" and source_ext == "wav")
+    ):
+        return get_content_streaming_response(db_file)
+
+    minio_service = MinIOService()
+    video_service = VideoProcessingService(minio_service)
+
+    if not video_service.check_ffmpeg_availability():
+        raise HTTPException(status_code=502, detail="Audio extraction is unavailable (no ffmpeg).")
+
+    try:
+        cache_key, ext, content_type = video_service.extract_audio(
+            db=db,
+            file_id=int(db_file.id),
+            original_object_name=str(db_file.storage_path),
+            audio_format=normalized,
+        )
+    except NoAudioTrackError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Audio extraction failed for file {db_file.uuid}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to extract audio.") from e
+
+    file_stream, _, _, total_length = video_service._get_cache_file_stream(cache_key, None)
+
+    base_name = db_file.filename.rsplit(".", 1)[0] if "." in db_file.filename else db_file.filename
+    download_filename = f"{base_name}.{ext}"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{download_filename}"',
+        "Content-Type": content_type,
+    }
+    if total_length:
+        headers["Content-Length"] = str(total_length)
+
+    return StreamingResponse(content=file_stream, media_type=content_type, headers=headers)
+
+
 @router.get("/{file_uuid}/download")
 def download_media_file(
     file_uuid: str,
     token: str | None = None,
     original: bool = Query(False, description="Download original file without subtitles"),
     include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
+    audio_only: bool = Query(False, description="Download only the audio track"),
+    audio_format: str = Query("mp3", description="Audio format: mp3, wav, or original"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Download a media file (with embedded subtitles for videos by default)"""
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+
+    # Audio-only takes precedence over the video-subtitle path.
+    if audio_only:
+        return _process_audio_only_download(db, db_file, audio_format)
 
     # Check if this is a video file with available subtitles
     is_video = db_file.content_type and db_file.content_type.startswith("video/")
@@ -696,6 +766,8 @@ def download_media_file_with_token(
     token: str,
     original: bool = Query(False, description="Download original file without subtitles"),
     include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
+    audio_only: bool = Query(False, description="Download only the audio track"),
+    audio_format: str = Query("mp3", description="Audio format: mp3, wav, or original"),
     db: Session = Depends(get_db),
 ):
     """
@@ -723,6 +795,10 @@ def download_media_file_with_token(
         is_admin = user.is_admin
         db_file = get_media_file_by_uuid(db, file_uuid, int(user.id), is_admin=is_admin)
 
+        # Audio-only takes precedence over the video-subtitle path.
+        if audio_only:
+            return _process_audio_only_download(db, db_file, audio_format)
+
         # Check if this is a video file with available subtitles
         is_video = db_file.content_type and db_file.content_type.startswith("video/")
         has_transcript = db_file.status == "completed"
@@ -745,6 +821,10 @@ def download_media_file_with_token(
 
     except JWTError as e:
         raise HTTPException(status_code=401, detail="Invalid token") from e
+    except HTTPException:
+        # Preserve real status codes (e.g. 422 no-audio, 502 no-ffmpeg) rather than
+        # masking them as auth failures.
+        raise
     except Exception as e:
         logger.error(f"Error in download with token: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed") from e

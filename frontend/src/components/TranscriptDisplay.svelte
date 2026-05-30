@@ -63,6 +63,22 @@
     showExportDropdown = false;
   }
 
+  let showDownloadDropdown = false;
+
+  function toggleDownloadDropdown(event: MouseEvent) {
+    event.stopPropagation();
+    showDownloadDropdown = !showDownloadDropdown;
+  }
+
+  function closeDownloadDropdown() {
+    showDownloadDropdown = false;
+  }
+
+  function selectDownload(mode: DownloadMode) {
+    closeDownloadDropdown();
+    downloadMedia(mode);
+  }
+
   // Create a reactive key based on speakerList to force re-renders of speaker sections
   // This ensures Edit Speakers and Merge Speakers sections update when speakers change
   $: speakerListKey = speakerList.map(s => s.uuid).join('-');
@@ -150,6 +166,8 @@
   $: downloadState = $downloadStore;
   $: currentDownload = downloadState[file?.uuid];
   $: isDownloading = currentDownload && ['preparing', 'processing', 'downloading'].includes(currentDownload.status);
+  $: isVideoFile = file?.content_type?.startsWith('video/') ?? false;
+  $: canEmbedSubtitles = isVideoFile && file?.status === 'completed';
 
   // Scrollbar indicator state
   let transcriptContainer: HTMLElement | null = null;
@@ -454,7 +472,9 @@
     }
   }
 
-  async function downloadFile() {
+  type DownloadMode = 'video-subs' | 'video-original' | 'audio-mp3' | 'audio-wav' | 'audio-original';
+
+  async function downloadMedia(mode: DownloadMode) {
     if (!file || !file.uuid) {
       toastStore.error($t('transcript.fileNotAvailable'));
       return;
@@ -469,84 +489,104 @@
       return;
     }
 
+    const baseName = filename.includes('.') ? filename.substring(0, filename.lastIndexOf('.')) : filename;
+    const extension = filename.includes('.') ? filename.substring(filename.lastIndexOf('.')) : '.mp4';
+
+    // Resolve URL, target filename, notification copy, and whether the server has to
+    // run ffmpeg (processed) vs. stream the bytes directly (instant).
+    let downloadUrl = `/api/files/${fileId}/download`;
+    let downloadFilename = filename;
+    let downloadType: 'video_with_subtitles' | 'original_video' | 'audio' = 'original_video';
+    let isProcessed = false;
+
+    switch (mode) {
+      case 'video-subs':
+        downloadUrl += '?include_speakers=true';
+        downloadFilename = `${baseName}_with_subtitles${extension}`;
+        downloadType = 'video_with_subtitles';
+        isProcessed = true;
+        break;
+      case 'video-original':
+        downloadUrl += '?original=true';
+        downloadFilename = filename;
+        downloadType = 'original_video';
+        break;
+      case 'audio-mp3':
+        downloadUrl += '?audio_only=true&audio_format=mp3';
+        downloadFilename = `${baseName}.mp3`;
+        downloadType = 'audio';
+        isProcessed = true;
+        break;
+      case 'audio-wav':
+        downloadUrl += '?audio_only=true&audio_format=wav';
+        downloadFilename = `${baseName}.wav`;
+        downloadType = 'audio';
+        isProcessed = true;
+        break;
+      case 'audio-original':
+        downloadUrl += '?audio_only=true&audio_format=original';
+        // Extension is decided server-side from the source codec; defer to the
+        // server's Content-Disposition filename by leaving download empty.
+        downloadFilename = '';
+        downloadType = 'audio';
+        isProcessed = true;
+        break;
+    }
+
     // Start download tracking
-    const canStart = downloadStore.startDownload(fileId, filename);
+    const canStart = downloadStore.startDownload(fileId, filename, downloadType);
     if (!canStart) return;
 
     try {
       downloadStore.updateStatus(fileId, 'processing');
 
-      // Determine if this is a video with subtitles for enhanced processing
-      const isVideo = file.content_type?.startsWith('video/');
-      const hasSubtitles = file.status === 'completed' && file.transcript_segments?.length > 0;
-
-      // For cached videos, add a small delay to ensure download state is properly initialized
-      // before WebSocket 'completed' message arrives
-      if (isVideo && hasSubtitles) {
+      // For processed downloads, add a small delay so download state is initialized
+      // before the WebSocket 'completed' message can arrive.
+      if (isProcessed) {
         await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      // Build download URL (cookies are sent automatically)
-      let downloadUrl = `/api/files/${fileId}/download`;
-      let downloadFilename = filename;
-
-      // For videos with subtitles, include subtitle embedding parameters
-      if (isVideo && hasSubtitles) {
-        downloadUrl += '?include_speakers=true';
-        // Generate filename with subtitles suffix
-        const baseName = filename.includes('.') ? filename.substring(0, filename.lastIndexOf('.')) : filename;
-        const extension = filename.includes('.') ? filename.substring(filename.lastIndexOf('.')) : '.mp4';
-        downloadFilename = `${baseName}_with_subtitles${extension}`;
       }
 
       downloadStore.updateStatus(fileId, 'downloading');
 
-      // Create download link
+      // Create download link (cookies are sent automatically)
       const link = document.createElement('a');
       link.href = downloadUrl;
       link.download = downloadFilename;
       link.style.display = 'none';
       document.body.appendChild(link);
-
-      // Trigger download
       link.click();
-
-      // Clean up
       document.body.removeChild(link);
 
-      // For non-video files or videos without subtitles, mark as completed quickly
-      if (!isVideo || !hasSubtitles) {
+      if (!isProcessed) {
+        // Instant passthrough (original file) — mark complete shortly after.
         setTimeout(() => {
           downloadStore.updateStatus(fileId, 'completed');
         }, 2000);
       } else {
-        // For videos with subtitles, monitor the download progress
-        // Set up an interval to check if the browser has started downloading
+        // Processed downloads: monitor until the browser starts receiving the file.
         let checkCount = 0;
         const checkInterval = setInterval(() => {
           checkCount++;
           const currentStatus = downloadStore.getDownloadStatus(fileId);
 
-          // If status changed to completed or error, clear the interval
           if (!currentStatus || currentStatus.status === 'completed' || currentStatus.status === 'error') {
             clearInterval(checkInterval);
             return;
           }
 
-          // For cached videos, the download starts almost immediately
-          // If we're still in processing after 3 seconds, it's likely done
+          // Cached results download almost immediately.
           if (checkCount >= 3 && ['processing', 'downloading'].includes(currentStatus.status)) {
             downloadStore.updateStatus(fileId, 'completed');
             clearInterval(checkInterval);
             return;
           }
 
-          // For actual processing, give it more time (up to 60 seconds)
+          // Allow up to 60s for actual ffmpeg processing.
           if (checkCount >= 60 && ['processing', 'downloading'].includes(currentStatus.status)) {
             downloadStore.updateStatus(fileId, 'completed');
             clearInterval(checkInterval);
           }
-        }, 1000); // Check every second
+        }, 1000);
       }
 
     } catch (error) {
@@ -558,8 +598,8 @@
 
 </script>
 
-<!-- Close export dropdown on outside click -->
-<svelte:window on:click={closeExportDropdown} />
+<!-- Close dropdowns on outside click -->
+<svelte:window on:click={() => { closeExportDropdown(); closeDownloadDropdown(); }} />
 
 <section class="transcript-column">
   <div class="transcript-header">
@@ -897,52 +937,49 @@
         {/if}
 
         {#if file && file.download_url}
-          <button
-            class="action-button download-button"
-            class:downloading={isDownloading}
-            class:processing={currentDownload?.status === 'processing'}
-            disabled={isDownloading}
-            on:click={downloadFile}
-            title={isDownloading ?
-              $t('transcript.processingVideoWithSubtitles') :
-              (file.content_type?.startsWith('video/') && file.status === 'completed' ? $t('transcript.downloadVideoWithSubtitles') : $t('transcript.downloadMediaFile'))}
-          >
-            {#if isDownloading}
-              {#if currentDownload?.status === 'preparing'}
+          <div class="export-dropdown download-dropdown" class:open={showDownloadDropdown}>
+            <button
+              class="action-button download-button"
+              class:downloading={isDownloading}
+              class:processing={currentDownload?.status === 'processing'}
+              disabled={isDownloading}
+              on:click={toggleDownloadDropdown}
+              title={isDownloading ? $t('transcript.processing') : $t('transcript.download')}
+            >
+              {#if isDownloading}
                 <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21 12a9 9 0 11-6.219-8.56"/>
                 </svg>
-                {$t('transcript.preparing')}
-              {:else if currentDownload?.status === 'processing'}
-                <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                {currentDownload?.status === 'preparing' ? $t('transcript.preparing') : $t('transcript.processing')}
+              {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
                 </svg>
-                {$t('transcript.processing')}
-              {:else if currentDownload?.status === 'downloading'}
-                <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                {$t('transcript.download')}
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
-                {$t('transcript.processing')}
               {/if}
-            {:else}
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              {$t('transcript.download')}
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-                <line x1="7" y1="2" x2="7" y2="22"></line>
-                <line x1="17" y1="2" x2="17" y2="22"></line>
-                <line x1="2" y1="12" x2="22" y2="12"></line>
-                <line x1="2" y1="7" x2="7" y2="7"></line>
-                <line x1="2" y1="17" x2="7" y2="17"></line>
-                <line x1="17" y1="17" x2="22" y2="17"></line>
-                <line x1="17" y1="7" x2="22" y2="7"></line>
-              </svg>
+            </button>
+            {#if showDownloadDropdown && !isDownloading}
+              <!-- svelte-ignore a11y-click-events-have-key-events -->
+              <!-- svelte-ignore a11y-no-static-element-interactions -->
+              <div class="export-dropdown-content" on:click|stopPropagation>
+                {#if canEmbedSubtitles}
+                  <button on:click={() => selectDownload('video-subs')}>{$t('transcript.downloadVideoSubtitles')}</button>
+                {/if}
+                {#if isVideoFile}
+                  <button on:click={() => selectDownload('video-original')}>{$t('transcript.downloadOriginalVideo')}</button>
+                {/if}
+                <div class="download-dropdown-label">{$t('transcript.downloadAudio')}</div>
+                <button on:click={() => selectDownload('audio-mp3')}>{$t('transcript.downloadAudioMp3')}</button>
+                <button on:click={() => selectDownload('audio-wav')}>{$t('transcript.downloadAudioWav')}</button>
+                <button on:click={() => selectDownload('audio-original')}>{$t('transcript.downloadAudioOriginal')}</button>
+              </div>
             {/if}
-          </button>
+          </div>
         {/if}
 
       </div>
@@ -1789,6 +1826,22 @@
 
   .export-dropdown-content button:last-child {
     border-radius: 0 0 6px 6px;
+  }
+
+  /* The Download dropdown is the rightmost action — align it to the right edge. */
+  .download-dropdown .export-dropdown-content {
+    left: auto;
+    right: 0;
+  }
+
+  .download-dropdown-label {
+    padding: 8px 16px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
   }
 
   .speaker-editor-container {

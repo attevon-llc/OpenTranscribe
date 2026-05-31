@@ -62,7 +62,7 @@ sentence-transformers>=2.2.0  # For semantic search embeddings (all-MiniLM-L6-v2
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
 deepgram-sdk>=6.1.1
 assemblyai>=0.30.0
-google-cloud-speech>=2.24.0
+google-cloud-speech>=2.39.0
 azure-cognitiveservices-speech>=1.35.0
 speechmatics-python>=1.11.0
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)

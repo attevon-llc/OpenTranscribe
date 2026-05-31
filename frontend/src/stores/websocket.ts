@@ -8,6 +8,7 @@ import { generateId } from '$lib/utils/ids';
 export type NotificationType =
   | 'transcription_status'
   | 'summarization_status'
+  | 'redaction_status'
   | 'topic_extraction_status'
   | 'auto_label_status'
   | 'youtube_processing_status'
@@ -499,6 +500,7 @@ function createWebSocketStore() {
             const isProgressiveType =
               data.type === 'transcription_status' ||
               data.type === 'summarization_status' ||
+              data.type === 'redaction_status' ||
               data.type === 'topic_extraction_status' ||
               data.type === 'auto_label_status' ||
               data.type === 'youtube_processing_status' ||
@@ -872,6 +874,8 @@ function createWebSocketStore() {
         return translate('notifications.transcriptionUpdate');
       case 'summarization_status':
         return translate('notifications.summarizationUpdate');
+      case 'redaction_status':
+        return translate('notifications.redactionUpdate');
       case 'topic_extraction_status':
         return translate('notifications.topicExtraction');
       case 'auto_label_status':

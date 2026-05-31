@@ -327,6 +327,61 @@ services:
       redis:
         condition: service_healthy
 
+  # Content redaction detection — dedicated, independently-scalable CPU service.
+  # Only this worker loads the PII (Presidio+GLiNER) and toxicity models. No GPU.
+  # Scale via REDACTION_CONCURRENCY / replicas (decoupled from the GPU pipeline).
+  #
+  # Single-machine politeness: redaction is a BACKGROUND post-step (the user already
+  # has their transcript). To avoid CPU thrashing with the transcription pipeline and
+  # other workers on one box, it runs at lower OS priority (`nice`) so it yields under
+  # contention, and PyTorch intra-op threads are capped (REDACTION_TORCH_THREADS) so a
+  # single inference can't grab all cores. On a dedicated AWS/K8s node, raise both
+  # REDACTION_TORCH_THREADS and REDACTION_CONCURRENCY (or add replicas) for full speed.
+  celery-redaction:
+    container_name: opentranscribe-celery-redaction
+    restart: always
+    env_file: .env
+    security_opt:
+      - no-new-privileges:true
+    command: nice -n ${REDACTION_NICE:-10} celery -A app.core.celery worker --loglevel=info -Q redaction --pool=${REDACTION_WORKER_POOL:-threads} --concurrency=${REDACTION_CONCURRENCY:-2} --max-tasks-per-child=${REDACTION_MAX_TASKS:-200} --hostname redaction@%h -E
+    volumes:
+      # HuggingFace cache holds the GLiNER PII + toxicity model weights.
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+    environment:
+      # Only this worker preloads the redaction models (Presidio+GLiNER, toxicity).
+      - PRELOAD_REDACTION_MODELS=true
+      - REDACTION_CONCURRENCY=${REDACTION_CONCURRENCY:-2}
+      # Cap PyTorch/BLAS intra-op threads so one inference can't peg all cores on a
+      # shared single machine. Raise on a dedicated node. (Must be set before import.)
+      - OMP_NUM_THREADS=${REDACTION_TORCH_THREADS:-8}
+      - MKL_NUM_THREADS=${REDACTION_TORCH_THREADS:-8}
+      # auto = use GPU automatically when it has free VRAM (checked at runtime, no
+      # restart), else CPU. The GPU overlay gives this worker a visible device.
+      - REDACTION_DEVICE=${REDACTION_DEVICE:-auto}
+      - REDACTION_PII_USE_GLINER=${REDACTION_PII_USE_GLINER:-false}
+      # Internal Docker network settings (same as other workers)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - TEMP_DIR=/app/temp
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d redaction@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   celery-cloud-asr-worker:
     # Dedicated worker for cloud ASR provider tasks (Deepgram, AssemblyAI,
     # Google, AWS, etc.). These are long-running network-bound jobs; giving
@@ -625,7 +680,7 @@ services:
       --auto_refresh=True
       --tasks_columns=name,uuid,state,received,started,runtime,worker,args
       --purge_offline_workers=600
-      --queues=gpu,gpu-transcribe,gpu-diarize,download,cpu,nlp,embedding,utility,cloud-asr,cpu-transcribe,celery
+      --queues=gpu,gpu-transcribe,gpu-diarize,download,cpu,nlp,embedding,utility,cloud-asr,cpu-transcribe,redaction,celery
       --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower}
     ports:
       - "${FLOWER_PORT:-5175}:5555"

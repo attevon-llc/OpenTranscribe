@@ -9,6 +9,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
+from app.core import constants as C  # noqa: N812
 from app.models.media import Analytics
 from app.models.media import Collection
 from app.models.media import CollectionMember
@@ -285,7 +286,10 @@ def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -
 
 
 def _format_transcript_segments(
-    transcript_segments: list[TranscriptSegment], speakers: list[Speaker]
+    transcript_segments: list[TranscriptSegment],
+    speakers: list[Speaker],
+    redaction_cfg: Any = None,
+    reveal_categories: set | None = None,
 ) -> list[Any]:
     """
     Format transcript segments with speaker labels and timestamps.
@@ -293,6 +297,8 @@ def _format_transcript_segments(
     Args:
         transcript_segments: List of transcript segments (DB models)
         speakers: List of speakers for name mapping
+        redaction_cfg: Optional ``EffectiveRedactionConfig`` for read-time masking
+        reveal_categories: Categories an authorized owner chose to reveal
 
     Returns:
         List of formatted transcript segment schemas
@@ -302,9 +308,91 @@ def _format_transcript_segments(
     }
 
     return [
-        FormattingService.format_transcript_segment(segment, speaker_mapping)
+        FormattingService.format_transcript_segment(
+            segment, speaker_mapping, redaction_cfg, reveal_categories
+        )
         for segment in transcript_segments
     ]
+
+
+def _resolve_redaction_for_request(
+    db: Session,
+    db_file: MediaFile,
+    current_user: User,
+    *,
+    is_admin: bool,
+    redact: bool,
+) -> tuple[Any, set]:
+    """Resolve (effective_cfg, reveal_categories) for a transcript read.
+
+    The owner (and admins, audited) may set ``redact=false`` to reveal NON-forced
+    categories; admin-forced categories stay masked. Non-owners never reveal.
+    """
+    try:
+        from app.services.redaction.config import resolve_effective_config
+
+        cfg = resolve_effective_config(db, int(current_user.id))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to resolve redaction config: {e}")
+        return None, set()
+
+    can_reveal = bool(db_file.user_id == int(current_user.id)) or bool(is_admin)
+    reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
+
+    if reveal:
+        # Audit any unredacted view (compliance trail).
+        try:
+            from app.auth.audit import AuditOutcome
+            from app.auth.audit import audit_logger
+
+            audit_logger.log(
+                event_type="transcript.view_unredacted",  # type: ignore[arg-type]
+                outcome=AuditOutcome.SUCCESS,
+                user_id=int(current_user.id),
+                username=str(current_user.email),
+                details={
+                    "file_id": int(db_file.id),
+                    "file_uuid": str(db_file.uuid),
+                    "revealed_categories": sorted(reveal),
+                },
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Audit log for unredacted view failed: {e}")
+
+    return cfg, reveal
+
+
+def _lazy_dispatch_redaction(db: Session, db_file: MediaFile) -> None:
+    """Kick off redaction detection for a completed file that never had it (legacy).
+
+    Sets status to 'pending' immediately so concurrent reads don't re-dispatch.
+    """
+    try:
+        db_file.redaction_status = C.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+        db.commit()
+        from app.tasks.redaction_task import redaction_detect_task
+
+        redaction_detect_task.delay(file_id=int(db_file.id), user_id=int(db_file.user_id))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Lazy redaction dispatch failed for file {db_file.id}: {e}")
+
+
+def _redaction_pending(db: Session, cfg: Any, db_file: MediaFile) -> bool:
+    """Whether transcript display should be withheld until redaction completes.
+
+    Only applies when redaction is enabled for the viewer. 'done'/'failed' never block
+    (failed = redaction couldn't run; don't trap the user). A file that never had
+    detection (legacy, status None) is dispatched lazily and treated as pending.
+    """
+    if cfg is None or not getattr(cfg, "enabled", False):
+        return False
+    status = getattr(db_file, "redaction_status", None)
+    if status in (C.REDACTION_STATUS_DONE, C.REDACTION_STATUS_FAILED):
+        return False
+    if status is None:
+        _lazy_dispatch_redaction(db, db_file)
+        return True
+    return True  # pending | processing
 
 
 def _build_media_file_response(
@@ -318,6 +406,8 @@ def _build_media_file_response(
     total_speaker_segments: int,
     segment_limit: int | None,
     segment_offset: int,
+    redaction_cfg: Any = None,
+    reveal_categories: set | None = None,
 ) -> MediaFileDetail:
     """
     Build the MediaFileDetail response with all formatted fields.
@@ -376,8 +466,10 @@ def _build_media_file_response(
     # Add error info if applicable
     _add_error_info_to_response(response, db_file)
 
-    # Format and add transcript segments
-    formatted_segments = _format_transcript_segments(transcript_segments, speakers)
+    # Format and add transcript segments (with optional read-time redaction)
+    formatted_segments = _format_transcript_segments(
+        transcript_segments, speakers, redaction_cfg, reveal_categories
+    )
     response.transcript_segments = formatted_segments  # type: ignore[assignment]
 
     # Add pagination metadata
@@ -395,6 +487,7 @@ def get_media_file_detail(
     current_user: User,
     segment_limit: int | None = None,
     segment_offset: int = 0,
+    redact: bool = True,
 ) -> MediaFileDetail:
     """
     Get detailed media file information including tags, analytics, and formatted fields.
@@ -457,6 +550,19 @@ def get_media_file_detail(
         # Set URLs
         set_file_urls(db_file)
 
+        # Resolve read-time redaction config for the caller.
+        redaction_cfg, reveal_categories = _resolve_redaction_for_request(
+            db, db_file, current_user, is_admin=is_admin, redact=redact
+        )
+
+        # If redaction is enabled but detection hasn't finished, withhold the transcript
+        # until it's ready (no un-redacted display window).
+        pending = _redaction_pending(db, redaction_cfg, db_file)
+        if pending:
+            transcript_segments = []
+            total_segments = 0
+            total_speaker_segments = 0
+
         # Build the response
         response = _build_media_file_response(
             db_file=db_file,
@@ -469,6 +575,12 @@ def get_media_file_detail(
             total_speaker_segments=total_speaker_segments,
             segment_limit=segment_limit,
             segment_offset=segment_offset,
+            redaction_cfg=redaction_cfg,
+            reveal_categories=reveal_categories,
+        )
+        response.redaction_pending = pending
+        response.redaction_status = (
+            str(db_file.redaction_status) if db_file.redaction_status else None
         )
 
         # Set caller's permission on the response
@@ -636,8 +748,29 @@ def update_single_transcript_segment(
         )
 
     # Update fields
-    for field, value in segment_update.model_dump(exclude_unset=True).items():
+    update_fields = segment_update.model_dump(exclude_unset=True)
+    text_changed = "text" in update_fields and update_fields["text"] != segment.text
+    for field, value in update_fields.items():
         setattr(segment, field, value)
+
+    # If the text changed, re-run redaction detection for THIS segment only so the
+    # edited text never bypasses masking (cheap inline detectors; ML best-effort).
+    if text_changed:
+        try:
+            from app.services.redaction.config import detection_config_for_all
+            from app.services.redaction.service import RedactionService
+
+            det_cfg = detection_config_for_all()
+            det_cfg["language"] = db_file.language
+            span_dicts, toxicity = RedactionService.detect_segment_spans(
+                str(segment.text),
+                segment.words,  # type: ignore[arg-type]
+                det_cfg,
+            )
+            segment.redactions = span_dicts or None  # type: ignore[assignment]
+            segment.toxicity = toxicity  # type: ignore[assignment]
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Re-detection after segment edit failed: {e}")
 
     db.commit()
     db.refresh(segment)

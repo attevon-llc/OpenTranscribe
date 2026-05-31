@@ -15,8 +15,12 @@
 # docker-compose.yml to work on CPU-only systems.
 #
 # Configuration:
-#   GPU_DEVICE_ID       - GPU device for AI work in normal mode (default: 0)
-#   GPU_SCALE_DEVICE_ID - GPU device for AI work in --gpu-scale mode (default: 2)
+#   GPU_DEVICE_ID           - GPU device for AI work in normal mode (default: 0)
+#   GPU_SCALE_DEVICE_ID     - GPU device for AI work in --gpu-scale mode (default: 2)
+#   REDACTION_GPU_DEVICE_ID - GPU the redaction worker may use (default: 0). Point at a
+#                             small/spare GPU to keep redaction off the transcription GPUs.
+#                             Only used when REDACTION_DEVICE=cuda; otherwise CPU. Even
+#                             then it falls back to CPU if that GPU is low on free VRAM.
 #   Set in .env file: GPU_DEVICE_ID=1
 
 services:
@@ -46,3 +50,16 @@ services:
             - driver: nvidia
               capabilities: [gpu]
               count: all
+
+  celery-redaction:
+    # Give the redaction worker visibility of one GPU so it CAN run GLiNER/toxicity on
+    # GPU when REDACTION_DEVICE=cuda. By default REDACTION_DEVICE=cpu, so the GPU is not
+    # used — but visibility lets the VRAM-aware resolver probe and fall back to CPU when
+    # the device is busy with transcription/diarization (single-GPU homelab safe).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ['${REDACTION_GPU_DEVICE_ID:-0}']

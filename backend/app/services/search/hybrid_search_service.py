@@ -627,6 +627,14 @@ class HybridSearchService:
             use_neural=use_neural,
         )
 
+        # Read-time content redaction of snippets (profanity + custom words). This is
+        # the cheap, model-free path that runs safely in the API process; PII masking
+        # of short snippets is not applied here (it needs the redaction worker's models)
+        # — the full transcript view + exports remain the enforced PII boundary.
+        # Applied before caching so the per-user cache (cache_key includes user_id)
+        # holds the masked version.
+        self._redact_snippets(result, user_id)
+
         # Cache the response — but NOT if it fell back to BM25-only due to
         # a transient error, so the next request retries hybrid properly.
         if not result._fell_back_to_bm25:
@@ -635,6 +643,50 @@ class HybridSearchService:
             logger.info("Skipping cache for BM25-fallback response (query='%s')", query)
 
         return result
+
+    def _redact_snippets(self, result: SearchResponse, user_id: int) -> None:
+        """Mask profanity/custom words in search snippets per the user's redaction config.
+
+        HTML-safe: the wordlist regex only matches word-boundary alphanumeric runs, never
+        ``<``/``>``, so ``<mark>`` highlight tags are preserved. Label style is used for
+        previews regardless of the user's chosen style.
+        """
+        try:
+            from app.db.session_utils import session_scope
+            from app.services.redaction.config import resolve_effective_config
+
+            with session_scope() as db:
+                cfg = resolve_effective_config(db, user_id)
+        except Exception as exc:  # noqa: BLE001 — never break search on redaction failure
+            logger.debug("Snippet redaction config unavailable: %s", exc)
+            return
+
+        if not cfg.enabled:
+            return
+        cats = cfg.enabled_categories & {"profanity", "custom"}
+        if not cats:
+            return
+
+        from app.services.redaction.detectors import wordlist
+        from app.services.redaction.spans import apply_redactions
+
+        for hit in getattr(result, "results", []) or []:
+            for occ in getattr(hit, "occurrences", []) or []:
+                snippet = getattr(occ, "snippet", "") or ""
+                if not snippet:
+                    continue
+                spans = []
+                if "profanity" in cats:
+                    spans += wordlist.find_profanity_spans(snippet, None, cfg.allowlist)
+                if "custom" in cats and cfg.custom_words:
+                    spans += wordlist.find_custom_spans(
+                        snippet, cfg.custom_words, None, cfg.allowlist
+                    )
+                if spans:
+                    masked, _ = apply_redactions(
+                        snippet, spans, style="label", enabled_categories=cats
+                    )
+                    occ.snippet = masked
 
     def _check_neural_search_available(self) -> bool:
         """Check if neural search is available in OpenSearch.

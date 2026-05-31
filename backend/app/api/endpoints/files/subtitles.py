@@ -25,6 +25,27 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
+    """Resolve (cfg, reveal_categories) for a subtitle export.
+
+    Honors the admin forced-export lock: when ``export_locked`` is set, the original
+    can never be exported regardless of the ``redact`` flag.
+    """
+    try:
+        from app.services.redaction.config import resolve_effective_config
+
+        cfg = resolve_effective_config(db, int(current_user.id))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to resolve redaction config for subtitles: {e}")
+        return None, set()
+
+    if getattr(cfg, "export_locked", False):
+        return cfg, set()  # forced — never reveal on export
+    can_reveal = (media_file.user_id == int(current_user.id)) or current_user.is_admin
+    reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
+    return cfg, reveal
+
+
 @router.get("/{file_uuid}/subtitles", response_class=Response)
 async def get_subtitles(
     file_uuid: str,
@@ -32,6 +53,7 @@ async def get_subtitles(
     current_user: User = Depends(get_current_active_user),
     include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
     subtitle_format: str = Query("srt", description="Subtitle format (srt, webvtt, txt)"),
+    redact: bool = Query(True, description="Apply content redaction (owner/admin may disable)"),
 ):
     """
     Generate and download subtitles for a media file.
@@ -48,17 +70,24 @@ async def get_subtitles(
     if media_file.status != "completed":
         raise HTTPException(status_code=400, detail="Transcription not completed yet")
 
+    # Resolve read-time redaction (export honors the censor toggle + admin floor).
+    cfg, reveal = _resolve_subtitle_redaction(db, media_file, current_user, redact)
+
     try:
         # Generate subtitle content based on format
         format_lower = subtitle_format.lower()
         if format_lower == "webvtt":
             subtitle_content = SubtitleService.generate_webvtt_content(
-                db, file_id, include_speakers
+                db, file_id, include_speakers, cfg, reveal
             )
         elif format_lower == "txt":
-            subtitle_content = SubtitleService.generate_txt_content(db, file_id, include_speakers)
+            subtitle_content = SubtitleService.generate_txt_content(
+                db, file_id, include_speakers, cfg, reveal
+            )
         else:
-            subtitle_content = SubtitleService.generate_srt_content(db, file_id, include_speakers)
+            subtitle_content = SubtitleService.generate_srt_content(
+                db, file_id, include_speakers, cfg, reveal
+            )
 
         if not subtitle_content.strip():
             raise HTTPException(status_code=404, detail="No transcript available for this file")

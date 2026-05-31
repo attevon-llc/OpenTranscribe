@@ -75,6 +75,7 @@ export interface GalleryActions {
   triggerDeleteSelected: () => void;
   triggerReprocess: () => void;
   triggerSummarize: () => void;
+  triggerRedact: () => void;
   triggerRetryFailed: () => void;
   triggerExport: (format: string) => void;
   triggerSpeakerId: () => void;
@@ -125,6 +126,7 @@ function createGalleryStore() {
   const deleteSelectedTrigger = writable<number>(0);
   const reprocessTrigger = writable<number>(0);
   const summarizeTrigger = writable<number>(0);
+  const redactTrigger = writable<number>(0);
   const retryFailedTrigger = writable<number>(0);
   const exportTrigger = writable<string>(''); // format string
   const speakerIdTrigger = writable<number>(0);
@@ -267,6 +269,10 @@ function createGalleryStore() {
 
     triggerSummarize: () => {
       summarizeTrigger.update((n) => n + 1);
+    },
+
+    triggerRedact: () => {
+      redactTrigger.update((n) => n + 1);
     },
 
     triggerRetryFailed: () => {
@@ -433,6 +439,16 @@ function createGalleryStore() {
     onSummarizeTrigger: (callback: (value: number) => void) => {
       let hasInitialized = false;
       return summarizeTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onRedactTrigger: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return redactTrigger.subscribe((value) => {
         if (hasInitialized && value > 0) {
           callback(value);
         }

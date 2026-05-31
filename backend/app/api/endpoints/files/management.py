@@ -58,7 +58,7 @@ class BulkActionRequest(BaseModel):
     """Request for bulk file operations."""
 
     file_uuids: list[str]
-    action: str  # "delete", "retry", "cancel", "recover", "reprocess", "summarize"
+    action: str  # delete | retry | cancel | recover | reprocess | summarize | redact
     force: bool = False
     reset_retry_count: bool = False
     # Selective reprocessing (optional, used when action='reprocess')
@@ -590,6 +590,48 @@ def _handle_summarize_action(
     return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
 
 
+def _handle_redact_action(db: Session, file_uuid: str, file_id: int) -> BulkActionResult:
+    """Handle content-redaction (re)scan for bulk/selective operations.
+
+    Re-runs redaction detection for a completed file (e.g., old files that predate the
+    feature, or to apply a settings change). Idempotent — replaces cached spans.
+    """
+    import os
+
+    from app.core import constants as C  # noqa: N812
+    from app.models.media import MediaFile
+
+    db_file = db.query(MediaFile).filter_by(id=file_id).first()
+    if not db_file or db_file.status != FileStatus.COMPLETED:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="File must be completed before redaction",
+            error="INVALID_STATUS",
+        )
+    if not db_file.transcript_segments:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="No transcript to redact",
+            error="NO_TRANSCRIPT",
+        )
+
+    # Mark pending so the UI shows the "Redacting…" state immediately.
+    db_file.redaction_status = C.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+    db.commit()
+
+    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        from app.tasks.redaction_task import redaction_detect_task
+
+        task = redaction_detect_task.delay(file_id=file_id, user_id=int(db_file.user_id))
+        message = f"Redaction started (task: {task.id})"
+    else:
+        message = "Redaction prepared (test mode)"
+
+    return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
+
+
 def _process_single_file_action(
     db: Session,
     file_uuid: str,
@@ -616,6 +658,7 @@ def _process_single_file_action(
             db, file_uuid, file_id, stages, min_speakers, max_speakers, num_speakers
         ),
         "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, int(current_user.id)),
+        "redact": lambda: _handle_redact_action(db, file_uuid, file_id),
     }
 
     handler = action_handlers.get(action)

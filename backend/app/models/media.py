@@ -53,6 +53,14 @@ class MediaFile(Base):
     )  # pending, processing, completed, failed, not_configured, disabled
     summary_schema_version = Column(Integer, default=1)  # Track summary schema evolution
     translated_text = Column(Text, nullable=True)  # For non-English transcripts
+
+    # Content redaction lifecycle (detection runs once per transcript, cached on segments)
+    redaction_status = Column(
+        String, nullable=True
+    )  # pending | processing | done | failed (None = not yet run)
+    redaction_model_version = Column(
+        String, nullable=True
+    )  # Detector model version that produced the cached spans (for upgrade re-index)
     file_hash = Column(String, nullable=True, index=True)  # SHA-256 hash for duplicate detection
     # Constant-time content fingerprint (first/middle/last byte samples + size).
     # Complements file_hash for server-side dedup + artifact cache keys. Not
@@ -177,6 +185,13 @@ class TranscriptSegment(Base):
         JSONB, nullable=True
     )  # Word-level timestamps: [{"word": "...", "start": 0.1, "end": 0.25, "score": 0.95}]
     confidence = Column(Float, nullable=True)  # ASR confidence score (0.0–1.0)
+    # Content redaction: cached detection spans (original text is never modified).
+    # [{"char_start": int, "char_end": int, "word_start": int|None, "word_end": int|None,
+    #   "category": "pii|toxicity|profanity|custom", "entity_type": "NAME|EMAIL|...",
+    #   "detector": "presidio|gliner|toxicity|wordlist|llm", "confidence": float}]
+    redactions = Column(JSONB, nullable=True)
+    # Segment-level toxicity scores (no char span): {"toxic": 0.91, "insult": 0.81, ...}
+    toxicity = Column(JSONB, nullable=True)
 
     # Relationships
     media_file = relationship("MediaFile", back_populates="transcript_segments")

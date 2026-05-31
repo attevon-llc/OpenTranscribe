@@ -111,6 +111,8 @@ class FilePipelineTiming(Base):
     clustering_end_ms = Column(BigInteger, nullable=True)
     summary_start_ms = Column(BigInteger, nullable=True)
     summary_end_ms = Column(BigInteger, nullable=True)
+    redaction_start_ms = Column(BigInteger, nullable=True)
+    redaction_end_ms = Column(BigInteger, nullable=True)
 
     # --- Derived (stored for query speed; recomputable from the above) ---
     user_perceived_duration_ms = Column(BigInteger, nullable=True, index=True)
@@ -123,6 +125,8 @@ class FilePipelineTiming(Base):
     whisper_model = Column(String(64), nullable=True)
     asr_provider = Column(String(64), nullable=True)
     asr_model = Column(String(128), nullable=True)
+    redaction_detectors = Column(String(128), nullable=True)
+    pii_entities_found = Column(Integer, nullable=True)
     gpu_device = Column(String(128), nullable=True)
     http_flow = Column(String(32), nullable=True)
     queue_depth_at_dispatch = Column(JSONB, nullable=True)

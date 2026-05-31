@@ -200,6 +200,20 @@ Two post-processing stages fix speaker mislabeling at turn boundaries. **All set
 - **Acoustic backchannel re-check** (default OFF, experimental, GPU): re-embeds short disputed/overlap words and reassigns by voiceprint cosine — relabels existing words only, never invents speech. +~15% WSER on top of the smoother, ~1.9 s / 10-min file. Code: `acoustic_recheck` (`boundary_resolver.py`), `diarizer.embed_window`, wired in `engine/stages.py`; carried on `EngineConfig` to keep the engine DB-free. Keys: `boundary_acoustic_recheck_enabled`, `boundary_acoustic_cosine_margin` (0.05), `boundary_acoustic_max_word_dur` (1.0).
 - Settings API: `api/endpoints/engine_settings.py`; UI: `frontend/src/components/settings/EngineSettings.svelte`. Metrics (WSER/island/DER): `utils/diarization_metrics.py`. Benchmark: `scripts/benchmark_boundary.py`. GPU-free regression: `tests/integration/test_boundary_regression.py` (fixtures: `tests/fixtures/boundary/`). Docs: `docs-site/docs/features/boundary-correction.md`, `docs-site/docs/developer-guide/diarization-boundary-correction.md`.
 
+### Content Redaction (PII / profanity / toxicity moderation)
+
+Detect profane/offensive/toxic words + PII and mask them at every display/export surface
+with `[CATEGORY]` placeholders — **the full original transcript is always kept in the DB**;
+masking is a read-time transform. **Per-user feature, on by default** (Settings → Content
+Redaction), with an **admin enforcement floor** (Settings → Redaction Policy) that can *force*
+PII/toxicity/profanity and mandate censored exports for all users.
+
+- **Detect-once, cache-forever**: detection runs once per transcript (always, regardless of settings) in a dedicated **`celery-redaction` CPU service** (`redaction` queue); spans cache on `transcript_segment.redactions` + `.toxicity`. Enable/disable, categories, style, custom words, allowlist are all **read-time** (no recompute). Only segment text edits + admin model upgrades recompute.
+- **Detectors** (`backend/app/services/redaction/detectors/`): `wordlist` (profanity + custom, read-time regex), `pii_presidio` (Presidio regex + GLiNER names, cached), `toxicity` (Tiny-Toxic / multilingual XLM-R, cached), `llm` (optional, reuses `LLM_PROVIDER`). Models pre-downloaded via `scripts/download-models.py` (`DOWNLOAD_REDACTION_MODELS=true`), loaded only by the redaction worker (`PRELOAD_REDACTION_MODELS=true`) — never on the GPU worker.
+- **The one read-time masker**: `services/redaction/spans.py:apply_redactions`. Effective config = user prefs ∪ admin force (`services/redaction/config.py:resolve_effective_config`); owner reveal via `?redact=false` (audited), forced categories never reveal. Read surfaces: `formatting_service.format_transcript_segment` (API), `subtitle_service` (SRT/VTT/TXT exports), `transcript_builders` (redact-before-LLM).
+- **Settings**: per-user `/user-settings/redaction`; admin `/admin/redaction-policy`. NO `.env` vars — coded defaults in `core/constants.py` (`DEFAULT_REDACTION_*`). Frontend: `ContentRedactionSettings.svelte` (user) + `RedactionPolicySettings.svelte` (admin), `lib/api/redactionSettings.ts`, 8-locale i18n at parity.
+- **Tests**: `backend/tests/redaction/` (unit, GPU-free), `tests/integration/test_redaction_pipeline.py` (`-m integration`), `tests/e2e/test_redaction_e2e.py` (`-m e2e`), golden fixtures in `tests/fixtures/redaction/`. ML-dependent detector tests are `@pytest.mark.models` (skip in fast CI). Migration: `v364_add_content_redaction`. Timing: `redaction_start_ms`/`redaction_end_ms` on `FilePipelineTiming`.
+
 ### LLM features (optional)
 
 Set `LLM_PROVIDER` in `.env` (vllm, openai, ollama, anthropic, openrouter) plus provider-specific keys/endpoints. Empty = transcription-only. Self-hosted vLLM/Ollama deployed separately. Model auto-discovery via OpenAI-compatible endpoints; edit mode reuses stored API keys.

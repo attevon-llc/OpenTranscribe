@@ -22,6 +22,8 @@ from app.services.speaker_status_service import SpeakerStatusService
 
 from .crud import _format_transcript_segments
 from .crud import _get_transcript_segments
+from .crud import _redaction_pending
+from .crud import _resolve_redaction_for_request
 from .crud import get_media_file_by_uuid
 
 router = APIRouter()
@@ -33,6 +35,7 @@ def get_file_segments(
     file_uuid: UUID,
     segment_limit: int = Query(500, ge=1, description="Number of segments to return"),
     segment_offset: int = Query(0, ge=0, description="Offset for pagination"),
+    redact: bool = Query(True, description="Apply content redaction (owner/admin may disable)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict[str, Any]:
@@ -45,6 +48,18 @@ def get_file_segments(
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(db, str(file_uuid), int(current_user.id), is_admin=is_admin)
     file_id = int(db_file.id)
+    redaction_cfg, reveal_categories = _resolve_redaction_for_request(
+        db, db_file, current_user, is_admin=is_admin, redact=redact
+    )
+
+    # Withhold the transcript until redaction finishes (when enabled).
+    if _redaction_pending(db, redaction_cfg, db_file):
+        return {
+            "transcript_segments": [],
+            "total_segments": 0,
+            "redaction_pending": True,
+            "redaction_status": str(db_file.redaction_status) if db_file.redaction_status else None,
+        }
 
     # 2 queries: count + paginated select with joinedload (vs 8+ in full detail)
     transcript_segments, total_segments = _get_transcript_segments(
@@ -60,7 +75,9 @@ def get_file_segments(
             processed_ids.add(int(segment.speaker.id))
             unique_speakers.append(segment.speaker)
 
-    formatted_segments = _format_transcript_segments(transcript_segments, unique_speakers)
+    formatted_segments = _format_transcript_segments(
+        transcript_segments, unique_speakers, redaction_cfg, reveal_categories
+    )
 
     return {
         "transcript_segments": formatted_segments,

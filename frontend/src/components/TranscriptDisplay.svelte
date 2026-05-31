@@ -1631,6 +1631,22 @@
     min-width: 0; /* Allow text to shrink in grid layout */
   }
 
+  /* Content redaction — "blur" mask style. The backend emits
+     <span class="redacted" data-cat="..."> around the original text; we blur it
+     and reveal on hover (authorized viewers only see this style at all). */
+  .segment-text :global(span.redacted) {
+    filter: blur(5px);
+    background: var(--surface-hover, rgba(127, 127, 127, 0.15));
+    border-radius: 3px;
+    cursor: help;
+    transition: filter 0.12s ease;
+    user-select: none;
+  }
+  .segment-text :global(span.redacted:hover) {
+    filter: blur(0);
+    user-select: text;
+  }
+
   .segment-text::before {
     content: '';
     position: absolute;

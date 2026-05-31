@@ -754,6 +754,38 @@
     }
   }
 
+  // Bulk content-redaction (re)scan of selected files
+  async function bulkRedact() {
+    const selected = $galleryState.selectedFiles;
+    if (selected.size === 0) return;
+
+    const completed = files.filter(f => selected.has(f.uuid) && f.status === 'completed');
+    if (completed.length === 0) {
+      toastStore.warning($t('gallery.bulk.noCompletedFiles'));
+      return;
+    }
+
+    try {
+      const response = await axiosInstance.post('/files/management/bulk-action', {
+        file_uuids: completed.map(f => f.uuid),
+        action: 'redact'
+      });
+      const results = response.data;
+      const successful = results.filter((r: any) => r.success);
+      const failed = results.filter((r: any) => !r.success);
+
+      if (successful.length > 0) {
+        toastStore.success($t('gallery.bulk.redactStarted', { count: successful.length }));
+      }
+      if (failed.length > 0) {
+        toastStore.error($t('gallery.bulk.redactFailed', { count: failed.length }));
+      }
+    } catch (err) {
+      console.error('Bulk redact error:', err);
+      toastStore.error($t('gallery.bulk.redactFailed', { count: completed.length }));
+    }
+  }
+
   // Bulk retry failed files
   async function bulkRetryFailed() {
     const selected = $galleryState.selectedFiles;
@@ -1288,6 +1320,10 @@
       bulkSummarize();
     });
 
+    const unsubscribeRedact = galleryStore.onRedactTrigger(() => {
+      bulkRedact();
+    });
+
     const unsubscribeRetryFailed = galleryStore.onRetryFailedTrigger(() => {
       bulkRetryFailed();
     });
@@ -1312,6 +1348,7 @@
       unsubscribeDeleteSelected();
       unsubscribeReprocess();
       unsubscribeSummarize();
+      unsubscribeRedact();
       unsubscribeRetryFailed();
       unsubscribeExport();
       unsubscribeSpeakerId();

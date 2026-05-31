@@ -55,6 +55,7 @@ const sidebars: SidebarsConfig = {
         'features/transcription',
         'features/speaker-diarization',
         'features/boundary-correction',
+        'features/content-redaction',
         'features/llm-integration',
         'features/authentication',
         'features/pipeline-optimization',

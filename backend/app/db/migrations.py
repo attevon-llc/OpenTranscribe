@@ -203,8 +203,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'media_file' AND column_name = 'requested_whisper_model')"
     )
+    has_content_redaction = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'transcript_segment' AND column_name = 'redactions')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v364: content redaction columns (transcript_segment.redactions/toxicity, media_file.redaction_*)
+    if has_content_redaction:
+        return "v364_add_content_redaction"
     # v352: per-transcription whisper model selection
     if has_requested_whisper_model:
         return "v352_add_requested_whisper_model"

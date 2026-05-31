@@ -9,6 +9,10 @@ import re
 import textwrap
 import zipfile
 from collections import defaultdict
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.redaction.config import EffectiveRedactionConfig
 
 from sqlalchemy.orm import Session
 
@@ -110,6 +114,36 @@ class SubtitleService:
         # Sort by start time and return just the groups
         result_with_positions.sort(key=lambda x: x[0])
         return [group for _, group in result_with_positions]
+
+    @staticmethod
+    def _redact_segments_inplace(
+        segments: list[TranscriptSegment],
+        redaction_cfg: "EffectiveRedactionConfig | None" = None,
+        reveal_categories: set | None = None,
+    ) -> None:
+        """Mask segment text in memory (read-only export path; never committed).
+
+        Mutating the loaded ORM objects' ``text`` makes every downstream subtitle
+        formatter (overlap merge, long-segment split) inherit the masked text without
+        touching each extraction site. The DB row is never updated (no commit here).
+        """
+        if redaction_cfg is None or not getattr(redaction_cfg, "enabled", False):
+            return
+        import contextlib
+
+        from app.services.redaction.service import RedactionService
+
+        for seg in segments:
+            # Never break export rendering if masking a single segment fails.
+            with contextlib.suppress(Exception):
+                masked, _ = RedactionService.mask_segment(
+                    str(seg.text or ""),
+                    seg.redactions or [],
+                    seg.words,
+                    redaction_cfg,
+                    reveal_categories or set(),
+                )
+                seg.text = masked
 
     @staticmethod
     def _format_overlap_for_subtitle(
@@ -285,7 +319,11 @@ class SubtitleService:
 
     @staticmethod
     def generate_webvtt_content(
-        db: Session, media_file_id: int, include_speakers: bool = True
+        db: Session,
+        media_file_id: int,
+        include_speakers: bool = True,
+        redaction_cfg: "EffectiveRedactionConfig | None" = None,
+        reveal_categories: set | None = None,
     ) -> str:
         """Generate WebVTT subtitle content from transcript segments.
 
@@ -319,6 +357,9 @@ class SubtitleService:
             )
             for row in speaker_rows:
                 speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
+
+        # Read-time content redaction (after speaker_map; mutates text in memory only)
+        SubtitleService._redact_segments_inplace(segments, redaction_cfg, reveal_categories)
 
         # Group overlapping segments
         segment_groups = SubtitleService._group_overlapping_segments(segments)
@@ -355,7 +396,13 @@ class SubtitleService:
         return webvtt_content
 
     @staticmethod
-    def generate_srt_content(db: Session, media_file_id: int, include_speakers: bool = True) -> str:
+    def generate_srt_content(
+        db: Session,
+        media_file_id: int,
+        include_speakers: bool = True,
+        redaction_cfg: "EffectiveRedactionConfig | None" = None,
+        reveal_categories: set | None = None,
+    ) -> str:
         """Generate SRT subtitle content from transcript segments.
 
         Handles overlapping speech by merging segments with the same overlap_group_id
@@ -388,6 +435,9 @@ class SubtitleService:
             )
             for row in speaker_rows:
                 speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
+
+        # Read-time content redaction (mutates text in memory only)
+        SubtitleService._redact_segments_inplace(segments, redaction_cfg, reveal_categories)
 
         # Group overlapping segments
         segment_groups = SubtitleService._group_overlapping_segments(segments)
@@ -448,7 +498,13 @@ class SubtitleService:
         return format_timestamp_simple(seconds)
 
     @staticmethod
-    def generate_txt_content(db: Session, media_file_id: int, include_speakers: bool = True) -> str:
+    def generate_txt_content(
+        db: Session,
+        media_file_id: int,
+        include_speakers: bool = True,
+        redaction_cfg: "EffectiveRedactionConfig | None" = None,
+        reveal_categories: set | None = None,
+    ) -> str:
         """Generate plain text transcript with timestamps and speaker labels.
 
         For overlapping speech, formats as:
@@ -483,6 +539,9 @@ class SubtitleService:
             )
             for row in speaker_rows:
                 speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
+
+        # Read-time content redaction (mutates text in memory only)
+        SubtitleService._redact_segments_inplace(segments, redaction_cfg, reveal_categories)
 
         # Group overlapping segments
         segment_groups = SubtitleService._group_overlapping_segments(segments)

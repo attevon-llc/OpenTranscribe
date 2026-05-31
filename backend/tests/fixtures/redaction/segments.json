@@ -1,0 +1,61 @@
+[
+  {
+    "idx": 0,
+    "speaker": "SPEAKER_01",
+    "start": 0.0,
+    "end": 3.0,
+    "text": "This is fucking ridiculous, I can't believe it.",
+    "words": [
+      {"word": "This", "start": 0.0, "end": 0.2, "score": 0.99},
+      {"word": "is", "start": 0.2, "end": 0.3, "score": 0.99},
+      {"word": "fucking", "start": 0.3, "end": 0.7, "score": 0.98},
+      {"word": "ridiculous,", "start": 0.7, "end": 1.2, "score": 0.97},
+      {"word": "I", "start": 1.2, "end": 1.3, "score": 0.99},
+      {"word": "can't", "start": 1.3, "end": 1.6, "score": 0.98},
+      {"word": "believe", "start": 1.6, "end": 2.0, "score": 0.98},
+      {"word": "it.", "start": 2.0, "end": 2.2, "score": 0.99}
+    ]
+  },
+  {
+    "idx": 1,
+    "speaker": "SPEAKER_02",
+    "start": 3.0,
+    "end": 7.0,
+    "text": "My name is John Smith and my email is john.smith@example.com."
+  },
+  {
+    "idx": 2,
+    "speaker": "SPEAKER_02",
+    "start": 7.0,
+    "end": 11.0,
+    "text": "Call me at 555-123-4567, my SSN is 123-45-6789."
+  },
+  {
+    "idx": 3,
+    "speaker": "SPEAKER_01",
+    "start": 11.0,
+    "end": 14.0,
+    "text": "Put it on card 4111 1111 1111 1111, expires 09/27."
+  },
+  {
+    "idx": 4,
+    "speaker": "SPEAKER_01",
+    "start": 14.0,
+    "end": 17.0,
+    "text": "You are an idiot and I hate you people."
+  },
+  {
+    "idx": 5,
+    "speaker": "SPEAKER_02",
+    "start": 17.0,
+    "end": 20.0,
+    "text": "The project codename is Bluefin, keep it quiet."
+  },
+  {
+    "idx": 6,
+    "speaker": "SPEAKER_02",
+    "start": 20.0,
+    "end": 23.0,
+    "text": "I mailed the contract to Scunthorpe last week."
+  }
+]

@@ -388,6 +388,13 @@ def get_media_file(
         description="Offset for transcript segment pagination",
         ge=0,
     ),
+    redact: bool = Query(
+        True,
+        description=(
+            "Apply content redaction to transcript text. Set false to view the original "
+            "(owner/admin only, for non-admin-forced categories; audited)."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -398,7 +405,9 @@ def get_media_file(
     """
     # segment_limit=0 means get all segments
     effective_limit = None if segment_limit == 0 else segment_limit
-    return get_media_file_detail(db, str(file_uuid), current_user, effective_limit, segment_offset)
+    return get_media_file_detail(
+        db, str(file_uuid), current_user, effective_limit, segment_offset, redact=redact
+    )
 
 
 @router.get("/{file_uuid}/info", response_model=MediaFilePublicInfo)

@@ -105,7 +105,7 @@ psutil>=5.9.5
 pyexiftool>=0.5.0
 # [default] extras: mutagen (metadata), pycryptodomex (stream decryption),
 # websockets (WS-based extractors), brotli (compressed responses), certifi (SSL)
-yt-dlp[default]>=2026.2.21
+yt-dlp[default]>=2026.3.17
 
 # Semantic search and NLP
 sentence-transformers>=2.2.0  # For semantic search embeddings (all-MiniLM-L6-v2)

@@ -64,7 +64,7 @@ deepgram-sdk>=6.1.1
 assemblyai>=0.30.0
 google-cloud-speech>=2.24.0
 azure-cognitiveservices-speech>=1.35.0
-speechmatics-python>=1.11.0
+speechmatics-python>=5.0.0.post1
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
 boto3>=1.28.0
 # openai must be listed explicitly — no package in this requirements pulls it in

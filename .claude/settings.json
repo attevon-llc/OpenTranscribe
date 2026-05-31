@@ -37,7 +37,6 @@
       "Write(/mnt/nvm/repos/transcribe-app/.env.example)"
     ],
     "deny": [
-      "Read(/mnt/nvm/repos/transcribe-app/.env)",
       "Read(/mnt/nvm/repos/transcribe-app/.env.local)",
       "Read(/mnt/nvm/repos/transcribe-app/.env.production)",
       "Read(/mnt/nvm/repos/transcribe-app/scripts/pki/test-certs/clients/*.p12)",

@@ -1,5 +1,5 @@
 fastapi>=0.103.1
-uvicorn[standard]>=0.23.2
+uvicorn[standard]>=0.46.0
 websockets>=11.0.3
 sqlalchemy>=2.0.20
 alembic>=1.12.0
@@ -31,7 +31,7 @@ cryptography>=42.0.0
 
 # MFA/TOTP Authentication (FedRAMP IA-2)
 pyotp>=2.9.0
-qrcode[pil]>=7.4.0
+qrcode[pil]>=8.2
 
 # AI/ML Stack - CPU-only (no CUDA, no GPU required)
 # NumPy 2.x compatible

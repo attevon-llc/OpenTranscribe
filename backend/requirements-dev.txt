@@ -19,7 +19,7 @@ pytest-cov>=4.1.0  # Code coverage reports
 pre-commit>=4.3.0
 
 # Type Stubs for Better Type Checking
-types-redis>=4.6.0
+types-redis>=4.6.0.20241004
 types-passlib>=1.7.0
 
 # Development Utilities

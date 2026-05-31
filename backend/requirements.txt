@@ -105,17 +105,17 @@ psutil>=5.9.5
 pyexiftool>=0.5.0
 # [default] extras: mutagen (metadata), pycryptodomex (stream decryption),
 # websockets (WS-based extractors), brotli (compressed responses), certifi (SSL)
-yt-dlp[default]>=2026.2.21
+yt-dlp[default]>=2026.3.17
 
 # Semantic search and NLP
-sentence-transformers>=2.2.0  # For semantic search embeddings (all-MiniLM-L6-v2)
+sentence-transformers>=5.5.1  # For semantic search embeddings (all-MiniLM-L6-v2)
 nltk>=3.9.1  # Required by whisperx>=3.7.6, also for SnowballStemmer
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
 deepgram-sdk>=6.1.1
 assemblyai>=0.30.0
-google-cloud-speech>=2.24.0
+google-cloud-speech>=2.39.0
 azure-cognitiveservices-speech>=1.35.0
 speechmatics-batch>=0.4.8
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)

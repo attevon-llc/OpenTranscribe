@@ -1,16 +1,37 @@
 version: 2
+# Dependency updates are intentionally low-noise: monthly schedule, grouped into
+# a single PR per ecosystem (not one-per-package), with known-bad versions ignored.
+# To pause entirely, comment out the `updates:` entries below; to run on demand,
+# use the "Check for updates" button on the repo's Dependabot (Insights) tab.
 updates:
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     open-pull-requests-limit: 5
+    groups:
+      npm:
+        patterns:
+          - "*"
+    ignore:
+      # svelte 5.56.x has a parser regression (declaration_tag_invalid_type on a
+      # plain ternary expression). Pinned to ~5.55.5 until upstream patches it.
+      - dependency-name: "svelte"
+        versions: ["5.56.x"]
+      # vite 8 requires @sveltejs/vite-plugin-svelte >=6; the current plugin (v5)
+      # peer-pins vite ^6. Hold the major until the Svelte plugin supports vite 8.
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     open-pull-requests-limit: 5
+    groups:
+      pip:
+        patterns:
+          - "*"
 
   - package-ecosystem: "docker"
     directory: "/backend"
@@ -25,5 +46,8 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
+      interval: "monthly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

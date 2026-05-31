@@ -1029,7 +1029,7 @@
   {#if activeTab === 'profiles'}
     <div class="tab-content">
       {#if loadingProfiles}
-        <CardGridSkeleton variant="profile" count={8} />
+        <CardGridSkeleton variant="profile" count={8} minCardWidth={280} />
       {:else if profiles.length === 0}
         <EmptyState title={$t('speakers.profiles.emptyTitle')} description={$t('speakers.profiles.emptyDesc')} padding="60px 20px">
           <svelte:fragment slot="icon">

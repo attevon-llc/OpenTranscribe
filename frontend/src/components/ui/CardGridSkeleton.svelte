@@ -41,6 +41,7 @@
 
 <div
   class="card-grid-skeleton"
+  class:is-search={variant === 'search'}
   style="--min-card-width: {actualMinWidth}px"
   role="status"
   aria-busy="true"
@@ -116,6 +117,14 @@
     gap: 16px;
     padding: 8px 0;
     width: 100%;
+  }
+
+  /* Search results render as a single full-width stacked column (Google-style),
+     so the skeleton must match — not the responsive multi-column grid. */
+  .card-grid-skeleton.is-search {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 
   .sr-only {

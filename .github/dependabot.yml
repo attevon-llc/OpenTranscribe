@@ -1,16 +1,18 @@
 version: 2
-# Dependency updates are intentionally low-noise: monthly schedule, grouped into
-# a single PR per ecosystem (not one-per-package), with known-bad versions ignored.
-# To pause entirely, comment out the `updates:` entries below; to run on demand,
-# use the "Check for updates" button on the repo's Dependabot (Insights) tab.
+# Low-clutter dependency updates: weekly, but GROUPED so each ecosystem produces a
+# single batched PR (not one-per-package) — i.e. one frontend (npm) PR and one
+# backend (pip) PR per week, plus a grouped GitHub Actions PR. Known-bad versions
+# are ignored. To pause entirely, comment out the `updates:` entries below; to run
+# on demand, use the "Check for updates" button on the repo's Dependabot tab.
 updates:
+  # Frontend — one grouped PR
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
     open-pull-requests-limit: 5
     groups:
-      npm:
+      frontend:
         patterns:
           - "*"
     ignore:
@@ -23,31 +25,42 @@ updates:
       - dependency-name: "vite"
         update-types: ["version-update:semver-major"]
 
+  # Backend — one grouped PR
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
     open-pull-requests-limit: 5
     groups:
-      pip:
+      backend:
         patterns:
           - "*"
 
+  # CI workflow actions — one grouped PR
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Dockerfile base images — infrequent, grouped per service
   - package-ecosystem: "docker"
     directory: "/backend"
     schedule:
       interval: "monthly"
+    groups:
+      backend-docker:
+        patterns:
+          - "*"
 
   - package-ecosystem: "docker"
     directory: "/frontend"
     schedule:
       interval: "monthly"
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "monthly"
     groups:
-      github-actions:
+      frontend-docker:
         patterns:
           - "*"

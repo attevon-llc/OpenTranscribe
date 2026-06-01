@@ -243,9 +243,11 @@ class SpeakerCreate(SpeakerBase):
 
 
 class SpeakerUpdate(BaseModel):
-    name: Optional[str] = None
-    display_name: Optional[str] = None
-    suggested_name: Optional[str] = None
+    # Server-side enforcement of the speaker-label length cap (the frontend also
+    # validates display_name <= 100 chars; the backend is the system of record).
+    name: Optional[str] = Field(default=None, max_length=100)
+    display_name: Optional[str] = Field(default=None, max_length=100)
+    suggested_name: Optional[str] = Field(default=None, max_length=100)
     verified: Optional[bool] = None
     embedding_vector: Optional[list[float]] = None
     profile_action: Optional[str] = None  # 'update_profile' or 'create_new_profile'

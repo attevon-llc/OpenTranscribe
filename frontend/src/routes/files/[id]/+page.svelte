@@ -3,6 +3,7 @@
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { writable, get } from 'svelte/store';
   import axiosInstance from '$lib/axios';
+  import { formatDuration, formatSrtTimestamp, formatVttTimestamp } from '$lib/utils/formatting';
   import { websocketStore } from '$stores/websocket';
 
   // Import new components
@@ -482,7 +483,7 @@
 
       // Update transcript text for editing
       editedTranscript = transcriptData.map((seg: any) =>
-        `${seg.display_timestamp || seg.formatted_timestamp || formatSimpleTimestamp(seg.start_time)} [${seg.speaker_label || seg.speaker?.name || 'Speaker'}]: ${seg.text}`
+        `${seg.display_timestamp || seg.formatted_timestamp || formatDuration(seg.start_time)} [${seg.speaker_label || seg.speaker?.name || 'Speaker'}]: ${seg.text}`
       ).join('\n');
 
       // Load speakers and update store after they're loaded
@@ -1011,40 +1012,6 @@
   }
 
 
-  function formatSimpleTimestamp(seconds: number): string {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    if (hours > 0) {
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  // Format seconds to SRT timestamp format (HH:MM:SS,mmm)
-  function formatSrtTimestamp(seconds: number): string {
-    if (isNaN(seconds) || seconds < 0) seconds = 0;
-
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    const milliseconds = Math.floor((seconds % 1) * 1000);
-
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
-  }
-
-  // Format seconds to VTT timestamp format (HH:MM:SS.mmm)
-  function formatVttTimestamp(seconds: number): string {
-    if (isNaN(seconds) || seconds < 0) seconds = 0;
-
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    const milliseconds = Math.floor((seconds % 1) * 1000);
-
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
-  }
-
   async function handleSaveSegment(event: any) {
     const segment = event.detail.segment;
     if (!segment || !editingSegmentText) return;
@@ -1297,7 +1264,7 @@
           let segments = speakerGroups.map(group => {
             const parts: string[] = [];
             if (txtOptions?.includeTimestamps !== false) {
-              parts.push(`[${formatSimpleTimestamp(group.startTime)} --> ${formatSimpleTimestamp(group.endTime)}]`);
+              parts.push(`[${formatDuration(group.startTime)} --> ${formatDuration(group.endTime)}]`);
             }
             if (txtOptions?.includeSpeakers !== false) {
               parts.push(`${group.speaker}:`);
@@ -1311,7 +1278,7 @@
           if (includeComments && fileComments.length > 0) {
             const commentLines = fileComments.map((comment: any) => {
               const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
-              return `[${formatSimpleTimestamp(comment.timestamp)}] USER COMMENT: ${userName}: ${comment.text}`;
+              return `[${formatDuration(comment.timestamp)}] USER COMMENT: ${userName}: ${comment.text}`;
             });
             segments = mergeCommentsWithTranscript(segments, commentLines, transcriptData, fileComments);
           }

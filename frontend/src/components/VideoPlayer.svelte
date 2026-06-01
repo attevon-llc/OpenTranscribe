@@ -4,6 +4,7 @@
   import 'plyr/dist/plyr.css';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import { formatTimeWithMillis } from '$lib/utils/formatting';
   import Spinner from './ui/Spinner.svelte';
 
   export let videoUrl: string = '';
@@ -307,8 +308,8 @@
       const text = segment.text;
 
       if (startTime !== undefined && endTime !== undefined && text && startTime < endTime) {
-        const formattedStartTime = formatTime(startTime);
-        const formattedEndTime = formatTime(endTime);
+        const formattedStartTime = formatTimeWithMillis(startTime);
+        const formattedEndTime = formatTimeWithMillis(endTime);
 
         // Get original speaker name from segment
         const originalSpeakerName = segment.speaker_label || segment.speaker?.name || segment.speaker || `SPEAKER_${String(index + 1).padStart(2, '0')}`;
@@ -328,19 +329,6 @@
     });
 
     return webvtt;
-  }
-
-  function formatTime(seconds: number): string {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    const ms = Math.floor((seconds % 1) * 1000);
-
-    if (hours > 0) {
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
-    } else {
-      return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
-    }
   }
 
   onMount(() => {

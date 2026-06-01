@@ -11,6 +11,7 @@
     type ExportStrings,
   } from '$lib/export/transcriptExport';
   import { websocketStore } from '$stores/websocket';
+  import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
 
   // Import new components
   import VideoPlayer from '$components/VideoPlayer.svelte';
@@ -1817,224 +1818,28 @@
 
           if (notificationFileId === currentFileId && notificationFileId !== 'undefined' && currentFileId !== 'undefined') {
 
-            // Handle transcription status updates
-            if (latestNotification.type === 'transcription_status') {
-
-              // Get status from notification (progressive notifications set it at root level)
-              const notificationStatus = latestNotification.status || latestNotification.data?.status;
-              const notificationProgress = latestNotification.progress?.percentage || latestNotification.data?.progress;
-
-
-              // Update progress in real-time for processing updates
-              if (notificationStatus === 'processing' && notificationProgress !== undefined) {
-                if (file) {
-                  file.progress = notificationProgress;
-                  file.status = 'processing';
-                  // Update the current processing step from the progressive notification
-                  currentProcessingStep = latestNotification.currentStep || latestNotification.message || latestNotification.data?.message || $t('fileDetail.processingDefault');
-                  file = { ...file }; // Trigger reactivity
-                  reactiveFile.set(file);
-
-                }
-              } else if (notificationStatus === 'completed' || notificationStatus === 'success' || notificationStatus === 'complete' || notificationStatus === 'finished') {
-                // Transcription completed - show completion and refresh
-                if (file) {
-                  file.progress = 100;
-                  file.status = 'completed';
-                  currentProcessingStep = $t('fileDetail.processingComplete');
-
-                  // Show AI summary spinner only if LLM is available after transcription completion
-                  if (llmAvailable) {
-                    summaryGenerating = true;
-                    generatingSummary = true;
-                    // Keep reprocessing flag true until summary completes to maintain proper UI state
-                  } else {
-                    // No LLM available, ensure spinners are off and reset reprocessing flag
-                    summaryGenerating = false;
-                    generatingSummary = false;
-                    reprocessing = false;
-                  }
-
-                  file = { ...file }; // Trigger reactivity
-                  reactiveFile.set(file);
-                }
-
-                // Clear processing step and refresh transcript data after completion
-                setTimeout(async () => {
-                  currentProcessingStep = ''; // Clear processing step
-
-                  // Only refresh the transcript data, not the entire file object to preserve spinner state
-                  if (file?.uuid && (file.status === 'completed' || file.status === 'success')) {
-                    await fetchTranscriptData();
-
-                    // Refresh subtitles in the video player now that transcript is available
-                    if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
-                      try {
-                        await videoPlayerComponent.updateSubtitles();
-                      } catch (error) {
-                        console.warn('Failed to update subtitles:', error);
-                      }
-                    }
-                  }
-                }, 1000);
-              } else if (notificationStatus === 'error' || notificationStatus === 'failed') {
-                // Error state - refresh immediately
-                currentProcessingStep = ''; // Clear processing step
-                fetchFileDetails();
-              }
-            }
-
-            // WebSocket notifications for file updates
-
-            // Handle summarization status updates
-            if (latestNotification.type === 'summarization_status') {
-              // Only process notifications for the current file
-              const notificationFileId = String(latestNotification.data?.file_id || '');
-              const currentFileId = String(fileId || '');
-
-              if (notificationFileId !== currentFileId) {
-                // Skip notifications for other files
-              } else {
-
-              // Get status from notification (progressive notifications set it at root level)
-              const status = latestNotification.status || latestNotification.data?.status;
-
-
-              if (status === 'queued' || status === 'processing' || status === 'generating') {
-                // Summary generation started - show spinner only if LLM is available
-                if (llmAvailable) {
-                  summaryGenerating = true;
-                  generatingSummary = true;
-                } else {
-                  // LLM not available, ensure spinners are off
-                  summaryGenerating = false;
-                  generatingSummary = false;
-                }
-
-              } else if (status === 'completed' || status === 'success' || status === 'complete' || status === 'finished') {
-                // Summary completed - stop spinners and update file
-                summaryGenerating = false;
-                generatingSummary = false;
-
-                // Reset reprocessing flag when summary completes (final step of reprocessing)
-                reprocessing = false;
-
-                if (file) {
-                  // Update summary-related fields from notification data
-                  // Note: The notification contains a brief preview, not the full summary_data
-                  const summaryPreview = latestNotification.data?.summary;
-                  const summaryId = latestNotification.data?.summary_opensearch_id;
-
-                  // Set a flag to indicate summary exists (full data fetched via API)
-                  if (summaryPreview || summaryId) {
-                    file.has_summary = true; // Summary now available
-                  }
-                  if (summaryId) {
-                    file.summary_opensearch_id = summaryId;
-                  }
-
-                  // Force reactivity update by creating new object reference
-                  file = { ...file };
-                  reactiveFile.set(file);
-                }
-              } else if (status === 'failed' || status === 'error') {
-                // Summary failed - stop spinners and show error
-                summaryGenerating = false;
-                generatingSummary = false;
-
-                // Get error message from notification
-                const errorMessage = latestNotification.data?.message || latestNotification.message || $t('fileDetail.failedToGenerateSummaryGeneric');
-                const isLLMConfigError = errorMessage.toLowerCase().includes('llm service is not available') ||
-                                       errorMessage.toLowerCase().includes('configure an llm provider') ||
-                                       errorMessage.toLowerCase().includes('llm provider');
-
-                if (!isLLMConfigError) {
-                  toastStore.error(errorMessage, 5000);
-                }
-
-              }
-              } // Close the else block for file ID matching
-            }
-
-            // Handle speaker update notifications (for real-time voice suggestion refresh)
-            if (latestNotification.type === 'speaker_updated') {
-              loadSpeakers();
-            }
-
-            // Handle speaker background processing complete notification
-            if (latestNotification.type === 'speaker_processing_complete') {
-              loadSpeakers();
-              // Show toast if labels were auto-applied to other speakers
-              const autoAppliedCount = latestNotification.data?.auto_applied_count || 0;
-              const suggestedCount = latestNotification.data?.suggested_count || 0;
-              if (autoAppliedCount > 0) {
-                toastStore.info($t('speakerProfile.autoAppliedToOthers', { count: autoAppliedCount }));
-              } else if (suggestedCount > 0) {
-                toastStore.info($t('speakerProfile.suggestionsCreated', { count: suggestedCount }));
-              }
-            }
-
-            // Handle topic extraction status updates (AI suggestions for tags/collections)
-            if (latestNotification.type === 'topic_extraction_status') {
-              const status = latestNotification.status || latestNotification.data?.status;
-              const message = latestNotification.message || latestNotification.data?.message;
-
-              if (status === 'processing') {
-                // Update processing step to show what's happening
-                currentProcessingStep = message || $t('fileDetail.analyzingTranscript');
-
-              } else if (status === 'completed') {
-                // Show completion message briefly before clearing
-                currentProcessingStep = message || $t('fileDetail.aiSuggestionsComplete');
-
-                // Reload AI suggestions when extraction completes
-                // This will fetch the newly generated suggestions and update the UI dynamically
-                loadAISuggestions().catch(err => {
-                  console.error('Error reloading AI suggestions after extraction:', err);
-                });
-
-                // Clear processing step after a brief delay
-                setTimeout(() => {
-                  currentProcessingStep = '';
-                }, 2000);
-
-              } else if (status === 'failed' || status === 'not_configured') {
-                // Clear processing step on failure
-                currentProcessingStep = '';
-              }
-            }
-
-            // Handle content-redaction status (chip + auto-refresh the transcript)
-            if (latestNotification.type === 'redaction_status') {
-              const rstatus = latestNotification.status || latestNotification.data?.status;
-              redactionStatus = rstatus || redactionStatus;
-              if (rstatus === 'done') {
-                // Detection finished — load the now-available (masked) transcript.
-                redactionPending = false;
-                fetchFileDetails();
-                const skipped = latestNotification.data?.skipped_detectors || [];
-                if (skipped.length) {
-                  toastStore.info(
-                    $t('settings.contentRedaction.someDetectorsSkipped', {
-                      detectors: skipped.join(', '),
-                    })
-                  );
-                }
-              } else if (rstatus === 'failed') {
-                redactionPending = false;
-                fetchFileDetails();
-              } else {
-                redactionPending = true;
-              }
-            }
-
-            // Handle cache invalidation (e.g., auto-label applied tags/collections)
-            if (latestNotification.type === 'cache_invalidate'
-                && latestNotification.data?.scope === 'files'
-                && latestNotification.data?.file_id === fileId) {
-              fetchFileDetails();
-              loadAISuggestions();
-            }
+            handleFileNotification(latestNotification, {
+              getFileId: () => fileId,
+              getFile: () => file,
+              getLlmAvailable: () => llmAvailable,
+              getRedactionStatus: () => redactionStatus,
+              getVideoPlayerComponent: () => videoPlayerComponent,
+              setFile: (f) => (file = f),
+              setReactiveFile: (f) => reactiveFile.set(f),
+              setCurrentProcessingStep: (s) => (currentProcessingStep = s),
+              setSummaryGenerating: (v) => (summaryGenerating = v),
+              setGeneratingSummary: (v) => (generatingSummary = v),
+              setReprocessing: (v) => (reprocessing = v),
+              setRedactionStatus: (s) => (redactionStatus = s),
+              setRedactionPending: (v) => (redactionPending = v),
+              fetchTranscriptData,
+              loadSpeakers,
+              loadAISuggestions,
+              fetchFileDetails,
+              t: $t,
+              toastError: (message, durationMs) => toastStore.error(message, durationMs),
+              toastInfo: (message) => toastStore.info(message),
+            });
 
           } else {
           }

@@ -7,6 +7,7 @@
   import Spinner from '../ui/Spinner.svelte';
   import BaseModal from '../ui/BaseModal.svelte';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { formatClock } from '$lib/utils/formatting';
   import type { SearchOccurrence } from '$stores/search';
 
   export let isOpen: boolean = false;
@@ -738,14 +739,6 @@
     dispatch('close');
   }
 
-  function formatTimestamp(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  }
-
   $: totalMatches = allMatchPositions.length;
 </script>
 
@@ -843,7 +836,7 @@
                       style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
                     >{translateSpeakerLabel(segment.speakerName)}</div>
                     <div class="segment-time">
-                      {formatTimestamp(segment.startTime)}-{formatTimestamp(segment.endTime)}
+                      {formatClock(segment.startTime)}-{formatClock(segment.endTime)}
                     </div>
                   </div>
                   <div class="segment-text">{@html sanitizeHighlightHtml(segment.highlightedText)}</div>

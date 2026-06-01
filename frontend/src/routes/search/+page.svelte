@@ -14,6 +14,7 @@
   import PlyrMiniPlayer from '$components/PlyrMiniPlayer.svelte';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import { prefetchNextSearchPage } from '$lib/prefetch';
+  import { formatClock } from '$lib/utils/formatting';
   import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
 
   let searchInput = '';
@@ -58,14 +59,6 @@
   let transcriptModalFileUuid = '';
   let transcriptModalFileName = '';
   let transcriptModalOccurrences: SearchOccurrence[] = [];
-
-  function formatPlaybackTime(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  }
 
   function findSpeakerAtTime(time: number): string {
     if (!previewData) return '';
@@ -715,7 +708,7 @@
             {previewData.title}
           </span>
           <span class="preview-playback-info">
-            <span class="preview-time">{formatPlaybackTime(previewCurrentTime)}</span>
+            <span class="preview-time">{formatClock(previewCurrentTime)}</span>
             {#if previewCurrentSpeaker}
               <span class="preview-separator">|</span>
               <span class="preview-speaker-name">{previewCurrentSpeaker}</span>

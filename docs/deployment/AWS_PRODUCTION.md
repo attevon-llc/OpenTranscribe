@@ -25,12 +25,25 @@ are AWS-infra recommendations (outside this repo) are marked ☁️.
 - **Dependabot** (`.github/dependabot.yml`) — grouped weekly npm/pip + github-actions, monthly docker.
 
 ## 2. Close before paid launch (in-repo, tracked)
-- **CSP: drop `script-src 'unsafe-inline'`.** Externalize the theme bootstrap in
-  `frontend/src/app.html` to `frontend/static/theme.js` (`<script src="/theme.js">`) — served
-  identically by Vite dev (:5173) and nginx prod — then remove `'unsafe-inline'` from
-  `script-src` in `nginx.conf` (line ~26 + the repeated location blocks) and `nginx-pki.conf`.
-  Keep `style-src 'unsafe-inline'` (Svelte scoped styles require it). Add a CSP `report-uri`/
-  `report-to` and watch for violations before fully locking down.
+- **CSP: drop `script-src 'unsafe-inline'` — PARTIALLY DONE, needs a prod-build verification.**
+  - ✅ Done: the custom theme bootstrap was externalized from `frontend/src/app.html` to
+    `frontend/static/theme.js` (`<script src="/theme.js">`, render-blocking in `<head>` so it
+    still applies the theme before first paint; served identically by Vite dev and nginx prod).
+  - ⚠️ Remaining blocker: `script-src 'unsafe-inline'` is still required because **SvelteKit
+    injects its own inline SPA bootstrap** into the built `index.html`
+    (`__sveltekit_… = {…}; kit.start(app, element)`). `script-src 'self'` alone would block it
+    and break the app. The fix is to enable SvelteKit's CSP so it hashes that bootstrap:
+    in `svelte.config.js` set `kit.csp = { mode: 'hash', directives: { 'script-src': ['self'],
+    'style-src': ['self','unsafe-inline'], … } }`. SvelteKit then emits a `<meta http-equiv>`
+    CSP containing `script-src 'self' 'sha256-<bootstrap-hash>'`.
+  - Caveats to handle in that effort: (a) a `<meta>` CSP **cannot** set `frame-ancestors` — keep
+    that (and the other headers) on nginx, or run the meta CSP for `script-src` only and keep the
+    nginx header for `frame-ancestors`/etc.; the browser enforces the **intersection** of all
+    active CSPs, so don't let the nginx header's `script-src 'self'` re-block the hashed bootstrap.
+    (b) Keep `style-src 'unsafe-inline'` (Svelte scoped styles + the app.html `<style>` blocks).
+  - **Verify** the lockdown with `npm run build && npm run preview` (serves the real built
+    output) + a browser load checking the console for **zero CSP violations** — NOT in the Vite
+    dev server (dev uses nonces, prod uses hashes). Add a CSP `report-uri`/`report-to` first.
 - **`npm audit` in CI.** Add `"audit": "npm audit --audit-level=moderate"` to
   `frontend/package.json` and an `npm audit` (+ backend `pip-audit`) step to
   `.github/workflows/security-scan.yml`. Re-enable the disabled Trivy/Grype/Dockle scans on a

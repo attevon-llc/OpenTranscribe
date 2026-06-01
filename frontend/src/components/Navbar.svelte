@@ -6,6 +6,8 @@
   import NotificationsPanel from "./NotificationsPanel.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
   import AboutModal from "./AboutModal.svelte";
+  import NavbarBrand from "$components/navbar/NavbarBrand.svelte";
+  import UserDropdown from "$components/navbar/UserDropdown.svelte";
 
   // Import the centralized notification store
   import { showNotificationsPanel, toggleNotificationsPanel, notifications } from '../stores/notifications';
@@ -26,7 +28,6 @@
 
   // Import i18n
   import { t } from '../stores/locale';
-  import { getFlowerUrl } from '$lib/utils/url';
   import { prefetchSpeakersData, prefetchFileStatusData } from '$lib/prefetch';
 
   // Gallery state detection based on location
@@ -52,9 +53,6 @@
   $: isPaused = $recordingStore.isPaused;
   $: recordedBlob = $recordingStore.recordedBlob;
 
-  // Import logo asset for proper Vite processing
-  import logoBanner from '../assets/logo-banner.png';
-
   // Reactive statements for active page detection
   $: currentPath = $page.url.pathname;
   $: isGalleryActive = currentPath === '/' || (currentPath as string) === '';
@@ -62,12 +60,8 @@
   $: isSpeakersActive = currentPath === '/speakers' || currentPath.startsWith('/speakers/');
   $: showGalleryLink = !isGalleryActive && !isTasksActive; // Show gallery link when not on gallery or tasks
 
-  // User dropdown state
-  /** @type {boolean} */
-  let showDropdown = false;
-
-  /** @type {HTMLDivElement | null} */
-  let dropdownRef: HTMLDivElement | null = null;
+  // User dropdown component reference (state lives in the child)
+  let userDropdown: UserDropdown;
 
   // Notification panel state
   let showNotifs = false;
@@ -84,16 +78,27 @@
   }
 
   /**
-   * Toggle the user dropdown menu
-   * @param {MouseEvent} event - The mouse click event
+   * Close the notifications panel when the user dropdown opens.
    */
-  function toggleDropdown(event: MouseEvent) {
-    event.stopPropagation(); // Prevent event from bubbling up
-    showDropdown = !showDropdown;
-    // Close notifications panel when opening user dropdown
-    if (showDropdown && showNotifs) {
+  function handleUserDropdownOpen() {
+    if (showNotifs) {
       showNotificationsPanel.set(false);
     }
+  }
+
+  /**
+   * Open settings from the user dropdown.
+   */
+  function handleOpenSettings() {
+    mobileMenuOpen = false;
+    settingsModalStore.open('system-statistics');
+  }
+
+  /**
+   * Close the mobile menu when a user-dropdown item is selected.
+   */
+  function handleUserMenuItemSelected() {
+    mobileMenuOpen = false;
   }
 
   /**
@@ -104,8 +109,8 @@
     event.stopPropagation(); // Prevent event from bubbling up
     toggleNotificationsPanel();
     // Close user dropdown when opening notifications
-    if (showDropdown && !showNotifs) {
-      showDropdown = false;
+    if (!showNotifs) {
+      userDropdown?.close();
     }
   }
 
@@ -232,13 +237,10 @@
   let recordingControlsRef: HTMLElement | null = null;
 
   /**
-   * Handle clicks outside the dropdown to close it
+   * Handle clicks outside the recording controls to close them
    * @param {MouseEvent} event - The mouse event
    */
   function handleClickOutside(event: MouseEvent) {
-    if (dropdownRef && event.target && !dropdownRef.contains(event.target as Node)) {
-      showDropdown = false;
-    }
     // Close recording controls when clicking outside (but not inside the popup)
     if (showRecordingControls && recordingControlsRef && event.target && !recordingControlsRef.contains(event.target as Node)) {
       showRecordingControls = false;
@@ -269,15 +271,7 @@
 <nav class="navbar">
   <div class="navbar-container">
     <!-- Far Left: OpenTranscribe Logo -->
-    <div class="navbar-brand">
-      <button
-        class="logo-link"
-        on:click={() => showAboutModal = true}
-        title={$t('nav.logoTooltip')}
-      >
-        <img src={logoBanner} alt={$t('nav.logoAlt')} class="logo-banner" />
-      </button>
-    </div>
+    <NavbarBrand on:about={() => showAboutModal = true} />
 
     <!-- Left side: Gallery tabs (only on gallery page) -->
     {#if isGalleryPage}
@@ -494,107 +488,14 @@
       </div>
 
       <!-- User profile dropdown -->
-      <div class="user-dropdown" bind:this={dropdownRef}>
-        <button
-          class="user-button"
-          on:click={toggleDropdown}
-          title={$t('nav.userMenuTooltip')}
-        >
-          <div class="user-avatar">
-            <!-- First letter of full name as avatar -->
-            {#if $user && $user.full_name}
-              {$user.full_name[0].toUpperCase()}
-            {:else}
-              U
-            {/if}
-          </div>
-          <span class="username">{$user ? $user.full_name : $t('nav.user')}</span>
-          {#if $user?.auth_type === 'pki'}
-            <div class="pki-badge" title={$t('nav.pkiAuthenticated') || 'Authenticated with X.509 Certificate'}>
-              <svg class="shield-icon" viewBox="0 0 24 24" width="16" height="16">
-                <path fill="#059669" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
-                <path fill="white" d="M10 17l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
-              </svg>
-            </div>
-          {/if}
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dropdown-icon">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
-
-        {#if showDropdown}
-          <div class="dropdown-menu">
-            <div class="dropdown-header">
-              <span>{$t('nav.signedInAs')}</span>
-              <strong>{$user ? $user.email : $t('nav.user')}</strong>
-            </div>
-            <div class="dropdown-divider"></div>
-            <button
-              class="dropdown-item"
-              on:click={() => {
-                showDropdown = false;
-                mobileMenuOpen = false;
-                settingsModalStore.open('system-statistics');
-              }}
-              title={$t('nav.settings')}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-              </svg>
-              <span>{$t('nav.settings')}</span>
-            </button>
-
-            <a
-              href="/docs/"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="dropdown-item"
-              on:click={() => { showDropdown = false; mobileMenuOpen = false; }}
-              title={$t('nav.docs')}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
-                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
-              </svg>
-              <span>{$t('nav.docs')}</span>
-            </a>
-
-            <button
-              class="dropdown-item"
-              on:click={() => {
-                // Dynamically construct Flower URL from current location
-                const url = getFlowerUrl();
-
-                // Open Flower in a new tab with the correct URL
-                window.open(url, '_blank');
-                showDropdown = false;
-                mobileMenuOpen = false;
-              }}
-              aria-label={$t('nav.flowerDashboard')}
-              title={$t('nav.flowerDashboard')}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-              </svg>
-              <span>{$t('nav.flowerDashboard')}</span>
-            </button>
-            <div class="dropdown-divider"></div>
-            <button
-              class="dropdown-item logout"
-              on:click={handleLogout}
-              title={$t('nav.logout')}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                <polyline points="16 17 21 12 16 7"></polyline>
-                <line x1="21" y1="12" x2="9" y2="12"></line>
-              </svg>
-              {$t('nav.logout')}
-            </button>
-          </div>
-        {/if}
-      </div>
+      <UserDropdown
+        bind:this={userDropdown}
+        user={$user}
+        on:open={handleUserDropdownOpen}
+        on:openSettings={handleOpenSettings}
+        on:itemSelected={handleUserMenuItemSelected}
+        on:logout={handleLogout}
+      />
     </div>
 
     <div class="mobile-toggle">
@@ -711,38 +612,6 @@
     border-radius: 2px;
   }
 
-  .navbar-brand {
-    display: flex;
-    align-items: center;
-  }
-
-  .logo-link {
-    display: flex;
-    align-items: center;
-    text-decoration: none;
-    color: var(--primary-color);
-    font-weight: 600;
-    font-size: 1.25rem;
-    transition: transform 0.2s ease;
-    border-radius: 8px;
-    padding: 0.25rem;
-    background: none;
-    border: none;
-    cursor: pointer;
-  }
-
-  .logo-link:hover {
-    transform: scale(1.1);
-  }
-
-  .logo-banner {
-    height: 36px;
-    width: auto;
-    object-fit: contain;
-    border-radius: 6px;
-    transition: inherit;
-  }
-
   .nav-links {
     display: flex;
     align-items: center;
@@ -852,238 +721,6 @@
     font-weight: bold;
   }
 
-  /* User Dropdown Styles */
-  .user-dropdown {
-    position: relative;
-  }
-
-  .user-button {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    color: var(--text-color);
-    font-family: inherit;
-    font-size: 1rem;
-  }
-
-  .user-button:hover {
-    background-color: rgba(0, 0, 0, 0.05);
-  }
-
-  .user-avatar {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background-color: #3b82f6;
-    color: white;
-    font-weight: 600;
-  }
-
-  .username {
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 150px;
-  }
-
-  .dropdown-icon {
-    margin-left: 0.25rem;
-    opacity: 0.7;
-  }
-
-  .pki-badge {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-left: 0.25rem;
-  }
-
-  .pki-badge .shield-icon {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-  }
-
-  .dropdown-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    width: 240px;
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-    margin-top: 0.5rem;
-    z-index: 1000;
-    padding: 0.5rem 0;
-    min-width: 200px;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .dropdown-header {
-    padding: 0.75rem 1rem;
-    color: var(--text-color-secondary);
-    font-size: 0.8rem;
-    line-height: 1.4;
-    white-space: normal;
-  }
-
-  .dropdown-header strong {
-    display: block;
-    color: var(--text-color);
-    font-weight: 600;
-    margin-top: 0.25rem;
-    word-break: break-all;
-  }
-
-  .dropdown-divider {
-    height: 1px;
-    background-color: var(--border-color);
-    margin: 0.125rem 0;
-    border: none;
-  }
-
-
-  .dropdown-item {
-    display: flex !important;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 1rem;
-    color: var(--text-color) !important;
-    text-decoration: none !important;
-    transition: all 0.2s ease;
-    font-size: 0.9rem;
-    font-weight: 500;
-    border: none;
-    width: calc(100% - 1rem);
-    text-align: left;
-    background-color: transparent;
-    cursor: pointer;
-    font-family: inherit;
-    box-sizing: border-box;
-    margin: 0.125rem 0.5rem;
-    border-radius: 6px;
-    white-space: nowrap;
-    position: relative;
-  }
-
-  /* Override any global link styles specifically for dropdown items */
-  .dropdown-menu :global(a.dropdown-item) {
-    color: var(--text-color) !important;
-    text-decoration: none !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 0.75rem !important;
-    padding: 0.5rem 1rem !important;
-    margin: 0.125rem 0.5rem !important;
-    width: calc(100% - 1rem) !important;
-    font-weight: 500 !important;
-    border-radius: 6px !important;
-    background-color: transparent !important;
-    transition: all 0.2s ease !important;
-  }
-
-  .dropdown-menu :global(a.dropdown-item:hover) {
-    color: var(--primary-color) !important;
-    text-decoration: none !important;
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05)) !important;
-    transform: translateX(2px) !important;
-  }
-
-  .dropdown-menu :global(a.dropdown-item:visited) {
-    color: var(--text-color) !important;
-    text-decoration: none !important;
-  }
-
-  .dropdown-menu :global(a.dropdown-item:visited:hover) {
-    color: var(--primary-color) !important;
-    text-decoration: none !important;
-  }
-
-  .dropdown-item svg {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-    opacity: 0.7;
-    transition: all 0.2s ease;
-  }
-
-  /* Ensure SVGs in Link components behave the same as button SVGs */
-  .dropdown-menu :global(a.dropdown-item svg) {
-    width: 16px !important;
-    height: 16px !important;
-    flex-shrink: 0 !important;
-    opacity: 0.7 !important;
-    transition: all 0.2s ease !important;
-  }
-
-  .dropdown-menu :global(a.dropdown-item:hover svg) {
-    opacity: 1 !important;
-    color: var(--primary-color) !important;
-  }
-
-  .dropdown-item:hover {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
-    color: var(--primary-color);
-    transform: translateX(2px);
-  }
-
-  .dropdown-item:hover svg {
-    opacity: 1;
-    color: var(--primary-color);
-  }
-
-  .dropdown-item:focus {
-    outline: 2px solid var(--primary-color);
-    outline-offset: -2px;
-  }
-
-  .dropdown-item.logout {
-    color: var(--error-color, #ef4444);
-    margin-top: 0.125rem;
-  }
-
-  .dropdown-item.logout svg {
-    opacity: 0.8;
-  }
-
-  .dropdown-item.logout:hover {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color, #dc2626);
-    transform: translateX(2px);
-  }
-
-  .dropdown-item.logout:hover svg {
-    opacity: 1;
-    color: var(--error-color, #dc2626);
-  }
-
-  /* Active state for dropdown items */
-  .dropdown-item:active {
-    transform: translateX(1px);
-    background-color: var(--primary-color-light, rgba(59, 130, 246, 0.1));
-  }
-
-  /* Improved spacing between groups */
-  .dropdown-item + .dropdown-divider {
-    margin-top: 0.25rem;
-  }
-
-  .dropdown-divider + .dropdown-item {
-    margin-top: 0.125rem;
-  }
-
   .mobile-toggle {
     display: none;
   }
@@ -1120,14 +757,6 @@
       gap: 1.5rem;
       padding: 0.5rem 1rem;
     }
-
-    .username {
-      display: none;
-    }
-
-    .dropdown-icon {
-      display: none;
-    }
   }
 
   /* iPad portrait — icon-only nav links, tighter layout */
@@ -1148,10 +777,6 @@
     /* Icon-only nav links on tablet portrait */
     .nav-label {
       display: none;
-    }
-
-    .logo-banner {
-      height: 30px;
     }
 
     .tab-button {
@@ -1182,10 +807,6 @@
     .tab-button.active::after {
       bottom: -6px;
       height: 2px;
-    }
-
-    .logo-banner {
-      height: 28px;
     }
 
     .nav-links {
@@ -1236,42 +857,13 @@
       justify-content: center;
     }
 
-    /* Mobile dropdown adjustments */
-    .dropdown-menu {
-      width: 220px;
-      right: -10px;
-    }
-
-    .dropdown-item {
-      padding: 0.625rem 1rem;
-      margin: 0.125rem 0.25rem;
-      font-size: 0.95rem;
-    }
-
-    .dropdown-item:hover {
-      transform: none; /* Disable transform on mobile for better touch experience */
-    }
-
-    /* Hide username text on mobile, show avatar only */
-    .username {
-      display: none;
-    }
-
-    .dropdown-icon {
-      display: none;
-    }
-
-    .user-button {
-      gap: 0.25rem;
-      padding: 0.25rem;
-    }
-
-    /* Mobile: user dropdown flows inline in the mobile menu */
-    .nav-links.open .user-dropdown {
+    /* Mobile: user dropdown flows inline in the mobile menu.
+       These reach into the child UserDropdown component, hence :global(). */
+    .nav-links.open :global(.user-dropdown) {
       width: 100%;
     }
 
-    .nav-links.open .user-button {
+    .nav-links.open :global(.user-button) {
       width: 100%;
       justify-content: flex-start;
       padding: 0.75rem 1rem;
@@ -1280,16 +872,16 @@
     }
 
     /* Show username in the mobile menu for clarity */
-    .nav-links.open .username {
+    .nav-links.open :global(.username) {
       display: inline;
     }
 
-    .nav-links.open .dropdown-icon {
+    .nav-links.open :global(.dropdown-icon) {
       display: inline;
       margin-left: auto;
     }
 
-    .nav-links.open .dropdown-menu {
+    .nav-links.open :global(.dropdown-menu) {
       position: relative;
       width: 100%;
       top: auto;
@@ -1302,7 +894,7 @@
       background: transparent;
     }
 
-    .nav-links.open .dropdown-item {
+    .nav-links.open :global(.dropdown-item) {
       width: 100%;
       min-height: 44px;
       display: flex;
@@ -1312,11 +904,11 @@
       padding: 0.75rem 1rem;
     }
 
-    .nav-links.open .dropdown-header {
+    .nav-links.open :global(.dropdown-header) {
       padding: 0.75rem 1rem;
     }
 
-    .nav-links.open .dropdown-divider {
+    .nav-links.open :global(.dropdown-divider) {
       margin: 0.25rem 0;
     }
   }
@@ -1330,10 +922,6 @@
 
     .tab-button {
       padding: 0.3rem 0.4rem;
-    }
-
-    .logo-banner {
-      height: 24px;
     }
 
     .navbar-container {
@@ -1351,18 +939,6 @@
 
     .theme-toggle-container {
       margin: 0 2px;
-    }
-  }
-
-  /* Reduced motion preferences */
-  @media (prefers-reduced-motion: reduce) {
-    .dropdown-item,
-    .dropdown-item svg {
-      transition: none;
-    }
-
-    .dropdown-item:hover {
-      transform: none;
     }
   }
 
@@ -1503,19 +1079,6 @@
 
   /* High contrast mode support */
   @media (prefers-contrast: high) {
-    .dropdown-item {
-      border: 1px solid transparent;
-    }
-
-    .dropdown-item:hover {
-      border-color: var(--primary-color);
-      background-color: var(--hover-color);
-    }
-
-    .dropdown-item.logout:hover {
-      border-color: var(--error-color);
-    }
-
     .recording-indicator {
       border-width: 2px;
       background: rgba(239, 68, 68, 0.2);

@@ -36,6 +36,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### 👥 **Smart Speaker Management**
 - **Automatic Speaker Diarization**: Identify different speakers using PyAnnote v4 with enhanced accuracy
 - **Speaker Overlap Detection**: Detect and handle multiple simultaneous speakers with advanced PyAnnote v4 capabilities
+- **Diarization Boundary Correction**: Word-boundary smoothing (default on, ~−32% word speaker error rate) collapses short wrong-speaker islands at turn boundaries, plus an opt-in acoustic backchannel re-check that re-embeds disputed words by voiceprint — both tuned live from the admin Engine Configuration panel (no restart)
 - **Cross-Video Speaker Recognition**: AI-powered voice fingerprinting to identify speakers across different media files
 - **Speaker Profile System**: Create and manage global speaker profiles that persist across all transcriptions
 - **Intelligent Speaker Suggestions**: Consolidated speaker identification with confidence scoring and automatic profile matching
@@ -137,7 +138,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **BLUF Format Summaries**: Bottom Line Up Front structured summaries with action items
 - **Multi-Model Support**: Works with models from 3B to 200B+ parameters
 - **Local & Cloud Processing**: Support for both local (privacy-first) and cloud AI providers
-- **Cloud ASR Providers**: 8 cloud speech-to-text providers (Deepgram, AssemblyAI, OpenAI Whisper API, Google, AWS Transcribe, Azure, Speechmatics, Gladia) as alternatives to local GPU processing
+- **Cloud ASR Providers**: 8 cloud speech-to-text providers (Deepgram, AssemblyAI, OpenAI Whisper API, Google, AWS Transcribe, Azure, Speechmatics, Gladia) as alternatives to local GPU processing — 6 verified end-to-end (Deepgram, AssemblyAI, Gladia, AWS Transcribe, Speechmatics, pyannote.ai)
 - **API-Lite Deployment**: `DEPLOYMENT_MODE=lite` for cloud-ASR-only deployments without requiring a local GPU
 - **Selective Reprocessing**: Re-run only specific pipeline stages (transcription, diarization, summarization) without full reprocessing
 - **Per-Upload Toggles**: Disable diarization or AI summarization on a per-file basis at upload or reprocess time
@@ -155,9 +156,19 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Password Security**: Password history tracking to prevent reuse, configurable complexity requirements
 - **Rate Limiting**: Protection against brute-force attacks on authentication endpoints
 
+### 🛡️ **Content Moderation & Privacy**
+- **Read-Time Redaction**: Mask PII, profanity, and toxicity at every display/export surface with `[CATEGORY]` placeholders — the full original transcript is always kept in the database, masking is a read-time transform (no destructive edits)
+- **Per-User, On by Default**: Each user controls categories, masking style, custom words, and allowlist (Settings → Content Redaction) with no recompute on change
+- **Admin Enforcement Floor**: Admins can force PII/toxicity/profanity masking and mandate censored exports for all users (Settings → Redaction Policy)
+- **Detect-Once, Cache-Forever**: Detection runs once per transcript in a dedicated `celery-redaction` CPU service; spans cache on the transcript so enable/disable and category changes are instant
+- **Multiple Detectors**: Presidio + spaCy/GLiNER (PII), toxic-bert / multilingual XLM-R (toxicity), wordlist (profanity), plus an optional LLM detector
+
+### ⚙️ **Engine Configuration (Admin)**
+- **Runtime-Tunable Engine Settings**: Admins adjust runtime-safe transcription/diarization engine settings — boundary-correction toggles and knobs, transcriber/diarizer backend selection — via Settings → Engine Configuration with no container restart
+
 ### ⚡ **Performance & Scaling**
 - **Multi-GPU Worker Scaling**: Optional parallel processing on dedicated GPUs for high-throughput systems
-- **Specialized Worker Queues**: GPU (transcription), Download (YouTube), CPU (waveform), NLP (AI features)
+- **Specialized Worker Queues**: 8 dedicated queues — gpu (transcription), cloud-asr, cpu (waveform), download (YouTube), nlp (AI features), embedding, utility, redaction
 - **Parallel Waveform Processing**: CPU-based waveform generation runs simultaneously with GPU transcription
 - **Non-Blocking Architecture**: LLM tasks don't delay next transcription (45-75s faster per 3-hour file)
 - **Configurable Concurrency**: GPU(1-4), CPU(8), Download(3), NLP(4) workers for optimal resource utilization
@@ -195,12 +206,15 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### **Backend**
 - **FastAPI** - High-performance async Python web framework
 - **SQLAlchemy 2.0** - Modern ORM with type safety
-- **Celery + Redis** - Multi-queue distributed task processing for AI workloads
+- **Celery + Redis** - Multi-queue distributed task processing for AI workloads (8 dedicated queues)
   - **GPU Queue** (concurrency=1-4): GPU-intensive transcription and diarization
-  - **Download Queue** (concurrency=3): Parallel YouTube video/playlist downloads
+  - **Cloud-ASR Queue**: Cloud speech-to-text provider jobs
   - **CPU Queue** (concurrency=8): Waveform generation and audio processing
+  - **Download Queue** (concurrency=3): Parallel YouTube video/playlist downloads
   - **NLP Queue** (concurrency=4): LLM API calls and AI features
+  - **Embedding Queue**: Speaker voice embedding extraction and matching
   - **Utility Queue** (concurrency=2): Health checks and maintenance tasks
+  - **Redaction Queue**: PII/profanity/toxicity detection (detect-once, cache-forever)
 - **WebSocket** - Real-time communication for live updates
 
 ### **AI/ML Stack**
@@ -535,7 +549,8 @@ ENGINE_SHARED_VOLUME_PATH=/tmp/transcription  # shared volume mount path
 - Export transcripts as TXT, JSON, or CSV
 - Generate SRT/VTT subtitle files with embedded timing
 - Access data programmatically via comprehensive REST API
-- Download media files with embedded subtitles
+- Media downloads use short-lived presigned MinIO URLs with live SSE progress — the download button is a dropdown offering video-with-subtitles, original video, and audio (MP3/WAV/original)
+- Bulk subtitle export is async: a prepare endpoint kicks off the job, progress streams over SSE, and the resulting ZIP is delivered via a presigned URL (no synchronous streamed download)
 
 ## 📁 Project Structure
 
@@ -834,8 +849,8 @@ For production use, ensure you:
 cd backend/
 pip install -r requirements.txt
 pytest tests/                    # Run tests
-black app/                       # Format code
-flake8 app/                      # Lint code
+ruff format app/                 # Format code
+ruff check app/                  # Lint code
 
 # Frontend development
 cd frontend/

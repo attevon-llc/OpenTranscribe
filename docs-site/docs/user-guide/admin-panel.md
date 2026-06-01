@@ -75,6 +75,31 @@ For each user (except yourself):
 You cannot modify your own role or delete your own account from this interface. Your row displays "Current User" instead of action buttons.
 :::
 
+## Engine Configuration
+
+Admin-tunable, runtime-safe transcription engine settings. All changes apply live -- no worker restart required. Settings are DB-backed with environment-variable fallback.
+
+### Diarization Boundary Correction
+
+- **Boundary smoothing** (default **on**): collapses 1--3 word "wrong-speaker islands" at speaker turn boundaries (pure-CPU, runs at finalize)
+- **Acoustic backchannel re-check** (default **off**, experimental, GPU): re-embeds short disputed/overlap words and reassigns them by voiceprint cosine
+  - **Cosine margin**: minimum cosine advantage required to relabel a word (default 0.05)
+  - **Max word duration**: only words shorter than this are eligible for re-check (default 1.0 s)
+
+### Backend Selection
+
+- **Transcriber backend**: select the active transcription engine
+- **Diarizer backend**: select the active diarization engine
+
+## Redaction Policy
+
+The admin enforcement floor for content redaction. While per-user redaction preferences live under **Settings → Content Redaction**, this admin policy is the floor that **overrides** those preferences for all users.
+
+- **Force categories**: force **PII**, **toxicity**, and/or **profanity** redaction on for every user (cannot be disabled per-user)
+- **Mandate censored exports**: require masked output for all subtitle/transcript exports
+- **Mandate mask-before-LLM**: require redaction before transcripts are sent to LLM features
+- **Re-scan / re-index after model upgrade**: trigger a re-scan and re-index of all files following a detection-model upgrade
+
 ## Authentication Configuration
 
 **Super Admin only.** The **Authentication** section provides runtime configuration of all supported authentication methods without restarting services. Database configuration takes precedence over `.env` variables.

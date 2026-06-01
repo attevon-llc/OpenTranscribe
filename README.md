@@ -167,7 +167,11 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Runtime-Tunable Engine Settings**: Admins adjust runtime-safe transcription/diarization engine settings — boundary-correction toggles and knobs, transcriber/diarizer backend selection — via Settings → Engine Configuration with no container restart
 
 ### ⚡ **Performance & Scaling**
-- **Multi-GPU Worker Scaling**: Optional parallel processing on dedicated GPUs for high-throughput systems
+- **Multi-GPU Worker Scaling**: Optional parallel processing on dedicated GPUs for high-throughput systems, including an optional ASR/diarization **GPU split** (`--with-gpu-split`) that runs transcription and diarization on separate GPUs
+- **Hybrid Mode**: Automatic CPU transcription + GPU/MPS diarization for small-VRAM GPUs and Apple Silicon
+- **Combined Transcription Engine**: Unified, backend-pluggable engine with admin-tunable runtime settings and per-worker metrics
+- **Fast Uploads**: Optional presigned direct-to-MinIO uploads with content-hash (imohash) deduplication and a shared-memory WAV handoff that removes redundant downloads from the processing pipeline
+- **Pipeline Timing Instrumentation**: Opt-in end-to-end wall-clock timing (`ENABLE_BENCHMARK_TIMING`) with admin timing endpoints
 - **Specialized Worker Queues**: 8 dedicated queues — gpu (transcription), cloud-asr, cpu (waveform), download (YouTube), nlp (AI features), embedding, utility, redaction
 - **Parallel Waveform Processing**: CPU-based waveform generation runs simultaneously with GPU transcription
 - **Non-Blocking Architecture**: LLM tasks don't delay next transcription (45-75s faster per 3-hour file)

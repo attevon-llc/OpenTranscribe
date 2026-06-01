@@ -152,6 +152,25 @@ main() {
     local check_output=""
     local check_failed=false
 
+    # Step 0: Run ESLint (lint gate — passes on warnings, fails only on errors)
+    print_info "Running eslint..."
+    local eslint_output
+    local eslint_exit=0
+    eslint_output=$(cd "$FRONTEND_DIR" && npm run lint 2>&1) || eslint_exit=$?
+
+    if [ $eslint_exit -ne 0 ]; then
+        check_failed=true
+        check_output="${check_output}
+--- ESLint Errors ---
+${eslint_output}"
+        print_error "eslint failed"
+        if [ "$VERBOSE" = true ]; then
+            echo "$eslint_output"
+        fi
+    else
+        print_success "eslint passed"
+    fi
+
     # Step 1: Run svelte-check
     print_info "Running svelte-check..."
     local svelte_output

@@ -60,6 +60,7 @@ celery_app = Celery(
         "app.tasks.utility",
         "app.tasks.recovery",
         "app.tasks.youtube_processing",
+        "app.tasks.media_download",
         "app.tasks.speaker_tasks",
         "app.tasks.speaker_identification_task",
         "app.tasks.speaker_update_task",
@@ -70,6 +71,7 @@ celery_app = Celery(
         "app.tasks.search_maintenance_task",
         "app.tasks.opensearch_integrity_task",
         "app.tasks.search_indexing_task",
+        "app.tasks.redaction_task",
         "app.tasks.thumbnail",
         "app.tasks.thumbnail_migration",
         "app.tasks.embedding_migration_v4",
@@ -135,6 +137,8 @@ celery_app.conf.update(
         # Download Queue - Network I/O tasks (concurrency=3, no GPU)
         "download.media_url": {"queue": CeleryQueues.DOWNLOAD},
         "download.media_playlist": {"queue": CeleryQueues.DOWNLOAD},
+        "download.prepare_media": {"queue": CeleryQueues.DOWNLOAD},
+        "download.prepare_bulk_subtitles": {"queue": CeleryQueues.DOWNLOAD},
         # CPU Queue - CPU-intensive parallel tasks (concurrency=8, no GPU)
         "media.generate_waveform": {"queue": CeleryQueues.CPU},
         "media.generate_waveform_data": {"queue": CeleryQueues.CPU},
@@ -165,6 +169,9 @@ celery_app.conf.update(
         "ai.group_batch_files": {"queue": CeleryQueues.NLP},
         "ai.retroactive_auto_label": {"queue": CeleryQueues.NLP},
         "ai.auto_label_batch": {"queue": CeleryQueues.NLP},
+        # Redaction Queue - Content moderation detection (dedicated CPU service)
+        "redaction.detect": {"queue": CeleryQueues.REDACTION},
+        "redaction.reindex_all": {"queue": CeleryQueues.REDACTION},
         # Embedding Queue - Search indexing with embedding model (concurrency=1)
         "index_transcript_search": {"queue": CeleryQueues.EMBEDDING},
         # Access index updates are lightweight OpenSearch writes (no GPU/embedding needed)
@@ -336,6 +343,37 @@ def preload_models(**kwargs):
             logger.info(f"CPU lightweight model '{cpu_config.model_name}' preloaded successfully")
         except Exception as e:
             logger.warning(f"CPU lightweight model preloading failed: {e}")
+
+    # Content-redaction model preloading — ONLY on the dedicated celery-redaction
+    # worker (PRELOAD_REDACTION_MODELS=true). Loads Presidio+GLiNER (PII) and the
+    # toxicity classifier once, shared across the threads pool. No GPU.
+    if os.getenv("PRELOAD_REDACTION_MODELS", "").lower() == "true":
+        try:
+            # Cap PyTorch intra-op threads so a single inference can't peg every core
+            # on a shared single machine (env OMP_NUM_THREADS is the primary control;
+            # this is a runtime fallback). Background redaction yields to user-facing work.
+            _rt = os.getenv("OMP_NUM_THREADS") or os.getenv("REDACTION_TORCH_THREADS")
+            if _rt:
+                try:
+                    import torch
+
+                    torch.set_num_threads(int(_rt))
+                    logger.info("Redaction worker: torch intra-op threads capped at %s", _rt)
+                except Exception as _te:  # noqa: BLE001
+                    logger.debug("Could not cap torch threads: %s", _te)
+
+            from app.services.redaction.detectors import pii_presidio
+            from app.services.redaction.detectors import toxicity
+
+            ok_pii = pii_presidio.preload()
+            ok_tox = toxicity.preload()
+            logger.info(
+                "Redaction models preloaded (pii=%s, toxicity=%s)",
+                ok_pii,
+                ok_tox,
+            )
+        except Exception as e:
+            logger.warning(f"Redaction model preloading failed: {e}")
 
     # Validate that all registered tasks have explicit queue routes
     _validate_task_routes()

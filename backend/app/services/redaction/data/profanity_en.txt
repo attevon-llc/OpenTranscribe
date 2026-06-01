@@ -1,0 +1,54 @@
+# Curated English profanity list for content redaction.
+# One term per line; lines starting with '#' are comments.
+# Matched case-insensitively with strict word boundaries (\b...\b) — inflections
+# are listed explicitly to avoid substring over-matching (the "Scunthorpe problem").
+# This is a deliberately conservative list; users/admins extend it via custom words.
+arse
+arsehole
+ass
+asshole
+assholes
+asses
+bastard
+bastards
+bitch
+bitches
+bitching
+bollocks
+bullshit
+crap
+cunt
+cunts
+damn
+dammit
+dick
+dickhead
+dicks
+douche
+douchebag
+fuck
+fucked
+fucker
+fuckers
+fucking
+fucks
+goddamn
+jackass
+motherfucker
+motherfuckers
+motherfucking
+piss
+pissed
+pissing
+prick
+pricks
+shit
+shits
+shitty
+shitting
+slut
+sluts
+twat
+wanker
+whore
+whores

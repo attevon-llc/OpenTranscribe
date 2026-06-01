@@ -3,15 +3,41 @@ import { addNotification } from './notifications';
 import { toastStore } from './toast';
 import { t } from '$stores/locale';
 
+export type DownloadType = 'video_with_subtitles' | 'original_video' | 'audio';
+
 export interface DownloadState {
   fileId: string;
   filename: string;
   status: 'preparing' | 'processing' | 'downloading' | 'completed' | 'error';
+  downloadType: DownloadType;
   progress?: number;
   startTime: Date;
   error?: string;
   notificationId?: string;
 }
+
+// i18n key fragments per download type, so notifications match what is actually
+// being downloaded (e.g. audio downloads don't claim to be "adding subtitles").
+const DOWNLOAD_COPY: Record<
+  DownloadType,
+  { started: string; preparing: string; processing: string }
+> = {
+  video_with_subtitles: {
+    started: 'downloads.videoDownloadStarted',
+    preparing: 'downloads.preparingWithSubtitles',
+    processing: 'downloads.addingSubtitles',
+  },
+  original_video: {
+    started: 'downloads.downloadStarted',
+    preparing: 'downloads.preparingDownload',
+    processing: 'downloads.preparingDownload',
+  },
+  audio: {
+    started: 'downloads.audioDownloadStarted',
+    preparing: 'downloads.preparingAudio',
+    processing: 'downloads.extractingAudio',
+  },
+};
 
 function createDownloadStore() {
   const { subscribe, set, update } = writable<Record<string, DownloadState>>({});
@@ -19,7 +45,11 @@ function createDownloadStore() {
   return {
     subscribe,
 
-    startDownload(fileId: string, filename: string): boolean {
+    startDownload(
+      fileId: string,
+      filename: string,
+      downloadType: DownloadType = 'video_with_subtitles'
+    ): boolean {
       let canStart = false;
 
       update((downloads) => {
@@ -32,13 +62,15 @@ function createDownloadStore() {
 
         canStart = true;
 
+        const copy = DOWNLOAD_COPY[downloadType];
+
         // Add persistent notification
         addNotification({
-          title: get(t)('downloads.videoDownloadStarted'),
-          message: get(t)('downloads.preparingWithSubtitles', { filename }),
+          title: get(t)(copy.started),
+          message: get(t)(copy.preparing, { filename }),
           type: 'info',
           read: false,
-          data: { file_id: fileId, download_type: 'video_with_subtitles' },
+          data: { file_id: fileId, download_type: downloadType },
         });
 
         // Create download state
@@ -46,6 +78,7 @@ function createDownloadStore() {
           fileId,
           filename,
           status: 'preparing',
+          downloadType,
           startTime: new Date(),
         };
 
@@ -69,29 +102,31 @@ function createDownloadStore() {
         if (progress !== undefined) download.progress = progress;
         if (error) download.error = error;
 
+        const copy = DOWNLOAD_COPY[download.downloadType];
+
         // Update notification based on status
         switch (status) {
           case 'processing':
             addNotification({
               title: get(t)('downloads.processingVideo'),
-              message: get(t)('downloads.addingSubtitles', {
+              message: get(t)(copy.processing, {
                 filename: download.filename,
               }),
               type: 'info',
               read: false,
-              data: { file_id: fileId, download_type: 'video_processing' },
+              data: { file_id: fileId, download_type: 'processing' },
             });
             break;
 
           case 'downloading':
             addNotification({
               title: get(t)('downloads.processingVideo'),
-              message: get(t)('downloads.processingWithSubtitles', {
+              message: get(t)(copy.processing, {
                 filename: download.filename,
               }),
               type: 'info',
               read: false,
-              data: { file_id: fileId, download_type: 'video_ready' },
+              data: { file_id: fileId, download_type: 'ready' },
             });
             break;
 

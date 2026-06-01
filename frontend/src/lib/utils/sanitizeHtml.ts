@@ -22,7 +22,7 @@ import DOMPurify from 'dompurify';
  * inline formatting that may appear in LLM-generated summaries.
  */
 const HIGHLIGHT_ALLOWED_TAGS = ['mark', 'span', 'br', 'ul', 'li', 'em', 'strong', 'div', 'p'];
-const HIGHLIGHT_ALLOWED_ATTR = ['class', 'data-match-index'];
+const HIGHLIGHT_ALLOWED_ATTR = ['class', 'data-match-index', 'data-cat'];
 
 /**
  * Sanitize an HTML string containing search highlight markup.

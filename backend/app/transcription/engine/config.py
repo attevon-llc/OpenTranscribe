@@ -27,11 +27,38 @@ class EngineConfig:
     precompute_vad: bool = False  # Phase 3a — Silero VAD in Stage 1
     gpu_split: bool = False  # Phase 4 — separate gpu-transcribe / gpu-diarize queues
 
+    # Boundary acoustic re-check (issue #193, Phase 3). DB-controlled via
+    # engine.boundary_acoustic_* SystemSettings (admin Engine panel) → env → defaults.
+    # Reassigns short absorbed backchannels by voiceprint inside the GPU stage; off by default.
+    boundary_acoustic_recheck_enabled: bool = False
+    boundary_acoustic_cosine_margin: float = 0.05
+    boundary_acoustic_max_word_dur: float = 1.0
+
     # Shared-volume handoff path (Opt-3A) — /tmp is always world-writable in containers
     shared_volume_path: str = "/tmp"  # noqa: S108  # nosec B108
 
     # Internal: wrapped TranscriptionConfig (set by from_environment)
     _transcription_config: TranscriptionConfig | None = field(default=None, repr=False)
+
+    @staticmethod
+    def _db_env_float(db, key: str, env: str, default: float) -> float:
+        """Resolve a float engine setting from DB → env → default (no crash on junk).
+
+        ``db=None`` (e.g. from_environment / no session) skips the DB read.
+        """
+        raw: str | None = None
+        if db is not None and key:
+            from app.services.system_settings_service import get_setting
+
+            raw = get_setting(db, key)
+        if raw is None:
+            raw = os.getenv(env)
+        if raw is None or raw == "":
+            return default
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return default
 
     @classmethod
     def from_db_with_env_fallback(cls, db) -> EngineConfig:
@@ -60,6 +87,24 @@ class EngineConfig:
                 "engine.precompute_vad",
                 default=os.getenv("ENGINE_PRECOMPUTE_VAD", "false").lower() == "true",
             ),
+            boundary_acoustic_recheck_enabled=get_setting_bool(
+                db,
+                "engine.boundary_acoustic_recheck_enabled",
+                default=os.getenv("ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", "false").lower()
+                == "true",
+            ),
+            boundary_acoustic_cosine_margin=cls._db_env_float(
+                db,
+                "engine.boundary_acoustic_cosine_margin",
+                "ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN",
+                0.05,
+            ),
+            boundary_acoustic_max_word_dur=cls._db_env_float(
+                db,
+                "engine.boundary_acoustic_max_word_dur",
+                "ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR",
+                1.0,
+            ),
             shared_volume_path=(
                 get_setting(db, "engine.shared_volume_path")
                 or os.getenv("ENGINE_SHARED_VOLUME_PATH")
@@ -84,6 +129,16 @@ class EngineConfig:
             diarizer_backend=os.getenv("ENGINE_DIARIZER_BACKEND", "pyannote"),
             precompute_vad=os.getenv("ENGINE_PRECOMPUTE_VAD", "false").lower() == "true",
             gpu_split=os.getenv("ENGINE_GPU_SPLIT", "false").lower() == "true",
+            boundary_acoustic_recheck_enabled=os.getenv(
+                "ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", "false"
+            ).lower()
+            == "true",
+            boundary_acoustic_cosine_margin=cls._db_env_float(
+                None, "", "ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN", 0.05
+            ),
+            boundary_acoustic_max_word_dur=cls._db_env_float(
+                None, "", "ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR", 1.0
+            ),
             shared_volume_path=os.getenv("ENGINE_SHARED_VOLUME_PATH", "/tmp"),  # noqa: S108  # nosec B108
         )
         for k, v in engine_overrides.items():
@@ -108,6 +163,9 @@ class EngineConfig:
             "diarizer_backend": self.diarizer_backend,
             "precompute_vad": self.precompute_vad,
             "gpu_split": self.gpu_split,
+            "boundary_acoustic_recheck_enabled": self.boundary_acoustic_recheck_enabled,
+            "boundary_acoustic_cosine_margin": self.boundary_acoustic_cosine_margin,
+            "boundary_acoustic_max_word_dur": self.boundary_acoustic_max_word_dur,
             "shared_volume_path": self.shared_volume_path,
             # TranscriptionConfig fields needed downstream
             "model_name": tc.model_name,
@@ -162,6 +220,11 @@ class EngineConfig:
             diarizer_backend=snapshot.get("diarizer_backend", "pyannote"),
             precompute_vad=snapshot.get("precompute_vad", False),
             gpu_split=snapshot.get("gpu_split", False),
+            boundary_acoustic_recheck_enabled=snapshot.get(
+                "boundary_acoustic_recheck_enabled", False
+            ),
+            boundary_acoustic_cosine_margin=snapshot.get("boundary_acoustic_cosine_margin", 0.05),
+            boundary_acoustic_max_word_dur=snapshot.get("boundary_acoustic_max_word_dur", 1.0),
             shared_volume_path=snapshot.get("shared_volume_path", "/tmp"),  # noqa: S108  # nosec B108
         )
         engine._transcription_config = tc

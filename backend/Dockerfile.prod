@@ -52,6 +52,12 @@ RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps whispe
 RUN pip install --user --no-cache-dir --force-reinstall --no-deps \
     "onnxruntime-gpu==1.26.0"
 
+# Content redaction: Presidio needs a spaCy pipeline for tokenization. Use the small
+# English model (~12 MB) — PII NER is handled by GLiNER + Presidio's regex recognizers,
+# so the large spaCy model is unnecessary. GLiNER + toxicity weights are pre-fetched at
+# startup via scripts/download-models.py (DOWNLOAD_REDACTION_MODELS=true).
+RUN python -m spacy download en_core_web_sm
+
 # triton removed: openai/triton is unrelated to NVIDIA TensorRT and is only used
 # by torch.compile(backend="inductor") JIT. torch.compile is opt-in and not on
 # the production path (Phase 6.1). Callers setting torch_compile=True will get

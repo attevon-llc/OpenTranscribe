@@ -42,6 +42,7 @@ class CeleryQueues:
     CPU_TRANSCRIBE = "cpu-transcribe"  # Dynamic: lightweight CPU transcription
     GPU_TRANSCRIBE = "gpu-transcribe"  # Phase 4: transcription-only GPU worker
     GPU_DIARIZE = "gpu-diarize"  # Phase 4: diarization-only GPU worker
+    REDACTION = "redaction"  # Content redaction detection (dedicated CPU service)
     DEFAULT = "celery"  # Celery default queue (NLP worker consumes as fallback)
 
     ALL: list[str] = [
@@ -55,6 +56,7 @@ class CeleryQueues:
         CPU_TRANSCRIBE,
         GPU_TRANSCRIBE,
         GPU_DIARIZE,
+        REDACTION,
         DEFAULT,
     ]
 
@@ -115,6 +117,17 @@ class UtilityPriority:
     ROUTINE = 5  # Periodic cleanup, access tracking
     BACKGROUND = 7  # Migration finalization, status checks
     DEV_TOOLS = 9  # Development and testing utilities (baseline export etc.)
+
+
+class RedactionPriority:
+    """Redaction queue (dedicated CPU service). Content-moderation detection.
+
+    Priority controls backlog ordering within the redaction worker pool.
+    """
+
+    PIPELINE_AUTO = 4  # Auto-dispatched after a transcript completes
+    USER_TRIGGERED = 3  # User re-ran detection (e.g. after editing a segment)
+    ADMIN_BACKFILL = 7  # Admin bulk re-index (model upgrade / first rollout)
 
 
 # =============================================================================
@@ -651,3 +664,96 @@ NOTIFICATION_TYPE_AUTO_LABEL_STATUS = "auto_label_status"
 
 # AI Summary settings defaults
 DEFAULT_AI_SUMMARY_ENABLED = True
+
+# =============================================================================
+# Content Redaction Settings
+# =============================================================================
+# Detection models (pre-downloaded at build/startup; loaded only by the
+# celery-redaction worker when PRELOAD_REDACTION_MODELS=true).
+REDACTION_PII_GLINER_MODEL = "knowledgator/gliner-pii-base-v1.0"
+# Standard-architecture toxicity classifiers (load natively, NO trust_remote_code —
+# avoids executing arbitrary remote code). toxic-bert is multi-label
+# (toxic/severe_toxic/obscene/threat/insult/identity_hate).
+REDACTION_TOXICITY_MODEL_EN = "unitary/toxic-bert"
+REDACTION_TOXICITY_MODEL_MULTI = "unitary/multilingual-toxic-xlm-roberta"
+
+# Current detection "model version" — bump to invalidate cached spans on a model
+# upgrade (the admin re-index targets files whose redaction_model_version differs).
+REDACTION_MODEL_VERSION = "v1"
+
+# Detector identifiers (which detectors a user/admin can toggle).
+REDACTION_DETECTORS = ["profanity", "pii", "toxicity", "llm"]
+
+# Language coverage per detector (ISO codes). A detector is SKIPPED for a transcript
+# whose language is not listed, and the skip is reported to the user. The LLM detector
+# is provider-dependent (no fixed list). GLiNER itself is multilingual but our Presidio
+# NLP engine is English-only, so PII is en-only until a multilingual engine is added.
+REDACTION_PROFANITY_LANGUAGES = ["en"]
+REDACTION_PII_LANGUAGES = ["en"]
+REDACTION_TOXICITY_LANGUAGES = ["en", "es", "fr", "it", "pt", "tr", "ru"]
+
+# PII name/entity detection engine. Default uses spaCy NER (fast: ~10-20 ms/segment,
+# bundled in Presidio). GLiNER is a higher-accuracy but much slower enhancement
+# (~130 ms/segment on CPU); enable it only when accuracy on diverse/non-Western names
+# matters more than throughput. Ops knob (env-overridable), read by the worker at load.
+REDACTION_PII_USE_GLINER = _os.environ.get("REDACTION_PII_USE_GLINER", "false").lower() == "true"
+
+# Compute device policy for the redaction ML models (toxicity, and GLiNER if enabled).
+#   auto (default) — use GPU automatically WHENEVER it has free VRAM, else CPU. Checked
+#                    at runtime per scan (no restart needed); the model moves GPU<->CPU
+#                    as availability changes. Requires the worker to see a GPU.
+#   cpu            — always CPU.
+#   cuda / cuda:N  — prefer that GPU (still falls back to CPU if it's short on VRAM).
+REDACTION_DEVICE = _os.environ.get("REDACTION_DEVICE", "auto").lower()
+
+# Minimum free VRAM (GB) required to place the redaction models on GPU. Below this, the
+# worker falls back to CPU so it never starves transcription/diarization on a shared GPU.
+# GLiNER (~0.5 GB) + toxic-bert (~0.5 GB) need ~1 GB; 1.5 GB leaves headroom.
+REDACTION_MIN_FREE_VRAM_GB = float(_os.environ.get("REDACTION_MIN_FREE_VRAM_GB", "1.5"))
+
+# Categories that can be redacted (a span's `category`).
+REDACTION_CATEGORIES = ["profanity", "pii", "toxicity", "custom"]
+
+# PII entity types we surface (Presidio entity names + GLiNER labels mapped to these).
+REDACTION_PII_ENTITIES = [
+    "NAME",
+    "EMAIL",
+    "PHONE",
+    "SSN",
+    "CREDIT_CARD",
+    "ADDRESS",
+    "BANK_ACCOUNT",
+    "IP_ADDRESS",
+    "IBAN",
+    "LOCATION",
+    "ORGANIZATION",
+]
+
+# Mask styles.
+REDACTION_STYLES = ["label", "asterisks", "first_letter", "blur"]
+
+# Per-user redaction defaults (coded — NO env vars). Mirrors DEFAULT_TRANSCRIPTION_*.
+# Redaction is OPT-OUT by default (off): it adds processing time and delays transcript
+# display until the scan completes, so users enable it explicitly. Admins can force it.
+DEFAULT_REDACTION_ENABLED = False
+DEFAULT_REDACTION_DETECTORS = ["profanity", "pii", "toxicity"]  # llm opt-in
+DEFAULT_REDACTION_CATEGORIES = ["profanity", "pii", "toxicity", "custom"]
+# ORGANIZATION is excluded from defaults: spaCy NER over-tags acronyms/common nouns as
+# ORG (e.g. "SSN" → ORGANIZATION), and org names are rarely sensitive PII. Still selectable.
+DEFAULT_REDACTION_PII_ENTITIES = [e for e in REDACTION_PII_ENTITIES if e != "ORGANIZATION"]
+DEFAULT_REDACTION_STYLE = "label"
+DEFAULT_REDACTION_TOXICITY_THRESHOLD = 0.5
+DEFAULT_REDACTION_REDACT_BEFORE_LLM = True
+DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED = True
+
+# PII detection confidence floor (Presidio/GLiNER scores below this are dropped).
+DEFAULT_REDACTION_PII_CONFIDENCE = 0.4
+
+# WebSocket notification type for redaction completion.
+NOTIFICATION_TYPE_REDACTION_STATUS = "redaction_status"
+
+# Redaction lifecycle statuses (MediaFile.redaction_status).
+REDACTION_STATUS_PENDING = "pending"
+REDACTION_STATUS_PROCESSING = "processing"
+REDACTION_STATUS_DONE = "done"
+REDACTION_STATUS_FAILED = "failed"

@@ -52,6 +52,8 @@ export interface ASRProviderInfo {
   name: string;
   description: string;
   requires_api_key: boolean;
+  /** True only for AWS — provider also needs an Access Key ID alongside the secret */
+  requires_access_key_id?: boolean;
   /** requires_region from the backend catalog */
   supports_region: boolean;
   /** supports_custom_url from the backend catalog */
@@ -75,6 +77,7 @@ export interface UserASRSettingsCreate {
   provider: ASRProvider;
   model_name: string;
   api_key?: string;
+  access_key_id?: string;
   region?: string;
   base_url?: string;
   is_active?: boolean;
@@ -85,6 +88,7 @@ export interface UserASRSettingsUpdate {
   provider?: ASRProvider;
   model_name?: string;
   api_key?: string;
+  access_key_id?: string;
   region?: string;
   base_url?: string;
   is_active?: boolean;
@@ -105,6 +109,8 @@ export interface UserASRSettingsResponse {
   test_status?: ASRConnectionStatus;
   test_message?: string;
   has_api_key: boolean;
+  /** Whether an AWS Access Key ID is already stored (encrypted, never returned) */
+  has_access_key_id?: boolean;
   is_shared?: boolean;
   shared_at?: string;
   owner_name?: string;
@@ -153,6 +159,7 @@ export interface ASRConnectionTestRequest {
   provider: ASRProvider;
   model_name: string;
   api_key?: string;
+  access_key_id?: string;
   region?: string;
   base_url?: string;
   config_id?: string;
@@ -195,6 +202,7 @@ export class ASRSettingsApi {
       description: p.description ?? '',
       // capability flags — normalise backend naming to frontend naming
       requires_api_key: p.requires_api_key ?? false,
+      requires_access_key_id: p.requires_access_key_id ?? false,
       supports_region: p.requires_region ?? p.supports_region ?? false,
       supports_base_url: p.supports_custom_url ?? p.supports_base_url ?? false,
       supports_diarization: p.supports_diarization ?? false,

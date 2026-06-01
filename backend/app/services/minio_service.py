@@ -3,12 +3,15 @@ import io
 import logging
 import os
 from typing import BinaryIO
+from urllib.parse import quote
 
 import urllib3
 from minio import Minio
 from minio.error import S3Error
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Disable urllib3 warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -102,194 +105,6 @@ def download_file(object_name: str) -> tuple[io.BytesIO, int, str]:
 def download_file_to_path(object_name: str, file_path: str) -> None:
     """Download a file from MinIO directly to a local path (no memory copy)."""
     minio_client.fget_object(settings.MEDIA_BUCKET_NAME, object_name, file_path)
-
-
-def _get_object_total_length(object_name: str, logger) -> int | None:
-    """
-    Get the total size of an object in MinIO.
-
-    Args:
-        object_name: Object name in MinIO
-        logger: Logger instance
-
-    Returns:
-        Total size in bytes, or None if unable to determine
-    """
-    try:
-        stats = minio_client.stat_object(settings.MEDIA_BUCKET_NAME, object_name)
-        logger.info(f"File size for {object_name}: {stats.size} bytes")
-        return stats.size  # type: ignore[no-any-return]
-    except Exception as e:
-        logger.error(f"Error getting object stats: {e}")
-        return None
-
-
-def _parse_range_header(
-    range_header: str | None, total_length: int | None, logger
-) -> tuple[int, int | None]:
-    """
-    Parse HTTP Range header and return start and end bytes.
-
-    Args:
-        range_header: HTTP Range header value (e.g., "bytes=0-1023")
-        total_length: Total file size in bytes, or None if unknown
-        logger: Logger instance
-
-    Returns:
-        Tuple of (start_byte, end_byte)
-    """
-    start_byte = 0
-    end_byte = total_length - 1 if total_length else None
-
-    if not range_header or not range_header.startswith("bytes="):
-        return start_byte, end_byte
-
-    try:
-        range_value = range_header.replace("bytes=", "")
-        parts = range_value.split("-")
-
-        if parts[0] and parts[1]:  # Format: bytes=start-end
-            start_byte = int(parts[0])
-            end_byte = min(int(parts[1]), total_length - 1) if total_length else int(parts[1])
-        elif parts[0]:  # Format: bytes=start-
-            start_byte = int(parts[0])
-            end_byte = total_length - 1 if total_length else None
-        elif parts[1]:  # Format: bytes=-end (last N bytes)
-            requested_length = int(parts[1])
-            if total_length:
-                start_byte = max(0, total_length - requested_length)
-                end_byte = total_length - 1
-
-        # Validate range is within bounds
-        if total_length and start_byte >= total_length:
-            logger.warning(f"Range start {start_byte} exceeds file size {total_length}")
-            start_byte = 0
-            end_byte = total_length - 1
-
-    except Exception as e:
-        logger.error(f"Error parsing range header '{range_header}': {e}")
-        start_byte = 0
-        end_byte = total_length - 1 if total_length else None
-
-    return start_byte, end_byte
-
-
-def _determine_chunk_size(total_length: int | None) -> int:
-    """
-    Determine optimal chunk size based on file size.
-
-    Smaller chunks for small files (reduces latency),
-    larger chunks for big files (improves throughput).
-
-    Args:
-        total_length: Total file size in bytes, or None if unknown
-
-    Returns:
-        Optimal chunk size in bytes
-    """
-    if total_length is None:
-        return 32768  # 32KB default
-
-    if total_length < 1024 * 1024:  # < 1MB
-        return 4096  # 4KB
-    if total_length < 10 * 1024 * 1024:  # < 10MB
-        return 16384  # 16KB
-    if total_length < 100 * 1024 * 1024:  # < 100MB
-        return 65536  # 64KB
-    return 131072  # 128KB for very large files
-
-
-def _create_chunk_generator(response, chunk_size: int, max_bytes: int | None, logger):
-    """
-    Create a generator that yields chunks from the MinIO response.
-
-    Args:
-        response: MinIO response object
-        chunk_size: Size of each chunk to read
-        max_bytes: Maximum bytes to read, or None for no limit
-        logger: Logger instance
-
-    Yields:
-        Chunks of file data
-    """
-    try:
-        bytes_read = 0
-        while True:
-            if max_bytes is not None and bytes_read + chunk_size > max_bytes:
-                final_chunk_size = max_bytes - bytes_read
-                if final_chunk_size <= 0:
-                    break
-                chunk = response.read(final_chunk_size)
-            else:
-                chunk = response.read(chunk_size)
-
-            if not chunk:
-                break
-
-            bytes_read += len(chunk)
-            yield chunk
-    finally:
-        try:
-            response.close()
-            response.release_conn()
-        except Exception as e:
-            logger.error(f"Error closing MinIO response: {e}")
-
-
-def get_file_stream(object_name: str, range_header: str | None = None):
-    """
-    Get a file stream from MinIO for efficient streaming of large files with adaptive chunking.
-    Implements robust range request handling for YouTube-like video streaming experience.
-
-    Args:
-        object_name: Object name in MinIO
-        range_header: HTTP Range header for partial content requests
-
-    Returns:
-        Tuple of (Generator that yields chunks of the file, start_byte, end_byte, total_length)
-    """
-    logger = logging.getLogger(__name__)
-
-    try:
-        total_length = _get_object_total_length(object_name, logger)
-        start_byte, end_byte = _parse_range_header(range_header, total_length, logger)
-
-        # Add offset and length parameters for MinIO if we have a range
-        if range_header and range_header.startswith("bytes="):
-            offset = start_byte
-            length = (
-                (end_byte - start_byte + 1) if end_byte is not None else 0
-            )  # +1 because range is inclusive
-            logger.info(
-                f"Streaming with range: start={start_byte}, "
-                f"end={end_byte if end_byte is not None else 'EOF'}, total={total_length}"
-            )
-            response = minio_client.get_object(
-                bucket_name=settings.MEDIA_BUCKET_NAME,
-                object_name=object_name,
-                offset=offset,
-                length=length,
-            )
-            max_bytes: int | None = length if length > 0 else None
-        else:
-            response = minio_client.get_object(
-                bucket_name=settings.MEDIA_BUCKET_NAME,
-                object_name=object_name,
-            )
-            max_bytes = None
-
-        chunk_size = _determine_chunk_size(total_length)
-
-        return (
-            _create_chunk_generator(response, chunk_size, max_bytes, logger),
-            start_byte,
-            end_byte,
-            total_length,
-        )
-
-    except Exception as e:
-        logger.error(f"Error setting up file stream for {object_name}: {e}")
-        raise Exception(f"Error streaming file: {e}") from e
 
 
 def get_file_url(object_name: str, expires: int = 86400) -> str:
@@ -469,6 +284,53 @@ def cleanup_temp_audio(file_uuid: str) -> None:
         _logger.debug(f"Temp audio cleanup failed (non-fatal): {e}")
 
 
+def get_presigned_download_url(
+    object_name: str,
+    *,
+    bucket_name: str | None = None,
+    download_filename: str | None = None,
+    content_type: str | None = None,
+    expires: int = settings.MEDIA_URL_EXPIRE_SECONDS,
+) -> str:
+    """Generate a browser-reachable presigned GET URL that forces a download.
+
+    Adds S3 ``response-content-disposition`` / ``response-content-type`` overrides
+    so the browser saves the object under ``download_filename`` with the right MIME,
+    regardless of the underlying object key. The internal MinIO host is rewritten to
+    the browser-facing endpoint (``MINIO_PUBLIC_URL`` or the ``/s3`` proxy path) so
+    the same URL works in dev (Vite proxy) and prod (nginx).
+
+    Args:
+        object_name: Object key.
+        bucket_name: Bucket holding the object (defaults to the media bucket).
+        download_filename: Filename the browser should save as (Content-Disposition).
+        content_type: MIME type to report.
+        expires: URL lifetime in seconds.
+
+    Returns:
+        A presigned, browser-reachable download URL.
+    """
+    bucket = bucket_name or settings.MEDIA_BUCKET_NAME
+    response_headers: dict[str, str | list[str] | tuple[str]] = {}
+    if download_filename:
+        # RFC 6266 / 5987: ASCII fallback + UTF-8 form for non-ASCII names.
+        ascii_name = download_filename.encode("ascii", "ignore").decode("ascii") or "download"
+        quoted = quote(download_filename, safe="")
+        response_headers["response-content-disposition"] = (
+            f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}"
+        )
+    if content_type:
+        response_headers["response-content-type"] = content_type
+
+    url = minio_client.presigned_get_object(
+        bucket_name=bucket,
+        object_name=object_name,
+        expires=datetime.timedelta(seconds=max(60, int(expires))),
+        response_headers=response_headers or None,
+    )
+    return _rewrite_minio_host(str(url))
+
+
 def get_internal_presigned_url(object_name: str, expires: int = 3600) -> str:
     """Get a presigned URL for server-to-server access (no hostname rewriting)."""
     delta = datetime.timedelta(seconds=expires)
@@ -641,6 +503,21 @@ class MinIOService:
         except Exception as e:
             raise Exception(f"Error uploading file: {e}") from e
 
+    def upload_bytes(
+        self, bucket_name: str, object_name: str, data: bytes, content_type: str
+    ) -> None:
+        """Upload an in-memory bytes payload to a MinIO bucket."""
+        try:
+            self.client.put_object(
+                bucket_name=bucket_name,
+                object_name=object_name,
+                data=io.BytesIO(data),
+                length=len(data),
+                content_type=content_type,
+            )
+        except Exception as e:
+            raise Exception(f"Error uploading bytes: {e}") from e
+
     def download_file(self, object_name: str, file_path: str, bucket_name: str | None = None):
         """Download a file from MinIO to local path."""
         bucket = bucket_name or settings.MEDIA_BUCKET_NAME
@@ -712,3 +589,111 @@ class MinIOService:
             self.client.make_bucket(bucket_name)
         except Exception as e:
             raise Exception(f"Error creating bucket: {e}") from e
+
+    def ensure_prefix_expiry(
+        self,
+        bucket_name: str,
+        prefix: str,
+        days: int,
+        rule_id: str,
+        *,
+        update_if_exists: bool = True,
+    ) -> None:
+        """Ensure an object-expiration lifecycle rule exists for a bucket prefix.
+
+        Idempotent and best-effort: used to auto-expire ephemeral artifacts (e.g.
+        bulk-export ZIPs) so they don't accumulate in object storage. Never raises —
+        a missing lifecycle rule must not block uploads. Only objects under ``prefix``
+        are affected; other objects in the bucket are untouched.
+
+        ``update_if_exists=False`` only bootstraps a missing rule and leaves an existing
+        one untouched — used so per-instance construction never clobbers the authoritative
+        (admin/startup-set) retention value.
+        """
+        from minio.commonconfig import ENABLED
+        from minio.commonconfig import Filter
+        from minio.lifecycleconfig import Expiration
+        from minio.lifecycleconfig import LifecycleConfig
+        from minio.lifecycleconfig import Rule
+
+        try:
+            existing_rules = []
+            try:
+                current = self.client.get_bucket_lifecycle(bucket_name)
+                if current and current.rules:
+                    for r in current.rules:
+                        if r.rule_id == rule_id:
+                            # Already present: skip if unchanged, or if caller only wants to
+                            # bootstrap a missing rule (not override an existing/authoritative one).
+                            if not update_if_exists:
+                                return
+                            if r.expiration and r.expiration.days == days:
+                                return
+                        else:
+                            existing_rules.append(r)
+            except Exception:
+                # No lifecycle config yet (S3 returns NoSuchLifecycleConfiguration).
+                existing_rules = []
+
+            rule = Rule(
+                ENABLED,
+                rule_filter=Filter(prefix=prefix),
+                rule_id=rule_id,
+                expiration=Expiration(days=days),
+            )
+            self.client.set_bucket_lifecycle(bucket_name, LifecycleConfig([*existing_rules, rule]))
+            logger.info(
+                f"Set lifecycle rule '{rule_id}' on {bucket_name}/{prefix} (expire {days}d)"
+            )
+        except Exception as e:  # pragma: no cover - best-effort housekeeping
+            logger.warning(f"Could not set lifecycle rule on {bucket_name}/{prefix}: {e}")
+
+    def remove_lifecycle_rule(self, bucket_name: str, rule_id: str) -> None:
+        """Remove a single lifecycle rule by id, preserving any others. Best-effort."""
+        from minio.lifecycleconfig import LifecycleConfig
+
+        try:
+            current = self.client.get_bucket_lifecycle(bucket_name)
+            if not current or not current.rules:
+                return
+            remaining = [r for r in current.rules if r.rule_id != rule_id]
+            if len(remaining) == len(current.rules):
+                return  # rule wasn't present
+            self.client.set_bucket_lifecycle(bucket_name, LifecycleConfig(remaining))
+            logger.info(f"Removed lifecycle rule '{rule_id}' from {bucket_name}")
+        except Exception as e:  # pragma: no cover - best-effort housekeeping
+            logger.warning(f"Could not remove lifecycle rule '{rule_id}' on {bucket_name}: {e}")
+
+    def prefix_stats(self, bucket_name: str, prefix: str) -> tuple[int, int]:
+        """Return ``(object_count, total_bytes)`` for all objects under a prefix."""
+        count = 0
+        total = 0
+        try:
+            for obj in self.client.list_objects(bucket_name, prefix=prefix, recursive=True):
+                count += 1
+                total += int(obj.size or 0)
+        except Exception as e:
+            logger.warning(f"Could not compute prefix stats for {bucket_name}/{prefix}: {e}")
+        return count, total
+
+    def delete_prefix(self, bucket_name: str, prefix: str) -> int:
+        """Delete every object under a prefix. Returns the number deleted. Best-effort."""
+        from minio.deleteobjects import DeleteObject
+
+        deleted = 0
+        try:
+            names = [
+                obj.object_name
+                for obj in self.client.list_objects(bucket_name, prefix=prefix, recursive=True)
+            ]
+            if not names:
+                return 0
+            errors = self.client.remove_objects(bucket_name, (DeleteObject(n) for n in names))
+            failed = 0
+            for err in errors:
+                failed += 1
+                logger.warning(f"Failed to delete {err.name}: {err.code} {err.message}")
+            deleted = len(names) - failed
+        except Exception as e:
+            logger.warning(f"Could not delete prefix {bucket_name}/{prefix}: {e}")
+        return deleted

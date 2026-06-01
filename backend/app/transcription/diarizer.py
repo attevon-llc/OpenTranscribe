@@ -8,6 +8,7 @@ import gc
 import logging
 import os
 import time
+from typing import Any
 from typing import ClassVar
 from typing import NoReturn
 
@@ -33,7 +34,7 @@ class SpeakerDiarizer:
 
     def __init__(self, config: TranscriptionConfig):
         self.config = config
-        self._pipeline = None
+        self._pipeline: Any = None
         self._model_name: str | None = None
 
     @property
@@ -327,6 +328,50 @@ class SpeakerDiarizer:
         )
 
         return diarize_df, overlap_info, native_embeddings
+
+    def embed_window(self, audio: np.ndarray, start: float, end: float) -> np.ndarray | None:
+        """Embed an audio window with the pipeline's WeSpeaker model (issue #193 Phase 3).
+
+        Used by the acoustic re-check to test which speaker a short disputed word actually
+        sounds like. The window is padded to a minimum embeddable length (centered) because
+        speaker embeddings of sub-second clips are unreliable. Returns a 256-d embedding,
+        or None on any failure / if the model is unavailable (graceful — never raises into
+        the pipeline).
+
+        Args:
+            audio: 16 kHz mono float32 waveform (the same array passed to diarize()).
+            start: Window start (seconds).
+            end: Window end (seconds).
+
+        Returns:
+            A 1-D embedding vector, or None.
+        """
+        try:
+            import torch
+
+            embedder = getattr(self._pipeline, "_embedding", None)
+            if embedder is None or audio is None:
+                return None
+            sr = int(getattr(embedder, "sample_rate", 16000))
+            # Center-pad to at least the model minimum (fallback ~0.8 s) so the embedding is
+            # stable; the caller's cosine-margin guard rejects ambiguous matches.
+            min_samples = int(getattr(embedder, "min_num_samples", 0) or 0) or int(0.8 * sr)
+            s, e = int(start * sr), int(end * sr)
+            if e - s < min_samples:
+                mid = (s + e) // 2
+                s, e = mid - min_samples // 2, mid + min_samples // 2
+            s, e = max(0, s), min(len(audio), e)
+            if e - s < min_samples // 2:
+                return None
+            clip = np.ascontiguousarray(audio[s:e]).astype(np.float32)
+            # CPU tensor: the fork's embedding wrapper pins + transfers to its device.
+            wf = torch.from_numpy(clip).view(1, 1, -1)
+            out = embedder(wf)
+            arr = out.detach().cpu().numpy() if hasattr(out, "detach") else np.asarray(out)
+            return arr.reshape(-1)
+        except Exception as exc:  # noqa: BLE001 — never break diarization on a re-check embed
+            logger.debug("embed_window failed (%s); skipping acoustic re-check for window", exc)
+            return None
 
     def _run_pipeline_with_oom_retry(self, audio_input: dict, pipeline_kwargs: dict, hook=None):
         """Run the diarization pipeline with automatic batch_size reduction on OOM.

@@ -32,6 +32,8 @@
   import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
   import ASRSettings from '$components/settings/ASRSettings.svelte';
   import EngineSettings from '$components/settings/EngineSettings.svelte';
+  import ContentRedactionSettings from '$components/settings/ContentRedactionSettings.svelte';
+  import RedactionPolicySettings from '$components/settings/RedactionPolicySettings.svelte';
   import CustomVocabularySettings from '$components/settings/CustomVocabularySettings.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
@@ -187,8 +189,10 @@
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
         { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic' },
         ...(isAdmin ? [{ id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu' }] : []),
+        ...(isAdmin ? [{ id: 'redaction-policy' as SettingsSection, label: $t('settings.redactionPolicy.title'), icon: 'shield' }] : []),
         { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' },
         { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list' },
+        { id: 'content-redaction' as SettingsSection, label: $t('settings.contentRedaction.title'), icon: 'eye-off' },
         { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
         { id: 'organization-context' as SettingsSection, label: $t('settings.orgContext.title'), icon: 'briefcase' },
         { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
@@ -1228,6 +1232,22 @@
             </div>
           {/if}
 
+          <!-- Content Redaction Section (per-user, all users) -->
+          {#if activeSection === 'content-redaction'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.contentRedaction.title')}</h3>
+              <ContentRedactionSettings />
+            </div>
+          {/if}
+
+          <!-- Redaction Policy Section (admin governance) -->
+          {#if activeSection === 'redaction-policy' && isAdmin}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.redactionPolicy.title')}</h3>
+              <RedactionPolicySettings />
+            </div>
+          {/if}
+
           <!-- Search & Indexing Section -->
           {#if activeSection === 'search-indexing'}
             <div class="content-section">
@@ -1372,9 +1392,9 @@
                     <div class="stat-value">{stats.throughput?.rate_1h || 0} <span class="stat-unit">{$t('settings.statistics.filesPerHour')}</span></div>
                     <div class="stat-detail">{$t('settings.statistics.avgRate3h')}: {stats.throughput?.rate_3h || 0} {$t('settings.statistics.filesPerHour')}</div>
                     {#if stats.eta?.remaining > 0}
-                      <div class="stat-detail">{$t('settings.statistics.remaining')}: {stats.eta.remaining} files</div>
+                      <div class="stat-detail">{$t('settings.statistics.remaining')}: {stats.eta.remaining} {$t('settings.statistics.filesUnit')}</div>
                       {#if stats.eta.hours_remaining !== null}
-                        <div class="stat-detail">{$t('settings.statistics.hoursRemaining')}: {stats.eta.hours_remaining}h</div>
+                        <div class="stat-detail">{$t('settings.statistics.hoursRemaining')}: {stats.eta.hours_remaining}{$t('settings.statistics.hoursUnit')}</div>
                       {/if}
                     {:else}
                       <div class="stat-detail">{$t('settings.statistics.noActiveProcessing')}</div>
@@ -1415,11 +1435,11 @@
                       <div class="model-info">
                         <div class="model-item">
                           <span class="model-label">{$t('settings.statistics.whisperModel')}:</span>
-                          <span class="model-value">{stats.models.whisper?.name || 'N/A'}</span>
+                          <span class="model-value">{stats.models.whisper?.name || $t('common.notAvailable')}</span>
                         </div>
                         <div class="model-item">
                           <span class="model-label">{$t('settings.statistics.diarization')}:</span>
-                          <span class="model-value">{stats.models.diarization?.name || 'N/A'}</span>
+                          <span class="model-value">{stats.models.diarization?.name || $t('common.notAvailable')}</span>
                         </div>
                         {#if stats.models.search_embedding}
                           <div class="model-item">
@@ -1544,12 +1564,12 @@
                       <div class="stat-card-content">
                         <h4>{$t('settings.statistics.gpuVram')}</h4>
                         <div class="stat-value loading-text">{$t('common.loading')}</div>
-                        <div class="stat-detail">{$t('settings.statistics.gpuStatsLoading') || 'Collecting GPU stats from worker...'}</div>
+                        <div class="stat-detail">{$t('settings.statistics.gpuStatsLoading')}</div>
                       </div>
                     {:else}
                       <div class="stat-card-content">
                         <h4>{$t('settings.statistics.gpuVram')}</h4>
-                        <div class="stat-value">N/A</div>
+                        <div class="stat-value">{$t('common.notAvailable')}</div>
                         <div class="stat-detail">{activeGpu?.name || $t('settings.statistics.noGpu')}</div>
                       </div>
                     {/if}
@@ -1742,7 +1762,7 @@
             </div>
           {/if}
 
-          <!-- File Retention Section -->
+          <!-- File Retention Section (includes derived media cache) -->
           {#if activeSection === 'retention' && isAdmin}
             <div class="content-section">
               <RetentionSettings />

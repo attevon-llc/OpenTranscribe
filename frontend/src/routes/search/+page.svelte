@@ -12,7 +12,7 @@
   import SearchAutocomplete from '$components/search/SearchAutocomplete.svelte';
   import SearchSortDropdown from '$components/search/SearchSortDropdown.svelte';
   import PlyrMiniPlayer from '$components/PlyrMiniPlayer.svelte';
-  import { getMediaStreamUrl, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
+  import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import { prefetchNextSearchPage } from '$lib/prefetch';
   import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
 
@@ -156,10 +156,12 @@
       getMediaStreamUrl(savedPreview.fileUuid, 'video').then((url) => {
         previewMediaUrl = url;
         previewData = savedPreview;
+        const info = getCachedUrlInfo(savedPreview.fileUuid, 'video');
+        const expiresIn = info ? Math.max(60, Math.floor((info.expiresAt - Date.now()) / 1000)) : 300;
         previewUrlRefresher = createUrlRefresher(
           savedPreview.fileUuid,
           (newUrl) => { previewMediaUrl = newUrl; },
-          300
+          expiresIn
         );
       }).catch((err) => {
         console.error('Failed to restore preview media URL:', err);
@@ -415,13 +417,16 @@
       clearMediaUrlCache(data.fileUuid);
       previewMediaUrl = await getMediaStreamUrl(data.fileUuid, 'video');
 
-      // Set up automatic URL refresh to prevent 401 on long playback
+      // Set up automatic URL refresh to prevent 401 on long playback, using the URL's
+      // real expiry rather than a hardcoded interval.
+      const info = getCachedUrlInfo(data.fileUuid, 'video');
+      const expiresIn = info ? Math.max(60, Math.floor((info.expiresAt - Date.now()) / 1000)) : 300;
       previewUrlRefresher = createUrlRefresher(
         data.fileUuid,
         (newUrl) => {
           previewMediaUrl = newUrl;
         },
-        300 // 5 minute expiration
+        expiresIn
       );
     } catch (err) {
       console.error('Failed to get media stream URL:', err);
@@ -629,7 +634,7 @@
       <!-- Results -->
       <main class="results">
         {#if $searchStore.isLoading}
-          <CardGridSkeleton variant="search" count={6} minCardWidth={520} />
+          <CardGridSkeleton variant="search" count={6} />
         {:else if $searchStore.error}
           <div class="state-container error">
             <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

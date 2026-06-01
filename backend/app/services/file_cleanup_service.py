@@ -395,66 +395,132 @@ def _cleanup_opensearch_for_file(file: "MediaFile", file_uuid: str) -> None:
                 )
 
 
-def auto_delete_media_file(db: Session, file: MediaFile) -> dict:
-    """Perform full cleanup of a MediaFile and all associated external data.
+def delete_file_storage_artifacts(db: Session, file: MediaFile) -> bool:
+    """Delete every object-storage artifact for a media file.
 
-    This is the service-layer equivalent of the HTTP delete endpoint. It deletes
-    the file's objects from MinIO, removes per-file speaker embeddings and the
-    transcript document from OpenSearch, then deletes the database record (DB
-    cascade removes all child rows). SpeakerProfile records and their OpenSearch
-    profile embeddings (keyed as ``profile_{profile_uuid}``) are intentionally
-    left intact.
-
-    Args:
-        db: SQLAlchemy database session.
-        file: MediaFile ORM instance to delete.
+    Covers the original, its thumbnail, and the regenerable derived cache
+    (subtitle-embedded videos + extracted audio under ``processed-videos/derived/``).
+    Single source of truth shared by the interactive delete endpoint and the
+    retention/auto-delete path so neither can orphan storage. Best-effort per
+    artifact — a missing object never blocks the rest.
 
     Returns:
-        A dict with keys:
-          - ``deleted`` (bool): True on full success, False on any error.
-          - ``file_uuid`` (str): UUID of the file that was processed.
-          - ``error`` (str | None): Error message on failure, None on success.
+        True if the original (``storage_path``) object was deleted.
+    """
+    from app.services.minio_service import delete_file
+
+    original_deleted = False
+    for path_attr in ("storage_path", "thumbnail_path"):
+        path = getattr(file, path_attr, None)
+        if not path:
+            continue
+        try:
+            delete_file(str(path))
+            if path_attr == "storage_path":
+                original_deleted = True
+            logger.info(f"Deleted MinIO object {path}")
+        except Exception as minio_err:
+            logger.warning(f"Could not delete MinIO object {path} (non-fatal): {minio_err}")
+
+    # Regenerable derived cache — duplicates that must not outlive the original.
+    try:
+        from app.services.minio_service import MinIOService
+        from app.services.video_processing_service import VideoProcessingService
+
+        VideoProcessingService(MinIOService()).clear_cache_for_media_file(db, int(file.id))
+    except Exception as cache_err:
+        logger.debug(f"Derived-cache cleanup failed (non-fatal): {cache_err}")
+
+    return original_deleted
+
+
+def _cleanup_empty_clusters(db: Session, owner_id: int) -> None:
+    """Remove non-promoted speaker clusters left empty after a file's speakers are deleted.
+
+    CASCADE removes cluster-membership rows but not the (now empty) cluster itself, so
+    we check actual remaining members via a NOT EXISTS subquery. Best-effort.
+    """
+    try:
+        from sqlalchemy import exists
+
+        from app.models.media import SpeakerCluster
+        from app.models.media import SpeakerClusterMember
+
+        has_members = (
+            exists()
+            .where(SpeakerClusterMember.cluster_id == SpeakerCluster.id)
+            .correlate(SpeakerCluster)
+        )
+        empty_clusters = (
+            db.query(SpeakerCluster)
+            .filter(
+                SpeakerCluster.user_id == owner_id,
+                ~has_members,
+                SpeakerCluster.promoted_to_profile_id.is_(None),
+            )
+            .all()
+        )
+        if not empty_clusters:
+            return
+        for cluster in empty_clusters:
+            with contextlib.suppress(Exception):
+                from app.services.opensearch_service import delete_cluster_embedding
+
+                delete_cluster_embedding(str(cluster.uuid))
+            db.delete(cluster)
+        db.commit()
+        logger.info(f"Cleaned up {len(empty_clusters)} empty cluster(s) after file deletion")
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Failed to clean up empty clusters: {e}")
+
+
+def purge_media_file(db: Session, file: MediaFile) -> dict:
+    """Canonical destroy for a MediaFile and ALL associated data.
+
+    Single source of truth shared by every delete path — interactive single/force
+    delete, bulk delete, N-day retention, and orphan cleanup — so a change here applies
+    everywhere and no path can drift or leak. Steps (each best-effort, DB delete is the
+    commit point):
+
+    1. Object storage: original + thumbnail + regenerable derived cache.
+    2. OpenSearch: speaker embeddings (v3+v4), transcript doc, transcript chunks, summaries.
+    3. Database row (CASCADE removes child rows).
+    4. Redis caches for the owner.
+    5. Empty non-promoted speaker clusters orphaned by the CASCADE.
+
+    SpeakerProfile records and their profile embeddings are intentionally preserved.
+
+    Returns ``{"deleted": bool, "file_uuid": str, "error": str | None}``. Never raises.
     """
     file_uuid = str(file.uuid)
-
     try:
-        # Step 1: Delete MinIO objects — non-fatal if the object is already gone.
-        for path_attr in ("storage_path", "thumbnail_path"):
-            path = getattr(file, path_attr, None)
-            if path:
-                try:
-                    from app.services.minio_service import delete_file
+        owner_id = int(file.user_id)
 
-                    delete_file(str(path))
-                    logger.info(f"auto_delete_media_file: deleted MinIO object {path}")
-                except Exception as minio_err:
-                    logger.warning(
-                        f"auto_delete_media_file: could not delete MinIO object {path} "
-                        f"(non-fatal): {minio_err}"
-                    )
-
-        # Step 2: Delete all OpenSearch data for this file.
+        delete_file_storage_artifacts(db, file)
         _cleanup_opensearch_for_file(file, file_uuid)
 
-        # Step 4: Delete from database — cascade removes all child rows.
-        owner_id = int(file.user_id)
         db.delete(file)
         db.commit()
-        logger.info(f"auto_delete_media_file: deleted file {file_uuid} from database")
+        logger.info(f"purge_media_file: deleted file {file_uuid} from database")
 
-        # Step 5: Invalidate Redis caches for the file owner.
         try:
             from app.services.redis_cache_service import redis_cache
 
             redis_cache.invalidate_all_for_user(owner_id)
         except Exception as cache_err:
-            logger.debug(
-                f"auto_delete_media_file: cache invalidation failed (non-critical): {cache_err}"
-            )
+            logger.debug(f"purge_media_file: cache invalidation failed (non-critical): {cache_err}")
+
+        _cleanup_empty_clusters(db, owner_id)
 
         return {"deleted": True, "file_uuid": file_uuid, "error": None}
 
     except Exception as e:
         db.rollback()
-        logger.error(f"auto_delete_media_file: failed to delete file {file_uuid}: {e}")
+        logger.error(f"purge_media_file: failed to delete file {file_uuid}: {e}")
         return {"deleted": False, "file_uuid": file_uuid, "error": str(e)}
+
+
+def auto_delete_media_file(db: Session, file: MediaFile) -> dict:
+    """Backwards-compatible alias for the canonical :func:`purge_media_file`."""
+    return purge_media_file(db, file)

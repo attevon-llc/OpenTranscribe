@@ -35,30 +35,3 @@ export function getFlowerUrl(): string {
 
   return `${window.location.origin}/${cleanPrefix}/`;
 }
-
-/**
- * Constructs a video file URL.
- *
- * @deprecated Use `getMediaStreamUrl()` from '$lib/api/mediaUrl' instead.
- * This returns an unauthenticated URL that will fail for private files.
- * The new presigned URL approach is more secure and follows AWS/GCS best practices.
- *
- * @param fileId The UUID of the file
- */
-export function getVideoUrl(fileId: string): string {
-  const baseUrl = getAppBaseUrl();
-  return `${baseUrl}/api/files/${fileId}/simple-video`;
-}
-
-/**
- * Constructs a thumbnail file URL.
- *
- * @deprecated Use `getMediaStreamUrl(fileId, 'thumbnail')` from '$lib/api/mediaUrl' instead.
- * This returns an unauthenticated URL that will fail for private files.
- *
- * @param fileId The UUID of the file
- */
-export function getThumbnailUrl(fileId: string): string {
-  const baseUrl = getAppBaseUrl();
-  return `${baseUrl}/api/files/${fileId}/thumbnail`;
-}

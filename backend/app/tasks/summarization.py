@@ -530,7 +530,21 @@ def summarize_transcript_task(
             if not transcript_segments:
                 raise ValueError(f"No transcript segments found for file {file_id}")
 
-            full_transcript, speaker_stats = build_transcript_and_stats(transcript_segments)
+            # Redact PII/profanity before sending to the LLM provider when the
+            # owner's (or admin-forced) policy requires it (don't leak to third parties).
+            redaction_cfg = None
+            try:
+                from app.services.redaction.config import resolve_effective_config
+
+                _cfg = resolve_effective_config(db, int(media_file.user_id))
+                if _cfg.enabled and _cfg.redact_before_llm:
+                    redaction_cfg = _cfg
+            except Exception as _redact_err:  # noqa: BLE001
+                logger.debug(f"Redaction config for LLM unavailable: {_redact_err}")
+
+            full_transcript, speaker_stats = build_transcript_and_stats(
+                transcript_segments, redaction_cfg
+            )
 
             update_task_status(db, task_id, "in_progress", progress=0.3)
             send_summary_notification(

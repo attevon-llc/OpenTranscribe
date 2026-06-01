@@ -212,7 +212,10 @@ class FormattingService:
 
     @staticmethod
     def format_transcript_segment(
-        segment: Any, speaker_mapping: Optional[dict[str, str]] = None
+        segment: Any,
+        speaker_mapping: Optional[dict[str, str]] = None,
+        redaction_cfg: Any = None,
+        reveal_categories: Optional[set] = None,
     ) -> TranscriptSegment:
         """
         Add formatted fields to a TranscriptSegment.
@@ -220,9 +223,14 @@ class FormattingService:
         Args:
             segment: TranscriptSegment object
             speaker_mapping: Optional mapping of speaker labels to display names
+            redaction_cfg: Optional ``EffectiveRedactionConfig``. When provided and
+                enabled, the segment ``text`` is masked at read time and ``redactions``
+                carries the applied spans (for blur UI). When ``None`` no masking is
+                applied and cached spans are stripped from the response.
+            reveal_categories: Categories an authorized owner chose to reveal.
 
         Returns:
-            TranscriptSegment with formatted fields
+            TranscriptSegment with formatted (and optionally redacted) fields
         """
         # Security: Validate input segment
         if segment is None:
@@ -234,6 +242,9 @@ class FormattingService:
         except Exception as e:
             logger.error(f"Failed to validate segment data: {e}")
             raise ValueError(f"Invalid segment data: {e}") from e
+
+        # Content redaction (read-time). Original text is never modified in the DB.
+        FormattingService._apply_redaction(segment_dict, segment, redaction_cfg, reveal_categories)
 
         # Add formatted timestamps
         segment_dict["formatted_timestamp"] = FormattingService.format_duration_with_millis(
@@ -269,6 +280,45 @@ class FormattingService:
 
         # Create a new schema instance from the enriched dict
         return TranscriptSegment.model_validate(segment_dict)  # type: ignore[no-any-return]
+
+    @staticmethod
+    def _apply_redaction(
+        segment_dict: dict,
+        segment: Any,
+        redaction_cfg: Any,
+        reveal_categories: Optional[set],
+    ) -> None:
+        """Mutate segment_dict in place: mask text + set applied redaction spans.
+
+        When redaction is disabled/absent, cached spans + toxicity are stripped so the
+        raw span offsets never leak. The DB text is never modified here.
+        """
+        if redaction_cfg is None or not getattr(redaction_cfg, "enabled", False):
+            segment_dict["redactions"] = None
+            segment_dict["toxicity"] = None
+            return
+        try:
+            from app.services.redaction.service import RedactionService
+
+            cached = segment.redactions if segment.redactions is not None else []
+            masked, applied = RedactionService.mask_segment(
+                str(segment_dict.get("text") or ""),
+                cached,
+                segment.words,
+                redaction_cfg,
+                reveal_categories or set(),
+            )
+            segment_dict["text"] = masked
+            segment_dict["redactions"] = applied or None
+            # Keep toxicity scores only when the segment is flagged (for the badge).
+            if RedactionService.is_segment_toxic(segment.toxicity, redaction_cfg):
+                segment_dict["toxicity"] = segment.toxicity
+            else:
+                segment_dict["toxicity"] = None
+        except Exception as e:  # noqa: BLE001 — never break transcript rendering
+            logger.warning(f"Redaction masking failed for a segment: {e}")
+            segment_dict["redactions"] = None
+            segment_dict["toxicity"] = None
 
     @staticmethod
     def format_file_size(file_size: Optional[int]) -> Optional[str]:

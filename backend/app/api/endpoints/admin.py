@@ -45,6 +45,9 @@ from app.models.prompt import SummaryPrompt
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.models.user_mfa import UserMFA
+from app.schemas.admin import CacheClearResponse
+from app.schemas.admin import CacheConfig
+from app.schemas.admin import CacheConfigUpdate
 from app.schemas.admin import GarbageCleanupConfig
 from app.schemas.admin import GarbageCleanupConfigUpdate
 from app.schemas.admin import MediaSource
@@ -848,6 +851,62 @@ async def update_retention_configuration(
     )
 
     return RetentionConfig(**updated)
+
+
+@router.get("/settings/cache-config", response_model=CacheConfig)
+async def get_cache_configuration(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> CacheConfig:
+    """Get derived-cache retention + current usage (admin only).
+
+    Derived assets (subtitle-embedded videos + extracted audio) are regenerable
+    duplicates of the originals. They auto-expire via a MinIO lifecycle rule whose
+    retention is set here; this also reports how much disk the cache currently uses.
+    """
+    from app.services import cache_management_service
+
+    stats = cache_management_service.get_cache_stats()
+    return CacheConfig(
+        retention_days=cache_management_service.resolve_retention_days(db),
+        **stats,
+    )
+
+
+@router.put("/settings/cache-config", response_model=CacheConfig)
+async def update_cache_configuration(
+    config: CacheConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> CacheConfig:
+    """Update the derived-cache retention window (admin only).
+
+    Applied live by re-setting the MinIO lifecycle rule — no redeploy needed.
+    """
+    from app.services import cache_management_service
+
+    logger.info(
+        f"Cache retention update by admin {current_user.email}: {config.retention_days} day(s)"
+    )
+    days = cache_management_service.set_retention_days(db, config.retention_days)
+    stats = cache_management_service.get_cache_stats()
+    return CacheConfig(retention_days=days, **stats)
+
+
+@router.post("/settings/cache-config/clear", response_model=CacheClearResponse)
+async def clear_cache_now(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> CacheClearResponse:
+    """Immediately purge all derived cache assets (admin only).
+
+    Safe: derived assets are regenerated on the next download. Originals are untouched.
+    """
+    from app.services import cache_management_service
+
+    logger.info(f"Manual derived-cache clear by admin {current_user.email}")
+    deleted = cache_management_service.clear_derived_cache()
+    return CacheClearResponse(deleted=deleted)
 
 
 @router.get("/settings/retention-config/preview", response_model=RetentionPreviewResponse)

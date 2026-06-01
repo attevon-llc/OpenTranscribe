@@ -265,11 +265,21 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "false").lower() == "true"
     MEDIA_BUCKET_NAME: str = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
 
-    # Presigned URL expiration settings (AWS/GCS best practices: shortest practical time)
-    # Video URLs: 5 minutes default - refreshed automatically for long playback
-    MEDIA_URL_EXPIRE_SECONDS: int = _int_env("MEDIA_URL_EXPIRE_SECONDS", 300)
+    # Presigned URL expiration settings.
+    # Video/audio URLs default to 6 hours: a single presigned URL must outlive a long
+    # viewing/labeling session of a multi-hour file (a 5-minute URL 403s mid-playback when
+    # the player issues a byte-range request after expiry — the <video> element keeps the
+    # stale URL even though the frontend refresher updates its variable). Override via env.
+    MEDIA_URL_EXPIRE_SECONDS: int = _int_env("MEDIA_URL_EXPIRE_SECONDS", 21600)
     # Thumbnail URLs: 15 minutes default - longer since they're static images
     THUMBNAIL_URL_EXPIRE_SECONDS: int = _int_env("THUMBNAIL_URL_EXPIRE_SECONDS", 900)
+    # Derived-asset cache retention (subtitle-embedded videos + extracted audio in the
+    # processed-videos/derived/ prefix). These are a regenerable cache, not storage —
+    # they are duplicates of the originals and re-created on demand in seconds. A MinIO
+    # lifecycle rule auto-expires them after this many days to bound disk/cloud usage.
+    # Baseline default for headless/cloud deployments; the admin UI (DB) overrides it.
+    # 0 disables auto-expiry (keep forever). Tune low on laptops, high on big-disk servers.
+    DERIVED_CACHE_RETENTION_DAYS: int = _int_env("DERIVED_CACHE_RETENTION_DAYS", 7)
     # Public URL for presigned URLs (how browsers access MinIO)
     # Dev: http://localhost:5178 | Prod/nginx: https://yourdomain.com/minio or https://minio.yourdomain.com
     MINIO_PUBLIC_URL: str = os.getenv("MINIO_PUBLIC_URL", "")

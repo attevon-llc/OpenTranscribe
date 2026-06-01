@@ -30,6 +30,7 @@ from app.api.endpoints.auth import get_current_admin_user
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
 from app.db.base import get_db
+from app.schemas.media import VALID_LOCAL_WHISPER_MODELS
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
@@ -151,6 +152,7 @@ def _create_asr_provider(
     model: str | None,
     base_url: str | None,
     region: str | None,
+    access_key_id: str | None = None,
 ):
     """Create an ASR provider instance via the factory."""
     from app.services.asr.factory import ASRProviderFactory  # type: ignore[import]
@@ -161,6 +163,7 @@ def _create_asr_provider(
         model=model,
         base_url=base_url,
         region=region,
+        access_key_id=access_key_id,
     )
 
 
@@ -237,6 +240,7 @@ def _config_to_dict(config: Any, *, owner=None, is_own: bool = True) -> dict:
         "region": config.region,
         "is_active": config.is_active,
         "has_api_key": bool(config.api_key),
+        "has_access_key_id": bool(getattr(config, "access_key_id", None)),
         "last_tested": config.last_tested.isoformat() if config.last_tested else None,
         "test_status": config.test_status,
         "test_message": config.test_message,
@@ -522,6 +526,14 @@ def create_asr_config(
         if not encrypted_key:
             raise HTTPException(status_code=500, detail="Failed to encrypt API key")
 
+    encrypted_access_key_id = None
+    if settings_in.access_key_id:
+        if not test_encryption():
+            raise HTTPException(status_code=500, detail="Encryption system is not working properly")
+        encrypted_access_key_id = encrypt_api_key(settings_in.access_key_id)
+        if not encrypted_access_key_id:
+            raise HTTPException(status_code=500, detail="Failed to encrypt access key ID")
+
     # Check before insert whether the user already has any config (determines auto-activate).
     # This avoids a second count query after the INSERT.
     has_existing = (
@@ -539,6 +551,7 @@ def create_asr_config(
         provider=settings_in.provider.value,
         model_name=settings_in.model_name,
         api_key=encrypted_key,
+        access_key_id=encrypted_access_key_id,
         base_url=settings_in.base_url,
         region=settings_in.region,
         is_active=settings_in.is_active,
@@ -626,6 +639,21 @@ def update_asr_config(  # noqa: C901
                 raise HTTPException(status_code=500, detail="Failed to encrypt API key")
             config.api_key = encrypted  # type: ignore[assignment]
             # Reset test status only when key actually changes
+            config.test_status = None  # type: ignore[assignment]
+
+    if "access_key_id" in settings_in.model_fields_set:
+        new_akid = settings_in.access_key_id
+        if new_akid is None or (isinstance(new_akid, str) and not new_akid.strip()):
+            pass  # Empty/null means "keep the existing access key ID" (mirrors api_key)
+        else:
+            if not test_encryption():
+                raise HTTPException(
+                    status_code=500, detail="Encryption system is not working properly"
+                )
+            encrypted_akid = encrypt_api_key(new_akid)
+            if not encrypted_akid:
+                raise HTTPException(status_code=500, detail="Failed to encrypt access key ID")
+            config.access_key_id = encrypted_akid  # type: ignore[assignment]
             config.test_status = None  # type: ignore[assignment]
 
     if "base_url" in settings_in.model_fields_set:
@@ -754,6 +782,7 @@ def test_asr_connection(
     base_url = settings_in.base_url
     region = settings_in.region
     model_name = settings_in.model_name
+    access_key_id = getattr(settings_in, "access_key_id", None)
 
     start_time = time.time()
     try:
@@ -763,6 +792,7 @@ def test_asr_connection(
             model=model_name,
             base_url=base_url,
             region=region,
+            access_key_id=access_key_id,
         )
         success, message, response_time_ms = provider.validate_connection()
     except Exception as exc:
@@ -806,6 +836,13 @@ def test_saved_asr_config(
             logger.error("Failed to decrypt API key for ASR config %s", config_uuid)
             raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
 
+    access_key_id = None
+    if getattr(config, "access_key_id", None):
+        access_key_id = decrypt_api_key(str(config.access_key_id))
+        if access_key_id is None:
+            logger.error("Failed to decrypt access key ID for ASR config %s", config_uuid)
+            raise HTTPException(status_code=500, detail="Failed to decrypt stored access key ID")
+
     start_time = time.time()
     try:
         provider = _create_asr_provider(
@@ -814,6 +851,7 @@ def test_saved_asr_config(
             model=config.model_name,
             base_url=config.base_url,
             region=config.region,
+            access_key_id=access_key_id,
         )
         success, message, response_time_ms = provider.validate_connection()
     except Exception as exc:
@@ -872,6 +910,17 @@ def get_active_local_model(
                 "language_support": m.get("language_support", "multilingual"),
             }
             break
+    # English-only ".en" variants (tiny.en, base.en, …) are not in the catalog but are
+    # English-only. Resolve them before the substring loop so they are not mis-matched to
+    # the multilingual base entry (e.g. "tiny.en" -> "tiny").
+    if not model_info and active_model.endswith(".en"):
+        model_info = {
+            "display_name": active_model,
+            "description": "English-only Whisper model",
+            "supports_translation": False,
+            "supports_diarization": True,
+            "language_support": "english_only",
+        }
     # Substring match for models like "large-v3-turbo" in custom repo names
     if not model_info:
         sorted_models = sorted(local_models, key=lambda x: len(x["id"]), reverse=True)
@@ -916,6 +965,39 @@ def set_active_local_model(
     model_name = body.model_name.strip()
     if not model_name:
         raise HTTPException(status_code=400, detail="model_name is required")
+    # Accept known short names (incl. distil variants from model_discovery), the reprocess
+    # whitelist (incl. CrisperWhisper), or any HuggingFace repo id (contains "/").
+    from app.services.asr.model_discovery import _SHORT_NAME_TO_REPO
+    from app.services.asr.model_discovery import resolve_loadable_model_name
+
+    # The PyTorch checkpoint nyrahealth/CrisperWhisper ships model.safetensors (no CT2
+    # model.bin), so faster-whisper's WhisperModel cannot load it. Transparently remap
+    # it to the CTranslate2 build, which is the only loadable CrisperWhisper variant.
+    if model_name == "nyrahealth/CrisperWhisper":
+        logger.info(
+            "Admin %s requested nyrahealth/CrisperWhisper (PyTorch checkpoint) — "
+            "remapping to the CTranslate2 build nyrahealth/faster_CrisperWhisper",
+            current_user.email,
+        )
+        model_name = "nyrahealth/faster_CrisperWhisper"
+
+    # Resolve custom short names (e.g. crisperwhisper) to the loadable repo id so the
+    # stored value is exactly what the GPU worker passes to WhisperModel.
+    model_name = resolve_loadable_model_name(model_name)
+
+    # Accept: reprocess whitelist + every short name and resolved repo id from the
+    # discovery map (covers distil-* short names and the CrisperWhisper repo id).
+    known_models = (
+        set(VALID_LOCAL_WHISPER_MODELS)
+        | set(_SHORT_NAME_TO_REPO)
+        | set(_SHORT_NAME_TO_REPO.values())
+    )
+    if model_name not in known_models and "/" not in model_name:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown model '{model_name}'. Provide a known faster-whisper model "
+            "(e.g. large-v3, large-v3-turbo, distil-large-v3) or a HuggingFace repo id.",
+        )
 
     from app.models.system_settings import SystemSettings
 

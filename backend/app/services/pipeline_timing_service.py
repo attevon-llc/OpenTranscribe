@@ -79,6 +79,8 @@ _TIMESTAMP_MARKERS: tuple[str, ...] = (
     "clustering_end",
     "summary_start",
     "summary_end",
+    "redaction_start",
+    "redaction_end",
 )
 
 _CONTEXT_STRING_KEYS: tuple[str, ...] = (
@@ -86,6 +88,7 @@ _CONTEXT_STRING_KEYS: tuple[str, ...] = (
     "whisper_model",
     "asr_provider",
     "asr_model",
+    "redaction_detectors",
     "gpu_device",
     "http_flow",
     "cpu_worker_cold",
@@ -96,6 +99,7 @@ _CONTEXT_INT_KEYS: tuple[str, ...] = (
     "file_size_bytes",
     "concurrent_files_at_dispatch",
     "retry_count",
+    "pii_entities_found",
 )
 _CONTEXT_FLOAT_KEYS: tuple[str, ...] = ("audio_duration_s",)
 _CONTEXT_JSON_KEYS: tuple[str, ...] = ("queue_depth_at_dispatch", "per_retry_timings")

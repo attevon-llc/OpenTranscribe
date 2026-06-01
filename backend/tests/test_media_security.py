@@ -89,30 +89,24 @@ class TestStreamUrlEndpoint:
         assert response.status_code == status.HTTP_200_OK
 
 
-class TestDirectVideoEndpoint:
-    """Tests for GET /files/{file_uuid}/simple-video (and /video)"""
+class TestRemovedLegacyEndpoints:
+    """The byte-proxy endpoints were removed in favor of presigned URLs.
 
-    def test_video_requires_auth_for_private_files(self, client, test_media_file):
-        """Private files should require authentication."""
-        response = client.get(f"/api/files/{test_media_file.uuid}/simple-video")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    Media now streams directly from MinIO via /stream-url (playback) and
+    prepare-download (downloads), so these routes must no longer exist.
+    """
 
-    def test_video_with_auth_succeeds(self, client, auth_headers, test_media_file):
-        """Authenticated users can access their own files."""
+    @pytest.mark.parametrize(
+        "suffix",
+        ["video", "simple-video", "content", "download", "download-with-token"],
+    )
+    def test_legacy_byte_proxy_routes_are_gone(self, client, auth_headers, test_media_file, suffix):
+        """Removed routes should 404 (route no longer registered), even when authed."""
         response = client.get(
-            f"/api/files/{test_media_file.uuid}/simple-video",
+            f"/api/files/{test_media_file.uuid}/{suffix}",
             headers=auth_headers,
         )
-        # Should succeed (200 or 206 for range requests)
-        assert response.status_code in (status.HTTP_200_OK, status.HTTP_206_PARTIAL_CONTENT)
-
-    def test_video_access_denied_wrong_user(self, client, other_user_auth_headers, test_media_file):
-        """Users should not access other users' private files."""
-        response = client.get(
-            f"/api/files/{test_media_file.uuid}/simple-video",
-            headers=other_user_auth_headers,
-        )
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestDirectThumbnailEndpoint:
@@ -137,12 +131,14 @@ class TestDirectThumbnailEndpoint:
 
 
 class TestCacheControlHeaders:
-    """Tests for Cache-Control security headers."""
+    """Tests for Cache-Control security headers on the retained thumbnail fallback."""
 
-    def test_private_file_has_no_store_header(self, client, auth_headers, test_media_file):
-        """Private files should have Cache-Control: private, no-store."""
+    def test_private_thumbnail_has_no_store_header(
+        self, client, auth_headers, test_media_file_with_thumbnail
+    ):
+        """Private files' thumbnails should have Cache-Control: private, no-store."""
         response = client.get(
-            f"/api/files/{test_media_file.uuid}/simple-video",
+            f"/api/files/{test_media_file_with_thumbnail.uuid}/thumbnail",
             headers=auth_headers,
         )
 

@@ -38,6 +38,20 @@ _SHORT_NAME_TO_REPO: dict[str, str] = {
     "distil-large-v3.5": "distil-whisper/distil-large-v3.5-ct2",
     "large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
     "turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    # CrisperWhisper: both short names resolve to the CTranslate2 build, the only
+    # variant faster-whisper's WhisperModel can load. The PyTorch checkpoint
+    # nyrahealth/CrisperWhisper (model.safetensors, no CT2 model.bin) is excluded —
+    # CTranslate2 cannot read it.
+    "crisperwhisper": "nyrahealth/faster_CrisperWhisper",
+    "faster_crisperwhisper": "nyrahealth/faster_CrisperWhisper",
+}
+
+# Full repo ids that faster-whisper CANNOT load (PyTorch/transformers checkpoints),
+# remapped to their loadable CTranslate2 equivalent. Applied even when the name already
+# contains "/", so an env-var / direct config override of the non-CT2 id is corrected
+# everywhere — not only at the admin-set endpoint.
+_NONLOADABLE_REPO_REMAP: dict[str, str] = {
+    "nyrahealth/CrisperWhisper": "nyrahealth/faster_CrisperWhisper",
 }
 
 # Reverse mapping: HuggingFace cache dir name → preferred short name.
@@ -112,3 +126,40 @@ def discover_local_models() -> list[dict]:
 def get_downloaded_model_names() -> set[str]:
     """Return a set of short names of locally downloaded Whisper models."""
     return {m["short_name"] for m in discover_local_models()}
+
+
+def resolve_loadable_model_name(model_name: str) -> str:
+    """Translate a custom short name to a HuggingFace repo id loadable by faster-whisper.
+
+    faster-whisper's ``WhisperModel`` accepts either one of its built-in short names
+    (``large-v3``, ``tiny``, …) or a full ``org/repo`` id. Our catalog adds short names
+    that faster-whisper does not recognize (e.g. ``crisperwhisper``); passing those
+    straight to ``WhisperModel`` raises ``ValueError``. This helper maps such names to
+    their CTranslate2 repo id via ``_SHORT_NAME_TO_REPO``.
+
+    Names already containing ``/`` (repo ids) and faster-whisper's own built-in short
+    names are returned unchanged so we never override a name the loader understands.
+
+    Args:
+        model_name: The configured/admin-set model name (short name or repo id).
+
+    Returns:
+        A model name that ``WhisperModel`` can load directly.
+    """
+    if not model_name:
+        return model_name
+    if model_name in _NONLOADABLE_REPO_REMAP:
+        return _NONLOADABLE_REPO_REMAP[model_name]
+    if "/" in model_name:
+        return model_name
+
+    try:
+        from faster_whisper.utils import _MODELS as _FW_MODELS
+
+        if model_name in _FW_MODELS:
+            return model_name
+    except Exception:  # noqa: S110  # nosec B110
+        # faster_whisper not importable (e.g. API server context) — fall through to map.
+        pass
+
+    return _SHORT_NAME_TO_REPO.get(model_name, model_name)

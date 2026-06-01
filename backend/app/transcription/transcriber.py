@@ -43,6 +43,82 @@ def _validate_word_timestamps(words: list[dict], seg_start: float, seg_end: floa
                 word["end"] = min(word["start"] + 0.01, seg_end)
 
 
+def _is_crisperwhisper_model(model_name: str) -> bool:
+    """Return True if the configured model resolves to a CrisperWhisper build.
+
+    CrisperWhisper needs a verbatim-tokenizer normalization pass (see
+    ``app.transcription.crisperwhisper_normalize``) that no other model requires.
+    The check resolves the loadable repo id first so admin/env/DB short names
+    (``crisperwhisper``), the PyTorch repo id, and the CT2 repo id all match, then
+    falls back to a substring match on the raw name for robustness.
+
+    Args:
+        model_name: The configured/admin-set model name (short name or repo id).
+
+    Returns:
+        Whether the active model is a CrisperWhisper variant.
+    """
+    if not model_name:
+        return False
+    try:
+        from app.services.asr.model_discovery import resolve_loadable_model_name
+
+        resolved = resolve_loadable_model_name(model_name)
+    except Exception:  # noqa: S110  # nosec B110 — fall back to raw name substring match
+        resolved = model_name
+    return "crisper" in resolved.lower() or "crisper" in model_name.lower()
+
+
+def _resolve_task_and_language(
+    model_name: str, source_language: str, translate_to_english: bool
+) -> tuple[str, str | None]:
+    """Resolve the faster-whisper ``task`` and ``language`` for a model's capabilities.
+
+    Enforces the model's language capability as the final safety net, mirroring the
+    capability-aware guards the frontend applies in the settings UI:
+
+    * Translation is only requested when the model advertises ``supports_translation``;
+      otherwise it falls back to ``transcribe`` (e.g. large-v3-turbo, CrisperWhisper).
+    * For ``english_only`` models (CrisperWhisper, ``.en`` variants) a non-English source
+      language is overridden to ``"en"`` so the model is never asked to decode a language
+      it does not support. ``"auto"`` is left as auto-detect (``None``).
+
+    Args:
+        model_name: The loadable model name/repo id (used for catalog capability lookup).
+        source_language: Configured source language ("auto" or an ISO code).
+        translate_to_english: Whether the user requested translation to English.
+
+    Returns:
+        ``(task, language)`` where task is "translate" or "transcribe" and language is an
+        ISO code or ``None`` for auto-detect.
+    """
+    from app.services.asr.factory import ASRProviderFactory
+
+    caps = ASRProviderFactory.get_model_capabilities("local", model_name)
+
+    if translate_to_english and caps["supports_translation"]:
+        task = "translate"
+    else:
+        if translate_to_english:
+            logger.warning(
+                "Model %s does not support translation — falling back to transcribe",
+                model_name,
+            )
+        task = "transcribe"
+
+    language = source_language if source_language != "auto" else None
+
+    if caps.get("language_support") == "english_only" and source_language not in ("auto", "en"):
+        logger.warning(
+            "Model %s is English-only — forcing language to 'en' (requested '%s' is not supported)",
+            model_name,
+            source_language,
+        )
+        language = "en"
+
+    return task, language
+
+
 def _interpolate_low_confidence_words(words: list[dict], seg_start: float, seg_end: float) -> None:
     """Interpolate timestamps for low-probability words from reliable neighbors.
 
@@ -100,16 +176,25 @@ class Transcriber:
         from faster_whisper import BatchedInferencePipeline
         from faster_whisper import WhisperModel
 
+        from app.services.asr.model_discovery import resolve_loadable_model_name
+
         step_start = time.perf_counter()
 
+        # Map any short name / non-CT2 repo id to a CTranslate2 model id that WhisperModel
+        # can load. This must happen at the load point (not only in _resolve_model_name) so
+        # EVERY path resolves: admin/env/DB defaults AND an explicit model_name override or
+        # a per-file reprocess (whisper_model). E.g. "crisperwhisper" or the PyTorch repo
+        # "nyrahealth/CrisperWhisper" → "nyrahealth/faster_CrisperWhisper".
+        model_id = resolve_loadable_model_name(self.config.model_name)
+
         logger.info(
-            f"Loading faster-whisper model: {self.config.model_name}, "
+            f"Loading faster-whisper model: {model_id} (requested: {self.config.model_name}), "
             f"device={self.config.device}, compute_type={self.config.compute_type}"
         )
 
         num_workers = self.config.concurrent_requests if self.config.concurrent_requests > 1 else 1
         self._model = WhisperModel(
-            self.config.model_name,
+            model_id,
             device=self.config.device,
             device_index=self.config.device_index,
             compute_type=self.config.compute_type,
@@ -137,22 +222,11 @@ class Transcriber:
 
         step_start = time.perf_counter()
 
-        if self.config.translate_to_english:
-            from app.services.asr.factory import ASRProviderFactory
-
-            caps = ASRProviderFactory.get_model_capabilities("local", self.config.model_name)
-            if not caps["supports_translation"]:
-                logger.warning(
-                    "Model %s does not support translation — falling back to transcribe",
-                    self.config.model_name,
-                )
-                task = "transcribe"
-            else:
-                task = "translate"
-        else:
-            task = "transcribe"
-
-        language = self.config.source_language if self.config.source_language != "auto" else None
+        task, language = _resolve_task_and_language(
+            self.config.model_name,
+            self.config.source_language,
+            self.config.translate_to_english,
+        )
 
         logger.info(
             f"Transcribing: task={task}, language={language or 'auto'}, "
@@ -223,6 +297,18 @@ class Transcriber:
                     "words": words,
                 }
             )
+
+        # CrisperWhisper's verbatim tokenizer emits comma-prefixed, punctuation-glued
+        # word tokens with no internal spacing. Reshape them into the standard
+        # leading-space whisper convention so downstream text rebuild, word counting,
+        # garbage detection, diarization assignment and the issue-#193 boundary smoother
+        # all work. Gated to CrisperWhisper only — turbo/large-v3 are untouched.
+        if _is_crisperwhisper_model(self.config.model_name):
+            from app.transcription.crisperwhisper_normalize import normalize_crisperwhisper
+
+            segments = normalize_crisperwhisper(segments)
+            total_words = sum(len(s["words"]) for s in segments)
+            logger.info("Applied CrisperWhisper normalization to %d segments", len(segments))
 
         elapsed = time.perf_counter() - step_start
         logger.info(

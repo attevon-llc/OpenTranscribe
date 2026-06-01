@@ -1,29 +1,66 @@
 version: 2
+# Low-clutter dependency updates: weekly, but GROUPED so each ecosystem produces a
+# single batched PR (not one-per-package) — i.e. one frontend (npm) PR and one
+# backend (pip) PR per week, plus a grouped GitHub Actions PR. Known-bad versions
+# are ignored. To pause entirely, comment out the `updates:` entries below; to run
+# on demand, use the "Check for updates" button on the repo's Dependabot tab.
 updates:
+  # Frontend — one grouped PR
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      frontend:
+        patterns:
+          - "*"
+    ignore:
+      # svelte 5.56.x has a parser regression (declaration_tag_invalid_type on a
+      # plain ternary expression). Pinned to ~5.55.5 until upstream patches it.
+      - dependency-name: "svelte"
+        versions: ["5.56.x"]
+      # vite 8 requires @sveltejs/vite-plugin-svelte >=6; the current plugin (v5)
+      # peer-pins vite ^6. Hold the major until the Svelte plugin supports vite 8.
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
 
+  # Backend — one grouped PR
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      backend:
+        patterns:
+          - "*"
 
+  # CI workflow actions — one grouped PR
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Dockerfile base images — infrequent, grouped per service
   - package-ecosystem: "docker"
     directory: "/backend"
     schedule:
       interval: "monthly"
+    groups:
+      backend-docker:
+        patterns:
+          - "*"
 
   - package-ecosystem: "docker"
     directory: "/frontend"
     schedule:
       interval: "monthly"
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
+    groups:
+      frontend-docker:
+        patterns:
+          - "*"

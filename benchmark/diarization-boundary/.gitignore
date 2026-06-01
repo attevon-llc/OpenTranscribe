@@ -1,0 +1,10 @@
+# Audio + GPU fixtures are large / ToS-bound — reproducible via download.sh + build_fixture.py.
+# Commit only references, manifests, provenance, and download scripts.
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.flac
+cache/
+**/cache/
+*.rawinfer.json

@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from pydantic import BaseModel
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app import models
@@ -22,31 +23,65 @@ from app.services.system_settings_service import set_setting
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Only runtime-safe, admin-tunable engine settings are exposed here. Deployment/infra
+# settings (gpu_split — needs the --profile gpu-split worker containers; precompute_vad —
+# unimplemented Phase-3a stub; shared_volume_path — internal cross-stage handoff dir) are
+# intentionally NOT surfaced in the UI; they remain env/deployment config on EngineConfig.
 _KEYS = {
     "transcriber_backend": "engine.transcriber_backend",
     "diarizer_backend": "engine.diarizer_backend",
-    "gpu_split": "engine.gpu_split",
-    "precompute_vad": "engine.precompute_vad",
-    "shared_volume_path": "engine.shared_volume_path",
+    "boundary_smoothing_enabled": "engine.boundary_smoothing_enabled",
+    "boundary_acoustic_recheck_enabled": "engine.boundary_acoustic_recheck_enabled",
+    "boundary_acoustic_cosine_margin": "engine.boundary_acoustic_cosine_margin",
+    "boundary_acoustic_max_word_dur": "engine.boundary_acoustic_max_word_dur",
 }
 
 _ENV_DEFAULTS: dict[str, Any] = {
     "transcriber_backend": ("ENGINE_TRANSCRIBER_BACKEND", "faster_whisper"),
     "diarizer_backend": ("ENGINE_DIARIZER_BACKEND", "pyannote"),
-    "gpu_split": ("ENGINE_GPU_SPLIT", "false"),
-    "precompute_vad": ("ENGINE_PRECOMPUTE_VAD", "false"),
-    "shared_volume_path": ("ENGINE_SHARED_VOLUME_PATH", "/tmp/transcription"),  # noqa: S108  # nosec B108
+    "boundary_smoothing_enabled": ("ENGINE_BOUNDARY_SMOOTHING_ENABLED", "true"),
+    "boundary_acoustic_recheck_enabled": ("ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", "false"),
+    "boundary_acoustic_cosine_margin": ("ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN", "0.05"),
+    "boundary_acoustic_max_word_dur": ("ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR", "1.0"),
 }
 
-_BOOL_KEYS = {"gpu_split", "precompute_vad"}
+_BOOL_KEYS = {
+    "boundary_smoothing_enabled",
+    "boundary_acoustic_recheck_enabled",
+}
+
+_FLOAT_KEYS = {"boundary_acoustic_cosine_margin", "boundary_acoustic_max_word_dur"}
 
 _DESCRIPTIONS = {
     "transcriber_backend": "Transcription backend (faster_whisper | whisperx | cloud)",
     "diarizer_backend": "Speaker diarization backend (pyannote)",
-    "gpu_split": "Enable separate gpu-transcribe / gpu-diarize queues (Phase 4)",
-    "precompute_vad": "Enable Silero VAD pre-computation in Stage 1 (Phase 3a)",
-    "shared_volume_path": "Shared-volume handoff path for cross-stage WAV files",
+    "boundary_smoothing_enabled": (
+        "Collapse 1-3 word wrong-speaker islands at turn boundaries (issue #193)"
+    ),
+    "boundary_acoustic_recheck_enabled": (
+        "Re-check short absorbed backchannels (yeah/mm-hmm) by voiceprint and reassign "
+        "the correct speaker (issue #193, Phase 3)"
+    ),
+    "boundary_acoustic_cosine_margin": (
+        "Minimum voiceprint cosine improvement over the current speaker before a word is "
+        "reassigned (higher = more conservative)"
+    ),
+    "boundary_acoustic_max_word_dur": (
+        "Only re-check words at or below this duration in seconds (backchannel length)"
+    ),
 }
+
+
+def _coerce(field: str, raw: str) -> Any:
+    """Coerce a stored string value to the field's typed value (bool / float / str)."""
+    if field in _BOOL_KEYS:
+        return raw.lower() in ("true", "1", "yes", "on")
+    if field in _FLOAT_KEYS:
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return float(_ENV_DEFAULTS[field][1])
+    return raw
 
 
 def _resolve_setting(db: Session, field: str) -> dict[str, Any]:
@@ -56,20 +91,13 @@ def _resolve_setting(db: Session, field: str) -> dict[str, Any]:
 
     db_value = get_setting(db, db_key)
     if db_value is not None:
-        value: Any = (
-            db_value.lower() in ("true", "1", "yes", "on") if field in _BOOL_KEYS else db_value
-        )
-        return {"value": value, "source": "db"}
+        return {"value": _coerce(field, db_value), "source": "db"}
 
     env_value = os.getenv(env_var)
     if env_value is not None:
-        value = (
-            env_value.lower() in ("true", "1", "yes", "on") if field in _BOOL_KEYS else env_value
-        )
-        return {"value": value, "source": "env"}
+        return {"value": _coerce(field, env_value), "source": "env"}
 
-    value = default.lower() in ("true", "1", "yes", "on") if field in _BOOL_KEYS else default
-    return {"value": value, "source": "default"}
+    return {"value": _coerce(field, default), "source": "default"}
 
 
 @router.get("")
@@ -84,9 +112,10 @@ def get_engine_settings(
 class _EngineSettingsUpdate(BaseModel):
     transcriber_backend: str | None = None
     diarizer_backend: str | None = None
-    gpu_split: bool | None = None
-    precompute_vad: bool | None = None
-    shared_volume_path: str | None = None
+    boundary_smoothing_enabled: bool | None = None
+    boundary_acoustic_recheck_enabled: bool | None = None
+    boundary_acoustic_cosine_margin: float | None = Field(default=None, ge=0.0, le=1.0)
+    boundary_acoustic_max_word_dur: float | None = Field(default=None, ge=0.1, le=5.0)
 
 
 @router.post("/update")

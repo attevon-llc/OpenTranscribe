@@ -1333,13 +1333,16 @@ def _process_transcription_result(
 
     # --- Critical path: must complete before GPU worker returns ---
 
-    # Resegment at speaker boundaries and merge adjacent same-speaker segments
-    from app.utils.segment_postprocess import merge_consecutive_segments
-    from app.utils.segment_postprocess import resegment_by_speaker
+    # Boundary smoothing (issue #193) → resegment at speaker boundaries → merge same-speaker.
+    # finalize_segments is the single chokepoint every transcription path routes through.
+    from app.transcription.boundary_resolver import BoundarySmoothingConfig
+    from app.utils.segment_postprocess import finalize_segments
 
     send_progress_notification(ctx.user_id, ctx.file_id, 0.68, "Processing speaker segments")
     step_start = time.perf_counter()
-    result["segments"] = merge_consecutive_segments(resegment_by_speaker(result["segments"]))
+    with session_scope() as db:
+        smoothing_cfg = BoundarySmoothingConfig.from_db_env(db)
+    result["segments"] = finalize_segments(result["segments"], smoothing_cfg)
     logger.info(f"TIMING: resegment+merge completed in {time.perf_counter() - step_start:.3f}s")
 
     step_start = time.perf_counter()
@@ -2219,13 +2222,15 @@ def _process_and_save_critical(
 
     post_start = time.perf_counter()
 
-    # Resegment at speaker boundaries and merge adjacent same-speaker segments
-    from app.utils.segment_postprocess import merge_consecutive_segments
-    from app.utils.segment_postprocess import resegment_by_speaker
+    # Boundary smoothing (issue #193) → resegment → merge, via the shared chokepoint.
+    from app.transcription.boundary_resolver import BoundarySmoothingConfig
+    from app.utils.segment_postprocess import finalize_segments
 
     send_progress_notification(ctx.user_id, ctx.file_id, 0.68, "Processing speaker segments")
     pre_merge_count = len(result["segments"])
-    result["segments"] = merge_consecutive_segments(resegment_by_speaker(result["segments"]))
+    with session_scope() as db:
+        smoothing_cfg = BoundarySmoothingConfig.from_db_env(db)
+    result["segments"] = finalize_segments(result["segments"], smoothing_cfg)
     post_merge_speakers = {s.get("speaker") for s in result["segments"] if s.get("speaker")}
     logger.info(
         "Segment processing: %d pre-merge → %d post-merge, speakers: %s (file %d)",

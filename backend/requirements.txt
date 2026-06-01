@@ -1,5 +1,5 @@
 fastapi>=0.103.1
-uvicorn[standard]>=0.23.2
+uvicorn[standard]>=0.46.0
 websockets>=11.0.3
 sqlalchemy>=2.0.20
 alembic>=1.12.0
@@ -32,7 +32,7 @@ cryptography>=42.0.0
 
 # MFA/TOTP Authentication (FedRAMP IA-2)
 pyotp>=2.9.0
-qrcode[pil]>=7.4.0
+qrcode[pil]>=8.2
 
 # AI/ML Stack - All cuDNN 9 compatible for CUDA 12.8
 # NumPy 2.x - required by whisperx>=3.7.6
@@ -68,7 +68,7 @@ huggingface-hub<1.0.0
 # via ORT sessions when PYANNOTE_USE_ONNX=1. onnxruntime-gpu includes CUDA EP
 # (and TensorrtExecutionProvider when ENABLE_TENSORRT=1 per Phase 6.3).
 # ~350 MB install footprint, CUDA-bundled. onnx needed at export time only.
-onnx>=1.17.0
+onnx>=1.21.0
 # Pinned to the validated version (1.26.0) so --no-cache container builds and venv
 # setups are reproducible — an unpinned >= floor could resolve a newer release with
 # a different bundled CUDA at build time. onnxruntime-gpu and onnxruntime ship in
@@ -105,22 +105,40 @@ psutil>=5.9.5
 pyexiftool>=0.5.0
 # [default] extras: mutagen (metadata), pycryptodomex (stream decryption),
 # websockets (WS-based extractors), brotli (compressed responses), certifi (SSL)
-yt-dlp[default]>=2026.2.21
+yt-dlp[default]>=2026.3.17
 
 # Semantic search and NLP
-sentence-transformers>=2.2.0  # For semantic search embeddings (all-MiniLM-L6-v2)
+sentence-transformers>=5.5.1  # For semantic search embeddings (all-MiniLM-L6-v2)
 nltk>=3.9.1  # Required by whisperx>=3.7.6, also for SnowballStemmer
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
 deepgram-sdk>=6.1.1
 assemblyai>=0.30.0
-google-cloud-speech>=2.24.0
+google-cloud-speech>=2.39.0
 azure-cognitiveservices-speech>=1.35.0
-speechmatics-python>=1.11.0
+speechmatics-batch>=0.4.8
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
 boto3>=1.28.0
 # openai must be listed explicitly — no package in this requirements pulls it in
 openai>=1.0.0
 # requests is pulled in by many packages but listed explicitly for Gladia REST calls
 requests>=2.31.0
+
+# Diarization-boundary benchmark (issue #193): cpWER metric. Lazily imported by
+# app.utils.diarization_metrics.cpwer + backend/scripts/benchmark_boundary.py — only
+# needed for accuracy benchmarking/tests, not the production transcription path.
+meeteval>=0.4.0
+
+# =============================================================================
+# Content Redaction (PII / profanity / toxicity moderation)
+# =============================================================================
+# Loaded only by the celery-redaction worker (PRELOAD_REDACTION_MODELS=true).
+# Presidio = PII detection orchestration (built-in regex recognizers + NER).
+presidio-analyzer>=2.2.355
+presidio-anonymizer>=2.2.355
+# GLiNER = small CPU zero-shot NER for names/addresses (plugs into Presidio).
+gliner>=0.2.13
+# detoxify = toxicity classification (segment-level). transformers (above) backs
+# the Tiny-Toxic-Detector / multilingual-toxic-xlm-roberta models.
+detoxify>=0.5.2

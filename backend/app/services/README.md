@@ -261,29 +261,30 @@ def upload_file(file_content: IO, file_size: int, object_name: str, content_type
 def download_file(object_name: str) -> Tuple[IO, int, str]:
     """Download file from MinIO storage."""
 
-def get_file_stream(object_name: str, range_header: str = None) -> Iterator[bytes]:
-    """Stream file with range support for video playback."""
+def upload_bytes(self, bucket_name: str, object_name: str, data: bytes, content_type: str) -> None:
+    """Upload an in-memory bytes payload (e.g. a generated ZIP) to MinIO."""
 
 def delete_file(object_name: str) -> None:
     """Delete file from MinIO storage."""
 
 def get_file_url(object_name: str, expires: int = 3600) -> str:
-    """Generate presigned URL for file access."""
+    """Generate presigned URL for inline file access (playback/thumbnails)."""
+
+def get_presigned_download_url(object_name: str, *, download_filename: str, content_type: str) -> str:
+    """Generate presigned URL that forces an attachment download."""
 ```
 
 ### Streaming Features
 ```python
-def get_file_stream(object_name: str, range_header: str = None):
-    """Advanced streaming with HTTP range support."""
-    # Parse range header for video seeking
-    # Stream file chunks efficiently
-    # Support partial content responses (206)
-    # Handle content-length and content-range headers
+# Media playback and downloads use presigned MinIO URLs, NOT API byte-proxying.
+# The browser streams directly from object storage via the presigned /s3 URL, which
+# supports HTTP range requests (206) natively for video seeking. Clients obtain URLs
+# from GET /files/{uuid}/stream-url (playback) or POST /files/{uuid}/prepare-download.
 ```
 
 ### Features
 - **Efficient Upload/Download**: Chunked file operations
-- **Video Streaming**: HTTP range request support for video players
+- **Presigned Streaming**: Range-capable playback served directly from MinIO (no API proxy)
 - **Presigned URLs**: Secure temporary file access
 - **Error Handling**: Comprehensive MinIO error handling
 - **Metadata Management**: File metadata and content-type handling

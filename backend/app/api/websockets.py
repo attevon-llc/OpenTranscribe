@@ -9,6 +9,8 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
+from redis.exceptions import RedisError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy.orm import Session
 
 from ..core.config import settings
@@ -68,45 +70,81 @@ async def setup_redis():
     """Initialize Redis connection for pub/sub notifications."""
     global redis_client
     if not redis_client:
-        redis_client = redis.from_url(settings.REDIS_URL)
+        # health_check_interval + keepalive keep the long-lived pub/sub connection
+        # from being reaped while idle (the root cause of the subscriber silently
+        # dying) and let redis-py detect a dead socket proactively.
+        redis_client = redis.from_url(
+            settings.REDIS_URL,
+            health_check_interval=30,
+            socket_keepalive=True,
+        )
         # Start Redis subscriber in background
         asyncio.create_task(redis_subscriber())
 
 
-async def redis_subscriber():
-    """Subscribe to Redis notifications and forward to WebSocket connections."""
+async def _dispatch_notification(message: dict) -> None:
+    """Parse one pub/sub message and forward it to the right WebSocket client(s)."""
+    if message.get("type") != "message":
+        return
     try:
-        assert redis_client is not None
-        pubsub = redis_client.pubsub()
-        await pubsub.subscribe("websocket_notifications")
-
-        logger.info("Started Redis subscriber for WebSocket notifications")
-
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                try:
-                    notification_data = json.loads(message["data"])
-                    user_id = notification_data.get("user_id")
-                    notification_type = notification_data.get("type")
-                    is_broadcast = notification_data.get("broadcast", False)
-                    data = notification_data.get("data", {})
-
-                    if is_broadcast and notification_type:
-                        await manager.broadcast({"type": notification_type, "data": data})
-                        logger.debug(f"Broadcast notification: {notification_type}")
-                    elif user_id and notification_type:
-                        await manager.send_personal_message(
-                            user_id, {"type": notification_type, "data": data}
-                        )
-                        logger.info(
-                            f"Forwarded notification to user {user_id}: {notification_type}"
-                        )
-                    else:
-                        logger.warning(f"Invalid notification data: {notification_data}")
-                except Exception as e:
-                    logger.error(f"Error processing Redis notification: {e}")
+        notification_data = json.loads(message["data"])
     except Exception as e:
-        logger.error(f"Redis subscriber error: {e}")
+        logger.error(f"Error decoding Redis notification: {e}")
+        return
+
+    user_id = notification_data.get("user_id")
+    notification_type = notification_data.get("type")
+    is_broadcast = notification_data.get("broadcast", False)
+    data = notification_data.get("data", {})
+
+    if is_broadcast and notification_type:
+        await manager.broadcast({"type": notification_type, "data": data})
+    elif user_id and notification_type:
+        await manager.send_personal_message(user_id, {"type": notification_type, "data": data})
+    else:
+        logger.warning(f"Invalid notification data: {notification_data}")
+
+
+async def redis_subscriber():
+    """Forward Redis pub/sub notifications to WebSocket connections.
+
+    Wrapped in a supervised reconnect loop: a transient Redis read timeout or
+    dropped connection must never permanently kill notification delivery (that
+    would silently break transcription progress, downloads, etc. for the whole
+    backend process). On any error we log, back off, and resubscribe. Polling
+    via ``get_message`` with a short timeout means idle periods don't raise.
+    """
+    backoff = 1
+    while True:
+        try:
+            assert redis_client is not None
+            pubsub = redis_client.pubsub()
+            await pubsub.subscribe("websocket_notifications")
+            logger.info("Started Redis subscriber for WebSocket notifications")
+            backoff = 1  # healthy subscription resets the backoff
+
+            while True:
+                try:
+                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
+                except (RedisTimeoutError, asyncio.TimeoutError):
+                    # Idle read timeout — benign keepalive, NOT a connection loss.
+                    continue
+                if message is None:
+                    continue
+                await _dispatch_notification(message)
+        except asyncio.CancelledError:
+            with contextlib.suppress(Exception):
+                await pubsub.close()
+            raise
+        except (RedisError, OSError) as e:
+            # Real connection loss — resubscribe with exponential backoff.
+            logger.warning(f"Redis subscriber connection lost: {e}; reconnecting in {backoff}s")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+        except Exception as e:
+            logger.error(f"Unexpected Redis subscriber error: {e}; reconnecting in {backoff}s")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30)
 
 
 # Function to publish notification to Redis (for use from other processes)

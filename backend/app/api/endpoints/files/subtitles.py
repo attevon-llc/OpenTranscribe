@@ -2,9 +2,7 @@
 API endpoints for subtitle generation.
 """
 
-import io
 import logging
-import zipfile
 
 from fastapi import APIRouter
 from fastapi import Body
@@ -27,6 +25,27 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
+    """Resolve (cfg, reveal_categories) for a subtitle export.
+
+    Honors the admin forced-export lock: when ``export_locked`` is set, the original
+    can never be exported regardless of the ``redact`` flag.
+    """
+    try:
+        from app.services.redaction.config import resolve_effective_config
+
+        cfg = resolve_effective_config(db, int(current_user.id))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to resolve redaction config for subtitles: {e}")
+        return None, set()
+
+    if getattr(cfg, "export_locked", False):
+        return cfg, set()  # forced — never reveal on export
+    can_reveal = (media_file.user_id == int(current_user.id)) or current_user.is_admin
+    reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
+    return cfg, reveal
+
+
 @router.get("/{file_uuid}/subtitles", response_class=Response)
 async def get_subtitles(
     file_uuid: str,
@@ -34,6 +53,7 @@ async def get_subtitles(
     current_user: User = Depends(get_current_active_user),
     include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
     subtitle_format: str = Query("srt", description="Subtitle format (srt, webvtt, txt)"),
+    redact: bool = Query(True, description="Apply content redaction (owner/admin may disable)"),
 ):
     """
     Generate and download subtitles for a media file.
@@ -50,17 +70,24 @@ async def get_subtitles(
     if media_file.status != "completed":
         raise HTTPException(status_code=400, detail="Transcription not completed yet")
 
+    # Resolve read-time redaction (export honors the censor toggle + admin floor).
+    cfg, reveal = _resolve_subtitle_redaction(db, media_file, current_user, redact)
+
     try:
         # Generate subtitle content based on format
         format_lower = subtitle_format.lower()
         if format_lower == "webvtt":
             subtitle_content = SubtitleService.generate_webvtt_content(
-                db, file_id, include_speakers
+                db, file_id, include_speakers, cfg, reveal
             )
         elif format_lower == "txt":
-            subtitle_content = SubtitleService.generate_txt_content(db, file_id, include_speakers)
+            subtitle_content = SubtitleService.generate_txt_content(
+                db, file_id, include_speakers, cfg, reveal
+            )
         else:
-            subtitle_content = SubtitleService.generate_srt_content(db, file_id, include_speakers)
+            subtitle_content = SubtitleService.generate_srt_content(
+                db, file_id, include_speakers, cfg, reveal
+            )
 
         if not subtitle_content.strip():
             raise HTTPException(status_code=404, detail="No transcript available for this file")
@@ -152,100 +179,151 @@ async def validate_subtitles(
         ) from e
 
 
-class BulkExportRequest(BaseModel):
-    """Request for bulk subtitle export."""
+class BulkExportPrepareRequest(BaseModel):
+    """Request for async bulk subtitle export."""
 
     file_uuids: list[str]
     subtitle_format: str = "srt"
     include_speakers: bool = True
 
 
-@router.post("/bulk-export", response_class=StreamingResponse)
-async def bulk_export_subtitles(
-    request: BulkExportRequest = Body(...),
+@router.post("/bulk-export/prepare")
+def prepare_bulk_export(
+    request: BulkExportPrepareRequest = Body(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Export subtitles for multiple files as a single ZIP download.
+    """Queue an async bulk subtitle export and return a job id.
 
-    Generates subtitle files for each requested file and bundles them into
-    a ZIP archive. Files that are not completed or not accessible are skipped.
+    The ZIP is built on the ``download`` worker, uploaded to object storage, and
+    delivered to the browser as a presigned URL over the ``bulk-export-stream`` SSE
+    channel — the API never proxies the archive bytes. UUIDs are permission-filtered
+    here so the worker can trust the resolved file ids without re-authorizing.
     """
     if not request.file_uuids:
         raise HTTPException(status_code=400, detail="No file UUIDs provided")
-
     if len(request.file_uuids) > 100:
         raise HTTPException(status_code=400, detail="Maximum 100 files per export")
-
-    format_lower = request.subtitle_format.lower()
-    if format_lower not in ("srt", "webvtt", "txt"):
-        raise HTTPException(status_code=400, detail=f"Unsupported format: {format_lower}")
-
-    ext = "vtt" if format_lower == "webvtt" else format_lower
-    zip_buffer = io.BytesIO()
-    exported = 0
-    skipped = 0
-
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file_uuid in request.file_uuids:
-            try:
-                media_file = get_file_by_uuid_with_permission(
-                    db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
-                )
-                file_id = int(media_file.id)
-
-                if media_file.status != "completed":
-                    skipped += 1
-                    continue
-
-                if format_lower == "webvtt":
-                    content = SubtitleService.generate_webvtt_content(
-                        db, file_id, request.include_speakers
-                    )
-                elif format_lower == "txt":
-                    content = SubtitleService.generate_txt_content(
-                        db, file_id, request.include_speakers
-                    )
-                else:
-                    content = SubtitleService.generate_srt_content(
-                        db, file_id, request.include_speakers
-                    )
-
-                if not content.strip():
-                    skipped += 1
-                    continue
-
-                base_name = (
-                    media_file.filename.rsplit(".", 1)[0]
-                    if "." in media_file.filename
-                    else media_file.filename
-                )
-                zf.writestr(f"{base_name}.{ext}", content.encode("utf-8"))
-                exported += 1
-
-            except HTTPException:
-                skipped += 1
-            except Exception as e:
-                logger.warning(f"Failed to export subtitles for {file_uuid}: {e}")
-                skipped += 1
-
-    if exported == 0:
+    if request.subtitle_format.lower() not in ("srt", "webvtt", "txt"):
         raise HTTPException(
-            status_code=404,
-            detail="No files could be exported. Ensure files are completed and accessible.",
+            status_code=400, detail=f"Unsupported format: {request.subtitle_format}"
         )
 
-    zip_buffer.seek(0)
-    zip_filename = f"transcripts_{format_lower}.zip"
+    file_specs: list[tuple[int, str]] = []
+    for file_uuid in request.file_uuids:
+        try:
+            media_file = get_file_by_uuid_with_permission(
+                db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+            )
+        except HTTPException:
+            continue  # inaccessible file — skip silently, mirrors prior per-file skip
+        if media_file.status != "completed":
+            continue
+        filename = str(media_file.filename)
+        base = filename.rsplit(".", 1)[0] if "." in filename else filename
+        file_specs.append((int(media_file.id), base))
+
+    if not file_specs:
+        raise HTTPException(
+            status_code=404,
+            detail="No accessible completed files to export.",
+        )
+
+    from uuid import uuid4
+
+    from app.tasks.media_download import prepare_bulk_subtitles_task
+
+    job_id = uuid4().hex
+    prepare_bulk_subtitles_task.delay(
+        file_specs=file_specs,
+        subtitle_format=request.subtitle_format,
+        include_speakers=request.include_speakers,
+        job_id=job_id,
+    )
+    return {"status": "processing", "job_id": job_id}
+
+
+@router.get("/bulk-export-stream")
+async def bulk_export_stream(
+    job: str = Query(..., description="Job id returned by /bulk-export/prepare"),
+    current_user: User = Depends(get_current_active_user),  # cookie-auth gates the stream
+):
+    """Server-Sent Events stream for an async bulk export.
+
+    Events: ``progress`` (status text), ``ready`` (``{url, filename, exported, skipped}``),
+    ``error`` (``{message}``). On connect the reconnect-safe result cache is checked first,
+    so a dropped EventSource still delivers once the worker has finished — no polling.
+    """
+    import asyncio
+    import contextlib
+    import json as _json
+
+    import redis.asyncio as aioredis
+    from redis.exceptions import RedisError
+    from redis.exceptions import TimeoutError as RedisTimeoutError
+
+    from app.core.config import settings
+    from app.core.redis import get_redis
+    from app.services.download_events import bulk_export_channel
+
+    def sse(event: str, payload: dict) -> str:
+        return f"event: {event}\ndata: {_json.dumps(payload)}\n\n"
+
+    async def event_stream():
+        # 1. Already finished? deliver immediately (covers reconnects after completion).
+        cached = get_redis().get(f"bulk_export_result:{job}")
+        if cached:
+            yield sse("ready", _json.loads(cached))
+            return
+
+        client = aioredis.from_url(
+            settings.REDIS_URL, health_check_interval=30, socket_keepalive=True
+        )
+        pubsub = client.pubsub()
+        await pubsub.subscribe(bulk_export_channel(job))
+        yield sse("progress", {"message": "Preparing export…", "progress": 0})
+        try:
+            while True:
+                try:
+                    msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
+                except (RedisTimeoutError, asyncio.TimeoutError):
+                    yield ": keepalive\n\n"
+                    continue
+                except RedisError as e:
+                    logger.warning(f"Bulk export SSE pubsub error for job {job}: {e}")
+                    yield sse("error", {"message": "Connection interrupted."})
+                    return
+                if msg is None:
+                    yield ": keepalive\n\n"
+                    continue
+                try:
+                    data = _json.loads(msg["data"])
+                except Exception:
+                    logger.debug("Skipping malformed bulk export event payload")
+                    continue
+                status = data.get("status")
+                if status == "completed" and data.get("url"):
+                    yield sse("ready", data)
+                    return
+                if status == "error":
+                    yield sse("error", data)
+                    return
+                yield sse("progress", data)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            with contextlib.suppress(Exception):
+                await pubsub.unsubscribe(bulk_export_channel(job))
+                await pubsub.close()
+                await client.close()
 
     return StreamingResponse(
-        zip_buffer,
-        media_type="application/zip",
+        event_stream(),
+        media_type="text/event-stream",
         headers={
-            "Content-Disposition": f'attachment; filename="{zip_filename}"',
-            "Content-Length": str(zip_buffer.getbuffer().nbytes),
-            "X-Exported-Count": str(exported),
-            "X-Skipped-Count": str(skipped),
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )
 

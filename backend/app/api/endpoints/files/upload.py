@@ -117,7 +117,7 @@ def create_media_file_record(
 
 
 def upload_file_to_storage(
-    file_content: bytes, file_size: int, storage_path: str, content_type: str
+    file_content: bytes | bytearray, file_size: int, storage_path: str, content_type: str
 ) -> None:
     """
     Upload file content to MinIO storage.

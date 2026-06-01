@@ -15,9 +15,10 @@
   interface EngineSettingsResponse {
     transcriber_backend: EngineSettingValue<string>;
     diarizer_backend: EngineSettingValue<string>;
-    gpu_split: EngineSettingValue<boolean>;
-    precompute_vad: EngineSettingValue<boolean>;
-    shared_volume_path: EngineSettingValue<string>;
+    boundary_smoothing_enabled: EngineSettingValue<boolean>;
+    boundary_acoustic_recheck_enabled: EngineSettingValue<boolean>;
+    boundary_acoustic_cosine_margin: EngineSettingValue<number>;
+    boundary_acoustic_max_word_dur: EngineSettingValue<number>;
   }
 
   type EngineSettingKey = keyof EngineSettingsResponse;
@@ -32,9 +33,10 @@
   // Draft values (bound to form controls)
   let draftTranscriberBackend = 'faster_whisper';
   let draftDiarizerBackend = 'pyannote';
-  let draftGpuSplit = false;
-  let draftPrecomputeVad = false;
-  let draftSharedVolumePath = '/tmp/transcription';
+  let draftBoundarySmoothing = false;
+  let draftAcousticRecheck = false;
+  let draftAcousticCosineMargin = 0.05;
+  let draftAcousticMaxWordDur = 1.0;
 
   onMount(async () => {
     await loadData();
@@ -47,9 +49,10 @@
       settings = res.data;
       draftTranscriberBackend = settings.transcriber_backend.value;
       draftDiarizerBackend = settings.diarizer_backend.value;
-      draftGpuSplit = settings.gpu_split.value;
-      draftPrecomputeVad = settings.precompute_vad.value;
-      draftSharedVolumePath = settings.shared_volume_path.value;
+      draftBoundarySmoothing = settings.boundary_smoothing_enabled.value;
+      draftAcousticRecheck = settings.boundary_acoustic_recheck_enabled.value;
+      draftAcousticCosineMargin = settings.boundary_acoustic_cosine_margin.value;
+      draftAcousticMaxWordDur = settings.boundary_acoustic_max_word_dur.value;
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
       toastStore.error(typeof detail === 'string' ? detail : 'Failed to load engine settings', 5000);
@@ -66,9 +69,10 @@
     const payload: Partial<{
       transcriber_backend: string;
       diarizer_backend: string;
-      gpu_split: boolean;
-      precompute_vad: boolean;
-      shared_volume_path: string;
+      boundary_smoothing_enabled: boolean;
+      boundary_acoustic_recheck_enabled: boolean;
+      boundary_acoustic_cosine_margin: number;
+      boundary_acoustic_max_word_dur: number;
     }> = {};
 
     if (draftTranscriberBackend !== settings.transcriber_backend.value) {
@@ -77,14 +81,17 @@
     if (draftDiarizerBackend !== settings.diarizer_backend.value) {
       payload.diarizer_backend = draftDiarizerBackend;
     }
-    if (draftGpuSplit !== settings.gpu_split.value) {
-      payload.gpu_split = draftGpuSplit;
+    if (draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value) {
+      payload.boundary_smoothing_enabled = draftBoundarySmoothing;
     }
-    if (draftPrecomputeVad !== settings.precompute_vad.value) {
-      payload.precompute_vad = draftPrecomputeVad;
+    if (draftAcousticRecheck !== settings.boundary_acoustic_recheck_enabled.value) {
+      payload.boundary_acoustic_recheck_enabled = draftAcousticRecheck;
     }
-    if (draftSharedVolumePath !== settings.shared_volume_path.value) {
-      payload.shared_volume_path = draftSharedVolumePath;
+    if (Number(draftAcousticCosineMargin) !== settings.boundary_acoustic_cosine_margin.value) {
+      payload.boundary_acoustic_cosine_margin = Number(draftAcousticCosineMargin);
+    }
+    if (Number(draftAcousticMaxWordDur) !== settings.boundary_acoustic_max_word_dur.value) {
+      payload.boundary_acoustic_max_word_dur = Number(draftAcousticMaxWordDur);
     }
 
     if (Object.keys(payload).length === 0) {
@@ -134,9 +141,10 @@
   $: isDirty = settings !== null && (
     draftTranscriberBackend !== settings.transcriber_backend.value ||
     draftDiarizerBackend !== settings.diarizer_backend.value ||
-    draftGpuSplit !== settings.gpu_split.value ||
-    draftPrecomputeVad !== settings.precompute_vad.value ||
-    draftSharedVolumePath !== settings.shared_volume_path.value
+    draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value ||
+    draftAcousticRecheck !== settings.boundary_acoustic_recheck_enabled.value ||
+    Number(draftAcousticCosineMargin) !== settings.boundary_acoustic_cosine_margin.value ||
+    Number(draftAcousticMaxWordDur) !== settings.boundary_acoustic_max_word_dur.value
   );
 </script>
 
@@ -228,22 +236,22 @@
         </div>
       </div>
 
-      <!-- GPU Split -->
+      <!-- Boundary Smoothing -->
       <div class="form-row">
         <div class="form-field">
           <div class="field-label-row">
-            <span class="field-name">{$t('settings.engineSettings.gpuSplit')}</span>
-            <span class="source-badge {sourceClass(settings.gpu_split.source)}">
-              {sourceLabel(settings.gpu_split.source)}
+            <span class="field-name">{$t('settings.engineSettings.boundarySmoothing')}</span>
+            <span class="source-badge {sourceClass(settings.boundary_smoothing_enabled.source)}">
+              {sourceLabel(settings.boundary_smoothing_enabled.source)}
             </span>
-            {#if settings.gpu_split.source !== 'default'}
+            {#if settings.boundary_smoothing_enabled.source !== 'default'}
               <button
                 class="reset-btn"
-                on:click={() => resetKey('gpu_split')}
-                disabled={resetInProgress === 'gpu_split' || saving}
+                on:click={() => resetKey('boundary_smoothing_enabled')}
+                disabled={resetInProgress === 'boundary_smoothing_enabled' || saving}
                 title={$t('settings.engineSettings.resetKey')}
               >
-                {#if resetInProgress === 'gpu_split'}
+                {#if resetInProgress === 'boundary_smoothing_enabled'}
                   <Spinner size="small" />
                 {:else}
                   {$t('settings.engineSettings.resetKey')}
@@ -251,36 +259,36 @@
               </button>
             {/if}
           </div>
-          <label class="toggle-label" for="gpu-split-input">
+          <label class="toggle-label" for="boundary-smoothing-input">
             <input
-              id="gpu-split-input"
+              id="boundary-smoothing-input"
               type="checkbox"
               class="toggle-input"
-              bind:checked={draftGpuSplit}
+              bind:checked={draftBoundarySmoothing}
               disabled={saving || resetInProgress !== null}
             />
             <span class="toggle-switch"></span>
-            <span class="toggle-text help-text">{$t('settings.engineSettings.gpuSplitHelp')}</span>
+            <span class="toggle-text help-text">{$t('settings.engineSettings.boundarySmoothingHelp')}</span>
           </label>
         </div>
       </div>
 
-      <!-- Precompute VAD -->
+      <!-- Acoustic Backchannel Re-check -->
       <div class="form-row">
         <div class="form-field">
           <div class="field-label-row">
-            <span class="field-name">{$t('settings.engineSettings.precomputeVad')}</span>
-            <span class="source-badge {sourceClass(settings.precompute_vad.source)}">
-              {sourceLabel(settings.precompute_vad.source)}
+            <span class="field-name">{$t('settings.engineSettings.boundaryAcousticRecheck')}</span>
+            <span class="source-badge {sourceClass(settings.boundary_acoustic_recheck_enabled.source)}">
+              {sourceLabel(settings.boundary_acoustic_recheck_enabled.source)}
             </span>
-            {#if settings.precompute_vad.source !== 'default'}
+            {#if settings.boundary_acoustic_recheck_enabled.source !== 'default'}
               <button
                 class="reset-btn"
-                on:click={() => resetKey('precompute_vad')}
-                disabled={resetInProgress === 'precompute_vad' || saving}
+                on:click={() => resetKey('boundary_acoustic_recheck_enabled')}
+                disabled={resetInProgress === 'boundary_acoustic_recheck_enabled' || saving}
                 title={$t('settings.engineSettings.resetKey')}
               >
-                {#if resetInProgress === 'precompute_vad'}
+                {#if resetInProgress === 'boundary_acoustic_recheck_enabled'}
                   <Spinner size="small" />
                 {:else}
                   {$t('settings.engineSettings.resetKey')}
@@ -288,36 +296,36 @@
               </button>
             {/if}
           </div>
-          <label class="toggle-label" for="precompute-vad-input">
+          <label class="toggle-label" for="boundary-acoustic-recheck-input">
             <input
-              id="precompute-vad-input"
+              id="boundary-acoustic-recheck-input"
               type="checkbox"
               class="toggle-input"
-              bind:checked={draftPrecomputeVad}
+              bind:checked={draftAcousticRecheck}
               disabled={saving || resetInProgress !== null}
             />
             <span class="toggle-switch"></span>
-            <span class="toggle-text help-text">{$t('settings.engineSettings.precomputeVadHelp')}</span>
+            <span class="toggle-text help-text">{$t('settings.engineSettings.boundaryAcousticRecheckHelp')}</span>
           </label>
         </div>
       </div>
 
-      <!-- Shared Volume Path -->
+      <!-- Re-check Cosine Margin -->
       <div class="form-row">
         <div class="form-field">
           <div class="field-label-row">
-            <label for="shared-volume-path">{$t('settings.engineSettings.sharedVolumePath')}</label>
-            <span class="source-badge {sourceClass(settings.shared_volume_path.source)}">
-              {sourceLabel(settings.shared_volume_path.source)}
+            <label for="boundary-acoustic-cosine-margin">{$t('settings.engineSettings.boundaryAcousticCosineMargin')}</label>
+            <span class="source-badge {sourceClass(settings.boundary_acoustic_cosine_margin.source)}">
+              {sourceLabel(settings.boundary_acoustic_cosine_margin.source)}
             </span>
-            {#if settings.shared_volume_path.source !== 'default'}
+            {#if settings.boundary_acoustic_cosine_margin.source !== 'default'}
               <button
                 class="reset-btn"
-                on:click={() => resetKey('shared_volume_path')}
-                disabled={resetInProgress === 'shared_volume_path' || saving}
+                on:click={() => resetKey('boundary_acoustic_cosine_margin')}
+                disabled={resetInProgress === 'boundary_acoustic_cosine_margin' || saving}
                 title={$t('settings.engineSettings.resetKey')}
               >
-                {#if resetInProgress === 'shared_volume_path'}
+                {#if resetInProgress === 'boundary_acoustic_cosine_margin'}
                   <Spinner size="small" />
                 {:else}
                   {$t('settings.engineSettings.resetKey')}
@@ -326,14 +334,53 @@
             {/if}
           </div>
           <input
-            id="shared-volume-path"
-            type="text"
+            id="boundary-acoustic-cosine-margin"
+            type="number"
+            step="0.01"
+            min="0"
+            max="1"
             class="form-input"
-            bind:value={draftSharedVolumePath}
-            disabled={saving || resetInProgress !== null}
-            placeholder="/tmp/transcription"
+            bind:value={draftAcousticCosineMargin}
+            disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
           />
-          <p class="field-hint">{$t('settings.engineSettings.sharedVolumePathHelp')}</p>
+          <p class="field-hint">{$t('settings.engineSettings.boundaryAcousticCosineMarginHelp')}</p>
+        </div>
+      </div>
+
+      <!-- Re-check Max Word Duration -->
+      <div class="form-row">
+        <div class="form-field">
+          <div class="field-label-row">
+            <label for="boundary-acoustic-max-word-dur">{$t('settings.engineSettings.boundaryAcousticMaxWordDur')}</label>
+            <span class="source-badge {sourceClass(settings.boundary_acoustic_max_word_dur.source)}">
+              {sourceLabel(settings.boundary_acoustic_max_word_dur.source)}
+            </span>
+            {#if settings.boundary_acoustic_max_word_dur.source !== 'default'}
+              <button
+                class="reset-btn"
+                on:click={() => resetKey('boundary_acoustic_max_word_dur')}
+                disabled={resetInProgress === 'boundary_acoustic_max_word_dur' || saving}
+                title={$t('settings.engineSettings.resetKey')}
+              >
+                {#if resetInProgress === 'boundary_acoustic_max_word_dur'}
+                  <Spinner size="small" />
+                {:else}
+                  {$t('settings.engineSettings.resetKey')}
+                {/if}
+              </button>
+            {/if}
+          </div>
+          <input
+            id="boundary-acoustic-max-word-dur"
+            type="number"
+            step="0.1"
+            min="0.1"
+            max="5"
+            class="form-input"
+            bind:value={draftAcousticMaxWordDur}
+            disabled={saving || resetInProgress !== null || !draftAcousticRecheck}
+          />
+          <p class="field-hint">{$t('settings.engineSettings.boundaryAcousticMaxWordDurHelp')}</p>
         </div>
       </div>
 

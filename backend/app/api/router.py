@@ -18,6 +18,7 @@ from .endpoints import llm_settings
 from .endpoints import llm_status
 from .endpoints import media_collections
 from .endpoints import prompts
+from .endpoints import redaction_settings
 from .endpoints import search
 from .endpoints import speaker_attribute_migration
 from .endpoints import speaker_clusters
@@ -102,6 +103,12 @@ include_router_with_consistency(
 )
 include_router_with_consistency(
     user_settings.router, prefix="/user-settings", tags=["user-settings"]
+)
+include_router_with_consistency(
+    redaction_settings.user_router, prefix="/user-settings", tags=["redaction-settings"]
+)
+include_router_with_consistency(
+    redaction_settings.admin_router, prefix="/admin/redaction-policy", tags=["admin"]
 )
 include_router_with_consistency(topics.router, prefix="/files", tags=["topics"])
 include_router_with_consistency(

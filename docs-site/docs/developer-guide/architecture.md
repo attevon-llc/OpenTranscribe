@@ -37,6 +37,7 @@ flowchart TB
         NLP[NLP Queue\nsummarization, speaker ID]
         Embedding[Embedding Queue\nmigration, consistency]
         Utility[Utility Queue\nindexing, cleanup]
+        Redaction[Redaction Queue\nPII/toxicity detection]
     end
 
     Workers --> PostgreSQL
@@ -74,6 +75,7 @@ flowchart TB
 - **NLP Queue**: LLM features (summarization, speaker ID)
 - **Embedding Queue**: Speaker embedding extraction
 - **Utility Queue**: Maintenance, error handlers
+- **Redaction Queue**: PII / toxicity / profanity detection (dedicated `celery-redaction` CPU service)
 
 ### Data Layer
 - **PostgreSQL**: Relational data with Alembic-only migrations (no init_db.sql)
@@ -182,11 +184,11 @@ The codebase underwent a major modularization refactor to address concrete maint
 
 The `app/services/interfaces.py` module defines Python `Protocol` classes for Storage, Search, Cache, and Notification services. This dependency inversion pattern allows tasks and services to depend on abstract interfaces rather than concrete implementations, enabling easier testing and future provider swaps (e.g., switching from MinIO to AWS S3).
 
-### 7-Queue Celery Architecture
+### 8-Queue Celery Architecture
 
 ```mermaid
 flowchart LR
-    Redis[(Redis Broker)] --> gpu & cloud_asr & cpu & download & nlp & embedding & utility
+    Redis[(Redis Broker)] --> gpu & cloud_asr & cpu & download & nlp & embedding & utility & redaction
 
     subgraph gpu["gpu (concurrency=1)"]
         g1[WhisperX transcription]
@@ -223,6 +225,11 @@ flowchart LR
         u2[Waveform generation]
         u3[Cleanup tasks]
     end
+
+    subgraph redaction["redaction (concurrency=2)"]
+        r1[PII / toxicity detection]
+        r2[Span caching]
+    end
 ```
 
 Tasks are separated into queues by resource type to prevent resource contention:
@@ -236,8 +243,15 @@ Tasks are separated into queues by resource type to prevent resource contention:
 | `nlp` | 4 | LLM API calls are network-bound, separate from transcription |
 | `embedding` | varies | Speaker embedding extraction, can be CPU or GPU |
 | `utility` | varies | Maintenance tasks, error handlers, reindexing |
+| `redaction` | 2 | PII / toxicity / profanity detection on a dedicated CPU service; isolates the redaction ML models from the GPU worker |
 
 This separation ensures GPU workers are never blocked waiting for a download to complete, and CPU-intensive postprocessing does not compete with GPU transcription for worker slots.
+
+#### Content Redaction Service
+
+Content redaction (PII, profanity, and toxicity moderation) runs on the dedicated `celery-redaction` CPU service following a **detect-once / cache-forever** model. Detection runs exactly once per transcript on this worker — the only worker that loads the PII (Presidio + GLiNER) and toxicity (Tiny-Toxic / XLM-R) models, keeping those weights off the GPU worker. The resulting spans are cached on `transcript_segment.redactions` and `transcript_segment.toxicity`, so detection never re-runs unless segment text is edited or an admin upgrades a model.
+
+Masking itself is a **read-time transform** (`services/redaction/spans.py:apply_redactions`) applied at every display and export surface (API formatting, subtitle/SRT/VTT/TXT exports, and redact-before-LLM). The full original transcript is always retained in the database; enabling/disabling redaction, changing categories, style, custom words, or the allowlist only changes how the cached spans are rendered — never the stored text.
 
 ### Redis Singleton Pattern
 

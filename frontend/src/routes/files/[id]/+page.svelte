@@ -26,7 +26,7 @@
   import { transcriptStore, processedTranscriptSegments } from '$stores/transcriptStore';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
-  import { getMediaStreamUrl, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
+  import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import Spinner from '../../../components/ui/Spinner.svelte';
   import FileDetailSkeleton from '../../../components/FileDetailSkeleton.svelte';
 
@@ -93,6 +93,15 @@
   // Permission level for shared files (null = owner/full access)
   let myPermission: string | null = null;
   $: canEdit = !myPermission || myPermission === 'editor' || myPermission === 'owner';
+
+  // Content redaction: owner/admin can reveal the original (non-admin-forced categories).
+  let showOriginal = false;
+  let redactionActive = false; // true once we've seen redacted spans on this file
+  // When redaction is enabled but detection hasn't finished, the transcript is withheld.
+  let redactionPending = false;
+  let redactionStatus = ''; // pending | processing | done | failed
+  $: canViewOriginal = myPermission === null || myPermission === 'owner';
+  $: showRedactionToggle = canViewOriginal && (redactionActive || showOriginal);
 
   // LLM availability for summary functionality
   $: llmAvailable = $isLLMAvailable;
@@ -242,12 +251,22 @@
       pageErrorMessage = '';
       videoErrorMessage = '';
 
-      const response = await axiosInstance.get(`/files/${targetFileId}`);
+      const response = await axiosInstance.get(`/files/${targetFileId}`, {
+        params: showOriginal ? { redact: false } : {},
+      });
 
       if (response.data && typeof response.data === 'object') {
         file = response.data;
         collections = response.data.collections || [];
         myPermission = response.data.my_permission || null;
+        // Content-redaction state: pending (transcript withheld) + whether masking applied.
+        redactionPending = response.data.redaction_pending || false;
+        redactionStatus = response.data.redaction_status || '';
+        if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
+          if (response.data.transcript_segments.some((s: any) => s?.redactions?.length)) {
+            redactionActive = true;
+          }
+        }
         reactiveFile.set(file);
 
         // Track pagination metadata
@@ -278,6 +297,41 @@
   }
 
   /**
+   * Toggle between the redacted view and the original (owner/admin only).
+   * Re-fetches the transcript from scratch with the appropriate redact flag.
+   * Admin-forced categories always remain masked regardless of this toggle.
+   */
+  async function toggleShowOriginal(): Promise<void> {
+    showOriginal = !showOriginal;
+    await fetchFileDetails(fileId);
+  }
+
+  /**
+   * Trigger (or re-run) content-redaction detection for THIS file. Useful for old files
+   * processed before redaction was enabled, or to re-scan after changing settings.
+   */
+  async function triggerRedaction(): Promise<void> {
+    if (!file?.uuid) return;
+    try {
+      const response = await axiosInstance.post('/files/management/bulk-action', {
+        file_uuids: [file.uuid],
+        action: 'redact'
+      });
+      const result = (response.data || [])[0];
+      if (result && result.success) {
+        redactionPending = true;
+        redactionStatus = 'pending';
+        toastStore.success($t('settings.contentRedaction.redactStarted'));
+      } else {
+        toastStore.error(result?.message || $t('settings.contentRedaction.redactTriggerFailed'));
+      }
+    } catch (err) {
+      console.error('Trigger redaction error:', err);
+      toastStore.error($t('settings.contentRedaction.redactTriggerFailed'));
+    }
+  }
+
+  /**
    * Load more transcript segments for large transcripts
    */
   async function loadMoreSegments(): Promise<void> {
@@ -291,7 +345,8 @@
       const response = await axiosInstance.get(`/files/${fileId}/segments`, {
         params: {
           segment_limit: segmentLimit,
-          segment_offset: nextOffset
+          segment_offset: nextOffset,
+          ...(showOriginal ? { redact: false } : {})
         }
       });
 
@@ -343,7 +398,8 @@
       const response = await axiosInstance.get(`/files/${fileId}/segments`, {
         params: {
           segment_limit: neededCount,
-          segment_offset: currentCount
+          segment_offset: currentCount,
+          ...(showOriginal ? { redact: false } : {})
         }
       });
 
@@ -580,14 +636,17 @@
       // Get presigned URL from backend (authenticated, time-limited)
       videoUrl = await getMediaStreamUrl(fileId, 'video');
 
-      // Set up automatic URL refresh for long videos
-      // Default expiration is 300 seconds (5 minutes)
+      // Set up automatic URL refresh for long videos, using the URL's real expiry
+      // (MEDIA_URL_EXPIRE_SECONDS) rather than a hardcoded interval — avoids needlessly
+      // re-fetching and re-setting the video src mid-playback.
+      const info = getCachedUrlInfo(fileId, 'video');
+      const expiresIn = info ? Math.max(60, Math.floor((info.expiresAt - Date.now()) / 1000)) : 300;
       urlRefresher = createUrlRefresher(
         fileId,
         (newUrl) => {
           videoUrl = newUrl;
         },
-        300 // 5 minute expiration
+        expiresIn
       );
 
       // Reset video element check flag to prompt afterUpdate to try initialization
@@ -2265,6 +2324,30 @@
               }
             }
 
+            // Handle content-redaction status (chip + auto-refresh the transcript)
+            if (latestNotification.type === 'redaction_status') {
+              const rstatus = latestNotification.status || latestNotification.data?.status;
+              redactionStatus = rstatus || redactionStatus;
+              if (rstatus === 'done') {
+                // Detection finished — load the now-available (masked) transcript.
+                redactionPending = false;
+                fetchFileDetails();
+                const skipped = latestNotification.data?.skipped_detectors || [];
+                if (skipped.length) {
+                  toastStore.info(
+                    $t('settings.contentRedaction.someDetectorsSkipped', {
+                      detectors: skipped.join(', '),
+                    })
+                  );
+                }
+              } else if (rstatus === 'failed') {
+                redactionPending = false;
+                fetchFileDetails();
+              } else {
+                redactionPending = true;
+              }
+            }
+
             // Handle cache invalidation (e.g., auto-label applied tags/collections)
             if (latestNotification.type === 'cache_invalidate'
                 && latestNotification.data?.scope === 'files'
@@ -2543,7 +2626,17 @@
       </section>
 
       <!-- Right column: Transcript -->
-      {#if file && file.transcript_segments}
+      {#if redactionPending}
+        <section class="transcript-column">
+          <div class="redaction-pending">
+            <div class="redaction-pending-chip">
+              <span class="chip-dot"></span>
+              {$t('settings.contentRedaction.processingChip')}
+            </div>
+            <p class="redaction-pending-msg">{$t('settings.contentRedaction.processingMessage')}</p>
+          </div>
+        </section>
+      {:else if file && file.transcript_segments}
         <section class="transcript-column">
           <TranscriptDisplay
           {file}
@@ -2580,6 +2673,46 @@
           on:loadMore={loadMoreSegments}
           on:loadUpTo={handleLoadUpTo}
         />
+          <!-- Content-redaction controls: kept BELOW the transcript so the video and -->
+          <!-- transcript columns stay top-aligned. -->
+          {#if showRedactionToggle}
+            <div class="redaction-footer">
+              <span class="redaction-status">
+                {showOriginal
+                  ? $t('settings.contentRedaction.showingOriginal')
+                  : $t('settings.contentRedaction.showingRedacted')}
+              </span>
+              <div class="redaction-bar-actions">
+                {#if canViewOriginal}
+                  <button
+                    type="button"
+                    class="redaction-link-btn"
+                    on:click={triggerRedaction}
+                    title={$t('settings.contentRedaction.rescanTooltip')}
+                  >
+                    {$t('settings.contentRedaction.rescan')}
+                  </button>
+                {/if}
+                <button type="button" class="redaction-link-btn" on:click={toggleShowOriginal}>
+                  {showOriginal
+                    ? $t('settings.contentRedaction.showRedacted')
+                    : $t('settings.contentRedaction.showOriginal')}
+                </button>
+              </div>
+            </div>
+          {:else if canViewOriginal}
+            <div class="redaction-footer">
+              <span class="redaction-status">{$t('settings.contentRedaction.notRedacted')}</span>
+              <button
+                type="button"
+                class="redaction-link-btn"
+                on:click={triggerRedaction}
+                title={$t('settings.contentRedaction.rescanTooltip')}
+              >
+                {$t('settings.contentRedaction.runRedaction')}
+              </button>
+            </div>
+          {/if}
         </section>
       {:else}
         <section class="transcript-column">
@@ -2663,6 +2796,17 @@
               </label>
             {/if}
           </div>
+          {#if redactionActive && !showOriginal}
+            <p class="export-redaction-note">
+              <svg class="export-redaction-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              {$t('settings.contentRedaction.exportRedactedNote')}
+              {#if canViewOriginal}
+                <span class="export-redaction-hint">
+                  {$t('settings.contentRedaction.exportOriginalHint')}
+                </span>
+              {/if}
+            </p>
+          {/if}
         </div>
 
         <div class="modal-footer">
@@ -3175,6 +3319,103 @@
     flex-direction: column;
     gap: 0.75rem;
     margin-top: 1rem;
+  }
+
+  /* Content redaction: transcript show-original toggle bar + export note */
+  .redaction-pending {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 3rem 1rem;
+    text-align: center;
+  }
+  .redaction-pending-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    background: rgba(var(--primary-color-rgb), 0.12);
+    color: var(--primary-color);
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .redaction-pending-chip .chip-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    animation: redaction-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes redaction-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+  .redaction-pending-msg {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    max-width: 360px;
+  }
+
+  /* Compact redaction controls placed under the transcript (keeps columns top-aligned). */
+  .redaction-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0.25rem 0;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--border-color);
+    flex-wrap: wrap;
+  }
+  .redaction-status {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+  .redaction-bar-actions {
+    display: flex;
+    gap: 0.9rem;
+    align-items: center;
+  }
+  /* Small, unobtrusive link-style button. Hover shifts to the primary-hover color with
+     a subtle tinted background (consistent with the app) — no underline. */
+  .redaction-link-btn {
+    background: none;
+    border: none;
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--primary-color);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      color 0.12s ease,
+      background-color 0.12s ease;
+  }
+  .redaction-link-btn:hover {
+    color: var(--primary-hover);
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+  }
+  .export-redaction-note {
+    margin-top: 1rem;
+    padding: 0.6rem 0.75rem;
+    background: rgba(var(--warning-color-rgb, 234, 179, 8), 0.12);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: var(--text-color);
+  }
+  .export-redaction-icon {
+    vertical-align: -2px;
+    margin-right: 0.3rem;
+    color: var(--warning-color);
+  }
+  .export-redaction-hint {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--text-secondary);
   }
 
   .export-option-label {

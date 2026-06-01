@@ -51,6 +51,16 @@ services:
     volumes:
       - ./backend:/app  # Mount source code for development
 
+  celery-redaction:
+    image: opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./backend:/app  # Mount source code for development
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+
   celery-cloud-asr-worker:
     image: opentranscribe-backend:latest
     build:

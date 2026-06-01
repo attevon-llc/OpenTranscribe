@@ -227,9 +227,9 @@ class AutoLabelService:
         except IntegrityError:
             nested.rollback()
             self._invalidate_tag_cache()
-            tag = self.db.query(Tag).filter(Tag.name == name).first()
-            if tag:
-                return tag
+            existing_tag: Optional[Tag] = self.db.query(Tag).filter(Tag.name == name).first()
+            if existing_tag:
+                return existing_tag
             raise
 
     def _get_or_create_collection_with_dedup(
@@ -250,13 +250,13 @@ class AutoLabelService:
         except IntegrityError:
             nested.rollback()
             self._invalidate_collection_cache(user_id)
-            collection = (
+            existing_collection: Optional[Collection] = (
                 self.db.query(Collection)
                 .filter(Collection.user_id == user_id, Collection.name == name)
                 .first()
             )
-            if collection:
-                return collection
+            if existing_collection:
+                return existing_collection
             raise
 
     def _add_tag_to_file(self, media_file: MediaFile, tag: Tag, confidence: float) -> None:

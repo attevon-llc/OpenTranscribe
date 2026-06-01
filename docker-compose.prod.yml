@@ -48,6 +48,17 @@ services:
     pull_policy: always
     # No volumes needed - CPU worker doesn't need model cache
 
+  celery-redaction:
+    image: davidamacey/opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod  # Production build
+    pull_policy: always
+    volumes:
+      # Redaction worker needs the HuggingFace cache for GLiNER + toxicity models
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+
   celery-cloud-asr-worker:
     image: davidamacey/opentranscribe-backend:latest
     build:

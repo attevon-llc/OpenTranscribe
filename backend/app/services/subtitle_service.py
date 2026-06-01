@@ -4,9 +4,15 @@ Handles movie-style formatting with proper line lengths and speaker labels.
 Supports overlapping speech display where multiple speakers talk simultaneously.
 """
 
+import io
 import re
 import textwrap
+import zipfile
 from collections import defaultdict
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.redaction.config import EffectiveRedactionConfig
 
 from sqlalchemy.orm import Session
 
@@ -108,6 +114,36 @@ class SubtitleService:
         # Sort by start time and return just the groups
         result_with_positions.sort(key=lambda x: x[0])
         return [group for _, group in result_with_positions]
+
+    @staticmethod
+    def _redact_segments_inplace(
+        segments: list[TranscriptSegment],
+        redaction_cfg: "EffectiveRedactionConfig | None" = None,
+        reveal_categories: set | None = None,
+    ) -> None:
+        """Mask segment text in memory (read-only export path; never committed).
+
+        Mutating the loaded ORM objects' ``text`` makes every downstream subtitle
+        formatter (overlap merge, long-segment split) inherit the masked text without
+        touching each extraction site. The DB row is never updated (no commit here).
+        """
+        if redaction_cfg is None or not getattr(redaction_cfg, "enabled", False):
+            return
+        import contextlib
+
+        from app.services.redaction.service import RedactionService
+
+        for seg in segments:
+            # Never break export rendering if masking a single segment fails.
+            with contextlib.suppress(Exception):
+                masked, _ = RedactionService.mask_segment(
+                    str(seg.text or ""),
+                    seg.redactions or [],
+                    seg.words,
+                    redaction_cfg,
+                    reveal_categories or set(),
+                )
+                seg.text = masked
 
     @staticmethod
     def _format_overlap_for_subtitle(
@@ -283,7 +319,11 @@ class SubtitleService:
 
     @staticmethod
     def generate_webvtt_content(
-        db: Session, media_file_id: int, include_speakers: bool = True
+        db: Session,
+        media_file_id: int,
+        include_speakers: bool = True,
+        redaction_cfg: "EffectiveRedactionConfig | None" = None,
+        reveal_categories: set | None = None,
     ) -> str:
         """Generate WebVTT subtitle content from transcript segments.
 
@@ -317,6 +357,9 @@ class SubtitleService:
             )
             for row in speaker_rows:
                 speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
+
+        # Read-time content redaction (after speaker_map; mutates text in memory only)
+        SubtitleService._redact_segments_inplace(segments, redaction_cfg, reveal_categories)
 
         # Group overlapping segments
         segment_groups = SubtitleService._group_overlapping_segments(segments)
@@ -353,7 +396,13 @@ class SubtitleService:
         return webvtt_content
 
     @staticmethod
-    def generate_srt_content(db: Session, media_file_id: int, include_speakers: bool = True) -> str:
+    def generate_srt_content(
+        db: Session,
+        media_file_id: int,
+        include_speakers: bool = True,
+        redaction_cfg: "EffectiveRedactionConfig | None" = None,
+        reveal_categories: set | None = None,
+    ) -> str:
         """Generate SRT subtitle content from transcript segments.
 
         Handles overlapping speech by merging segments with the same overlap_group_id
@@ -386,6 +435,9 @@ class SubtitleService:
             )
             for row in speaker_rows:
                 speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
+
+        # Read-time content redaction (mutates text in memory only)
+        SubtitleService._redact_segments_inplace(segments, redaction_cfg, reveal_categories)
 
         # Group overlapping segments
         segment_groups = SubtitleService._group_overlapping_segments(segments)
@@ -446,7 +498,13 @@ class SubtitleService:
         return format_timestamp_simple(seconds)
 
     @staticmethod
-    def generate_txt_content(db: Session, media_file_id: int, include_speakers: bool = True) -> str:
+    def generate_txt_content(
+        db: Session,
+        media_file_id: int,
+        include_speakers: bool = True,
+        redaction_cfg: "EffectiveRedactionConfig | None" = None,
+        reveal_categories: set | None = None,
+    ) -> str:
         """Generate plain text transcript with timestamps and speaker labels.
 
         For overlapping speech, formats as:
@@ -481,6 +539,9 @@ class SubtitleService:
             )
             for row in speaker_rows:
                 speaker_map[row.id] = str(row.display_name) if row.display_name else str(row.name)
+
+        # Read-time content redaction (mutates text in memory only)
+        SubtitleService._redact_segments_inplace(segments, redaction_cfg, reveal_categories)
 
         # Group overlapping segments
         segment_groups = SubtitleService._group_overlapping_segments(segments)
@@ -570,6 +631,55 @@ class SubtitleService:
             i = j
 
         return "\n\n".join(txt_lines)
+
+    @staticmethod
+    def build_subtitle_archive(
+        db: Session,
+        file_specs: list[tuple[int, str]],
+        subtitle_format: str,
+        include_speakers: bool,
+    ) -> tuple[bytes, int, int]:
+        """Build a ZIP of subtitle files for a batch of media files.
+
+        Args:
+            db: Database session.
+            file_specs: ``[(media_file_id, base_filename), ...]`` — already
+                permission-filtered by the caller.
+            subtitle_format: ``srt`` | ``webvtt`` | ``txt``.
+            include_speakers: Whether to embed speaker labels.
+
+        Returns:
+            ``(zip_bytes, exported, skipped)``. Files whose subtitle generation
+            fails or yields empty content are counted as skipped, never aborting
+            the batch.
+        """
+        fmt = subtitle_format.lower()
+        ext = "vtt" if fmt == "webvtt" else fmt
+        buf = io.BytesIO()
+        exported = skipped = 0
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_id, base_name in file_specs:
+                try:
+                    if fmt == "webvtt":
+                        content = SubtitleService.generate_webvtt_content(
+                            db, file_id, include_speakers
+                        )
+                    elif fmt == "txt":
+                        content = SubtitleService.generate_txt_content(
+                            db, file_id, include_speakers
+                        )
+                    else:
+                        content = SubtitleService.generate_srt_content(
+                            db, file_id, include_speakers
+                        )
+                    if not content.strip():
+                        skipped += 1
+                        continue
+                    zf.writestr(f"{base_name}.{ext}", content.encode("utf-8"))
+                    exported += 1
+                except Exception:  # noqa: BLE001 - one bad file shouldn't abort the batch
+                    skipped += 1
+        return buf.getvalue(), exported, skipped
 
     @staticmethod
     def validate_subtitle_timing(db: Session, media_file_id: int) -> list[str]:

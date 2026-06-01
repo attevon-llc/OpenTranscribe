@@ -16,6 +16,7 @@ export type SettingsSection =
   | 'groups'
   | 'asr-provider'
   | 'custom-vocabulary'
+  | 'content-redaction'
   | 'engine-settings'
   // System sections (visible to all users)
   | 'system-statistics'
@@ -23,9 +24,11 @@ export type SettingsSection =
   | 'admin-users'
   | 'admin-task-health'
   | 'admin-settings'
+  | 'redaction-policy'
   | 'embedding-migration'
   | 'data-integrity'
   | 'retention'
+  | 'cache'
   | 'media-sources'
   // Super Admin sections
   | 'authentication'
@@ -55,14 +58,17 @@ const initialState: SettingsModalState = {
     groups: false,
     'asr-provider': false,
     'custom-vocabulary': false,
+    'content-redaction': false,
     'engine-settings': false,
     'system-statistics': false,
     'admin-users': false,
     'admin-task-health': false,
     'admin-settings': false,
+    'redaction-policy': false,
     'embedding-migration': false,
     'data-integrity': false,
     retention: false,
+    cache: false,
     'media-sources': false,
     authentication: false,
     'audit-logs': false,

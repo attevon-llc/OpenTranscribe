@@ -100,6 +100,20 @@ ASR_PROVIDER_CATALOG: dict = {
                 "supports_translation": True,
                 "language_support": "multilingual",
             },
+            {
+                # CTranslate2 build (config.json + model.bin) — the only CrisperWhisper
+                # variant that loads in faster-whisper's WhisperModel. The PyTorch
+                # checkpoint nyrahealth/CrisperWhisper is intentionally NOT in this
+                # catalog: it ships model.safetensors (no CT2 model.bin), so CTranslate2
+                # cannot load it and the whisperx transformers backend is still a stub.
+                "id": "nyrahealth/faster_CrisperWhisper",
+                "display_name": "CrisperWhisper (English)",
+                "description": "Precise verbatim word-level timestamps, English only, ~3 GB VRAM",
+                "price_per_min_batch": 0,
+                "supports_diarization": True,
+                "supports_translation": False,
+                "language_support": "english_only",
+            },
         ],
     },
     "deepgram": {
@@ -159,42 +173,28 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_diarization": True,
         "supports_vocabulary": True,
         "supports_translation": False,
-        "description": "Best-in-class diarization with Universal-2 and Slam-1 models",
-        "status": "experimental",
-        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
+        "description": "Best-in-class diarization with the Universal speech models",
+        "status": "tested",
+        "status_note": "",
         "diarization_quality": "Good — AssemblyAI offers strong diarization with speaker count support",
+        # Only universal-3-pro and universal-2 are accepted by the current speech_models API;
+        # slam-1 / nano were rejected live ("must be one of universal-3-pro, universal-2").
         "models": [
             {
                 "id": "universal",
-                "display_name": "Universal",
-                "description": "Base model, English",
-                "price_per_min_batch": 0.0025,
-                "languages": 1,
+                "display_name": "Universal-3 Pro",
+                "description": "Highest accuracy — English, Spanish, Portuguese, French, German, Italian",
+                "price_per_min_batch": 0.0045,
+                "languages": 6,
                 "is_default": True,
                 "supports_diarization": True,
             },
             {
                 "id": "universal-multilingual",
-                "display_name": "Universal (99 languages)",
-                "description": "Auto language detection",
+                "display_name": "Universal-2 (99 languages)",
+                "description": "Multilingual with automatic language detection",
                 "price_per_min_batch": 0.0045,
                 "languages": 99,
-                "supports_diarization": True,
-            },
-            {
-                "id": "slam-1",
-                "display_name": "Slam-1",
-                "description": "Highest accuracy, English",
-                "price_per_min_batch": 0.0062,
-                "languages": 1,
-                "supports_diarization": True,
-            },
-            {
-                "id": "nano",
-                "display_name": "Nano",
-                "description": "Budget-friendly, English",
-                "price_per_min_batch": 0.002,
-                "languages": 1,
                 "supports_diarization": True,
             },
         ],
@@ -320,25 +320,38 @@ ASR_PROVIDER_CATALOG: dict = {
     "aws": {
         "id": "aws",
         "display_name": "Amazon Transcribe",
-        "requires_api_key": False,
+        "requires_api_key": True,  # the AWS Secret Access Key (stored in api_key, encrypted)
+        "requires_access_key_id": True,  # the AWS Access Key ID (encrypted, AWS-only)
         "requires_region": True,
         "supports_custom_url": False,
         "supports_diarization": True,
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "Standard and Medical transcription (HIPAA-eligible)",
-        "status": "experimental",
-        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
-        "diarization_quality": "Unknown — limited to 10 speakers maximum",
+        "status": "tested",
+        "status_note": "",
+        "diarization_quality": "Supports up to 30 speakers",
         "models": [
             {
                 "id": "standard",
-                "display_name": "Standard",
-                "description": "General purpose",
+                "display_name": "Standard (single language)",
+                "description": "One language per file — uses your source language, or "
+                "auto-detects the dominant language when set to Auto",
                 "price_per_min_batch": 0.024,
+                "languages": 100,
                 "is_default": True,
                 "supports_diarization": True,
                 "supports_vocabulary": True,
+            },
+            {
+                "id": "multilingual",
+                "display_name": "Multilingual (code-switching)",
+                "description": "Multiple languages within one file — detects and transcribes "
+                "each language (e.g. a bilingual speaker switching mid-conversation)",
+                "price_per_min_batch": 0.024,
+                "languages": 100,
+                "supports_diarization": True,
+                "supports_vocabulary": False,
             },
             {
                 "id": "medical",
@@ -360,10 +373,10 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_diarization": True,
         "supports_vocabulary": True,
         "supports_translation": False,
-        "description": "Enterprise-grade with 55+ languages and 3 diarization modes",
-        "status": "experimental",
-        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
-        "diarization_quality": "Unknown — offers 3 diarization modes",
+        "description": "Enterprise-grade with 55+ languages and speaker diarization",
+        "status": "tested",
+        "status_note": "",
+        "diarization_quality": "Strong — enterprise speaker diarization",
         "models": [
             {
                 "id": "standard",
@@ -387,9 +400,9 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": True,
         "supports_translation": False,
         "description": "All features bundled, 100+ languages",
-        "status": "experimental",
-        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
-        "diarization_quality": "Unknown — diarization included in all plans",
+        "status": "tested",
+        "status_note": "",
+        "diarization_quality": "Good — diarization included in all plans",
         "models": [
             {
                 "id": "standard",
@@ -413,8 +426,8 @@ ASR_PROVIDER_CATALOG: dict = {
         "supports_vocabulary": False,
         "supports_translation": False,
         "description": "STT Orchestration — premium diarization + transcription in one API call",
-        "status": "experimental",
-        "status_note": "This provider has not been fully tested with real API keys. Results may vary.",
+        "status": "tested",
+        "status_note": "",
         "diarization_quality": "Excellent — premium cloud diarization from pyannote.ai",
         "models": [
             {
@@ -642,8 +655,12 @@ class ASRProviderFactory:
         model: str | None = None,
         base_url: str | None = None,
         region: str | None = None,
+        access_key_id: str | None = None,
     ) -> ASRProvider:
-        """Create provider for connection testing (no DB lookup)."""
+        """Create provider for connection testing (no DB lookup).
+
+        ``access_key_id`` is AWS-only (the Secret Access Key arrives via ``api_key``).
+        """
         if provider == "local":
             return LocalASRProvider()
         if provider == "deepgram":
@@ -667,10 +684,17 @@ class ASRProviderFactory:
 
             return AzureASRProvider(api_key or "", region or "eastus", model or "whisper")
         if provider == "aws":
+            import os
+
             from .aws_provider import AWSTranscribeProvider
 
+            # UI creds take precedence; otherwise fall back to boto3's default chain
+            # (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY env vars, or an IAM role on AWS).
             return AWSTranscribeProvider(
-                region=region or "us-east-1", model_name=model or "standard"
+                region=region or os.getenv("AWS_REGION") or "us-east-1",
+                model_name=model or "standard",
+                access_key_id=access_key_id or os.getenv("AWS_ACCESS_KEY_ID"),
+                secret_access_key=api_key or os.getenv("AWS_SECRET_ACCESS_KEY"),
             )
         if provider == "speechmatics":
             from .speechmatics_provider import SpeechmaticsProvider
@@ -718,6 +742,18 @@ class ASRProviderFactory:
 
         # For local provider: substring match (most-specific first)
         if provider_id == "local":
+            # English-only Whisper ".en" variants (tiny.en, base.en, small.en, medium.en,
+            # distil-*.en) are not enumerated in the catalog but are English-only and cannot
+            # translate. Checked BEFORE the substring loop so "tiny.en" is not mis-matched to
+            # the multilingual "tiny" entry. Classified consistently with the catalog's
+            # english_only entries so the same UI guards and transcriber safety net apply.
+            if model_id.endswith(".en"):
+                return {
+                    "supports_translation": False,
+                    "language_support": "english_only",
+                    "languages": 1,
+                }
+
             sorted_models = sorted(models, key=lambda m: len(m["id"]), reverse=True)
             for m in sorted_models:
                 if m["id"] in model_id:

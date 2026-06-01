@@ -325,6 +325,13 @@ def enrich_and_dispatch(
     except Exception as e:
         logger.warning(f"Search indexing failed for file {file_id}: {e}")
 
+    # Content redaction detection — runs ALWAYS (independent of user settings).
+    # Dedicated CPU service; masking applies at read time once spans land.
+    try:
+        _dispatch_redaction(file_id, user_id, pipeline_task_id=pipeline_task_id)
+    except Exception as e:
+        logger.warning(f"Redaction dispatch failed for file {file_id}: {e}")
+
     # Downstream tasks — each wrapped individually so one failure
     # doesn't prevent the others from dispatching
     logger.info(f"Dispatching downstream enrichment tasks for file {file_id}")
@@ -443,6 +450,34 @@ def _index_transcript(
         logger.info(f"Dispatched search indexing task for file {file_uuid}")
     except Exception as e:
         logger.warning(f"Failed to dispatch search indexing: {e}")
+
+
+def _dispatch_redaction(file_id: int, user_id: int, pipeline_task_id: str | None = None) -> None:
+    """Dispatch content-redaction detection — ONLY when the owner has redaction enabled
+    (or an admin forces it). Redaction is opt-out by default, so we skip the (potentially
+    expensive) scan for the common case. If a user enables redaction later, detection is
+    dispatched lazily the first time they open the file.
+    """
+    try:
+        from app.db.session_utils import session_scope
+        from app.services.redaction.config import resolve_effective_config
+
+        with session_scope() as db:
+            cfg = resolve_effective_config(db, user_id)
+        if not cfg.enabled:
+            logger.info(f"Redaction off for owner of file {file_id}; skipping detection")
+            return
+
+        from app.tasks.redaction_task import redaction_detect_task
+
+        redaction_detect_task.delay(
+            file_id=file_id,
+            user_id=user_id,
+            pipeline_task_id=pipeline_task_id,
+        )
+        logger.info(f"Dispatched redaction detection for file {file_id}")
+    except Exception as e:
+        logger.warning(f"Failed to dispatch redaction detection: {e}")
 
 
 def _dispatch_speaker_attributes(

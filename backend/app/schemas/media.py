@@ -29,6 +29,9 @@ VALID_LOCAL_WHISPER_MODELS = frozenset(
         "large-v2",
         "large-v3",
         "large-v3-turbo",
+        # CrisperWhisper: only the CTranslate2 build loads in faster-whisper.
+        # The PyTorch checkpoint (nyrahealth/CrisperWhisper) is deliberately omitted.
+        "nyrahealth/faster_CrisperWhisper",
     }
 )
 
@@ -359,6 +362,11 @@ class TranscriptSegment(TranscriptSegmentBase, UUIDBaseSchema):
     )
     resolved_speaker_name: Optional[str] = None  # Display name (user label or original ID)
 
+    # Content redaction (text above is already masked at read time when redaction is on).
+    # `redactions` carries the spans that were applied so the UI can render blur/tooltips.
+    redactions: Optional[list[dict]] = None
+    toxicity: Optional[dict] = None  # Segment-level toxicity scores (for badge/flag UI)
+
 
 class MediaFileBase(BaseModel):
     filename: str
@@ -471,6 +479,12 @@ class MediaFileDetail(MediaFile):
 
     # Caller's effective permission on this file (null = owner)
     my_permission: Optional[str] = None
+
+    # Content redaction state. When redaction is enabled and detection hasn't finished,
+    # transcript segments are withheld and `redaction_pending` is true so the UI shows a
+    # "redaction in progress" state instead of un-redacted text.
+    redaction_status: Optional[str] = None  # pending | processing | done | failed | None
+    redaction_pending: bool = False
 
     # Transcript pagination metadata
     total_segments: Optional[int] = None  # Total number of transcript segments

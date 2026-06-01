@@ -2,6 +2,10 @@
 
 Guidance for Claude Code working in this repository. See `docs/` for in-depth references; this file is the index.
 
+## ⚠️ CRITICAL: Always use `./opentr.sh` for the stack — never bare `docker compose`
+
+**Start, stop, restart, shell, and logs go through `./opentr.sh` (e.g. `./opentr.sh start dev`).** It composes the correct overlay set (base + dev override + GPU/storage/etc.) so containers get the **correct database, MinIO storage, and env**. Bare `docker compose up/restart/exec` skips those overlays and can attach to a differently-configured stack — symptoms: a backend that ran migrations against the wrong DB, "table/relation does not exist" errors, or storage pointing at the wrong volume. If something looks schema-broken, first re-launch with `./opentr.sh start dev` (rebuilds + runs startup migrations against the right DB) before debugging further. Tests run against the **live stack**, so the stack must be up via `./opentr.sh start dev` (not bare compose) for backend integration/E2E tests to hit the correct DB/storage.
+
 ## ⚠️ CRITICAL: Local Code vs Docker Hub Images
 
 **Production/nginx/PKI overlays serve pre-built images from Docker Hub. Your local code changes are NOT included until you rebuild.** Symptom: 404s on new endpoints, missing UI features.
@@ -187,6 +191,28 @@ Fork: `davidamacey/pyannote-audio@gpu-optimizations` (pip-installable). Embeddin
 - `MIN_SPEAKERS=1`, `MAX_SPEAKERS=20` defaults; raise `MAX_SPEAKERS` to 30–50+ for conferences (no hard cap — sklearn `AgglomerativeClustering`).
 
 Diagnostics: `python -m app.scripts.diarization_diag`. Raw data: `docs/diarization-vram-profile/README.md`. PR: pyannote-audio#1992.
+
+#### Boundary correction (issue #193)
+
+Two post-processing stages fix speaker mislabeling at turn boundaries. **All settings are DB-backed and live in the admin UI → Settings → Engine Configuration** (no restart); env (`ENGINE_BOUNDARY_*`) is fallback-only — no required `.env` vars.
+
+- **Boundary smoothing** (default ON, pure-CPU): collapses 1–3 word "wrong-speaker islands" flanked by the same speaker with no real pause. Runs at the `finalize_segments()` chokepoint. -32% WSER on the reporter's clip, AMI-regression-safe. Code: `boundary_resolver.py` (`smooth_word_speakers`, `BoundarySmoothingConfig`), `utils/segment_postprocess.py`, called from `tasks/transcription/core.py`. Key: `boundary_smoothing_enabled`.
+- **Acoustic backchannel re-check** (default OFF, experimental, GPU): re-embeds short disputed/overlap words and reassigns by voiceprint cosine — relabels existing words only, never invents speech. +~15% WSER on top of the smoother, ~1.9 s / 10-min file. Code: `acoustic_recheck` (`boundary_resolver.py`), `diarizer.embed_window`, wired in `engine/stages.py`; carried on `EngineConfig` to keep the engine DB-free. Keys: `boundary_acoustic_recheck_enabled`, `boundary_acoustic_cosine_margin` (0.05), `boundary_acoustic_max_word_dur` (1.0).
+- Settings API: `api/endpoints/engine_settings.py`; UI: `frontend/src/components/settings/EngineSettings.svelte`. Metrics (WSER/island/DER): `utils/diarization_metrics.py`. Benchmark: `scripts/benchmark_boundary.py`. GPU-free regression: `tests/integration/test_boundary_regression.py` (fixtures: `tests/fixtures/boundary/`). Docs: `docs-site/docs/features/boundary-correction.md`, `docs-site/docs/developer-guide/diarization-boundary-correction.md`.
+
+### Content Redaction (PII / profanity / toxicity moderation)
+
+Detect profane/offensive/toxic words + PII and mask them at every display/export surface
+with `[CATEGORY]` placeholders — **the full original transcript is always kept in the DB**;
+masking is a read-time transform. **Per-user feature, on by default** (Settings → Content
+Redaction), with an **admin enforcement floor** (Settings → Redaction Policy) that can *force*
+PII/toxicity/profanity and mandate censored exports for all users.
+
+- **Detect-once, cache-forever**: detection runs once per transcript (always, regardless of settings) in a dedicated **`celery-redaction` CPU service** (`redaction` queue); spans cache on `transcript_segment.redactions` + `.toxicity`. Enable/disable, categories, style, custom words, allowlist are all **read-time** (no recompute). Only segment text edits + admin model upgrades recompute.
+- **Detectors** (`backend/app/services/redaction/detectors/`): `wordlist` (profanity + custom, read-time regex), `pii_presidio` (Presidio regex + GLiNER names, cached), `toxicity` (Tiny-Toxic / multilingual XLM-R, cached), `llm` (optional, reuses `LLM_PROVIDER`). Models pre-downloaded via `scripts/download-models.py` (`DOWNLOAD_REDACTION_MODELS=true`), loaded only by the redaction worker (`PRELOAD_REDACTION_MODELS=true`) — never on the GPU worker.
+- **The one read-time masker**: `services/redaction/spans.py:apply_redactions`. Effective config = user prefs ∪ admin force (`services/redaction/config.py:resolve_effective_config`); owner reveal via `?redact=false` (audited), forced categories never reveal. Read surfaces: `formatting_service.format_transcript_segment` (API), `subtitle_service` (SRT/VTT/TXT exports), `transcript_builders` (redact-before-LLM).
+- **Settings**: per-user `/user-settings/redaction`; admin `/admin/redaction-policy`. NO `.env` vars — coded defaults in `core/constants.py` (`DEFAULT_REDACTION_*`). Frontend: `ContentRedactionSettings.svelte` (user) + `RedactionPolicySettings.svelte` (admin), `lib/api/redactionSettings.ts`, 8-locale i18n at parity.
+- **Tests**: `backend/tests/redaction/` (unit, GPU-free), `tests/integration/test_redaction_pipeline.py` (`-m integration`), `tests/e2e/test_redaction_e2e.py` (`-m e2e`), golden fixtures in `tests/fixtures/redaction/`. ML-dependent detector tests are `@pytest.mark.models` (skip in fast CI). Migration: `v364_add_content_redaction`. Timing: `redaction_start_ms`/`redaction_end_ms` on `FilePipelineTiming`.
 
 ### LLM features (optional)
 

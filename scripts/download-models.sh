@@ -194,6 +194,21 @@ download_models_docker() {
         whisper_model="large-v3-turbo"
     fi
 
+    # CrisperWhisper: only the CTranslate2 build loads in faster-whisper. The
+    # download container resolves WHISPER_MODEL through whisperx.load_model, which
+    # triggers the same HF snapshot download as every other CT2 model, so the
+    # weights are pre-fetched into the cache here (not just on first transcription).
+    if [[ "$whisper_model" == "nyrahealth/faster_CrisperWhisper" || \
+          "$whisper_model" == "crisperwhisper" ]]; then
+        whisper_model="nyrahealth/faster_CrisperWhisper"
+        print_info "CrisperWhisper selected (English-only, CTranslate2) — pre-downloading weights"
+    elif [[ "$whisper_model" == "nyrahealth/CrisperWhisper" ]]; then
+        # PyTorch checkpoint cannot be loaded by faster-whisper — remap to the CT2 build.
+        whisper_model="nyrahealth/faster_CrisperWhisper"
+        print_warning "nyrahealth/CrisperWhisper is a PyTorch checkpoint (not CTranslate2);"
+        print_warning "using nyrahealth/faster_CrisperWhisper instead for faster-whisper compatibility"
+    fi
+
     # Determine if GPU is available
     local use_gpu="false"
     local gpu_args=""

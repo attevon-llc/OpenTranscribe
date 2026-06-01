@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
+  import CacheSettings from './CacheSettings.svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
@@ -498,12 +499,22 @@
         {saving ? $t('settings.retention.savingButton') : $t('settings.retention.saveButton')}
       </button>
     </div>
+
+    <!-- Derived media cache (regenerable duplicates of originals) -->
+    <hr class="section-divider" />
+    <CacheSettings />
   {/if}
 </div>
 
 <style>
   .retention-settings {
     padding: 0.5rem 0;
+  }
+
+  .section-divider {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 1.5rem 0 0.5rem 0;
   }
 
   .title-row {

@@ -100,20 +100,26 @@ class AssemblyAIProvider(ASRProvider):
 
         aai.settings.api_key = self._api_key
 
+        # `speech_model` (singular) is deprecated server-side; the API requires
+        # `speech_models` — a priority list of model-id strings. Valid ids (AssemblyAI docs,
+        # /docs/pre-recorded-audio/select-the-speech-model): universal-3-pro (English+5),
+        # universal-2 (99-language), plus slam-1 (English, highest accuracy) and nano (budget).
         _model_map = {
-            "universal": aai.SpeechModel.best,
-            "universal-multilingual": aai.SpeechModel.best,
-            "nano": aai.SpeechModel.nano,
+            "universal": "universal-3-pro",
+            "universal-multilingual": "universal-2",
+            "slam-1": "slam-1",
+            "nano": "nano",
         }
-        speech_model = _model_map.get(self._model_name, aai.SpeechModel.best)
-        if self._model_name == "slam-1" and hasattr(aai.SpeechModel, "slam_1"):
-            speech_model = aai.SpeechModel.slam_1  # type: ignore[attr-defined]
+        speech_models = [_model_map.get(self._model_name, "universal-3-pro")]
+        # universal-2 is the multilingual model → let it auto-detect language.
+        detect_language = self._model_name == "universal-multilingual" or config.language == "auto"
 
         cfg = aai.TranscriptionConfig(
-            speech_model=speech_model,
+            speech_models=speech_models,
             speaker_labels=config.enable_diarization,
             speakers_expected=config.num_speakers,
-            language_code=None if config.language == "auto" else config.language,
+            language_detection=detect_language,
+            language_code=None if detect_language else config.language,
             punctuate=True,
             format_text=True,
             word_boost=config.vocabulary[:1000] if config.vocabulary else None,

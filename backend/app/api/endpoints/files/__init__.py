@@ -60,10 +60,7 @@ from .filtering import apply_all_filters
 from .filtering import get_metadata_filters
 from .reprocess import process_file_reprocess
 from .segments import router as segments_router
-from .streaming import get_content_streaming_response
-from .streaming import get_enhanced_video_streaming_response
 from .streaming import get_thumbnail_streaming_response
-from .streaming import get_video_streaming_response
 from .streaming import validate_file_exists
 from .subtitles import router as subtitles_router
 from .summary_status import router as summary_status_router
@@ -391,6 +388,13 @@ def get_media_file(
         description="Offset for transcript segment pagination",
         ge=0,
     ),
+    redact: bool = Query(
+        True,
+        description=(
+            "Apply content redaction to transcript text. Set false to view the original "
+            "(owner/admin only, for non-admin-forced categories; audited)."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -401,7 +405,9 @@ def get_media_file(
     """
     # segment_limit=0 means get all segments
     effective_limit = None if segment_limit == 0 else segment_limit
-    return get_media_file_detail(db, str(file_uuid), current_user, effective_limit, segment_offset)
+    return get_media_file_detail(
+        db, str(file_uuid), current_user, effective_limit, segment_offset, redact=redact
+    )
 
 
 @router.get("/{file_uuid}/info", response_model=MediaFilePublicInfo)
@@ -550,288 +556,242 @@ def get_media_file_stream_url(
         ) from e
 
 
-@router.get("/{file_uuid}/content")
-def get_media_file_content(
-    file_uuid: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """Get the content of a media file"""
-    is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-    return get_content_streaming_response(db_file)
+def _audio_source_extension(filename: str) -> str:
+    """Return the lowercase extension of a filename without the dot."""
+    return filename.rsplit(".", 1)[1].lower() if "." in filename else ""
 
 
-def _process_video_download_with_subtitles(
-    db: Session,
-    db_file: MediaFile,
-    user_id: int,
-    include_speakers: bool,
-    endpoint_name: str = "download",
-) -> Optional[StreamingResponse]:
-    """
-    Process a video file and embed subtitles for download.
+_DOWNLOAD_MODES = {
+    "video_subtitles",
+    "video_original",
+    "audio_mp3",
+    "audio_wav",
+    "audio_original",
+}
 
-    Args:
-        db: Database session
-        db_file: The media file database object
-        user_id: The user ID requesting the download
-        include_speakers: Whether to include speaker labels in subtitles
-        endpoint_name: Name of the endpoint for logging (e.g., "download" or "token endpoint")
 
-    Returns:
-        StreamingResponse with the processed video, or None if processing fails
-        (caller should fall back to original file on None)
+def _audio_passthrough(db_file: MediaFile, mode: str) -> bool:
+    """True when an audio mode can serve the original bytes without ffmpeg."""
+    if not (db_file.content_type and db_file.content_type.startswith("audio/")):
+        return False
+    src_ext = _audio_source_extension(str(db_file.filename))
+    return (
+        mode == "audio_original"
+        or (mode == "audio_mp3" and src_ext == "mp3")
+        or (mode == "audio_wav" and src_ext == "wav")
+    )
+
+
+def _resolve_ready_download(db_file: MediaFile, mode: str) -> dict | None:
+    """Return ``{"url", "filename"}`` if the asset can be served now, else None.
+
+    "Ready" means a direct passthrough (original bytes) or an already-cached derived
+    asset — both yield an instant presigned URL with no ffmpeg work.
     """
     from app.services.minio_service import MinIOService
+    from app.services.minio_service import get_presigned_download_url
     from app.services.video_processing_service import VideoProcessingService
 
-    file_id = int(db_file.id)
-    file_uuid = str(db_file.uuid)
+    filename = str(db_file.filename)
+    base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
 
-    try:
-        logger.info(
-            f"Processing video download with subtitles for file {file_uuid} "
-            f"(id: {file_id}, {endpoint_name})"
+    if mode == "video_original" or _audio_passthrough(db_file, mode):
+        url = get_presigned_download_url(
+            str(db_file.storage_path),
+            download_filename=filename,
+            content_type=str(db_file.content_type) if db_file.content_type else None,
         )
+        return {"url": url, "filename": filename}
 
-        # Initialize services
-        minio_service = MinIOService()
-        video_service = VideoProcessingService(minio_service)
+    service = VideoProcessingService(MinIOService())
 
-        # Check if ffmpeg is available
-        if not video_service.check_ffmpeg_availability():
-            logger.warning(
-                f"ffmpeg not available, serving original file for {file_uuid} "
-                f"(id: {file_id}, {endpoint_name})"
-            )
-            return None
-
-        logger.info(
-            f"ffmpeg available, processing video {file_uuid} (id: {file_id}) "
-            f"with subtitles ({endpoint_name})"
-        )
-
-        # Process video with embedded subtitles
-        cache_key = video_service.process_video_with_subtitles(
-            db=db,
-            file_id=file_id,
-            original_object_name=str(db_file.storage_path),
-            user_id=user_id,
-            include_speakers=include_speakers,
-            output_format="mp4",
-        )
-
-        logger.info(f"Video processing complete, streaming processed video: {cache_key}")
-
-        # Stream the processed video through backend
-        # Note: request object not available here, will handle basic streaming
-        file_stream, _, _, total_length = video_service._get_cache_file_stream(
-            cache_key,
-            "",  # type: ignore[arg-type]
-        )
-
-        # Generate proper filename for download
-        base_name = (
-            db_file.filename.rsplit(".", 1)[0] if "." in db_file.filename else db_file.filename
-        )
-        download_filename = f"{base_name}_with_subtitles.mp4"
-
-        headers = {
-            "Content-Disposition": f'attachment; filename="{download_filename}"',
-            "Content-Type": "video/mp4",
-            "Accept-Ranges": "bytes",
-        }
-
-        if total_length:
-            headers["Content-Length"] = str(total_length)
-
-        return StreamingResponse(content=file_stream, media_type="video/mp4", headers=headers)
-
-    except Exception as e:
-        logger.error(
-            f"Failed to process video with subtitles for file {file_id} ({endpoint_name}): {e}",
-            exc_info=True,
-        )
+    if mode == "video_subtitles":
+        if db_file.status != "completed":
+            raise HTTPException(status_code=422, detail="Transcript is not ready yet.")
+        cache_key = service.generate_cache_key(int(db_file.id), filename, include_speakers=True)
+        if service.is_video_cached(cache_key):
+            dl_name = f"{base_name}_with_subtitles.mp4"
+            return {
+                "url": service.presigned_download_url(cache_key, dl_name, "video/mp4"),
+                "filename": dl_name,
+            }
         return None
 
+    audio_format = mode.split("_", 1)[1]
+    cached = service.peek_cached_audio(filename, audio_format)
+    if cached:
+        cache_key, ext, content_type = cached
+        dl_name = f"{base_name}.{ext}"
+        return {
+            "url": service.presigned_download_url(cache_key, dl_name, content_type),
+            "filename": dl_name,
+        }
+    return None
 
-@router.get("/{file_uuid}/download")
-def download_media_file(
+
+def _ensure_prepare_enqueued(db_file: MediaFile, user_id: int, mode: str) -> None:
+    """Queue the ffmpeg prep task at most once per (file, mode) in-flight window.
+
+    A short-lived Redis NX guard collapses duplicate requests (double-click, a POST
+    plus the SSE stream, multiple tabs) into a single worker task. Once cached, the
+    ready path short-circuits before reaching here.
+    """
+    from app.core.redis import get_redis
+    from app.tasks.media_download import prepare_media_download_task
+
+    guard_key = f"download:prep:{db_file.id}:{mode}"
+    try:
+        first = get_redis().set(guard_key, "1", nx=True, ex=900)
+    except Exception:
+        first = True  # Redis hiccup → don't block the download
+    if first:
+        prepare_media_download_task.delay(file_id=int(db_file.id), user_id=user_id, mode=mode)
+
+
+@router.post("/{file_uuid}/prepare-download")
+def prepare_download(
     file_uuid: str,
-    token: str | None = None,
-    original: bool = Query(False, description="Download original file without subtitles"),
-    include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
+    mode: str = Query(
+        ..., description="video_subtitles|video_original|audio_mp3|audio_wav|audio_original"
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Download a media file (with embedded subtitles for videos by default)"""
-    is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+    """Prepare a media download.
 
-    # Check if this is a video file with available subtitles
-    is_video = db_file.content_type and db_file.content_type.startswith("video/")
-    has_transcript = db_file.status == "completed"
+    Returns one of:
+    - ``{"status": "ready", "url": <presigned>, "filename": <name>}`` — passthrough or
+      cache hit; the browser downloads straight from object storage.
+    - ``{"status": "processing", "file_id": <uuid>}`` — ffmpeg work was queued on the
+      download worker; the client opens the SSE stream (``download-stream``) to receive
+      progress and the final presigned URL.
+    """
+    if mode not in _DOWNLOAD_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
 
-    # Always embed subtitles for videos when available, unless user explicitly requests original
-    if is_video and has_transcript and not original:
-        response = _process_video_download_with_subtitles(
-            db=db,
-            db_file=db_file,
-            user_id=int(current_user.id),
-            include_speakers=include_speakers,
-            endpoint_name="download",
-        )
-        if response is not None:
-            return response
-        # Fall through to return original file on processing failure
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
 
-    # Return original file
-    return get_content_streaming_response(db_file)
+    ready = _resolve_ready_download(db_file, mode)
+    if ready:
+        return {"status": "ready", **ready}
+
+    _ensure_prepare_enqueued(db_file, int(current_user.id), mode)
+    return {"status": "processing", "file_id": str(db_file.uuid)}
 
 
-@router.get("/{file_uuid}/download-with-token")
-def download_media_file_with_token(
+@router.get("/{file_uuid}/download-stream")
+async def download_stream(
     file_uuid: str,
-    token: str,
-    original: bool = Query(False, description="Download original file without subtitles"),
-    include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
+    mode: str = Query(
+        ..., description="video_subtitles|video_original|audio_mp3|audio_wav|audio_original"
+    ),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ):
+    """Server-Sent Events stream that pushes download progress + the final URL.
+
+    The browser opens this (EventSource, cookie-authenticated) after a ``processing``
+    response. Events: ``progress`` (status text), ``ready`` (``{url, filename}``),
+    ``error`` (``{message}``). On (re)connect we re-check readiness first, so a dropped
+    connection still delivers once the worker has finished — no client polling.
     """
-    Download a media file using token parameter (for native browser downloads)
-    No authentication required - token is validated manually
-    """
-    from jose import JWTError
-    from jose import jwt
+    import asyncio
+    import contextlib
+    import json as _json
+
+    import redis.asyncio as aioredis
 
     from app.core.config import settings
+    from app.services.download_events import download_events_channel
 
-    try:
-        # Validate JWT token manually
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        user_uuid: str = payload.get("sub")
-        if user_uuid is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
+    if mode not in _DOWNLOAD_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
 
-        # Get user from database by UUID (token contains UUID, not integer ID)
-        user = db.query(User).filter(User.uuid == user_uuid).first()
-        if not user or not user.is_active:
-            raise HTTPException(status_code=401, detail="Invalid user")
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+    )
+    user_id = int(current_user.id)
 
-        # Get file and check ownership
-        is_admin = user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, int(user.id), is_admin=is_admin)
+    def sse(event: str, payload: dict) -> str:
+        return f"event: {event}\ndata: {_json.dumps(payload)}\n\n"
 
-        # Check if this is a video file with available subtitles
-        is_video = db_file.content_type and db_file.content_type.startswith("video/")
-        has_transcript = db_file.status == "completed"
+    async def event_stream():
+        # 1. Already available? deliver immediately (covers reconnects after completion).
+        try:
+            ready = _resolve_ready_download(db_file, mode)
+        except HTTPException as e:
+            yield sse("error", {"message": e.detail})
+            return
+        if ready:
+            yield sse("ready", ready)
+            return
 
-        # Always embed subtitles for videos when available, unless user explicitly requests original
-        if is_video and has_transcript and not original:
-            response = _process_video_download_with_subtitles(
-                db=db,
-                db_file=db_file,
-                user_id=int(user.id),
-                include_speakers=include_speakers,
-                endpoint_name="token endpoint",
-            )
-            if response is not None:
-                return response
-            # Fall through to return original file on processing failure
+        # 2. Make sure the work is running, then stream its events.
+        _ensure_prepare_enqueued(db_file, user_id, mode)
+        yield sse("progress", {"message": "Preparing your download…", "progress": 0})
 
-        # Return original file
-        return get_content_streaming_response(db_file)
+        from redis.exceptions import RedisError
+        from redis.exceptions import TimeoutError as RedisTimeoutError
 
-    except JWTError as e:
-        raise HTTPException(status_code=401, detail="Invalid token") from e
-    except Exception as e:
-        logger.error(f"Error in download with token: {e}")
-        raise HTTPException(status_code=401, detail="Authentication failed") from e
-
-
-@router.get("/{file_uuid}/video")
-async def video_file(
-    file_uuid: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
-):
-    """
-    Direct video endpoint for video player.
-
-    Security: Requires authentication OR file must be public.
-    For secure access, use GET /{file_uuid}/stream-url to get a presigned URL instead.
-    """
-    from app.utils.uuid_helpers import get_file_by_uuid
-
-    db_file = get_file_by_uuid(db, file_uuid)
-    validate_file_exists(db_file)
-
-    # Security check: must be public OR user must be authenticated and own file (or be admin)
-    is_public = getattr(db_file, "is_public", False)
-    if not is_public:
-        if not current_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required for private files. Use /stream-url endpoint for presigned URLs.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        is_admin = current_user.is_admin
-        if not is_admin and db_file.user_id != current_user.id:
-            from app.services.permission_service import PermissionService
-
-            perm = PermissionService.get_file_permission(db, int(db_file.id), int(current_user.id))
-            if not perm:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied to this file",
+        client = aioredis.from_url(
+            settings.REDIS_URL, health_check_interval=30, socket_keepalive=True
+        )
+        pubsub = client.pubsub()
+        await pubsub.subscribe(download_events_channel(file_uuid))
+        try:
+            while True:
+                try:
+                    msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
+                except (RedisTimeoutError, asyncio.TimeoutError):
+                    yield ": keepalive\n\n"  # benign idle read — keep the SSE open
+                    continue
+                except RedisError as e:
+                    logger.warning(f"Download SSE pubsub error for {file_uuid}: {e}")
+                    yield sse("error", {"message": "Connection interrupted."})
+                    return
+                if msg is None:
+                    yield ": keepalive\n\n"  # comment frame keeps proxies from closing
+                    continue
+                try:
+                    data = _json.loads(msg["data"])
+                except Exception:
+                    logger.debug("Skipping malformed download event payload")
+                    continue
+                if data.get("mode") != mode:
+                    continue
+                status = data.get("status")
+                if status == "completed" and data.get("url"):
+                    yield sse("ready", {"url": data["url"], "filename": data.get("filename", "")})
+                    return
+                if status == "error":
+                    yield sse("error", {"message": data.get("message", "Download failed.")})
+                    return
+                yield sse(
+                    "progress",
+                    {
+                        "message": data.get("message", ""),
+                        "progress": data.get("progress", 0),
+                    },
                 )
+        except asyncio.CancelledError:
+            raise
+        finally:
+            with contextlib.suppress(Exception):
+                await pubsub.unsubscribe(download_events_channel(file_uuid))
+                await pubsub.close()
+                await client.close()
 
-    range_header = request.headers.get("range") or ""
-    return get_video_streaming_response(db_file, range_header)
-
-
-@router.get("/{file_uuid}/simple-video")
-async def simple_video(
-    file_uuid: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
-):
-    """
-    Enhanced video streaming endpoint with YouTube-like streaming.
-
-    Security: Requires authentication OR file must be public.
-    For secure access, use GET /{file_uuid}/stream-url to get a presigned URL instead.
-    """
-    from app.utils.uuid_helpers import get_file_by_uuid
-
-    db_file = get_file_by_uuid(db, file_uuid)
-    validate_file_exists(db_file)
-
-    # Security check: must be public OR user must be authenticated and own file (or be admin)
-    is_public = getattr(db_file, "is_public", False)
-    if not is_public:
-        if not current_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required for private files. Use /stream-url endpoint for presigned URLs.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        is_admin = current_user.is_admin
-        if not is_admin and db_file.user_id != current_user.id:
-            from app.services.permission_service import PermissionService
-
-            perm = PermissionService.get_file_permission(db, int(db_file.id), int(current_user.id))
-            if not perm:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied to this file",
-                )
-
-    range_header = request.headers.get("range") or ""
-    return get_enhanced_video_streaming_response(db_file, range_header)
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # disable nginx buffering for SSE
+        },
+    )
 
 
 @router.get("/{file_uuid}/thumbnail")
@@ -1022,9 +982,6 @@ __all__ = [
     "get_stream_url_info",
     "apply_all_filters",
     "get_metadata_filters",
-    "get_content_streaming_response",
-    "get_video_streaming_response",
-    "get_enhanced_video_streaming_response",
     "validate_file_exists",
     "get_thumbnail_streaming_response",
 ]

@@ -170,6 +170,8 @@ Export subtitles for multiple files at once:
 
 Up to 100 files can be exported in a single bulk operation. Files that are not yet completed are automatically skipped.
 
+Bulk subtitle export is **asynchronous**: the ZIP is built on the download worker while live progress streams to the browser over SSE, then delivered via a short-lived presigned URL -- rather than a synchronous download that blocks until the archive is ready.
+
 ### Video Download with Embedded Subtitles
 
 When downloading a video file, OpenTranscribe automatically embeds subtitles using FFmpeg:

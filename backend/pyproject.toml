@@ -76,6 +76,7 @@ markers = [
     "pki: PKI certificate tests",
     "e2e: end-to-end browser tests",
     "integration: integration tests requiring running dev environment",
+    "models: tests requiring ML model weights (Presidio/GLiNER/toxicity) — skipped in fast CI",
 ]
 filterwarnings = ["ignore::pytest.PytestUnknownMarkWarning"]
 norecursedirs = ["tests/e2e"]

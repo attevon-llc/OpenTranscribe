@@ -164,6 +164,14 @@ Not automatically, but it can:
 
 See [Speaker Management](./user-guide/speaker-management.md) for details.
 
+### Why are some speaker labels corrected automatically?
+
+OpenTranscribe applies diarization boundary correction to fix speaker mislabeling at turn boundaries. Word-boundary smoothing (default on) collapses short "wrong-speaker islands," and an optional acoustic re-check re-embeds short disputed words and reassigns them by voiceprint. This relabels existing words only -- it never invents speech. See [Boundary Correction](./features/boundary-correction.md).
+
+### Can OpenTranscribe redact PII, profanity, or toxic content?
+
+Yes. Content redaction detects PII, profanity, and toxic/offensive words and masks them with `[CATEGORY]` placeholders at every display and export surface. Masking is a read-time transform -- the full original transcript is always kept in the database. It is a per-user feature, **on by default** (Settings → Content Redaction), with an admin enforcement floor (Redaction Policy) that can force categories on and mandate censored exports for all users. See [Content Redaction](./features/content-redaction.md).
+
 ### How many speakers can it detect?
 
 Default: **1-20 speakers**

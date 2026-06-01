@@ -29,6 +29,7 @@
     provider: '' as ASRProvider | '',
     model_name: '',
     api_key: '',
+    access_key_id: '',
     region: '',
     base_url: '',
     is_active: true,
@@ -69,7 +70,8 @@
     formData.name.trim() &&
     formData.provider &&
     formData.model_name.trim() &&
-    (formData.provider === 'local' || !selectedProvider?.requires_api_key || formData.api_key.trim() || editingConfig?.has_api_key)
+    (formData.provider === 'local' || !selectedProvider?.requires_api_key || formData.api_key.trim() || editingConfig?.has_api_key) &&
+    (!selectedProvider?.requires_access_key_id || formData.access_key_id.trim() || editingConfig?.has_access_key_id)
   );
 
   $: needsRegion = formData.provider === 'azure' || formData.provider === 'aws';
@@ -81,6 +83,7 @@
       provider: config.provider,
       model_name: config.model_name,
       api_key: '',
+      access_key_id: '',
       region: config.region || '',
       base_url: config.base_url || '',
       is_active: config.is_active,
@@ -96,6 +99,7 @@
       provider: '' as ASRProvider | '',
       model_name: '',
       api_key: '',
+      access_key_id: '',
       region: '',
       base_url: '',
       is_active: true,
@@ -132,6 +136,7 @@
         is_shared: formData.is_shared,
       };
       if (formData.api_key.trim()) payload.api_key = formData.api_key.trim();
+      if (formData.access_key_id.trim()) payload.access_key_id = formData.access_key_id.trim();
       if (formData.region.trim()) payload.region = formData.region.trim();
       if (formData.base_url.trim()) payload.base_url = formData.base_url.trim();
 
@@ -164,6 +169,7 @@
       };
       if (formData.api_key.trim()) params.api_key = formData.api_key.trim();
       else if (editingConfig?.has_api_key) params.config_id = editingConfig.uuid;
+      if (formData.access_key_id.trim()) params.access_key_id = formData.access_key_id.trim();
       if (formData.region.trim()) params.region = formData.region.trim();
       if (formData.base_url.trim()) params.base_url = formData.base_url.trim();
 
@@ -219,6 +225,7 @@
             {#each providers as p}
               <option value={p.provider}>
                 {ASRSettingsApi.getProviderDisplayName(p.provider)}
+                {#if p.status === 'experimental'} &#9888; ({$t('settings.asrProvider.experimentalShort')}){/if}
                 {#if !p.sdk_available} ({$t('settings.asrProvider.missingSDK')}){/if}
               </option>
             {/each}
@@ -281,10 +288,25 @@
             {/if}
           </div>
 
-          <!-- API Key -->
+          <!-- Access Key ID (AWS) -->
+          {#if selectedProvider.requires_access_key_id}
+            <div class="form-group">
+              <label for="asr-access-key-id">{$t('settings.asrProvider.fields.accessKeyId')}</label>
+              <input
+                id="asr-access-key-id"
+                type="text"
+                bind:value={formData.access_key_id}
+                placeholder={editingConfig?.has_access_key_id ? '(stored — leave blank to keep)' : 'Enter Access Key ID'}
+                class="form-input"
+                autocomplete="off"
+              />
+            </div>
+          {/if}
+
+          <!-- API Key / Secret Access Key -->
           {#if selectedProvider.requires_api_key}
             <div class="form-group">
-              <label for="asr-apikey">{$t('settings.asrProvider.fields.apiKey')}</label>
+              <label for="asr-apikey">{selectedProvider.requires_access_key_id ? $t('settings.asrProvider.fields.secretAccessKey') : $t('settings.asrProvider.fields.apiKey')}</label>
               <div class="input-with-toggle">
                 <input
                   id="asr-apikey"

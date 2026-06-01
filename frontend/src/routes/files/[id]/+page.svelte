@@ -3,7 +3,13 @@
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { writable, get } from 'svelte/store';
   import axiosInstance from '$lib/axios';
-  import { formatDuration, formatSrtTimestamp, formatVttTimestamp } from '$lib/utils/formatting';
+  import { formatDuration } from '$lib/utils/formatting';
+  import { loadTxtPrefs, saveTxtPrefs } from '$lib/export/txtExportPrefs';
+  import {
+    buildExportContent,
+    type ExportFormat,
+    type ExportStrings,
+  } from '$lib/export/transcriptExport';
   import { websocketStore } from '$stores/websocket';
 
   // Import new components
@@ -130,18 +136,7 @@
   let showExportConfirmation = false;
   let pendingExportFormat = '';
 
-  // TXT export options modal state + localStorage persistence
-  const TXT_PREF_KEY = 'opentranscribe.txtExportPrefs';
-  function loadTxtPrefs(): { includeTimestamps: boolean; includeSpeakers: boolean } {
-    try {
-      const raw = localStorage.getItem(TXT_PREF_KEY);
-      if (raw) return { includeTimestamps: true, includeSpeakers: true, ...JSON.parse(raw) };
-    } catch {}
-    return { includeTimestamps: true, includeSpeakers: true };
-  }
-  function saveTxtPrefs(prefs: { includeTimestamps: boolean; includeSpeakers: boolean }) {
-    try { localStorage.setItem(TXT_PREF_KEY, JSON.stringify(prefs)); } catch {}
-  }
+  // TXT export options modal state (localStorage persistence in $lib/export/txtExportPrefs)
   let showTxtExportOptions = false;
   let txtExportOptions = { includeTimestamps: true, includeSpeakers: true, includeComments: false, hasComments: false };
 
@@ -1220,246 +1215,31 @@
     }
 
     try {
-      // Sort transcript data by start_time to ensure proper ordering
-      transcriptData = [...transcriptData].sort((a: any, b: any) => a.start_time - b.start_time);
-
-      // Create speaker display name mapping
-      const speakerMapping = new Map();
-      speakerList.forEach((speaker: any) => {
-        speakerMapping.set(speaker.name, speaker.display_name || speaker.name);
-      });
-
-      // Helper function to get speaker display name
-      const getSpeakerDisplayName = (segment: any) => {
-        const speakerName = segment.speaker_label || segment.speaker?.name || $t('fileDetail.speakerDefault');
-        return speakerMapping.get(speakerName) || segment.speaker?.display_name || speakerName;
-      };
-
-      // Client-side export with updated speaker names
-      let content = '';
       const filename = file.filename.replace(/\.[^/.]+$/, '');
 
-      switch (format) {
-        case 'txt':
-          // Group consecutive segments by the same speaker
-          const speakerGroups: Array<{ speaker: string; startTime: number; endTime: number; texts: string[] }> = [];
-          let currentGroup: typeof speakerGroups[0] | null = null;
+      // Resolve i18n strings here (Svelte store access stays in the page); the pure
+      // serializer in $lib/export consumes them so it can remain store-free.
+      const translations: ExportStrings = {
+        speakerDefault: $t('fileDetail.speakerDefault'),
+        userComment: $t('fileDetail.userComment'),
+        commentType: $t('fileDetail.commentType'),
+        csvHeaderDefault: $t('fileDetail.csvHeaderDefault'),
+        csvHeaderWithComments: $t('fileDetail.csvHeaderWithComments'),
+      };
 
-          for (const seg of transcriptData) {
-            const speaker = getSpeakerDisplayName(seg);
-            const startTime = seg.start_time || seg.start || 0;
-            const endTime = seg.end_time || seg.end || 0;
-
-            if (currentGroup && currentGroup.speaker === speaker) {
-              currentGroup.endTime = endTime;
-              currentGroup.texts.push(seg.text);
-            } else {
-              if (currentGroup) speakerGroups.push(currentGroup);
-              currentGroup = { speaker, startTime, endTime, texts: [seg.text] };
-            }
-          }
-          if (currentGroup) speakerGroups.push(currentGroup);
-
-          // Format each group as a single block
-          let segments = speakerGroups.map(group => {
-            const parts: string[] = [];
-            if (txtOptions?.includeTimestamps !== false) {
-              parts.push(`[${formatDuration(group.startTime)} --> ${formatDuration(group.endTime)}]`);
-            }
-            if (txtOptions?.includeSpeakers !== false) {
-              parts.push(`${group.speaker}:`);
-            }
-            const header = parts.join(' ');
-            const text = group.texts.join(' ');
-            return header ? `${header}\n${text}` : text;
-          });
-
-          // Add comments if requested (comments always retain their timestamps since they are positional)
-          if (includeComments && fileComments.length > 0) {
-            const commentLines = fileComments.map((comment: any) => {
-              const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
-              return `[${formatDuration(comment.timestamp)}] USER COMMENT: ${userName}: ${comment.text}`;
-            });
-            segments = mergeCommentsWithTranscript(segments, commentLines, transcriptData, fileComments);
-          }
-
-          content = segments.join('\n\n');
-          break;
-        case 'json':
-          const jsonData: any = {
-            filename: file.filename,
-            duration: file.duration,
-            segments: transcriptData.map((seg: any) => ({
-              start_time: seg.start_time || seg.start || 0,
-              end_time: seg.end_time || seg.end || 0,
-              speaker: getSpeakerDisplayName(seg),
-              text: seg.text
-            }))
-          };
-
-          // Add comments to JSON if requested
-          if (includeComments && fileComments.length > 0) {
-            jsonData.comments = fileComments.map((comment: any) => ({
-              timestamp: comment.timestamp,
-              user: comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous',
-              text: comment.text
-            }));
-          }
-
-          content = JSON.stringify(jsonData, null, 2);
-          break;
-        case 'csv':
-          let csvHeader = $t('fileDetail.csvHeaderDefault');
-          let csvRows = transcriptData.map((seg: any) => {
-            const start = seg.start_time || seg.start || 0;
-            const end = seg.end_time || seg.end || 0;
-            const speaker = getSpeakerDisplayName(seg);
-            // Escape CSV fields properly
-            const escapedText = `"${seg.text.replace(/"/g, '""')}"`;
-            return `${start},${end},"${speaker}",${escapedText}`;
-          });
-
-          // Add comments to CSV if requested
-          if (includeComments && fileComments.length > 0) {
-            // Add comment column to header if comments are included
-            csvHeader = $t('fileDetail.csvHeaderWithComments');
-
-            // Add comments as separate rows
-            const commentRows = fileComments.map((comment: any) => {
-              const timestamp = comment.timestamp;
-              const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
-              const escapedText = `"${comment.text.replace(/"/g, '""')}"`;
-              // Add comment rows with user info in the Speaker column and 'COMMENT' in Comment Type
-              return `${timestamp},${timestamp},"${$t('fileDetail.userComment')}: ${userName}",${escapedText},"${$t('fileDetail.commentType')}"`;
-            });
-
-            // Combine segment rows (with empty Comment Type) with comment rows
-            csvRows = csvRows.map((row: string) => row + ',""');
-            csvRows = mergeSortedArrays(csvRows, commentRows,
-              transcriptData.map((seg: any) => seg.start_time || seg.start || 0),
-              fileComments.map((comment: any) => comment.timestamp));
-          }
-
-          content = csvHeader + '\n' + csvRows.join('\n');
-          break;
-        case 'srt':
-          let srtItems: Array<{
-            index: number;
-            startTime: number;
-            endTime: number;
-            formattedStart: string;
-            formattedEnd: string;
-            text: string;
-            isComment: boolean;
-          }> = [];
-          let counter = 1;
-
-          // Add transcript segments
-          transcriptData.forEach((seg: any) => {
-            const startTime = formatSrtTimestamp(seg.start_time || seg.start || 0);
-            const endTime = formatSrtTimestamp(seg.end_time || seg.end || 0);
-            const speaker = getSpeakerDisplayName(seg);
-            const text = `${speaker}: ${seg.text}`;
-            srtItems.push({
-              index: counter++,
-              startTime: seg.start_time || seg.start || 0,
-              endTime: seg.end_time || seg.end || 0,
-              formattedStart: startTime,
-              formattedEnd: endTime,
-              text: text,
-              isComment: false
-            });
-          });
-
-          // Add comments if requested
-          if (includeComments && fileComments.length > 0) {
-            fileComments.forEach(comment => {
-              const timestamp = comment.timestamp;
-              const formattedTime = formatSrtTimestamp(timestamp);
-              const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
-              const text = `${$t('fileDetail.userComment')}: ${userName}: ${comment.text}`;
-
-              srtItems.push({
-                index: counter++,
-                startTime: timestamp,
-                endTime: timestamp + 2, // Show comment for 2 seconds
-                formattedStart: formattedTime,
-                formattedEnd: formatSrtTimestamp(timestamp + 2),
-                text: text,
-                isComment: true
-              });
-            });
-
-            // Sort by start time
-            srtItems.sort((a: any, b: any) => a.startTime - b.startTime);
-
-            // Reassign indices after sorting
-            srtItems.forEach((item: any, idx: number) => {
-              item.index = idx + 1;
-            });
-          }
-
-          // Generate SRT content
-          content = srtItems.map((item: any) =>
-            `${item.index}\n${item.formattedStart} --> ${item.formattedEnd}\n${item.text}\n`
-          ).join('\n');
-          break;
-        case 'vtt':
-          let vttItems: Array<{
-            startTime: number;
-            endTime: number;
-            formattedStart: string;
-            formattedEnd: string;
-            text: string;
-            isComment: boolean;
-          }> = [];
-
-          // Add transcript segments
-          transcriptData.forEach((seg: any) => {
-            const startTime = formatVttTimestamp(seg.start_time || seg.start || 0);
-            const endTime = formatVttTimestamp(seg.end_time || seg.end || 0);
-            const speaker = getSpeakerDisplayName(seg);
-            const text = `${speaker}: ${seg.text}`;
-            vttItems.push({
-              startTime: seg.start_time || seg.start || 0,
-              endTime: seg.end_time || seg.end || 0,
-              formattedStart: startTime,
-              formattedEnd: endTime,
-              text: text,
-              isComment: false
-            });
-          });
-
-          // Add comments if requested
-          if (includeComments && fileComments.length > 0) {
-            fileComments.forEach(comment => {
-              const timestamp = comment.timestamp;
-              const formattedTime = formatVttTimestamp(timestamp);
-              const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
-              const text = `${$t('fileDetail.userComment')}: ${userName}: ${comment.text}`;
-
-              vttItems.push({
-                startTime: timestamp,
-                endTime: timestamp + 2, // Show comment for 2 seconds
-                formattedStart: formattedTime,
-                formattedEnd: formatVttTimestamp(timestamp + 2),
-                text: text,
-                isComment: true
-              });
-            });
-
-            // Sort by start time
-            vttItems.sort((a: any, b: any) => a.startTime - b.startTime);
-          }
-
-          // Generate VTT content
-          content = 'WEBVTT\n\n' + vttItems.map((item: any) =>
-            `${item.formattedStart} --> ${item.formattedEnd}\n${item.text}\n`
-          ).join('\n');
-          break;
-        default:
-          content = transcriptData.map((seg: any) => seg.text).join(' ');
-      }
+      const content = buildExportContent(
+        format as ExportFormat,
+        transcriptData,
+        speakerList,
+        fileComments,
+        {
+          includeComments,
+          txtOptions,
+          filename,
+          jsonMeta: { filename: file.filename, duration: file.duration },
+          translations,
+        }
+      );
 
       const blob = new Blob([content], { type: 'text/plain' });
       const url = window.URL.createObjectURL(blob);
@@ -1500,84 +1280,6 @@
       includeTimestamps: txtExportOptions.includeTimestamps,
       includeSpeakers: txtExportOptions.includeSpeakers
     });
-  }
-
-  /**
-   * Merges transcript segments and comments in chronological order
-   * @param {string[]} segments - Array of formatted transcript segment strings
-   * @param {string[]} commentLines - Array of formatted comment strings
-   * @param {any[]} transcriptData - Raw transcript data with timestamps
-   * @param {any[]} comments - Raw comments data with timestamps
-   * @returns {string[]} - Combined array of segments and comments in order
-   */
-  function mergeCommentsWithTranscript(segments: string[], commentLines: string[], transcriptData: any[], comments: any[]): string[] {
-    // Create arrays of timestamps for sorting
-    const segmentTimes = transcriptData.map((seg: any) => seg.start_time || seg.start || 0);
-    const commentTimes = comments.map((comment: any) => comment.timestamp);
-
-    // Create merged array of segment and comment entries
-    let merged = [];
-    let si = 0, ci = 0;
-
-    // Merge two sorted arrays (segments and comments) by timestamp
-    while (si < segments.length && ci < commentLines.length) {
-      if (segmentTimes[si] <= commentTimes[ci]) {
-        merged.push(segments[si]);
-        si++;
-      } else {
-        merged.push(commentLines[ci]);
-        ci++;
-      }
-    }
-
-    // Add any remaining segments
-    while (si < segments.length) {
-      merged.push(segments[si]);
-      si++;
-    }
-
-    // Add any remaining comments
-    while (ci < commentLines.length) {
-      merged.push(commentLines[ci]);
-      ci++;
-    }
-
-    return merged;
-  }
-
-  /**
-   * Merges two arrays based on their corresponding timestamp arrays
-   * @param {any[]} arr1 - First array
-   * @param {any[]} arr2 - Second array
-   * @param {number[]} times1 - Timestamps for first array
-   * @param {number[]} times2 - Timestamps for second array
-   * @returns {any[]} - Merged array in chronological order
-   */
-  function mergeSortedArrays<T>(arr1: T[], arr2: T[], times1: number[], times2: number[]): T[] {
-    let merged = [];
-    let i = 0, j = 0;
-
-    while (i < arr1.length && j < arr2.length) {
-      if (times1[i] <= times2[j]) {
-        merged.push(arr1[i]);
-        i++;
-      } else {
-        merged.push(arr2[j]);
-        j++;
-      }
-    }
-
-    while (i < arr1.length) {
-      merged.push(arr1[i]);
-      i++;
-    }
-
-    while (j < arr2.length) {
-      merged.push(arr2[j]);
-      j++;
-    }
-
-    return merged;
   }
 
   async function handleSaveSpeakerNames() {

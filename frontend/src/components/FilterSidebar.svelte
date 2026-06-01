@@ -702,6 +702,7 @@
       <DatePicker
         isRange
         enableFutureDates
+        includeFont={false}
         bind:isOpen={datePickerOpen}
         bind:startDate={dpStartDate}
         bind:endDate={dpEndDate}

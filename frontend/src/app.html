@@ -2,8 +2,9 @@
 <html lang="en">
   <head>
     <!-- Immediate theme initialization to prevent flashing.
-         Render-blocking external script (runs before first paint) so the production
-         CSP can drop `script-src 'unsafe-inline'`. Source: /static/theme.js -->
+         Render-blocking external script (runs before first paint), served from
+         /static/theme.js — kept external so the CSP can omit script-src unsafe-inline
+         (SvelteKit's kit.csp hash-mode meta governs scripts; see svelte.config.js). -->
     <script src="/theme.js"></script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />

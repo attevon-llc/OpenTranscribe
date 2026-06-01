@@ -28,6 +28,7 @@
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
   import TranscriptModal from '$components/TranscriptModal.svelte';
+  import TxtExportOptionsModal from '$components/fileDetail/TxtExportOptionsModal.svelte';
   import { isLLMAvailable } from '$stores/llmStatus';
   import { authStore } from '$stores/auth';
   import { transcriptStore, processedTranscriptSegments } from '$stores/transcriptStore';
@@ -2428,68 +2429,19 @@
 />
 
 <!-- TXT Export Options Modal -->
-{#if showTxtExportOptions}
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-overlay" on:wheel|stopPropagation on:touchmove|stopPropagation>
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 class="modal-title">{$t('exportOptions.title')}</h2>
-          <button
-            class="modal-close-btn"
-            on:click={() => showTxtExportOptions = false}
-            aria-label={$t('modal.closeDialog')}
-          >
-            ×
-          </button>
-        </div>
-
-        <div class="modal-body">
-          <p class="modal-message">{$t('exportOptions.description')}</p>
-          <div class="export-options-list">
-            <label class="export-option-label">
-              <input type="checkbox" bind:checked={txtExportOptions.includeTimestamps} />
-              {$t('exportOptions.includeTimestamps')}
-            </label>
-            <label class="export-option-label" class:disabled-option={diarizationDisabled}>
-              <input type="checkbox" bind:checked={txtExportOptions.includeSpeakers} disabled={diarizationDisabled} />
-              {$t('exportOptions.includeSpeakers')}
-              {#if diarizationDisabled}
-                <span class="option-hint">{$t('exportOptions.diarizationDisabledHint')}</span>
-              {/if}
-            </label>
-            {#if txtExportOptions.hasComments}
-              <label class="export-option-label">
-                <input type="checkbox" bind:checked={txtExportOptions.includeComments} />
-                {$t('exportOptions.includeComments')}
-              </label>
-            {/if}
-          </div>
-          {#if redactionActive && !showOriginal}
-            <p class="export-redaction-note">
-              <svg class="export-redaction-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              {$t('settings.contentRedaction.exportRedactedNote')}
-              {#if canViewOriginal}
-                <span class="export-redaction-hint">
-                  {$t('settings.contentRedaction.exportOriginalHint')}
-                </span>
-              {/if}
-            </p>
-          {/if}
-        </div>
-
-        <div class="modal-footer">
-          <button class="btn btn-primary" on:click={handleTxtExportConfirm}>
-            {$t('exportOptions.export')}
-          </button>
-          <button class="btn btn-cancel" on:click={() => showTxtExportOptions = false}>
-            {$t('common.cancel')}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-{/if}
+<TxtExportOptionsModal
+  bind:show={showTxtExportOptions}
+  bind:includeTimestamps={txtExportOptions.includeTimestamps}
+  bind:includeSpeakers={txtExportOptions.includeSpeakers}
+  bind:includeComments={txtExportOptions.includeComments}
+  hasComments={txtExportOptions.hasComments}
+  {diarizationDisabled}
+  {redactionActive}
+  {showOriginal}
+  {canViewOriginal}
+  on:confirm={handleTxtExportConfirm}
+  on:close={() => showTxtExportOptions = false}
+/>
 
 <!-- Speaker Profile Confirmation Modal -->
 {#if showSpeakerProfileConfirmation}
@@ -2983,13 +2935,6 @@
     font-size: 0.95rem;
   }
 
-  .export-options-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-top: 1rem;
-  }
-
   /* Content redaction: transcript show-original toggle bar + export note */
   .redaction-pending {
     display: flex;
@@ -3068,52 +3013,6 @@
     color: var(--primary-hover);
     background-color: rgba(var(--primary-color-rgb), 0.1);
   }
-  .export-redaction-note {
-    margin-top: 1rem;
-    padding: 0.6rem 0.75rem;
-    background: rgba(var(--warning-color-rgb, 234, 179, 8), 0.12);
-    border-radius: 6px;
-    font-size: 0.85rem;
-    color: var(--text-color);
-  }
-  .export-redaction-icon {
-    vertical-align: -2px;
-    margin-right: 0.3rem;
-    color: var(--warning-color);
-  }
-  .export-redaction-hint {
-    display: block;
-    margin-top: 0.25rem;
-    color: var(--text-secondary);
-  }
-
-  .export-option-label {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    cursor: pointer;
-    font-size: 0.95rem;
-    color: var(--text-color);
-  }
-
-  .export-option-label input[type="checkbox"] {
-    width: 1rem;
-    height: 1rem;
-    cursor: pointer;
-    accent-color: var(--primary-color);
-  }
-
-  .export-option-label.disabled-option {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .option-hint {
-    font-size: 0.8rem;
-    color: var(--text-secondary-color);
-    font-style: italic;
-  }
-
   .modal-footer {
     display: flex;
     gap: 0.75rem;

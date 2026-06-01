@@ -210,9 +210,11 @@
   }
 
   // Function to position tooltip dynamically
-  function positionTooltip(event) {
-    const rect = event.target.closest('.info-tooltip').getBoundingClientRect();
-    const tooltip = event.target.closest('.info-tooltip');
+  function positionTooltip(event: MouseEvent) {
+    const target = event.target as Element | null;
+    const tooltip = target?.closest('.info-tooltip');
+    if (!(tooltip instanceof HTMLElement)) return;
+    const rect = tooltip.getBoundingClientRect();
 
     tooltip.style.setProperty('--tooltip-left', `${rect.left + rect.width / 2}px`);
     tooltip.style.setProperty('--tooltip-top', `${rect.bottom}px`);

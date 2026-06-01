@@ -60,7 +60,7 @@
         {#if collection.default_prompt_name}
           <span class="badge prompt">{collection.default_prompt_name}</span>
         {/if}
-        {#if collection.share_count > 0}
+        {#if (collection.share_count ?? 0) > 0}
           <ShareBadge shareCount={collection.share_count} isShared={true} />
         {/if}
       </div>

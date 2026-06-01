@@ -31,7 +31,7 @@
   import TxtExportOptionsModal from '$components/fileDetail/TxtExportOptionsModal.svelte';
   import { isLLMAvailable } from '$stores/llmStatus';
   import { authStore } from '$stores/auth';
-  import { transcriptStore, processedTranscriptSegments } from '$stores/transcriptStore';
+  import { transcriptStore, processedTranscriptSegments, type SpeakerInfo } from '$stores/transcriptStore';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
@@ -73,7 +73,12 @@
   let editingSegmentId: string | number | null = null;
   let editingSegmentText = '';
   let isEditingSpeakers = false;
-  let speakerList: any[] = [];
+  interface SpeakerItem extends SpeakerInfo {
+    profile?: { uuid: string; name: string } | null;
+    profile_suggestions?: Array<Record<string, any>>;
+    [key: string]: any;
+  }
+  let speakerList: SpeakerItem[] = [];
   let originalSpeakerNames: Map<string, string> = new Map(); // Track original names for change detection
   let speakerNamesChanged = false; // Track if any speaker names have been modified
   let reprocessing = false;
@@ -159,12 +164,17 @@
       _prevSpeakerConfirm = showSpeakerProfileConfirmation;
     }
   }
-  let pendingSpeakerUpdate = null;
+  type PendingSpeakerUpdate = {
+    speakerId: number | string;
+    newName: string;
+    speaker: SpeakerItem;
+  };
+  let pendingSpeakerUpdate: PendingSpeakerUpdate | null = null;
   let profileUpdateMessage = '';
   let profileUpdateTitle = '';
 
   // Bulk speaker save confirmation state
-  let speakerConfirmationQueue = [];
+  let speakerConfirmationQueue: SpeakerItem[] = [];
   let currentConfirmationIndex = 0;
   let bulkSaveInProgress = false;
   let bulkSaveDecisions = new Map();
@@ -809,7 +819,7 @@
     // Validate the speaker name
     const validation = validateSpeakerName(newName, speakerId);
     if (!validation.isValid) {
-      toastStore.error(validation.error);
+      toastStore.error(validation.error ?? $t('speakerValidation.nameRequired'));
       return;
     }
 
@@ -896,11 +906,11 @@
       const speaker = speakerConfirmationQueue[currentConfirmationIndex];
       pendingSpeakerUpdate = {
         speakerId: speaker.uuid,
-        newName: speaker.display_name,
+        newName: speaker.display_name ?? speaker.name,
         speaker
       };
       profileUpdateTitle = $t('fileDetail.updateSpeakerProfileCounter', { current: currentConfirmationIndex + 1, total: speakerConfirmationQueue.length });
-      profileUpdateMessage = $t('fileDetail.profileLinkedMessage', { displayName: speaker.display_name || speaker.name, profileName: speaker.profile.name });
+      profileUpdateMessage = $t('fileDetail.profileLinkedMessage', { displayName: speaker.display_name || speaker.name, profileName: speaker.profile?.name ?? '' });
       showSpeakerProfileConfirmation = true;
     }
   }
@@ -1299,7 +1309,7 @@
 
       // Validate each speaker name
       for (const speaker of speakersToUpdate) {
-        const validation = validateSpeakerName(speaker.display_name, speaker.uuid);
+        const validation = validateSpeakerName(speaker.display_name ?? '', speaker.uuid);
         if (!validation.isValid) {
           toastStore.error(`${speaker.name}: ${validation.error}`);
           savingSpeakers = false;
@@ -1309,7 +1319,7 @@
 
       // Check for speakers that need profile confirmation (skip when diarization disabled)
       const speakersNeedingConfirmation = diarizationDisabled ? [] : speakersToUpdate.filter(speaker =>
-        speaker.profile && speaker.profile.name !== speaker.display_name.trim()
+        speaker.profile && speaker.profile.name !== (speaker.display_name ?? '').trim()
       );
 
       if (speakersNeedingConfirmation.length > 0) {
@@ -1366,7 +1376,7 @@
   }
 
   // Perform the actual bulk save operation
-  async function performBulkSave(speakersToUpdate, decisions = new Map()) {
+  async function performBulkSave(speakersToUpdate: SpeakerItem[], decisions = new Map()) {
     // STEP 1: Optimistic UI updates - immediately update voice suggestions with new names
     const nameChanges = new Map(); // Track profile name changes for voice suggestions
 
@@ -1467,7 +1477,7 @@
 
     // Update subtitles and clear cache (async, don't block)
     if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
-      videoPlayerComponent.updateSubtitles().catch(error => {
+      videoPlayerComponent.updateSubtitles().catch((error: unknown) => {
         console.warn('Failed to update subtitles after saving speaker names:', error);
       });
     }

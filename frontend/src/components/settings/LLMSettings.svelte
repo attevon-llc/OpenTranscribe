@@ -274,17 +274,18 @@
 
   async function deleteConfiguration() {
     if (!configToDelete) return;
+    const config = configToDelete;
 
     saving = true;
 
     try {
-      await LLMSettingsApi.deleteConfiguration(configToDelete.uuid);
+      await LLMSettingsApi.deleteConfiguration(config.uuid);
 
       // Remove from saved configurations
-      savedConfigurations = savedConfigurations.filter(c => c.uuid !== configToDelete.uuid);
+      savedConfigurations = savedConfigurations.filter(c => c.uuid !== config.uuid);
 
       // If this was the active configuration, clear it
-      if (configToDelete.uuid === activeConfigurationId) {
+      if (config.uuid === activeConfigurationId) {
         activeConfigurationId = null;
         currentSettings = null;
         hasSettings = false;
@@ -293,7 +294,7 @@
         llmStatusStore.reset();
       }
 
-      toastStore.success($t('settings.llmProvider.configDeleted', { name: configToDelete.name }), 5000);
+      toastStore.success($t('settings.llmProvider.configDeleted', { name: config.name }), 5000);
 
       configToDelete = null;
       showDeleteConfigModal = false;

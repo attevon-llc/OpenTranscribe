@@ -267,17 +267,18 @@
 
   async function deletePrompt() {
     if (!promptToDelete) return;
+    const prompt = promptToDelete;
 
     saving = true;
 
     try {
-      await PromptsApi.deletePrompt(promptToDelete.uuid);
+      await PromptsApi.deletePrompt(prompt.uuid);
 
       // Remove from list
-      allPrompts = allPrompts.filter(p => p.uuid !== promptToDelete.uuid);
+      allPrompts = allPrompts.filter(p => p.uuid !== prompt.uuid);
 
       // Check if we deleted the active prompt
-      const wasActivePrompt = selectedPromptId === promptToDelete.uuid;
+      const wasActivePrompt = selectedPromptId === prompt.uuid;
 
       // Check if we have any remaining user prompts after deletion
       const remainingUserPrompts = allPrompts.filter(p => !p.is_system_default);
@@ -384,20 +385,22 @@
   $: isDirty = JSON.stringify({ ...formData, tags: formData.tags }) !== JSON.stringify(originalFormData);
 
   // Function to prevent native tooltip flicker and position tooltip
-  function removeTitle(event) {
+  function removeTitle(event: MouseEvent) {
+    const target = event.target as Element | null;
     // Remove title attribute to prevent native tooltip
-    if (event.target.hasAttribute('title')) {
-      event.target.removeAttribute('title');
+    if (target?.hasAttribute('title')) {
+      target.removeAttribute('title');
     }
     // Check parent elements too
-    let element = event.target.closest('[title]');
+    const element = target?.closest('[title]');
     if (element) {
       element.removeAttribute('title');
     }
 
     // Position the tooltip dynamically
-    const rect = event.target.closest('.info-tooltip').getBoundingClientRect();
-    const tooltip = event.target.closest('.info-tooltip');
+    const tooltip = target?.closest('.info-tooltip');
+    if (!(tooltip instanceof HTMLElement)) return;
+    const rect = tooltip.getBoundingClientRect();
 
     tooltip.style.setProperty('--tooltip-left', `${rect.left + rect.width / 2}px`);
     tooltip.style.setProperty('--tooltip-top', `${rect.bottom}px`);
@@ -946,7 +949,7 @@
             type="button"
             class="copy-button-header"
             class:copied={isCopied}
-            on:click={() => copyPromptText(viewingPrompt.prompt_text)}
+            on:click={() => copyPromptText(viewingPrompt?.prompt_text ?? '')}
             aria-label={$t('prompts.copy')}
             title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
           >

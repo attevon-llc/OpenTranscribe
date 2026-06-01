@@ -84,11 +84,12 @@
       toastStore.error($t('speaker.pleaseSelectTarget'));
       return;
     }
+    const target = targetSpeaker;
 
     merging = true;
 
     // Get source speakers (all selected except target)
-    const sourceSpeakers = selectedSpeakerList.filter(s => s.uuid !== targetSpeaker.uuid);
+    const sourceSpeakers = selectedSpeakerList.filter(s => s.uuid !== target.uuid);
 
     // Track successful and failed merges
     const successfulMerges: Speaker[] = [];
@@ -97,7 +98,7 @@
     // Merge each source speaker into target
     for (const sourceSpeaker of sourceSpeakers) {
       try {
-        await mergeSpeakers(sourceSpeaker.uuid, targetSpeaker.uuid);
+        await mergeSpeakers(sourceSpeaker.uuid, target.uuid);
         successfulMerges.push(sourceSpeaker);
       } catch (error: any) {
         const errorMessage = error.response?.data?.detail || error.message || $t('common.unknownError');
@@ -110,7 +111,7 @@
     if (failedMerges.length === 0) {
       // All merges succeeded
       const speakerWord = successfulMerges.length > 1 ? $t('speaker.speakers') : $t('speaker.speaker');
-      const targetName = targetSpeaker.display_name || targetSpeaker.name;
+      const targetName = target.display_name || target.name;
       toastStore.success(
         $t('speaker.mergeSuccessAll', { count: successfulMerges.length, speakerWord, target: targetName })
       );

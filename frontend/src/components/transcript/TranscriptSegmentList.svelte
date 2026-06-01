@@ -508,6 +508,13 @@
 
   .transcript-segment {
     border-bottom: 1px solid var(--border-light);
+    /* Browser-native virtualization: skip rendering/layout/paint of off-screen rows.
+       Unlike JS windowing, every segment stays in the DOM, so infinite-scroll, the
+       scrollbar indicator, search-scroll-to, segment editing, and the highlight-flash
+       all keep working unchanged. `auto` remembers each row's real rendered height,
+       so the intrinsic-size estimate only affects never-yet-rendered far-offscreen rows. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 56px;
   }
 
   .transcript-segment:last-child {

@@ -358,6 +358,7 @@
       <button
         class="notifications-btn"
         on:click={handleToggleNotifications}
+        aria-label={$unreadCount > 0 ? $t('nav.notificationsWithUnread', { count: $unreadCount }) : $t('nav.notificationsTooltip')}
         title={$unreadCount > 0 ? $t('nav.notificationsWithUnread', { count: $unreadCount }) : $t('nav.notificationsTooltip')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -412,6 +413,7 @@
                   <button
                     class="control-btn pause-btn"
                     on:click={handleTogglePause}
+                    aria-label={isPaused ? $t('nav.resumeRecording') : $t('nav.pauseRecording')}
                     title={isPaused ? $t('nav.resumeRecording') : $t('nav.pauseRecording')}
                   >
                     {#if isPaused}
@@ -429,6 +431,7 @@
                   <button
                     class="control-btn stop-btn"
                     on:click={handleStopRecording}
+                    aria-label={$t('nav.stopRecording')}
                     title={$t('nav.stopRecording')}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -440,6 +443,7 @@
                   <button
                     class="control-btn delete-btn"
                     on:click={handleDeleteRecording}
+                    aria-label={$t('nav.deleteRecording')}
                     title={$t('nav.deleteRecording')}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -453,6 +457,7 @@
                   <button
                     class="control-btn upload-btn"
                     on:click={handleUploadRecording}
+                    aria-label={$t('nav.uploadRecording')}
                     title={$t('nav.uploadRecording')}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -467,6 +472,7 @@
                 <button
                   class="control-btn modal-btn"
                   on:click={handleOpenRecordingModal}
+                  aria-label={$t('nav.openFullRecording')}
                   title={$t('nav.openFullRecording')}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

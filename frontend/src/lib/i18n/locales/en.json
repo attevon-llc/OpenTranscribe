@@ -3538,5 +3538,11 @@
   "gallery.bulk.redact": "Redact",
   "gallery.bulk.redactTooltip": "Run content-redaction detection on the selected completed files",
   "gallery.bulk.redactStarted": "Redaction started for {count} file(s)",
-  "gallery.bulk.redactFailed": "Redaction failed for {count} file(s)"
+  "gallery.bulk.redactFailed": "Redaction failed for {count} file(s)",
+  "errorPage.title": "Something went wrong",
+  "errorPage.notFoundTitle": "Page not found",
+  "errorPage.notFoundMessage": "The page you're looking for doesn't exist or has moved.",
+  "errorPage.genericMessage": "An unexpected error occurred. Please try again.",
+  "errorPage.statusLabel": "Error",
+  "errorPage.goHome": "Go home"
 }

@@ -16,12 +16,17 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
+  import { focusTrap } from '$lib/actions/focusTrap';
 
   export let isOpen = false;
   export let title = '';
   export let maxWidth = '600px';
   export let zIndex = 1300;
   export let onClose: () => void = () => {};
+
+  // Stable id for wiring the dialog's accessible name to its <h2> title (when no
+  // custom header slot is supplied). Generated once per instance.
+  const titleId = `modal-title-${Math.random().toString(36).slice(2, 10)}`;
 
   let _wasOpen = false;
   $: if (typeof document !== 'undefined' && isOpen !== _wasOpen) {
@@ -48,14 +53,22 @@
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div class="modal-backdrop" style="z-index: {zIndex}" on:click={handleBackdropClick} on:wheel|preventDefault|self on:touchmove|preventDefault|self>
-    <div class="modal-container" style="max-width: {maxWidth}">
+    <div
+      class="modal-container"
+      style="max-width: {maxWidth}"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={$$slots.header ? undefined : titleId}
+      aria-label={$$slots.header ? title || undefined : undefined}
+      use:focusTrap={{ enabled: isOpen }}
+    >
       <div class="modal-header">
         {#if $$slots.header}
           <div class="modal-header-content">
             <slot name="header" />
           </div>
         {:else}
-          <h2>{title}</h2>
+          <h2 id={titleId}>{title}</h2>
         {/if}
         <button class="modal-close-button" on:click={onClose} aria-label="Close modal">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

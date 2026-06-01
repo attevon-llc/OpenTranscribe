@@ -95,6 +95,9 @@
   <button
     class="user-button"
     on:click={toggleDropdown}
+    aria-label={$t('nav.userMenuTooltip')}
+    aria-haspopup="menu"
+    aria-expanded={showDropdown}
     title={$t('nav.userMenuTooltip')}
   >
     <div class="user-avatar">

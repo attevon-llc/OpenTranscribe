@@ -3538,5 +3538,11 @@
   "gallery.bulk.redact": "Redact",
   "gallery.bulk.redactTooltip": "Run content-redaction detection on the selected completed files",
   "gallery.bulk.redactStarted": "Redaction started for {count} file(s)",
-  "gallery.bulk.redactFailed": "Redaction failed for {count} file(s)"
+  "gallery.bulk.redactFailed": "Redaction failed for {count} file(s)",
+  "errorPage.title": "Algo deu errado",
+  "errorPage.notFoundTitle": "Página não encontrada",
+  "errorPage.notFoundMessage": "A página que você procura não existe ou foi movida.",
+  "errorPage.genericMessage": "Ocorreu um erro inesperado. Por favor, tente novamente.",
+  "errorPage.statusLabel": "Erro",
+  "errorPage.goHome": "Ir para o início"
 }

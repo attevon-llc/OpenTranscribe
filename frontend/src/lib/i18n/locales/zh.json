@@ -3538,5 +3538,11 @@
   "gallery.bulk.redact": "Redact",
   "gallery.bulk.redactTooltip": "Run content-redaction detection on the selected completed files",
   "gallery.bulk.redactStarted": "Redaction started for {count} file(s)",
-  "gallery.bulk.redactFailed": "Redaction failed for {count} file(s)"
+  "gallery.bulk.redactFailed": "Redaction failed for {count} file(s)",
+  "errorPage.title": "出现错误",
+  "errorPage.notFoundTitle": "页面未找到",
+  "errorPage.notFoundMessage": "您查找的页面不存在或已被移动。",
+  "errorPage.genericMessage": "发生意外错误，请重试。",
+  "errorPage.statusLabel": "错误",
+  "errorPage.goHome": "返回主页"
 }

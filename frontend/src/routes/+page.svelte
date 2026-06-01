@@ -7,19 +7,13 @@
   import { toastStore } from '$stores/toast';
   import { uploadsStore } from '$stores/uploads';
   import { isAuthenticated } from '$stores/auth';
-  import CardGridSkeleton from '$components/ui/CardGridSkeleton.svelte';
-  import { galleryStore, galleryState, hasMoreFiles, isLoadingMore, galleryTotalCount, galleryViewMode } from '$stores/gallery';
+  import { galleryStore, galleryState, hasMoreFiles, isLoadingMore } from '$stores/gallery';
   import { t } from '$stores/locale';
   import ConfirmationModal from '../components/ConfirmationModal.svelte';
   import SelectiveReprocessModal from '../components/SelectiveReprocessModal.svelte';
-  import GalleryCountChip from '$components/gallery/GalleryCountChip.svelte';
-  import GallerySortDropdown from '$components/gallery/GallerySortDropdown.svelte';
-  import GalleryViewToggle from '$components/gallery/GalleryViewToggle.svelte';
-  import GalleryActionButtons from '$components/gallery/GalleryActionButtons.svelte';
-  import VirtualList from '$components/gallery/VirtualList.svelte';
-  import VirtualGrid from '$components/gallery/VirtualGrid.svelte';
-  import Spinner from '../components/ui/Spinner.svelte';
-  import EmptyState from '../components/ui/EmptyState.svelte';
+  import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
+  import GalleryHeader from '$components/gallery/GalleryHeader.svelte';
+  import GalleryGrid from '$components/gallery/GalleryGrid.svelte';
   import type { MediaFile, DurationRange, DateRange } from '$lib/types/media';
 
   // Modal state
@@ -58,7 +52,6 @@
 
   // Import components
   import FileUploader from '../components/FileUploader.svelte';
-  import FilterSidebar from '../components/FilterSidebar.svelte';
   import CollectionsPanel from '../components/CollectionsPanel.svelte';
   import UserFileStatus from '../components/UserFileStatus.svelte';
 
@@ -102,7 +95,7 @@
   $: selectedFiles = $galleryState.selectedFiles;
 
   // Component refs
-  let filterSidebarRef: any;
+  let filterPanelRef: any;
 
   // WebSocket subscription
   let unsubscribeFileStatus: (() => void) | undefined;
@@ -1361,172 +1354,55 @@
 <div class="media-library-container">
   {#if activeTab === 'gallery'}
     <div class="gallery-tab-wrapper">
-      <!-- Mobile filter overlay backdrop -->
-      {#if showFilters}
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <div
-          class="filter-overlay-backdrop"
-          on:click={toggleFilters}
-          transition:fade={{ duration: 200 }}
-        ></div>
-      {/if}
-
       <!-- Left Sidebar: Filters (Sticky) -->
-      <div class="filter-sidebar {showFilters ? 'show' : ''}">
-        <!-- Filters Toggle Button (always visible) -->
-        <div class="filter-toggle-container">
-          <button
-            class="filter-toggle-btn {showFilters ? 'expanded' : 'collapsed'}"
-            on:click={toggleFilters}
-            title={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line>
-              <line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line>
-              <line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>
-              <line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line>
-              <line x1="17" y1="16" x2="23" y2="16"></line>
-            </svg>
-          </button>
-        </div>
-
-        <!-- Filter Content (hidden when collapsed) -->
-        {#if showFilters}
-          <div class="filter-content">
-            <FilterSidebar
-              bind:this={filterSidebarRef}
-              searchQuery={searchQuery}
-              selectedTags={selectedTags}
-              selectedSpeakers={selectedSpeakers}
-              selectedCollectionId={selectedCollectionId}
-              dateRange={dateRange}
-              durationRange={durationRange}
-              fileSizeRange={fileSizeRange}
-              selectedFileTypes={selectedFileTypes}
-              selectedStatuses={selectedStatuses}
-              ownershipFilter={ownershipFilter}
-              on:filter={applyFilters}
-              on:reset={resetFilters}
-            />
-          </div>
-        {/if}
-      </div>
+      <GalleryFilterPanel
+        bind:this={filterPanelRef}
+        {showFilters}
+        {searchQuery}
+        {selectedTags}
+        {selectedSpeakers}
+        {selectedCollectionId}
+        {dateRange}
+        {durationRange}
+        {fileSizeRange}
+        {selectedFileTypes}
+        {selectedStatuses}
+        {ownershipFilter}
+        on:toggle={toggleFilters}
+        on:filter={applyFilters}
+        on:reset={resetFilters}
+      />
 
       <!-- Right Content: Scrollable Media Grid -->
       <div class="content-area">
         <div class="scrollable-content" bind:this={scrollableContentEl} on:scroll={onGalleryScroll}>
-      <!-- Gallery Header (sticky) - always visible for action buttons -->
-      <div class="gallery-header">
-        <div class="gallery-header-left">
-          <!-- Mobile filter toggle button (visible only on mobile) -->
-          <button
-            class="mobile-filter-toggle"
-            on:click={toggleFilters}
-            title={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
-            aria-label={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line>
-              <line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line>
-              <line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>
-              <line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line>
-              <line x1="17" y1="16" x2="23" y2="16"></line>
-            </svg>
-          </button>
-          <GalleryActionButtons {files} />
+          <!-- Gallery Header (sticky) - always visible for action buttons -->
+          <GalleryHeader
+            {files}
+            {sortBy}
+            {sortOrder}
+            {loading}
+            {showFilters}
+            on:togglefilters={toggleFilters}
+            on:change={handleSortChange}
+          />
+
+          <GalleryGrid
+            {files}
+            {loading}
+            {error}
+            {selectedCollectionId}
+            {isSelecting}
+            {selectedFiles}
+            {pendingNewFiles}
+            {pendingDeletions}
+            scrollContainer={scrollableContentEl}
+            on:sentinel={(e) => (infiniteScrollSentinel = e.detail)}
+            on:retry={() => fetchFiles()}
+            on:errorclick={(e) => showEnhancedErrorNotification(e.detail)}
+          />
         </div>
-        {#if files.length > 0}
-          <div class="gallery-header-right">
-            <GallerySortDropdown
-              {sortBy}
-              {sortOrder}
-              on:change={handleSortChange}
-            />
-            <GalleryViewToggle />
-            <GalleryCountChip loading={loading} filesLoaded={files.length} />
-          </div>
-        {/if}
       </div>
-
-      {#if loading}
-        <CardGridSkeleton variant="media" count={12} />
-      {:else if error}
-        <div class="error-state">
-          <p>{$t('gallery.connectionError')}</p>
-          <button
-            class="retry-button"
-            on:click={() => fetchFiles()}
-            title={$t('gallery.retryTooltip')}
-          >{$t('gallery.retry')}</button>
-        </div>
-      {:else if files.length === 0}
-        <EmptyState
-          title={selectedCollectionId ? $t('gallery.noFilesInCollection') : $t('gallery.libraryEmpty')}
-          description={$t('gallery.uploadFirstFile')}
-        />
-      {:else}
-        {#if $galleryViewMode === 'list'}
-          <!-- List View (Virtual Scrolling) -->
-          <VirtualList
-            items={files}
-            scrollContainer={scrollableContentEl}
-            {isSelecting}
-            {selectedFiles}
-            {pendingNewFiles}
-            {pendingDeletions}
-            on:errorclick={(e) => showEnhancedErrorNotification(e.detail)}
-          />
-        {:else}
-          <!-- Grid View (Virtual Scrolling) -->
-          <VirtualGrid
-            items={files}
-            scrollContainer={scrollableContentEl}
-            {isSelecting}
-            {selectedFiles}
-            {pendingNewFiles}
-            {pendingDeletions}
-            on:errorclick={(e) => showEnhancedErrorNotification(e.detail)}
-          />
-        {/if}
-
-        <!-- Infinite scroll sentinel -->
-        <div bind:this={infiniteScrollSentinel} class="scroll-sentinel"></div>
-
-        <!-- Loading indicator -->
-        {#if $isLoadingMore}
-          <div class="loading-more" transition:fade={{ duration: 200 }}>
-            <Spinner size="large" />
-            <p>{$t('gallery.loadingMore')}</p>
-          </div>
-        {/if}
-
-        <!-- End of Results Indicator -->
-        {#if !$hasMoreFiles && files.length > 0 && !loading}
-          <div class="end-of-results" in:fade={{ duration: 300 }}>
-            <div class="end-indicator-line"></div>
-            <div class="end-indicator-content">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              <span>{$t('gallery.allFilesLoaded')}</span>
-            </div>
-            <div class="end-indicator-line"></div>
-          </div>
-        {/if}
-      {/if}
-    </div>
-  </div>
     </div>
   {:else if activeTab === 'status'}
     <div class="status-tab-content">
@@ -1640,8 +1516,8 @@
               // In manage mode, keep the modal open for multiple collections
 
               // Refresh collections in filter
-              if (filterSidebarRef && filterSidebarRef.refreshCollections) {
-                filterSidebarRef.refreshCollections();
+              if (filterPanelRef && filterPanelRef.refreshCollections) {
+                filterPanelRef.refreshCollections();
               }
               // Refresh files if we're filtering by collection
               if (selectedCollectionId !== null) {
@@ -1701,95 +1577,6 @@
     width: 100%;
   }
 
-  /* Left Sidebar - Sticky Filters */
-  .filter-sidebar {
-    flex-shrink: 0;
-    background-color: var(--surface-color);
-    border-right: 1px solid var(--border-color);
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    transition: all 0.3s ease;
-  }
-
-  /* Expanded state */
-  .filter-sidebar.show {
-    width: 320px;
-  }
-
-  /* Collapsed state */
-  .filter-sidebar:not(.show) {
-    width: 50px; /* Just enough for the toggle button */
-  }
-
-  .filter-toggle-container {
-    padding: 0.5rem 0.5rem 0;
-    margin-bottom: 0.5rem;
-    flex-shrink: 0;
-  }
-
-  .filter-sidebar.show .filter-toggle-container {
-    padding: 0.5rem 1rem 0;
-  }
-
-  .filter-toggle-btn {
-    width: 100%;
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.6rem 1rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    height: 40px;
-    white-space: nowrap;
-  }
-
-  .filter-toggle-btn:hover {
-    background-color: var(--hover-color);
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  }
-
-  .filter-toggle-btn:active {
-    transform: scale(0.98);
-  }
-
-  .filter-toggle-btn svg {
-    flex-shrink: 0;
-    opacity: 0.8;
-  }
-
-  .filter-toggle-btn.collapsed {
-    justify-content: center;
-    padding: 0.6rem;
-    width: auto;
-  }
-
-  .filter-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 1rem;
-  }
-
-  /* Mobile filter overlay backdrop - hidden on desktop */
-  .filter-overlay-backdrop {
-    display: none;
-    position: fixed;
-    top: var(--content-top, 60px);
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.4);
-    z-index: 999;
-  }
-
   /* Right Content Area - Scrollable */
   .content-area {
     flex: 1;
@@ -1803,42 +1590,6 @@
     overflow-y: auto;
     padding: 1rem;
     padding-top: 0; /* Gallery header provides top spacing */
-  }
-
-  .error-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 400px;
-    text-align: center;
-    color: var(--text-secondary);
-  }
-
-  .error-state {
-    color: var(--error-color);
-  }
-
-  .retry-button {
-    margin-top: 1rem;
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.875rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-  }
-
-  .retry-button:hover {
-    background-color: var(--primary-hover);
-    transform: translateY(-1px);
-  }
-
-  .retry-button:active {
-    transform: translateY(0);
   }
 
   /* Modal styles */
@@ -1925,64 +1676,10 @@
     overflow-y: auto;
   }
 
-  /* Infinite scroll sentinel - invisible trigger element */
-  .scroll-sentinel {
-    height: 20px;
-    margin-top: 2rem;
-    pointer-events: none;
-  }
-
-  /* Loading more indicator */
-  .loading-more {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    gap: 1rem;
-  }
-
-  .loading-more p {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    margin: 0;
-  }
-
-  /* Narrower filter sidebar on tablet to give more room to content */
-  @media (max-width: 1200px) {
-    .filter-sidebar.show {
-      width: 260px;
-    }
-  }
-
   /* Responsive design */
   @media (max-width: 768px) {
     .media-library-container {
       flex-direction: column;
-    }
-
-    .filter-sidebar {
-      position: fixed;
-      top: var(--content-top, 60px);
-      left: -100%;
-      width: 85%;
-      max-width: 320px;
-      height: calc(100vh - var(--content-top, 60px));
-      height: calc(100dvh - var(--content-top, 60px));
-      background: var(--surface-color);
-      z-index: 1300;
-      transition: left 0.3s ease;
-      border-right: 1px solid var(--border-color);
-      border-top: 1px solid var(--border-color);
-      box-shadow: 4px 0 16px rgba(0, 0, 0, 0.1);
-    }
-
-    .filter-sidebar.show {
-      left: 0;
-    }
-
-    .filter-overlay-backdrop {
-      display: block;
     }
 
     .content-area {
@@ -2059,160 +1756,4 @@
     transform: scale(1.02) !important;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
   }
-
-  /* Gallery Header with Sort and Count Chips */
-  .gallery-header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 0.75rem;
-    padding: 0.75rem 1rem;
-    background-color: var(--surface-color);
-    border-bottom: 1px solid var(--border-color);
-    margin-left: -1rem;
-    margin-right: -1rem;
-  }
-
-  .gallery-header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  .gallery-header-right {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-shrink: 0;
-  }
-
-  /* Mobile-only filter toggle button in gallery header */
-  .mobile-filter-toggle {
-    display: none; /* Hidden on desktop */
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-  }
-
-  .mobile-filter-toggle:hover {
-    border-color: var(--primary-color);
-    color: var(--text-primary);
-    background: var(--hover-color);
-  }
-
-  .mobile-filter-toggle svg {
-    flex-shrink: 0;
-  }
-
-  /* Tablet/iPad: wrap gallery header and right-justify controls */
-  @media (max-width: 1200px) and (min-width: 769px) {
-    .gallery-header {
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
-
-    .gallery-header-left {
-      flex: 1 1 100%;
-    }
-
-    .gallery-header-right {
-      flex: 1 1 auto;
-      justify-content: flex-end;
-      gap: 0.375rem;
-    }
-  }
-
-  @media (max-width: 768px) {
-    .mobile-filter-toggle {
-      display: flex; /* Visible on mobile */
-    }
-
-    .gallery-header {
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      margin-left: -1rem;
-      margin-right: -1rem;
-      padding: 0.5rem 1rem;
-      /* Prevent content showing through gap between navbar and toolbar */
-      background-color: var(--background-color, var(--surface-color));
-      box-shadow: 0 -20px 0 0 var(--background-color, var(--surface-color));
-    }
-
-    .gallery-header-left {
-      flex: 1 1 auto;
-      min-width: 0;
-    }
-
-    .gallery-header-right {
-      flex: 0 0 auto;
-      gap: 0.375rem;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .gallery-header {
-      gap: 0.375rem;
-      padding-top: 0.5rem;
-      padding-bottom: 0.5rem;
-    }
-
-    .gallery-header-left {
-      flex: 1 1 100%;
-    }
-
-    .gallery-header-right {
-      flex: 1 1 auto;
-      justify-content: flex-end;
-    }
-  }
-
-  /* End of Results Indicator */
-  .end-of-results {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    padding: 3rem 1rem;
-  }
-
-  .end-indicator-line {
-    flex: 1;
-    height: 1px;
-    background: linear-gradient(to right, transparent, var(--border-color) 50%, transparent);
-    max-width: 200px;
-  }
-
-  .end-indicator-content {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 20px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-  }
-
-  .end-indicator-content svg {
-    flex-shrink: 0;
-    color: var(--success-color, #10b981);
-  }
-
 </style>

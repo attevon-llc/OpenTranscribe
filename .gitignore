@@ -174,6 +174,8 @@ backend/VERSION  # Ghost file created by Docker bind mount (real VERSION is at r
 # Test files
 test-output/
 /screenshots/
+# Playwright E2E failure screenshots (auto-saved by backend/tests/e2e/conftest.py)
+backend/tests/e2e/screenshots/
 videos/
 test_videos/
 # Allow documentation screenshots

@@ -68,8 +68,28 @@
     startSegmentIndex: number;  // Track starting index in original array for reading progress
   }
 
-  // Group transcript segments, keeping overlap groups together
+  // Map a backend-shaped grouped segment (snake_case) to the camelCase shape the
+  // template consumes. Keeps downstream rendering identical to the client path.
+  function mapBackendGroup(group: any): GroupedSegment {
+    return {
+      isOverlapGroup: group.is_overlap_group ?? false,
+      overlapGroupId: group.overlap_group_id ?? undefined,
+      startTime: group.start_time,
+      endTime: group.end_time,
+      segments: group.segments || [],
+      startSegmentIndex: group.start_segment_index ?? 0,
+    };
+  }
+
+  // Group transcript segments, keeping overlap groups together. Prefer the
+  // backend-provided `grouped_segments` (thin-frontend) and fall back to the
+  // client-side computation for older payloads that lack it.
   $: groupedTranscriptSegments = (() => {
+    const backendGroups = file?.grouped_segments;
+    if (Array.isArray(backendGroups) && backendGroups.length) {
+      return backendGroups.map(mapBackendGroup);
+    }
+
     const segments = file?.transcript_segments || [];
     if (!segments.length) return [];
 

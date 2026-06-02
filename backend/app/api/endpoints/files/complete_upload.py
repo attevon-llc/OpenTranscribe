@@ -90,8 +90,7 @@ async def complete_upload(
 ) -> dict[str, Any]:
     """Finalize a presigned upload and dispatch the transcription pipeline."""
     from app.api.endpoints.files.upload import _update_file_hash
-    from app.api.endpoints.files.upload import dispatch_thumbnail_for_video
-    from app.api.endpoints.files.upload import start_transcription_task
+    from app.api.endpoints.files.upload import dispatch_upload_pipeline
     from app.services.imohash_service import compute_from_minio
     from app.services.minio_service import object_exists_and_size
 
@@ -193,29 +192,24 @@ async def complete_upload(
     if request.skip_summary:
         db_file.summary_status = "disabled"  # type: ignore[assignment]
     db_file.status = FileStatus.PENDING  # type: ignore[assignment]
+    # Snapshot the per-file model BEFORE commit so resolving it doesn't trigger
+    # an expire-on-commit refetch (we deliberately skip db.refresh() here).
     whisper_model: str | None = request.whisper_model
-    requested_model_snapshot = (
-        str(db_file.requested_whisper_model) if db_file.requested_whisper_model else None
-    )
+    if not whisper_model and db_file.requested_whisper_model:
+        whisper_model = str(db_file.requested_whisper_model)
     db.commit()
 
-    if not whisper_model and requested_model_snapshot:
-        whisper_model = requested_model_snapshot
-
-    # Dispatch the background thumbnail early (concurrent with the pipeline)
-    # so the gallery shows it via the live file_updated refresh while the
-    # file is still transcribing — parity with the legacy upload path.
-    dispatch_thumbnail_for_video(db_file, int(current_user.id))
-
-    # Dispatch the pipeline with the pre-minted task_id so every downstream
-    # marker lands in the same benchmark hash as the client-side markers.
-    start_transcription_task(
-        int(db_file.id),
-        str(db_file.uuid),
-        request.min_speakers,
-        request.max_speakers,
-        request.num_speakers,
+    # Fire the thumbnail + transcription pipeline via the shared dispatch tail
+    # (same call the legacy path uses). The thumbnail runs concurrently so the
+    # gallery shows it via the live file_updated refresh during processing, and
+    # the pre-minted task_id keeps every downstream marker in one benchmark hash.
+    dispatch_upload_pipeline(
+        db_file,
+        user_id=int(current_user.id),
         whisper_model=whisper_model,
+        min_speakers=request.min_speakers,
+        max_speakers=request.max_speakers,
+        num_speakers=request.num_speakers,
         task_id=request.task_id,
     )
 

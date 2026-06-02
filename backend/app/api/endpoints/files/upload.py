@@ -220,6 +220,39 @@ def dispatch_thumbnail_for_video(db_file: MediaFile, user_id: int) -> None:
         logger.warning(f"Thumbnail dispatch failed for {db_file.id} (non-fatal): {thumb_err}")
 
 
+def dispatch_upload_pipeline(
+    db_file: MediaFile,
+    *,
+    user_id: int,
+    whisper_model: str | None,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+    task_id: str | None,
+) -> str | None:
+    """Shared post-commit dispatch tail for BOTH upload ingest paths.
+
+    Fires the background thumbnail and dispatches the transcription pipeline.
+    The legacy multipart and presigned ``/complete`` routes both call this so
+    the "what happens after the bytes land" logic lives in ONE place — the
+    thumbnail/validation gaps came from these two tails being hand-copied and
+    drifting. Call AFTER the row is committed. ``whisper_model`` falls back to
+    the per-file requested model when not explicitly provided.
+    """
+    if not whisper_model and db_file.requested_whisper_model:
+        whisper_model = str(db_file.requested_whisper_model)
+    dispatch_thumbnail_for_video(db_file, user_id)
+    return start_transcription_task(
+        int(db_file.id),
+        str(db_file.uuid),
+        min_speakers,
+        max_speakers,
+        num_speakers,
+        whisper_model=whisper_model,
+        task_id=task_id,
+    )
+
+
 def _get_or_create_file_record(
     db: Session,
     file: UploadFile,
@@ -459,10 +492,6 @@ async def process_file_upload(
             db.commit()
             db.refresh(db_file)
 
-        # Dispatch the background thumbnail generation for video files
-        # (shared with the presigned /complete path — see helper).
-        dispatch_thumbnail_for_video(db_file, int(current_user.id))
-
         # Capture file context for later reporting (persists until flushed
         # into file_pipeline_timing by finalize_transcription).
         benchmark_timing.set_context(
@@ -474,20 +503,15 @@ async def process_file_upload(
             },
         )
 
-        # Read requested model from the prepare step if not explicitly provided
-        if not whisper_model and db_file.requested_whisper_model:
-            whisper_model = str(db_file.requested_whisper_model)
-
-        # Start background transcription and waveform generation in parallel.
-        # Pass our ingress-minted task_id through so the pipeline writes into
-        # the same benchmark hash we've been populating.
-        start_transcription_task(
-            int(db_file.id),
-            str(db_file.uuid),
-            min_speakers,
-            max_speakers,
-            num_speakers,
+        # Fire the thumbnail + transcription pipeline via the shared dispatch
+        # tail so this route stays in lockstep with the presigned /complete one.
+        dispatch_upload_pipeline(
+            db_file,
+            user_id=int(current_user.id),
             whisper_model=whisper_model,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
             task_id=task_id,
         )
 

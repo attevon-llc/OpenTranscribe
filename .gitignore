@@ -178,6 +178,8 @@ test-output/
 /screenshots/
 # Playwright E2E failure screenshots (auto-saved by backend/tests/e2e/conftest.py)
 backend/tests/e2e/screenshots/
+# Visual-regression failure captures (the .png baselines in __screenshots__/ ARE tracked)
+backend/tests/e2e/__screenshots__/*.actual.png
 videos/
 test_videos/
 # Allow documentation screenshots

@@ -76,7 +76,7 @@ function createLLMStatusStore() {
     stopMonitoring() {
       if (monitoringTimer) {
         clearInterval(monitoringTimer);
-        monitoringTimer = undefined as any;
+        monitoringTimer = undefined;
       }
     },
 
@@ -137,7 +137,7 @@ function createLLMStatusStore() {
     },
 
     // Handle WebSocket notifications
-    handleNotification: (type: string, _data: any) => {
+    handleNotification: (type: string, _data: unknown) => {
       if (type === 'llm_settings_changed' || type === 'llm_status_changed') {
         store.refreshStatus();
       }

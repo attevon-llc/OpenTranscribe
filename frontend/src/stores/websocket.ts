@@ -1,6 +1,6 @@
 import { writable, derived, get, type Writable } from 'svelte/store';
 import * as authStore from './auth';
-import { downloadStore } from './downloads';
+import { downloadStore, type DownloadState } from './downloads';
 import { t } from '$stores/locale';
 import { generateId } from '$lib/utils/ids';
 
@@ -50,6 +50,29 @@ export type NotificationType =
   | 'enrichment_task_complete'
   | 'search_indexing_complete';
 
+/**
+ * Payload attached to a {@link Notification}. Carries the `data` object from the
+ * backend WebSocket message. The known fields below are read by consumers (file
+ * detail page, settings panels); the index signature keeps forward-compatibility
+ * with task-specific extra fields.
+ */
+export interface NotificationData {
+  file_id?: string;
+  status?: string;
+  message?: string;
+  progress?: number;
+  summary?: string;
+  summary_opensearch_id?: string;
+  auto_applied_count?: number;
+  suggested_count?: number;
+  skipped_detectors?: string[];
+  scope?: string;
+  task?: string;
+  tasks?: string[];
+  eta_seconds?: number | null;
+  [key: string]: unknown;
+}
+
 // Notification interface
 export interface Notification {
   id: string;
@@ -58,7 +81,7 @@ export interface Notification {
   message: string;
   timestamp: Date;
   read: boolean;
-  data?: any;
+  data?: NotificationData;
   // Progressive notification fields
   progressId?: string; // Used to group progressive notifications
   currentStep?: string; // Current processing step
@@ -136,9 +159,9 @@ const loadNotificationsFromStorage = (): Notification[] => {
     try {
       const stored = localStorage.getItem('notifications');
       if (stored) {
-        const parsed = JSON.parse(stored);
+        const parsed: Array<Notification & { timestamp: string }> = JSON.parse(stored);
         // Convert timestamp strings back to Date objects
-        return parsed.map((n: any) => ({
+        return parsed.map((n) => ({
           ...n,
           timestamp: new Date(n.timestamp),
         }));
@@ -788,7 +811,7 @@ function createWebSocketStore() {
   };
 
   // Send message
-  const send = (message: any) => {
+  const send = (message: unknown) => {
     update((state: WebSocketState) => {
       if (state.socket && state.status === 'connected') {
         state.socket.send(JSON.stringify(message));
@@ -858,7 +881,14 @@ function createWebSocketStore() {
   // Handle download progress messages (legacy/global). Media downloads initiated
   // from the file page are delivered over a dedicated SSE stream — see
   // TranscriptDisplay's EventSource — so this only mirrors status into the store.
-  const handleDownloadProgress = (data: any) => {
+  const handleDownloadProgress = (data: {
+    data: {
+      file_id?: string;
+      status: DownloadState['status'];
+      progress?: number;
+      error?: string;
+    };
+  }) => {
     const { file_id, status, progress, error } = data.data;
 
     if (file_id) {

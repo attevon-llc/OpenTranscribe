@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { uploadService, type UploadItem, type UploadEvent } from '../lib/services/uploadService';
+import type { ExtractedAudioMetadata } from '$lib/types/audioExtraction';
 
 // Upload store state
 interface UploadStoreState {
@@ -116,7 +117,7 @@ function createUploadStore() {
     addExtractedAudio(
       audioBlob: Blob,
       filename: string,
-      extractionMetadata: any,
+      extractionMetadata: ExtractedAudioMetadata,
       compressionRatio: number
     ) {
       return uploadService.addExtractedAudio(

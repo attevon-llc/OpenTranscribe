@@ -182,13 +182,9 @@ export const processedTranscriptSegments = derived(transcriptStore, ($transcript
   let currentRawCount = 0;
 
   sortedSegments.forEach((segment, rawIndex) => {
-    // Use the latest speaker display name from the store
-    const speakerName =
-      segment.resolved_speaker_name ||
-      segment.speaker?.display_name ||
-      segment.speaker?.name ||
-      segment.speaker_label ||
-      'Unknown Speaker';
+    // Backend guarantees `resolved_speaker_name` (display_name → speaker_label →
+    // "Unknown"); prefer it directly, keeping a last-resort guard for old payloads.
+    const speakerName = segment.resolved_speaker_name || 'Unknown Speaker';
     const speakerLabel = segment.speaker_label || segment.speaker?.name || 'Unknown';
     const startTime = parseFloat(String(segment.start_time || 0));
     const endTime = parseFloat(String(segment.end_time || 0));

@@ -3544,5 +3544,9 @@
   "errorPage.notFoundMessage": "The page you're looking for doesn't exist or has moved.",
   "errorPage.genericMessage": "An unexpected error occurred. Please try again.",
   "errorPage.statusLabel": "Error",
-  "errorPage.goHome": "Go home"
+  "errorPage.goHome": "Go home",
+  "errorPage.reload": "Reload",
+  "connection.reconnecting": "Reconnecting to live updates…",
+  "connection.disconnected": "Connection lost. Live updates are paused.",
+  "connection.retry": "Retry now"
 }

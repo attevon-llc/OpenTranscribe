@@ -3544,5 +3544,9 @@
   "errorPage.notFoundMessage": "Запрашиваемая страница не существует или была перемещена.",
   "errorPage.genericMessage": "Произошла непредвиденная ошибка. Пожалуйста, попробуйте снова.",
   "errorPage.statusLabel": "Ошибка",
-  "errorPage.goHome": "На главную"
+  "errorPage.goHome": "На главную",
+  "errorPage.reload": "Перезагрузить",
+  "connection.reconnecting": "Повторное подключение к обновлениям в реальном времени…",
+  "connection.disconnected": "Соединение потеряно. Обновления в реальном времени приостановлены.",
+  "connection.retry": "Повторить сейчас"
 }

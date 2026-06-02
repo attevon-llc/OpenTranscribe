@@ -3544,5 +3544,9 @@
   "errorPage.notFoundMessage": "お探しのページは存在しないか、移動されました。",
   "errorPage.genericMessage": "予期しないエラーが発生しました。もう一度お試しください。",
   "errorPage.statusLabel": "エラー",
-  "errorPage.goHome": "ホームへ"
+  "errorPage.goHome": "ホームへ",
+  "errorPage.reload": "再読み込み",
+  "connection.reconnecting": "ライブ更新に再接続しています…",
+  "connection.disconnected": "接続が切れました。ライブ更新は一時停止しています。",
+  "connection.retry": "今すぐ再試行"
 }

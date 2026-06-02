@@ -3544,5 +3544,9 @@
   "errorPage.notFoundMessage": "Die gesuchte Seite existiert nicht oder wurde verschoben.",
   "errorPage.genericMessage": "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es erneut.",
   "errorPage.statusLabel": "Fehler",
-  "errorPage.goHome": "Zur Startseite"
+  "errorPage.goHome": "Zur Startseite",
+  "errorPage.reload": "Neu laden",
+  "connection.reconnecting": "Verbindung zu Live-Updates wird wiederhergestellt…",
+  "connection.disconnected": "Verbindung verloren. Live-Updates sind pausiert.",
+  "connection.retry": "Jetzt erneut versuchen"
 }

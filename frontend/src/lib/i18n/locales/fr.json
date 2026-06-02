@@ -3544,5 +3544,9 @@
   "errorPage.notFoundMessage": "La page que vous recherchez n'existe pas ou a été déplacée.",
   "errorPage.genericMessage": "Une erreur inattendue s'est produite. Veuillez réessayer.",
   "errorPage.statusLabel": "Erreur",
-  "errorPage.goHome": "Accueil"
+  "errorPage.goHome": "Accueil",
+  "errorPage.reload": "Recharger",
+  "connection.reconnecting": "Reconnexion aux mises à jour en direct…",
+  "connection.disconnected": "Connexion perdue. Les mises à jour en direct sont en pause.",
+  "connection.retry": "Réessayer maintenant"
 }

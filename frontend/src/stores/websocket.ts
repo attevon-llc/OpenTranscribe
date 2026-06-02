@@ -1189,6 +1189,28 @@ export const unreadCount = derived(
     $websocketStore.notifications.filter((n: Notification) => !n.read && !n.silent).length
 );
 
+/**
+ * Simplified, UI-facing connection status.
+ *
+ * Collapses the store's internal {@link ConnectionStatus} into the three states the UI
+ * actually cares about for surfacing connection loss:
+ *  - `connected`     — socket open, live updates flowing.
+ *  - `reconnecting`  — connecting, or recovering after a non-clean close (backoff retries).
+ *  - `disconnected`  — closed/errored with no reconnect in progress.
+ *
+ * Purely observational — it does not drive the reconnection logic, it only reflects it.
+ */
+export type UiConnectionStatus = 'connected' | 'reconnecting' | 'disconnected';
+
+export const connectionStatus = derived<typeof websocketStore, UiConnectionStatus>(
+  websocketStore,
+  ($ws) => {
+    if ($ws.status === 'connected') return 'connected';
+    if ($ws.status === 'connecting' || $ws.reconnectAttempts > 0) return 'reconnecting';
+    return 'disconnected';
+  }
+);
+
 // Initialize WebSocket when auth changes (cookies sent automatically)
 authStore.token.subscribe((token: string | null) => {
   if (token) {

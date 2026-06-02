@@ -3544,5 +3544,9 @@
   "errorPage.notFoundMessage": "A página que você procura não existe ou foi movida.",
   "errorPage.genericMessage": "Ocorreu um erro inesperado. Por favor, tente novamente.",
   "errorPage.statusLabel": "Erro",
-  "errorPage.goHome": "Ir para o início"
+  "errorPage.goHome": "Ir para o início",
+  "errorPage.reload": "Recarregar",
+  "connection.reconnecting": "Reconectando às atualizações ao vivo…",
+  "connection.disconnected": "Conexão perdida. As atualizações ao vivo estão pausadas.",
+  "connection.retry": "Tentar novamente agora"
 }

@@ -27,6 +27,7 @@
   import AppContent from "../components/AppContent.svelte";
   import SettingsModal from "../components/SettingsModal.svelte";
   import ClassificationBanner from "$lib/components/ClassificationBanner.svelte";
+  import ConnectionStatusBanner from "$components/ui/ConnectionStatusBanner.svelte";
 
   // Classification banner state
   let bannerEnabled = false;
@@ -145,6 +146,7 @@
       <NotificationsPanel />
       <UploadManager />
       <SettingsModal />
+      <ConnectionStatusBanner />
     {/if}
 
     {#if $isAuthenticated && !isPublicPath}

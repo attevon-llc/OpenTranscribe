@@ -79,3 +79,66 @@ export function formatTimestampWithMillis(timestamp: string | number | Date): st
     return 'Invalid Date';
   }
 }
+
+/**
+ * Splits a duration in seconds into time parts, clamping invalid input to zero.
+ * Shared internal helper for the clock/timestamp formatters below.
+ */
+function splitTime(totalSeconds: number): {
+  hours: number;
+  minutes: number;
+  seconds: number;
+  millis: number;
+} {
+  const s = isNaN(totalSeconds) || totalSeconds < 0 ? 0 : totalSeconds;
+  return {
+    hours: Math.floor(s / 3600),
+    minutes: Math.floor((s % 3600) / 60),
+    seconds: Math.floor(s % 60),
+    millis: Math.floor((s % 1) * 1000),
+  };
+}
+
+/**
+ * Unpadded-minute clock for inline transcript/comment/playback labels.
+ * e.g. 5 -> "0:05", 65 -> "1:05", 3661 -> "1:01:01". Invalid input -> "0:00".
+ * Use this where the UI shows a compact running time; use {@link formatDuration}
+ * where 2-digit-padded minutes are expected (e.g. "01:05").
+ */
+export function formatClock(totalSeconds: number): string {
+  const { hours, minutes, seconds } = splitTime(totalSeconds);
+  const ss = String(seconds).padStart(2, '0');
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${ss}` : `${minutes}:${ss}`;
+}
+
+/**
+ * Live player time with decimal milliseconds (padded minutes).
+ * e.g. 3.25 -> "00:03.250", 3661.5 -> "01:01:01.500". Invalid input -> "00:00.000".
+ */
+export function formatTimeWithMillis(totalSeconds: number): string {
+  const { hours, minutes, seconds, millis } = splitTime(totalSeconds);
+  const body = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(
+    millis
+  ).padStart(3, '0')}`;
+  return hours > 0 ? `${String(hours).padStart(2, '0')}:${body}` : body;
+}
+
+/**
+ * SRT cue timestamp: "HH:MM:SS,mmm" (comma separator). Always emits full padded
+ * hours, which SRT requires even under one hour. Invalid input -> "00:00:00,000".
+ */
+export function formatSrtTimestamp(totalSeconds: number): string {
+  const { hours, minutes, seconds, millis } = splitTime(totalSeconds);
+  return (
+    `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:` +
+    `${String(seconds).padStart(2, '0')},${String(millis).padStart(3, '0')}`
+  );
+}
+
+/**
+ * WebVTT cue timestamp: "HH:MM:SS.mmm" (dot separator). Always emits full padded
+ * hours, which VTT requires. Invalid input -> "00:00:00.000".
+ */
+export function formatVttTimestamp(totalSeconds: number): string {
+  return formatSrtTimestamp(totalSeconds).replace(',', '.');
+}

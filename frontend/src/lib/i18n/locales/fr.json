@@ -3538,5 +3538,15 @@
   "gallery.bulk.redact": "Redact",
   "gallery.bulk.redactTooltip": "Run content-redaction detection on the selected completed files",
   "gallery.bulk.redactStarted": "Redaction started for {count} file(s)",
-  "gallery.bulk.redactFailed": "Redaction failed for {count} file(s)"
+  "gallery.bulk.redactFailed": "Redaction failed for {count} file(s)",
+  "errorPage.title": "Une erreur s'est produite",
+  "errorPage.notFoundTitle": "Page introuvable",
+  "errorPage.notFoundMessage": "La page que vous recherchez n'existe pas ou a été déplacée.",
+  "errorPage.genericMessage": "Une erreur inattendue s'est produite. Veuillez réessayer.",
+  "errorPage.statusLabel": "Erreur",
+  "errorPage.goHome": "Accueil",
+  "errorPage.reload": "Recharger",
+  "connection.reconnecting": "Reconnexion aux mises à jour en direct…",
+  "connection.disconnected": "Connexion perdue. Les mises à jour en direct sont en pause.",
+  "connection.retry": "Réessayer maintenant"
 }

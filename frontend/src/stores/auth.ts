@@ -2,6 +2,23 @@ import { writable, derived, get } from 'svelte/store';
 import axiosInstance, { abortAllRequests } from '../lib/axios';
 import { clearUserState } from '$lib/session/clearUserState';
 
+/**
+ * Minimal shape of an axios error used for status- and detail-based message
+ * extraction in this module. Mirrors the relevant subset of AxiosError.
+ */
+interface AuthRequestError {
+  response?: {
+    status?: number;
+    data?: { detail?: unknown; message?: unknown };
+  };
+  request?: unknown;
+  message?: string;
+}
+
+function asAuthError(error: unknown): AuthRequestError {
+  return (error ?? {}) as AuthRequestError;
+}
+
 // Certificate information for PKI authentication
 export interface CertificateInfo {
   has_certificate: boolean;
@@ -141,7 +158,7 @@ export async function fetchUserInfo() {
 
     authStore.setUser(userData);
     return userData;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('auth.ts: Failed to fetch user info:', error);
     logout();
     return null;
@@ -197,8 +214,9 @@ export async function login(
     authStore.setReady(true);
 
     return { success: true };
-  } catch (err: any) {
-    console.error('auth.ts: Login error:', err);
+  } catch (rawErr: unknown) {
+    const err = asAuthError(rawErr);
+    console.error('auth.ts: Login error:', rawErr);
 
     authStore.reset();
 
@@ -210,10 +228,11 @@ export async function login(
       switch (err.response.status) {
         case 401:
           errorMessage =
-            err.response.data?.detail || 'Invalid email or password. Please try again.';
+            (err.response.data?.detail as string) || 'Invalid email or password. Please try again.';
           break;
         case 400:
-          errorMessage = err.response.data?.detail || 'Invalid request. Please check your input.';
+          errorMessage =
+            (err.response.data?.detail as string) || 'Invalid request. Please check your input.';
           break;
         case 429:
           errorMessage = 'Too many login attempts. Please try again later.';
@@ -225,8 +244,8 @@ export async function login(
           break;
         default:
           errorMessage =
-            err.response.data?.detail ||
-            err.response.data?.message ||
+            (err.response.data?.detail as string) ||
+            (err.response.data?.message as string) ||
             'Login failed. Please try again.';
       }
     } else if (err.request) {
@@ -254,21 +273,26 @@ export async function register(email: string, fullName: string, password: string
     });
 
     return { success: true, user: response.data };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('auth.ts: Registration error:', error);
 
     // Handle validation errors (array) vs simple error messages (string)
     let errorMessage = 'Registration failed. Please try again.';
-    const detail = error.response?.data?.detail;
+    const detail = asAuthError(error).response?.data?.detail;
 
     if (detail) {
       if (typeof detail === 'string') {
         errorMessage = detail;
       } else if (Array.isArray(detail)) {
         // Pydantic validation errors - extract messages
-        errorMessage = detail.map((err: any) => err.msg || err.message || String(err)).join('. ');
+        errorMessage = detail
+          .map(
+            (item: { msg?: string; message?: string }) => item.msg || item.message || String(item)
+          )
+          .join('. ');
       } else if (typeof detail === 'object') {
-        errorMessage = detail.msg || detail.message || JSON.stringify(detail);
+        const d = detail as { msg?: string; message?: string };
+        errorMessage = d.msg || d.message || JSON.stringify(detail);
       }
     }
 
@@ -360,11 +384,13 @@ export async function loginWithKeycloak(): Promise<{
     // Redirect to Keycloak login page
     window.location.href = parsed.toString();
     return { success: true };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Keycloak login error:', error);
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to initiate Keycloak login',
+      message:
+        (asAuthError(error).response?.data?.detail as string) ||
+        'Failed to initiate Keycloak login',
     };
   }
 }
@@ -396,11 +422,13 @@ export async function handleKeycloakCallback(
       success: false,
       message: 'Invalid response from Keycloak callback',
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Keycloak callback error:', error);
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to complete Keycloak authentication',
+      message:
+        (asAuthError(error).response?.data?.detail as string) ||
+        'Failed to complete Keycloak authentication',
     };
   }
 }
@@ -430,14 +458,15 @@ export async function loginWithPKI(): Promise<{
       success: false,
       message: 'Invalid response from PKI authentication',
     };
-  } catch (error: any) {
-    console.error('PKI login error:', error);
+  } catch (rawError: unknown) {
+    const error = asAuthError(rawError);
+    console.error('PKI login error:', rawError);
 
     let message = 'PKI authentication failed';
     if (error.response?.status === 401) {
       message = 'Invalid or missing client certificate';
     } else if (error.response?.status === 400) {
-      message = error.response?.data?.detail || 'PKI authentication is not enabled';
+      message = (error.response?.data?.detail as string) || 'PKI authentication is not enabled';
     }
 
     return { success: false, message };
@@ -474,14 +503,15 @@ export async function verifyMFA(
       success: false,
       message: 'Invalid response from MFA verification',
     };
-  } catch (error: any) {
-    console.error('MFA verification error:', error);
+  } catch (rawError: unknown) {
+    const error = asAuthError(rawError);
+    console.error('MFA verification error:', rawError);
 
     let message = 'MFA verification failed';
     if (error.response?.status === 401) {
-      message = error.response?.data?.detail || 'Invalid verification code';
+      message = (error.response?.data?.detail as string) || 'Invalid verification code';
     } else if (error.response?.status === 400) {
-      message = error.response?.data?.detail || 'Invalid MFA token or code';
+      message = (error.response?.data?.detail as string) || 'Invalid MFA token or code';
     } else if (error.response?.status === 429) {
       message = 'Too many verification attempts. Please try again later.';
     }

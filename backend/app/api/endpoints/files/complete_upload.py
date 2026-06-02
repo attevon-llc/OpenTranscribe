@@ -90,7 +90,7 @@ async def complete_upload(
 ) -> dict[str, Any]:
     """Finalize a presigned upload and dispatch the transcription pipeline."""
     from app.api.endpoints.files.upload import _update_file_hash
-    from app.api.endpoints.files.upload import start_transcription_task
+    from app.api.endpoints.files.upload import dispatch_upload_pipeline
     from app.services.imohash_service import compute_from_minio
     from app.services.minio_service import object_exists_and_size
 
@@ -117,6 +117,11 @@ async def complete_upload(
     # Verify the object actually landed in MinIO — trust but verify.
     minio_size = object_exists_and_size(str(db_file.storage_path))
     if minio_size is None:
+        # The presigned PUT never completed, so the prepared row is an orphan.
+        # Drop it (parity with the legacy path's failure cleanup) so it doesn't
+        # linger in the gallery as a stuck PENDING upload.
+        db.delete(db_file)
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -128,6 +133,45 @@ async def complete_upload(
         logger.warning(
             f"size mismatch for {request.file_id}: client={request.file_size} server={minio_size}"
         )
+
+    # Magic-byte validation — parity with the legacy path. The bytes went
+    # browser→MinIO directly, so verify the object's real signature matches
+    # its declared content_type before dispatching it to the GPU pipeline.
+    # We range-read only a small header (never the whole object). Fail closed
+    # on a CONFIRMED mismatch (delete object + row, 400); on a transient read
+    # error, log and proceed — the object verified-exists, so we don't reject
+    # a legitimate upload over a MinIO hiccup.
+    header_bytes: bytes | None = None
+    try:
+        from app.services.minio_service import range_read
+
+        header_bytes = range_read(str(db_file.storage_path), 0, 64)
+    except Exception as read_err:
+        logger.warning(
+            f"header read for validation of {request.file_id} failed "
+            f"(non-fatal, proceeding): {read_err}"
+        )
+    if header_bytes is not None and db_file.content_type:
+        from app.utils.file_validation import validate_uploaded_file
+
+        is_valid, validation_detail = validate_uploaded_file(
+            header_bytes, str(db_file.content_type), str(db_file.filename)
+        )
+        benchmark_timing.mark(request.task_id, "http_validation_end")
+        if not is_valid:
+            from app.services.minio_service import delete_file
+
+            logger.warning(f"Rejecting presigned upload {request.file_id}: {validation_detail}")
+            try:
+                delete_file(str(db_file.storage_path))
+            except Exception as del_err:
+                logger.warning(f"cleanup of rejected object failed (non-fatal): {del_err}")
+            db.delete(db_file)
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File content does not match its declared type: {validation_detail}",
+            )
 
     # Update client-supplied hash and compute server-side imohash fingerprint
     _update_file_hash(db_file, request.file_hash, str(db_file.filename))
@@ -148,26 +192,24 @@ async def complete_upload(
     if request.skip_summary:
         db_file.summary_status = "disabled"  # type: ignore[assignment]
     db_file.status = FileStatus.PENDING  # type: ignore[assignment]
+    # Snapshot the per-file model BEFORE commit so resolving it doesn't trigger
+    # an expire-on-commit refetch (we deliberately skip db.refresh() here).
     whisper_model: str | None = request.whisper_model
-    requested_model_snapshot = (
-        str(db_file.requested_whisper_model) if db_file.requested_whisper_model else None
-    )
+    if not whisper_model and db_file.requested_whisper_model:
+        whisper_model = str(db_file.requested_whisper_model)
     db.commit()
 
-    if not whisper_model and requested_model_snapshot:
-        whisper_model = requested_model_snapshot
-
-    # Dispatch the pipeline with the pre-minted task_id so every downstream
-    # marker lands in the same benchmark hash as the client-side markers.
-    start_transcription_task(
-        int(db_file.id),
-        str(db_file.uuid),
-        request.min_speakers,
-        request.max_speakers,
-        request.num_speakers,
-        whisper_model=whisper_model,
+    # Fire the thumbnail + transcription pipeline via the shared dispatch tail
+    # (same call the legacy path uses). The thumbnail runs concurrently so the
+    # gallery shows it via the live file_updated refresh during processing, and
+    # the pre-minted task_id keeps every downstream marker in one benchmark hash.
+    dispatch_upload_pipeline(
+        db_file,
         user_id=int(current_user.id),
-        db=db,
+        whisper_model=whisper_model,
+        min_speakers=request.min_speakers,
+        max_speakers=request.max_speakers,
+        num_speakers=request.num_speakers,
         task_id=request.task_id,
     )
 

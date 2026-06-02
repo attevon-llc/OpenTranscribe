@@ -69,15 +69,23 @@ repos:
         stages: [pre-commit]
         verbose: true
 
-  # Dockerfile linting
-  - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0
+  # Dockerfile linting — runs hadolint via its official pinned Docker image
+  # (language: docker_image), so NO local hadolint binary is required; this is
+  # identical in CI and for contributors (both have Docker) and can never fall
+  # back to a missing system binary. The previous config used the hadolint repo
+  # with language: system + entry: hadolint, which exec'd a local binary that
+  # isn't installed in CI — failing every run with "Executable hadolint not
+  # found" (the Pre-commit workflow was red on master since Oct 2025 for this).
+  # Picks up the repo-root .hadolint.yaml; types:[file] + files matches the
+  # Dockerfile.<stage> naming that identify doesn't tag as 'dockerfile'.
+  - repo: local
     hooks:
-      - id: hadolint-docker
+      - id: hadolint
         name: Lint Dockerfiles
+        language: docker_image
+        entry: hadolint/hadolint:v2.12.0 hadolint
         files: Dockerfile.*
-        entry: hadolint
-        language: system
+        types: [file]
 
   # Secret detection
   - repo: https://github.com/gitleaks/gitleaks

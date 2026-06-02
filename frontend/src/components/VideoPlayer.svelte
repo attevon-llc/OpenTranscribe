@@ -4,6 +4,7 @@
   import 'plyr/dist/plyr.css';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import { formatTimeWithMillis } from '$lib/utils/formatting';
   import Spinner from './ui/Spinner.svelte';
 
   export let videoUrl: string = '';
@@ -96,10 +97,11 @@
     if (!player || !file || !file.transcript_segments || !Array.isArray(file.transcript_segments) || file.transcript_segments.length === 0) {
       return;
     }
+    const activePlayer = player;
 
     try {
       // Find the track element
-      const videoElement = (player as any).media as HTMLVideoElement;
+      const videoElement = (activePlayer as any).media as HTMLVideoElement;
       trackElement = videoElement?.querySelector('track[kind="captions"]') as HTMLTrackElement;
 
       if (!trackElement) {
@@ -144,13 +146,13 @@
         currentLoadHandler = () => {
           textTrack.mode = 'showing';
 
-          if ((player as any).captions) {
-            (player as any).captions.active = true;
+          if ((activePlayer as any).captions) {
+            (activePlayer as any).captions.active = true;
           }
 
           // Force Plyr to update its caption state
-          if (player.elements?.buttons?.captions && !(player as any).captions?.active) {
-            player.elements.buttons.captions.click();
+          if (activePlayer.elements?.buttons?.captions && !(activePlayer as any).captions?.active) {
+            activePlayer.elements.buttons.captions.click();
           }
         };
 
@@ -162,8 +164,8 @@
           if (textTrack.cues?.length === 0) {
             textTrack.mode = 'showing';
 
-            if ((player as any).captions) {
-              (player as any).captions.active = true;
+            if ((activePlayer as any).captions) {
+              (activePlayer as any).captions.active = true;
             }
           }
         }, 1000);
@@ -231,11 +233,12 @@
 
     try {
       // Initialize Plyr
-      player = new Plyr(mediaElement, plyrConfig);
+      const newPlayer = new Plyr(mediaElement, plyrConfig);
+      player = newPlayer;
 
       // Set up event listeners
-      player.on('ready', () => {
-        duration = player.duration;
+      newPlayer.on('ready', () => {
+        duration = newPlayer.duration;
         dispatch('loadedmetadata', { duration });
 
         // Initialize subtitles when player is ready
@@ -246,23 +249,23 @@
         }
       });
 
-      player.on('timeupdate', () => {
-        currentTime = player.currentTime;
-        duration = player.duration;
+      newPlayer.on('timeupdate', () => {
+        currentTime = newPlayer.currentTime;
+        duration = newPlayer.duration;
         dispatch('timeupdate', {
           currentTime,
           duration
         });
       });
 
-      player.on('play', () => dispatch('play'));
-      player.on('pause', () => dispatch('pause'));
-      player.on('ended', () => dispatch('ended'));
-      player.on('seeking', () => {
+      newPlayer.on('play', () => dispatch('play'));
+      newPlayer.on('pause', () => dispatch('pause'));
+      newPlayer.on('ended', () => dispatch('ended'));
+      newPlayer.on('seeking', () => {
         isSeeking = true;
         dispatch('seeking');
       });
-      player.on('seeked', () => {
+      newPlayer.on('seeked', () => {
         isSeeking = false;
         dispatch('seeked');
       });
@@ -307,8 +310,8 @@
       const text = segment.text;
 
       if (startTime !== undefined && endTime !== undefined && text && startTime < endTime) {
-        const formattedStartTime = formatTime(startTime);
-        const formattedEndTime = formatTime(endTime);
+        const formattedStartTime = formatTimeWithMillis(startTime);
+        const formattedEndTime = formatTimeWithMillis(endTime);
 
         // Get original speaker name from segment
         const originalSpeakerName = segment.speaker_label || segment.speaker?.name || segment.speaker || `SPEAKER_${String(index + 1).padStart(2, '0')}`;
@@ -328,19 +331,6 @@
     });
 
     return webvtt;
-  }
-
-  function formatTime(seconds: number): string {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    const ms = Math.floor((seconds % 1) * 1000);
-
-    if (hours > 0) {
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
-    } else {
-      return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
-    }
   }
 
   onMount(() => {

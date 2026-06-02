@@ -4,9 +4,11 @@
   import { translateSpeakerLabel } from '$lib/i18n';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from '../ui/Spinner.svelte';
   import BaseModal from '../ui/BaseModal.svelte';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { formatClock } from '$lib/utils/formatting';
   import type { SearchOccurrence } from '$stores/search';
 
   export let isOpen: boolean = false;
@@ -261,12 +263,9 @@
     }
 
     sorted.forEach((segment: any, rawIdx: number) => {
-      const speakerName =
-        segment.resolved_speaker_name ||
-        segment.speaker?.display_name ||
-        segment.speaker?.name ||
-        segment.speaker_label ||
-        'Unknown Speaker';
+      // Backend guarantees `resolved_speaker_name`; prefer it directly, with a
+      // last-resort guard for old payloads. `speakerLabel` stays for color mapping.
+      const speakerName = segment.resolved_speaker_name || 'Unknown Speaker';
       const speakerLabel = segment.speaker_label || segment.speaker?.name || 'Unknown';
       const startTime = parseFloat(String(segment.start_time || 0));
       const endTime = parseFloat(String(segment.end_time || 0));
@@ -454,9 +453,9 @@
 
       // Set up infinite scroll for additional pages
       setupInfiniteScrollObserver();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to load transcript:', e);
-      error = e?.response?.data?.detail || 'Failed to load transcript';
+      error = getErrorMessage(e, 'Failed to load transcript');
       loading = false;
     }
   }
@@ -525,7 +524,7 @@
           }
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to load more segments:', e);
     }
     loadingMoreSegments = false;
@@ -738,14 +737,6 @@
     dispatch('close');
   }
 
-  function formatTimestamp(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  }
-
   $: totalMatches = allMatchPositions.length;
 </script>
 
@@ -843,7 +834,7 @@
                       style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
                     >{translateSpeakerLabel(segment.speakerName)}</div>
                     <div class="segment-time">
-                      {formatTimestamp(segment.startTime)}-{formatTimestamp(segment.endTime)}
+                      {formatClock(segment.startTime)}-{formatClock(segment.endTime)}
                     </div>
                   </div>
                   <div class="segment-text">{@html sanitizeHighlightHtml(segment.highlightedText)}</div>

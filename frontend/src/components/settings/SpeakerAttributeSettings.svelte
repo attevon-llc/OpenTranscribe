@@ -657,11 +657,6 @@
     animation: skeleton-pulse 1.5s ease-in-out infinite;
   }
 
-  @keyframes skeleton-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 0.8; }
-  }
-
   .bulk-section {
     margin-top: 1rem;
   }

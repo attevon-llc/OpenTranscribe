@@ -1,19 +1,19 @@
-<script>
-  // @ts-nocheck
+<script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import axiosInstance from '../lib/axios';
+  import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorStatus, getErrorCode } from '$lib/utils/apiError';
   import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
   // Use the shared axios instance so auth token is always sent
 
-  /** @type {string} */
+  type Tag = { uuid: string; name: string; source?: string; usage_count?: number };
+  type AISuggestion = { name: string; confidence: number; rationale?: string };
+
   export let fileId = "";
-  /** @type {Array<{uuid: string, name: string, source?: string}>} */
-  export let tags = [];
-  /** @type {Array<{name: string, confidence: number, rationale?: string}>} */
-  export let aiSuggestions = [];
+  export let tags: Tag[] = [];
+  export let aiSuggestions: AISuggestion[] = [];
 
   // Filter AI suggestions to only show ones not already applied
   $: filteredAISuggestions = aiSuggestions.filter(suggestion =>
@@ -28,7 +28,7 @@
   $: {
     if (Array.isArray(tags)) {
       // Handle case where backend returns tag names as strings instead of objects
-      tags = tags.map(tag => {
+      tags = tags.map((tag: Tag | string): Tag => {
         if (typeof tag === 'string') {
           // Convert string tag to object format with a temporary UUID
           return { uuid: `temp-${tag}`, name: tag };
@@ -45,15 +45,15 @@
     }
   }
 
-  /** @type {Array<{uuid: string, name: string, usage_count?: number}>} */
-  let allTags = [];
-  /** @type {string} */
+  let allTags: Tag[] = [];
   let newTagInput = '';
-  /** @type {boolean} */
   let loading = false;
 
   // Event dispatcher
-  const dispatch = createEventDispatcher();
+  const dispatch = createEventDispatcher<{
+    tagsUpdated: { tags: Tag[] };
+    aiSuggestionAccepted: { suggestion: AISuggestion };
+  }>();
 
   // Fetch all available tags
   async function fetchAllTags() {
@@ -62,25 +62,19 @@
       const response = await axiosInstance.get('/tags');
 
       // Ensure all tags have valid IDs before adding them to the allTags array
-      const validTags = (response.data || []).filter(tag =>
+      const validTags = (response.data || []).filter((tag: Tag) =>
         tag && typeof tag === 'object' &&
         tag.uuid !== undefined && tag.uuid !== null &&
         tag.name !== undefined && tag.name !== null
       );
 
       allTags = validTags;
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[TagsEditor] Error fetching tags:', err);
-      console.error('[TagsEditor] Error details:', {
-        message: err.message,
-        status: err.response?.status,
-        data: err.response?.data,
-        config: err.config
-      });
-
-      if (err.response && err.response.status === 401) {
+      const status = getErrorStatus(err);
+      if (status === 401) {
         toastStore.error($t('tags.unauthorizedLogin'));
-      } else if (err.code === 'ERR_NETWORK') {
+      } else if (getErrorCode(err) === 'ERR_NETWORK') {
         toastStore.error($t('tags.networkError'));
       } else {
         toastStore.error($t('tags.failedToLoad'));
@@ -89,7 +83,7 @@
   }
 
   // Add a tag to the file
-  async function addTag(tagId) {
+  async function addTag(tagId: string) {
     loading = true;
     try {
       // Adding tag to file
@@ -126,8 +120,8 @@
         tags = [...tags, finalTag];
         dispatch('tagsUpdated', { tags });
       }
-    } catch (err) {
-      if (err.response && err.response.status === 401) {
+    } catch (err: unknown) {
+      if (getErrorStatus(err) === 401) {
         toastStore.error($t('tags.unauthorizedLogin'));
       } else {
         toastStore.error($t('tags.failedToAdd'));
@@ -183,10 +177,10 @@
       } else {
         newTagInput = '';
       }
-    } catch (err) {
+    } catch (err: unknown) {
       // Safely check for error properties
       if (err && typeof err === 'object') {
-        const errorObj = err;
+        const errorObj = err as any;
 
         if (errorObj.response && errorObj.response.status === 401) {
           toastStore.error($t('tags.unauthorizedLogin'));
@@ -212,7 +206,7 @@
   }
 
   // Remove a tag from the file
-  async function removeTag(tagId) {
+  async function removeTag(tagId: string) {
     loading = true;
     try {
       // Removing tag from file
@@ -243,19 +237,11 @@
         tags = updatedTags;
         dispatch('tagsUpdated', { tags });
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[TagsEditor] Error removing tag:', err);
-      console.error('[TagsEditor] Error details:', {
-        message: err.message,
-        status: err.response?.status,
-        data: err.response?.data,
-        config: err.config
-      });
-
-
-      if (err.response && err.response.status === 401) {
+      if (getErrorStatus(err) === 401) {
         toastStore.error($t('tags.unauthorizedLogin'));
-      } else if (err.code === 'ERR_NETWORK') {
+      } else if (getErrorCode(err) === 'ERR_NETWORK') {
         toastStore.error($t('tags.networkError'));
       } else {
         toastStore.error($t('tags.failedToRemove'));
@@ -266,15 +252,15 @@
   }
 
   // Handle keydown event in the input field
-  function handleInputKeydown(event) {
+  function handleInputKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter' && newTagInput.trim()) {
       event.preventDefault();
       createAndAddTag();
     }
   }
 
-  let suggestedTags = [];
-  let dropdownTags = []; // All available tags for dropdown
+  let suggestedTags: Tag[] = [];
+  let dropdownTags: Array<{ id: string; name: string; count: number }> = []; // All available tags for dropdown
 
   // Get top 5 suggested tags as chips (most used)
   $: suggestedTags = allTags
@@ -312,13 +298,13 @@
     }));
 
   // Handle multiselect tag selection
-  async function handleTagSelect(event) {
+  async function handleTagSelect(event: CustomEvent<{ id: string | number }>) {
     const { id } = event.detail;
-    await addTag(id);
+    await addTag(String(id));
   }
 
   // Handle AI suggestion acceptance
-  async function handleAcceptAISuggestion(event) {
+  async function handleAcceptAISuggestion(event: CustomEvent<{ suggestion: AISuggestion }>) {
     const { suggestion } = event.detail;
     newTagInput = suggestion.name;
     await createAndAddTag();

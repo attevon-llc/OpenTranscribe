@@ -1,18 +1,24 @@
-<script>
-  // @ts-nocheck
+<script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import axiosInstance from '../lib/axios';
+  import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage, getErrorStatus, getErrorCode } from '$lib/utils/apiError';
   import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
 
-  /** @type {string} */
+  type Collection = {
+    uuid: string;
+    name: string;
+    description?: string;
+    source?: string;
+    media_count?: number;
+  };
+  type AISuggestion = { name: string; confidence: number; rationale?: string; description?: string };
+
   export let fileId = "";
-  /** @type {Array<{uuid: string, name: string, description?: string, source?: string}>} */
-  export let collections = [];
-  /** @type {Array<{name: string, confidence: number, rationale?: string, description?: string}>} */
-  export let aiSuggestions = [];
+  export let collections: Collection[] = [];
+  export let aiSuggestions: AISuggestion[] = [];
 
   // Filter AI suggestions to only show ones not already applied
   $: filteredAISuggestions = aiSuggestions.filter(suggestion =>
@@ -26,7 +32,7 @@
   // Ensure collections are always in the correct format
   $: {
     if (Array.isArray(collections)) {
-      collections = collections.map(collection => {
+      collections = collections.map((collection: Collection): Collection => {
         if (collection && typeof collection === 'object') {
           return {
             uuid: collection.uuid || `temp-${collection.name}`,
@@ -40,15 +46,15 @@
     }
   }
 
-  /** @type {Array<{uuid: string, name: string, description?: string, media_count?: number}>} */
-  let allCollections = [];
-  /** @type {string} */
+  let allCollections: Collection[] = [];
   let newCollectionInput = '';
-  /** @type {boolean} */
   let loading = false;
 
   // Event dispatcher
-  const dispatch = createEventDispatcher();
+  const dispatch = createEventDispatcher<{
+    collectionsUpdated: { collections: Collection[] };
+    aiSuggestionAccepted: { suggestion: AISuggestion };
+  }>();
 
   // Fetch all available collections
   async function fetchAllCollections() {
@@ -56,25 +62,20 @@
       const response = await axiosInstance.get('/collections');
 
       // Ensure all collections have valid IDs
-      const validCollections = (response.data || []).filter(collection =>
+      const validCollections = (response.data || []).filter((collection: Collection) =>
         collection && typeof collection === 'object' &&
         collection.uuid !== undefined && collection.uuid !== null &&
         collection.name !== undefined && collection.name !== null
       );
 
       allCollections = validCollections;
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[CollectionsEditor] Error fetching collections:', err);
-      console.error('[CollectionsEditor] Error details:', {
-        message: err.message,
-        status: err.response?.status,
-        data: err.response?.data
-      });
 
       // Show toast for critical errors
-      if (err.response && err.response.status === 401) {
+      if (getErrorStatus(err) === 401) {
         toastStore.error($t('collections.unauthorizedLogin'));
-      } else if (err.code === 'ERR_NETWORK') {
+      } else if (getErrorCode(err) === 'ERR_NETWORK') {
         toastStore.error($t('collections.networkError'));
       }
       // Silent fail for collection loading - not critical
@@ -82,7 +83,7 @@
   }
 
   // Add file to an existing collection
-  async function addToCollection(collectionId) {
+  async function addToCollection(collectionId: string) {
     loading = true;
     try {
       const collectionToAdd = allCollections.find(c => c.uuid === collectionId);
@@ -102,16 +103,11 @@
         dispatch('collectionsUpdated', { collections });
         toastStore.success($t('collections.addedTo', { name: collectionToAdd.name }));
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[CollectionsEditor] Error adding to collection:', err);
 
       // Extract error message
-      let errorMessage = $t('collections.failedToAdd');
-      if (err?.response?.data?.detail) {
-        errorMessage = err.response.data.detail;
-      } else if (err?.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = getErrorMessage(err, $t('collections.failedToAdd'));
 
       toastStore.error(errorMessage);
     } finally {
@@ -168,16 +164,11 @@
       }
 
       newCollectionInput = '';
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[CollectionsEditor] Error with collection:', err);
 
       // Extract error message
-      let errorMessage = $t('collections.failedToAdd');
-      if (err?.response?.data?.detail) {
-        errorMessage = err.response.data.detail;
-      } else if (err?.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = getErrorMessage(err, $t('collections.failedToAdd'));
 
       // Show toast instead of inline error
       toastStore.error(errorMessage);
@@ -187,7 +178,7 @@
   }
 
   // Remove file from a collection
-  async function removeFromCollection(collectionId) {
+  async function removeFromCollection(collectionId: string) {
     loading = true;
     try {
       const collectionToRemove = collections.find(c => c.uuid === collectionId);
@@ -211,16 +202,11 @@
         dispatch('collectionsUpdated', { collections });
         toastStore.success($t('collections.removedFrom', { name: collectionToRemove.name }));
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[CollectionsEditor] Error removing from collection:', err);
 
       // Extract error message
-      let errorMessage = $t('collections.failedToRemove');
-      if (err?.response?.data?.detail) {
-        errorMessage = err.response.data.detail;
-      } else if (err?.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = getErrorMessage(err, $t('collections.failedToRemove'));
 
       toastStore.error(errorMessage);
     } finally {
@@ -229,15 +215,15 @@
   }
 
   // Handle keydown event in the input field
-  function handleInputKeydown(event) {
+  function handleInputKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter' && newCollectionInput.trim()) {
       event.preventDefault();
       createAndAddCollection();
     }
   }
 
-  let suggestedCollections = [];
-  let dropdownCollections = [];
+  let suggestedCollections: Collection[] = [];
+  let dropdownCollections: Array<{ id: string; name: string; count: number }> = [];
 
   // Get top 5 most used collections as chips
   $: suggestedCollections = allCollections
@@ -279,13 +265,13 @@
     }));
 
   // Handle multiselect collection selection
-  async function handleCollectionSelect(event) {
+  async function handleCollectionSelect(event: CustomEvent<{ id: string | number }>) {
     const { id } = event.detail;
-    await addToCollection(id);
+    await addToCollection(String(id));
   }
 
   // Handle AI suggestion acceptance
-  async function handleAcceptAISuggestion(event) {
+  async function handleAcceptAISuggestion(event: CustomEvent<{ suggestion: AISuggestion }>) {
     const { suggestion } = event.detail;
     newCollectionInput = suggestion.name;
     await createAndAddCollection();

@@ -3,6 +3,7 @@
   import { t } from '$stores/locale';
   import { recordingStore, recordingManager, isRecording, recordingDuration, audioLevel } from '$stores/recording';
   import { settingsModalStore } from '$stores/settingsModalStore';
+  import { formatClock } from '$lib/utils/formatting';
 
   export let recordingSupported = true;
   export let maxRecordingDuration = 7200; // seconds
@@ -18,14 +19,6 @@
   $: audioDevices = $recordingStore.audioDevices;
   $: selectedDeviceId = $recordingStore.selectedDeviceId;
   $: isPaused = $recordingStore.isPaused;
-
-  function formatDuration(seconds: number): string {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    if (hours > 0) return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
-  }
 
   async function startRecording() {
     try {
@@ -122,7 +115,7 @@
           <div class="status-row">
             <div class="recording-dot" class:paused={isPaused}></div>
             <span class="status-text">{isPaused ? $t('uploader.paused') : $t('uploader.recording')}</span>
-            <span class="duration-badge">{formatDuration($recordingDuration)}</span>
+            <span class="duration-badge">{formatClock($recordingDuration)}</span>
           </div>
 
           <div class="visualizer">
@@ -158,7 +151,7 @@
         <div class="recording-complete">
           <div class="complete-info">
             <span class="complete-title">{$t('uploader.recordingComplete')}</span>
-            <span class="complete-meta">{formatDuration($recordingDuration)} &bull; {(recordedBlob.size / 1024 / 1024).toFixed(1)} MB</span>
+            <span class="complete-meta">{formatClock($recordingDuration)} &bull; {(recordedBlob.size / 1024 / 1024).toFixed(1)} MB</span>
           </div>
           <button class="ctrl-btn clear" on:click={clearRecording} title={$t('uploader.clearRecordingTooltip')}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -10,6 +10,7 @@
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import { createDebouncedHandler } from '$lib/utils/debounce';
+  import { formatClock } from '$lib/utils/formatting';
 
   // Type definitions for props and state
   /**
@@ -396,14 +397,6 @@
     }
   }
 
-  function formatDuration(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  }
-
   function formatFileSize(mb: number): string {
     if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
     return `${Math.round(mb)} MB`;
@@ -709,6 +702,7 @@
       <DatePicker
         isRange
         enableFutureDates
+        includeFont={false}
         bind:isOpen={datePickerOpen}
         bind:startDate={dpStartDate}
         bind:endDate={dpEndDate}
@@ -759,8 +753,8 @@
   <div class="filter-section">
     <h3>{$t('filter.duration')}</h3>
     <div class="slider-labels">
-      <span>{formatDuration(durationSliderValues[0])}</span>
-      <span>{formatDuration(durationSliderValues[1])}</span>
+      <span>{formatClock(durationSliderValues[0])}</span>
+      <span>{formatClock(durationSliderValues[1])}</span>
     </div>
     <div class="slider-wrapper">
       <RangeSlider

@@ -541,11 +541,6 @@
     width: 60%;
   }
 
-  @keyframes skeleton-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 0.8; }
-  }
-
   .cluster-avatar {
     width: 24px;
     height: 24px;

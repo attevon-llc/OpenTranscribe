@@ -1,12 +1,11 @@
 name: Pre-commit Checks
 
 on:
-  workflow_dispatch:  # Manual triggering ONLY - automatic runs disabled
-  # Automatic runs disabled - pre-commit hooks should run locally before commit
-  # Re-enable when GitHub plan supports sufficient runner resources
+  workflow_dispatch:  # Manual triggering always available
+  pull_request:
+    branches: [master, main, develop]
+  # push intentionally left off to respect runner-resource limits — PRs are the gate.
   # push:
-  #   branches: [master, main, develop]
-  # pull_request:
   #   branches: [master, main, develop]
 
 jobs:
@@ -28,7 +27,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'  # matches frontend/Dockerfile.prod build stage (node:22-alpine)
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -66,3 +65,44 @@ jobs:
           echo "- Security checks (Gitleaks, Bandit)" >> $GITHUB_STEP_SUMMARY
           echo "- Shell script validation (shellcheck)" >> $GITHUB_STEP_SUMMARY
           echo "- Dockerfile linting (Hadolint)" >> $GITHUB_STEP_SUMMARY
+
+  frontend-tests:
+    name: Frontend Unit Tests (Vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Check i18n key parity
+        working-directory: frontend
+        run: npm run check:i18n
+
+      - name: Run Vitest
+        working-directory: frontend
+        run: npm run test
+
+      # Report-only dev-tooling: surface dead code and import cycles in the job log
+      # without failing CI yet (|| true). Tighten to hard-fail once the existing
+      # backlog of knip false-positives / the intentional axios↔auth cycle is triaged.
+      - name: Dead-code report (knip, non-blocking)
+        working-directory: frontend
+        run: npm run deadcode || true
+
+      - name: Import-cycle report (madge, non-blocking)
+        working-directory: frontend
+        run: npm run cycles || true

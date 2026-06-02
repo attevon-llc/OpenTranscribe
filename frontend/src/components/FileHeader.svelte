@@ -317,11 +317,6 @@
     flex-shrink: 0;
   }
 
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-
   .processing-status {
     flex: 1;
     display: flex;
@@ -668,11 +663,6 @@
 
   .spinning {
     animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
   }
 
   @media (max-width: 768px) {

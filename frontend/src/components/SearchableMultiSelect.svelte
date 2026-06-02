@@ -1,10 +1,11 @@
-<script>
-  // @ts-nocheck
+<script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { t } from '$stores/locale';
 
-  export let options = []; // Array of {id, name, count?}
-  export let selectedIds = []; // Array of selected IDs
+  type Option = { id: string | number; name: string; count?: number };
+
+  export let options: Option[] = []; // Array of {id, name, count?}
+  export let selectedIds: Array<string | number> = []; // Array of selected IDs
   export let placeholder = "";
   export let maxHeight = "200px";
   export let disabled = false;
@@ -12,11 +13,14 @@
 
   $: placeholder = placeholder || $t('select.placeholder');
 
-  const dispatch = createEventDispatcher();
+  const dispatch = createEventDispatcher<{
+    select: { id: string | number };
+    deselect: { id: string | number };
+  }>();
 
   let isOpen = false;
   let searchTerm = '';
-  let dropdownElement;
+  let dropdownElement: HTMLDivElement;
 
   // Filter options based on search
   $: filteredOptions = options.filter(option => {
@@ -33,7 +37,7 @@
     return a.name.localeCompare(b.name);
   });
 
-  function toggleOption(optionId) {
+  function toggleOption(optionId: string | number) {
     if (selectedIds.includes(optionId)) {
       selectedIds = selectedIds.filter(id => id !== optionId);
       dispatch('deselect', { id: optionId });
@@ -43,8 +47,8 @@
     }
   }
 
-  function handleClickOutside(event) {
-    if (dropdownElement && !dropdownElement.contains(event.target)) {
+  function handleClickOutside(event: MouseEvent) {
+    if (dropdownElement && !dropdownElement.contains(event.target as Node)) {
       isOpen = false;
     }
   }

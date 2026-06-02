@@ -10,6 +10,7 @@ import type {
   BatchVerifyResponse,
   ReclusterResponse,
   OutlierAnalysisResponse,
+  SpeakerProfile,
 } from '$lib/types/speakerCluster';
 
 export async function listClusters(
@@ -128,7 +129,7 @@ export async function getSpeakerMediaPreview(
 export async function updateProfile(
   uuid: string,
   data: { name?: string; description?: string }
-): Promise<any> {
+): Promise<SpeakerProfile> {
   const params = new URLSearchParams();
   if (data.name) params.set('name', data.name);
   if (data.description !== undefined) params.set('description', data.description);

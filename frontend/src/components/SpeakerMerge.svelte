@@ -6,6 +6,7 @@
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import type { Speaker } from '$lib/types/speaker';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { translateSpeakerLabel } from '$lib/i18n';
   import BaseModal from './ui/BaseModal.svelte';
   import Spinner from './ui/Spinner.svelte';
@@ -84,11 +85,12 @@
       toastStore.error($t('speaker.pleaseSelectTarget'));
       return;
     }
+    const target = targetSpeaker;
 
     merging = true;
 
     // Get source speakers (all selected except target)
-    const sourceSpeakers = selectedSpeakerList.filter(s => s.uuid !== targetSpeaker.uuid);
+    const sourceSpeakers = selectedSpeakerList.filter(s => s.uuid !== target.uuid);
 
     // Track successful and failed merges
     const successfulMerges: Speaker[] = [];
@@ -97,10 +99,10 @@
     // Merge each source speaker into target
     for (const sourceSpeaker of sourceSpeakers) {
       try {
-        await mergeSpeakers(sourceSpeaker.uuid, targetSpeaker.uuid);
+        await mergeSpeakers(sourceSpeaker.uuid, target.uuid);
         successfulMerges.push(sourceSpeaker);
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.detail || error.message || $t('common.unknownError');
+      } catch (error: unknown) {
+        const errorMessage = getErrorMessage(error, $t('common.unknownError'));
         failedMerges.push({ speaker: sourceSpeaker, error: errorMessage });
         console.error(`Error merging speaker ${sourceSpeaker.display_name || sourceSpeaker.name}:`, error);
       }
@@ -110,7 +112,7 @@
     if (failedMerges.length === 0) {
       // All merges succeeded
       const speakerWord = successfulMerges.length > 1 ? $t('speaker.speakers') : $t('speaker.speaker');
-      const targetName = targetSpeaker.display_name || targetSpeaker.name;
+      const targetName = target.display_name || target.name;
       toastStore.success(
         $t('speaker.mergeSuccessAll', { count: successfulMerges.length, speakerWord, target: targetName })
       );

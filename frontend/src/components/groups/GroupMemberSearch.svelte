@@ -4,6 +4,7 @@
   import { GroupsApi } from '$lib/api/groups';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { getInitials } from '$lib/utils/formatting';
   import { createDebouncedHandler } from '$lib/utils/debounce';
   import Spinner from '../ui/Spinner.svelte';
@@ -47,7 +48,7 @@
 
     try {
       searchResults = await GroupsApi.searchUsers(searchQuery.trim());
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('User search failed:', err);
       searchResults = [];
     } finally {
@@ -70,8 +71,8 @@
       // Clear search after successful add (dropdown-select pattern)
       searchQuery = '';
       searchResults = [];
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || $t('groups.toast.addMemberFailed');
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, $t('groups.toast.addMemberFailed'));
       toastStore.error(message);
     } finally {
       addingUserUuid = null;

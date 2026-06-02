@@ -2,19 +2,10 @@
   import type { SearchOccurrence } from '$stores/search';
   import { t } from '$stores/locale';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { formatClock } from '$lib/utils/formatting';
 
   export let occurrence: SearchOccurrence;
   export let fileUuid: string;
-
-  function formatTimestamp(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) {
-      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    }
-    return `${m}:${String(s).padStart(2, '0')}`;
-  }
 </script>
 
 <div class="occurrence">
@@ -31,9 +22,9 @@
     <a
       class="timestamp-link"
       href="/files/{fileUuid}?t={occurrence.start_time}"
-      title="{$t('search.jumpTo')} {formatTimestamp(occurrence.start_time)}"
+      title="{$t('search.jumpTo')} {formatClock(occurrence.start_time)}"
     >
-      {formatTimestamp(occurrence.start_time)}
+      {formatClock(occurrence.start_time)}
     </a>
   </div>
   {#if occurrence.snippet}

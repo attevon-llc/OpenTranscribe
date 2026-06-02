@@ -146,8 +146,6 @@ def start_transcription_task(
     max_speakers: int | None = None,
     num_speakers: int | None = None,
     whisper_model: str | None = None,
-    user_id: int | None = None,
-    db=None,
     disable_diarization: bool | None = None,
     task_id: str | None = None,
 ) -> str | None:
@@ -164,8 +162,6 @@ def start_transcription_task(
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization
         whisper_model: Optional Whisper model override for this transcription
-        user_id: Unused (kept for backward compatibility)
-        db: Unused (kept for backward compatibility)
         task_id: Optional pre-generated application task_id. When provided,
             it's threaded through dispatch_transcription_pipeline and
             generate_waveform_task so HTTP-ingress benchmark markers share
@@ -197,6 +193,64 @@ def start_transcription_task(
     else:
         logger.info("Skipping Celery task in test environment")
         return None
+
+
+def dispatch_thumbnail_for_video(db_file: MediaFile, user_id: int) -> None:
+    """Dispatch background WebP thumbnail generation for video files.
+
+    Shared by the legacy multipart upload and the presigned ``/complete``
+    path so every video gets a thumbnail — and the gallery's live
+    ``file_updated`` refresh — regardless of ingest route. No-op for audio.
+    Reads ``content_type`` off the row (set by both ingest paths) so the
+    two upload routes can't drift on this again.
+    """
+    content_type = getattr(db_file, "content_type", None)
+    if not (content_type and str(content_type).startswith("video/")):
+        return
+    try:
+        from app.tasks.thumbnail import generate_thumbnail_task
+
+        generate_thumbnail_task.delay(
+            file_id=int(db_file.id),
+            user_id=int(user_id),
+            storage_path=str(db_file.storage_path),
+        )
+        logger.info(f"Dispatched thumbnail generation for video file {db_file.id}")
+    except Exception as thumb_err:
+        logger.warning(f"Thumbnail dispatch failed for {db_file.id} (non-fatal): {thumb_err}")
+
+
+def dispatch_upload_pipeline(
+    db_file: MediaFile,
+    *,
+    user_id: int,
+    whisper_model: str | None,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+    task_id: str | None,
+) -> str | None:
+    """Shared post-commit dispatch tail for BOTH upload ingest paths.
+
+    Fires the background thumbnail and dispatches the transcription pipeline.
+    The legacy multipart and presigned ``/complete`` routes both call this so
+    the "what happens after the bytes land" logic lives in ONE place — the
+    thumbnail/validation gaps came from these two tails being hand-copied and
+    drifting. Call AFTER the row is committed. ``whisper_model`` falls back to
+    the per-file requested model when not explicitly provided.
+    """
+    if not whisper_model and db_file.requested_whisper_model:
+        whisper_model = str(db_file.requested_whisper_model)
+    dispatch_thumbnail_for_video(db_file, user_id)
+    return start_transcription_task(
+        int(db_file.id),
+        str(db_file.uuid),
+        min_speakers,
+        max_speakers,
+        num_speakers,
+        whisper_model=whisper_model,
+        task_id=task_id,
+    )
 
 
 def _get_or_create_file_record(
@@ -438,22 +492,6 @@ async def process_file_upload(
             db.commit()
             db.refresh(db_file)
 
-        # Dispatch the background thumbnail generation for video files.
-        if file.content_type and file.content_type.startswith("video/"):
-            try:
-                from app.tasks.thumbnail import generate_thumbnail_task
-
-                generate_thumbnail_task.delay(
-                    file_id=int(db_file.id),
-                    user_id=int(current_user.id),
-                    storage_path=storage_path,
-                )
-                logger.info(f"Dispatched thumbnail generation for video file {db_file.id}")
-            except Exception as thumb_err:
-                logger.warning(
-                    f"Thumbnail dispatch failed for {db_file.id} (non-fatal): {thumb_err}"
-                )
-
         # Capture file context for later reporting (persists until flushed
         # into file_pipeline_timing by finalize_transcription).
         benchmark_timing.set_context(
@@ -465,22 +503,15 @@ async def process_file_upload(
             },
         )
 
-        # Read requested model from the prepare step if not explicitly provided
-        if not whisper_model and db_file.requested_whisper_model:
-            whisper_model = str(db_file.requested_whisper_model)
-
-        # Start background transcription and waveform generation in parallel.
-        # Pass our ingress-minted task_id through so the pipeline writes into
-        # the same benchmark hash we've been populating.
-        start_transcription_task(
-            int(db_file.id),
-            str(db_file.uuid),
-            min_speakers,
-            max_speakers,
-            num_speakers,
-            whisper_model=whisper_model,
+        # Fire the thumbnail + transcription pipeline via the shared dispatch
+        # tail so this route stays in lockstep with the presigned /complete one.
+        dispatch_upload_pipeline(
+            db_file,
             user_id=int(current_user.id),
-            db=db,
+            whisper_model=whisper_model,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
             task_id=task_id,
         )
 

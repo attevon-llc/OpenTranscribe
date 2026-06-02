@@ -1,0 +1,88 @@
+/*
+ * Global keyframe animations.
+ *
+ * Canonical definitions consolidated from byte-identical copies that were
+ * previously duplicated across many Svelte components. This is a plain global
+ * stylesheet (not Svelte-scoped), so these keyframe names are visible to every
+ * component's `animation:` rule. Components that referenced an identical local
+ * `@keyframes` had it removed and now resolve to these.
+ *
+ * Variants that differ (different transforms/opacities/steps) intentionally
+ * remain local in their components to preserve their exact visual behavior.
+ */
+
+/* Continuous rotation (spinners, refresh icons, loading indicators). */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Simple opacity fade-in (modal backdrops, panels). */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Modal slide-in: fade up + slight scale (CollectionFormModal,
+   TxtExportOptionsModal, file detail page). BaseModal uses a subtler variant
+   that stays local. */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Modal slide-up from below (SettingsModal, UserManagementTable). */
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Skeleton placeholder pulse (opacity variant used by settings/speaker
+   skeletons). SkeletonLoader's background-position shimmer is a different
+   animation and stays local/scoped. */
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/*
+ * Accessibility: honor the user's reduced-motion preference. Collapses
+ * animation/transition durations to effectively-instant and disables smooth
+ * scrolling, without removing the animations themselves (so end states still
+ * apply). Applies app-wide.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

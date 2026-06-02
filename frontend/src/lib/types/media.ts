@@ -73,6 +73,21 @@ export interface MediaFile {
   diarization_disabled?: boolean;
 }
 
+/**
+ * Backend-shaped overlap-grouped transcript segment (snake_case), guaranteed
+ * present on the file-detail payload as `grouped_segments`. Mirrors the Pydantic
+ * `GroupedTranscriptSegment` schema. The frontend prefers this over recomputing
+ * the grouping client-side; see `TranscriptDisplay.svelte`.
+ */
+export interface GroupedTranscriptSegment {
+  is_overlap_group: boolean;
+  overlap_group_id?: string | null;
+  start_time: number;
+  end_time: number;
+  start_segment_index: number;
+  segments: any[];
+}
+
 export interface DurationRange {
   min: number | null;
   max: number | null;

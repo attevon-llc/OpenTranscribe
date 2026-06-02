@@ -29,7 +29,7 @@
     try {
       const response = await axiosInstance.get('/prompts');
       availablePrompts = response.data.prompts || [];
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching prompts:', err);
     } finally {
       loadingPrompts = false;

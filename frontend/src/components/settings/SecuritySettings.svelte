@@ -4,6 +4,7 @@
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { getAuthMethods, user as userStore } from '$stores/auth';
   import CertificateInfo from './CertificateInfo.svelte';
 
@@ -62,7 +63,7 @@
       // Get user's MFA status
       const response = await axiosInstance.get('/auth/mfa/status');
       mfaStatus = response.data;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading MFA status:', err);
       toastStore.error($t('settings.security.loadFailed'));
     } finally {
@@ -75,9 +76,9 @@
     try {
       const response = await axiosInstance.post('/auth/mfa/setup');
       setupData = response.data;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error starting MFA setup:', err);
-      toastStore.error(err.response?.data?.detail || $t('settings.security.setupFailed'));
+      toastStore.error(getErrorMessage(err, $t('settings.security.setupFailed')));
       setupStep = 'idle';
     }
   }
@@ -97,9 +98,9 @@
       backupCodes = response.data.backup_codes;
       setupStep = 'complete';
       toastStore.success($t('settings.security.setupSuccess'));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error verifying MFA setup:', err);
-      toastStore.error(err.response?.data?.detail || $t('settings.security.verifyFailed'));
+      toastStore.error(getErrorMessage(err, $t('settings.security.verifyFailed')));
     } finally {
       verifyLoading = false;
     }
@@ -130,9 +131,9 @@
       showDisableConfirm = false;
       disableCode = '';
       await loadMFAStatus();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error disabling MFA:', err);
-      toastStore.error(err.response?.data?.detail || $t('settings.security.disableFailed'));
+      toastStore.error(getErrorMessage(err, $t('settings.security.disableFailed')));
     } finally {
       disableLoading = false;
     }

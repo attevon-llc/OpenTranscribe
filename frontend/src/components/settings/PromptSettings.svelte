@@ -8,6 +8,7 @@
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   export let onSettingsChange: (() => void) | null = null;
 
@@ -106,10 +107,9 @@
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading prompts:', err);
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('prompts.loadFailed'));
+      toastStore.error(getErrorMessage(err, $t('prompts.loadFailed')));
     } finally {
       loading = false;
     }
@@ -130,10 +130,9 @@
       if (onSettingsChange) {
         onSettingsChange();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error setting active prompt:', err);
-      const detail = err.response?.data?.detail;
-      const errorMessage = typeof detail === 'string' ? detail : $t('prompts.setActiveFailed');
+      const errorMessage = getErrorMessage(err, $t('prompts.setActiveFailed'));
       toastStore.error(errorMessage);
     } finally {
       saving = false;
@@ -246,10 +245,9 @@
       if (onSettingsChange) {
         onSettingsChange();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error saving prompt:', err);
-      const saveDetail = err.response?.data?.detail;
-      toastStore.error(typeof saveDetail === 'string' ? saveDetail : $t('prompts.saveFailed'));
+      toastStore.error(getErrorMessage(err, $t('prompts.saveFailed')));
     } finally {
       saving = false;
     }
@@ -267,17 +265,18 @@
 
   async function deletePrompt() {
     if (!promptToDelete) return;
+    const prompt = promptToDelete;
 
     saving = true;
 
     try {
-      await PromptsApi.deletePrompt(promptToDelete.uuid);
+      await PromptsApi.deletePrompt(prompt.uuid);
 
       // Remove from list
-      allPrompts = allPrompts.filter(p => p.uuid !== promptToDelete.uuid);
+      allPrompts = allPrompts.filter(p => p.uuid !== prompt.uuid);
 
       // Check if we deleted the active prompt
-      const wasActivePrompt = selectedPromptId === promptToDelete.uuid;
+      const wasActivePrompt = selectedPromptId === prompt.uuid;
 
       // Check if we have any remaining user prompts after deletion
       const remainingUserPrompts = allPrompts.filter(p => !p.is_system_default);
@@ -295,7 +294,7 @@
           } else {
             toastStore.success($t('prompts.promptDeletedDefaultActive'));
           }
-        } catch (activeErr: any) {
+        } catch (activeErr: unknown) {
           console.error('Error getting fallback active prompt:', activeErr);
           selectedPromptId = null;
           activePrompt = null;
@@ -313,10 +312,9 @@
       if (onSettingsChange) {
         onSettingsChange();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error deleting prompt:', err);
-      const deleteDetail = err.response?.data?.detail;
-      toastStore.error(typeof deleteDetail === 'string' ? deleteDetail : $t('prompts.deleteFailed'));
+      toastStore.error(getErrorMessage(err, $t('prompts.deleteFailed')));
     } finally {
       saving = false;
       promptToDelete = null;
@@ -346,7 +344,7 @@
       toastStore.success(
         newShared ? $t('prompts.shareEnabled') : $t('prompts.shareDisabled')
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Rollback on failure
       if (idx !== -1) {
         allPrompts[idx] = {
@@ -357,8 +355,7 @@
         allPrompts = allPrompts;
       }
       console.error('Error toggling share:', err);
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('prompts.shareFailed'));
+      toastStore.error(getErrorMessage(err, $t('prompts.shareFailed')));
     } finally {
       saving = false;
     }
@@ -384,20 +381,22 @@
   $: isDirty = JSON.stringify({ ...formData, tags: formData.tags }) !== JSON.stringify(originalFormData);
 
   // Function to prevent native tooltip flicker and position tooltip
-  function removeTitle(event) {
+  function removeTitle(event: MouseEvent) {
+    const target = event.target as Element | null;
     // Remove title attribute to prevent native tooltip
-    if (event.target.hasAttribute('title')) {
-      event.target.removeAttribute('title');
+    if (target?.hasAttribute('title')) {
+      target.removeAttribute('title');
     }
     // Check parent elements too
-    let element = event.target.closest('[title]');
+    const element = target?.closest('[title]');
     if (element) {
       element.removeAttribute('title');
     }
 
     // Position the tooltip dynamically
-    const rect = event.target.closest('.info-tooltip').getBoundingClientRect();
-    const tooltip = event.target.closest('.info-tooltip');
+    const tooltip = target?.closest('.info-tooltip');
+    if (!(tooltip instanceof HTMLElement)) return;
+    const rect = tooltip.getBoundingClientRect();
 
     tooltip.style.setProperty('--tooltip-left', `${rect.left + rect.width / 2}px`);
     tooltip.style.setProperty('--tooltip-top', `${rect.bottom}px`);
@@ -946,7 +945,7 @@
             type="button"
             class="copy-button-header"
             class:copied={isCopied}
-            on:click={() => copyPromptText(viewingPrompt.prompt_text)}
+            on:click={() => copyPromptText(viewingPrompt?.prompt_text ?? '')}
             aria-label={$t('prompts.copy')}
             title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
           >

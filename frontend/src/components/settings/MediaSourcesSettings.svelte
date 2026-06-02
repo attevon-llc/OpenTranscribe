@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { toastStore } from '$stores/toast';
   import Spinner from '../ui/Spinner.svelte';
   import {
@@ -81,9 +82,8 @@
       sources = [...sources, created];
       resetAddForm();
       toastStore.success($t('settings.mediaSources.addSuccess'));
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      toastStore.error(detail || $t('settings.mediaSources.addFailed'));
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('settings.mediaSources.addFailed')));
     } finally {
       saving = false;
     }
@@ -122,9 +122,8 @@
       sources = sources.map(s => s.uuid === editingUuid ? updated : s);
       editingUuid = null;
       toastStore.success($t('settings.mediaSources.updateSuccess'));
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      toastStore.error(detail || $t('settings.mediaSources.updateFailed'));
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('settings.mediaSources.updateFailed')));
     } finally {
       saving = false;
     }

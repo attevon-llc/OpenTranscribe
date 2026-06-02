@@ -4,6 +4,7 @@
   import { goto, beforeNavigate } from '$app/navigation';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { searchStore, type SearchResponse, type SearchOccurrence } from '$stores/search';
   import SearchResultCard from '$components/search/SearchResultCard.svelte';
   import SearchTranscriptModal from '$components/search/SearchTranscriptModal.svelte';
@@ -14,6 +15,7 @@
   import PlyrMiniPlayer from '$components/PlyrMiniPlayer.svelte';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import { prefetchNextSearchPage } from '$lib/prefetch';
+  import { formatClock } from '$lib/utils/formatting';
   import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
 
   let searchInput = '';
@@ -58,14 +60,6 @@
   let transcriptModalFileUuid = '';
   let transcriptModalFileName = '';
   let transcriptModalOccurrences: SearchOccurrence[] = [];
-
-  function formatPlaybackTime(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  }
 
   function findSpeakerAtTime(time: number): string {
     if (!previewData) return '';
@@ -278,9 +272,9 @@
       if (totalPages > pageNum) {
         prefetchNextSearchPage(query, pageNum, totalPages, apiParams);
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Search failed:', e);
-      searchStore.setError(e?.response?.data?.detail || 'Search failed');
+      searchStore.setError(getErrorMessage(e, 'Search failed'));
       searchStore.setLoading(false);
     }
   }
@@ -715,7 +709,7 @@
             {previewData.title}
           </span>
           <span class="preview-playback-info">
-            <span class="preview-time">{formatPlaybackTime(previewCurrentTime)}</span>
+            <span class="preview-time">{formatClock(previewCurrentTime)}</span>
             {#if previewCurrentSpeaker}
               <span class="preview-separator">|</span>
               <span class="preview-speaker-name">{previewCurrentSpeaker}</span>

@@ -4,6 +4,7 @@
   import { GroupsApi } from '$lib/api/groups';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import BaseModal from '../ui/BaseModal.svelte';
 
   export let isOpen = false;
@@ -45,8 +46,8 @@
       toastStore.success($t('groups.toast.groupCreated'));
       dispatch('created', group);
       handleClose();
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || $t('groups.toast.createGroupFailed');
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, $t('groups.toast.createGroupFailed'));
       toastStore.error(message);
     } finally {
       isCreating = false;

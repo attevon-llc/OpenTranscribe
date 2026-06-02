@@ -3,7 +3,15 @@
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { writable, get } from 'svelte/store';
   import axiosInstance from '$lib/axios';
+  import { formatDuration } from '$lib/utils/formatting';
+  import { loadTxtPrefs, saveTxtPrefs } from '$lib/export/txtExportPrefs';
+  import {
+    buildExportContent,
+    type ExportFormat,
+    type ExportStrings,
+  } from '$lib/export/transcriptExport';
   import { websocketStore } from '$stores/websocket';
+  import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
 
   // Import new components
   import VideoPlayer from '$components/VideoPlayer.svelte';
@@ -18,12 +26,14 @@
   import SelectiveReprocessModal from '$components/SelectiveReprocessModal.svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
   import TranscriptModal from '$components/TranscriptModal.svelte';
+  import TxtExportOptionsModal from '$components/fileDetail/TxtExportOptionsModal.svelte';
   import { isLLMAvailable } from '$stores/llmStatus';
   import { authStore } from '$stores/auth';
-  import { transcriptStore, processedTranscriptSegments } from '$stores/transcriptStore';
+  import { transcriptStore, processedTranscriptSegments, type SpeakerInfo } from '$stores/transcriptStore';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   import { getAppBaseUrl } from '$lib/utils/url';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
@@ -65,7 +75,12 @@
   let editingSegmentId: string | number | null = null;
   let editingSegmentText = '';
   let isEditingSpeakers = false;
-  let speakerList: any[] = [];
+  interface SpeakerItem extends SpeakerInfo {
+    profile?: { uuid: string; name: string } | null;
+    profile_suggestions?: Array<Record<string, any>>;
+    [key: string]: any;
+  }
+  let speakerList: SpeakerItem[] = [];
   let originalSpeakerNames: Map<string, string> = new Map(); // Track original names for change detection
   let speakerNamesChanged = false; // Track if any speaker names have been modified
   let reprocessing = false;
@@ -129,18 +144,7 @@
   let showExportConfirmation = false;
   let pendingExportFormat = '';
 
-  // TXT export options modal state + localStorage persistence
-  const TXT_PREF_KEY = 'opentranscribe.txtExportPrefs';
-  function loadTxtPrefs(): { includeTimestamps: boolean; includeSpeakers: boolean } {
-    try {
-      const raw = localStorage.getItem(TXT_PREF_KEY);
-      if (raw) return { includeTimestamps: true, includeSpeakers: true, ...JSON.parse(raw) };
-    } catch {}
-    return { includeTimestamps: true, includeSpeakers: true };
-  }
-  function saveTxtPrefs(prefs: { includeTimestamps: boolean; includeSpeakers: boolean }) {
-    try { localStorage.setItem(TXT_PREF_KEY, JSON.stringify(prefs)); } catch {}
-  }
+  // TXT export options modal state (localStorage persistence in $lib/export/txtExportPrefs)
   let showTxtExportOptions = false;
   let txtExportOptions = { includeTimestamps: true, includeSpeakers: true, includeComments: false, hasComments: false };
 
@@ -162,12 +166,17 @@
       _prevSpeakerConfirm = showSpeakerProfileConfirmation;
     }
   }
-  let pendingSpeakerUpdate = null;
+  type PendingSpeakerUpdate = {
+    speakerId: number | string;
+    newName: string;
+    speaker: SpeakerItem;
+  };
+  let pendingSpeakerUpdate: PendingSpeakerUpdate | null = null;
   let profileUpdateMessage = '';
   let profileUpdateTitle = '';
 
   // Bulk speaker save confirmation state
-  let speakerConfirmationQueue = [];
+  let speakerConfirmationQueue: SpeakerItem[] = [];
   let currentConfirmationIndex = 0;
   let bulkSaveInProgress = false;
   let bulkSaveDecisions = new Map();
@@ -482,7 +491,7 @@
 
       // Update transcript text for editing
       editedTranscript = transcriptData.map((seg: any) =>
-        `${seg.display_timestamp || seg.formatted_timestamp || formatSimpleTimestamp(seg.start_time)} [${seg.speaker_label || seg.speaker?.name || 'Speaker'}]: ${seg.text}`
+        `${seg.display_timestamp || seg.formatted_timestamp || formatDuration(seg.start_time)} [${seg.speaker_label || seg.speaker?.name || 'Speaker'}]: ${seg.text}`
       ).join('\n');
 
       // Load speakers and update store after they're loaded
@@ -812,7 +821,7 @@
     // Validate the speaker name
     const validation = validateSpeakerName(newName, speakerId);
     if (!validation.isValid) {
-      toastStore.error(validation.error);
+      toastStore.error(validation.error ?? $t('speakerValidation.nameRequired'));
       return;
     }
 
@@ -899,11 +908,11 @@
       const speaker = speakerConfirmationQueue[currentConfirmationIndex];
       pendingSpeakerUpdate = {
         speakerId: speaker.uuid,
-        newName: speaker.display_name,
+        newName: speaker.display_name ?? speaker.name,
         speaker
       };
       profileUpdateTitle = $t('fileDetail.updateSpeakerProfileCounter', { current: currentConfirmationIndex + 1, total: speakerConfirmationQueue.length });
-      profileUpdateMessage = $t('fileDetail.profileLinkedMessage', { displayName: speaker.display_name || speaker.name, profileName: speaker.profile.name });
+      profileUpdateMessage = $t('fileDetail.profileLinkedMessage', { displayName: speaker.display_name || speaker.name, profileName: speaker.profile?.name ?? '' });
       showSpeakerProfileConfirmation = true;
     }
   }
@@ -988,13 +997,14 @@
 
         toastStore.success(successMessage);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to update speaker name in database:', error);
 
       // Show user-friendly error with option to retry
-      const errorMessage = error.response?.status === 404
+      const status = getErrorStatus(error);
+      const errorMessage = status === 404
         ? $t('speakerProfile.notFound')
-        : error.response?.status === 403
+        : status === 403
         ? $t('speakerProfile.permissionDenied')
         : $t('speakerProfile.saveFailed');
 
@@ -1010,40 +1020,6 @@
     editingSegmentText = segment.text;
   }
 
-
-  function formatSimpleTimestamp(seconds: number): string {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    if (hours > 0) {
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  // Format seconds to SRT timestamp format (HH:MM:SS,mmm)
-  function formatSrtTimestamp(seconds: number): string {
-    if (isNaN(seconds) || seconds < 0) seconds = 0;
-
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    const milliseconds = Math.floor((seconds % 1) * 1000);
-
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
-  }
-
-  // Format seconds to VTT timestamp format (HH:MM:SS.mmm)
-  function formatVttTimestamp(seconds: number): string {
-    if (isNaN(seconds) || seconds < 0) seconds = 0;
-
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    const milliseconds = Math.floor((seconds % 1) * 1000);
-
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
-  }
 
   async function handleSaveSegment(event: any) {
     const segment = event.detail.segment;
@@ -1115,15 +1091,16 @@
           }
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving segment:', error);
 
       // Show error as toast notification for consistency
-      if (error.response?.status === 405) {
+      const status = getErrorStatus(error);
+      if (status === 405) {
         toastStore.error($t('fileDetail.transcriptEditingNotSupported'));
-      } else if (error.response?.status === 404) {
+      } else if (status === 404) {
         toastStore.error($t('fileDetail.transcriptSegmentNotFound'));
-      } else if (error.response?.status === 422) {
+      } else if (status === 422) {
         toastStore.error($t('fileDetail.invalidSegmentData'));
       } else {
         toastStore.error($t('fileDetail.failedToSaveSegment'));
@@ -1253,246 +1230,31 @@
     }
 
     try {
-      // Sort transcript data by start_time to ensure proper ordering
-      transcriptData = [...transcriptData].sort((a: any, b: any) => a.start_time - b.start_time);
-
-      // Create speaker display name mapping
-      const speakerMapping = new Map();
-      speakerList.forEach((speaker: any) => {
-        speakerMapping.set(speaker.name, speaker.display_name || speaker.name);
-      });
-
-      // Helper function to get speaker display name
-      const getSpeakerDisplayName = (segment: any) => {
-        const speakerName = segment.speaker_label || segment.speaker?.name || $t('fileDetail.speakerDefault');
-        return speakerMapping.get(speakerName) || segment.speaker?.display_name || speakerName;
-      };
-
-      // Client-side export with updated speaker names
-      let content = '';
       const filename = file.filename.replace(/\.[^/.]+$/, '');
 
-      switch (format) {
-        case 'txt':
-          // Group consecutive segments by the same speaker
-          const speakerGroups: Array<{ speaker: string; startTime: number; endTime: number; texts: string[] }> = [];
-          let currentGroup: typeof speakerGroups[0] | null = null;
+      // Resolve i18n strings here (Svelte store access stays in the page); the pure
+      // serializer in $lib/export consumes them so it can remain store-free.
+      const translations: ExportStrings = {
+        speakerDefault: $t('fileDetail.speakerDefault'),
+        userComment: $t('fileDetail.userComment'),
+        commentType: $t('fileDetail.commentType'),
+        csvHeaderDefault: $t('fileDetail.csvHeaderDefault'),
+        csvHeaderWithComments: $t('fileDetail.csvHeaderWithComments'),
+      };
 
-          for (const seg of transcriptData) {
-            const speaker = getSpeakerDisplayName(seg);
-            const startTime = seg.start_time || seg.start || 0;
-            const endTime = seg.end_time || seg.end || 0;
-
-            if (currentGroup && currentGroup.speaker === speaker) {
-              currentGroup.endTime = endTime;
-              currentGroup.texts.push(seg.text);
-            } else {
-              if (currentGroup) speakerGroups.push(currentGroup);
-              currentGroup = { speaker, startTime, endTime, texts: [seg.text] };
-            }
-          }
-          if (currentGroup) speakerGroups.push(currentGroup);
-
-          // Format each group as a single block
-          let segments = speakerGroups.map(group => {
-            const parts: string[] = [];
-            if (txtOptions?.includeTimestamps !== false) {
-              parts.push(`[${formatSimpleTimestamp(group.startTime)} --> ${formatSimpleTimestamp(group.endTime)}]`);
-            }
-            if (txtOptions?.includeSpeakers !== false) {
-              parts.push(`${group.speaker}:`);
-            }
-            const header = parts.join(' ');
-            const text = group.texts.join(' ');
-            return header ? `${header}\n${text}` : text;
-          });
-
-          // Add comments if requested (comments always retain their timestamps since they are positional)
-          if (includeComments && fileComments.length > 0) {
-            const commentLines = fileComments.map((comment: any) => {
-              const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
-              return `[${formatSimpleTimestamp(comment.timestamp)}] USER COMMENT: ${userName}: ${comment.text}`;
-            });
-            segments = mergeCommentsWithTranscript(segments, commentLines, transcriptData, fileComments);
-          }
-
-          content = segments.join('\n\n');
-          break;
-        case 'json':
-          const jsonData: any = {
-            filename: file.filename,
-            duration: file.duration,
-            segments: transcriptData.map((seg: any) => ({
-              start_time: seg.start_time || seg.start || 0,
-              end_time: seg.end_time || seg.end || 0,
-              speaker: getSpeakerDisplayName(seg),
-              text: seg.text
-            }))
-          };
-
-          // Add comments to JSON if requested
-          if (includeComments && fileComments.length > 0) {
-            jsonData.comments = fileComments.map((comment: any) => ({
-              timestamp: comment.timestamp,
-              user: comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous',
-              text: comment.text
-            }));
-          }
-
-          content = JSON.stringify(jsonData, null, 2);
-          break;
-        case 'csv':
-          let csvHeader = $t('fileDetail.csvHeaderDefault');
-          let csvRows = transcriptData.map((seg: any) => {
-            const start = seg.start_time || seg.start || 0;
-            const end = seg.end_time || seg.end || 0;
-            const speaker = getSpeakerDisplayName(seg);
-            // Escape CSV fields properly
-            const escapedText = `"${seg.text.replace(/"/g, '""')}"`;
-            return `${start},${end},"${speaker}",${escapedText}`;
-          });
-
-          // Add comments to CSV if requested
-          if (includeComments && fileComments.length > 0) {
-            // Add comment column to header if comments are included
-            csvHeader = $t('fileDetail.csvHeaderWithComments');
-
-            // Add comments as separate rows
-            const commentRows = fileComments.map((comment: any) => {
-              const timestamp = comment.timestamp;
-              const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
-              const escapedText = `"${comment.text.replace(/"/g, '""')}"`;
-              // Add comment rows with user info in the Speaker column and 'COMMENT' in Comment Type
-              return `${timestamp},${timestamp},"${$t('fileDetail.userComment')}: ${userName}",${escapedText},"${$t('fileDetail.commentType')}"`;
-            });
-
-            // Combine segment rows (with empty Comment Type) with comment rows
-            csvRows = csvRows.map((row: string) => row + ',""');
-            csvRows = mergeSortedArrays(csvRows, commentRows,
-              transcriptData.map((seg: any) => seg.start_time || seg.start || 0),
-              fileComments.map((comment: any) => comment.timestamp));
-          }
-
-          content = csvHeader + '\n' + csvRows.join('\n');
-          break;
-        case 'srt':
-          let srtItems: Array<{
-            index: number;
-            startTime: number;
-            endTime: number;
-            formattedStart: string;
-            formattedEnd: string;
-            text: string;
-            isComment: boolean;
-          }> = [];
-          let counter = 1;
-
-          // Add transcript segments
-          transcriptData.forEach((seg: any) => {
-            const startTime = formatSrtTimestamp(seg.start_time || seg.start || 0);
-            const endTime = formatSrtTimestamp(seg.end_time || seg.end || 0);
-            const speaker = getSpeakerDisplayName(seg);
-            const text = `${speaker}: ${seg.text}`;
-            srtItems.push({
-              index: counter++,
-              startTime: seg.start_time || seg.start || 0,
-              endTime: seg.end_time || seg.end || 0,
-              formattedStart: startTime,
-              formattedEnd: endTime,
-              text: text,
-              isComment: false
-            });
-          });
-
-          // Add comments if requested
-          if (includeComments && fileComments.length > 0) {
-            fileComments.forEach(comment => {
-              const timestamp = comment.timestamp;
-              const formattedTime = formatSrtTimestamp(timestamp);
-              const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
-              const text = `${$t('fileDetail.userComment')}: ${userName}: ${comment.text}`;
-
-              srtItems.push({
-                index: counter++,
-                startTime: timestamp,
-                endTime: timestamp + 2, // Show comment for 2 seconds
-                formattedStart: formattedTime,
-                formattedEnd: formatSrtTimestamp(timestamp + 2),
-                text: text,
-                isComment: true
-              });
-            });
-
-            // Sort by start time
-            srtItems.sort((a: any, b: any) => a.startTime - b.startTime);
-
-            // Reassign indices after sorting
-            srtItems.forEach((item: any, idx: number) => {
-              item.index = idx + 1;
-            });
-          }
-
-          // Generate SRT content
-          content = srtItems.map((item: any) =>
-            `${item.index}\n${item.formattedStart} --> ${item.formattedEnd}\n${item.text}\n`
-          ).join('\n');
-          break;
-        case 'vtt':
-          let vttItems: Array<{
-            startTime: number;
-            endTime: number;
-            formattedStart: string;
-            formattedEnd: string;
-            text: string;
-            isComment: boolean;
-          }> = [];
-
-          // Add transcript segments
-          transcriptData.forEach((seg: any) => {
-            const startTime = formatVttTimestamp(seg.start_time || seg.start || 0);
-            const endTime = formatVttTimestamp(seg.end_time || seg.end || 0);
-            const speaker = getSpeakerDisplayName(seg);
-            const text = `${speaker}: ${seg.text}`;
-            vttItems.push({
-              startTime: seg.start_time || seg.start || 0,
-              endTime: seg.end_time || seg.end || 0,
-              formattedStart: startTime,
-              formattedEnd: endTime,
-              text: text,
-              isComment: false
-            });
-          });
-
-          // Add comments if requested
-          if (includeComments && fileComments.length > 0) {
-            fileComments.forEach(comment => {
-              const timestamp = comment.timestamp;
-              const formattedTime = formatVttTimestamp(timestamp);
-              const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
-              const text = `${$t('fileDetail.userComment')}: ${userName}: ${comment.text}`;
-
-              vttItems.push({
-                startTime: timestamp,
-                endTime: timestamp + 2, // Show comment for 2 seconds
-                formattedStart: formattedTime,
-                formattedEnd: formatVttTimestamp(timestamp + 2),
-                text: text,
-                isComment: true
-              });
-            });
-
-            // Sort by start time
-            vttItems.sort((a: any, b: any) => a.startTime - b.startTime);
-          }
-
-          // Generate VTT content
-          content = 'WEBVTT\n\n' + vttItems.map((item: any) =>
-            `${item.formattedStart} --> ${item.formattedEnd}\n${item.text}\n`
-          ).join('\n');
-          break;
-        default:
-          content = transcriptData.map((seg: any) => seg.text).join(' ');
-      }
+      const content = buildExportContent(
+        format as ExportFormat,
+        transcriptData,
+        speakerList,
+        fileComments,
+        {
+          includeComments,
+          txtOptions,
+          filename,
+          jsonMeta: { filename: file.filename, duration: file.duration },
+          translations,
+        }
+      );
 
       const blob = new Blob([content], { type: 'text/plain' });
       const url = window.URL.createObjectURL(blob);
@@ -1535,84 +1297,6 @@
     });
   }
 
-  /**
-   * Merges transcript segments and comments in chronological order
-   * @param {string[]} segments - Array of formatted transcript segment strings
-   * @param {string[]} commentLines - Array of formatted comment strings
-   * @param {any[]} transcriptData - Raw transcript data with timestamps
-   * @param {any[]} comments - Raw comments data with timestamps
-   * @returns {string[]} - Combined array of segments and comments in order
-   */
-  function mergeCommentsWithTranscript(segments: string[], commentLines: string[], transcriptData: any[], comments: any[]): string[] {
-    // Create arrays of timestamps for sorting
-    const segmentTimes = transcriptData.map((seg: any) => seg.start_time || seg.start || 0);
-    const commentTimes = comments.map((comment: any) => comment.timestamp);
-
-    // Create merged array of segment and comment entries
-    let merged = [];
-    let si = 0, ci = 0;
-
-    // Merge two sorted arrays (segments and comments) by timestamp
-    while (si < segments.length && ci < commentLines.length) {
-      if (segmentTimes[si] <= commentTimes[ci]) {
-        merged.push(segments[si]);
-        si++;
-      } else {
-        merged.push(commentLines[ci]);
-        ci++;
-      }
-    }
-
-    // Add any remaining segments
-    while (si < segments.length) {
-      merged.push(segments[si]);
-      si++;
-    }
-
-    // Add any remaining comments
-    while (ci < commentLines.length) {
-      merged.push(commentLines[ci]);
-      ci++;
-    }
-
-    return merged;
-  }
-
-  /**
-   * Merges two arrays based on their corresponding timestamp arrays
-   * @param {any[]} arr1 - First array
-   * @param {any[]} arr2 - Second array
-   * @param {number[]} times1 - Timestamps for first array
-   * @param {number[]} times2 - Timestamps for second array
-   * @returns {any[]} - Merged array in chronological order
-   */
-  function mergeSortedArrays<T>(arr1: T[], arr2: T[], times1: number[], times2: number[]): T[] {
-    let merged = [];
-    let i = 0, j = 0;
-
-    while (i < arr1.length && j < arr2.length) {
-      if (times1[i] <= times2[j]) {
-        merged.push(arr1[i]);
-        i++;
-      } else {
-        merged.push(arr2[j]);
-        j++;
-      }
-    }
-
-    while (i < arr1.length) {
-      merged.push(arr1[i]);
-      i++;
-    }
-
-    while (j < arr2.length) {
-      merged.push(arr2[j]);
-      j++;
-    }
-
-    return merged;
-  }
-
   async function handleSaveSpeakerNames() {
     if (!speakerList || speakerList.length === 0) return;
 
@@ -1629,7 +1313,7 @@
 
       // Validate each speaker name
       for (const speaker of speakersToUpdate) {
-        const validation = validateSpeakerName(speaker.display_name, speaker.uuid);
+        const validation = validateSpeakerName(speaker.display_name ?? '', speaker.uuid);
         if (!validation.isValid) {
           toastStore.error(`${speaker.name}: ${validation.error}`);
           savingSpeakers = false;
@@ -1639,7 +1323,7 @@
 
       // Check for speakers that need profile confirmation (skip when diarization disabled)
       const speakersNeedingConfirmation = diarizationDisabled ? [] : speakersToUpdate.filter(speaker =>
-        speaker.profile && speaker.profile.name !== speaker.display_name.trim()
+        speaker.profile && speaker.profile.name !== (speaker.display_name ?? '').trim()
       );
 
       if (speakersNeedingConfirmation.length > 0) {
@@ -1696,7 +1380,7 @@
   }
 
   // Perform the actual bulk save operation
-  async function performBulkSave(speakersToUpdate, decisions = new Map()) {
+  async function performBulkSave(speakersToUpdate: SpeakerItem[], decisions = new Map()) {
     // STEP 1: Optimistic UI updates - immediately update voice suggestions with new names
     const nameChanges = new Map(); // Track profile name changes for voice suggestions
 
@@ -1797,7 +1481,7 @@
 
     // Update subtitles and clear cache (async, don't block)
     if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
-      videoPlayerComponent.updateSubtitles().catch(error => {
+      videoPlayerComponent.updateSubtitles().catch((error: unknown) => {
         console.warn('Failed to update subtitles after saving speaker names:', error);
       });
     }
@@ -2002,9 +1686,9 @@
       // This preserves user's editing state
 
       // The WebSocket will update summaryGenerating = true when processing starts
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error generating summary:', error);
-      const errorMessage = error.response?.data?.detail || $t('fileDetail.failedToGenerateSummary');
+      const errorMessage = getErrorMessage(error, $t('fileDetail.failedToGenerateSummary'));
 
       toastStore.error(errorMessage, 5000);
     } finally {
@@ -2021,9 +1705,9 @@
     try {
       const response = await axiosInstance.get(`/files/${file.uuid}/summary`);
       summaryData = response.data.summary_data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading summary:', error);
-      if (error.response?.status !== 404) {
+      if (getErrorStatus(error) !== 404) {
         toastStore.error($t('fileDetail.failedToLoadSummary'), 5000);
       }
     }
@@ -2137,224 +1821,28 @@
 
           if (notificationFileId === currentFileId && notificationFileId !== 'undefined' && currentFileId !== 'undefined') {
 
-            // Handle transcription status updates
-            if (latestNotification.type === 'transcription_status') {
-
-              // Get status from notification (progressive notifications set it at root level)
-              const notificationStatus = latestNotification.status || latestNotification.data?.status;
-              const notificationProgress = latestNotification.progress?.percentage || latestNotification.data?.progress;
-
-
-              // Update progress in real-time for processing updates
-              if (notificationStatus === 'processing' && notificationProgress !== undefined) {
-                if (file) {
-                  file.progress = notificationProgress;
-                  file.status = 'processing';
-                  // Update the current processing step from the progressive notification
-                  currentProcessingStep = latestNotification.currentStep || latestNotification.message || latestNotification.data?.message || $t('fileDetail.processingDefault');
-                  file = { ...file }; // Trigger reactivity
-                  reactiveFile.set(file);
-
-                }
-              } else if (notificationStatus === 'completed' || notificationStatus === 'success' || notificationStatus === 'complete' || notificationStatus === 'finished') {
-                // Transcription completed - show completion and refresh
-                if (file) {
-                  file.progress = 100;
-                  file.status = 'completed';
-                  currentProcessingStep = $t('fileDetail.processingComplete');
-
-                  // Show AI summary spinner only if LLM is available after transcription completion
-                  if (llmAvailable) {
-                    summaryGenerating = true;
-                    generatingSummary = true;
-                    // Keep reprocessing flag true until summary completes to maintain proper UI state
-                  } else {
-                    // No LLM available, ensure spinners are off and reset reprocessing flag
-                    summaryGenerating = false;
-                    generatingSummary = false;
-                    reprocessing = false;
-                  }
-
-                  file = { ...file }; // Trigger reactivity
-                  reactiveFile.set(file);
-                }
-
-                // Clear processing step and refresh transcript data after completion
-                setTimeout(async () => {
-                  currentProcessingStep = ''; // Clear processing step
-
-                  // Only refresh the transcript data, not the entire file object to preserve spinner state
-                  if (file?.uuid && (file.status === 'completed' || file.status === 'success')) {
-                    await fetchTranscriptData();
-
-                    // Refresh subtitles in the video player now that transcript is available
-                    if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
-                      try {
-                        await videoPlayerComponent.updateSubtitles();
-                      } catch (error) {
-                        console.warn('Failed to update subtitles:', error);
-                      }
-                    }
-                  }
-                }, 1000);
-              } else if (notificationStatus === 'error' || notificationStatus === 'failed') {
-                // Error state - refresh immediately
-                currentProcessingStep = ''; // Clear processing step
-                fetchFileDetails();
-              }
-            }
-
-            // WebSocket notifications for file updates
-
-            // Handle summarization status updates
-            if (latestNotification.type === 'summarization_status') {
-              // Only process notifications for the current file
-              const notificationFileId = String(latestNotification.data?.file_id || '');
-              const currentFileId = String(fileId || '');
-
-              if (notificationFileId !== currentFileId) {
-                // Skip notifications for other files
-              } else {
-
-              // Get status from notification (progressive notifications set it at root level)
-              const status = latestNotification.status || latestNotification.data?.status;
-
-
-              if (status === 'queued' || status === 'processing' || status === 'generating') {
-                // Summary generation started - show spinner only if LLM is available
-                if (llmAvailable) {
-                  summaryGenerating = true;
-                  generatingSummary = true;
-                } else {
-                  // LLM not available, ensure spinners are off
-                  summaryGenerating = false;
-                  generatingSummary = false;
-                }
-
-              } else if (status === 'completed' || status === 'success' || status === 'complete' || status === 'finished') {
-                // Summary completed - stop spinners and update file
-                summaryGenerating = false;
-                generatingSummary = false;
-
-                // Reset reprocessing flag when summary completes (final step of reprocessing)
-                reprocessing = false;
-
-                if (file) {
-                  // Update summary-related fields from notification data
-                  // Note: The notification contains a brief preview, not the full summary_data
-                  const summaryPreview = latestNotification.data?.summary;
-                  const summaryId = latestNotification.data?.summary_opensearch_id;
-
-                  // Set a flag to indicate summary exists (full data fetched via API)
-                  if (summaryPreview || summaryId) {
-                    file.has_summary = true; // Summary now available
-                  }
-                  if (summaryId) {
-                    file.summary_opensearch_id = summaryId;
-                  }
-
-                  // Force reactivity update by creating new object reference
-                  file = { ...file };
-                  reactiveFile.set(file);
-                }
-              } else if (status === 'failed' || status === 'error') {
-                // Summary failed - stop spinners and show error
-                summaryGenerating = false;
-                generatingSummary = false;
-
-                // Get error message from notification
-                const errorMessage = latestNotification.data?.message || latestNotification.message || $t('fileDetail.failedToGenerateSummaryGeneric');
-                const isLLMConfigError = errorMessage.toLowerCase().includes('llm service is not available') ||
-                                       errorMessage.toLowerCase().includes('configure an llm provider') ||
-                                       errorMessage.toLowerCase().includes('llm provider');
-
-                if (!isLLMConfigError) {
-                  toastStore.error(errorMessage, 5000);
-                }
-
-              }
-              } // Close the else block for file ID matching
-            }
-
-            // Handle speaker update notifications (for real-time voice suggestion refresh)
-            if (latestNotification.type === 'speaker_updated') {
-              loadSpeakers();
-            }
-
-            // Handle speaker background processing complete notification
-            if (latestNotification.type === 'speaker_processing_complete') {
-              loadSpeakers();
-              // Show toast if labels were auto-applied to other speakers
-              const autoAppliedCount = latestNotification.data?.auto_applied_count || 0;
-              const suggestedCount = latestNotification.data?.suggested_count || 0;
-              if (autoAppliedCount > 0) {
-                toastStore.info($t('speakerProfile.autoAppliedToOthers', { count: autoAppliedCount }));
-              } else if (suggestedCount > 0) {
-                toastStore.info($t('speakerProfile.suggestionsCreated', { count: suggestedCount }));
-              }
-            }
-
-            // Handle topic extraction status updates (AI suggestions for tags/collections)
-            if (latestNotification.type === 'topic_extraction_status') {
-              const status = latestNotification.status || latestNotification.data?.status;
-              const message = latestNotification.message || latestNotification.data?.message;
-
-              if (status === 'processing') {
-                // Update processing step to show what's happening
-                currentProcessingStep = message || $t('fileDetail.analyzingTranscript');
-
-              } else if (status === 'completed') {
-                // Show completion message briefly before clearing
-                currentProcessingStep = message || $t('fileDetail.aiSuggestionsComplete');
-
-                // Reload AI suggestions when extraction completes
-                // This will fetch the newly generated suggestions and update the UI dynamically
-                loadAISuggestions().catch(err => {
-                  console.error('Error reloading AI suggestions after extraction:', err);
-                });
-
-                // Clear processing step after a brief delay
-                setTimeout(() => {
-                  currentProcessingStep = '';
-                }, 2000);
-
-              } else if (status === 'failed' || status === 'not_configured') {
-                // Clear processing step on failure
-                currentProcessingStep = '';
-              }
-            }
-
-            // Handle content-redaction status (chip + auto-refresh the transcript)
-            if (latestNotification.type === 'redaction_status') {
-              const rstatus = latestNotification.status || latestNotification.data?.status;
-              redactionStatus = rstatus || redactionStatus;
-              if (rstatus === 'done') {
-                // Detection finished — load the now-available (masked) transcript.
-                redactionPending = false;
-                fetchFileDetails();
-                const skipped = latestNotification.data?.skipped_detectors || [];
-                if (skipped.length) {
-                  toastStore.info(
-                    $t('settings.contentRedaction.someDetectorsSkipped', {
-                      detectors: skipped.join(', '),
-                    })
-                  );
-                }
-              } else if (rstatus === 'failed') {
-                redactionPending = false;
-                fetchFileDetails();
-              } else {
-                redactionPending = true;
-              }
-            }
-
-            // Handle cache invalidation (e.g., auto-label applied tags/collections)
-            if (latestNotification.type === 'cache_invalidate'
-                && latestNotification.data?.scope === 'files'
-                && latestNotification.data?.file_id === fileId) {
-              fetchFileDetails();
-              loadAISuggestions();
-            }
+            handleFileNotification(latestNotification, {
+              getFileId: () => fileId,
+              getFile: () => file,
+              getLlmAvailable: () => llmAvailable,
+              getRedactionStatus: () => redactionStatus,
+              getVideoPlayerComponent: () => videoPlayerComponent,
+              setFile: (f) => (file = f),
+              setReactiveFile: (f) => reactiveFile.set(f),
+              setCurrentProcessingStep: (s) => (currentProcessingStep = s),
+              setSummaryGenerating: (v) => (summaryGenerating = v),
+              setGeneratingSummary: (v) => (generatingSummary = v),
+              setReprocessing: (v) => (reprocessing = v),
+              setRedactionStatus: (s) => (redactionStatus = s),
+              setRedactionPending: (v) => (redactionPending = v),
+              fetchTranscriptData,
+              loadSpeakers,
+              loadAISuggestions,
+              fetchFileDetails,
+              t: $t,
+              toastError: (message, durationMs) => toastStore.error(message, durationMs),
+              toastInfo: (message) => toastStore.info(message),
+            });
 
           } else {
           }
@@ -2759,68 +2247,19 @@
 />
 
 <!-- TXT Export Options Modal -->
-{#if showTxtExportOptions}
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-overlay" on:wheel|stopPropagation on:touchmove|stopPropagation>
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 class="modal-title">{$t('exportOptions.title')}</h2>
-          <button
-            class="modal-close-btn"
-            on:click={() => showTxtExportOptions = false}
-            aria-label={$t('modal.closeDialog')}
-          >
-            ×
-          </button>
-        </div>
-
-        <div class="modal-body">
-          <p class="modal-message">{$t('exportOptions.description')}</p>
-          <div class="export-options-list">
-            <label class="export-option-label">
-              <input type="checkbox" bind:checked={txtExportOptions.includeTimestamps} />
-              {$t('exportOptions.includeTimestamps')}
-            </label>
-            <label class="export-option-label" class:disabled-option={diarizationDisabled}>
-              <input type="checkbox" bind:checked={txtExportOptions.includeSpeakers} disabled={diarizationDisabled} />
-              {$t('exportOptions.includeSpeakers')}
-              {#if diarizationDisabled}
-                <span class="option-hint">{$t('exportOptions.diarizationDisabledHint')}</span>
-              {/if}
-            </label>
-            {#if txtExportOptions.hasComments}
-              <label class="export-option-label">
-                <input type="checkbox" bind:checked={txtExportOptions.includeComments} />
-                {$t('exportOptions.includeComments')}
-              </label>
-            {/if}
-          </div>
-          {#if redactionActive && !showOriginal}
-            <p class="export-redaction-note">
-              <svg class="export-redaction-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              {$t('settings.contentRedaction.exportRedactedNote')}
-              {#if canViewOriginal}
-                <span class="export-redaction-hint">
-                  {$t('settings.contentRedaction.exportOriginalHint')}
-                </span>
-              {/if}
-            </p>
-          {/if}
-        </div>
-
-        <div class="modal-footer">
-          <button class="btn btn-primary" on:click={handleTxtExportConfirm}>
-            {$t('exportOptions.export')}
-          </button>
-          <button class="btn btn-cancel" on:click={() => showTxtExportOptions = false}>
-            {$t('common.cancel')}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-{/if}
+<TxtExportOptionsModal
+  bind:show={showTxtExportOptions}
+  bind:includeTimestamps={txtExportOptions.includeTimestamps}
+  bind:includeSpeakers={txtExportOptions.includeSpeakers}
+  bind:includeComments={txtExportOptions.includeComments}
+  hasComments={txtExportOptions.hasComments}
+  {diarizationDisabled}
+  {redactionActive}
+  {showOriginal}
+  {canViewOriginal}
+  on:confirm={handleTxtExportConfirm}
+  on:close={() => showTxtExportOptions = false}
+/>
 
 <!-- Speaker Profile Confirmation Modal -->
 {#if showSpeakerProfileConfirmation}
@@ -3256,17 +2695,6 @@
     animation: slideIn 0.2s ease-out;
   }
 
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateY(-20px) scale(0.95);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-
   .modal-header {
     display: flex;
     justify-content: space-between;
@@ -3312,13 +2740,6 @@
     color: var(--text-secondary);
     line-height: 1.5;
     font-size: 0.95rem;
-  }
-
-  .export-options-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-top: 1rem;
   }
 
   /* Content redaction: transcript show-original toggle bar + export note */
@@ -3399,52 +2820,6 @@
     color: var(--primary-hover);
     background-color: rgba(var(--primary-color-rgb), 0.1);
   }
-  .export-redaction-note {
-    margin-top: 1rem;
-    padding: 0.6rem 0.75rem;
-    background: rgba(var(--warning-color-rgb, 234, 179, 8), 0.12);
-    border-radius: 6px;
-    font-size: 0.85rem;
-    color: var(--text-color);
-  }
-  .export-redaction-icon {
-    vertical-align: -2px;
-    margin-right: 0.3rem;
-    color: var(--warning-color);
-  }
-  .export-redaction-hint {
-    display: block;
-    margin-top: 0.25rem;
-    color: var(--text-secondary);
-  }
-
-  .export-option-label {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    cursor: pointer;
-    font-size: 0.95rem;
-    color: var(--text-color);
-  }
-
-  .export-option-label input[type="checkbox"] {
-    width: 1rem;
-    height: 1rem;
-    cursor: pointer;
-    accent-color: var(--primary-color);
-  }
-
-  .export-option-label.disabled-option {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .option-hint {
-    font-size: 0.8rem;
-    color: var(--text-secondary-color);
-    font-style: italic;
-  }
-
   .modal-footer {
     display: flex;
     gap: 0.75rem;

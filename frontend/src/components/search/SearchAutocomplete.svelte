@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { getErrorCode } from '$lib/utils/apiError';
   import { createDebouncedHandler } from '$lib/utils/debounce';
 
   export let value: string = '';
@@ -43,9 +44,9 @@
       suggestions = res.data || [];
       showSuggestions = suggestions.length > 0;
       selectedIndex = -1;
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Ignore cancelled requests
-      if (e?.code === 'ERR_CANCELED') return;
+      if (getErrorCode(e) === 'ERR_CANCELED') return;
       suggestions = [];
       showSuggestions = false;
     }

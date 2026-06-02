@@ -7,6 +7,7 @@
   } from '../../lib/api/asrSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   const DOMAINS = ['all', 'medical', 'legal', 'corporate', 'government', 'technical', 'general'];
 
@@ -38,9 +39,8 @@
     loading = true;
     try {
       terms = await CustomVocabularyApi.getVocabulary(selectedDomain);
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('settings.vocabulary.loadFailed'), 4000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('settings.vocabulary.loadFailed')), 4000);
     } finally {
       loading = false;
     }
@@ -71,9 +71,8 @@
       newTerm = '';
       newCategory = '';
       toastStore.success($t('settings.vocabulary.termAdded', { term: created.term }));
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('settings.vocabulary.addFailed'), 4000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('settings.vocabulary.addFailed')), 4000);
     } finally {
       addingTerm = false;
     }
@@ -83,9 +82,8 @@
     try {
       const updated = await CustomVocabularyApi.updateTerm(term.id, { is_active: !term.is_active });
       terms = terms.map(t => t.id === updated.id ? updated : t);
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('settings.vocabulary.updateFailed'), 4000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('settings.vocabulary.updateFailed')), 4000);
     }
   }
 
@@ -108,9 +106,8 @@
       await CustomVocabularyApi.deleteTerm(term.id);
       terms = terms.filter(t => t.id !== term.id);
       toastStore.success($t('settings.vocabulary.termRemoved', { term: term.term }));
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('settings.vocabulary.deleteFailed'), 4000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('settings.vocabulary.deleteFailed')), 4000);
     }
   }
 
@@ -125,9 +122,8 @@
       bulkText = '';
       showBulkImport = false;
       await loadVocabulary();
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('settings.vocabulary.importFailed'), 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('settings.vocabulary.importFailed')), 5000);
     } finally {
       importing = false;
     }

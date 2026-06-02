@@ -228,11 +228,6 @@
     animation: fadeIn 0.15s ease-out;
   }
 
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
   .detail-grid {
     display: flex;
     flex-direction: column;

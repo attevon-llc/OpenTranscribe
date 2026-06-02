@@ -410,11 +410,6 @@
     width: 130px;
   }
 
-  @keyframes skeleton-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 0.8; }
-  }
-
   .settings-section {
     background: var(--surface-color);
     border: 1px solid var(--border-color);

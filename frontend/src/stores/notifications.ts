@@ -14,7 +14,7 @@ export interface Notification {
   read: boolean;
   data?: {
     file_id?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 

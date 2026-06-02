@@ -59,16 +59,33 @@ export function clearSpeakerColorMappings() {
 export { speakerColorMappings };
 
 /**
+ * Various object shapes a speaker identifier can arrive in: a raw string, a
+ * transcript segment (`speaker_label`), a speaker object (`name`), or a wrapper
+ * with a nested `speaker`.
+ */
+type SpeakerColorSource =
+  | string
+  | {
+      speaker_label?: string;
+      name?: string;
+      speaker?: { name?: string };
+    }
+  | null
+  | undefined;
+
+/**
  * Helper function to get speaker color from various data sources
  * Tries to find the original speaker ID from different object structures
  */
-export function getSpeakerColorSmart(speakerData: any) {
+export function getSpeakerColorSmart(speakerData: SpeakerColorSource) {
+  const obj = typeof speakerData === 'object' && speakerData !== null ? speakerData : undefined;
+  const asString = typeof speakerData === 'string' ? speakerData : undefined;
   // Try different ways to get the original speaker ID
   const speakerId =
-    speakerData?.speaker_label || // For transcript segments (now contains original ID)
-    speakerData?.name || // For speaker objects
-    speakerData?.speaker?.name || // For nested speaker objects
-    speakerData || // If speakerData is just a string
+    obj?.speaker_label || // For transcript segments (now contains original ID)
+    obj?.name || // For speaker objects
+    obj?.speaker?.name || // For nested speaker objects
+    asString || // If speakerData is just a string
     'Unknown';
 
   return getSpeakerColorFromStore(speakerId);

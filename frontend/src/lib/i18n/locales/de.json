@@ -3538,5 +3538,15 @@
   "gallery.bulk.redact": "Redact",
   "gallery.bulk.redactTooltip": "Run content-redaction detection on the selected completed files",
   "gallery.bulk.redactStarted": "Redaction started for {count} file(s)",
-  "gallery.bulk.redactFailed": "Redaction failed for {count} file(s)"
+  "gallery.bulk.redactFailed": "Redaction failed for {count} file(s)",
+  "errorPage.title": "Etwas ist schiefgelaufen",
+  "errorPage.notFoundTitle": "Seite nicht gefunden",
+  "errorPage.notFoundMessage": "Die gesuchte Seite existiert nicht oder wurde verschoben.",
+  "errorPage.genericMessage": "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es erneut.",
+  "errorPage.statusLabel": "Fehler",
+  "errorPage.goHome": "Zur Startseite",
+  "errorPage.reload": "Neu laden",
+  "connection.reconnecting": "Verbindung zu Live-Updates wird wiederhergestellt…",
+  "connection.disconnected": "Verbindung verloren. Live-Updates sind pausiert.",
+  "connection.retry": "Jetzt erneut versuchen"
 }

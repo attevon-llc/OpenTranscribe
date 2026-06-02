@@ -69,7 +69,7 @@ export interface ConnectionTestResponse {
   status: ConnectionStatus;
   message: string;
   response_time_ms?: number;
-  model_info?: any;
+  model_info?: Record<string, unknown>;
 }
 
 export interface ProviderDefaults {
@@ -220,7 +220,7 @@ export class LLMSettingsApi {
       size: number;
       modified_at: string;
       digest: string;
-      details: any;
+      details: Record<string, unknown>;
       display_name: string;
     }>;
     total: number;

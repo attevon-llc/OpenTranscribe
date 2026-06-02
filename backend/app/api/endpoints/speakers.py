@@ -479,6 +479,8 @@ def _process_single_speaker(
     speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
     speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
     speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
+    speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment]
+    speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment]
 
     # Get smart, consolidated speaker suggestions
     smart_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions(
@@ -538,6 +540,8 @@ def _process_single_speaker_with_suggestions(
     speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
     speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
     speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
+    speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment]
+    speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment]
 
     raw_cross_video_matches = SmartSpeakerSuggestionService.format_for_api(smart_suggestions)
     profile_suggestions = _get_profile_suggestions(raw_cross_video_matches)

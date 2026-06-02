@@ -243,9 +243,11 @@ class SpeakerCreate(SpeakerBase):
 
 
 class SpeakerUpdate(BaseModel):
-    name: Optional[str] = None
-    display_name: Optional[str] = None
-    suggested_name: Optional[str] = None
+    # Server-side enforcement of the speaker-label length cap (the frontend also
+    # validates display_name <= 100 chars; the backend is the system of record).
+    name: Optional[str] = Field(default=None, max_length=100)
+    display_name: Optional[str] = Field(default=None, max_length=100)
+    suggested_name: Optional[str] = Field(default=None, max_length=100)
     verified: Optional[bool] = None
     embedding_vector: Optional[list[float]] = None
     profile_action: Optional[str] = None  # 'update_profile' or 'create_new_profile'
@@ -265,6 +267,11 @@ class Speaker(SpeakerBase, UUIDBaseSchema):
     status_text: Optional[str] = None  # Human-readable status text
     status_color: Optional[str] = None  # CSS color for status display
     resolved_display_name: Optional[str] = None  # Best available display name
+
+    # Linked SpeakerProfile info (saves the frontend a separate profile fetch).
+    # None when the speaker is not linked to a profile.
+    profile_name: Optional[str] = None  # Name of the linked SpeakerProfile
+    profile_status: Optional[str] = None  # "linked" when a profile is attached, else None
 
     # AI-predicted voice attributes
     predicted_gender: Optional[str] = None
@@ -368,6 +375,32 @@ class TranscriptSegment(TranscriptSegmentBase, UUIDBaseSchema):
     toxicity: Optional[dict] = None  # Segment-level toxicity scores (for badge/flag UI)
 
 
+class GroupedTranscriptSegment(BaseModel):
+    """A display group of transcript segments, mirroring the frontend's grouping.
+
+    Consecutive segments sharing an ``overlap_group_id`` (with more than one member)
+    are collapsed into a single overlap group; every other segment is its own
+    single-member group. This replicates the ``groupedTranscriptSegments`` logic in
+    ``TranscriptDisplay.svelte`` so the frontend can render groups directly.
+
+    Attributes:
+        is_overlap_group: True when this group represents an overlapping-speech cluster.
+        overlap_group_id: The shared overlap group id (only set for overlap groups).
+        start_time: Minimum start time across the group's segments.
+        end_time: Maximum end time across the group's segments.
+        start_segment_index: Index of the first segment of this group in the flat
+            transcript list (used by the frontend for reading-progress tracking).
+        segments: The segments belonging to this group, in order.
+    """
+
+    is_overlap_group: bool = False
+    overlap_group_id: Optional[UUID] = None
+    start_time: float
+    end_time: float
+    start_segment_index: int
+    segments: list[TranscriptSegment] = []
+
+
 class MediaFileBase(BaseModel):
     filename: str
 
@@ -465,6 +498,9 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
 
 class MediaFileDetail(MediaFile):
     transcript_segments: list[TranscriptSegment] = []
+    # Pre-grouped view of transcript_segments (overlap groups kept together).
+    # Mirrors the frontend grouping so it can render groups without recomputing.
+    grouped_segments: list[GroupedTranscriptSegment] = []
     tags: list[str] = []
     collections: list["Collection"] = []
     analytics: Optional["Analytics"] = None

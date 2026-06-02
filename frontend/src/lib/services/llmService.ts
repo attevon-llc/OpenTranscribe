@@ -5,6 +5,7 @@
 import axiosInstance from '$lib/axios';
 import { get } from 'svelte/store';
 import { t } from '$stores/locale';
+import { getErrorMessage } from '$lib/utils/apiError';
 
 export interface LLMStatus {
   available: boolean;
@@ -78,9 +79,8 @@ export class LLMService {
       this.statusCache = response.data;
       this.lastCheck = now;
       return this.statusCache as LLMStatus;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[LLM Service] Error getting LLM status:', error);
-      console.error('[LLM Service] Error details:', error.response?.status, error.response?.data);
 
       // Return default unavailable status on error
       const errorStatus: LLMStatus = {
@@ -88,7 +88,7 @@ export class LLMService {
         user_id: '0',
         provider: null,
         model: null,
-        message: error.response?.data?.detail || get(t)('llm.unableToCheckStatus'),
+        message: getErrorMessage(error, get(t)('llm.unableToCheckStatus')),
       };
 
       this.statusCache = errorStatus;
@@ -104,9 +104,9 @@ export class LLMService {
     try {
       const response = await axiosInstance.get('/llm/providers');
       return response.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error getting LLM providers:', error);
-      throw new Error(error.response?.data?.detail || get(t)('llm.providersLoadFailed'));
+      throw new Error(getErrorMessage(error, get(t)('llm.providersLoadFailed')));
     }
   }
 
@@ -117,11 +117,11 @@ export class LLMService {
     try {
       const response = await axiosInstance.post('/llm/test-connection');
       return response.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error testing LLM connection:', error);
       return {
         success: false,
-        message: error.response?.data?.detail || get(t)('llm.connectionTestFailed'),
+        message: getErrorMessage(error, get(t)('llm.connectionTestFailed')),
         details: get(t)('llm.unableToReach'),
       };
     }

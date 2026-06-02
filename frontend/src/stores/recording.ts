@@ -2,7 +2,7 @@ import { writable, derived, get } from 'svelte/store';
 
 // Import toast store for error notifications
 // We'll use dynamic import to avoid circular dependencies
-let toastStore: any = null;
+let toastStore: typeof import('./toast').toastStore | null = null;
 try {
   import('./toast').then((module) => {
     toastStore = module.toastStore;
@@ -163,8 +163,11 @@ export class RecordingManager {
 
       this.audioStream = await navigator.mediaDevices.getUserMedia(constraints);
 
-      // Set up audio context for visualization
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // Set up audio context for visualization (webkitAudioContext for older Safari)
+      const AudioContextCtor =
+        window.AudioContext ||
+        (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      this.audioContext = new AudioContextCtor();
 
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();

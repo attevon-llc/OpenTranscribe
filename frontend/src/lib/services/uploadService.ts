@@ -3,7 +3,8 @@ import axiosInstance from '$lib/axios';
 import { authStore } from '$stores/auth';
 import { toastStore } from '$stores/toast';
 import { t } from '$stores/locale';
-import axios, { type AxiosProgressEvent } from 'axios';
+import axios, { type AxiosProgressEvent, type CancelTokenSource } from 'axios';
+import type { ExtractedAudioMetadata } from '$lib/types/audioExtraction';
 import { generateId } from '$lib/utils/ids';
 import { hashFileSHA256 } from '$lib/services/sha256Hasher';
 
@@ -32,9 +33,9 @@ export interface UploadItem {
   startTime?: number;
   estimatedTime?: string;
   isDuplicate?: boolean;
-  cancelToken?: any;
+  cancelToken?: CancelTokenSource;
   // Extraction metadata (for extracted-audio type)
-  extractionMetadata?: any; // ExtractedAudioMetadata from audio extraction
+  extractionMetadata?: ExtractedAudioMetadata;
   compressionRatio?: number; // Percentage for display (0-100)
   // Speaker diarization parameters
   minSpeakers?: number | null;
@@ -67,7 +68,13 @@ export type UploadEventType =
 export interface UploadEvent {
   type: UploadEventType;
   uploadId: string;
-  data?: any;
+  data?: unknown;
+}
+
+/** Result of a single upload/prepare flow. */
+interface UploadResult {
+  uuid: string;
+  isDuplicate: boolean;
 }
 
 // Hash calculation for duplicate detection. Uses a Web Worker so the UI
@@ -97,7 +104,7 @@ class UploadService {
     };
   }
 
-  private emit(type: UploadEventType, uploadId: string, data?: any) {
+  private emit(type: UploadEventType, uploadId: string, data?: unknown) {
     const event: UploadEvent = { type, uploadId, data };
     this.eventListeners.forEach((listener) => listener(event));
   }
@@ -174,7 +181,7 @@ class UploadService {
   addExtractedAudio(
     audioBlob: Blob,
     filename: string,
-    extractionMetadata: any,
+    extractionMetadata: ExtractedAudioMetadata,
     compressionRatio: number
   ): string {
     const id = this.generateId();
@@ -259,7 +266,7 @@ class UploadService {
           result = await this.uploadExtractedAudio(
             uploadId,
             upload.source as Blob,
-            upload.extractionMetadata
+            upload.extractionMetadata as ExtractedAudioMetadata
           );
           break;
         case 'url':
@@ -286,7 +293,7 @@ class UploadService {
       } else {
         toastStore.success(get(t)('upload.uploadCompleted', { name: upload.name }));
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Log error through proper error handling below
 
       const errorMessage = this.getErrorMessage(error);
@@ -318,7 +325,7 @@ class UploadService {
     this.persistUploads();
   }
 
-  private async uploadFile(uploadId: string, file: File | Blob): Promise<any> {
+  private async uploadFile(uploadId: string, file: File | Blob): Promise<UploadResult> {
     const upload = this.uploads.get(uploadId)!;
 
     // Create cancel token
@@ -463,8 +470,8 @@ class UploadService {
   private async uploadExtractedAudio(
     uploadId: string,
     audioBlob: Blob,
-    extractionMetadata: any
-  ): Promise<any> {
+    extractionMetadata: ExtractedAudioMetadata
+  ): Promise<UploadResult> {
     const upload = this.uploads.get(uploadId)!;
 
     // Create cancel token
@@ -473,25 +480,34 @@ class UploadService {
 
     // Use original video file hash from extraction metadata for duplicate detection
     const originalFileHash = extractionMetadata?.originalFileHash || null;
+    const contentType = audioBlob.type || 'audio/webm';
 
-    // Step 1: Prepare the upload with extraction metadata
+    // Step 1: Prepare — presigned direct-to-MinIO first (same ingress path as
+    // regular uploads), carrying the extracted-from-video metadata so the
+    // backend records the source video details.
     const prepareResponse = await axiosInstance.post('/files/prepare', {
       filename: upload.name,
       file_size: audioBlob.size,
-      content_type: audioBlob.type || 'audio/opus',
+      content_type: contentType,
       file_hash: originalFileHash,
       extracted_from_video: extractionMetadata?.videoMetadata || null,
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
+      use_presigned: true,
     });
 
-    const { file_id: fileId, is_duplicate } = prepareResponse.data;
+    const {
+      file_id: fileId,
+      is_duplicate,
+      task_id: taskId,
+      upload_url: uploadUrl,
+      upload_method: uploadMethod,
+    } = prepareResponse.data;
 
     if (is_duplicate) {
       return { uuid: fileId, isDuplicate: true };
     }
 
-    // Step 2: Upload the extracted audio file
     this.updateUpload(uploadId, {
       status: 'uploading',
       fileId,
@@ -499,6 +515,56 @@ class UploadService {
       estimatedTime: 'Uploading extracted audio...',
     });
 
+    const progressHandler = (progressEvent: AxiosProgressEvent) => {
+      if (!progressEvent.total) return;
+      const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+      const progress = Math.min(percentCompleted, 99);
+      this.updateUpload(uploadId, { progress });
+      this.emit('progress', uploadId, { progress });
+      const elapsed = Date.now() - (upload.startTime || Date.now());
+      if (elapsed > 0) {
+        const rate = progressEvent.loaded / elapsed;
+        const remaining = (progressEvent.total - progressEvent.loaded) / rate;
+        this.updateUpload(uploadId, { estimatedTime: this.formatTimeRemaining(remaining) });
+      }
+    };
+
+    // --- Presigned flow: PUT the audio blob straight to MinIO, then finalize.
+    if (uploadUrl && uploadMethod === 'PUT' && taskId) {
+      try {
+        const clientPutStartMs = Date.now();
+        await axios.put(uploadUrl, audioBlob, {
+          headers: { 'Content-Type': contentType },
+          timeout: UPLOAD_TIMEOUT_MS,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+          cancelToken: cancelToken.token,
+          onUploadProgress: progressHandler,
+        });
+        const clientPutEndMs = Date.now();
+
+        await axiosInstance.post('/files/complete', {
+          file_id: fileId,
+          task_id: taskId,
+          file_hash: originalFileHash,
+          file_size: audioBlob.size,
+          client_put_start_ms: clientPutStartMs,
+          client_put_end_ms: clientPutEndMs,
+          min_speakers: upload.minSpeakers ?? null,
+          max_speakers: upload.maxSpeakers ?? null,
+          num_speakers: upload.numSpeakers ?? null,
+        });
+
+        return { uuid: fileId, isDuplicate: false };
+      } catch (err: unknown) {
+        if (axios.isCancel(err)) {
+          throw err;
+        }
+        // Fall through to the legacy flow below.
+      }
+    }
+
+    // --- Legacy fallback (multipart POST through the API container) -------
     const formData = new FormData();
     formData.append('file', audioBlob, upload.name);
 
@@ -507,36 +573,18 @@ class UploadService {
         'Content-Type': 'multipart/form-data',
         'X-File-ID': fileId,
         'X-File-Hash': originalFileHash || '',
-        'X-Extracted-Audio': 'true', // Flag for backend to know this is extracted audio
       },
       timeout: UPLOAD_TIMEOUT_MS,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
       cancelToken: cancelToken.token,
-      onUploadProgress: (progressEvent: AxiosProgressEvent) => {
-        if (progressEvent.total) {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          const progress = Math.min(percentCompleted, 99);
-
-          this.updateUpload(uploadId, { progress });
-          this.emit('progress', uploadId, { progress });
-
-          // Calculate estimated time remaining
-          const elapsed = Date.now() - (upload.startTime || Date.now());
-          if (elapsed > 0) {
-            const rate = progressEvent.loaded / elapsed;
-            const remaining = (progressEvent.total - progressEvent.loaded) / rate;
-            const estimatedTime = this.formatTimeRemaining(remaining);
-            this.updateUpload(uploadId, { estimatedTime });
-          }
-        }
-      },
+      onUploadProgress: progressHandler,
     });
 
     return { uuid: fileId, isDuplicate: false };
   }
 
-  private async processUrl(uploadId: string, url: string): Promise<any> {
+  private async processUrl(uploadId: string, url: string): Promise<UploadResult> {
     const upload = this.uploads.get(uploadId)!;
 
     // Create cancel token
@@ -719,17 +767,18 @@ class UploadService {
     }
   }
 
-  private getErrorMessage(error: any): string {
+  private getErrorMessage(error: unknown): string {
     if (axios.isCancel(error)) {
       return 'Upload cancelled';
     }
 
-    if (error?.response?.data?.detail) {
-      return error.response.data.detail;
+    const e = error as { response?: { data?: { detail?: string } }; message?: string };
+    if (e?.response?.data?.detail) {
+      return e.response.data.detail;
     }
 
-    if (error?.message) {
-      return error.message;
+    if (e?.message) {
+      return e.message;
     }
 
     return 'Unknown error occurred';

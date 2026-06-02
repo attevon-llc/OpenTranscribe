@@ -88,6 +88,10 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      - name: Check i18n key parity
+        working-directory: frontend
+        run: npm run check:i18n
+
       - name: Run Vitest
         working-directory: frontend
         run: npm run test

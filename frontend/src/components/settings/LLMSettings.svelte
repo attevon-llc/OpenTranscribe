@@ -882,11 +882,6 @@
     width: 65%;
   }
 
-  @keyframes skeleton-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 0.8; }
-  }
-
   .saved-configs-section {
     margin-bottom: 2rem;
   }

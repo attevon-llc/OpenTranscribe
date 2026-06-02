@@ -8,6 +8,7 @@
   import "../styles/theme.css";
   import "../styles/form-elements.css";
   import "../styles/tables.css";
+  import "../styles/animations.css";
 
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods } from "$stores/auth";

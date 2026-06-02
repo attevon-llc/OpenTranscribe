@@ -640,11 +640,6 @@
     width: 110px;
   }
 
-  @keyframes skeleton-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 0.8; }
-  }
-
   .status-chips-row {
     display: flex;
     flex-wrap: wrap;

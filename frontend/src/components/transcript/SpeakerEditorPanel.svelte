@@ -1170,15 +1170,6 @@
     animation: spin 1s linear infinite;
   }
 
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
   /* Second .spinner rule (later in the original stylesheet → wins for
      conflicting `animation`/size props). Preserved verbatim so the
      save-speakers-button spinner renders identically. */

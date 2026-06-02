@@ -985,11 +985,6 @@
     overscroll-behavior: none;
   }
 
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
   .password-reset-modal {
     position: relative;
     width: 90%;
@@ -999,17 +994,6 @@
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     padding: 1.5rem;
     animation: slideUp 0.3s ease-out;
-  }
-
-  @keyframes slideUp {
-    from {
-      transform: translateY(20px);
-      opacity: 0;
-    }
-    to {
-      transform: scale(1);
-      opacity: 1;
-    }
   }
 
   .modal-close-btn {

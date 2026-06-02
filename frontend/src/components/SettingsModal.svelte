@@ -921,15 +921,6 @@
     overscroll-behavior: none;
   }
 
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
   .settings-modal {
     position: relative;
     width: 90vw;
@@ -943,17 +934,6 @@
     animation: slideUp 0.3s ease-out;
     display: flex;
     flex-direction: column;
-  }
-
-  @keyframes slideUp {
-    from {
-      transform: translateY(20px);
-      opacity: 0;
-    }
-    to {
-      transform: scale(1);
-      opacity: 1;
-    }
   }
 
   .settings-header-bar {

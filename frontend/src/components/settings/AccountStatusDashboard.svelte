@@ -148,9 +148,4 @@
   .skeleton-chip.wide {
     width: 130px;
   }
-
-  @keyframes skeleton-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 0.8; }
-  }
 </style>

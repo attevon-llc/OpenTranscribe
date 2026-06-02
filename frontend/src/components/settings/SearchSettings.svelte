@@ -487,11 +487,6 @@
     border-radius: 6px;
   }
 
-  @keyframes skeleton-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 0.8; }
-  }
-
   .subsection-header {
     display: flex;
     align-items: center;

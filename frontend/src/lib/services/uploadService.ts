@@ -480,25 +480,34 @@ class UploadService {
 
     // Use original video file hash from extraction metadata for duplicate detection
     const originalFileHash = extractionMetadata?.originalFileHash || null;
+    const contentType = audioBlob.type || 'audio/webm';
 
-    // Step 1: Prepare the upload with extraction metadata
+    // Step 1: Prepare — presigned direct-to-MinIO first (same ingress path as
+    // regular uploads), carrying the extracted-from-video metadata so the
+    // backend records the source video details.
     const prepareResponse = await axiosInstance.post('/files/prepare', {
       filename: upload.name,
       file_size: audioBlob.size,
-      content_type: audioBlob.type || 'audio/opus',
+      content_type: contentType,
       file_hash: originalFileHash,
       extracted_from_video: extractionMetadata?.videoMetadata || null,
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
+      use_presigned: true,
     });
 
-    const { file_id: fileId, is_duplicate } = prepareResponse.data;
+    const {
+      file_id: fileId,
+      is_duplicate,
+      task_id: taskId,
+      upload_url: uploadUrl,
+      upload_method: uploadMethod,
+    } = prepareResponse.data;
 
     if (is_duplicate) {
       return { uuid: fileId, isDuplicate: true };
     }
 
-    // Step 2: Upload the extracted audio file
     this.updateUpload(uploadId, {
       status: 'uploading',
       fileId,
@@ -506,6 +515,56 @@ class UploadService {
       estimatedTime: 'Uploading extracted audio...',
     });
 
+    const progressHandler = (progressEvent: AxiosProgressEvent) => {
+      if (!progressEvent.total) return;
+      const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+      const progress = Math.min(percentCompleted, 99);
+      this.updateUpload(uploadId, { progress });
+      this.emit('progress', uploadId, { progress });
+      const elapsed = Date.now() - (upload.startTime || Date.now());
+      if (elapsed > 0) {
+        const rate = progressEvent.loaded / elapsed;
+        const remaining = (progressEvent.total - progressEvent.loaded) / rate;
+        this.updateUpload(uploadId, { estimatedTime: this.formatTimeRemaining(remaining) });
+      }
+    };
+
+    // --- Presigned flow: PUT the audio blob straight to MinIO, then finalize.
+    if (uploadUrl && uploadMethod === 'PUT' && taskId) {
+      try {
+        const clientPutStartMs = Date.now();
+        await axios.put(uploadUrl, audioBlob, {
+          headers: { 'Content-Type': contentType },
+          timeout: UPLOAD_TIMEOUT_MS,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+          cancelToken: cancelToken.token,
+          onUploadProgress: progressHandler,
+        });
+        const clientPutEndMs = Date.now();
+
+        await axiosInstance.post('/files/complete', {
+          file_id: fileId,
+          task_id: taskId,
+          file_hash: originalFileHash,
+          file_size: audioBlob.size,
+          client_put_start_ms: clientPutStartMs,
+          client_put_end_ms: clientPutEndMs,
+          min_speakers: upload.minSpeakers ?? null,
+          max_speakers: upload.maxSpeakers ?? null,
+          num_speakers: upload.numSpeakers ?? null,
+        });
+
+        return { uuid: fileId, isDuplicate: false };
+      } catch (err: unknown) {
+        if (axios.isCancel(err)) {
+          throw err;
+        }
+        // Fall through to the legacy flow below.
+      }
+    }
+
+    // --- Legacy fallback (multipart POST through the API container) -------
     const formData = new FormData();
     formData.append('file', audioBlob, upload.name);
 
@@ -514,30 +573,12 @@ class UploadService {
         'Content-Type': 'multipart/form-data',
         'X-File-ID': fileId,
         'X-File-Hash': originalFileHash || '',
-        'X-Extracted-Audio': 'true', // Flag for backend to know this is extracted audio
       },
       timeout: UPLOAD_TIMEOUT_MS,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
       cancelToken: cancelToken.token,
-      onUploadProgress: (progressEvent: AxiosProgressEvent) => {
-        if (progressEvent.total) {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          const progress = Math.min(percentCompleted, 99);
-
-          this.updateUpload(uploadId, { progress });
-          this.emit('progress', uploadId, { progress });
-
-          // Calculate estimated time remaining
-          const elapsed = Date.now() - (upload.startTime || Date.now());
-          if (elapsed > 0) {
-            const rate = progressEvent.loaded / elapsed;
-            const remaining = (progressEvent.total - progressEvent.loaded) / rate;
-            const estimatedTime = this.formatTimeRemaining(remaining);
-            this.updateUpload(uploadId, { estimatedTime });
-          }
-        }
-      },
+      onUploadProgress: progressHandler,
     });
 
     return { uuid: fileId, isDuplicate: false };

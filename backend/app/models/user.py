@@ -78,7 +78,10 @@ class User(Base):
     speaker_profiles = relationship("SpeakerProfile", back_populates="user")
     speaker_collections = relationship("SpeakerCollection", back_populates="user")
     collections = relationship("Collection", back_populates="user")
-    summary_prompts = relationship("SummaryPrompt", back_populates="user")
+    # SummaryPrompt has two FKs to user (creator + sharer); disambiguate on the creator FK.
+    summary_prompts = relationship(
+        "SummaryPrompt", back_populates="user", foreign_keys="SummaryPrompt.user_id"
+    )
     settings = relationship("UserSetting", back_populates="user")
     llm_settings = relationship("UserLLMSettings", back_populates="user")
     asr_settings = relationship(

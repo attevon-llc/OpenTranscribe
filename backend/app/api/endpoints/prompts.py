@@ -13,6 +13,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from sqlalchemy import and_
 from sqlalchemy import not_
 from sqlalchemy import or_
@@ -22,11 +23,39 @@ from sqlalchemy.orm import Session
 from app import models
 from app import schemas
 from app.api.endpoints.auth import get_current_active_user
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
 from app.db.base import get_db
+from app.middleware.audit import get_request_context
 from app.utils.uuid_helpers import get_prompt_by_uuid
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+MAX_USER_PROMPTS = 50
+
+
+def _assert_under_prompt_limit(db: Session, user_id: int) -> None:
+    """Raise HTTP 400 if the user is at or above the custom-prompt cap.
+
+    Counts active, user-owned prompts. Clones count toward this limit too.
+    """
+    user_prompt_count = (
+        db.query(models.SummaryPrompt)
+        .filter(
+            and_(
+                models.SummaryPrompt.user_id == user_id,
+                models.SummaryPrompt.is_active,
+            )
+        )
+        .count()
+    )
+    if user_prompt_count >= MAX_USER_PROMPTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum number of custom prompts reached ({MAX_USER_PROMPTS})",
+        )
 
 
 @router.get("", response_model=schemas.SummaryPromptList)
@@ -136,11 +165,12 @@ def get_prompts(
                 collection_map[pid] = []
             collection_map[pid].append(schemas.LinkedCollection(uuid=row[1], name=row[2]))
 
-    # Batch-fetch owners for shared prompts
-    shared_owner_ids = {p.user_id for p in prompts if p.user_id and p.user_id != current_user.id}
-    owners = (
-        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(shared_owner_ids)).all()}
-        if shared_owner_ids
+    # Batch-fetch users referenced for attribution: creators + sharers
+    referenced_ids = {p.user_id for p in prompts if p.user_id and p.user_id != current_user.id}
+    referenced_ids |= {p.shared_by for p in prompts if p.shared_by}
+    users = (
+        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(referenced_ids)).all()}
+        if referenced_ids
         else {}
     )
 
@@ -151,10 +181,14 @@ def get_prompts(
         pwc.linked_collections = collection_map.get(p.id, [])
         pwc.is_owner = p.user_id == current_user.id
         if p.user_id and p.user_id != current_user.id:
-            owner = owners.get(p.user_id)
+            owner = users.get(p.user_id)
             if owner:
                 pwc.author_name = owner.full_name
                 pwc.author_role = owner.role
+        if p.shared_by:
+            sharer = users.get(p.shared_by)
+            if sharer:
+                pwc.shared_by_name = sharer.full_name
         prompt_list.append(pwc)
 
     return schemas.SummaryPromptList(
@@ -303,19 +337,7 @@ def create_prompt(
         HTTPException: If user has reached the prompt limit (50) or creation fails
     """
     # Check if user already has too many prompts
-    user_prompt_count = (
-        db.query(models.SummaryPrompt)
-        .filter(
-            and_(
-                models.SummaryPrompt.user_id == current_user.id,
-                models.SummaryPrompt.is_active,
-            )
-        )
-        .count()
-    )
-
-    if user_prompt_count >= 50:  # Reasonable limit
-        raise HTTPException(status_code=400, detail="Maximum number of custom prompts reached (50)")
+    _assert_under_prompt_limit(db, int(current_user.id))
 
     prompt_data = prompt_in.model_dump()
     prompt_data.update({"user_id": current_user.id, "is_system_default": False})
@@ -534,11 +556,12 @@ def get_shared_prompt_library(
 
     prompts = query.offset(skip).limit(limit).all()
 
-    # Batch-fetch owners
-    owner_ids = {p.user_id for p in prompts if p.user_id}
-    owners = (
-        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()}
-        if owner_ids
+    # Batch-fetch users referenced for attribution: creators + sharers
+    referenced_ids = {p.user_id for p in prompts if p.user_id}
+    referenced_ids |= {p.shared_by for p in prompts if p.shared_by}
+    users = (
+        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(referenced_ids)).all()}
+        if referenced_ids
         else {}
     )
 
@@ -546,10 +569,14 @@ def get_shared_prompt_library(
     for p in prompts:
         sp = schemas.SummaryPrompt.model_validate(p)
         sp.is_owner = p.user_id == current_user.id
-        owner = owners.get(p.user_id) if p.user_id else None
+        owner = users.get(p.user_id) if p.user_id else None
         if owner:
             sp.author_name = owner.full_name
             sp.author_role = owner.role
+        if p.shared_by:
+            sharer = users.get(p.shared_by)
+            if sharer:
+                sp.shared_by_name = sharer.full_name
         prompt_list.append(sp)
 
     # Get available tags
@@ -581,6 +608,7 @@ def get_shared_prompt_library(
 def share_prompt(
     prompt_uuid: str,
     share_data: schemas.SummaryPromptShare,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -593,10 +621,14 @@ def share_prompt(
         raise HTTPException(status_code=400, detail="Cannot share system prompts")
 
     prompt.is_shared = share_data.is_shared  # type: ignore[assignment]
-    if share_data.is_shared and not prompt.shared_at:
-        prompt.shared_at = datetime.now(timezone.utc)  # type: ignore[assignment]
-    elif not share_data.is_shared:
+    if share_data.is_shared:
+        if not prompt.shared_at:
+            prompt.shared_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+        # Record who flipped sharing on (may differ from the creator)
+        prompt.shared_by = current_user.id  # type: ignore[assignment]
+    else:
         prompt.shared_at = None  # type: ignore[assignment]
+        prompt.shared_by = None  # type: ignore[assignment]
         # Clean up other users who had this prompt set as active
         db.query(models.UserSetting).filter(
             models.UserSetting.setting_key == "active_summary_prompt_id",
@@ -606,6 +638,23 @@ def share_prompt(
 
     db.commit()
     db.refresh(prompt)
+
+    ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.PROMPT_SHARE
+        if share_data.is_shared
+        else AuditEventType.PROMPT_UNSHARE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        source_ip=ctx["source_ip"],
+        user_agent=ctx["user_agent"],
+        details={
+            "prompt_uuid": str(prompt.uuid),
+            "prompt_name": str(prompt.name),
+            "owner_id": int(prompt.user_id) if prompt.user_id else None,
+        },
+    )
     return prompt
 
 
@@ -690,3 +739,65 @@ def delete_prompt(
     db.delete(prompt)
     db.commit()
     return {"detail": "Prompt deleted successfully"}
+
+
+@router.post("/{prompt_uuid}/clone", response_model=schemas.SummaryPrompt)
+def clone_prompt(
+    prompt_uuid: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """Clone an accessible prompt into the current user's editable library.
+
+    A user may clone a system prompt, a shared prompt, or one of their own
+    prompts. The clone is private (not shared), owned by the current user, and
+    counts toward the per-user prompt cap.
+    """
+    source = get_prompt_by_uuid(db, prompt_uuid)
+
+    # Access check mirrors the single-prompt GET: system, shared, or own only.
+    if not source.is_system_default and not source.is_shared and source.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot clone other users' private prompts")
+
+    # Clones count toward the per-user cap.
+    _assert_under_prompt_limit(db, int(current_user.id))
+
+    clone = models.SummaryPrompt(
+        user_id=current_user.id,
+        name=f"{source.name} (copy)",
+        description=source.description,
+        prompt_text=source.prompt_text,
+        content_type=source.content_type,
+        tags=list(source.tags or []),
+        is_system_default=False,
+        is_active=True,
+        is_shared=False,
+        shared_at=None,
+        shared_by=None,
+        usage_count=0,
+    )
+    db.add(clone)
+    db.commit()
+    db.refresh(clone)
+
+    ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.PROMPT_CLONE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        source_ip=ctx["source_ip"],
+        user_agent=ctx["user_agent"],
+        details={
+            "prompt_uuid": str(clone.uuid),
+            "prompt_name": str(clone.name),
+            "source_prompt_uuid": str(source.uuid),
+            "owner_id": int(source.user_id) if source.user_id else None,
+        },
+    )
+
+    # The clone is always owned by the caller; reflect that in the response.
+    response = schemas.SummaryPrompt.model_validate(clone)
+    response.is_owner = True
+    return response

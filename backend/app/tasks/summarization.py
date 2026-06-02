@@ -573,6 +573,21 @@ def summarize_transcript_task(
 
             _finalize_summary_storage(summary_data, media_file, file_id, db)
 
+            # Bump usage_count on the prompt actually used (best-effort; never
+            # fail the task). Makes the shared library's usage ordering and the
+            # "most used prompts" metric meaningful.
+            try:
+                from app.utils.prompt_manager import increment_prompt_usage
+                from app.utils.prompt_manager import resolve_active_prompt_record
+
+                used_prompt = resolve_active_prompt_record(
+                    int(media_file.user_id) if media_file.user_id else None, db, prompt_uuid
+                )
+                if used_prompt is not None:
+                    increment_prompt_usage(db, int(used_prompt.id))
+            except Exception as usage_err:  # noqa: BLE001
+                logger.warning(f"Could not increment prompt usage_count: {usage_err}")
+
             logger.info("=== Summarization Task Completed Successfully ===")
             logger.info(f"Total processing time: {int((time.time() - start_time) * 1000)}ms")
 

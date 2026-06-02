@@ -415,7 +415,10 @@ start_app() {
       build_prod_images
       # Add local override to prevent pulling from Docker Hub (overrides pull_policy: always)
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.yml"
-      BUILD_CMD=""
+      # Force no-pull at `up` time. pull_policy:never in the override is NOT reliably honored
+      # when a service also defines a build: context — `docker compose up` still pulls the
+      # referenced image: tag and clobbers the locally-built one. `--pull never` is explicit.
+      BUILD_CMD="--pull never"
     else
       echo "🔄 Starting services in PRODUCTION mode (pulling from Docker Hub)..."
       BUILD_CMD=""

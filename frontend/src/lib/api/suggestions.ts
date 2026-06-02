@@ -23,6 +23,21 @@ export interface AISuggestions {
   suggestion_id?: string; // UUID
 }
 
+/** Raw tag suggestion shape as returned by the backend, before normalisation. */
+interface RawTagSuggestion {
+  name: string;
+  confidence?: number;
+  rationale?: string;
+}
+
+/** Raw collection suggestion shape as returned by the backend, before normalisation. */
+interface RawCollectionSuggestion {
+  name: string;
+  confidence?: number;
+  rationale?: string;
+  description?: string;
+}
+
 /**
  * Get AI suggestions for a file (tags and collections)
  */
@@ -37,14 +52,14 @@ export async function getAISuggestions(fileId: string): Promise<AISuggestions | 
     const data = response.data;
 
     // Extract tags and collections from the response
-    const tags: TagSuggestion[] = (data.suggested_tags || []).map((tag: any) => ({
+    const tags: TagSuggestion[] = (data.suggested_tags || []).map((tag: RawTagSuggestion) => ({
       name: tag.name,
       confidence: tag.confidence || 0.5,
       rationale: tag.rationale,
     }));
 
     const collections: CollectionSuggestion[] = (data.suggested_collections || []).map(
-      (col: any) => ({
+      (col: RawCollectionSuggestion) => ({
         name: col.name,
         confidence: col.confidence || 0.5,
         rationale: col.rationale,
@@ -58,8 +73,9 @@ export async function getAISuggestions(fileId: string): Promise<AISuggestions | 
       status: data.status || 'pending',
       suggestion_id: data.uuid || data.suggestion_id || data.id,
     };
-  } catch (error: any) {
-    if (error.response?.status === 404) {
+  } catch (error: unknown) {
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    if (status === 404) {
       // No suggestions yet
       return null;
     }

@@ -41,6 +41,10 @@ export interface ASRModelInfo {
   supports_vocabulary?: boolean;
   supports_translation?: boolean;
   languages?: number;
+  /** Present for local Whisper models — whether the model weights are downloaded */
+  downloaded?: boolean;
+  /** Present for local Whisper models — e.g. 'multilingual' or 'english' */
+  language_support?: string;
 }
 
 export interface ASRProviderInfo {
@@ -173,6 +177,52 @@ export interface ASRConnectionTestResult {
   config_uuid?: string;
 }
 
+/**
+ * Raw model entry as returned by the backend provider catalog, before normalisation.
+ * Field names differ from the frontend `ASRModelInfo` interface (see getProviders()).
+ */
+interface RawASRModel {
+  id: string;
+  display_name?: string;
+  name?: string;
+  description?: string;
+  price_per_min_batch?: number;
+  price_per_min_realtime?: number;
+  price_per_min_stream?: number;
+  supports_diarization?: boolean;
+  supports_vocabulary?: boolean;
+  supports_translation?: boolean;
+  languages?: number;
+  downloaded?: boolean;
+  language_support?: string;
+}
+
+/**
+ * Raw provider entry as returned by the backend provider catalog, before normalisation.
+ * Field names differ from the frontend `ASRProviderInfo` interface (see getProviders()).
+ */
+interface RawASRProvider {
+  id?: string;
+  provider?: string;
+  display_name?: string;
+  name?: string;
+  description?: string;
+  requires_api_key?: boolean;
+  requires_access_key_id?: boolean;
+  requires_region?: boolean;
+  supports_region?: boolean;
+  supports_custom_url?: boolean;
+  supports_base_url?: boolean;
+  supports_diarization?: boolean;
+  supports_vocabulary?: boolean;
+  supports_translation?: boolean;
+  sdk_available?: boolean;
+  status?: string;
+  status_note?: string;
+  diarization_quality?: string;
+  models?: RawASRModel[];
+}
+
 export class ASRSettingsApi {
   private static readonly BASE_PATH = '/asr-settings';
 
@@ -191,44 +241,50 @@ export class ASRSettingsApi {
    */
   static async getProviders(): Promise<{ providers: ASRProviderInfo[] }> {
     const response = await axiosInstance.get(`${this.BASE_PATH}/providers`);
-    const raw: any[] = response.data?.providers ?? [];
-    const providers: ASRProviderInfo[] = raw.map((p: any) => ({
-      // identity
-      id: p.id ?? p.provider,
-      provider: (p.id ?? p.provider) as ASRProvider,
-      // display name — backend sends display_name
-      display_name: p.display_name ?? p.name ?? p.id,
-      name: p.display_name ?? p.name ?? p.id,
-      description: p.description ?? '',
-      // capability flags — normalise backend naming to frontend naming
-      requires_api_key: p.requires_api_key ?? false,
-      requires_access_key_id: p.requires_access_key_id ?? false,
-      supports_region: p.requires_region ?? p.supports_region ?? false,
-      supports_base_url: p.supports_custom_url ?? p.supports_base_url ?? false,
-      supports_diarization: p.supports_diarization ?? false,
-      supports_vocabulary: p.supports_vocabulary ?? false,
-      supports_translation: p.supports_translation ?? false,
-      // sdk_available is not in the backend catalog — assume true unless explicitly false
-      sdk_available: p.sdk_available ?? true,
-      // testing status and quality notes
-      status: p.status ?? 'experimental',
-      status_note: p.status_note ?? '',
-      diarization_quality: p.diarization_quality ?? '',
-      // normalise each model entry
-      models: (p.models ?? []).map((m: any) => ({
-        id: m.id,
-        display_name: m.display_name ?? m.name ?? m.id,
-        name: m.display_name ?? m.name ?? m.id,
-        description: m.description,
-        price_per_min_batch: m.price_per_min_batch,
-        // backend sends price_per_min_stream; interface calls it price_per_min_realtime
-        price_per_min_realtime: m.price_per_min_realtime ?? m.price_per_min_stream,
-        supports_diarization: m.supports_diarization,
-        supports_vocabulary: m.supports_vocabulary,
-        supports_translation: m.supports_translation,
-        languages: m.languages,
-      })),
-    }));
+    const raw: RawASRProvider[] = response.data?.providers ?? [];
+    const providers: ASRProviderInfo[] = raw.map((p: RawASRProvider) => {
+      const providerId = p.id ?? p.provider ?? '';
+      const providerName = p.display_name ?? p.name ?? providerId;
+      return {
+        // identity
+        id: providerId,
+        provider: providerId as ASRProvider,
+        // display name — backend sends display_name
+        display_name: providerName,
+        name: providerName,
+        description: p.description ?? '',
+        // capability flags — normalise backend naming to frontend naming
+        requires_api_key: p.requires_api_key ?? false,
+        requires_access_key_id: p.requires_access_key_id ?? false,
+        supports_region: p.requires_region ?? p.supports_region ?? false,
+        supports_base_url: p.supports_custom_url ?? p.supports_base_url ?? false,
+        supports_diarization: p.supports_diarization ?? false,
+        supports_vocabulary: p.supports_vocabulary ?? false,
+        supports_translation: p.supports_translation ?? false,
+        // sdk_available is not in the backend catalog — assume true unless explicitly false
+        sdk_available: p.sdk_available ?? true,
+        // testing status and quality notes
+        status: p.status ?? 'experimental',
+        status_note: p.status_note ?? '',
+        diarization_quality: p.diarization_quality ?? '',
+        // normalise each model entry
+        models: (p.models ?? []).map((m: RawASRModel) => ({
+          id: m.id,
+          display_name: m.display_name ?? m.name ?? m.id,
+          name: m.display_name ?? m.name ?? m.id,
+          description: m.description,
+          price_per_min_batch: m.price_per_min_batch,
+          // backend sends price_per_min_stream; interface calls it price_per_min_realtime
+          price_per_min_realtime: m.price_per_min_realtime ?? m.price_per_min_stream,
+          supports_diarization: m.supports_diarization,
+          supports_vocabulary: m.supports_vocabulary,
+          supports_translation: m.supports_translation,
+          languages: m.languages,
+          downloaded: m.downloaded,
+          language_support: m.language_support,
+        })),
+      };
+    });
     return { providers };
   }
 
@@ -456,9 +512,9 @@ export class ASRSettingsApi {
       id: m.id,
       display_name: m.display_name ?? m.name ?? m.id,
       description: m.description ?? '',
-      downloaded: (m as any).downloaded ?? true,
+      downloaded: m.downloaded ?? true,
       supports_translation: m.supports_translation ?? false,
-      language_support: (m as any).language_support ?? 'multilingual',
+      language_support: m.language_support ?? 'multilingual',
     }));
   }
 

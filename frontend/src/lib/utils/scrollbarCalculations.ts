@@ -296,7 +296,7 @@ export function calculateTimeFromScrollbarPosition(
  * Validate transcript segments array for common issues
  * Returns validation result with error details
  */
-export function validateTranscriptSegments(segments: any[]): {
+export function validateTranscriptSegments(segments: unknown): {
   isValid: boolean;
   errors: string[];
   warnings: string[];
@@ -315,12 +315,14 @@ export function validateTranscriptSegments(segments: any[]): {
   }
 
   for (let i = 0; i < segments.length; i++) {
-    const segment = segments[i];
+    const raw = segments[i];
 
-    if (!segment || typeof segment !== 'object') {
+    if (!raw || typeof raw !== 'object') {
       errors.push(`Segment ${i} is not a valid object`);
       continue;
     }
+
+    const segment = raw as { start_time?: unknown; end_time?: unknown; text?: unknown };
 
     if (typeof segment.start_time !== 'number' || isNaN(segment.start_time)) {
       errors.push(`Segment ${i} has invalid start_time`);
@@ -330,7 +332,11 @@ export function validateTranscriptSegments(segments: any[]): {
       errors.push(`Segment ${i} has invalid end_time`);
     }
 
-    if (segment.start_time >= segment.end_time) {
+    if (
+      typeof segment.start_time === 'number' &&
+      typeof segment.end_time === 'number' &&
+      segment.start_time >= segment.end_time
+    ) {
       warnings.push(`Segment ${i} has start_time >= end_time`);
     }
 

@@ -16,6 +16,34 @@ import { formatDuration, formatSrtTimestamp, formatVttTimestamp } from '$lib/uti
 export type ExportFormat = 'txt' | 'json' | 'csv' | 'srt' | 'vtt';
 
 /**
+ * A transcript segment as consumed by the export serializer. Tolerates both the
+ * `start_time`/`end_time` and legacy `start`/`end` field names, and resolves a
+ * speaker from `speaker_label` or a nested `speaker` object.
+ */
+export interface ExportSegment {
+  start_time?: number;
+  end_time?: number;
+  start?: number;
+  end?: number;
+  text: string;
+  speaker_label?: string;
+  speaker?: { name?: string; display_name?: string };
+}
+
+/** A speaker entry used to map raw names to display names. */
+export interface ExportSpeaker {
+  name: string;
+  display_name?: string;
+}
+
+/** A comment entry merged positionally into the export. */
+export interface ExportComment {
+  timestamp: number;
+  text: string;
+  user?: { full_name?: string; username?: string; email?: string };
+}
+
+/**
  * The i18n strings the serialization switch needs. The caller resolves each via
  * `$t(...)` and passes them in so this module stays store-free.
  */
@@ -42,7 +70,7 @@ export interface ExportOptions {
    */
   filename: string;
   /** File metadata embedded only in the JSON export body. */
-  jsonMeta?: { filename: string; duration: any };
+  jsonMeta?: { filename: string; duration: number | null | undefined };
   translations: ExportStrings;
 }
 
@@ -57,12 +85,12 @@ export interface ExportOptions {
 export function mergeCommentsWithTranscript(
   segments: string[],
   commentLines: string[],
-  transcriptData: any[],
-  comments: any[]
+  transcriptData: ExportSegment[],
+  comments: ExportComment[]
 ): string[] {
   // Create arrays of timestamps for sorting
-  const segmentTimes = transcriptData.map((seg: any) => seg.start_time || seg.start || 0);
-  const commentTimes = comments.map((comment: any) => comment.timestamp);
+  const segmentTimes = transcriptData.map((seg) => seg.start_time || seg.start || 0);
+  const commentTimes = comments.map((comment) => comment.timestamp);
 
   // Create merged array of segment and comment entries
   let merged = [];
@@ -151,25 +179,25 @@ export function mergeSortedArrays<T>(
  */
 export function buildExportContent(
   format: ExportFormat,
-  transcriptData: any[],
-  speakerList: any[],
-  fileComments: any[],
+  transcriptData: ExportSegment[],
+  speakerList: ExportSpeaker[],
+  fileComments: ExportComment[],
   opts: ExportOptions
 ): string {
   const { includeComments, txtOptions, jsonMeta, translations } = opts;
   const t = translations;
 
   // Sort transcript data by start_time to ensure proper ordering
-  transcriptData = [...transcriptData].sort((a: any, b: any) => a.start_time - b.start_time);
+  transcriptData = [...transcriptData].sort((a, b) => (a.start_time ?? 0) - (b.start_time ?? 0));
 
   // Create speaker display name mapping
-  const speakerMapping = new Map();
-  speakerList.forEach((speaker: any) => {
+  const speakerMapping = new Map<string, string>();
+  speakerList.forEach((speaker) => {
     speakerMapping.set(speaker.name, speaker.display_name || speaker.name);
   });
 
   // Helper function to get speaker display name
-  const getSpeakerDisplayName = (segment: any) => {
+  const getSpeakerDisplayName = (segment: ExportSegment) => {
     const speakerName = segment.speaker_label || segment.speaker?.name || t.speakerDefault;
     return speakerMapping.get(speakerName) || segment.speaker?.display_name || speakerName;
   };
@@ -219,7 +247,7 @@ export function buildExportContent(
 
       // Add comments if requested (comments always retain their timestamps since they are positional)
       if (includeComments && fileComments.length > 0) {
-        const commentLines = fileComments.map((comment: any) => {
+        const commentLines = fileComments.map((comment) => {
           const userName =
             comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
           return `[${formatDuration(comment.timestamp)}] USER COMMENT: ${userName}: ${
@@ -238,10 +266,15 @@ export function buildExportContent(
       break;
     }
     case 'json': {
-      const jsonData: any = {
+      const jsonData: {
+        filename: string | undefined;
+        duration: number | null | undefined;
+        segments: Array<{ start_time: number; end_time: number; speaker: string; text: string }>;
+        comments?: Array<{ timestamp: number; user: string; text: string }>;
+      } = {
         filename: jsonMeta?.filename,
         duration: jsonMeta?.duration,
-        segments: transcriptData.map((seg: any) => ({
+        segments: transcriptData.map((seg) => ({
           start_time: seg.start_time || seg.start || 0,
           end_time: seg.end_time || seg.end || 0,
           speaker: getSpeakerDisplayName(seg),
@@ -251,7 +284,7 @@ export function buildExportContent(
 
       // Add comments to JSON if requested
       if (includeComments && fileComments.length > 0) {
-        jsonData.comments = fileComments.map((comment: any) => ({
+        jsonData.comments = fileComments.map((comment) => ({
           timestamp: comment.timestamp,
           user:
             comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous',
@@ -264,7 +297,7 @@ export function buildExportContent(
     }
     case 'csv': {
       let csvHeader = t.csvHeaderDefault;
-      let csvRows = transcriptData.map((seg: any) => {
+      let csvRows = transcriptData.map((seg) => {
         const start = seg.start_time || seg.start || 0;
         const end = seg.end_time || seg.end || 0;
         const speaker = getSpeakerDisplayName(seg);
@@ -279,7 +312,7 @@ export function buildExportContent(
         csvHeader = t.csvHeaderWithComments;
 
         // Add comments as separate rows
-        const commentRows = fileComments.map((comment: any) => {
+        const commentRows = fileComments.map((comment) => {
           const timestamp = comment.timestamp;
           const userName =
             comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
@@ -293,8 +326,8 @@ export function buildExportContent(
         csvRows = mergeSortedArrays(
           csvRows,
           commentRows,
-          transcriptData.map((seg: any) => seg.start_time || seg.start || 0),
-          fileComments.map((comment: any) => comment.timestamp)
+          transcriptData.map((seg) => seg.start_time || seg.start || 0),
+          fileComments.map((comment) => comment.timestamp)
         );
       }
 
@@ -314,7 +347,7 @@ export function buildExportContent(
       let counter = 1;
 
       // Add transcript segments
-      transcriptData.forEach((seg: any) => {
+      transcriptData.forEach((seg) => {
         const startTime = formatSrtTimestamp(seg.start_time || seg.start || 0);
         const endTime = formatSrtTimestamp(seg.end_time || seg.end || 0);
         const speaker = getSpeakerDisplayName(seg);
@@ -351,10 +384,10 @@ export function buildExportContent(
         });
 
         // Sort by start time
-        srtItems.sort((a: any, b: any) => a.startTime - b.startTime);
+        srtItems.sort((a, b) => a.startTime - b.startTime);
 
         // Reassign indices after sorting
-        srtItems.forEach((item: any, idx: number) => {
+        srtItems.forEach((item, idx) => {
           item.index = idx + 1;
         });
       }
@@ -362,8 +395,7 @@ export function buildExportContent(
       // Generate SRT content
       content = srtItems
         .map(
-          (item: any) =>
-            `${item.index}\n${item.formattedStart} --> ${item.formattedEnd}\n${item.text}\n`
+          (item) => `${item.index}\n${item.formattedStart} --> ${item.formattedEnd}\n${item.text}\n`
         )
         .join('\n');
       break;
@@ -379,7 +411,7 @@ export function buildExportContent(
       }> = [];
 
       // Add transcript segments
-      transcriptData.forEach((seg: any) => {
+      transcriptData.forEach((seg) => {
         const startTime = formatVttTimestamp(seg.start_time || seg.start || 0);
         const endTime = formatVttTimestamp(seg.end_time || seg.end || 0);
         const speaker = getSpeakerDisplayName(seg);
@@ -414,19 +446,19 @@ export function buildExportContent(
         });
 
         // Sort by start time
-        vttItems.sort((a: any, b: any) => a.startTime - b.startTime);
+        vttItems.sort((a, b) => a.startTime - b.startTime);
       }
 
       // Generate VTT content
       content =
         'WEBVTT\n\n' +
         vttItems
-          .map((item: any) => `${item.formattedStart} --> ${item.formattedEnd}\n${item.text}\n`)
+          .map((item) => `${item.formattedStart} --> ${item.formattedEnd}\n${item.text}\n`)
           .join('\n');
       break;
     }
     default:
-      content = transcriptData.map((seg: any) => seg.text).join(' ');
+      content = transcriptData.map((seg) => seg.text).join(' ');
   }
 
   return content;

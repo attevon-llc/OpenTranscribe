@@ -90,6 +90,7 @@ async def complete_upload(
 ) -> dict[str, Any]:
     """Finalize a presigned upload and dispatch the transcription pipeline."""
     from app.api.endpoints.files.upload import _update_file_hash
+    from app.api.endpoints.files.upload import dispatch_thumbnail_for_video
     from app.api.endpoints.files.upload import start_transcription_task
     from app.services.imohash_service import compute_from_minio
     from app.services.minio_service import object_exists_and_size
@@ -117,6 +118,11 @@ async def complete_upload(
     # Verify the object actually landed in MinIO — trust but verify.
     minio_size = object_exists_and_size(str(db_file.storage_path))
     if minio_size is None:
+        # The presigned PUT never completed, so the prepared row is an orphan.
+        # Drop it (parity with the legacy path's failure cleanup) so it doesn't
+        # linger in the gallery as a stuck PENDING upload.
+        db.delete(db_file)
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -128,6 +134,45 @@ async def complete_upload(
         logger.warning(
             f"size mismatch for {request.file_id}: client={request.file_size} server={minio_size}"
         )
+
+    # Magic-byte validation — parity with the legacy path. The bytes went
+    # browser→MinIO directly, so verify the object's real signature matches
+    # its declared content_type before dispatching it to the GPU pipeline.
+    # We range-read only a small header (never the whole object). Fail closed
+    # on a CONFIRMED mismatch (delete object + row, 400); on a transient read
+    # error, log and proceed — the object verified-exists, so we don't reject
+    # a legitimate upload over a MinIO hiccup.
+    header_bytes: bytes | None = None
+    try:
+        from app.services.minio_service import range_read
+
+        header_bytes = range_read(str(db_file.storage_path), 0, 64)
+    except Exception as read_err:
+        logger.warning(
+            f"header read for validation of {request.file_id} failed "
+            f"(non-fatal, proceeding): {read_err}"
+        )
+    if header_bytes is not None and db_file.content_type:
+        from app.utils.file_validation import validate_uploaded_file
+
+        is_valid, validation_detail = validate_uploaded_file(
+            header_bytes, str(db_file.content_type), str(db_file.filename)
+        )
+        benchmark_timing.mark(request.task_id, "http_validation_end")
+        if not is_valid:
+            from app.services.minio_service import delete_file
+
+            logger.warning(f"Rejecting presigned upload {request.file_id}: {validation_detail}")
+            try:
+                delete_file(str(db_file.storage_path))
+            except Exception as del_err:
+                logger.warning(f"cleanup of rejected object failed (non-fatal): {del_err}")
+            db.delete(db_file)
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File content does not match its declared type: {validation_detail}",
+            )
 
     # Update client-supplied hash and compute server-side imohash fingerprint
     _update_file_hash(db_file, request.file_hash, str(db_file.filename))
@@ -157,6 +202,11 @@ async def complete_upload(
     if not whisper_model and requested_model_snapshot:
         whisper_model = requested_model_snapshot
 
+    # Dispatch the background thumbnail early (concurrent with the pipeline)
+    # so the gallery shows it via the live file_updated refresh while the
+    # file is still transcribing — parity with the legacy upload path.
+    dispatch_thumbnail_for_video(db_file, int(current_user.id))
+
     # Dispatch the pipeline with the pre-minted task_id so every downstream
     # marker lands in the same benchmark hash as the client-side markers.
     start_transcription_task(
@@ -166,8 +216,6 @@ async def complete_upload(
         request.max_speakers,
         request.num_speakers,
         whisper_model=whisper_model,
-        user_id=int(current_user.id),
-        db=db,
         task_id=request.task_id,
     )
 

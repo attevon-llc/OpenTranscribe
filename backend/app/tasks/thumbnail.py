@@ -97,6 +97,28 @@ def generate_thumbnail_task(self, file_id: int, user_id: int, storage_path: str)
                 else:
                     logger.warning(f"MediaFile {file_id} not found for thumbnail update")
 
+            # Push the thumbnail to the gallery live: a file_updated event with a
+            # presigned thumbnail_url so the card swaps the placeholder for the
+            # real thumbnail mid-processing (no refresh). Matches the frontend
+            # file_updated handler in routes/+page.svelte.
+            try:
+                from app.services.minio_service import get_file_url
+                from app.services.notification_service import send_task_notification
+
+                thumbnail_url = get_file_url(
+                    thumbnail_storage_path, expires=settings.THUMBNAIL_URL_EXPIRE_SECONDS
+                )
+                send_task_notification(
+                    user_id,
+                    "file_updated",
+                    file_id=file_id,
+                    extra={"thumbnail_url": thumbnail_url},
+                )
+            except Exception as notify_err:
+                logger.warning(
+                    f"Thumbnail notify failed for file {file_id} (non-fatal): {notify_err}"
+                )
+
             result["success"] = True
             result["thumbnail_path"] = thumbnail_storage_path
             logger.info(f"Successfully generated thumbnail for file {file_id}")

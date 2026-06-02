@@ -874,9 +874,17 @@ pytest --cov=app tests/          # With coverage
 
 # Frontend tests
 cd frontend/
-npm run test                     # Unit tests
-npm run test:e2e                 # End-to-end tests
-npm run test:components          # Component tests
+npm run test                     # Vitest unit + component tests (jsdom)
+npm run test:coverage            # …with coverage
+npm run check                    # svelte-check (types + a11y)
+npm run lint                     # ESLint (flat config)
+npm run check:i18n               # locale key-parity across all 8 languages
+
+# Frontend end-to-end (Playwright via pytest, against the live stack)
+source backend/venv/bin/activate
+pytest backend/tests/e2e/ -v                 # headless
+pytest backend/tests/e2e/test_a11y.py -v     # axe-core accessibility
+pytest backend/tests/e2e/test_visual_regression.py -v   # screenshot baselines
 ```
 
 ### **Contributing**

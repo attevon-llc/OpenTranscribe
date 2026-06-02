@@ -1,24 +1,24 @@
-fastapi>=0.103.1
-uvicorn[standard]>=0.46.0
-websockets>=11.0.3
-sqlalchemy>=2.0.20
-alembic>=1.12.0
-pydantic>=2.3.0
-pydantic-settings>=2.0.0
-python-jose[cryptography]>=3.3.0
-python-multipart>=0.0.6
+fastapi>=0.136.3
+uvicorn[standard]>=0.48.0
+websockets>=16.0
+sqlalchemy>=2.0.50
+alembic>=1.18.4
+pydantic>=2.13.4
+pydantic-settings>=2.14.1
+python-jose[cryptography]>=3.5.0
+python-multipart>=0.0.30
 passlib[bcrypt]>=1.7.4
-bcrypt==3.2.2
+bcrypt==5.0.0
 email-validator
 # Asynchronous Tasks
-celery>=5.3.4
-redis>=5.0.0
-flower>=2.0.0
-psycopg2-binary>=2.9.7
-minio>=7.2.18
-opensearch-py>=3.0.0
-httpx>=0.24.1
-python-dotenv>=1.0.0
+celery>=5.6.3
+redis>=8.0.0
+flower>=2.0.1
+psycopg2-binary>=2.9.12
+minio>=7.2.20
+opensearch-py>=3.2.0
+httpx>=0.28.1
+python-dotenv>=1.2.2
 
 # LDAP/Active Directory Authentication
 ldap3>=2.9.1
@@ -27,7 +27,7 @@ ldap3>=2.9.1
 slowapi>=0.1.9
 
 # PKI/X.509 Certificate Authentication
-cryptography>=42.0.0
+cryptography>=48.0.0
 
 # MFA/TOTP Authentication (FedRAMP IA-2)
 pyotp>=2.9.0
@@ -35,23 +35,23 @@ qrcode[pil]>=8.2
 
 # AI/ML Stack - CPU-only (no CUDA, no GPU required)
 # NumPy 2.x compatible
-numpy>=1.25.2
+numpy>=2.4.6
 
 # PyTorch CPU-only (for speaker embeddings — no CUDA build)
 # Use --extra-index-url so PyPI remains available for all other packages.
 # --index-url would replace PyPI entirely, breaking pyannote.audio and other deps.
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.8.0+cpu
+torch==2.12.0+cpu
 
 # PyAnnote (CPU-only, for speaker embedding extraction and cross-file speaker matching)
-pyannote.audio>=3.3.2
+pyannote.audio>=4.0.4
 
 # Supporting libraries
 omegaconf>=2.3.0
 ffmpeg-python>=0.2.0
-sentencepiece>=0.1.99
-psutil>=5.9.5
-pyexiftool>=0.5.0
+sentencepiece>=0.2.1
+psutil>=7.2.2
+pyexiftool>=0.5.6
 yt-dlp>=2025.1.7
 
 # Semantic search and NLP
@@ -60,14 +60,14 @@ sentence-transformers>=2.2.0  # For semantic search embeddings (all-MiniLM-L6-v2
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
-deepgram-sdk>=6.1.1
-assemblyai>=0.30.0
+deepgram-sdk>=7.3.0
+assemblyai>=0.64.4
 google-cloud-speech>=2.24.0
-azure-cognitiveservices-speech>=1.35.0
-speechmatics-python>=1.11.0
+azure-cognitiveservices-speech>=1.50.0
+speechmatics-python>=5.0.0.post1
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
-boto3>=1.28.0
+boto3>=1.43.19
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai>=1.0.0
+openai>=2.40.0
 # requests is pulled in transitively by many packages above, but list explicitly for clarity
-requests>=2.31.0
+requests>=2.34.2

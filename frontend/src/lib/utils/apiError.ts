@@ -10,8 +10,28 @@ import { toastStore } from '$stores/toast';
  */
 
 interface AxiosLikeError {
-  response?: { data?: { detail?: unknown; message?: unknown } };
+  response?: { status?: number; data?: { detail?: unknown; message?: unknown } };
   message?: unknown;
+  code?: unknown;
+}
+
+/**
+ * Extracts the HTTP status code from an unknown (axios-like) error, or `undefined`
+ * if there is none. Use this instead of casting to `any` for `err.response?.status`
+ * checks in catch blocks.
+ */
+export function getErrorStatus(error: unknown): number | undefined {
+  const status = (error as AxiosLikeError)?.response?.status;
+  return typeof status === 'number' ? status : undefined;
+}
+
+/**
+ * Extracts the axios error `code` (e.g. `ERR_NETWORK`, `ERR_CANCELED`,
+ * `ECONNABORTED`) from an unknown error, or `undefined`.
+ */
+export function getErrorCode(error: unknown): string | undefined {
+  const code = (error as AxiosLikeError)?.code;
+  return typeof code === 'string' ? code : undefined;
 }
 
 /**

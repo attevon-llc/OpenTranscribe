@@ -6,5 +6,7 @@ package-lock.json
 static/fonts/
 src/lib/i18n/locales/
 coverage/
+.bundle-stats/
+.madgerc
 *.min.js
 *.min.css

@@ -3,6 +3,7 @@ import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
 import path, { dirname } from 'path';
 import serviceWorker from './plugins/vite-plugin-service-worker';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -13,8 +14,29 @@ export default defineConfig(({ mode }) => {
   // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
   const env = loadEnv(mode, process.cwd(), '');
 
+  // Bundle-size analysis is opt-in (ANALYZE=true or `--mode analyze`) so normal
+  // builds are completely unaffected. Emits dist/stats.html after the build.
+  const analyze = process.env.ANALYZE === 'true' || mode === 'analyze';
+
   return {
-    plugins: [sveltekit(), serviceWorker()],
+    plugins: [
+      sveltekit(),
+      serviceWorker(),
+      ...(analyze
+        ? [
+            // adapter-static empties dist/ during finalization (after the Vite
+            // sub-builds run), so writing straight to dist/stats.html gets wiped.
+            // Emit to a staging dir; build:analyze copies it into dist/ afterward.
+            visualizer({
+              filename: path.resolve(__dirname, '.bundle-stats/stats.html'),
+              gzipSize: true,
+              brotliSize: true,
+              template: 'treemap',
+              emitFile: false,
+            }),
+          ]
+        : []),
+    ],
     server: {
       port: 5173,
       proxy: {

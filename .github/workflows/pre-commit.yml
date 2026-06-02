@@ -95,3 +95,14 @@ jobs:
       - name: Run Vitest
         working-directory: frontend
         run: npm run test
+
+      # Report-only dev-tooling: surface dead code and import cycles in the job log
+      # without failing CI yet (|| true). Tighten to hard-fail once the existing
+      # backlog of knip false-positives / the intentional axios↔auth cycle is triaged.
+      - name: Dead-code report (knip, non-blocking)
+        working-directory: frontend
+        run: npm run deadcode || true
+
+      - name: Import-cycle report (madge, non-blocking)
+        working-directory: frontend
+        run: npm run cycles || true

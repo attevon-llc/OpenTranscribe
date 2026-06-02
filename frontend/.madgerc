@@ -1,0 +1,16 @@
+{
+  "fileExtensions": ["ts", "js", "svelte"],
+  "tsConfig": "tsconfig.json",
+  "detectiveOptions": {
+    "ts": { "skipTypeImports": true },
+    "es6": { "skipTypeImports": true }
+  },
+  "webpackConfig": null,
+  "resolve": {
+    "alias": {
+      "$lib": "./src/lib",
+      "$components": "./src/components",
+      "$stores": "./src/stores"
+    }
+  }
+}

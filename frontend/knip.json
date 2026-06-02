@@ -1,0 +1,32 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "src/routes/**/+{page,layout,error}.{svelte,ts,js}",
+    "src/routes/**/+{page,layout}.server.{ts,js}",
+    "src/app.html",
+    "src/service-worker.{ts,js}",
+    "src/serviceWorkerRegistration.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "svelte.config.js",
+    "eslint.config.js",
+    "plugins/**/*.ts",
+    "scripts/**/*.{js,mjs}"
+  ],
+  "project": ["src/**/*.{ts,js,svelte}"],
+  "ignore": [
+    "src/tests/**",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/test-setup.ts",
+    "**/*.d.ts",
+    ".svelte-kit/**"
+  ],
+  "ignoreDependencies": [],
+  "svelte": {
+    "config": ["svelte.config.js"]
+  },
+  "vite": {
+    "config": ["vite.config.ts", "vitest.config.ts"]
+  }
+}

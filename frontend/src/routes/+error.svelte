@@ -10,6 +10,10 @@
   $: heading = isNotFound ? $t('errorPage.notFoundTitle') : $t('errorPage.title');
   // Prefer the framework-provided message; fall back to a friendly translated one.
   $: body = errorMessage || (isNotFound ? $t('errorPage.notFoundMessage') : $t('errorPage.genericMessage'));
+
+  function reload() {
+    if (typeof window !== 'undefined') window.location.reload();
+  }
 </script>
 
 <svelte:head>
@@ -21,7 +25,12 @@
     <p class="error-status">{$t('errorPage.statusLabel')} {status}</p>
     <h1 class="error-heading">{heading}</h1>
     <p class="error-body">{body}</p>
-    <a class="error-home" href="/">{$t('errorPage.goHome')}</a>
+    <div class="error-actions">
+      <a class="error-home" href="/">{$t('errorPage.goHome')}</a>
+      <button type="button" class="error-reload" on:click={reload}>
+        {$t('errorPage.reload')}
+      </button>
+    </div>
   </div>
 </div>
 
@@ -70,18 +79,34 @@
     word-break: break-word;
   }
 
-  .error-home {
+  .error-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  .error-home,
+  .error-reload {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-height: 44px;
     padding: 0.6rem 1.5rem;
     border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+  }
+
+  /* Primary action — "Go home". */
+  .error-home {
     background: var(--primary-color, #3b82f6);
     color: #ffffff;
-    font-weight: 600;
     text-decoration: none;
-    transition: background-color 0.2s ease, transform 0.2s ease;
+    border: none;
   }
 
   .error-home:hover {
@@ -89,16 +114,31 @@
     transform: translateY(-1px);
   }
 
-  .error-home:focus-visible {
+  /* Secondary action — "Reload" (grey, never blue). */
+  .error-reload {
+    background: var(--surface-color, #ffffff);
+    color: var(--text-color, #1a1a1a);
+    border: 1px solid var(--border-color, #e0e0e0);
+  }
+
+  .error-reload:hover {
+    background: var(--button-hover, #f1f5f9);
+    transform: translateY(-1px);
+  }
+
+  .error-home:focus-visible,
+  .error-reload:focus-visible {
     outline: 2px solid var(--primary-color, #3b82f6);
     outline-offset: 2px;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .error-home {
+    .error-home,
+    .error-reload {
       transition: none;
     }
-    .error-home:hover {
+    .error-home:hover,
+    .error-reload:hover {
       transform: none;
     }
   }

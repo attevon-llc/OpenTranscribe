@@ -17,7 +17,7 @@
 #   (Then reference in docker-compose.blackwell.yml)
 # =============================================================================
 
-FROM nvcr.io/nvidia/pytorch:25.01-py3
+FROM nvcr.io/nvidia/pytorch:26.05-py3
 
 LABEL org.opencontainers.image.title="OpenTranscribe Backend (Blackwell)" \
       org.opencontainers.image.description="AI-powered transcription backend for NVIDIA Blackwell/DGX Spark" \

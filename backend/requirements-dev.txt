@@ -15,6 +15,10 @@ pytest>=8.4.0
 pytest-asyncio>=0.23.0  # For testing async code
 pytest-cov>=4.1.0  # Code coverage reports
 
+# E2E (Playwright) test infrastructure
+pytest-playwright>=0.7.2  # Playwright pytest plugin (browser fixtures)
+axe-playwright-python>=0.1.7  # Bundled axe-core a11y scans (no CDN fetch at runtime)
+
 # Git Hooks & Pre-commit
 pre-commit>=4.3.0
 

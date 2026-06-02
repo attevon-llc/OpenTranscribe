@@ -7,6 +7,7 @@
   import { toastStore } from '../../stores/toast';
   import { llmStatusStore } from '../../stores/llmStatus';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import axiosInstance from '$lib/axios';
 
   export let onSettingsChange: (() => void) | null = null;
@@ -110,11 +111,11 @@
         hasSettings = false;
         llmStatusStore.reset();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading LLM providers:', err);
-      const detail = err.response?.data?.detail;
-      const detailStr = typeof detail === 'string' ? detail : '';
-      if (!err.message?.includes('LLM') && !detailStr.includes('configuration')) {
+      const detailStr = getErrorMessage(err, '');
+      const rawMessage = err instanceof Error ? err.message : '';
+      if (!rawMessage.includes('LLM') && !detailStr.includes('configuration')) {
         const errorMsg = detailStr || $t('settings.llmProvider.loadProvidersError');
         toastStore.error(errorMsg, 5000);
       }
@@ -138,9 +139,8 @@
       const res = await axiosInstance.put('/settings/ai-summary', { enabled: autoSummaryEnabled });
       autoSummaryEnabled = res.data.ai_summary_enabled;
       toastStore.success(res.data.message, 3000);
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('common.error'), 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('common.error')), 5000);
       autoSummaryEnabled = !autoSummaryEnabled; // rollback
     } finally {
       autoSummaryLoading = false;
@@ -163,9 +163,8 @@
       systemSummaryEnabled = res.data.ai_summary_enabled;
       const state = systemSummaryEnabled ? $t('common.enabled') : $t('common.disabled');
       toastStore.success(`${$t('settings.llm.systemSummary')}: ${state}`, 3000);
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('common.error'), 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('common.error')), 5000);
       systemSummaryEnabled = !systemSummaryEnabled; // rollback
     } finally {
       systemSummaryLoading = false;
@@ -186,10 +185,9 @@
       connectionStatus = result.success ? 'connected' : 'disconnected';
       statusMessage = result.message;
       statusLastChecked = new Date();
-    } catch (err: any) {
+    } catch (err: unknown) {
       connectionStatus = 'disconnected';
-      const detail = err.response?.data?.detail;
-      statusMessage = typeof detail === 'string' ? detail : $t('settings.llmProvider.testFailed');
+      statusMessage = getErrorMessage(err, $t('settings.llmProvider.testFailed'));
       statusLastChecked = new Date();
     } finally {
       checkingStatus = false;
@@ -238,9 +236,8 @@
       if (onSettingsChange) {
         onSettingsChange();
       }
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.activateFailed');
+    } catch (err: unknown) {
+      const errorMsg = getErrorMessage(err, $t('settings.llmProvider.activateFailed'));
       toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
@@ -258,9 +255,8 @@
       } else {
         toastStore.error(`${config.name}: ${result.message}`, 8000);
       }
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.testFailed');
+    } catch (err: unknown) {
+      const errorMsg = getErrorMessage(err, $t('settings.llmProvider.testFailed'));
       toastStore.error(`${config.name}: ${errorMsg}`, 8000);
     } finally {
       testing = false;
@@ -303,9 +299,8 @@
       if (onSettingsChange) {
         onSettingsChange();
       }
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.deleteFailed');
+    } catch (err: unknown) {
+      const errorMsg = getErrorMessage(err, $t('settings.llmProvider.deleteFailed'));
       toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
@@ -347,9 +342,8 @@
       if (onSettingsChange) {
         onSettingsChange();
       }
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.deleteAllFailed');
+    } catch (err: unknown) {
+      const errorMsg = getErrorMessage(err, $t('settings.llmProvider.deleteAllFailed'));
       toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
@@ -403,7 +397,7 @@
         newShared ? $t('settings.llmProvider.shareEnabled') : $t('settings.llmProvider.shareDisabled'),
         3000
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Rollback on failure
       if (idx !== -1) {
         savedConfigurations[idx] = {
@@ -413,8 +407,7 @@
         };
         savedConfigurations = savedConfigurations;
       }
-      const detail = err.response?.data?.detail;
-      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.shareFailed');
+      const errorMsg = getErrorMessage(err, $t('settings.llmProvider.shareFailed'));
       toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;

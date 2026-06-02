@@ -11,6 +11,7 @@
   import { toastStore } from '$stores/toast';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from '$components/ui/Spinner.svelte';
   import RetrySettings from '$components/settings/RetrySettings.svelte';
 
@@ -29,9 +30,9 @@
     try {
       const response = await axiosInstance.get('/tasks/system/health');
       taskHealthData = response.data;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading task health:', err);
-      const message = err.response?.data?.detail || $t('settings.toast.taskHealthLoadFailed');
+      const message = getErrorMessage(err, $t('settings.toast.taskHealthLoadFailed'));
       toastStore.error(message);
     } finally {
       taskHealthLoading = false;
@@ -55,9 +56,9 @@
           await axiosInstance.post('/tasks/recover-stuck-tasks');
           toastStore.success($t('settings.toast.stuckTasksRecoveryInitiated'));
           await refreshTaskHealth();
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('Error recovering stuck tasks:', err);
-          const message = err.response?.data?.detail || $t('settings.toast.stuckTasksRecoveryFailed');
+          const message = getErrorMessage(err, $t('settings.toast.stuckTasksRecoveryFailed'));
           toastStore.error(message);
         }
       }
@@ -73,9 +74,9 @@
           await axiosInstance.post('/tasks/fix-inconsistent-files');
           toastStore.success($t('settings.toast.inconsistentFilesFixInitiated'));
           await refreshTaskHealth();
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('Error fixing inconsistent files:', err);
-          const message = err.response?.data?.detail || $t('settings.toast.inconsistentFilesFixFailed');
+          const message = getErrorMessage(err, $t('settings.toast.inconsistentFilesFixFailed'));
           toastStore.error(message);
         }
       }
@@ -91,9 +92,9 @@
           await axiosInstance.post('/tasks/system/startup-recovery');
           toastStore.success($t('settings.toast.startupRecoveryInitiated'));
           await refreshTaskHealth();
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('Error running startup recovery:', err);
-          const message = err.response?.data?.detail || $t('settings.toast.startupRecoveryFailed');
+          const message = getErrorMessage(err, $t('settings.toast.startupRecoveryFailed'));
           toastStore.error(message);
         }
       }
@@ -109,9 +110,9 @@
           await axiosInstance.post('/tasks/system/recover-all-user-files');
           toastStore.success($t('settings.toast.allUserFilesRecoveryInitiated'));
           await refreshTaskHealth();
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('Error recovering all user files:', err);
-          const message = err.response?.data?.detail || $t('settings.toast.allUserFilesRecoveryFailed');
+          const message = getErrorMessage(err, $t('settings.toast.allUserFilesRecoveryFailed'));
           toastStore.error(message);
         }
       }
@@ -123,9 +124,9 @@
       await axiosInstance.post(`/tasks/system/recover-task/${taskId}`);
       toastStore.success($t('settings.toast.taskRetryInitiated'));
       await refreshTaskHealth();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error retrying task:', err);
-      const message = err.response?.data?.detail || $t('settings.toast.taskRetryFailed');
+      const message = getErrorMessage(err, $t('settings.toast.taskRetryFailed'));
       toastStore.error(message);
     }
   }
@@ -135,9 +136,9 @@
       await axiosInstance.post(`/tasks/retry/${fileId}`);
       toastStore.success($t('settings.toast.fileRetryInitiated'));
       await refreshTaskHealth();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error retrying file:', err);
-      const message = err.response?.data?.detail || $t('settings.toast.fileRetryFailed');
+      const message = getErrorMessage(err, $t('settings.toast.fileRetryFailed'));
       toastStore.error(message);
     }
   }

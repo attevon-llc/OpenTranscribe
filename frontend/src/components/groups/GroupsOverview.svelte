@@ -5,6 +5,7 @@
   import { groupsStore, myGroups, memberGroups } from '$stores/groups';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { formatDate } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
   import GroupDetailPanel from './GroupDetailPanel.svelte';
@@ -51,8 +52,8 @@
     try {
       const groups = await GroupsApi.fetchGroups();
       groupsStore.setGroups(groups);
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || $t('groups.toast.loadGroupsFailed');
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, $t('groups.toast.loadGroupsFailed'));
       groupsStore.setError(message);
       toastStore.error(message);
     }
@@ -63,8 +64,8 @@
     try {
       selectedGroup = await GroupsApi.fetchGroupDetail(group.uuid);
       groupsStore.setSelectedGroup(selectedGroup);
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || $t('groups.toast.loadGroupFailed');
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, $t('groups.toast.loadGroupFailed'));
       toastStore.error(message);
     } finally {
       loadingDetail = false;

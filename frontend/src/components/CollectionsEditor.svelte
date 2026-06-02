@@ -3,6 +3,7 @@
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage, getErrorStatus, getErrorCode } from '$lib/utils/apiError';
   import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
 
@@ -68,18 +69,13 @@
       );
 
       allCollections = validCollections;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[CollectionsEditor] Error fetching collections:', err);
-      console.error('[CollectionsEditor] Error details:', {
-        message: err.message,
-        status: err.response?.status,
-        data: err.response?.data
-      });
 
       // Show toast for critical errors
-      if (err.response && err.response.status === 401) {
+      if (getErrorStatus(err) === 401) {
         toastStore.error($t('collections.unauthorizedLogin'));
-      } else if (err.code === 'ERR_NETWORK') {
+      } else if (getErrorCode(err) === 'ERR_NETWORK') {
         toastStore.error($t('collections.networkError'));
       }
       // Silent fail for collection loading - not critical
@@ -107,16 +103,11 @@
         dispatch('collectionsUpdated', { collections });
         toastStore.success($t('collections.addedTo', { name: collectionToAdd.name }));
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[CollectionsEditor] Error adding to collection:', err);
 
       // Extract error message
-      let errorMessage = $t('collections.failedToAdd');
-      if (err?.response?.data?.detail) {
-        errorMessage = err.response.data.detail;
-      } else if (err?.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = getErrorMessage(err, $t('collections.failedToAdd'));
 
       toastStore.error(errorMessage);
     } finally {
@@ -173,16 +164,11 @@
       }
 
       newCollectionInput = '';
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[CollectionsEditor] Error with collection:', err);
 
       // Extract error message
-      let errorMessage = $t('collections.failedToAdd');
-      if (err?.response?.data?.detail) {
-        errorMessage = err.response.data.detail;
-      } else if (err?.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = getErrorMessage(err, $t('collections.failedToAdd'));
 
       // Show toast instead of inline error
       toastStore.error(errorMessage);
@@ -216,16 +202,11 @@
         dispatch('collectionsUpdated', { collections });
         toastStore.success($t('collections.removedFrom', { name: collectionToRemove.name }));
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[CollectionsEditor] Error removing from collection:', err);
 
       // Extract error message
-      let errorMessage = $t('collections.failedToRemove');
-      if (err?.response?.data?.detail) {
-        errorMessage = err.response.data.detail;
-      } else if (err?.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = getErrorMessage(err, $t('collections.failedToRemove'));
 
       toastStore.error(errorMessage);
     } finally {

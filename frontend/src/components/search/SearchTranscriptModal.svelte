@@ -4,6 +4,7 @@
   import { translateSpeakerLabel } from '$lib/i18n';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from '../ui/Spinner.svelte';
   import BaseModal from '../ui/BaseModal.svelte';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
@@ -452,9 +453,9 @@
 
       // Set up infinite scroll for additional pages
       setupInfiniteScrollObserver();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to load transcript:', e);
-      error = e?.response?.data?.detail || 'Failed to load transcript';
+      error = getErrorMessage(e, 'Failed to load transcript');
       loading = false;
     }
   }
@@ -523,7 +524,7 @@
           }
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to load more segments:', e);
     }
     loadingMoreSegments = false;

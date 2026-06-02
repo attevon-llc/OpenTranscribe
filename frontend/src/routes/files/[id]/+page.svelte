@@ -26,6 +26,7 @@
   import SelectiveReprocessModal from '$components/SelectiveReprocessModal.svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
   import TranscriptModal from '$components/TranscriptModal.svelte';
@@ -996,13 +997,14 @@
 
         toastStore.success(successMessage);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to update speaker name in database:', error);
 
       // Show user-friendly error with option to retry
-      const errorMessage = error.response?.status === 404
+      const status = getErrorStatus(error);
+      const errorMessage = status === 404
         ? $t('speakerProfile.notFound')
-        : error.response?.status === 403
+        : status === 403
         ? $t('speakerProfile.permissionDenied')
         : $t('speakerProfile.saveFailed');
 
@@ -1089,15 +1091,16 @@
           }
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving segment:', error);
 
       // Show error as toast notification for consistency
-      if (error.response?.status === 405) {
+      const status = getErrorStatus(error);
+      if (status === 405) {
         toastStore.error($t('fileDetail.transcriptEditingNotSupported'));
-      } else if (error.response?.status === 404) {
+      } else if (status === 404) {
         toastStore.error($t('fileDetail.transcriptSegmentNotFound'));
-      } else if (error.response?.status === 422) {
+      } else if (status === 422) {
         toastStore.error($t('fileDetail.invalidSegmentData'));
       } else {
         toastStore.error($t('fileDetail.failedToSaveSegment'));
@@ -1683,9 +1686,9 @@
       // This preserves user's editing state
 
       // The WebSocket will update summaryGenerating = true when processing starts
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error generating summary:', error);
-      const errorMessage = error.response?.data?.detail || $t('fileDetail.failedToGenerateSummary');
+      const errorMessage = getErrorMessage(error, $t('fileDetail.failedToGenerateSummary'));
 
       toastStore.error(errorMessage, 5000);
     } finally {
@@ -1702,9 +1705,9 @@
     try {
       const response = await axiosInstance.get(`/files/${file.uuid}/summary`);
       summaryData = response.data.summary_data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading summary:', error);
-      if (error.response?.status !== 404) {
+      if (getErrorStatus(error) !== 404) {
         toastStore.error($t('fileDetail.failedToLoadSummary'), 5000);
       }
     }

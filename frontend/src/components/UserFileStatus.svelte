@@ -7,6 +7,7 @@
   import { websocketStore } from '../stores/websocket';
   import { toastStore } from '../stores/toast';
   import { t } from '../stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { getFlowerUrl } from '$lib/utils/url';
   import SkeletonLoader from './ui/SkeletonLoader.svelte';
   import TaskFilterPanel from '$components/fileStatus/TaskFilterPanel.svelte';
@@ -120,10 +121,10 @@
         },
         CacheTTL.STATUS
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching file status:', err);
       if (!silent) {
-        error = err.response?.data?.detail || $t('fileStatus.loadFailed');
+        error = getErrorMessage(err, $t('fileStatus.loadFailed'));
       }
     } finally {
       if (!silent) {
@@ -175,10 +176,10 @@
       }
       filteredTasks = tasks;
       filtersReady = true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching tasks:', err);
       if (!silent) {
-        tasksError = err.response?.data?.detail || $t('fileStatus.tasksLoadFailed');
+        tasksError = getErrorMessage(err, $t('fileStatus.tasksLoadFailed'));
       }
     } finally {
       if (!silent) {
@@ -226,9 +227,9 @@
       detailedStatus = response.data;
       selectedFile = fileId;
       lockScroll();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching detailed status:', err);
-      error = err.response?.data?.detail || $t('fileStatus.detailsLoadFailed');
+      error = getErrorMessage(err, $t('fileStatus.detailsLoadFailed'));
     }
   }
 
@@ -256,9 +257,9 @@
       // Show success message
       showMessage($t('fileStatus.retryInitiated'), 'success');
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error retrying file:', err);
-      const errorMsg = err.response?.data?.detail || $t('fileStatus.retryFailed');
+      const errorMsg = getErrorMessage(err, $t('fileStatus.retryFailed'));
       showMessage(errorMsg, 'error');
     } finally {
       retryingFiles.delete(fileId);
@@ -278,9 +279,9 @@
         fetchFileStatus(true); // Silent refresh
       }, 2000);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error requesting recovery:', err);
-      const errorMsg = err.response?.data?.detail || $t('fileStatus.recoveryFailed');
+      const errorMsg = getErrorMessage(err, $t('fileStatus.recoveryFailed'));
       showMessage(errorMsg, 'error');
     } finally {
       loading = false;

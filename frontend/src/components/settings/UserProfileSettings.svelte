@@ -5,6 +5,7 @@
   import { toastStore } from '$stores/toast';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
 
@@ -71,9 +72,9 @@
       settingsModalStore.clearDirty('profile');
 
       await fetchUserInfo();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error updating profile:', err);
-      const message = err.response?.data?.detail || $t('settings.toast.profileUpdateFailed');
+      const message = getErrorMessage(err, $t('settings.toast.profileUpdateFailed'));
       toastStore.error(message);
     } finally {
       profileLoading = false;
@@ -120,9 +121,9 @@
       showConfirmPassword = false;
       passwordChanged = false;
       // Note: dirty state is managed reactively based on profileChanged || passwordChanged
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error updating password:', err);
-      const message = err.response?.data?.detail || $t('settings.toast.passwordUpdateFailed');
+      const message = getErrorMessage(err, $t('settings.toast.passwordUpdateFailed'));
       toastStore.error(message);
     } finally {
       passwordLoading = false;

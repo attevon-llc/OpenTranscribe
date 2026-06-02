@@ -3,6 +3,7 @@
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorStatus, getErrorCode } from '$lib/utils/apiError';
   import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
   // Use the shared axios instance so auth token is always sent
@@ -68,18 +69,12 @@
       );
 
       allTags = validTags;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[TagsEditor] Error fetching tags:', err);
-      console.error('[TagsEditor] Error details:', {
-        message: err.message,
-        status: err.response?.status,
-        data: err.response?.data,
-        config: err.config
-      });
-
-      if (err.response && err.response.status === 401) {
+      const status = getErrorStatus(err);
+      if (status === 401) {
         toastStore.error($t('tags.unauthorizedLogin'));
-      } else if (err.code === 'ERR_NETWORK') {
+      } else if (getErrorCode(err) === 'ERR_NETWORK') {
         toastStore.error($t('tags.networkError'));
       } else {
         toastStore.error($t('tags.failedToLoad'));
@@ -125,8 +120,8 @@
         tags = [...tags, finalTag];
         dispatch('tagsUpdated', { tags });
       }
-    } catch (err: any) {
-      if (err.response && err.response.status === 401) {
+    } catch (err: unknown) {
+      if (getErrorStatus(err) === 401) {
         toastStore.error($t('tags.unauthorizedLogin'));
       } else {
         toastStore.error($t('tags.failedToAdd'));
@@ -242,19 +237,11 @@
         tags = updatedTags;
         dispatch('tagsUpdated', { tags });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[TagsEditor] Error removing tag:', err);
-      console.error('[TagsEditor] Error details:', {
-        message: err.message,
-        status: err.response?.status,
-        data: err.response?.data,
-        config: err.config
-      });
-
-
-      if (err.response && err.response.status === 401) {
+      if (getErrorStatus(err) === 401) {
         toastStore.error($t('tags.unauthorizedLogin'));
-      } else if (err.code === 'ERR_NETWORK') {
+      } else if (getErrorCode(err) === 'ERR_NETWORK') {
         toastStore.error($t('tags.networkError'));
       } else {
         toastStore.error($t('tags.failedToRemove'));

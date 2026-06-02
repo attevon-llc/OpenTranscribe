@@ -11,6 +11,7 @@
   } from '../../lib/api/asrSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   export let show = false;
   export let editingConfig: UserASRSettingsResponse | null = null;
@@ -150,9 +151,8 @@
       }
       dispatch('saved', result);
       handleClose();
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to save ASR configuration', 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, 'Failed to save ASR configuration'), 5000);
     } finally {
       saving = false;
     }
@@ -175,9 +175,8 @@
 
       const result = await ASRSettingsApi.testConnection(params);
       testResult = { success: result.success, message: result.message };
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      testResult = { success: false, message: typeof detail === 'string' ? detail : 'Connection test failed' };
+    } catch (err: unknown) {
+      testResult = { success: false, message: getErrorMessage(err, 'Connection test failed') };
     } finally {
       testing = false;
     }

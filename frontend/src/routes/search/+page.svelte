@@ -4,6 +4,7 @@
   import { goto, beforeNavigate } from '$app/navigation';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { searchStore, type SearchResponse, type SearchOccurrence } from '$stores/search';
   import SearchResultCard from '$components/search/SearchResultCard.svelte';
   import SearchTranscriptModal from '$components/search/SearchTranscriptModal.svelte';
@@ -271,9 +272,9 @@
       if (totalPages > pageNum) {
         prefetchNextSearchPage(query, pageNum, totalPages, apiParams);
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Search failed:', e);
-      searchStore.setError(e?.response?.data?.detail || 'Search failed');
+      searchStore.setError(getErrorMessage(e, 'Search failed'));
       searchStore.setLoading(false);
     }
   }

@@ -6,6 +6,7 @@
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import type { Speaker } from '$lib/types/speaker';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { translateSpeakerLabel } from '$lib/i18n';
   import BaseModal from './ui/BaseModal.svelte';
   import Spinner from './ui/Spinner.svelte';
@@ -100,8 +101,8 @@
       try {
         await mergeSpeakers(sourceSpeaker.uuid, target.uuid);
         successfulMerges.push(sourceSpeaker);
-      } catch (error: any) {
-        const errorMessage = error.response?.data?.detail || error.message || $t('common.unknownError');
+      } catch (error: unknown) {
+        const errorMessage = getErrorMessage(error, $t('common.unknownError'));
         failedMerges.push({ speaker: sourceSpeaker, error: errorMessage });
         console.error(`Error merging speaker ${sourceSpeaker.display_name || sourceSpeaker.name}:`, error);
       }

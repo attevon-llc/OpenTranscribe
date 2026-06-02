@@ -4,6 +4,7 @@
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import ShareCollectionModal from './sharing/ShareCollectionModal.svelte';
   import { SharingApi } from '$lib/api/sharing';
@@ -73,7 +74,7 @@
     try {
       const response = await axiosInstance.get('/collections');
       collections = response.data;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching collections:', err);
       toastStore.error($t('collectionsPanel.failedToLoad'));
     } finally {
@@ -101,7 +102,7 @@
           newCollectionPromptId = systemDefault.uuid;
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching prompts:', err);
       // Non-critical: prompts dropdown will just be empty
     } finally {
@@ -114,7 +115,7 @@
     loadingShared = true;
     try {
       sharedCollections = await SharingApi.fetchSharedCollections();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching shared collections:', err);
     } finally {
       loadingShared = false;
@@ -168,9 +169,9 @@
         showCreateModal = false;
         // Don't trigger collection selection callback in manage mode during creation
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error creating collection:', err);
-      toastStore.error(err.response?.data?.detail || $t('collectionsPanel.failedToCreate'));
+      toastStore.error(getErrorMessage(err, $t('collectionsPanel.failedToCreate')));
     } finally {
       creating = false;
     }
@@ -197,9 +198,9 @@
       toastStore.success($t('collectionsPanel.updatedSuccess', { name: editCollectionName }));
       showEditModal = false;
       collectionToEdit = null;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error updating collection:', err);
-      toastStore.error(err.response?.data?.detail || $t('collectionsPanel.failedToUpdate'));
+      toastStore.error(getErrorMessage(err, $t('collectionsPanel.failedToUpdate')));
     } finally {
       updating = false;
     }
@@ -237,9 +238,9 @@
       toastStore.success($t('collectionsPanel.deletedSuccess', { name: collectionToDelete.name }));
       showDeleteConfirm = false;
       collectionToDelete = null;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error deleting collection:', err);
-      toastStore.error(err.response?.data?.detail || $t('collectionsPanel.failedToDelete'));
+      toastStore.error(getErrorMessage(err, $t('collectionsPanel.failedToDelete')));
     } finally {
       deleting = false;
     }
@@ -280,9 +281,9 @@
 
       // Trigger callback to close modal and refresh
       onCollectionSelect(collectionId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error adding media to collection:', err);
-      toastStore.error(err.response?.data?.detail || $t('collectionsPanel.failedToAddMedia'));
+      toastStore.error(getErrorMessage(err, $t('collectionsPanel.failedToAddMedia')));
     } finally {
       addingToCollection = false;
     }

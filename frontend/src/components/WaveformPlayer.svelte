@@ -3,6 +3,7 @@
   import axiosInstance from '$lib/axios';
   import { theme } from '../stores/theme.js';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from './ui/Spinner.svelte';
 
   // Props
@@ -112,9 +113,9 @@
       } else {
         throw new Error($t('waveform.noData'));
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading waveform:', error);
-      waveformError = error.response?.data?.detail || $t('waveform.loadFailed');
+      waveformError = getErrorMessage(error, $t('waveform.loadFailed'));
     } finally {
       isLoadingWaveform = false;
     }

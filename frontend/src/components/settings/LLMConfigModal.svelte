@@ -4,6 +4,7 @@
   import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults } from '../../lib/api/llmSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from '../ui/Spinner.svelte';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import BaseModal from '../ui/BaseModal.svelte';
@@ -268,9 +269,8 @@
 
       dispatch('saved', savedConfig);
       closeModal(true);
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      const errorMsg = typeof detail === 'string' ? detail : $t('llm.configSaveFailed');
+    } catch (err: unknown) {
+      const errorMsg = getErrorMessage(err, $t('llm.configSaveFailed'));
       toastStore.error(errorMsg, 8000);
     } finally {
       saving = false;
@@ -296,9 +296,8 @@
       } else {
         toastStore.error(result.message, 8000);
       }
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      const errorMsg = typeof detail === 'string' ? detail : $t('llm.connectionTestFailed');
+    } catch (err: unknown) {
+      const errorMsg = getErrorMessage(err, $t('llm.connectionTestFailed'));
       toastStore.error(errorMsg, 8000);
     } finally {
       testing = false;
@@ -321,8 +320,8 @@
       } else {
         toastStore.error(result.message);
       }
-    } catch (err: any) {
-      toastStore.error(err.response?.data?.detail || $t('llm.ollamaLoadFailed'));
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('llm.ollamaLoadFailed')));
     } finally {
       loadingOllamaModels = false;
     }
@@ -368,9 +367,8 @@
       } else {
         toastStore.error(result.message);
       }
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('llm.modelsLoadFailed'));
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('llm.modelsLoadFailed')));
     } finally {
       loadingOpenAIModels = false;
     }
@@ -403,8 +401,8 @@
       } else {
         toastStore.error(result.message);
       }
-    } catch (err: any) {
-      toastStore.error(err.response?.data?.detail || $t('llm.modelsLoadFailed'));
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, $t('llm.modelsLoadFailed')));
     } finally {
       loadingAnthropicModels = false;
     }

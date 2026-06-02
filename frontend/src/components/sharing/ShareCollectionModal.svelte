@@ -2,6 +2,7 @@
   import { onMount, createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import BaseModal from '../ui/BaseModal.svelte';
   import { toastStore } from '$stores/toast';
   import { SharingApi } from '$lib/api/sharing';
@@ -39,7 +40,7 @@
       const data = await SharingApi.fetchCollectionShares(collectionUuid);
       shares = data;
       sharingStore.setCurrentShares(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading shares:', err);
       toastStore.error($t('sharing.failedToLoadShares'));
     } finally {
@@ -81,9 +82,9 @@
           sharingStore.addShare(newShare);
           shares = [...shares, newShare];
           successCount++;
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('Error sharing with target:', target, err);
-          const detail = err.response?.data?.detail || $t('sharing.failedToShare');
+          const detail = getErrorMessage(err, $t('sharing.failedToShare'));
           errors.push(`${target.name}: ${detail}`);
         }
       }

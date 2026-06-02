@@ -5,6 +5,7 @@
   import { toastStore } from '$stores/toast';
   import { authStore } from '$stores/auth';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { formatDate, getInitials } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
   import ConfirmationModal from '../ConfirmationModal.svelte';
@@ -39,8 +40,8 @@
       await GroupsApi.updateMemberRole(groupUuid, member.user_uuid, { role: newRole });
       toastStore.success($t('groups.toast.roleUpdated'));
       dispatch('roleChanged', { userUuid: member.user_uuid, newRole });
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || $t('groups.toast.roleUpdateFailed');
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, $t('groups.toast.roleUpdateFailed'));
       toastStore.error(message);
     } finally {
       changingRoleFor = null;
@@ -71,8 +72,8 @@
         toastStore.success($t('groups.toast.memberRemoved'));
         dispatch('memberRemoved', { userUuid: member.user_uuid });
       }
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || $t('groups.toast.removeMemberFailed');
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, $t('groups.toast.removeMemberFailed'));
       toastStore.error(message);
     } finally {
       removingMember = null;

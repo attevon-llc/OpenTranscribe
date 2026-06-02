@@ -11,6 +11,7 @@
   import ASRConfigModal from './ASRConfigModal.svelte';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   export let onSettingsChange: (() => void) | null = null;
   export let isAdmin = false;
@@ -80,10 +81,9 @@
         localModelInfo = localModelResp.model_info || null;
         selectedLocalModel = activeLocalModel;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading ASR settings:', err);
-      const detail = (err as any).response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('settings.asrProvider.loadError'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.loadError')), 5000);
     } finally {
       loading = false;
     }
@@ -98,9 +98,8 @@
       usingLocalDefault = false;
       toastStore.success($t('settings.asrProvider.setActive') + ' — ' + (configurations.find(c => c.uuid === uuid)?.name || ''));
       if (onSettingsChange) onSettingsChange();
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to activate ASR configuration', 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, 'Failed to activate ASR configuration'), 5000);
     } finally {
       saving = false;
     }
@@ -115,9 +114,8 @@
       usingLocalDefault = true;
       toastStore.success($t('settings.asrProvider.switchedToLocal'));
       if (onSettingsChange) onSettingsChange();
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to switch to local', 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, 'Failed to switch to local'), 5000);
     } finally {
       saving = false;
     }
@@ -135,9 +133,8 @@
       } else {
         toastStore.error(`${config.name}: ${result.message}`, 8000);
       }
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(`${config.name}: ${typeof detail === 'string' ? detail : 'Test failed'}`, 8000);
+    } catch (err: unknown) {
+      toastStore.error(`${config.name}: ${getErrorMessage(err, 'Test failed')}`, 8000);
     } finally {
       testing = false;
       testingConfigId = null;
@@ -171,9 +168,8 @@
       await loadData();
       toastStore.success(`"${deletedName}" deleted`);
       if (onSettingsChange) onSettingsChange();
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to delete configuration', 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, 'Failed to delete configuration'), 5000);
     } finally {
       saving = false;
     }
@@ -189,9 +185,8 @@
       showDeleteAllModal = false;
       toastStore.success($t('settings.asrProvider.deletedAll'));
       if (onSettingsChange) onSettingsChange();
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to delete configurations', 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, 'Failed to delete configurations'), 5000);
     } finally {
       saving = false;
     }
@@ -230,7 +225,7 @@
         newShared ? $t('settings.asrProvider.shareEnabled') : $t('settings.asrProvider.shareDisabled'),
         3000
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Rollback on failure
       if (idx !== -1) {
         configurations[idx] = {
@@ -240,8 +235,7 @@
         };
         configurations = configurations;
       }
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to toggle sharing', 5000);
+      toastStore.error(getErrorMessage(err, 'Failed to toggle sharing'), 5000);
     } finally {
       saving = false;
     }
@@ -268,9 +262,8 @@
       activeLocalModel = selectedLocalModel;
       activeLocalModelSource = 'database';
       toastStore.success(`Local model set to "${selectedLocalModel}". Restart GPU worker to apply.`);
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to set local model', 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, 'Failed to set local model'), 5000);
     } finally {
       modelChangeInProgress = false;
     }
@@ -281,9 +274,8 @@
     try {
       const result = await ASRSettingsApi.restartGpuWorker();
       toastStore.success(result.message, 8000);
-    } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to restart GPU worker', 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, 'Failed to restart GPU worker'), 5000);
     } finally {
       restartInProgress = false;
     }

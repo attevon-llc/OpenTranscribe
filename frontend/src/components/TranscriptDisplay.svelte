@@ -11,6 +11,7 @@
   import { updateSegmentSpeaker } from '$lib/api/transcripts';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   export let file: any = null;
   export let isEditingTranscript: boolean = false;
@@ -260,16 +261,14 @@
       dispatch('analyticsRefreshNeeded');
 
       toastStore.success($t('transcript.speakerAssignmentUpdated'));
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating segment speaker:', error);
 
       // Rollback on error
       file.transcript_segments[segmentIndex].speaker = originalSpeaker;
       file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
 
-      toastStore.error(
-        error.response?.data?.detail || $t('transcript.failedToUpdateSpeaker')
-      );
+      toastStore.error(getErrorMessage(error, $t('transcript.failedToUpdateSpeaker')));
     } finally {
       updatingSegments.delete(segmentUuid);
     }
@@ -341,14 +340,13 @@
       } else {
         openDownloadStream(fileId, mode);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Download error:', error);
-      const detail = error?.response?.data?.detail;
       downloadStore.updateStatus(
         fileId,
         'error',
         undefined,
-        detail || $t('transcript.downloadFailed')
+        getErrorMessage(error, $t('transcript.downloadFailed'))
       );
     }
   }

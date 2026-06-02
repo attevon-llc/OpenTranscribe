@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { toastStore } from '$stores/toast';
   import { SharingApi } from '$lib/api/sharing';
   import { sharingStore } from '$stores/sharing';
@@ -28,9 +29,9 @@
       });
       sharingStore.updateSharePermission(share.uuid, newPermission);
       toastStore.success($t('sharing.permissionUpdated'));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error updating share permission:', err);
-      toastStore.error(err.response?.data?.detail || $t('sharing.failedToUpdatePermission'));
+      toastStore.error(getErrorMessage(err, $t('sharing.failedToUpdatePermission')));
     } finally {
       updatingShareId = null;
     }
@@ -52,9 +53,9 @@
       await SharingApi.revokeShare(collectionUuid, share.uuid);
       sharingStore.removeShare(share.uuid);
       toastStore.success($t('sharing.shareRevoked'));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error revoking share:', err);
-      toastStore.error(err.response?.data?.detail || $t('sharing.failedToRevoke'));
+      toastStore.error(getErrorMessage(err, $t('sharing.failedToRevoke')));
     } finally {
       revokingShareId = null;
     }

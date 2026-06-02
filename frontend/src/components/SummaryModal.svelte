@@ -5,6 +5,7 @@
   import { isLLMAvailable } from '../stores/llmStatus';
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { t } from '$stores/locale';
+  import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
 
@@ -84,12 +85,12 @@
         const response = await axiosInstance.get(`/files/${fileId}/summary`);
         const data: SummaryResponse = response.data;
         summary = data.summary_data;
-      } catch (summaryErr: any) {
-        if (summaryErr.response?.status === 404) {
+      } catch (summaryErr: unknown) {
+        if (getErrorStatus(summaryErr) === 404) {
           // No summary exists yet
           summary = null;
         } else {
-          throw new Error(`Failed to load summary: ${summaryErr.response?.statusText || summaryErr.message}`);
+          throw new Error(`Failed to load summary: ${getErrorMessage(summaryErr, 'Failed to load summary')}`);
         }
       }
     } catch (err) {

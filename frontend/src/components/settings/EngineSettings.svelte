@@ -4,6 +4,7 @@
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   type SettingSource = 'db' | 'env' | 'default';
 
@@ -53,9 +54,8 @@
       draftAcousticRecheck = settings.boundary_acoustic_recheck_enabled.value;
       draftAcousticCosineMargin = settings.boundary_acoustic_cosine_margin.value;
       draftAcousticMaxWordDur = settings.boundary_acoustic_max_word_dur.value;
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to load engine settings', 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, 'Failed to load engine settings'), 5000);
     } finally {
       loading = false;
     }
@@ -104,9 +104,8 @@
       await axiosInstance.post('/admin/engine-settings/update', payload);
       toastStore.success($t('settings.engineSettings.saved'));
       await loadData();
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : 'Failed to save engine settings', 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, 'Failed to save engine settings'), 5000);
     } finally {
       saving = false;
     }
@@ -118,9 +117,8 @@
       await axiosInstance.delete(`/admin/engine-settings/${key}`);
       toastStore.success(`Reset ${key} to default`);
       await loadData();
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : `Failed to reset ${key}`, 5000);
+    } catch (err: unknown) {
+      toastStore.error(getErrorMessage(err, `Failed to reset ${key}`), 5000);
     } finally {
       resetInProgress = null;
     }

@@ -9,6 +9,7 @@
   import { isAuthenticated } from '$stores/auth';
   import { galleryStore, galleryState, hasMoreFiles, isLoadingMore } from '$stores/gallery';
   import { t } from '$stores/locale';
+  import { getErrorMessage, getErrorCode } from '$lib/utils/apiError';
   import ConfirmationModal from '../components/ConfirmationModal.svelte';
   import SelectiveReprocessModal from '../components/SelectiveReprocessModal.svelte';
   import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
@@ -328,9 +329,9 @@
       // Note: scroll position restoration for back-nav is handled in onMount
       // before fetchFiles is called, using the cached files from the store.
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching files:', err);
-      if (err?.code === 'ECONNABORTED') {
+      if (getErrorCode(err) === 'ECONNABORTED') {
         error = $t('gallery.queryTimeout');
       } else {
         error = $t('gallery.loadFilesFailed');
@@ -677,9 +678,9 @@
 
       clearSelection();
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error deleting files:', err);
-      const errorMessage = err.response?.data?.detail || $t('gallery.deleteError');
+      const errorMessage = getErrorMessage(err, $t('gallery.deleteError'));
       toastStore.error(errorMessage);
     } finally {
       // No need to set loading = false since we didn't set it to true

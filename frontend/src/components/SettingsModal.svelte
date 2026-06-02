@@ -41,6 +41,7 @@
 
   // Import i18n
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   // Modal state
   let modalElement: HTMLElement;
@@ -320,9 +321,9 @@
       recordingQuality = settings.recording_quality;
       autoStopEnabled = settings.auto_stop_enabled;
       recordingSettingsChanged = false;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading recording settings:', err);
-      const message = err.response?.data?.detail || $t('settings.toast.recordingSettingsSaveFailed');
+      const message = getErrorMessage(err, $t('settings.toast.recordingSettingsSaveFailed'));
       toastStore.error(message);
     } finally {
       recordingSettingsLoading = false;
@@ -356,9 +357,9 @@
       toastStore.success($t('settings.toast.recordingSettingsSaved'));
       recordingSettingsChanged = false;
       settingsModalStore.clearDirty('recording');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error saving recording settings:', err);
-      const message = err.response?.data?.detail || $t('settings.toast.recordingSettingsSaveFailed');
+      const message = getErrorMessage(err, $t('settings.toast.recordingSettingsSaveFailed'));
       toastStore.error(message);
     } finally {
       recordingSettingsLoading = false;
@@ -374,9 +375,9 @@
       toastStore.success($t('settings.toast.recordingSettingsReset'));
       recordingSettingsChanged = false;
       settingsModalStore.clearDirty('recording');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error resetting recording settings:', err);
-      const message = err.response?.data?.detail || $t('settings.toast.recordingSettingsResetFailed');
+      const message = getErrorMessage(err, $t('settings.toast.recordingSettingsResetFailed'));
       toastStore.error(message);
     } finally {
       recordingSettingsLoading = false;
@@ -393,9 +394,9 @@
     try {
       const response = await axiosInstance.get('/admin/users');
       users = response.data;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading admin users:', err);
-      const message = err.response?.data?.detail || $t('settings.toast.usersLoadFailed');
+      const message = getErrorMessage(err, $t('settings.toast.usersLoadFailed'));
       toastStore.error(message);
     } finally {
       if (showLoading) {
@@ -413,9 +414,9 @@
     try {
       await axiosInstance.post(`/tasks/system/recover-user-files/${userId}`);
       toastStore.success($t('settings.toast.userRecoveryInitiated'));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error recovering user files:', err);
-      const message = err.response?.data?.detail || $t('settings.toast.userRecoveryFailed');
+      const message = getErrorMessage(err, $t('settings.toast.userRecoveryFailed'));
       toastStore.error(message);
     }
   }
@@ -448,9 +449,9 @@
           loadStats();
         }, 5000);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading stats:', err);
-      const message = err.response?.data?.detail || $t('settings.toast.statisticsLoadFailed');
+      const message = getErrorMessage(err, $t('settings.toast.statisticsLoadFailed'));
       toastStore.error(message);
     } finally {
       statsLoading = false;

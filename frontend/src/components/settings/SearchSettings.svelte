@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { toastStore } from '$stores/toast';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import StatusChip from './StatusChip.svelte';
@@ -146,8 +147,8 @@
       toastStore.success(res.data.message);
       isReindexing = true;
       await loadStatus();
-    } catch (e: any) {
-      toastStore.error(e?.response?.data?.detail || 'Failed to switch model');
+    } catch (e: unknown) {
+      toastStore.error(getErrorMessage(e, 'Failed to switch model'));
       selectedModelId = currentModelId;
     } finally {
       isSwitchingModel = false;
@@ -166,8 +167,8 @@
       toastStore.success(res.data.message);
       await loadStatus();
       // Don't set isReindexing = false here - WebSocket 'reindex-complete' event handles that
-    } catch (e: any) {
-      toastStore.error(e?.response?.data?.detail || 'Failed to start re-indexing');
+    } catch (e: unknown) {
+      toastStore.error(getErrorMessage(e, 'Failed to start re-indexing'));
       isReindexing = false; // Only reset on error
     }
   }
@@ -179,8 +180,8 @@
       toastStore.success(res.data.message);
       await loadStatus();
       // Don't set isReindexing = false here - WebSocket 'reindex-complete' event handles that
-    } catch (e: any) {
-      toastStore.error(e?.response?.data?.detail || 'Failed to start re-indexing');
+    } catch (e: unknown) {
+      toastStore.error(getErrorMessage(e, 'Failed to start re-indexing'));
       isReindexing = false; // Only reset on error
     }
   }
@@ -196,8 +197,8 @@
         await loadStatus();
       }
       toastStore.info(res.data.message);
-    } catch (e: any) {
-      toastStore.error(e?.response?.data?.detail || 'Failed to stop re-indexing');
+    } catch (e: unknown) {
+      toastStore.error(getErrorMessage(e, 'Failed to stop re-indexing'));
       isStopping = false;
     }
   }

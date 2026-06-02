@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import { getErrorStatus } from '$lib/utils/apiError';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import './upload-shared.css';
@@ -55,8 +56,8 @@
       dispatch('collectionsChange', { collections: selectedCollections });
       newName = '';
       toastStore.success($t('uploader.collectionCreated'));
-    } catch (err: any) {
-      if (err?.response?.status === 409) {
+    } catch (err: unknown) {
+      if (getErrorStatus(err) === 409) {
         toastStore.warning($t('uploader.collectionAlreadyExists'));
       } else {
         toastStore.error($t('uploader.createCollectionFailed'));

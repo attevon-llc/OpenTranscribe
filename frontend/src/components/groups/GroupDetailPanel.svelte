@@ -4,6 +4,7 @@
   import { GroupsApi } from '$lib/api/groups';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { formatDate } from '$lib/utils/formatting';
   import GroupRoleBadge from './GroupRoleBadge.svelte';
   import GroupMemberList from './GroupMemberList.svelte';
@@ -71,8 +72,8 @@
       editingName = false;
       toastStore.success($t('groups.toast.groupUpdated'));
       dispatch('updated');
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || $t('groups.toast.updateGroupFailed');
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, $t('groups.toast.updateGroupFailed'));
       toastStore.error(message);
     } finally {
       isSaving = false;
@@ -93,8 +94,8 @@
       editingDescription = false;
       toastStore.success($t('groups.toast.groupUpdated'));
       dispatch('updated');
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || $t('groups.toast.updateGroupFailed');
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, $t('groups.toast.updateGroupFailed'));
       toastStore.error(message);
     } finally {
       isSaving = false;
@@ -112,8 +113,8 @@
       await GroupsApi.deleteGroup(group.uuid);
       toastStore.success($t('groups.toast.groupDeleted'));
       dispatch('deleted', { uuid: group.uuid });
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || $t('groups.toast.deleteGroupFailed');
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, $t('groups.toast.deleteGroupFailed'));
       toastStore.error(message);
     } finally {
       isDeleting = false;
@@ -124,7 +125,7 @@
     try {
       const updated = await GroupsApi.fetchGroupDetail(group.uuid);
       group = updated;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to refresh group:', err);
     }
   }

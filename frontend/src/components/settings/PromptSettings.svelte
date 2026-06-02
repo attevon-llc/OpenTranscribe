@@ -8,6 +8,7 @@
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   export let onSettingsChange: (() => void) | null = null;
 
@@ -106,10 +107,9 @@
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading prompts:', err);
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('prompts.loadFailed'));
+      toastStore.error(getErrorMessage(err, $t('prompts.loadFailed')));
     } finally {
       loading = false;
     }
@@ -130,10 +130,9 @@
       if (onSettingsChange) {
         onSettingsChange();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error setting active prompt:', err);
-      const detail = err.response?.data?.detail;
-      const errorMessage = typeof detail === 'string' ? detail : $t('prompts.setActiveFailed');
+      const errorMessage = getErrorMessage(err, $t('prompts.setActiveFailed'));
       toastStore.error(errorMessage);
     } finally {
       saving = false;
@@ -246,10 +245,9 @@
       if (onSettingsChange) {
         onSettingsChange();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error saving prompt:', err);
-      const saveDetail = err.response?.data?.detail;
-      toastStore.error(typeof saveDetail === 'string' ? saveDetail : $t('prompts.saveFailed'));
+      toastStore.error(getErrorMessage(err, $t('prompts.saveFailed')));
     } finally {
       saving = false;
     }
@@ -296,7 +294,7 @@
           } else {
             toastStore.success($t('prompts.promptDeletedDefaultActive'));
           }
-        } catch (activeErr: any) {
+        } catch (activeErr: unknown) {
           console.error('Error getting fallback active prompt:', activeErr);
           selectedPromptId = null;
           activePrompt = null;
@@ -314,10 +312,9 @@
       if (onSettingsChange) {
         onSettingsChange();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error deleting prompt:', err);
-      const deleteDetail = err.response?.data?.detail;
-      toastStore.error(typeof deleteDetail === 'string' ? deleteDetail : $t('prompts.deleteFailed'));
+      toastStore.error(getErrorMessage(err, $t('prompts.deleteFailed')));
     } finally {
       saving = false;
       promptToDelete = null;
@@ -347,7 +344,7 @@
       toastStore.success(
         newShared ? $t('prompts.shareEnabled') : $t('prompts.shareDisabled')
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Rollback on failure
       if (idx !== -1) {
         allPrompts[idx] = {
@@ -358,8 +355,7 @@
         allPrompts = allPrompts;
       }
       console.error('Error toggling share:', err);
-      const detail = err.response?.data?.detail;
-      toastStore.error(typeof detail === 'string' ? detail : $t('prompts.shareFailed'));
+      toastStore.error(getErrorMessage(err, $t('prompts.shareFailed')));
     } finally {
       saving = false;
     }

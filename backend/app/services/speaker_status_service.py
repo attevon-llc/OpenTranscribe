@@ -45,7 +45,7 @@ class SpeakerStatusService:
     }
 
     @staticmethod
-    def compute_speaker_status(speaker: Speaker) -> dict[str, str]:
+    def compute_speaker_status(speaker: Speaker) -> dict[str, Optional[str]]:
         """
         Compute comprehensive status information for a speaker.
 
@@ -53,7 +53,9 @@ class SpeakerStatusService:
             speaker: Speaker object
 
         Returns:
-            Dictionary with computed status information
+            Dictionary with computed status information. ``profile_name`` and
+            ``profile_status`` are ``None`` when the speaker has no linked profile;
+            the other values are always non-null strings.
         """
         # Determine status
         status = SpeakerStatusService._get_speaker_status(speaker)
@@ -69,12 +71,33 @@ class SpeakerStatusService:
         # Resolve display name
         resolved_display_name = SpeakerStatusService._resolve_display_name(speaker)
 
+        # Linked profile info (None when the speaker has no profile)
+        profile_name, profile_status = SpeakerStatusService._resolve_profile_info(speaker)
+
         return {
             "computed_status": status,
             "status_text": status_text,
             "status_color": status_color,
             "resolved_display_name": resolved_display_name,
+            "profile_name": profile_name,
+            "profile_status": profile_status,
         }
+
+    @staticmethod
+    def _resolve_profile_info(speaker: Speaker) -> tuple[Optional[str], Optional[str]]:
+        """Resolve the linked SpeakerProfile's name and a coarse link status.
+
+        Args:
+            speaker: Speaker object.
+
+        Returns:
+            ``(profile_name, profile_status)`` where ``profile_status`` is ``"linked"``
+            when a profile is attached and ``None`` otherwise. ``profile_name`` is the
+            profile's name, or ``None`` when no profile is linked.
+        """
+        if speaker.profile:
+            return str(speaker.profile.name), "linked"
+        return None, None
 
     @staticmethod
     def _get_speaker_status(speaker: Speaker) -> str:
@@ -260,3 +283,5 @@ class SpeakerStatusService:
         speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
         speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
         speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
+        speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment]
+        speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment]

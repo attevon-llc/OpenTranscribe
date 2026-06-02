@@ -285,6 +285,96 @@ def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -
     response.is_retryable = error_info["is_retryable"]
 
 
+def _resolve_segment_speaker_name(speaker: Speaker | None) -> str:
+    """Resolve a never-null display name for a segment's speaker.
+
+    Mirrors the frontend's fallback chain so the field can be rendered as-is:
+    ``display_name`` → ``name`` (original speaker label) → ``"Unknown speaker"``.
+
+    Args:
+        speaker: The segment's linked Speaker, or None.
+
+    Returns:
+        A non-empty display name string.
+    """
+    if speaker is None:
+        return "Unknown speaker"
+    return str(speaker.display_name or speaker.name or "Unknown speaker")
+
+
+def _build_grouped_segments(formatted_segments: list[Any]) -> list[Any]:
+    """Group formatted transcript segments exactly like the frontend.
+
+    Replicates ``groupedTranscriptSegments`` in ``TranscriptDisplay.svelte``:
+    consecutive segments sharing a non-null ``overlap_group_id`` are collapsed into a
+    single overlap group **only when the run has more than one member**; every other
+    segment becomes its own single-member group. Group ``start_time``/``end_time`` are
+    the min/max across the group's segments, and ``start_segment_index`` is the index
+    of the group's first segment in the flat list.
+
+    Args:
+        formatted_segments: Formatted ``TranscriptSegment`` schema objects, in order.
+
+    Returns:
+        List of ``GroupedTranscriptSegment`` schema objects.
+    """
+    from app.schemas.media import GroupedTranscriptSegment
+
+    groups: list[Any] = []
+    i = 0
+    n = len(formatted_segments)
+
+    while i < n:
+        segment = formatted_segments[i]
+
+        if segment.overlap_group_id:
+            overlap_group_id = segment.overlap_group_id
+            overlap_segments = [segment]
+            j = i + 1
+            while j < n and formatted_segments[j].overlap_group_id == overlap_group_id:
+                overlap_segments.append(formatted_segments[j])
+                j += 1
+
+            if len(overlap_segments) > 1:
+                groups.append(
+                    GroupedTranscriptSegment(
+                        is_overlap_group=True,
+                        overlap_group_id=overlap_group_id,
+                        start_time=min(s.start_time for s in overlap_segments),
+                        end_time=max(s.end_time for s in overlap_segments),
+                        start_segment_index=i,
+                        segments=overlap_segments,
+                    )
+                )
+                i = j
+                continue
+
+            # Single segment carrying an overlap flag: treat as a regular group.
+            groups.append(
+                GroupedTranscriptSegment(
+                    is_overlap_group=False,
+                    start_time=segment.start_time,
+                    end_time=segment.end_time,
+                    start_segment_index=i,
+                    segments=[segment],
+                )
+            )
+            i += 1
+        else:
+            groups.append(
+                GroupedTranscriptSegment(
+                    is_overlap_group=False,
+                    start_time=segment.start_time,
+                    end_time=segment.end_time,
+                    start_segment_index=i,
+                    segments=[segment],
+                )
+            )
+            i += 1
+
+    return groups
+
+
 def _format_transcript_segments(
     transcript_segments: list[TranscriptSegment],
     speakers: list[Speaker],
@@ -471,6 +561,9 @@ def _build_media_file_response(
         transcript_segments, speakers, redaction_cfg, reveal_categories
     )
     response.transcript_segments = formatted_segments  # type: ignore[assignment]
+
+    # Pre-grouped view (overlap groups kept together) for the frontend to render directly.
+    response.grouped_segments = _build_grouped_segments(formatted_segments)  # type: ignore[assignment]
 
     # Add pagination metadata
     response.total_segments = total_segments
@@ -787,9 +880,7 @@ def update_single_transcript_segment(
         formatted_timestamp=format_timestamp(float(segment.start_time)),
         display_timestamp=format_timestamp(float(segment.start_time)),
         speaker_label=(segment.speaker.name if segment.speaker else None),
-        resolved_speaker_name=(
-            segment.speaker.display_name or segment.speaker.name if segment.speaker else None
-        ),
+        resolved_speaker_name=_resolve_segment_speaker_name(segment.speaker),
     )
 
 

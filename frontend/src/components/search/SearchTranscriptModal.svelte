@@ -262,12 +262,9 @@
     }
 
     sorted.forEach((segment: any, rawIdx: number) => {
-      const speakerName =
-        segment.resolved_speaker_name ||
-        segment.speaker?.display_name ||
-        segment.speaker?.name ||
-        segment.speaker_label ||
-        'Unknown Speaker';
+      // Backend guarantees `resolved_speaker_name`; prefer it directly, with a
+      // last-resort guard for old payloads. `speakerLabel` stays for color mapping.
+      const speakerName = segment.resolved_speaker_name || 'Unknown Speaker';
       const speakerLabel = segment.speaker_label || segment.speaker?.name || 'Unknown';
       const startTime = parseFloat(String(segment.start_time || 0));
       const endTime = parseFloat(String(segment.end_time || 0));

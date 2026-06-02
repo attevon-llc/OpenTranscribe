@@ -18,6 +18,7 @@
   import { networkStore } from "../stores/network";
   import { register as registerServiceWorker } from "../serviceWorkerRegistration";
   import { resetScrollLock } from '$lib/scrollLock';
+  import { initMonitoring } from '$lib/monitoring';
 
   // Import components
   import Navbar from "../components/Navbar.svelte";
@@ -58,6 +59,9 @@
   // Initialize auth state when the component mounts
   onMount(() => {
     window.addEventListener('pageshow', handlePageShow);
+
+    // Optional, env-gated error reporting — no-op unless VITE_SENTRY_DSN is set.
+    void initMonitoring();
 
     // Register service worker for PWA support
     registerServiceWorker();

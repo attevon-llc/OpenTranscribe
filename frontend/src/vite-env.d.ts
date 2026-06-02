@@ -19,6 +19,11 @@ declare namespace NodeJS {
 interface ImportMetaEnv {
   readonly PROD: boolean;
   readonly DEV: boolean;
+  readonly MODE: string;
+  // Optional, env-gated error monitoring (see src/lib/monitoring.ts). Unset by default.
+  readonly VITE_SENTRY_DSN?: string;
+  readonly VITE_SENTRY_ENVIRONMENT?: string;
+  readonly VITE_SENTRY_TRACES_SAMPLE_RATE?: string;
   // Add other environment variables as needed
 }
 

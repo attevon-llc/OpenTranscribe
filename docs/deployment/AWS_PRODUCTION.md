@@ -68,8 +68,17 @@ are AWS-infra recommendations (outside this repo) are marked ☁️.
 - **Data:** RDS Postgres (Multi-AZ, encrypted, automated backups/PITR); ElastiCache Redis;
   OpenSearch Service (or self-managed). GPU workers on EC2 g5/g6 with the NVIDIA runtime.
 - **Observability:** ALB + nginx access logs (status/latency/user) to CloudWatch/S3; CSP
-  `report-uri` → a collector; enable the frontend error boundary + optional Sentry
-  (`VITE_SENTRY_DSN`, off by default for home-label).
+  `report-uri` → a collector; the frontend error boundary (`src/routes/+error.svelte`) is
+  always on, plus **optional Sentry error reporting** gated on `VITE_SENTRY_DSN`.
+  - **Off by default** (the home-label default): with `VITE_SENTRY_DSN` unset, the monitoring
+    hook (`frontend/src/lib/monitoring.ts`) is a no-op and the Sentry SDK is **not bundled** —
+    zero impact on the default build.
+  - **To enable:** install the SDK in `frontend/` (`npm i @sentry/svelte`), uncomment the lazy
+    `import('@sentry/svelte')` in `monitoring.ts` (kept dynamic so it lands in its own chunk,
+    fetched only when a DSN is present), set `VITE_SENTRY_DSN` (and optionally
+    `VITE_SENTRY_ENVIRONMENT`, `VITE_SENTRY_TRACES_SAMPLE_RATE`) in `.env`, then rebuild the
+    frontend image. The DSN is a public/ingest key — safe to ship in the bundle — but the SPA
+    still carries no other secrets.
 - **Network:** private subnets for backend/workers/DB; only ALB public. Security groups least-priv.
 
 ## 4. Pre-launch checklist

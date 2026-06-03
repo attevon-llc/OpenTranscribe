@@ -460,7 +460,12 @@
                   <button type="button" class="fb-entry" on:click={() => openBrowser(listing?.parent_path ?? '')}>.. ({$t('settings.watchSources.parent')})</button>
                 {/if}
                 {#each listing.directories as dir}
-                  <button type="button" class="fb-entry" on:click={() => openBrowser(dir.path)}>📁 {dir.name}</button>
+                  <button type="button" class="fb-entry" on:click={() => openBrowser(dir.path)}>
+                    <svg class="fb-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                    {dir.name}
+                  </button>
                 {/each}
                 {#if listing.directories.length === 0}
                   <div class="fb-empty">{$t('settings.watchSources.noSubfolders')}</div>
@@ -675,7 +680,12 @@
     <div role="status" aria-live="polite">
       {#if testResult}
         <div class="test-result" class:success={testResult.success} class:failure={!testResult.success}>
-          {testResult.success ? '✓' : '✗'} {testResult.message}
+          {#if testResult.success}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
+          {:else}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          {/if}
+          <span>{testResult.message}</span>
         </div>
       {/if}
     </div>
@@ -914,7 +924,9 @@
     font-size: 0.8rem;
   }
   .fb-entry {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 6px;
     width: 100%;
     text-align: left;
     background: none;
@@ -924,6 +936,10 @@
     cursor: pointer;
     color: var(--text-color);
     font-size: 0.85rem;
+  }
+  .fb-icon {
+    flex: none;
+    color: var(--text-secondary);
   }
   .fb-entry:hover {
     background: var(--button-hover);
@@ -945,6 +961,9 @@
     padding: 0;
   }
   .test-result {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     padding: 8px 10px;
     border-radius: 6px;
     font-size: 0.85rem;

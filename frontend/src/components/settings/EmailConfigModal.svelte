@@ -133,6 +133,13 @@
         ? $t('settings.emailNotifications.editTitle')
         : $t('settings.emailNotifications.addTitle')}
     </h2>
+    <span class="experimental-badge" title={$t('settings.emailNotifications.experimentalNote')}>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M9 3h6M10 3v6.5L5.2 18a2 2 0 0 0 1.8 3h10a2 2 0 0 0 1.8-3L14 9.5V3" />
+        <path d="M7.5 14h9" />
+      </svg>
+      {$t('settings.emailNotifications.experimental')}
+    </span>
   </svelte:fragment>
 
   <div class="email-form">
@@ -254,6 +261,23 @@
   .modal-title {
     margin: 0;
     font-size: 1.1rem;
+  }
+  .experimental-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(234, 179, 8, 0.15);
+    color: #b45309;
+  }
+  :global([data-theme='dark']) .experimental-badge {
+    color: #fbbf24;
   }
   .form-group {
     display: flex;

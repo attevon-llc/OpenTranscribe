@@ -305,6 +305,12 @@ function createWebSocketStore() {
                 window.dispatchEvent(new CustomEvent('gpu-stats-updated', { detail: data.data }));
               }
               return;
+            } else if (data.type === 'watch_source_scan') {
+              // Watch-source scan completed — dispatch event for WatchSourcesSettings
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('watch-source-scan', { detail: data.data }));
+              }
+              return;
             } else if (data.type === 'reindex_progress') {
               // Reindex progress update — dispatch event for SearchSettings
               if (typeof window !== 'undefined') {

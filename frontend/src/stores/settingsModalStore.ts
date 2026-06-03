@@ -30,6 +30,7 @@ export type SettingsSection =
   | 'retention'
   | 'cache'
   | 'media-sources'
+  | 'watch-sources'
   // Super Admin sections
   | 'authentication'
   | 'audit-logs';
@@ -70,6 +71,7 @@ const initialState: SettingsModalState = {
     retention: false,
     cache: false,
     'media-sources': false,
+    'watch-sources': false,
     authentication: false,
     'audit-logs': false,
   },

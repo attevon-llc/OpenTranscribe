@@ -50,7 +50,7 @@ def upgrade():
             polling_interval_minutes INTEGER NOT NULL DEFAULT 15,
             use_fs_events BOOLEAN NOT NULL DEFAULT FALSE,
             file_extensions TEXT,
-            skip_files_older_than_days INTEGER DEFAULT 30,
+            skip_files_older_than_days INTEGER,
             recursive BOOLEAN NOT NULL DEFAULT TRUE,
             auto_transcribe BOOLEAN NOT NULL DEFAULT TRUE,
             min_speakers INTEGER DEFAULT 1,

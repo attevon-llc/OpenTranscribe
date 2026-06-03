@@ -76,7 +76,10 @@ class WatchSource(Base):
     polling_interval_minutes = Column(Integer, default=15, nullable=False)
     use_fs_events = Column(Boolean, default=False, nullable=False)  # local-only watchdog opt-in
     file_extensions = Column(Text, nullable=True)  # CSV, e.g. ".mp4,.mp3"; null → all media
-    skip_files_older_than_days = Column(Integer, default=30, nullable=True)  # null → no age skip
+    # No column default: null must mean "no age skip". New-source default (30) is
+    # supplied by the Pydantic schema, so an explicit null from the UI is stored
+    # as null (a column default=30 would silently override it — see issue #26).
+    skip_files_older_than_days = Column(Integer, nullable=True)
     recursive = Column(Boolean, default=True, nullable=False)
     auto_transcribe = Column(Boolean, default=True, nullable=False)
     min_speakers = Column(Integer, default=1, nullable=True)

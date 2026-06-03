@@ -3668,5 +3668,19 @@
   "settings.emailNotifications.fields.exchangeDomain": "Domain",
   "settings.emailNotifications.fields.exchangeUsername": "Username",
   "settings.emailNotifications.fields.exchangePassword": "Password",
-  "settings.emailNotifications.fields.enabled": "Enabled"
+  "settings.emailNotifications.fields.enabled": "Enabled",
+  "common.back": "Back",
+  "common.next": "Next",
+  "settings.watchSources.collectionsLabel": "Collections",
+  "settings.watchSources.skipOlderHelp": "Only import files modified within this many days — e.g. set 30 to ignore years of old recordings in a folder and process just the last month. Leave blank to import all ages.",
+  "settings.watchSources.stitchHelp": "When a long recording drops its connection it can be saved as several files (e.g. meeting_P001.mp4, meeting_P002.mp4, …). Stitching automatically rejoins those parts into one file with ffmpeg before transcription. Enable it and set the part-name pattern below; the default matches a _P### suffix.",
+  "settings.watchSources.regexHelp": "Regex with three groups: base name, part number, and extension. Default: ^(.+?)_P(\\d{3})(\\.[^.]+)$ matches name_P001.mp4. Use the tester below to check a filename.",
+  "settings.watchSources.organizeHelp": "Optionally tag every imported file and add it to collections. Pick from existing ones or create new — applied automatically on import.",
+  "settings.emailNotifications.smtpHelp": "Works with Gmail, Yahoo, Outlook, or any SMTP server. For Gmail/Yahoo with 2-factor auth, create an App Password and use it here (not your normal password). Common: smtp.gmail.com port 587 with STARTTLS.",
+  "settings.emailNotifications.m365Help": "For Microsoft 365 tenants with SMTP disabled. Register an Azure AD app with the Mail.Send application permission (admin-consented), then enter its tenant ID, client ID, and a client secret.",
+  "settings.emailNotifications.exchangeHelp": "For on-premises Exchange via authenticated SMTP submission. Enter the server host, optional domain, and the mailbox username/password.",
+  "settings.watchSources.extensionsHelp": "Comma-separated extensions to consider (e.g. .mp4,.mp3). Leave blank for all files — every file is still magic-byte validated, so only valid audio/video is imported.",
+  "settings.watchSources.tagsPlaceholder": "Select or type to add tags…",
+  "settings.watchSources.collectionsPlaceholder": "Select or type to add collections…",
+  "settings.watchSources.collectionCreateFailed": "Failed to create collection"
 }

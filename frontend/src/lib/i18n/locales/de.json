@@ -3668,5 +3668,19 @@
   "settings.emailNotifications.fields.exchangeDomain": "Domäne",
   "settings.emailNotifications.fields.exchangeUsername": "Benutzername",
   "settings.emailNotifications.fields.exchangePassword": "Passwort",
-  "settings.emailNotifications.fields.enabled": "Aktiviert"
+  "settings.emailNotifications.fields.enabled": "Aktiviert",
+  "common.back": "Zurück",
+  "common.next": "Weiter",
+  "settings.watchSources.collectionsLabel": "Sammlungen",
+  "settings.watchSources.skipOlderHelp": "Nur Dateien importieren, die innerhalb dieser Tage geändert wurden — z. B. 30, um jahrelange alte Aufnahmen zu ignorieren und nur den letzten Monat zu verarbeiten. Leer lassen, um alle zu importieren.",
+  "settings.watchSources.stitchHelp": "Wenn eine lange Aufnahme die Verbindung verliert, kann sie als mehrere Dateien gespeichert werden (z. B. meeting_P001.mp4, meeting_P002.mp4, …). Das Zusammenfügen verbindet diese Teile vor der Transkription automatisch mit ffmpeg zu einer Datei. Aktivieren Sie es und legen Sie unten das Teilnamen-Muster fest; die Vorgabe passt auf ein _P###-Suffix.",
+  "settings.watchSources.regexHelp": "Regex mit drei Gruppen: Basisname, Teilnummer und Erweiterung. Standard: ^(.+?)_P(\\d{3})(\\.[^.]+)$ passt auf name_P001.mp4. Nutzen Sie den Tester unten.",
+  "settings.watchSources.organizeHelp": "Optional jede importierte Datei taggen und zu Sammlungen hinzufügen. Aus vorhandenen wählen oder neue erstellen — beim Import automatisch angewendet.",
+  "settings.emailNotifications.smtpHelp": "Funktioniert mit Gmail, Yahoo, Outlook oder jedem SMTP-Server. Für Gmail/Yahoo mit Zwei-Faktor-Authentifizierung ein App-Passwort erstellen und hier verwenden (nicht Ihr normales Passwort). Üblich: smtp.gmail.com Port 587 mit STARTTLS.",
+  "settings.emailNotifications.m365Help": "Für Microsoft-365-Mandanten mit deaktiviertem SMTP. Registrieren Sie eine Azure-AD-App mit der Anwendungsberechtigung Mail.Send (Admin-Zustimmung) und geben Sie Tenant-ID, Client-ID und ein Client-Secret ein.",
+  "settings.emailNotifications.exchangeHelp": "Für lokales Exchange über authentifizierte SMTP-Übermittlung. Geben Sie den Server-Host, optionale Domäne und Postfach-Benutzername/Passwort ein.",
+  "settings.watchSources.extensionsHelp": "Kommagetrennte zu berücksichtigende Erweiterungen (z. B. .mp4,.mp3). Leer lassen für alle Dateien — jede Datei wird per Magic-Bytes geprüft, sodass nur gültige Audio-/Videodateien importiert werden.",
+  "settings.watchSources.tagsPlaceholder": "Auswählen oder tippen, um Tags hinzuzufügen…",
+  "settings.watchSources.collectionsPlaceholder": "Auswählen oder tippen, um Sammlungen hinzuzufügen…",
+  "settings.watchSources.collectionCreateFailed": "Sammlung konnte nicht erstellt werden"
 }

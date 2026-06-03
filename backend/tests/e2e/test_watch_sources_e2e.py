@@ -115,16 +115,51 @@ class TestWatchSourcesPanel:
         # The "Add Watch Source" button should be present.
         expect(app_page.get_by_role("button", name="Add Watch Source")).to_be_visible(timeout=8000)
 
-    def test_add_modal_opens_and_switches_tabs(self, app_page: Page) -> None:
+    def test_stepper_walks_all_steps(self, app_page: Page) -> None:
+        """The Add editor is a guided stepper: Next walks every step to Save."""
         _open_watch_sources(app_page)
         app_page.get_by_role("button", name="Add Watch Source").click()
-        # The editor modal shows its title and the source-type select.
         expect(app_page.get_by_text("Add Watch Source").first).to_be_visible(timeout=8000)
-        # Switch to the Processing tab, then Advanced.
-        for tab in ("Processing", "Advanced", "Organize"):
-            tab_btn = app_page.get_by_role("tab", name=tab)
-            if tab_btn.count():
-                tab_btn.first.click()
-                app_page.wait_for_timeout(150)
+
+        dialog = app_page.locator(".modal-container")
+        # Name is required before the connection step can advance.
+        app_page.fill("#ws-name", "E2E Stepper Source")
+
+        # Walk Connection → Processing → Advanced → Organize via Next.
+        for _ in range(3):
+            nxt = dialog.get_by_role("button", name="Next", exact=True)
+            expect(nxt).to_be_enabled(timeout=5000)
+            nxt.click()
+            app_page.wait_for_timeout(200)
+
+        # On the last step the primary action is Save.
+        expect(dialog.get_by_role("button", name="Save", exact=True)).to_be_visible(timeout=5000)
+        # Tag + collection multiselects render on the organize step.
+        expect(app_page.locator("#ws-tags")).to_be_visible(timeout=5000)
+        expect(app_page.locator("#ws-cols")).to_be_visible(timeout=5000)
+
         unexpected = _unexpected_console_errors(app_page._console_errors)  # type: ignore[attr-defined]
         assert not unexpected, f"Unexpected console errors: {unexpected}"
+
+    def test_create_and_delete_local_source(self, app_page: Page) -> None:
+        """Create a local watch source through the stepper, see it listed, delete it."""
+        _open_watch_sources(app_page)
+        name = "E2E Created Source"
+        app_page.get_by_role("button", name="Add Watch Source").click()
+        dialog = app_page.locator(".modal-container")
+        app_page.fill("#ws-name", name)
+        for _ in range(3):
+            nxt = dialog.get_by_role("button", name="Next", exact=True)
+            expect(nxt).to_be_enabled(timeout=5000)
+            nxt.click()
+            app_page.wait_for_timeout(200)
+        dialog.get_by_role("button", name="Save", exact=True).click()
+
+        # The new source card appears in the panel.
+        card = app_page.locator(".source-card", has_text=name)
+        expect(card.first).to_be_visible(timeout=8000)
+
+        # Clean up: delete it and confirm in the confirmation dialog.
+        card.first.get_by_role("button", name="Delete").click()
+        app_page.locator(".modal-container").get_by_role("button", name="Delete").click()
+        expect(app_page.locator(".source-card", has_text=name)).to_have_count(0, timeout=8000)

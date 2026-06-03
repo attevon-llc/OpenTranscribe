@@ -71,7 +71,8 @@
     "i18next-browser-languagedetector": "^8.2.1",
     "imohash": "^1.0.3",
     "plyr": "^3.8.4",
-    "svelte-loading-spinners": "^0.3.6"
+    "svelte-loading-spinners": "^0.3.6",
+    "svelte-multiselect": "^11.7.1"
   },
   "overrides": {
     "cookie": "^0.7.2",

@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { onMount, createEventDispatcher } from 'svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
+  import MultiSelect from 'svelte-multiselect';
+  import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -27,14 +29,27 @@
 
   const dispatch = createEventDispatcher();
 
-  type Tab = 'connection' | 'processing' | 'advanced' | 'organize';
-  let activeTab: Tab = 'connection';
+  const DEFAULT_REGEX = '^(.+?)_P(\\d{3})(\\.[^.]+)$';
+
+  // ── Stepper state ──
+  let currentStepIndex = 0;
+  let maxStepReached = 0;
+  $: steps = [
+    { id: 'connection', label: $t('settings.watchSources.tabs.connection') },
+    { id: 'processing', label: $t('settings.watchSources.tabs.processing') },
+    { id: 'advanced', label: $t('settings.watchSources.tabs.advanced') },
+    { id: 'organize', label: $t('settings.watchSources.tabs.organize') },
+  ];
+  $: currentStep = steps[currentStepIndex];
+  $: isFirstStep = currentStepIndex === 0;
+  $: isLastStep = currentStepIndex === steps.length - 1;
+  $: if (currentStepIndex > maxStepReached) maxStepReached = currentStepIndex;
+
   let saving = false;
   let testing = false;
   let testResult: { success: boolean; message: string } | null = null;
-  let lastEditingId: string | null = null;
 
-  // Folder browser state (local sources)
+  // Folder browser (local)
   let browsing = false;
   let listing: DirectoryListing | null = null;
 
@@ -42,9 +57,18 @@
   let regexSample = '';
   let regexResult: string | null = null;
 
-  const DEFAULT_REGEX = '^(.+?)_P(\\d{3})(\\.[^.]+)$';
+  // Tags + collections (Organize step) — compact svelte-multiselect.
+  // Tags are plain names (the backend creates tags on import). Collections are
+  // {label,value} options where value is the collection UUID; brand-new names
+  // typed by the user are created via the API at save time.
+  type ColOption = { label: string; value: string };
+  let selectedTags: string[] = [];
+  let selectedCollections: ColOption[] = [];
+  let tagNames: string[] = [];
+  let colOptions: ColOption[] = [];
+  let availableCollections: Array<{ uuid: string; name: string }> = [];
 
-  function blankForm(): any {
+  function blankForm(): Record<string, unknown> {
     return {
       name: '',
       source_type: (capabilities.local_enabled ? 'local' : 's3') as SourceType,
@@ -73,7 +97,6 @@
       auto_transcribe: true,
       min_speakers: 1,
       max_speakers: 20,
-      tag_names_csv: '',
       multipart_enabled: false,
       multipart_regex: DEFAULT_REGEX,
       multipart_time_window_hours: 24,
@@ -82,7 +105,57 @@
     };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let form: any = blankForm();
+
+  onMount(() => {
+    (async () => {
+      try {
+        const [colRes, tagRes] = await Promise.all([
+          axiosInstance.get('/collections'),
+          axiosInstance.get('/tags'),
+        ]);
+        availableCollections = colRes.data ?? [];
+        colOptions = availableCollections.map((c) => ({ label: c.name, value: c.uuid }));
+        tagNames = (tagRes.data ?? []).map((t: { name: string }) => t.name);
+        mapEditingCollections();
+      } catch {
+        // Non-fatal: organize step still works with create-new.
+      }
+    })();
+  });
+
+  function mapEditingCollections() {
+    if (editingSource?.collection_ids?.length && availableCollections.length) {
+      selectedCollections = editingSource.collection_ids
+        .map((id) => availableCollections.find((c) => c.uuid === id))
+        .filter((c): c is { uuid: string; name: string } => !!c)
+        .map((c) => ({ label: c.name, value: c.uuid }));
+    }
+  }
+
+  /** Resolve selected collections to UUIDs, creating any brand-new names. */
+  async function resolveCollectionIds(): Promise<string[]> {
+    const ids: string[] = [];
+    for (const opt of selectedCollections) {
+      const known = availableCollections.find((c) => c.uuid === opt.value);
+      if (known) {
+        ids.push(known.uuid);
+        continue;
+      }
+      // A newly-typed name (value === label, not an existing uuid): create it.
+      try {
+        const { data } = await axiosInstance.post('/collections', { name: opt.label });
+        availableCollections = [...availableCollections, { uuid: data.uuid, name: data.name }];
+        colOptions = [...colOptions, { label: data.name, value: data.uuid }];
+        ids.push(data.uuid);
+      } catch {
+        // Skip a collection that couldn't be created; don't block the save.
+        toastStore.error(getErrorMessage(null, $t('settings.watchSources.collectionCreateFailed')));
+      }
+    }
+    return ids;
+  }
 
   function populate(src: WatchSource) {
     form = {
@@ -114,30 +187,39 @@
       auto_transcribe: src.auto_transcribe,
       min_speakers: src.min_speakers ?? 1,
       max_speakers: src.max_speakers ?? 20,
-      tag_names_csv: (src.tag_names ?? []).join(', '),
       multipart_enabled: src.multipart_enabled,
       multipart_regex: src.multipart_regex || DEFAULT_REGEX,
       multipart_time_window_hours: src.multipart_time_window_hours,
       multipart_wait_scans: src.multipart_wait_scans,
       upload_stitched_to_source: src.upload_stitched_to_source,
     };
+    selectedTags = [...(src.tag_names ?? [])];
+    mapEditingCollections();
   }
 
-  $: if (show) {
-    if (editingSource && editingSource.uuid !== lastEditingId) {
+  // Initialize the form when the modal transitions to open, so blankForm() reads
+  // the real `capabilities` prop (which arrives after init) — otherwise new
+  // sources would wrongly default to S3 even when a local folder is available.
+  let prevShow = false;
+  $: if (show && !prevShow) {
+    prevShow = true;
+    currentStepIndex = 0;
+    testResult = null;
+    listing = null;
+    regexResult = null;
+    if (editingSource) {
       populate(editingSource);
-      lastEditingId = editingSource.uuid;
-      activeTab = 'connection';
-      testResult = null;
-    } else if (!editingSource && lastEditingId !== null) {
+      maxStepReached = steps.length - 1; // edits can jump to any step
+    } else {
       form = blankForm();
-      lastEditingId = null;
-      activeTab = 'connection';
-      testResult = null;
+      selectedTags = [];
+      selectedCollections = [];
+      maxStepReached = 0;
     }
   }
+  $: if (!show && prevShow) prevShow = false;
 
-  $: isFormValid = (() => {
+  $: connectionValid = (() => {
     if (!form.name?.trim()) return false;
     if (form.source_type === 's3') {
       return !!(
@@ -152,12 +234,21 @@
     return true; // local
   })();
 
-  function buildPayload(): any {
-    const tags = form.tag_names_csv
-      .split(',')
-      .map((s: string) => s.trim())
-      .filter(Boolean);
-    const payload: any = {
+  $: canProceed = currentStep?.id === 'connection' ? connectionValid : true;
+  $: canSave = connectionValid;
+
+  function goNext() {
+    if (!isLastStep && canProceed) currentStepIndex += 1;
+  }
+  function goBack() {
+    if (!isFirstStep) currentStepIndex -= 1;
+  }
+  function goToStep(i: number) {
+    if (i <= maxStepReached) currentStepIndex = i;
+  }
+
+  function buildPayload(collectionIds: string[]): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
       name: form.name.trim(),
       is_enabled: form.is_enabled,
       polling_interval_minutes: Number(form.polling_interval_minutes),
@@ -171,7 +262,8 @@
       auto_transcribe: form.auto_transcribe,
       min_speakers: Number(form.min_speakers),
       max_speakers: Number(form.max_speakers),
-      tag_names: tags,
+      tag_names: selectedTags,
+      collection_ids: collectionIds,
       multipart_enabled: form.multipart_enabled,
       multipart_regex: form.multipart_regex,
       multipart_time_window_hours: Number(form.multipart_time_window_hours),
@@ -202,16 +294,22 @@
   }
 
   async function handleSave() {
-    if (!isFormValid) return;
+    if (!canSave) return;
     saving = true;
     try {
+      const collectionIds = await resolveCollectionIds();
       if (editingSource) {
-        const updated = await updateWatchSource(editingSource.uuid, buildPayload());
+        const updated = await updateWatchSource(
+          editingSource.uuid,
+          buildPayload(collectionIds) as Parameters<typeof updateWatchSource>[1]
+        );
         toastStore.success($t('settings.watchSources.saved', { name: updated.name }));
         dispatch('saved', updated);
       } else {
-        const payload = { ...buildPayload(), source_type: form.source_type };
-        const created = await createWatchSource(payload);
+        const created = await createWatchSource({
+          ...buildPayload(collectionIds),
+          source_type: form.source_type,
+        } as unknown as Parameters<typeof createWatchSource>[0]);
         toastStore.success($t('settings.watchSources.saved', { name: created.name }));
         dispatch('saved', created);
       }
@@ -250,7 +348,6 @@
       browsing = false;
     }
   }
-
   function selectFolder(path: string) {
     form.local_path = path;
     listing = null;
@@ -276,13 +373,6 @@
     regexResult = null;
     dispatch('close');
   }
-
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'connection', label: 'settings.watchSources.tabs.connection' },
-    { id: 'processing', label: 'settings.watchSources.tabs.processing' },
-    { id: 'advanced', label: 'settings.watchSources.tabs.advanced' },
-    { id: 'organize', label: 'settings.watchSources.tabs.organize' },
-  ];
 </script>
 
 <BaseModal isOpen={show} onClose={handleClose} maxWidth="640px">
@@ -306,30 +396,40 @@
       />
     </div>
 
-    <div class="ws-tabs" role="tablist">
-      {#each TABS as tab}
+    <!-- Stepper indicator -->
+    <div class="step-indicator" role="navigation" aria-label={$t('settings.watchSources.title')}>
+      {#each steps as step, i (step.id)}
         <button
-          class="ws-tab"
-          class:active={activeTab === tab.id}
-          role="tab"
-          aria-selected={activeTab === tab.id}
-          on:click={() => (activeTab = tab.id)}
+          type="button"
+          class="step-item"
+          class:active={currentStepIndex === i}
+          class:completed={i < currentStepIndex}
+          class:visited={i > currentStepIndex && i <= maxStepReached}
+          on:click={() => goToStep(i)}
+          disabled={i > maxStepReached}
+          aria-current={currentStepIndex === i ? 'step' : undefined}
         >
-          {$t(tab.label)}
+          <span class="step-dot">
+            {#if i < currentStepIndex}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            {:else}
+              <span class="step-number">{i + 1}</span>
+            {/if}
+          </span>
+          <span class="step-label">{step.label}</span>
         </button>
+        {#if i < steps.length - 1}
+          <div class="step-line" class:completed={i < currentStepIndex}></div>
+        {/if}
       {/each}
     </div>
 
-    {#if activeTab === 'connection'}
-      <div class="tab-panel">
+    <!-- Step: Connection -->
+    {#if currentStep?.id === 'connection'}
+      <div class="step-panel">
         <div class="form-group">
           <label for="ws-type">{$t('settings.watchSources.fields.sourceType')}</label>
-          <select
-            id="ws-type"
-            class="form-select"
-            bind:value={form.source_type}
-            disabled={!!editingSource}
-          >
+          <select id="ws-type" class="form-select" bind:value={form.source_type} disabled={!!editingSource}>
             {#if capabilities.local_enabled}
               <option value="local">{$t('settings.watchSources.types.local')}</option>
             {/if}
@@ -345,16 +445,8 @@
           <div class="form-group">
             <label for="ws-localpath">{$t('settings.watchSources.fields.localPath')}</label>
             <div class="path-row">
-              <input
-                id="ws-localpath"
-                type="text"
-                class="form-input"
-                bind:value={form.local_path}
-                placeholder={$t('settings.watchSources.fields.localPathPlaceholder')}
-              />
-              <button class="btn btn-secondary" on:click={() => openBrowser(form.local_path)}>
-                {$t('settings.watchSources.browse')}
-              </button>
+              <input id="ws-localpath" type="text" class="form-input" bind:value={form.local_path} placeholder={$t('settings.watchSources.fields.localPathPlaceholder')} />
+              <button type="button" class="btn btn-secondary" on:click={() => openBrowser(form.local_path)}>{$t('settings.watchSources.browse')}</button>
             </div>
             {#if browsing}
               <Spinner size="small" />
@@ -362,17 +454,13 @@
               <div class="folder-browser">
                 <div class="fb-header">
                   <span class="fb-current">/{listing.current_path}</span>
-                  <button class="btn-link" on:click={() => selectFolder(listing?.current_path ?? '')}>
-                    {$t('settings.watchSources.selectThisFolder')}
-                  </button>
+                  <button type="button" class="btn-link" on:click={() => selectFolder(listing?.current_path ?? '')}>{$t('settings.watchSources.selectThisFolder')}</button>
                 </div>
                 {#if listing.parent_path !== null && listing.parent_path !== undefined}
-                  <button class="fb-entry" on:click={() => openBrowser(listing?.parent_path ?? '')}
-                    >.. ({$t('settings.watchSources.parent')})</button
-                  >
+                  <button type="button" class="fb-entry" on:click={() => openBrowser(listing?.parent_path ?? '')}>.. ({$t('settings.watchSources.parent')})</button>
                 {/if}
                 {#each listing.directories as dir}
-                  <button class="fb-entry" on:click={() => openBrowser(dir.path)}>📁 {dir.name}</button>
+                  <button type="button" class="fb-entry" on:click={() => openBrowser(dir.path)}>📁 {dir.name}</button>
                 {/each}
                 {#if listing.directories.length === 0}
                   <div class="fb-empty">{$t('settings.watchSources.noSubfolders')}</div>
@@ -414,15 +502,7 @@
           </div>
           <div class="form-group">
             <label for="ws-s3sk">{$t('settings.watchSources.fields.s3SecretKey')}</label>
-            <input
-              id="ws-s3sk"
-              type="password"
-              class="form-input"
-              bind:value={form.s3_secret_key}
-              placeholder={editingSource?.has_s3_secret_key
-                ? $t('settings.watchSources.secretStored')
-                : ''}
-            />
+            <input id="ws-s3sk" type="password" class="form-input" bind:value={form.s3_secret_key} placeholder={editingSource?.has_s3_secret_key ? $t('settings.watchSources.secretStored') : ''} />
           </div>
           <label class="checkbox-row">
             <input type="checkbox" bind:checked={form.s3_use_ssl} />
@@ -450,15 +530,7 @@
             </div>
             <div class="form-group">
               <label for="ws-smbpw">{$t('settings.watchSources.fields.smbPassword')}</label>
-              <input
-                id="ws-smbpw"
-                type="password"
-                class="form-input"
-                bind:value={form.smb_password}
-                placeholder={editingSource?.has_smb_password
-                  ? $t('settings.watchSources.secretStored')
-                  : ''}
-              />
+              <input id="ws-smbpw" type="password" class="form-input" bind:value={form.smb_password} placeholder={editingSource?.has_smb_password ? $t('settings.watchSources.secretStored') : ''} />
             </div>
           </div>
           <div class="form-row">
@@ -475,8 +547,9 @@
       </div>
     {/if}
 
-    {#if activeTab === 'processing'}
-      <div class="tab-panel">
+    <!-- Step: Processing -->
+    {#if currentStep?.id === 'processing'}
+      <div class="step-panel">
         <div class="form-row">
           <div class="form-group">
             <label for="ws-interval">{$t('settings.watchSources.fields.pollingInterval')}</label>
@@ -485,11 +558,13 @@
           <div class="form-group">
             <label for="ws-age">{$t('settings.watchSources.fields.skipOlderThan')}</label>
             <input id="ws-age" type="number" min="0" class="form-input" bind:value={form.skip_files_older_than_days} />
+            <p class="field-hint">{$t('settings.watchSources.skipOlderHelp')}</p>
           </div>
         </div>
         <div class="form-group">
           <label for="ws-ext">{$t('settings.watchSources.fields.fileExtensions')}</label>
-          <input id="ws-ext" type="text" class="form-input" bind:value={form.file_extensions} placeholder=".mp4,.mp3,.wav (blank = all media)" />
+          <input id="ws-ext" type="text" class="form-input" bind:value={form.file_extensions} placeholder=".mp4,.mp3,.wav" />
+          <p class="field-hint">{$t('settings.watchSources.extensionsHelp')}</p>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -518,8 +593,10 @@
       </div>
     {/if}
 
-    {#if activeTab === 'advanced'}
-      <div class="tab-panel">
+    <!-- Step: Advanced (multi-part stitching) -->
+    {#if currentStep?.id === 'advanced'}
+      <div class="step-panel">
+        <p class="step-hint">{$t('settings.watchSources.stitchHelp')}</p>
         <label class="checkbox-row">
           <input type="checkbox" bind:checked={form.multipart_enabled} />
           <span>{$t('settings.watchSources.fields.multipartEnabled')}</span>
@@ -528,12 +605,13 @@
           <div class="form-group">
             <label for="ws-regex">{$t('settings.watchSources.fields.multipartRegex')}</label>
             <input id="ws-regex" type="text" class="form-input" bind:value={form.multipart_regex} />
+            <p class="field-hint">{$t('settings.watchSources.regexHelp')}</p>
           </div>
           <div class="form-group">
             <label for="ws-regextest">{$t('settings.watchSources.regexTester')}</label>
             <div class="path-row">
               <input id="ws-regextest" type="text" class="form-input" bind:value={regexSample} placeholder="meeting_P001.mp4" />
-              <button class="btn btn-secondary" on:click={runRegexTest}>{$t('settings.watchSources.testRegex')}</button>
+              <button type="button" class="btn btn-secondary" on:click={runRegexTest}>{$t('settings.watchSources.testRegex')}</button>
             </div>
             {#if regexResult}<p class="field-hint">{regexResult}</p>{/if}
           </div>
@@ -557,14 +635,37 @@
       </div>
     {/if}
 
-    {#if activeTab === 'organize'}
-      <div class="tab-panel">
+    <!-- Step: Organize (tags + collections) -->
+    {#if currentStep?.id === 'organize'}
+      <div class="step-panel">
+        <p class="step-hint">{$t('settings.watchSources.organizeHelp')}</p>
         <div class="form-group">
           <label for="ws-tags">{$t('settings.watchSources.fields.tags')}</label>
-          <input id="ws-tags" type="text" class="form-input" bind:value={form.tag_names_csv} placeholder="meetings, auto-import" />
-          <p class="field-hint">{$t('settings.watchSources.fields.tagsHint')}</p>
+          <div class="ms-wrap">
+            <MultiSelect
+              --sms-options-bg="var(--surface-color)"
+              id="ws-tags"
+              options={tagNames}
+              bind:selected={selectedTags}
+              allowUserOptions="append"
+              placeholder={$t('settings.watchSources.tagsPlaceholder')}
+            />
+          </div>
         </div>
-        <label class="checkbox-row">
+        <div class="form-group">
+          <label for="ws-cols">{$t('settings.watchSources.collectionsLabel')}</label>
+          <div class="ms-wrap">
+            <MultiSelect
+              --sms-options-bg="var(--surface-color)"
+              id="ws-cols"
+              options={colOptions}
+              bind:selected={selectedCollections}
+              allowUserOptions="append"
+              placeholder={$t('settings.watchSources.collectionsPlaceholder')}
+            />
+          </div>
+        </div>
+        <label class="checkbox-row enabled-row">
           <input type="checkbox" bind:checked={form.is_enabled} />
           <span>{$t('settings.watchSources.fields.enabled')}</span>
         </label>
@@ -582,19 +683,26 @@
 
   <svelte:fragment slot="footer">
     <div class="footer-row">
-      <button
-        class="btn btn-secondary"
-        on:click={handleTest}
-        disabled={testing || !editingSource}
-        title={!editingSource ? $t('settings.watchSources.testSaveFirst') : ''}
-      >
-        {#if testing}<Spinner size="small" />{:else}{$t('settings.watchSources.testConnection')}{/if}
-      </button>
+      <div class="footer-left">
+        {#if currentStep?.id === 'connection'}
+          <button class="btn btn-secondary" on:click={handleTest} disabled={testing || !editingSource} title={!editingSource ? $t('settings.watchSources.testSaveFirst') : ''}>
+            {#if testing}<Spinner size="small" />{:else}{$t('settings.watchSources.testConnection')}{/if}
+          </button>
+        {/if}
+      </div>
       <div class="footer-actions">
         <button class="btn btn-secondary" on:click={handleClose}>{$t('common.cancel')}</button>
-        <button class="btn btn-primary" on:click={handleSave} disabled={saving || !isFormValid}>
-          {saving ? $t('common.saving') : editingSource ? $t('common.update') : $t('common.save')}
-        </button>
+        {#if !isFirstStep}
+          <button class="btn btn-secondary" on:click={goBack}>{$t('common.back')}</button>
+        {/if}
+        {#if !isLastStep}
+          <button class="btn btn-primary" on:click={goNext} disabled={!canProceed}>{$t('common.next')}</button>
+        {/if}
+        {#if isLastStep || editingSource}
+          <button class="btn btn-primary" on:click={handleSave} disabled={saving || !canSave}>
+            {saving ? $t('common.saving') : editingSource ? $t('common.update') : $t('common.save')}
+          </button>
+        {/if}
       </div>
     </div>
   </svelte:fragment>
@@ -604,36 +712,95 @@
   .ws-form {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
   }
   .modal-title {
     margin: 0;
     font-size: 1.1rem;
   }
-  .ws-tabs {
+
+  /* Stepper indicator */
+  .step-indicator {
     display: flex;
-    gap: 4px;
-    border-bottom: 1px solid var(--border-color);
-    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 0 8px;
   }
-  .ws-tab {
-    background: none;
+  .step-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    background: transparent;
     border: none;
-    padding: 8px 12px;
+    border-radius: 6px;
+    box-shadow: none;
     cursor: pointer;
-    color: var(--text-secondary);
-    border-bottom: 2px solid transparent;
-    font-size: 0.9rem;
+    flex-shrink: 0;
   }
-  .ws-tab.active {
+  .step-item:disabled {
+    cursor: default;
+  }
+  .step-item:not(:disabled):hover {
+    background: rgba(var(--primary-color-rgb), 0.08);
+    transform: none;
+    box-shadow: none;
+  }
+  .step-dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border: 2px solid var(--border-color);
+    background: var(--surface-color);
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+  }
+  .step-item.active .step-dot,
+  .step-item.completed .step-dot {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: white;
+  }
+  .step-item.visited .step-dot {
+    border-color: var(--primary-color);
     color: var(--primary-color);
-    border-bottom-color: var(--primary-color);
+  }
+  .step-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .step-item.active .step-label {
+    color: var(--primary-color);
     font-weight: 600;
   }
-  .tab-panel {
+  .step-item.completed .step-label,
+  .step-item.visited .step-label {
+    color: var(--primary-color);
+  }
+  .step-line {
+    flex: 1;
+    max-width: 40px;
+    height: 2px;
+    background: var(--border-color);
+    margin: 0 4px;
+  }
+  .step-line.completed {
+    background: var(--primary-color);
+  }
+
+  .step-panel {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-height: 180px;
   }
   .form-group {
     display: flex;
@@ -649,21 +816,27 @@
     font-size: 0.85rem;
     color: var(--text-secondary);
   }
-  .form-input,
-  .form-select {
-    padding: 8px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color);
-    color: var(--text-color);
-    font-size: 0.9rem;
-  }
+  /* .form-input / .form-select inherit the app's global input/select styling. */
   .checkbox-row {
     display: flex;
     align-items: center;
     gap: 8px;
     font-size: 0.9rem;
     cursor: pointer;
+  }
+  /* Override the global `input { width:100% }` base so checkboxes stay square. */
+  .checkbox-row input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    flex: none;
+    cursor: pointer;
+    accent-color: var(--primary-color);
+  }
+  .enabled-row {
+    margin-top: 4px;
   }
   .path-row {
     display: flex;
@@ -676,6 +849,45 @@
     font-size: 0.8rem;
     color: var(--text-secondary);
     margin: 2px 0 0;
+  }
+  .step-hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.5;
+  }
+  /* Theme svelte-multiselect to match the app's inputs (light/dark) and
+     neutralize the aggressive global button styling on its internal buttons. */
+  .ms-wrap :global(.multiselect) {
+    --sms-bg: var(--input-background);
+    --sms-border: 1px solid var(--input-border);
+    --sms-focus-border: 1px solid var(--primary-color);
+    --sms-text-color: var(--text-color);
+    --sms-placeholder-color: var(--text-secondary);
+    --sms-options-bg: var(--surface-color);
+    --sms-li-active-bg: var(--button-hover);
+    --sms-selected-bg: rgba(var(--primary-color-rgb), 0.15);
+    --sms-selected-text-color: var(--text-color);
+    border-radius: 4px;
+    min-height: 40px;
+    font-size: 0.9rem;
+  }
+  .ms-wrap :global(.multiselect button) {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    min-height: 0;
+  }
+  .ms-wrap :global(.multiselect button:hover) {
+    transform: none;
+    box-shadow: none;
+  }
+  .ms-wrap :global(.multiselect input) {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    min-height: 0;
   }
   .warning-text {
     font-size: 0.8rem;
@@ -707,6 +919,7 @@
     text-align: left;
     background: none;
     border: none;
+    box-shadow: none;
     padding: 6px 10px;
     cursor: pointer;
     color: var(--text-color);
@@ -714,6 +927,8 @@
   }
   .fb-entry:hover {
     background: var(--button-hover);
+    transform: none;
+    box-shadow: none;
   }
   .fb-empty {
     padding: 8px 10px;
@@ -723,9 +938,11 @@
   .btn-link {
     background: none;
     border: none;
+    box-shadow: none;
     color: var(--primary-color);
     cursor: pointer;
     font-size: 0.8rem;
+    padding: 0;
   }
   .test-result {
     padding: 8px 10px;
@@ -745,6 +962,7 @@
     justify-content: space-between;
     align-items: center;
     width: 100%;
+    gap: 8px;
   }
   .footer-actions {
     display: flex;

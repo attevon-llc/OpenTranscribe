@@ -237,10 +237,26 @@
 
   {#if sources.length === 0}
     <EmptyState
-      icon="eye"
       title={$t('settings.watchSources.emptyTitle')}
       description={$t('settings.watchSources.emptyDescription')}
-    />
+    >
+      <svelte:fragment slot="icon">
+        <svg
+          width="40"
+          height="40"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      </svelte:fragment>
+    </EmptyState>
   {:else}
     <div class="source-list">
       {#each sources as s (s.uuid)}
@@ -545,19 +561,24 @@
     font-size: 0.85rem;
     color: var(--text-secondary);
   }
-  .form-input {
-    padding: 8px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color);
-    color: var(--text-color);
-  }
+  /* .form-input inherits the global input styling (form-elements.css). */
   .checkbox-row {
     display: flex;
     align-items: center;
     gap: 8px;
     font-size: 0.9rem;
     cursor: pointer;
+  }
+  /* Override the global `input { width:100% }` base so checkboxes stay square. */
+  .checkbox-row input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    flex: none;
+    cursor: pointer;
+    accent-color: var(--primary-color);
   }
   .muted {
     color: var(--text-secondary);

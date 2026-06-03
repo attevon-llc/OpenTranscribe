@@ -3668,5 +3668,19 @@
   "settings.emailNotifications.fields.exchangeDomain": "ドメイン",
   "settings.emailNotifications.fields.exchangeUsername": "ユーザー名",
   "settings.emailNotifications.fields.exchangePassword": "パスワード",
-  "settings.emailNotifications.fields.enabled": "有効"
+  "settings.emailNotifications.fields.enabled": "有効",
+  "common.back": "戻る",
+  "common.next": "次へ",
+  "settings.watchSources.collectionsLabel": "コレクション",
+  "settings.watchSources.skipOlderHelp": "この日数以内に変更されたファイルのみインポートします。例: 30 にすると、フォルダー内の何年も前の録音を無視し、直近1か月だけを処理します。空欄ですべてインポート。",
+  "settings.watchSources.stitchHelp": "長い録音が接続を失うと、複数のファイルとして保存されることがあります（例: meeting_P001.mp4, meeting_P002.mp4 …）。結合は、文字起こし前にこれらのパートを ffmpeg で自動的に1つのファイルに再結合します。有効にして下のパート名パターンを設定してください。既定は _P### サフィックスに一致します。",
+  "settings.watchSources.regexHelp": "3つのグループを持つ正規表現: ベース名、パート番号、拡張子。既定 ^(.+?)_P(\\d{3})(\\.[^.]+)$ は name_P001.mp4 に一致。下のテスターで確認できます。",
+  "settings.watchSources.organizeHelp": "任意で、インポートする各ファイルにタグを付けてコレクションに追加できます。既存から選ぶか新規作成 — インポート時に自動適用されます。",
+  "settings.emailNotifications.smtpHelp": "Gmail、Yahoo、Outlook など任意の SMTP サーバーで動作します。2要素認証の Gmail/Yahoo では、アプリパスワードを作成してここに入力してください（通常のパスワードではありません）。一般的: smtp.gmail.com ポート 587、STARTTLS。",
+  "settings.emailNotifications.m365Help": "SMTP が無効な Microsoft 365 テナント向け。Mail.Send アプリケーション許可（管理者同意済み）を持つ Azure AD アプリを登録し、テナント ID、クライアント ID、クライアントシークレットを入力します。",
+  "settings.emailNotifications.exchangeHelp": "認証付き SMTP 送信によるオンプレミス Exchange 向け。サーバーホスト、任意のドメイン、メールボックスのユーザー名/パスワードを入力します。",
+  "settings.watchSources.extensionsHelp": "対象とする拡張子をカンマ区切りで指定（例: .mp4,.mp3）。空欄ですべてのファイル — 各ファイルはマジックバイトで検証されるため、有効な音声/動画のみインポートされます。",
+  "settings.watchSources.tagsPlaceholder": "選択または入力してタグを追加…",
+  "settings.watchSources.collectionsPlaceholder": "選択または入力してコレクションを追加…",
+  "settings.watchSources.collectionCreateFailed": "コレクションの作成に失敗しました"
 }

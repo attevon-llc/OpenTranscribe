@@ -148,6 +148,15 @@
         <option value="exchange">Exchange (on-prem)</option>
       </select>
     </div>
+
+    {#if form.provider === 'smtp'}
+      <p class="provider-help">{$t('settings.emailNotifications.smtpHelp')}</p>
+    {:else if form.provider === 'm365'}
+      <p class="provider-help">{$t('settings.emailNotifications.m365Help')}</p>
+    {:else if form.provider === 'exchange'}
+      <p class="provider-help">{$t('settings.emailNotifications.exchangeHelp')}</p>
+    {/if}
+
     <div class="form-row">
       <div class="form-group">
         <label for="em-from">{$t('settings.emailNotifications.fields.fromAddress')}</label>
@@ -260,14 +269,15 @@
     font-size: 0.85rem;
     color: var(--text-secondary);
   }
-  .form-input,
-  .form-select {
+  /* .form-input / .form-select inherit the global input/select styling. */
+  .provider-help {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0;
     padding: 8px 10px;
-    border: 1px solid var(--border-color);
+    background: var(--button-hover);
     border-radius: 6px;
-    background: var(--surface-color);
-    color: var(--text-color);
-    font-size: 0.9rem;
   }
   .checkbox-row {
     display: flex;
@@ -275,5 +285,16 @@
     gap: 8px;
     font-size: 0.9rem;
     cursor: pointer;
+  }
+  /* Override the global `input { width:100% }` base so checkboxes stay square. */
+  .checkbox-row input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    flex: none;
+    cursor: pointer;
+    accent-color: var(--primary-color);
   }
 </style>

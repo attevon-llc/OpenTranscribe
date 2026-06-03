@@ -7,6 +7,8 @@ This package contains database models for all entities in the system.
 from .auth_config import AuthConfig
 from .auth_config import AuthConfigAudit
 from .custom_vocabulary import CustomVocabulary
+from .email_notification_config import EmailNotificationConfig
+from .email_notification_config import WatchSourceEmail
 from .group import UserGroup
 from .group import UserGroupMember
 from .media import Analytics
@@ -41,6 +43,8 @@ from .user_diarization_settings import UserDiarizationSettings
 from .user_llm_settings import UserLLMSettings
 from .user_media_source import UserMediaSource
 from .user_mfa import UserMFA
+from .watch_source import WatchSource
+from .watch_source import WatchSourceFile
 
 __all__ = [
     "User",
@@ -80,4 +84,8 @@ __all__ = [
     "CollectionShare",
     "UploadBatch",
     "FilePipelineTiming",
+    "WatchSource",
+    "WatchSourceFile",
+    "EmailNotificationConfig",
+    "WatchSourceEmail",
 ]

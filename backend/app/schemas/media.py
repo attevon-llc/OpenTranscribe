@@ -441,6 +441,7 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     download_url: Optional[str] = None
     preview_url: Optional[str] = None
     file_hash: Optional[str] = None
+    imohash: Optional[str] = None  # Server-side constant-time content fingerprint (dedup)
     thumbnail_path: Optional[str] = None
     thumbnail_url: Optional[str] = None
 

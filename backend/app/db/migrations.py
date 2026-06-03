@@ -211,8 +211,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'summary_prompt' AND column_name = 'shared_by')"
     )
+    has_watch_sources = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'watch_source')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v366: watch-source auto-import tables
+    if has_watch_sources:
+        return "v366_add_watch_sources"
     # v365: shared_by attribution column on summary_prompt
     if has_prompt_shared_by:
         return "v365_add_prompt_shared_by"

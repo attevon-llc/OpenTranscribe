@@ -277,6 +277,40 @@ async def _run_thumbnail_migration():
         logger.error(f"Error scheduling thumbnail migration: {e}")
 
 
+async def _run_imohash_recompute():
+    """One-time recompute of every media_file.imohash after the package switch.
+
+    The server-side fingerprint moved from a hand-rolled blake2b stand-in to the
+    real ``imohash`` package, changing every existing value. Checks a DB flag
+    first — if already done, returns immediately. Otherwise dispatches the
+    batched recompute task, which sets the flag when the whole library is
+    processed. Same pattern as the thumbnail / embedding-normalization
+    migrations.
+    """
+    try:
+        await asyncio.sleep(75)
+
+        from app.db.base import SessionLocal
+        from app.models.system_settings import SystemSettings
+        from app.tasks.imohash_recompute import RECOMPUTE_FLAG_KEY
+
+        db = SessionLocal()
+        try:
+            flag = db.query(SystemSettings).filter(SystemSettings.key == RECOMPUTE_FLAG_KEY).first()
+            if flag and flag.value == "true":
+                logger.info("imohash package recompute already completed — skipping")
+                return
+        finally:
+            db.close()
+
+        from app.tasks.imohash_recompute import recompute_all
+
+        result = recompute_all.delay()
+        logger.info(f"imohash package recompute task scheduled: {result.id}")
+    except Exception as e:
+        logger.error(f"Error scheduling imohash recompute: {e}")
+
+
 async def _run_one_time_embedding_normalization():
     """One-time migration: normalize legacy embeddings for users upgrading.
 
@@ -554,6 +588,7 @@ async def lifespan(app: FastAPI):
     thumbnail_migration = asyncio.create_task(_run_thumbnail_migration())
     neural_search_task = asyncio.create_task(_initialize_neural_search())
     embedding_migration = asyncio.create_task(_run_one_time_embedding_normalization())
+    imohash_recompute_task = asyncio.create_task(_run_imohash_recompute())
 
     yield
 
@@ -565,6 +600,7 @@ async def lifespan(app: FastAPI):
         thumbnail_migration,
         neural_search_task,
         embedding_migration,
+        imohash_recompute_task,
     ]:
         if not task.done():
             task.cancel()

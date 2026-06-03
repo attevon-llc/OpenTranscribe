@@ -33,6 +33,7 @@ from .endpoints import transcript_segments
 from .endpoints import user_files
 from .endpoints import user_settings
 from .endpoints import users
+from .endpoints import watch_sources
 from .endpoints.files import router as files_router
 from .endpoints.files.management import router as file_management_router
 
@@ -78,6 +79,9 @@ include_router_with_consistency(
 include_router_with_consistency(comments.router, prefix="/comments", tags=["comments"])
 include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])
+include_router_with_consistency(
+    watch_sources.router, prefix="/watch-sources", tags=["watch-sources"]
+)
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])

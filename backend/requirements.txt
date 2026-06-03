@@ -16,7 +16,7 @@ redis>=5.0.0
 flower>=2.0.0
 psycopg2-binary>=2.9.7
 minio>=7.2.18
-imohash>=1.0.4  # Fast constant-time file fingerprint (sampled SHA-512) for server-side dedup + artifact caching
+imohash>=1.1.0  # Fast constant-time file fingerprint (murmur3 over sampled first/middle/last windows + size) for server-side dedup + artifact caching
 
 opensearch-py>=3.0.0,<4.0.0
 httpx>=0.24.1
@@ -142,3 +142,15 @@ gliner>=0.2.13
 # detoxify = toxicity classification (segment-level). transformers (above) backs
 # the Tiny-Toxic-Detector / multilingual-toxic-xlm-roberta models.
 detoxify>=0.5.2
+
+# =============================================================================
+# Watch Sources (auto-import from local folder / S3 / SMB) — issue #26
+# =============================================================================
+# watchdog = optional event-driven local FS watching (polling is the reliable
+# default; events are an additive speedup on real local filesystems only).
+watchdog>=4.0.0
+# smbprotocol = pure-Python SMB2/3 client (no cifs-utils / mount; runs non-root).
+smbprotocol>=1.12.0
+# msal = Microsoft Authentication Library for M365 Graph sendMail (OAuth2) when
+# the tenant has SMTP basic-auth disabled. (boto3 already listed above for S3.)
+msal>=1.26.0

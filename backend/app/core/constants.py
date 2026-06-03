@@ -429,6 +429,16 @@ DEFAULT_SPEAKER_PROMPT_BEHAVIOR = "always_prompt"
 DEFAULT_GARBAGE_CLEANUP_ENABLED = True
 DEFAULT_GARBAGE_CLEANUP_THRESHOLD = 50
 
+# Watch Sources global tuning (DB-backed via SystemSettings, admin-UI managed,
+# no restart). Coded defaults here are the single source of truth — there are
+# NO watch tuning .env vars (only the physical WATCH_FOLDER_PATH mount).
+# SystemSettings keys: watch.enabled / watch.file_stability_seconds /
+# watch.max_concurrent_imports / watch.fs_events_enabled.
+DEFAULT_WATCH_ENABLED = True
+DEFAULT_WATCH_FILE_STABILITY_SECONDS = 30  # skip files modified within N s (still writing)
+DEFAULT_WATCH_MAX_CONCURRENT_IMPORTS = 5  # files imported concurrently per scan
+DEFAULT_WATCH_FS_EVENTS_ENABLED = False  # optional watchdog layer (polling is the baseline)
+
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
 DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)
 DEFAULT_VAD_MIN_SILENCE_MS = 2000  # Min silence to split segments (ms)

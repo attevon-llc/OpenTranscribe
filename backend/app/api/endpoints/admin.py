@@ -1884,3 +1884,58 @@ def update_system_ai_summary_setting(
     state = "enabled" if enabled else "disabled"
     logger.info(f"Admin {current_user.email} {state} system-wide AI summaries")
     return {"ai_summary_enabled": enabled, "scope": "system"}
+
+
+@router.get("/imohash-recompute/status")
+def get_imohash_recompute_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Status of the one-time imohash fingerprint recompute (admin only).
+
+    Cross-pipeline dedup (watch sources, re-upload detection) is unreliable
+    until this completes, so surface it in the admin Data Integrity panel.
+    """
+    from app.tasks.imohash_recompute import RECOMPUTE_FLAG_KEY
+    from app.tasks.imohash_recompute import recompute_progress
+
+    complete = system_settings_service.get_setting_bool(db, RECOMPUTE_FLAG_KEY, False)
+    return {"complete": complete, "progress": recompute_progress.get_status()}
+
+
+@router.post("/imohash-recompute/start")
+def start_imohash_recompute(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Manually (re)trigger the imohash fingerprint recompute (admin only).
+
+    Clears the completion flag and dispatches the batched recompute task. Safe
+    to run any time; it overwrites every ``media_file.imohash`` via fast ranged
+    reads. No-op guard if a recompute is already running.
+    """
+    from app.tasks.imohash_recompute import RECOMPUTE_FLAG_KEY
+    from app.tasks.imohash_recompute import recompute_all
+    from app.tasks.imohash_recompute import recompute_progress
+
+    if recompute_progress.is_running():
+        return {
+            "status": "already_running",
+            "message": "imohash recompute is already in progress",
+            "progress": recompute_progress.get_status(),
+        }
+
+    # Reset the completion flag so a fresh run is tracked from zero.
+    system_settings_service.set_setting(
+        db,
+        RECOMPUTE_FLAG_KEY,
+        "false",
+        "One-time imohash package recompute of all media_file.imohash completed",
+    )
+    task = recompute_all.delay()
+    logger.info("Admin %s triggered imohash recompute: %s", current_user.email, task.id)
+    return {
+        "status": "started",
+        "task_id": task.id,
+        "message": "imohash recompute dispatched.",
+    }

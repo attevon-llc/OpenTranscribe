@@ -55,7 +55,7 @@ def _create_asr_config(db, user, *, name=None, shared=False, api_key="sk-asr-key
     return cfg
 
 
-def _create_prompt(db, user, *, name=None, shared=False, tags=None):
+def _create_prompt(db, user, *, name=None, shared=False, tags=None, shared_by=None):
     """Create a custom prompt directly in the DB and return it."""
     p = SummaryPrompt(
         user_id=user.id,
@@ -65,12 +65,22 @@ def _create_prompt(db, user, *, name=None, shared=False, tags=None):
         is_system_default=False,
         is_active=True,
         is_shared=shared,
+        shared_by=shared_by.id if shared_by else None,
         tags=tags or [],
     )
     db.add(p)
     db.commit()
     db.refresh(p)
     return p
+
+
+def _get_system_prompt(db):
+    """Return an existing active system default prompt (seeded in the live DB)."""
+    return (
+        db.query(SummaryPrompt)
+        .filter(SummaryPrompt.is_system_default == True, SummaryPrompt.is_active == True)  # noqa: E712
+        .first()
+    )
 
 
 def _set_active_llm(db, user, config):
@@ -774,3 +784,268 @@ class TestUnauthenticatedAccess:
         """GET /prompts/shared/library without auth returns 401."""
         resp = client.get("/api/prompts/shared/library")
         assert resp.status_code == 401
+
+
+# ===================================================================
+# Prompt Clone (issue #78)
+# ===================================================================
+
+
+class TestPromptClone:
+    """Cloning a prompt into the current user's editable library."""
+
+    def test_clone_shared_prompt_creates_owned_copy(
+        self, client, db_session, normal_user, other_user, other_user_auth_headers
+    ):
+        """Cloning a shared prompt yields a private, owned copy named '(copy)'."""
+        src = _create_prompt(db_session, normal_user, shared=True, name="Great Prompt")
+
+        resp = client.post(f"/api/prompts/{src.uuid}/clone", headers=other_user_auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "Great Prompt (copy)"
+        assert data["is_owner"] is True
+        assert data["is_shared"] is False
+        assert data["prompt_text"] == src.prompt_text
+        assert data["uuid"] != str(src.uuid)
+
+        # The clone now appears in the cloner's own prompt list.
+        list_resp = client.get("/api/prompts", headers=other_user_auth_headers)
+        names = [p["name"] for p in list_resp.json()["prompts"]]
+        assert "Great Prompt (copy)" in names
+
+    def test_clone_system_prompt(self, client, db_session, other_user, other_user_auth_headers):
+        """A system prompt can be cloned into a user's library."""
+        sys_prompt = _get_system_prompt(db_session)
+        assert sys_prompt is not None, "No system default prompt seeded in DB"
+
+        resp = client.post(f"/api/prompts/{sys_prompt.uuid}/clone", headers=other_user_auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["is_owner"] is True
+        assert data["is_system_default"] is False
+        assert data["name"] == f"{sys_prompt.name} (copy)"
+
+    def test_cannot_clone_private_prompt_of_other_user(
+        self, client, db_session, normal_user, other_user, other_user_auth_headers
+    ):
+        """Cloning another user's private prompt is forbidden (403)."""
+        src = _create_prompt(db_session, normal_user, shared=False, name="Secret")
+
+        resp = client.post(f"/api/prompts/{src.uuid}/clone", headers=other_user_auth_headers)
+        assert resp.status_code == 403
+
+    def test_clone_counts_toward_prompt_limit(
+        self, client, db_session, normal_user, other_user, other_user_auth_headers
+    ):
+        """A clone is rejected (400) when the cloner is already at the 50-prompt cap."""
+        # Fill the cloner's library to the cap.
+        for i in range(50):
+            _create_prompt(db_session, other_user, name=f"filler-{i}-{uuid.uuid4().hex[:4]}")
+
+        src = _create_prompt(db_session, normal_user, shared=True, name="Capped")
+        resp = client.post(f"/api/prompts/{src.uuid}/clone", headers=other_user_auth_headers)
+        assert resp.status_code == 400
+        assert "Maximum number" in resp.json()["detail"]
+
+
+class TestPromptShareAttribution:
+    """shared_by attribution is recorded and surfaced distinctly from the creator."""
+
+    def test_admin_share_sets_shared_by_name(
+        self,
+        client,
+        db_session,
+        normal_user,
+        admin_user,
+        admin_token_headers,
+        other_user,
+        other_user_auth_headers,
+    ):
+        """When an admin shares another user's prompt, shared_by_name is the admin's name."""
+        prompt = _create_prompt(db_session, normal_user, shared=False, name="Curated")
+
+        share_resp = client.post(
+            f"/api/prompts/shared/{prompt.uuid}/toggle",
+            json={"is_shared": True},
+            headers=admin_token_headers,
+        )
+        assert share_resp.status_code == 200
+
+        resp = client.get("/api/prompts", headers=other_user_auth_headers)
+        p = next(p for p in resp.json()["prompts"] if p["name"] == "Curated")
+        assert p["author_name"] == normal_user.full_name
+        assert p["shared_by_name"] == admin_user.full_name
+        assert p["is_owner"] is False
+
+    def test_unshare_clears_shared_by(self, client, db_session, normal_user, user_token_headers):
+        """Unsharing clears the shared_by attribution."""
+        prompt = _create_prompt(db_session, normal_user, shared=True, shared_by=normal_user)
+
+        resp = client.post(
+            f"/api/prompts/shared/{prompt.uuid}/toggle",
+            json={"is_shared": False},
+            headers=user_token_headers,
+        )
+        assert resp.status_code == 200
+        db_session.expire_all()
+        db_session.refresh(prompt)
+        assert prompt.shared_by is None
+        assert prompt.shared_at is None
+
+
+class TestPromptShareAudit:
+    """Share / unshare / clone emit audit events."""
+
+    def test_share_emits_audit_event(
+        self, client, db_session, normal_user, user_token_headers, monkeypatch
+    ):
+        """Sharing a prompt logs a PROMPT_SHARE audit event."""
+        from app.api.endpoints import prompts as prompts_module
+        from app.auth.audit import AuditEventType
+
+        events = []
+        monkeypatch.setattr(
+            prompts_module.audit_logger,
+            "log",
+            lambda **kw: events.append(kw),
+        )
+
+        prompt = _create_prompt(db_session, normal_user, shared=False)
+        resp = client.post(
+            f"/api/prompts/shared/{prompt.uuid}/toggle",
+            json={"is_shared": True},
+            headers=user_token_headers,
+        )
+        assert resp.status_code == 200
+        assert any(e["event_type"] == AuditEventType.PROMPT_SHARE for e in events)
+        evt = next(e for e in events if e["event_type"] == AuditEventType.PROMPT_SHARE)
+        assert evt["details"]["prompt_uuid"] == str(prompt.uuid)
+
+    def test_clone_emits_audit_event(
+        self, client, db_session, normal_user, other_user, other_user_auth_headers, monkeypatch
+    ):
+        """Cloning a prompt logs a PROMPT_CLONE audit event referencing the source."""
+        from app.api.endpoints import prompts as prompts_module
+        from app.auth.audit import AuditEventType
+
+        events = []
+        monkeypatch.setattr(
+            prompts_module.audit_logger,
+            "log",
+            lambda **kw: events.append(kw),
+        )
+
+        src = _create_prompt(db_session, normal_user, shared=True)
+        resp = client.post(f"/api/prompts/{src.uuid}/clone", headers=other_user_auth_headers)
+        assert resp.status_code == 200
+        clone_uuid = resp.json()["uuid"]
+        evt = next(e for e in events if e["event_type"] == AuditEventType.PROMPT_CLONE)
+        assert evt["details"]["source_prompt_uuid"] == str(src.uuid)
+        assert evt["details"]["prompt_uuid"] == clone_uuid
+
+
+class TestPromptUsageCount:
+    """usage_count is incremented on real use and drives 'popular' ordering."""
+
+    def test_increment_prompt_usage_bumps_count(self, db_session, normal_user):
+        """increment_prompt_usage(+1) raises usage_count by one."""
+        from app.utils.prompt_manager import increment_prompt_usage
+
+        p = _create_prompt(db_session, normal_user, shared=True)
+        assert p.usage_count == 0
+
+        increment_prompt_usage(db_session, p.id)
+        db_session.refresh(p)
+        assert p.usage_count == 1
+
+        increment_prompt_usage(db_session, p.id)
+        db_session.refresh(p)
+        assert p.usage_count == 2
+
+    def test_increment_prompt_usage_by_uuid(self, db_session, normal_user):
+        """increment_prompt_usage accepts a UUID as well as an int id."""
+        from app.utils.prompt_manager import increment_prompt_usage
+
+        p = _create_prompt(db_session, normal_user, shared=True)
+        increment_prompt_usage(db_session, str(p.uuid))
+        db_session.refresh(p)
+        assert p.usage_count == 1
+
+    def test_increment_missing_prompt_is_noop(self, db_session):
+        """Incrementing a non-existent prompt does not raise."""
+        from app.utils.prompt_manager import increment_prompt_usage
+
+        increment_prompt_usage(db_session, 999_999_999)  # no row; must not raise
+
+    def test_shared_library_popular_sort_reflects_usage(
+        self, client, db_session, normal_user, other_user, other_user_auth_headers
+    ):
+        """The 'popular' sort orders a heavily-used prompt above a fresh one."""
+        from app.utils.prompt_manager import increment_prompt_usage
+
+        unique = uuid.uuid4().hex[:8]
+        low = _create_prompt(db_session, normal_user, shared=True, name=f"low-{unique}")
+        high = _create_prompt(db_session, normal_user, shared=True, name=f"high-{unique}")
+        for _ in range(5):
+            increment_prompt_usage(db_session, high.id)
+
+        resp = client.get(
+            "/api/prompts/shared/library?sort_by=popular", headers=other_user_auth_headers
+        )
+        assert resp.status_code == 200
+        names = [p["name"] for p in resp.json()["prompts"]]
+        assert f"high-{unique}" in names
+        assert f"low-{unique}" in names
+        assert names.index(f"high-{unique}") < names.index(f"low-{unique}")
+
+
+class TestSharedPromptDeletionCleanup:
+    """Deleting a shared prompt clears every user's active-prompt pointer."""
+
+    def test_delete_shared_prompt_clears_others_active(
+        self,
+        client,
+        db_session,
+        normal_user,
+        other_user,
+        user_token_headers,
+        other_user_auth_headers,
+    ):
+        """Owner deleting a shared prompt removes non-owners' active references."""
+        prompt = _create_prompt(db_session, normal_user, shared=True)
+
+        # other_user activates the shared prompt.
+        activate = client.post(
+            "/api/prompts/active/set",
+            json={"prompt_id": str(prompt.uuid)},
+            headers=other_user_auth_headers,
+        )
+        assert activate.status_code == 200
+
+        setting = (
+            db_session.query(UserSetting)
+            .filter(
+                UserSetting.user_id == other_user.id,
+                UserSetting.setting_key == "active_summary_prompt_id",
+                UserSetting.setting_value == str(prompt.id),
+            )
+            .first()
+        )
+        assert setting is not None
+
+        # Owner deletes the prompt.
+        resp = client.delete(f"/api/prompts/{prompt.uuid}", headers=user_token_headers)
+        assert resp.status_code == 200
+
+        db_session.expire_all()
+        setting = (
+            db_session.query(UserSetting)
+            .filter(
+                UserSetting.user_id == other_user.id,
+                UserSetting.setting_key == "active_summary_prompt_id",
+                UserSetting.setting_value == str(prompt.id),
+            )
+            .first()
+        )
+        assert setting is None

@@ -290,3 +290,6 @@ scripts/pki/test-certs/
 # Claude Code worktrees
 .claude/worktrees/
 test-results/
+
+# Watch Sources local mount (test/runtime media — issue #26)
+/watch/

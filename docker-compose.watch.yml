@@ -1,0 +1,34 @@
+# Watch Sources overlay (issue #26)
+#
+# Mounts the host watch folder into the services that need it and tells the app
+# the in-container path. Load via: ./opentr.sh start dev --with-watch
+#
+#   WATCH_HOST_PATH   host directory to watch (default ./watch)  → /watch in containers
+#   WATCH_FOLDER_PATH the in-container path the backend reads (always /watch here)
+#
+# All other watch settings (per-source connections, credentials, schedules, and
+# the global tuning knobs) are DB-backed and managed from the admin UI — no env.
+#
+# Workers that touch the folder:
+#   - backend            : folder browser + connection test (read)
+#   - celery-download-worker : scan + import + delete-after-import (read/write)
+#   - celery-cpu-worker  : multi-part stitch + optional write-back (read/write)
+
+services:
+  backend:
+    volumes:
+      - ${WATCH_HOST_PATH:-./watch}:/watch
+    environment:
+      - WATCH_FOLDER_PATH=/watch
+
+  celery-download-worker:
+    volumes:
+      - ${WATCH_HOST_PATH:-./watch}:/watch
+    environment:
+      - WATCH_FOLDER_PATH=/watch
+
+  celery-cpu-worker:
+    volumes:
+      - ${WATCH_HOST_PATH:-./watch}:/watch
+    environment:
+      - WATCH_FOLDER_PATH=/watch

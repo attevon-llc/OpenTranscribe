@@ -41,6 +41,7 @@ const sidebars: SidebarsConfig = {
       label: 'User Guide',
       items: [
         'user-guide/uploading-files',
+        'user-guide/watch-sources',
         'user-guide/speaker-management',
         'user-guide/ai-summarization',
         'user-guide/search-and-filters',
@@ -56,6 +57,7 @@ const sidebars: SidebarsConfig = {
         'features/speaker-diarization',
         'features/boundary-correction',
         'features/content-redaction',
+        'features/watch-sources',
         'features/llm-integration',
         'features/authentication',
         'features/pipeline-optimization',
@@ -100,6 +102,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'developer-guide/architecture',
         'developer-guide/diarization-boundary-correction',
+        'developer-guide/watch-sources',
         'developer-guide/contributing',
         'developer-guide/testing',
       ],

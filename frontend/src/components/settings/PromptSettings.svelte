@@ -139,6 +139,28 @@
     }
   }
 
+  async function handleClone(prompt: SummaryPrompt) {
+    saving = true;
+
+    try {
+      await PromptsApi.clonePrompt(prompt.uuid);
+      await loadData();
+      toastStore.success($t('prompts.cloneSuccess'));
+
+      if (onSettingsChange) {
+        onSettingsChange();
+      }
+    } catch (err: unknown) {
+      console.error('Error cloning prompt:', err);
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const fallback =
+        status === 400 ? $t('prompts.cloneLimitReached') : $t('prompts.cloneFailed');
+      toastStore.error(getErrorMessage(err, fallback));
+    } finally {
+      saving = false;
+    }
+  }
+
   function openCreateForm() {
     showCreateForm = true;
     editingPrompt = null;
@@ -718,6 +740,9 @@
                 {#if prompt.author_name}
                   <div class="shared-by">{$t('prompts.sharedBy', { name: prompt.author_name })}</div>
                 {/if}
+                {#if prompt.shared_by_name && prompt.shared_by_name !== prompt.author_name}
+                  <div class="shared-by">{$t('prompts.sharedByAttribution', { admin: prompt.shared_by_name })}</div>
+                {/if}
               </div>
               <div class="prompt-actions">
                 {#if selectedPromptId === prompt.uuid}
@@ -750,6 +775,19 @@
                     {$t('prompts.activate')}
                   </button>
                 {/if}
+
+                <button
+                  class="clone-button"
+                  on:click={() => handleClone(prompt)}
+                  disabled={saving}
+                  title={$t('prompts.clone')}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                  {$t('prompts.clone')}
+                </button>
 
                 <button
                   class="view-button"

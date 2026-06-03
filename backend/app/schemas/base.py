@@ -55,6 +55,11 @@ class UUIDBaseSchema(BaseModel):
         if hasattr(data, "user") and hasattr(data.user, "uuid"):
             data_dict["user_id"] = data.user.uuid
 
+        # Map sharing-attribution relationship (shared_by FK -> user uuid)
+        shared_by_user = getattr(data, "shared_by_user", None)
+        if shared_by_user is not None and hasattr(shared_by_user, "uuid"):
+            data_dict["shared_by"] = shared_by_user.uuid
+
         # Map media_file relationship
         if hasattr(data, "media_file") and hasattr(data.media_file, "uuid"):
             data_dict["media_file_id"] = data.media_file.uuid

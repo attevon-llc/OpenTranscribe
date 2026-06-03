@@ -75,6 +75,8 @@ celery_app = Celery(
         "app.tasks.thumbnail",
         "app.tasks.thumbnail_migration",
         "app.tasks.embedding_migration_v4",
+        "app.tasks.imohash_recompute",
+        "app.tasks.watch_source_tasks",
         "app.tasks.speaker_embedding_migration",
         "app.tasks.baseline_export",
         "app.tasks.rediarize_task",
@@ -191,6 +193,13 @@ celery_app.conf.update(
         "finalize_v4_migration": {"queue": CeleryQueues.UTILITY},
         "export_transcript_baseline": {"queue": CeleryQueues.UTILITY},
         "compare_transcript_baseline": {"queue": CeleryQueues.UTILITY},
+        "imohash_recompute.recompute_all": {"queue": CeleryQueues.UTILITY},
+        # Watch Sources (issue #26)
+        "watch_source.scan_all": {"queue": CeleryQueues.UTILITY},
+        "watch_source.scan_single": {"queue": CeleryQueues.DOWNLOAD},
+        "watch_source.stitch_and_import": {"queue": CeleryQueues.CPU},
+        "watch_source.send_notification": {"queue": CeleryQueues.UTILITY},
+        "watch_source.cleanup_temp": {"queue": CeleryQueues.UTILITY},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -236,6 +245,18 @@ celery_app.conf.update(
             # the client / presigned PUT.
             "schedule": crontab(minute="5,20,35,50"),
             "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
+        },
+        "watch-source-scan": {
+            "task": "watch_source.scan_all",
+            # Every minute the orchestrator checks which enabled sources are due
+            # per their own polling_interval_minutes (DB-driven, no restart).
+            "schedule": crontab(minute="*"),
+            "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
+        },
+        "watch-source-temp-cleanup": {
+            "task": "watch_source.cleanup_temp",
+            "schedule": crontab(minute=25),  # hourly at :25, offset from other jobs
+            "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
         },
     },
 )

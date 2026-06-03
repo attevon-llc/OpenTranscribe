@@ -96,6 +96,10 @@
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
+    /* Reset the aggressive global `button {}` base style (rounded corners +
+       drop shadow) so tabs stay square with a flat bottom bar. */
+    border-radius: 0;
+    box-shadow: none;
     margin-bottom: -1px;
     color: var(--text-secondary);
     font-size: 14px;
@@ -106,18 +110,29 @@
       border-color 0.15s ease,
       background 0.15s ease;
   }
-  .tab:hover:not(:disabled) {
+  /* Neutralize the global `button:hover/:focus { transform: scale; box-shadow }`
+     so tabs never lift, round, or shadow on hover/focus. */
+  .tab:hover:not(:disabled),
+  .tab:focus:not(:disabled) {
     color: var(--text-color);
     background: var(--button-hover);
+    transform: none;
+    box-shadow: none;
   }
   .tab.active {
     color: var(--primary-color);
     border-bottom-color: var(--primary-color);
+    background: transparent;
+    transform: none;
+    box-shadow: none;
+  }
+  .tab.active:hover:not(:disabled) {
+    background: var(--button-hover);
   }
   .tab:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: -2px;
-    border-radius: 4px 4px 0 0;
+    border-radius: 0;
   }
   .tab:disabled {
     opacity: 0.5;

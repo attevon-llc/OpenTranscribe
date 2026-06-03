@@ -15,6 +15,8 @@ export interface SummaryPrompt {
   is_active: boolean;
   is_shared?: boolean;
   shared_at?: string;
+  shared_by?: string; // UUID of the user who shared the prompt
+  shared_by_name?: string;
   tags?: string[];
   usage_count?: number;
   author_name?: string;
@@ -182,6 +184,14 @@ export class PromptsApi {
     const response = await axiosInstance.post(`${this.BASE_PATH}/shared/${promptId}/toggle`, {
       is_shared: isShared,
     });
+    return response.data;
+  }
+
+  /**
+   * Clone an accessible prompt (system / shared / own) into the user's own library
+   */
+  static async clonePrompt(sourceUuid: string): Promise<SummaryPrompt> {
+    const response = await axiosInstance.post(`${this.BASE_PATH}/${sourceUuid}/clone`);
     return response.data;
   }
 }

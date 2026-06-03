@@ -16,6 +16,7 @@
   import OrganizationContextSettings from '$components/settings/OrganizationContextSettings.svelte';
   import DownloadSettings from '$components/settings/DownloadSettings.svelte';
   import MediaSourcesSettings from '$components/settings/MediaSourcesSettings.svelte';
+  import WatchSourcesSettings from '$components/settings/WatchSourcesSettings.svelte';
   import SearchSettings from '$components/settings/SearchSettings.svelte';
   import GroupsSettings from '$components/settings/GroupsSettings.svelte';
   import DataIntegritySettings from '$components/settings/DataIntegritySettings.svelte';
@@ -182,6 +183,7 @@
       items: [
         { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
         { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link' },
+        { id: 'watch-sources' as SettingsSection, label: $t('settings.watchSources.title'), icon: 'eye' },
         { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
         { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download' }
       ]
@@ -698,6 +700,15 @@
               <h3 class="section-title">{$t('settings.mediaSources.title')}</h3>
               <p class="section-description">{$t('settings.mediaSources.description')}</p>
               <MediaSourcesSettings />
+            </div>
+          {/if}
+
+          <!-- Watch Sources Settings Section -->
+          {#if activeSection === 'watch-sources'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.watchSources.title')}</h3>
+              <p class="section-description">{$t('settings.watchSources.description')}</p>
+              <WatchSourcesSettings />
             </div>
           {/if}
 

@@ -67,6 +67,11 @@ class AuditEventType(str, Enum):
     ADMIN_ROLE_CHANGE = "admin.role.change"
     ADMIN_SETTINGS_CHANGE = "admin.settings.change"
 
+    # Prompt sharing events
+    PROMPT_SHARE = "prompt.share"
+    PROMPT_UNSHARE = "prompt.unshare"
+    PROMPT_CLONE = "prompt.clone"
+
     # Banner acknowledgment
     AUTH_BANNER_ACKNOWLEDGED = "auth.banner.acknowledged"
 

@@ -46,6 +46,8 @@ class SummaryPrompt(Base):
     # Sharing
     is_shared = Column(Boolean, nullable=False, default=False)
     shared_at = Column(DateTime(timezone=True), nullable=True)
+    # Admin/owner who flipped sharing on (may differ from creator)
+    shared_by = Column(Integer, ForeignKey("user.id"), nullable=True)
     tags = Column(JSONB, nullable=False, default=list)
     usage_count = Column(Integer, nullable=False, default=0)
 
@@ -53,7 +55,9 @@ class SummaryPrompt(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    user = relationship("User", back_populates="summary_prompts")
+    # Two FKs to user (creator + sharer) require explicit foreign_keys to disambiguate.
+    user = relationship("User", back_populates="summary_prompts", foreign_keys=[user_id])
+    shared_by_user = relationship("User", foreign_keys=[shared_by])
 
 
 class UserSetting(Base):

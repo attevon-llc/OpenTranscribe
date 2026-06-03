@@ -118,6 +118,8 @@ class SummaryPrompt(SummaryPromptBase, UUIDBaseSchema):
     is_system_default: bool = Field(False, description="Whether this is a system-provided prompt")
     is_shared: bool = False
     shared_at: Optional[datetime] = None
+    shared_by: Optional[UUID] = None
+    shared_by_name: Optional[str] = None
     tags: list[str] = []
     usage_count: int = 0
     author_name: Optional[str] = None

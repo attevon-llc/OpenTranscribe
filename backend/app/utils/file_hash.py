@@ -73,6 +73,59 @@ async def check_duplicate_by_hash(
     return None
 
 
+def check_duplicate_by_imohash(db_session, imohash: str, exclude_file_id: Optional[int] = None):
+    """Check whether a file with the same imohash fingerprint already exists.
+
+    This is the server-side, cross-pipeline dedup layer (manual upload, URL
+    import, prior watch-source import). It mirrors the status filtering of
+    :func:`check_duplicate_by_hash` so failed/incomplete uploads never block a
+    re-import, but returns the full ``MediaFile`` ORM object (not just a UUID)
+    so callers can link ``media_file_id`` and show the user where the content
+    already lives.
+
+    Args:
+        db_session: SQLAlchemy database session.
+        imohash: The imohash fingerprint to look up.
+        exclude_file_id: Optional MediaFile id to exclude (e.g. the row being
+            recomputed) from the match.
+
+    Returns:
+        The matching ``MediaFile`` if found, else ``None``.
+    """
+    from sqlalchemy import and_
+    from sqlalchemy import or_
+
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+
+    if not imohash:
+        return None
+
+    query = db_session.query(MediaFile).filter(MediaFile.imohash == imohash)
+
+    if exclude_file_id is not None:
+        query = query.filter(MediaFile.id != exclude_file_id)
+
+    # Same filtering as check_duplicate_by_hash: ignore failed/cancelled/orphaned
+    # rows and incomplete PENDING uploads (no storage_path) so they never block
+    # a fresh import of the same content.
+    query = query.filter(
+        MediaFile.status.notin_([FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED])
+    )
+    query = query.filter(
+        or_(
+            MediaFile.status != FileStatus.PENDING,
+            and_(
+                MediaFile.status == FileStatus.PENDING,
+                MediaFile.storage_path.isnot(None),
+                MediaFile.storage_path != "",
+            ),
+        )
+    )
+
+    return query.first()
+
+
 async def cleanup_failed_duplicates(db_session, file_hash: str, user_id: int) -> int:
     """
     Clean up any failed or incomplete files with the same hash.

@@ -737,6 +737,23 @@ class Settings(BaseSettings):
     MODEL_BASE_DIR: Path = Path(os.getenv("MODELS_DIR", "/app/models"))
     TEMP_DIR: Path = Path(os.getenv("TEMP_DIR", "/app/temp"))
 
+    # ===== Watch Sources (auto-import from local folder / S3 / SMB) =====
+    # Only PHYSICAL paths live in env (they map to a real container volume mount).
+    # Every other watch setting — the master toggle, per-source connection
+    # details/credentials/schedules, and the global tuning knobs (file stability,
+    # max concurrent imports, FS-events) — is DB-backed and managed live from the
+    # admin UI with NO restart (see watch_settings_service + the watch_source
+    # table). Container path of the mounted local watch folder; empty → the
+    # "local" source type is hidden in the UI. Mounted by docker-compose.watch.yml.
+    WATCH_FOLDER_PATH: str = os.getenv("WATCH_FOLDER_PATH", "")
+    # Temp dir for downloaded/stitched files; falls back to TEMP_DIR when empty.
+    WATCH_TEMP_DIR: str = os.getenv("WATCH_TEMP_DIR", "")
+
+    @property
+    def watch_temp_dir(self) -> Path:
+        """Resolved temp dir for watch-source downloads (falls back to TEMP_DIR)."""
+        return Path(self.WATCH_TEMP_DIR) if self.WATCH_TEMP_DIR else self.TEMP_DIR
+
     # Initialization (CORS and directories)
     def __init__(self, **data):
         super().__init__(**data)

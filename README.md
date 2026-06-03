@@ -70,6 +70,16 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **File Reprocessing**: Re-run AI analysis while preserving user comments and annotations
 - **Auto-Recovery System**: Intelligent detection and recovery of stuck or failed file processing
 
+### 📁 **Watch Sources (Auto-Import)**
+- **Watch Local Folders, S3 & SMB**: Point OpenTranscribe at a mounted folder, an S3-compatible bucket (AWS S3, MinIO, Backblaze B2, Wasabi), or an SMB/CIFS network share — new media is imported and transcribed automatically
+- **Scheduled Polling**: Each source scans on its own interval (Celery Beat); a "Scan Now" button triggers an immediate pass. No restart to add, edit, or disable sources
+- **Three-Layer Deduplication**: Content fingerprint (imohash) dedup within a source, across sources, and against everything already in your library — duplicates are recorded and linked, never re-imported
+- **Age Filter**: "Skip files older than N days" so adding a folder with years of recordings can process just the last 30/90 days
+- **Multi-Part Stitching**: Auto-detects split recordings (e.g. `meeting_P001.mp4`, `meeting_P002.mp4`) from dropped connections and rejoins them into one file with ffmpeg before transcription
+- **Auto-Organize**: Apply tags and collections to every imported file (pick existing or create new)
+- **Guided Setup Wizard**: A stepper UI for connection → processing → stitching → organize, with inline connection testing and a folder picker; originals on remote sources are never moved or deleted
+- **Email Notifications (experimental)**: Optional SMTP / Microsoft 365 / Exchange scan-summary emails, with in-app setup guidance for modern providers
+
 ### 🔍 **Powerful Search & Discovery**
 - **Hybrid Search**: Combine keyword and semantic search capabilities
 - **OpenSearch Neural Search**: Native neural search engine for advanced vector-based semantic search
@@ -395,6 +405,20 @@ ENGINE_SHARED_VOLUME_PATH=/tmp/transcription  # shared volume mount path
 ./opentr.sh reset dev --with-gpu-split
 ```
 **Best for:** Two-GPU setups where you want dedicated VRAM per model — one GPU purely for Whisper, one purely for PyAnnote.
+
+### **Watch Sources (Auto-Import)**
+```bash
+# Mount a host folder to watch for new media (the only watch env var),
+# then start with the watch overlay:
+WATCH_HOST_PATH=/path/to/your/media ./opentr.sh start dev --with-watch
+
+# Optional: a local Samba share to test an SMB watch source
+./opentr.sh start dev --with-watch --with-smb-test
+
+# Seed sample media (multi-part group, duplicate, old file, mixed types)
+bash scripts/setup-watch-source-test-data.sh ./watch
+```
+Then configure sources in **Settings → Watch Sources** (local folder, S3, or SMB). Without `--with-watch`, the local-folder type is hidden and only S3/SMB are available. All connection, schedule, and credential settings are managed in the UI — no restart required.
 
 ### **Development Workflow**
 ```bash

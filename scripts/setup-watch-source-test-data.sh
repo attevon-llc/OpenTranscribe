@@ -74,21 +74,32 @@ chown -R 1000:1000 "$TARGET_DIR" 2>/dev/null || true
 success "Local folder seeded"
 
 # ---- MinIO S3 bucket (optional) ----
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q opentranscribe-minio; then
-  info "Seeding MinIO bucket 'watch-source-test'..."
-  MINIO_USER="${MINIO_ROOT_USER:-minioadmin}"
-  MINIO_PASS="${MINIO_ROOT_PASSWORD:-minioadmin}"
-  docker exec opentranscribe-minio sh -c "
-    mc alias set local http://localhost:9000 '$MINIO_USER' '$MINIO_PASS' >/dev/null 2>&1 || true
-    mc mb -p local/watch-source-test >/dev/null 2>&1 || true
-  " 2>/dev/null || warn "mc not available in MinIO container; skipping S3 seed"
+# Seed via the backend container's boto3 (always present) rather than mc, which
+# isn't reliably available in the MinIO image.
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q opentranscribe-backend; then
+  info "Seeding MinIO bucket 'watch-source-test' via backend boto3..."
   for f in standalone_talk.mp4 podcast.mp3 meeting_2026_P001.mp4 meeting_2026_P002.mp4; do
-    docker cp "$WORK/$f" "opentranscribe-minio:/tmp/$f" 2>/dev/null &&
-      docker exec opentranscribe-minio mc cp "/tmp/$f" "local/watch-source-test/$f" >/dev/null 2>&1 || true
+    docker cp "$WORK/$f" "opentranscribe-backend:/tmp/$f" 2>/dev/null || true
   done
-  success "MinIO bucket 'watch-source-test' seeded (S3 endpoint: http://minio:9000)"
+  docker exec -w /app opentranscribe-backend sh -c 'PYTHONPATH=/app python3 - <<PY 2>/dev/null
+import os, boto3
+c = boto3.client("s3", endpoint_url="http://minio:9000",
+                 aws_access_key_id=os.getenv("MINIO_ROOT_USER", "minioadmin"),
+                 aws_secret_access_key=os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"),
+                 use_ssl=False)
+try:
+    c.create_bucket(Bucket="watch-source-test")
+except Exception:
+    pass
+for f in ("standalone_talk.mp4", "podcast.mp3", "meeting_2026_P001.mp4", "meeting_2026_P002.mp4"):
+    p = "/tmp/" + f
+    if os.path.exists(p):
+        c.upload_file(p, "watch-source-test", f)
+print("ok")
+PY' >/dev/null 2>&1 && success "MinIO bucket 'watch-source-test' seeded (endpoint: http://minio:9000)" ||
+    warn "Could not seed S3 bucket via backend"
 else
-  warn "MinIO container not running; skipped S3 seed"
+  warn "Backend container not running; skipped S3 seed"
 fi
 
 # ---- SMB test share (optional) ----

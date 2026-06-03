@@ -1,0 +1,33 @@
+# SMB/CIFS test container for Watch Sources testing (issue #26).
+#
+# Spins up a Samba share so an "smb" watch source can be exercised end-to-end
+# without a real NAS. Load via: ./opentr.sh start dev --with-smb-test
+#
+# Connection (from the backend/worker containers on the app network):
+#   server: smb-test    share: media    user: testuser / testpass    port: 445
+# Connection (from the host): localhost:4450
+#
+# Seed test media into it with scripts/setup-watch-source-test-data.sh.
+
+services:
+  smb-test:
+    image: dperson/samba:latest
+    container_name: opentranscribe-smb-test
+    command: >-
+      -u "testuser;testpass"
+      -s "media;/share;yes;no;no;testuser"
+      -p
+    ports:
+      - "4450:445"
+    volumes:
+      - smb_test_data:/share
+    networks:
+      - transcribe-app_default
+    restart: unless-stopped
+
+volumes:
+  smb_test_data:
+
+networks:
+  transcribe-app_default:
+    external: true

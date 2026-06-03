@@ -48,6 +48,8 @@ show_help() {
   echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
   echo "  --with-ldap-test     - Start LDAP test container (dev or prod)"
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod)"
+  echo "  --with-watch         - Mount the host watch folder (WATCH_HOST_PATH, default ./watch) for auto-import"
+  echo "  --with-smb-test      - Start a Samba test share for watch-source testing (localhost:4450)"
   echo ""
   echo "Reset & Database Commands:"
   echo "  reset [dev|prod] [options]             - Reset and reinitialize (deletes all data!)"
@@ -271,6 +273,8 @@ start_app() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
+  WITH_WATCH_FLAG=""
+  WITH_SMB_TEST_FLAG=""
   LITE_FLAG=""
   CPU_FLAG=""
 
@@ -314,6 +318,14 @@ start_app() {
         ;;
       --with-keycloak-test)
         WITH_KEYCLOAK_TEST_FLAG="--with-keycloak-test"
+        shift
+        ;;
+      --with-watch)
+        WITH_WATCH_FLAG="--with-watch"
+        shift
+        ;;
+      --with-smb-test)
+        WITH_SMB_TEST_FLAG="--with-smb-test"
         shift
         ;;
       *)
@@ -571,6 +583,33 @@ start_app() {
     fi
   fi
 
+  # Add Watch Sources overlay if requested (mounts the host watch folder)
+  if [ -n "$WITH_WATCH_FLAG" ]; then
+    if [ -f "docker-compose.watch.yml" ]; then
+      WATCH_HOST_PATH="${WATCH_HOST_PATH:-./watch}"
+      mkdir -p "$WATCH_HOST_PATH"
+      # Match the non-root container user (UID/GID 1000) so imports can read/write.
+      chown -R 1000:1000 "$WATCH_HOST_PATH" 2>/dev/null || true
+      export WATCH_HOST_PATH
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
+      echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"
+      echo "   Host watch folder: $WATCH_HOST_PATH → /watch (in containers)"
+    else
+      echo "⚠️  --with-watch specified but docker-compose.watch.yml not found"
+    fi
+  fi
+
+  # Add SMB test container if requested (Samba share for watch-source testing)
+  if [ -n "$WITH_SMB_TEST_FLAG" ]; then
+    if [ -f "docker-compose.smb-test.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.smb-test.yml"
+      echo "🗄️  Adding SMB test container (docker-compose.smb-test.yml)"
+      echo "   SMB share: smb://localhost:4450/media  (testuser / testpass)"
+    else
+      echo "⚠️  --with-smb-test specified but docker-compose.smb-test.yml not found"
+    fi
+  fi
+
   # Start services with appropriate compose files
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES up -d $BUILD_CMD
@@ -624,6 +663,8 @@ reset_and_init() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
+  WITH_WATCH_FLAG=""
+  WITH_SMB_TEST_FLAG=""
   LITE_FLAG=""
   CPU_FLAG=""
 
@@ -667,6 +708,14 @@ reset_and_init() {
         ;;
       --with-keycloak-test)
         WITH_KEYCLOAK_TEST_FLAG="--with-keycloak-test"
+        shift
+        ;;
+      --with-watch)
+        WITH_WATCH_FLAG="--with-watch"
+        shift
+        ;;
+      --with-smb-test)
+        WITH_SMB_TEST_FLAG="--with-smb-test"
         shift
         ;;
       *)
@@ -908,6 +957,33 @@ reset_and_init() {
       echo "   Admin credentials: admin / admin"
     else
       echo "⚠️  --with-keycloak-test specified but docker-compose.keycloak.yml not found"
+    fi
+  fi
+
+  # Add Watch Sources overlay if requested (mounts the host watch folder)
+  if [ -n "$WITH_WATCH_FLAG" ]; then
+    if [ -f "docker-compose.watch.yml" ]; then
+      WATCH_HOST_PATH="${WATCH_HOST_PATH:-./watch}"
+      mkdir -p "$WATCH_HOST_PATH"
+      # Match the non-root container user (UID/GID 1000) so imports can read/write.
+      chown -R 1000:1000 "$WATCH_HOST_PATH" 2>/dev/null || true
+      export WATCH_HOST_PATH
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
+      echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"
+      echo "   Host watch folder: $WATCH_HOST_PATH → /watch (in containers)"
+    else
+      echo "⚠️  --with-watch specified but docker-compose.watch.yml not found"
+    fi
+  fi
+
+  # Add SMB test container if requested (Samba share for watch-source testing)
+  if [ -n "$WITH_SMB_TEST_FLAG" ]; then
+    if [ -f "docker-compose.smb-test.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.smb-test.yml"
+      echo "🗄️  Adding SMB test container (docker-compose.smb-test.yml)"
+      echo "   SMB share: smb://localhost:4450/media  (testuser / testpass)"
+    else
+      echo "⚠️  --with-smb-test specified but docker-compose.smb-test.yml not found"
     fi
   fi
 

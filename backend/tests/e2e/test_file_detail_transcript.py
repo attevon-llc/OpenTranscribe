@@ -36,6 +36,8 @@ import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
+pytestmark = pytest.mark.transcription
+
 FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
 BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
@@ -250,6 +252,37 @@ class TestExportControl:
         combined = (menu.text_content() or "").lower()
         for fmt in EXPORT_FORMATS:
             assert f".{fmt}" in combined, f"Export dropdown should offer .{fmt}; got: {combined!r}"
+
+
+class TestSegmentEditing:
+    """Inline segment editing (issue #123 Phase 4) — cancel path only.
+
+    Deliberately never saves: dev-environment transcripts must not be
+    mutated by tests. The cancel path still exercises the edit affordance,
+    textarea, and state restoration.
+    """
+
+    def test_edit_segment_cancel_preserves_text(self, detail_page: Page) -> None:
+        """Entering edit mode, changing text, and cancelling restores the original."""
+        first_segment = detail_page.locator(".transcript-segment").first
+        original = (first_segment.locator(".segment-text").first.text_content() or "").strip()
+        assert original, "Segment under edit must have text"
+
+        first_segment.hover()
+        edit_btn = first_segment.locator(".edit-button")
+        if edit_btn.count() == 0:
+            pytest.skip("Segment edit affordance not available on this view")
+        edit_btn.first.click()
+
+        textarea = detail_page.locator(".segment-textarea")
+        expect(textarea.first).to_be_visible(timeout=5000)
+        textarea.first.fill("E2E EDIT THAT MUST NEVER PERSIST")
+
+        detail_page.locator(".segment-edit-actions .cancel-button").first.click()
+        expect(detail_page.locator(".segment-textarea")).to_have_count(0, timeout=5000)
+
+        restored = (first_segment.locator(".segment-text").first.text_content() or "").strip()
+        assert restored == original, "Cancel must restore the original segment text"
 
 
 class TestSpeakerEditor:

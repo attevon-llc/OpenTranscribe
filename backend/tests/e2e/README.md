@@ -50,6 +50,26 @@ Use display `:11` (the XRDP session on this machine):
 DISPLAY=:11 pytest backend/tests/e2e/ -v --headed
 ```
 
+### Runner Scripts
+
+```bash
+./scripts/e2e/run-e2e.sh                # full suite (checks the stack first)
+./scripts/e2e/run-e2e-smoke.sh          # quick read-mostly subset (~3 min)
+./scripts/e2e/run-e2e.sh -m upload      # one marker
+./scripts/e2e/run-e2e.sh --headed       # visible browser (DISPLAY=:11)
+```
+
+### Markers
+
+```bash
+pytest backend/tests/e2e/ -m upload          # upload stepper flows
+pytest backend/tests/e2e/ -m search          # search page
+pytest backend/tests/e2e/ -m settings        # settings modal
+pytest backend/tests/e2e/ -m transcription   # transcript view/editing
+pytest backend/tests/e2e/ -m "not slow"      # skip slow tests
+# also: gallery, auth, smoke, pki, responsive, visual, api_e2e
+```
+
 ### Additional Options
 
 ```bash
@@ -58,13 +78,14 @@ pytest backend/tests/e2e/ -v --screenshot only-on-failure
 
 # Slow down for debugging (100ms between actions)
 pytest backend/tests/e2e/ -v --headed --slowmo 100
-
-# Run tests marked as slow
-pytest backend/tests/e2e/ -v -m slow
-
-# Skip slow tests
-pytest backend/tests/e2e/ -v -m "not slow"
 ```
+
+### Media Fixtures
+
+`sample_audio` / `sample_video` fixtures generate tiny clips with **ffmpeg**
+into `backend/tests/e2e/fixtures/` (gitignored, cached) — no external
+downloads. Upload tests delete everything they create through the API, so
+the dev environment stays clean.
 
 ## Test Structure
 
@@ -73,6 +94,7 @@ backend/tests/e2e/
 ├── conftest.py                       # Shared fixtures
 ├── pytest.ini                        # E2E-specific pytest config
 ├── README.md                         # This file
+├── fixtures/                         # ffmpeg-generated media (gitignored)
 ├── test_auth_flow.py                 # Combined auth flow tests
 ├── test_auth_buttons.py              # Auth method button visibility tests
 ├── test_login.py                     # Comprehensive login tests (~50 tests)
@@ -81,6 +103,10 @@ backend/tests/e2e/
 ├── test_pki.py                       # PKI certificate auth E2E (requires TLS overlay)
 ├── test_ldap_keycloak.py             # LDAP + Keycloak config + login tests
 ├── test_gallery_actions.py           # File gallery UI action tests
+├── test_upload.py                    # Upload stepper flows (@upload)
+├── test_search.py                    # Search page (@search)
+├── test_settings_modal.py            # Settings modal incl. profile/transcription (@settings)
+├── test_file_detail_transcript.py    # Transcript view + segment editing (@transcription)
 ├── test_speaker_gender_clusters.py   # Speaker gender/cluster UI tests
 └── test_speaker_sharing.py           # Speaker sharing UI tests
 ```

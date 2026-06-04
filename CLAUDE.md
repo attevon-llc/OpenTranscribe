@@ -104,17 +104,28 @@ Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]
 
 ## Testing
 
-### E2E (pytest + Playwright)
-
-Tests in `backend/tests/e2e/` (login, registration, auth flow). Requires dev environment running (`./opentr.sh start dev`).
+**Local-first.** GitHub Actions runs the unit/API suite (`backend-tests` job, fresh Postgres + CPU-only `requirements-ci.txt`) and vitest as a safety net; the COMPLETE suite needs the live stack and runs locally:
 
 ```bash
-source backend/venv/bin/activate
-pytest backend/tests/e2e/ -v                                    # headless
-DISPLAY=:11 pytest backend/tests/e2e/ -v --headed               # visible on XRDP
-pytest backend/tests/e2e/test_login.py::TestLoginSuccess -v
+./scripts/run-integration-tests.sh        # THE pre-merge gate: ungated suite +
+                                          # all RUN_*-gated security suites (both
+                                          # FIPS modes) + integration-marked tests
+                                          # flags: --coverage --e2e-smoke --cleanup
 ```
-Test fixtures (in `conftest.py`): `login_page`, `authenticated_page`, `auth_helper`, `api_helper`. Test creds: `admin@example.com` / `password`.
+
+MinIO/OpenSearch-backed tests **auto-enable** when the dev stack is reachable (conftest TCP-probes localhost:5178/5180) and skip otherwise. Coverage is configured report-only (`pytest --cov=app`, `npm run test:coverage`).
+
+### E2E (pytest + Playwright)
+
+Tests in `backend/tests/e2e/` (auth, gallery, upload, search, settings, transcript editing, visual). Requires dev environment running (`./opentr.sh start dev`).
+
+```bash
+./scripts/e2e/run-e2e.sh                                        # full suite, headless
+./scripts/e2e/run-e2e-smoke.sh                                  # quick subset
+./scripts/e2e/run-e2e.sh -m upload                              # by marker (upload/search/settings/transcription/gallery/auth/visual)
+DISPLAY=:11 pytest backend/tests/e2e/ -v --headed               # visible on XRDP
+```
+Test fixtures (in `conftest.py`): `login_page`, `authenticated_page`, `gallery_page` (shared one-login-per-session auth state — avoids login rate limiting), `auth_helper`, `api_helper`, ffmpeg-generated `sample_audio`/`sample_video`. Test creds: `admin@example.com` / `password`. E2E suites must never persist changes to dev data (upload tests delete what they create; edit tests use the cancel path).
 
 ### Browser automation (interactive debugging)
 

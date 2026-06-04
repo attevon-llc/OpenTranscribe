@@ -22,13 +22,13 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test-setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,js}'],
-    exclude: ['src/tests/**', 'node_modules/**', '.svelte-kit/**'],
+    exclude: ['node_modules/**', '.svelte-kit/**'],
     // Report-only coverage (no thresholds yet) — run with `npm run test:coverage`.
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'lcov'],
       include: ['src/**/*.{ts,svelte}'],
-      exclude: ['src/tests/**', 'src/**/*.{test,spec}.ts', 'src/**/*.d.ts', 'src/test-setup.ts'],
+      exclude: ['src/**/*.{test,spec}.ts', 'src/**/*.d.ts', 'src/test-setup.ts'],
     },
   },
 });

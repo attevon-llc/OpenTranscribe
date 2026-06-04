@@ -16,15 +16,7 @@ import svelteConfig from './svelte.config.js';
  */
 export default tseslint.config(
   {
-    ignores: [
-      'build/',
-      '.svelte-kit/',
-      'dist/',
-      'node_modules/',
-      'static/',
-      'src/tests/', // legacy manual fixtures, not runnable
-      'scripts/',
-    ],
+    ignores: ['build/', '.svelte-kit/', 'dist/', 'node_modules/', 'static/', 'scripts/'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

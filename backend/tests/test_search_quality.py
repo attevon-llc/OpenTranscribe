@@ -100,6 +100,92 @@ def require_corpus(headers, title_substring: str) -> None:
         pytest.skip(f"Corpus file matching {title_substring!r} not indexed in this environment")
 
 
+class TestTranscriptContentRetrieval:
+    """The 'Google for transcripts' contract — self-calibrating to ANY corpus.
+
+    Pulls REAL transcript text from an indexed file via the API, then asserts
+    each search mode retrieves the source file. Unlike the corpus-pinned
+    relevance tests below, these work at any library scale because the
+    expected answer is derived from the data itself.
+    """
+
+    @pytest.fixture(scope="class")
+    def probe(self, headers):
+        """A DISTINCTIVE 10-word phrase from a real transcript + its source.
+
+        Generic filler ("I think I had a great relationship with") appears
+        verbatim across many spoken-word transcripts and cannot anchor a
+        retrieval assertion — require several long content words so the
+        phrase identifies its source the way a Google quote-search would.
+        """
+        listing = requests.get(
+            f"{BASE}/files",
+            params={
+                "page": "1",
+                "page_size": "25",
+                "sort_by": "upload_time",
+                "sort_order": "desc",
+            },
+            headers=headers,
+            timeout=10,
+        )
+        listing.raise_for_status()
+        for f in listing.json().get("items", []):
+            if f.get("status") != "completed":
+                continue
+            detail = requests.get(f"{BASE}/files/{f['uuid']}", headers=headers, timeout=10).json()
+            for seg in detail.get("transcript_segments") or []:
+                words = [w for w in (seg.get("text") or "").split() if w.isalpha()]
+                # Slide a 10-word window; accept the first with >=4 content words
+                for start in range(max(0, len(words) - 10) + 1):
+                    window = words[start : start + 10]
+                    if len(window) < 10:
+                        break
+                    content_words = [w for w in window if len(w) >= 5]
+                    if len(content_words) >= 4:
+                        return {
+                            "file_uuid": f["uuid"],
+                            "phrase": " ".join(window),
+                        }
+        pytest.skip("No completed file with a distinctive transcript phrase")
+
+    def test_keyword_exact_phrase_finds_source_file(self, headers, probe):
+        """Quoted exact phrase from a transcript must retrieve its source file."""
+        data = search(headers, f'"{probe["phrase"]}"', mode="keyword")
+        uuids = [r.get("file_uuid") for r in data.get("results", [])]
+        assert probe["file_uuid"] in uuids, (
+            f"Keyword search for exact transcript phrase {probe['phrase']!r} "
+            f"did not return its source file; got {len(uuids)} results"
+        )
+
+    def test_hybrid_phrase_finds_source_file(self, headers, probe):
+        """Hybrid search for a transcript phrase must retrieve its source file."""
+        data = search(headers, probe["phrase"], mode="hybrid")
+        uuids = [r.get("file_uuid") for r in data.get("results", [])]
+        assert probe["file_uuid"] in uuids, (
+            f"Hybrid search for transcript phrase {probe['phrase']!r} "
+            f"did not return its source file; got {len(uuids)} results"
+        )
+
+    def test_hybrid_never_starves_below_keyword(self, headers, probe):
+        """Hybrid must never return drastically fewer files than keyword mode.
+
+        Guards the RRF-window group-starvation defect (one file's dense
+        chunk matches crowding every other file out of the collapse window).
+        """
+        word = probe["phrase"].split()[0]
+        kw = search(headers, word, mode="keyword")
+        hy = search(headers, word, mode="hybrid")
+        kw_total = kw.get("total_files") or 0
+        hy_total = hy.get("total_files") or 0
+        if kw_total == 0:
+            pytest.skip(f"No keyword matches for {word!r}")
+        assert hy_total >= min(kw_total, 10), (
+            f"Hybrid starvation: keyword found {kw_total} files for {word!r} "
+            f"but hybrid returned only {hy_total}"
+        )
+
+
 class TestNeuralSearchHealth:
     """Corpus-independent: the semantic half of hybrid search must be alive.
 
@@ -234,15 +320,14 @@ class TestSpeakerSearch:
                     f"Missing metadata_speaker: {r['title']}, src={r['match_sources']}"
                 )
 
-    @pytest.mark.xfail(
-        reason="Known defect (issue #234): files whose chunks carry matching "
-        "speaker^3 metadata flood the RRF over-fetch window, so hybrid+collapse "
-        "returns a single group for speaker-name queries. Needs window "
-        "diversification (OpenSearch 3.4 forbids aggs with hybrid+collapse+RRF).",
-        strict=False,
-    )
     def test_speaker_search_finds_files(self, headers):
-        """Searching speaker name must return files they appear in."""
+        """Searching speaker name must return files they appear in.
+
+        Regression guard for the RRF-window group-starvation defect: one
+        labeled file's dense speaker^3 chunk matches used to crowd every
+        other file out of the collapse window ("Joe Rogan" -> 1 file).
+        Fixed by the BM25 group backfill in hybrid_search_service.
+        """
         data = search(headers, "Joe Rogan")
         assert data["total_files"] >= 10, (
             f"Joe Rogan is in 15+ files but search found {data['total_files']}"
@@ -374,16 +459,12 @@ class TestSemanticQuality:
 class TestPhraseSearch:
     """Multi-word searches should match phrases correctly."""
 
-    @pytest.mark.xfail(
-        reason="Known defect (issue #234): when exactly one file has labeled "
-        "speakers, its per-chunk speaker^3 metadata matches flood the RRF "
-        "over-fetch window and collapse returns a single group. Passes on "
-        "uniformly-labeled corpora; needs window diversification to fix "
-        "(OpenSearch 3.4 forbids aggs with hybrid+collapse+RRF).",
-        strict=False,
-    )
     def test_joe_rogan_experience(self, headers):
-        """'Joe Rogan Experience' should match title and content."""
+        """'Joe Rogan Experience' should match title and content.
+
+        Regression guard for RRF-window group starvation (fixed by the
+        BM25 group backfill in hybrid_search_service).
+        """
         data = search(headers, "Joe Rogan Experience")
         assert data["total_files"] >= 5
 

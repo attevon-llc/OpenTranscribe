@@ -1669,6 +1669,64 @@ class HybridSearchService:
                 h.relevance_score *= 0.5
                 h.semantic_confidence = "low"
 
+    def _backfill_starved_groups(
+        self,
+        client: Any,
+        grouped: list["SearchHit"],
+        search_query: str,
+        filters: list[dict[str, Any]],
+        page: int,
+        page_size: int,
+        has_speaker_filter: bool,
+        sort_by: str,
+        sort_order: str,
+        query: str,
+    ) -> list["SearchHit"]:
+        """Backfill file groups starved out of the hybrid RRF rank window.
+
+        Runs the plain BM25 collapse query (immune to window starvation) and
+        appends any file groups the hybrid pass missed. Backfilled hits get
+        relevance scores rescaled strictly below the lowest hybrid score —
+        BM25 raw scores live on a different scale than RRF scores and must
+        never outrank the hybrid-ranked results.
+
+        Best-effort: any failure returns the hybrid groups unchanged.
+        """
+        try:
+            bm25_body = self._build_collapsed_bm25_body(
+                search_query,
+                filters,
+                page,
+                page_size,
+                has_speaker_filter,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
+            bm25_response = client.search(
+                index=settings.OPENSEARCH_CHUNKS_INDEX,
+                body=bm25_body,
+            )
+        except Exception as e:
+            logger.warning(f"BM25 group backfill failed for query='{query}': {e}")
+            return grouped
+
+        bm25_grouped, _ = self._process_collapsed_results(bm25_response, query)
+        seen = {hit.file_uuid for hit in grouped}
+        new_hits = [hit for hit in bm25_grouped if hit.file_uuid not in seen]
+        if not new_hits:
+            return grouped
+
+        # Rescale below the hybrid floor, preserving BM25 relative order
+        floor = min((hit.relevance_score for hit in grouped), default=0.0)
+        for i, hit in enumerate(new_hits):
+            hit.relevance_score = floor - (i + 1) * 1e-6
+
+        logger.info(
+            f"Backfilled {len(new_hits)} file groups starved from the hybrid "
+            f"window for query='{query}' (hybrid returned {len(grouped)})"
+        )
+        return grouped + new_hits
+
     def _process_collapsed_results(
         self,
         response: dict[str, Any],
@@ -2411,6 +2469,29 @@ class HybridSearchService:
         t_process = time.time()
         grouped, total_files_est = self._process_collapsed_results(response, query)
         process_ms = round((time.time() - t_process) * 1000)
+
+        # Group-starvation backfill: with hybrid+RRF, collapse can only return
+        # files present in the rank window. A query that densely matches ONE
+        # file's chunks (e.g. a speaker name hitting every chunk's speaker^3
+        # metadata on a labeled file) fills the window with that single file
+        # and starves every other group — "Joe Rogan" returned 1 file from a
+        # 2,500-file library. When the hybrid pass returns fewer groups than a
+        # page, backfill missing groups from the BM25 collapse query (which
+        # discovers groups normally); hybrid-ranked hits keep their positions,
+        # backfilled keyword groups rank strictly below them.
+        if use_neural and not fell_back_to_bm25 and search_query and len(grouped) < page_size:
+            grouped = self._backfill_starved_groups(
+                client=client,
+                grouped=grouped,
+                search_query=search_query,
+                filters=filters,
+                page=page,
+                page_size=page_size,
+                has_speaker_filter=has_speaker_filter,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                query=query,
+            )
 
         self._apply_semantic_demotion(grouped)
 

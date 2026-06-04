@@ -25,7 +25,13 @@ async def cancel_upload(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Cancel an in-progress file upload and clean up any uploaded data.
+    Cancel an in-progress upload, or delete a completed file.
+
+    PENDING files owned by the caller get the lightweight cancel cleanup;
+    anything else falls through to the full deletion (permission and safety
+    checks, storage + search-index cleanup). Both flows share this route —
+    this router registers DELETE /{file_uuid} first, so a separate
+    full-delete route would be unreachable.
     """
     # Get the media file by UUID
 
@@ -40,10 +46,11 @@ async def cancel_upload(
     )
 
     if not db_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No pending upload found with this ID",
-        )
+        # Not a pending upload owned by the caller — full delete path.
+        from app.api.endpoints.files.crud import delete_media_file
+
+        delete_media_file(db, file_uuid, current_user)
+        return None
 
     file_id = db_file.id
 

@@ -453,15 +453,10 @@ def update_media_file_endpoint(
     return update_media_file(db, str(file_uuid), media_file_update, current_user)
 
 
-@router.delete("/{file_uuid}", status_code=204)
-def delete_media_file_endpoint(
-    file_uuid: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """Delete a media file and all associated data"""
-    delete_media_file(db, str(file_uuid), current_user)
-    return None
+# NOTE: DELETE /{file_uuid} is handled by cancel_upload.router (included
+# earlier, so it always matched first). It cancels PENDING uploads and
+# delegates everything else to crud.delete_media_file — a duplicate route
+# here would be unreachable.
 
 
 @router.get("/{file_uuid}/stream-url")

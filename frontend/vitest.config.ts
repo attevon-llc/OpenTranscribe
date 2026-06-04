@@ -23,12 +23,20 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,js}'],
     exclude: ['node_modules/**', '.svelte-kit/**'],
-    // Report-only coverage (no thresholds yet) — run with `npm run test:coverage`.
+    // Coverage via `npm run test:coverage`. Thresholds are RATCHET FLOORS set
+    // just below the measured baseline (~2% lines, 2026-06-04) — raise them as
+    // component test coverage grows, never lower them.
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'lcov'],
       include: ['src/**/*.{ts,svelte}'],
       exclude: ['src/**/*.{test,spec}.ts', 'src/**/*.d.ts', 'src/test-setup.ts'],
+      thresholds: {
+        lines: 1.5,
+        statements: 1.5,
+        functions: 1,
+        branches: 2,
+      },
     },
   },
 });

@@ -27,7 +27,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'  # matches frontend/Dockerfile.prod build stage (node:22-alpine)
+          node-version: '24' # matches frontend/Dockerfile.prod build stage (node:24-alpine, active LTS)
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -171,7 +171,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 

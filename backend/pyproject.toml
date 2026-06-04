@@ -81,8 +81,9 @@ markers = [
 filterwarnings = ["ignore::pytest.PytestUnknownMarkWarning"]
 norecursedirs = ["tests/e2e"]
 
-# Coverage is report-only for now (no fail_under) — enable via `pytest --cov=app`
-# locally or in CI; thresholds will be ratcheted once a baseline is established.
+# Coverage runs via `pytest --cov=app` (CI backend-tests job + the local gate's
+# --coverage flag). fail_under is a RATCHET FLOOR set just below the measured
+# baseline (36.6% on 2026-06-04) — raise it as coverage grows, never lower it.
 [tool.coverage.run]
 source = ["app"]
 branch = true
@@ -96,3 +97,4 @@ omit = [
 show_missing = true
 skip_empty = true
 precision = 1
+fail_under = 35

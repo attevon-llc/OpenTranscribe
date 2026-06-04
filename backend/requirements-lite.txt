@@ -12,7 +12,7 @@ bcrypt==3.2.2
 email-validator
 # Asynchronous Tasks
 celery>=5.6.3
-redis>=5.0.0
+redis>=8.0.0
 flower>=2.0.1
 psycopg2-binary>=2.9.12
 minio>=7.2.20
@@ -60,8 +60,8 @@ sentence-transformers>=2.2.0  # For semantic search embeddings (all-MiniLM-L6-v2
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
-deepgram-sdk>=6.1.1
-assemblyai>=0.30.0
+deepgram-sdk>=7.3.0
+assemblyai>=0.64.4
 google-cloud-speech>=2.24.0
 azure-cognitiveservices-speech>=1.50.0
 # speechmatics-python is deprecated and drops speaker labels — the app uses
@@ -70,6 +70,6 @@ speechmatics-batch>=0.4.8
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
 boto3>=1.43.21
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai>=1.0.0
+openai>=2.40.0
 # requests is pulled in transitively by many packages above, but list explicitly for clarity
 requests>=2.34.2

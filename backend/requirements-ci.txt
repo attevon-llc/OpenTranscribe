@@ -31,7 +31,7 @@ email-validator
 
 # Asynchronous Tasks
 celery>=5.6.3
-redis>=5.0.0
+redis>=8.0.0
 psycopg2-binary>=2.9.12
 minio>=7.2.20
 imohash>=1.1.0
@@ -70,13 +70,13 @@ sentence-transformers>=5.5.1
 nltk>=3.9.4
 
 # Cloud ASR provider SDKs (lazily imported)
-deepgram-sdk>=6.1.1
-assemblyai>=0.30.0
+deepgram-sdk>=7.3.0
+assemblyai>=0.64.4
 google-cloud-speech>=2.39.0
 azure-cognitiveservices-speech>=1.50.0
 speechmatics-batch>=0.4.8
 boto3>=1.43.21
-openai>=1.0.0
+openai>=2.40.0
 requests>=2.34.2
 
 # Diarization metrics (cpWER) — exercised by tests/unit/test_diarization_metrics.py

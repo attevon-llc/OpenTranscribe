@@ -29,16 +29,23 @@ LOGIN_PASSWORD = "password"
 
 @pytest.fixture(scope="module")
 def auth_token():
-    """Get auth token by logging in."""
-    try:
-        resp = requests.post(
-            f"{BASE_URL}/auth/login",
-            data={"username": LOGIN_EMAIL, "password": LOGIN_PASSWORD},
-            timeout=5,
-        )
-    except requests.ConnectionError:
-        pytest.skip("Dev environment not running — skipping integration test")
-    assert resp.status_code == 200, f"Login failed: {resp.text}"
+    """Get auth token by logging in (retry through transient rate limiting)."""
+    resp: requests.Response | None = None
+    for attempt in range(4):
+        try:
+            resp = requests.post(
+                f"{BASE_URL}/auth/login",
+                data={"username": LOGIN_EMAIL, "password": LOGIN_PASSWORD},
+                timeout=5,
+            )
+        except requests.ConnectionError:
+            pytest.skip("Dev environment not running — skipping integration test")
+        if resp is not None and resp.status_code == 200:
+            break
+        time.sleep(10 * (attempt + 1))
+    assert resp is not None and resp.status_code == 200, (
+        f"Login failed: {resp.text if resp is not None else 'no response'}"
+    )
     token = resp.json().get("access_token")
     assert token, "No access_token in login response"
     return token
@@ -87,16 +94,27 @@ def completed_file(headers):
 
 
 def _wait_for_completed(headers, file_uuid, max_wait=180):
-    """Wait for file to return to completed status."""
+    """Wait for the file to be STABLY completed.
+
+    A single 'completed' poll is not enough: chained async stages (analytics,
+    search indexing) can flip the file back to PROCESSING moments after a
+    prior stage reports completed, which races the next reprocess request
+    into an INVALID_STATUS rejection. Require two consecutive completed polls.
+    """
+    consecutive = 0
     for i in range(max_wait):
         resp = requests.get(f"{BASE_URL}/files/{file_uuid}", headers=headers)
         if resp.status_code == 200:
             status = resp.json().get("status")
             if status == "completed":
-                return True
+                consecutive += 1
+                if consecutive >= 2:
+                    return True
+            else:
+                consecutive = 0
             if i % 10 == 0 and i > 0:
                 logger.info(f"  Waiting for completion... status={status} ({i}s)")
-        time.sleep(1)
+        time.sleep(2 if consecutive else 1)
     return False
 
 
@@ -154,21 +172,21 @@ class TestSingleStages:
     def test_rediarize_stage(self, headers, completed_file):
         """Rediarize dispatches successfully, file goes to processing."""
         file_uuid = completed_file["uuid"]
-        assert _wait_for_completed(headers, file_uuid, max_wait=300), "File not completed"
+        assert _wait_for_completed(headers, file_uuid, max_wait=600), "File not completed"
 
         resp = _reprocess(headers, file_uuid, ["rediarize"])
         assert resp.status_code == 200, f"[rediarize] HTTP {resp.status_code}: {resp.text}"
         logger.info(f"  [rediarize] OK — dispatched, status={resp.json().get('status')}")
 
         # Wait for rediarize to complete before next test
-        assert _wait_for_completed(headers, file_uuid, max_wait=300), (
+        assert _wait_for_completed(headers, file_uuid, max_wait=600), (
             "File did not return to completed after rediarize"
         )
 
     def test_transcription_stage(self, headers, completed_file):
         """Transcription dispatches successfully, file goes to processing."""
         file_uuid = completed_file["uuid"]
-        assert _wait_for_completed(headers, file_uuid, max_wait=300), "File not completed"
+        assert _wait_for_completed(headers, file_uuid, max_wait=600), "File not completed"
 
         resp = _reprocess(headers, file_uuid, ["transcription"])
         assert resp.status_code == 200, f"[transcription] HTTP {resp.status_code}: {resp.text}"
@@ -191,7 +209,7 @@ class TestCombinations:
     def test_all_non_destructive(self, headers, completed_file):
         """All 5 non-destructive stages at once."""
         file_uuid = completed_file["uuid"]
-        assert _wait_for_completed(headers, file_uuid, max_wait=300)
+        assert _wait_for_completed(headers, file_uuid, max_wait=600)
 
         stages = [
             "search_indexing",
@@ -208,24 +226,24 @@ class TestCombinations:
     def test_rediarize_with_downstream(self, headers, completed_file):
         """Rediarize + analytics + search_indexing."""
         file_uuid = completed_file["uuid"]
-        assert _wait_for_completed(headers, file_uuid, max_wait=300)
+        assert _wait_for_completed(headers, file_uuid, max_wait=600)
 
         stages = ["rediarize", "analytics", "search_indexing"]
         resp = _reprocess(headers, file_uuid, stages)
         assert resp.status_code == 200, f"rediarize+downstream: {resp.text}"
         logger.info("  [rediarize + analytics + search_indexing] OK")
-        assert _wait_for_completed(headers, file_uuid, max_wait=300)
+        assert _wait_for_completed(headers, file_uuid, max_wait=600)
 
     def test_rediarize_with_speaker_llm(self, headers, completed_file):
         """Rediarize + speaker_llm — LLM chains via attribute detection."""
         file_uuid = completed_file["uuid"]
-        assert _wait_for_completed(headers, file_uuid, max_wait=300)
+        assert _wait_for_completed(headers, file_uuid, max_wait=600)
 
         stages = ["rediarize", "speaker_llm"]
         resp = _reprocess(headers, file_uuid, stages)
         assert resp.status_code == 200, f"rediarize+speaker_llm: {resp.text}"
         logger.info("  [rediarize + speaker_llm] OK")
-        assert _wait_for_completed(headers, file_uuid, max_wait=300)
+        assert _wait_for_completed(headers, file_uuid, max_wait=600)
 
 
 # ── Bulk mode tests ──────────────────────────────────────────
@@ -237,7 +255,7 @@ class TestBulkMode:
     def test_bulk_analytics(self, headers, completed_file):
         """Bulk reprocess single file — analytics only."""
         file_uuid = completed_file["uuid"]
-        assert _wait_for_completed(headers, file_uuid, max_wait=300)
+        assert _wait_for_completed(headers, file_uuid, max_wait=600)
 
         resp = _bulk_reprocess(headers, [file_uuid], ["analytics"])
         assert resp.status_code == 200, f"Bulk analytics: {resp.text}"
@@ -249,7 +267,7 @@ class TestBulkMode:
     def test_bulk_multiple_stages(self, headers, completed_file):
         """Bulk reprocess with multiple non-destructive stages."""
         file_uuid = completed_file["uuid"]
-        assert _wait_for_completed(headers, file_uuid, max_wait=300)
+        assert _wait_for_completed(headers, file_uuid, max_wait=600)
 
         resp = _bulk_reprocess(
             headers,
@@ -264,7 +282,7 @@ class TestBulkMode:
     def test_bulk_empty_stages_is_full_reprocess(self, headers, completed_file):
         """Empty stages = full reprocess (backward compatible)."""
         file_uuid = completed_file["uuid"]
-        assert _wait_for_completed(headers, file_uuid, max_wait=300)
+        assert _wait_for_completed(headers, file_uuid, max_wait=600)
 
         resp = _bulk_reprocess(headers, [file_uuid], [])
         assert resp.status_code == 200, f"Bulk full: {resp.text}"

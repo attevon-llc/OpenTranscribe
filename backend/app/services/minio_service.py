@@ -97,6 +97,12 @@ def download_file(object_name: str) -> tuple[io.BytesIO, int, str]:
 
         # Return tuple with file data as BytesIO, size, and content type
         return io.BytesIO(file_content), content_length, content_type
+    except S3Error as e:
+        if e.code == "NoSuchKey":
+            # Missing object is a distinct, recoverable condition (callers map to 404)
+            raise FileNotFoundError(f"Object not found in storage: {object_name}") from e
+        logger.error(f"Error downloading file: {e}")
+        raise Exception(f"Error downloading file: {e}") from e
     except Exception as e:
         logger.error(f"Error downloading file: {e}")
         raise Exception(f"Error downloading file: {e}") from e

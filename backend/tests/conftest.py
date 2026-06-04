@@ -24,12 +24,13 @@ if _env_file.exists():
     _env_values = dotenv_values(_env_file)
 
 # Set only the service credentials we need from .env (DB always; MinIO for the
-# S3-backed tests that activate when the dev stack is reachable).
+# S3-backed tests that activate when the dev stack is reachable). Explicitly
+# exported values win over .env so CI / throwaway-DB runs can override.
 _db_vars = ["POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"]
 _minio_vars = ["MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD", "MEDIA_BUCKET_NAME"]
 for _var in _db_vars + _minio_vars:
-    if _var in _env_values:
-        os.environ[_var] = _env_values[_var]
+    if _var in _env_values and _env_values[_var]:
+        os.environ.setdefault(_var, _env_values[_var])
 
 # Create temporary directories for testing
 _test_temp_dir = tempfile.mkdtemp(prefix="opentranscribe_test_")

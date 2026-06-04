@@ -6,8 +6,8 @@ Key design choices:
   a default under the project's ``models/onnx/`` directory. Tests skip if the
   artifacts are absent — run ``python -m pyannote.audio.onnx.export ...``
   first.
-- ``device`` defaults to CUDA when available, else CPU. A ``--device``
-  pytest option overrides.
+- ``device`` defaults to CUDA when available, else CPU. An ``--onnx-device``
+  pytest option overrides (named to avoid pytest-playwright's ``--device``).
 - ``hf_token`` reads ``HF_TOKEN`` or ``HUGGINGFACE_TOKEN`` from the env.
   Tests that need to load a PyTorch reference model skip if absent.
 """
@@ -21,8 +21,9 @@ import pytest
 
 
 def pytest_addoption(parser):
+    # Named --onnx-device because pytest-playwright already claims --device
     parser.addoption(
-        "--device",
+        "--onnx-device",
         default=None,
         help="Device for ONNX tests (cpu | cuda | cuda:0). Default: cuda if available, else cpu.",
     )
@@ -30,7 +31,7 @@ def pytest_addoption(parser):
 
 @pytest.fixture(scope="session")
 def device(request: pytest.FixtureRequest) -> str:
-    override = request.config.getoption("--device")
+    override = request.config.getoption("--onnx-device", default=None)
     if override:
         return str(override)
     try:

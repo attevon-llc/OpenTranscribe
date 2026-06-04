@@ -1376,7 +1376,7 @@ async def pki_login(request: Request, db: Session = Depends(get_db)):
 
     client_ip, user_agent = _get_client_info(request)
 
-    pki_data = pki_authenticate(request)
+    pki_data = pki_authenticate(request, admin_dns_config=auth_settings.pki_admin_dns)
     if not pki_data:
         logger.warning("PKI authentication failed - invalid or missing certificate")
         # Log PKI login failure

@@ -1151,7 +1151,7 @@ def _normalize_dn(dn: str | None) -> str:
     return ",".join(rdns)
 
 
-def _is_pki_admin(subject_dn: str) -> bool:
+def _is_pki_admin(subject_dn: str, admin_dns_config: str | None = None) -> bool:
     """
     Check if certificate DN is in the admin DNs list.
 
@@ -1159,19 +1159,23 @@ def _is_pki_admin(subject_dn: str) -> bool:
 
     Args:
         subject_dn: Certificate subject DN
+        admin_dns_config: Admin DN list (DB-backed config takes precedence
+            over .env — callers with a session pass auth_settings.pki_admin_dns).
+            Falls back to the PKI_ADMIN_DNS environment setting.
 
     Returns:
         True if user is an admin
     """
-    if not settings.PKI_ADMIN_DNS:
+    effective_dns = admin_dns_config if admin_dns_config else settings.PKI_ADMIN_DNS
+    if not effective_dns:
         return False
 
     normalized_subject = _normalize_dn(subject_dn)
-    # PKI_ADMIN_DNS uses semicolons to separate DNs because full DNs contain commas.
+    # Admin DNs use semicolons to separate entries because full DNs contain commas.
     # e.g. PKI_ADMIN_DNS=CN=Doe John jdoe,O=U.S. Government,C=US;CN=Smith Jane jsmith,...
     from app.auth.ldap_auth import _parse_group_list
 
-    admin_dns = [_normalize_dn(dn) for dn in _parse_group_list(settings.PKI_ADMIN_DNS)]
+    admin_dns = [_normalize_dn(dn) for dn in _parse_group_list(effective_dns)]
 
     return normalized_subject in admin_dns
 
@@ -1281,12 +1285,15 @@ def _extract_user_info_from_request(
     return None
 
 
-def pki_authenticate(request) -> PKIUserData | None:
+def pki_authenticate(request, admin_dns_config: str | None = None) -> PKIUserData | None:
     """
     Authenticate user via X.509 client certificate.
 
     Performs certificate validation including optional revocation checking
     via OCSP (preferred) and CRL (fallback) when PKI_VERIFY_REVOCATION is enabled.
+
+    ``admin_dns_config`` carries the DB-backed admin DN list (admin UI takes
+    precedence over .env); without it the PKI_ADMIN_DNS env setting is used.
 
     Args:
         request: FastAPI Request object
@@ -1354,8 +1361,8 @@ def pki_authenticate(request) -> PKIUserData | None:
 
     subject_dn, common_name, email = user_info
 
-    # Check if admin DN
-    is_admin = _is_pki_admin(subject_dn)
+    # Check if admin DN (DB-backed config wins over .env when provided)
+    is_admin = _is_pki_admin(subject_dn, admin_dns_config)
 
     logger.info(f"PKI authentication successful for: {subject_dn}")
 

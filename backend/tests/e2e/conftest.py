@@ -88,6 +88,55 @@ def authenticated_page(page: Page, base_url: str):
     return page
 
 
+@pytest.fixture(scope="session")
+def shared_auth_state(browser):
+    """Login ONCE per session and persist browser storage state.
+
+    Repeated per-test logins trip the backend's login rate limiting in larger
+    runs — prefer this with a fresh context per test (see gallery_page).
+    """
+    import tempfile
+
+    context = browser.new_context(
+        viewport={"width": 1920, "height": 1080},
+        ignore_https_errors=True,
+    )
+    page = context.new_page()
+    page.goto(FRONTEND_URL)
+    page.wait_for_selector("#email", timeout=15000)
+    page.fill("#email", TEST_ADMIN_EMAIL)
+    page.fill("#password", TEST_ADMIN_PASSWORD)
+    page.click("button[type=submit]")
+    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+
+    fd, state_file = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    context.storage_state(path=state_file)
+    page.close()
+    context.close()
+
+    yield state_file
+
+    if os.path.exists(state_file):
+        os.unlink(state_file)
+
+
+@pytest.fixture
+def gallery_page(browser, shared_auth_state):
+    """A fresh pre-authenticated page on the gallery (no per-test login)."""
+    context = browser.new_context(
+        storage_state=shared_auth_state,
+        viewport={"width": 1920, "height": 1080},
+        ignore_https_errors=True,
+    )
+    page = context.new_page()
+    page.goto(FRONTEND_URL)
+    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    yield page
+    page.close()
+    context.close()
+
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 

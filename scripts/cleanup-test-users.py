@@ -111,10 +111,10 @@ def main() -> int:
 
         if args.execute:
             ids = [c[0] for c in candidates]
-            with conn.begin():
-                result = conn.execute(
-                    text('DELETE FROM "user" WHERE id = ANY(:ids)'), {"ids": ids}
-                )
+            # The SELECT above already auto-began a transaction on this
+            # connection — reuse it and commit, rather than calling begin().
+            result = conn.execute(text('DELETE FROM "user" WHERE id = ANY(:ids)'), {"ids": ids})
+            conn.commit()
             print(f"Deleted {result.rowcount} orphaned test users.")
         else:
             print(f"\nDry run — {len(candidates)} users would be deleted. "

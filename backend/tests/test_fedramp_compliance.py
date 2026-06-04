@@ -25,9 +25,6 @@ pytestmark = pytest.mark.skipif(
     reason="FedRAMP compliance features in development (set RUN_FEDRAMP_TESTS=true to run)",
 )
 
-# Import test utilities
-from fastapi.testclient import TestClient
-
 
 class TestPasswordPolicy:
     """Tests for Phase 2: Password Policy Enforcement (FedRAMP IA-5)"""
@@ -356,14 +353,12 @@ class TestSecurityHeaders:
 
 # Integration tests (require running app)
 class TestIntegrationEndpoints:
-    """Integration tests for API endpoints"""
+    """Integration tests for API endpoints.
 
-    @pytest.fixture
-    def client(self):
-        """Create test client."""
-        from app.main import app
-
-        return TestClient(app)
+    Uses the conftest ``client`` fixture (savepoint-isolated DB session) —
+    a bare TestClient here would commit registered users straight into the
+    dev database (that leak is exactly how this comment came to exist).
+    """
 
     def test_password_policy_endpoint(self, client):
         """GET /api/auth/password-policy should return policy."""

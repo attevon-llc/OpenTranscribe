@@ -9,6 +9,7 @@ entire files from MinIO. Segments are fetched in parallel via a thread
 pool for better throughput.
 """
 
+import contextlib
 import datetime
 import logging
 import os
@@ -159,6 +160,36 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
     entire file. Segments for all speakers are fetched in parallel via
     a thread pool. Runs on CPU queue in parallel with GPU transcription.
     """
+    # Idempotency guard: gender inference is minutes of CPU-bound wav2vec2 per
+    # file, and rediarize/recovery flows can dispatch the same detection again
+    # before the first finishes (observed 6-deep on one file). Duplicates would
+    # compute identical results while multiplying CPU contention — skip them.
+    # Fail-open if Redis is unavailable (e.g. unit tests with SKIP_REDIS).
+    _guard = None
+    _guard_key = f"speaker_attr_detect:{file_uuid}"
+    try:
+        from app.core.redis import get_redis
+
+        _guard = get_redis()
+        if not _guard.set(_guard_key, "1", nx=True, ex=7200):
+            logger.info(
+                f"Attribute detection already in progress for {file_uuid}; skipping duplicate"
+            )
+            _dispatch_llm_speaker_identification(file_uuid)
+            return {"status": "skipped", "reason": "duplicate_in_progress"}
+    except Exception:
+        _guard = None  # Redis unavailable — proceed unguarded
+
+    try:
+        return _detect_speaker_attributes(file_uuid, user_id)
+    finally:
+        if _guard is not None:
+            with contextlib.suppress(Exception):  # lock expires via TTL anyway
+                _guard.delete(_guard_key)
+
+
+def _detect_speaker_attributes(file_uuid: str, user_id: int):
+    """Inner implementation of detect_speaker_attributes_task."""
     from app.models.media import Speaker
     from app.models.media import TranscriptSegment
     from app.services.minio_service import minio_client

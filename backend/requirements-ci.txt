@@ -16,32 +16,32 @@
 
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-fastapi>=0.103.1
-uvicorn[standard]>=0.46.0
+fastapi>=0.136.3
+uvicorn[standard]>=0.48.0
 websockets>=11.0.3
-sqlalchemy>=2.0.20
-alembic>=1.12.0
-pydantic>=2.3.0
-pydantic-settings>=2.0.0
-python-jose[cryptography]>=3.3.0
-python-multipart>=0.0.6
+sqlalchemy>=2.0.50
+alembic>=1.18.4
+pydantic>=2.13.4
+pydantic-settings>=2.14.1
+python-jose[cryptography]>=3.5.0
+python-multipart>=0.0.30
 passlib[bcrypt]>=1.7.4
 bcrypt==3.2.2
 email-validator
 
 # Asynchronous Tasks
-celery>=5.3.4
+celery>=5.6.3
 redis>=5.0.0
-psycopg2-binary>=2.9.7
-minio>=7.2.18
+psycopg2-binary>=2.9.12
+minio>=7.2.20
 imohash>=1.1.0
 
-opensearch-py>=3.0.0,<4.0.0
-httpx>=0.24.1
-python-dotenv>=1.0.0
+opensearch-py>=3.2.0,<4.0.0
+httpx>=0.28.1
+python-dotenv>=1.2.2
 ldap3>=2.9.1
 slowapi>=0.1.9
-cryptography>=42.0.0
+cryptography>=48.0.0
 pyotp>=2.9.0
 qrcode[pil]>=8.2
 
@@ -49,8 +49,8 @@ qrcode[pil]>=8.2
 numpy>=2.1.0
 torch==2.8.0
 torchaudio==2.8.0
-ctranslate2>=4.6.0,<5
-faster-whisper>=1.1.1
+ctranslate2>=4.7.2,<5
+faster-whisper>=1.2.1
 transformers>=4.48.0
 huggingface-hub<1.0.0
 onnx>=1.21.0
@@ -60,24 +60,24 @@ omegaconf>=2.3.0
 # Supporting libraries
 ffmpeg-python>=0.2.0
 gender-guesser>=0.4.0
-sentencepiece>=0.1.99
-psutil>=5.9.5
-pyexiftool>=0.5.0
+sentencepiece>=0.2.1
+psutil>=7.2.2
+pyexiftool>=0.5.6
 yt-dlp[default]>=2026.3.17
 
 # Semantic search and NLP
 sentence-transformers>=5.5.1
-nltk>=3.9.1
+nltk>=3.9.4
 
 # Cloud ASR provider SDKs (lazily imported)
 deepgram-sdk>=6.1.1
 assemblyai>=0.30.0
 google-cloud-speech>=2.39.0
-azure-cognitiveservices-speech>=1.35.0
+azure-cognitiveservices-speech>=1.50.0
 speechmatics-batch>=0.4.8
-boto3>=1.28.0
+boto3>=1.43.21
 openai>=1.0.0
-requests>=2.31.0
+requests>=2.34.2
 
 # Diarization metrics (cpWER) — exercised by tests/unit/test_diarization_metrics.py
 meeteval>=0.4.0

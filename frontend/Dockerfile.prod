@@ -29,7 +29,7 @@ RUN chmod -R 755 static/fonts
 RUN npm run build
 
 # Production stage
-FROM nginx:1.29.8-alpine3.23
+FROM nginx:1.31.1-alpine3.23
 
 # OCI annotations for container metadata and compliance
 LABEL org.opencontainers.image.title="OpenTranscribe Frontend" \

@@ -114,6 +114,15 @@ services:
       # like all-MiniLM-L6-v2 explicitly).
       - "OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms4g -Xmx4g}"
       - DISABLE_SECURITY_PLUGIN=true
+      # Disk watermarks as ABSOLUTE free-space bytes, not percentages. The
+      # defaults (85/90/95% of the whole disk) misfire on a large shared
+      # drive: the host can sit at 93% used with >100 GB free while the
+      # OpenSearch data dir holds a few GB, tripping flood-stage and marking
+      # every index read_only_allow_delete (audit writes 429'd). "Act only
+      # when actual free space is low" is the correct dev-box semantics.
+      - cluster.routing.allocation.disk.watermark.low=30gb
+      - cluster.routing.allocation.disk.watermark.high=20gb
+      - cluster.routing.allocation.disk.watermark.flood_stage=10gb
       # ML Commons settings for neural search (CPU-based embedding inference)
       - plugins.ml_commons.only_run_on_ml_node=false
       - plugins.ml_commons.native_memory_threshold=99

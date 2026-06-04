@@ -80,3 +80,19 @@ markers = [
 ]
 filterwarnings = ["ignore::pytest.PytestUnknownMarkWarning"]
 norecursedirs = ["tests/e2e"]
+
+# Coverage is report-only for now (no fail_under) — enable via `pytest --cov=app`
+# locally or in CI; thresholds will be ratcheted once a baseline is established.
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [
+    "app/alembic/*",
+    "app/scripts/*",
+    "tests/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+precision = 1

@@ -1,8 +1,8 @@
-"""
-Tests for LLM settings functionality
+"""Tests for user LLM settings: encryption, model, API endpoints, schemas, service.
 
-NOTE: API endpoint tests are skipped unless RUN_LLM_TESTS=true is set.
-The encryption tests are always run.
+Encryption tests always run. The remaining classes are gated behind
+RUN_LLM_TESTS=true (they exercise the multi-configuration LLM settings API
+against the test database — no external LLM calls are made).
 """
 
 import os
@@ -10,15 +10,19 @@ from unittest.mock import Mock
 from unittest.mock import patch
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
-from app.main import app
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
-from app.utils.encryption import test_encryption
+
+# Alias so pytest doesn't collect the imported utility as a test function
+from app.utils.encryption import test_encryption as encryption_self_test
+
+_llm_gate = pytest.mark.skipif(
+    os.environ.get("RUN_LLM_TESTS", "false").lower() != "true",
+    reason="LLM settings tests are opt-in (set RUN_LLM_TESTS=true to run)",
+)
 
 
 class TestEncryption:
@@ -49,80 +53,68 @@ class TestEncryption:
 
     def test_encryption_system_test(self):
         """Test encryption system validation"""
-        assert test_encryption() is True
+        assert encryption_self_test() is True
 
 
-@pytest.fixture
-def mock_db():
-    """Mock database session"""
-    return Mock(spec=Session)
+def _create_config_payload(name: str = "Test Config", **overrides) -> dict:
+    """Valid payload for POST /api/llm-settings."""
+    payload = {
+        "name": name,
+        "provider": "openai",
+        "model_name": "gpt-4o-mini",
+        "api_key": "sk-test123456789",  # gitleaks:allow — fake fixture key
+        "base_url": "https://api.openai.com/v1",
+        "max_tokens": 2000,
+        "temperature": "0.3",
+        "is_active": True,
+    }
+    payload.update(overrides)
+    return payload
 
 
-@pytest.fixture
-def mock_user():
-    """Mock user object"""
-    user = Mock()
-    user.id = 1
-    user.email = "test@example.com"
-    user.full_name = "Test User"
-    return user
-
-
-@pytest.fixture
-def client():
-    """Test client"""
-    return TestClient(app)
-
-
-@pytest.mark.skipif(
-    os.environ.get("RUN_LLM_TESTS", "false").lower() != "true",
-    reason="LLM settings model tests need schema review (set RUN_LLM_TESTS=true to run)",
-)
+@_llm_gate
 class TestLLMSettingsModel:
     """Test UserLLMSettings model"""
 
-    def test_user_llm_settings_creation(self, mock_db):
-        """Test creating UserLLMSettings instance"""
-        settings = models.UserLLMSettings(
-            user_id=1,
+    def test_user_llm_settings_creation(self, db_session, normal_user):
+        """Creating and persisting a UserLLMSettings row works end-to-end"""
+        config = models.UserLLMSettings(
+            user_id=normal_user.id,
+            name="Model Test Config",
             provider="openai",
             model_name="gpt-4o-mini",
-            api_key="encrypted_key",
+            api_key=encrypt_api_key("sk-model-test"),
             base_url="https://api.openai.com/v1",
             max_tokens=2000,
             temperature="0.3",
-            timeout=60,
             is_active=True,
             test_status="untested",
         )
+        db_session.add(config)
+        db_session.commit()
+        db_session.refresh(config)
 
-        assert settings.user_id == 1
-        assert settings.provider == "openai"
-        assert settings.model_name == "gpt-4o-mini"
-        assert settings.is_active is True
+        assert config.user_id == normal_user.id
+        assert config.provider == "openai"
+        assert config.model_name == "gpt-4o-mini"
+        assert config.is_active is True
+        assert config.has_api_key is True
+        assert config.uuid is not None
 
 
-@pytest.mark.skipif(
-    os.environ.get("RUN_LLM_TESTS", "false").lower() != "true",
-    reason="LLM settings API tests need review (set RUN_LLM_TESTS=true to run)",
-)
+@_llm_gate
 class TestLLMSettingsAPI:
-    """Test LLM settings API endpoints"""
+    """Test LLM settings API endpoints against the real app + test database"""
 
-    @patch("app.api.endpoints.llm_settings.get_current_active_user")
-    @patch("app.api.endpoints.llm_settings.get_db")
-    def test_get_providers(self, mock_get_db, mock_get_user, client):
-        """Test getting supported providers"""
-        mock_get_user.return_value = Mock(id=1)
-
-        response = client.get("/api/llm-settings/providers")
+    def test_get_providers(self, client, user_token_headers):
+        """Supported providers are listed with their defaults"""
+        response = client.get("/api/llm-settings/providers", headers=user_token_headers)
 
         assert response.status_code == 200
         data = response.json()
         assert "providers" in data
         assert len(data["providers"]) > 0
 
-        # Check provider structure
         provider = data["providers"][0]
         assert "provider" in provider
         assert "default_model" in provider
@@ -130,190 +122,130 @@ class TestLLMSettingsAPI:
         assert "supports_custom_url" in provider
         assert "description" in provider
 
-    @patch("app.api.endpoints.llm_settings.get_current_active_user")
-    @patch("app.api.endpoints.llm_settings.get_db")
-    def test_get_status_no_settings(self, mock_get_db, mock_get_user, client):
-        """Test getting status when user has no settings"""
-        mock_get_user.return_value = Mock(id=1)
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = None
-        mock_get_db.return_value = mock_db
-
-        response = client.get("/api/llm-settings/status")
+    def test_get_status_no_settings(self, client, user_token_headers):
+        """A fresh user has no settings and uses the system default"""
+        response = client.get("/api/llm-settings/status", headers=user_token_headers)
 
         assert response.status_code == 200
         data = response.json()
         assert data["has_settings"] is False
         assert data["using_system_default"] is True
+        assert data["total_configurations"] == 0
 
-    @patch("app.api.endpoints.llm_settings.get_current_active_user")
-    @patch("app.api.endpoints.llm_settings.get_db")
-    def test_get_settings_not_found(self, mock_get_db, mock_get_user, client):
-        """Test getting settings when none exist"""
-        mock_get_user.return_value = Mock(id=1)
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = None
-        mock_get_db.return_value = mock_db
+    def test_list_configurations_empty(self, client, user_token_headers):
+        """A fresh user has an empty configurations list"""
+        response = client.get("/api/llm-settings", headers=user_token_headers)
 
-        response = client.get("/api/llm-settings")
-
-        assert response.status_code == 404
-        assert "not found" in response.json()["detail"]
-
-    @patch("app.api.endpoints.llm_settings.get_current_active_user")
-    @patch("app.api.endpoints.llm_settings.get_db")
-    @patch("app.utils.encryption.test_encryption")
-    @patch("app.utils.encryption.encrypt_api_key")
-    def test_create_settings(
-        self, mock_encrypt, mock_test_encryption, mock_get_db, mock_get_user, client
-    ):
-        """Test creating new LLM settings"""
-        mock_get_user.return_value = Mock(id=1)
-        mock_test_encryption.return_value = True
-        mock_encrypt.return_value = "encrypted_key"
-
-        # Mock database interactions
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = (
-            None  # No existing settings
-        )
-        mock_get_db.return_value = mock_db
-
-        # Mock created settings
-        created_settings = Mock()
-        created_settings.id = 1
-        created_settings.user_id = 1
-        created_settings.provider = "openai"
-        created_settings.model_name = "gpt-4o-mini"
-        created_settings.api_key = "encrypted_key"
-        created_settings.has_api_key = True
-        created_settings.__dict__ = {
-            "id": 1,
-            "user_id": 1,
-            "provider": "openai",
-            "model_name": "gpt-4o-mini",
-            "base_url": "https://api.openai.com/v1",
-            "max_tokens": 2000,
-            "temperature": "0.3",
-            "timeout": 60,
-            "is_active": True,
-            "last_tested": None,
-            "test_status": None,
-            "test_message": None,
-            "created_at": "2023-01-01T00:00:00",
-            "updated_at": "2023-01-01T00:00:00",
-        }
-
-        mock_db.refresh.return_value = None
-        mock_db.add.return_value = None
-        mock_db.commit.return_value = None
-
-        # Mock the models.UserLLMSettings constructor
-        with patch(
-            "app.api.endpoints.llm_settings.models.UserLLMSettings",
-            return_value=created_settings,
-        ):
-            settings_data = {
-                "provider": "openai",
-                "model_name": "gpt-4o-mini",
-                "api_key": "sk-test123456789",
-                "base_url": "https://api.openai.com/v1",
-                "max_tokens": 2000,
-                "temperature": "0.3",
-                "timeout": 60,
-                "is_active": True,
-            }
-
-            response = client.post("/api/llm-settings", json=settings_data)
-
-            assert response.status_code == 200
-            data = response.json()
-            assert data["provider"] == "openai"
-            assert data["model_name"] == "gpt-4o-mini"
-
-    @patch("app.api.endpoints.llm_settings.get_current_active_user")
-    @patch("app.api.endpoints.llm_settings.get_db")
-    def test_create_settings_already_exist(self, mock_get_db, mock_get_user, client):
-        """Test creating settings when they already exist"""
-        mock_get_user.return_value = Mock(id=1)
-
-        # Mock existing settings
-        existing_settings = Mock()
-        existing_settings.id = 1
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = existing_settings
-        mock_get_db.return_value = mock_db
-
-        settings_data = {"provider": "openai", "model_name": "gpt-4o-mini"}
-
-        response = client.post("/api/llm-settings", json=settings_data)
-
-        assert response.status_code == 400
-        assert "already has" in response.json()["detail"]
-
-    @patch("app.api.endpoints.llm_settings.get_current_active_user")
-    def test_test_connection_invalid_provider(self, mock_get_user, client):
-        """Test connection with invalid provider"""
-        mock_get_user.return_value = Mock(id=1)
-
-        test_data = {"provider": "invalid_provider", "model_name": "test-model"}
-
-        response = client.post("/api/llm-settings/test", json=test_data)
-
-        # Should handle invalid provider gracefully
         assert response.status_code == 200
         data = response.json()
-        assert data["success"] is False
-        assert "failed" in data["status"].lower()
+        assert data["configurations"] == []
+        assert data["total"] == 0
+        assert data["active_configuration_id"] is None
+
+    def test_create_configuration(self, client, user_token_headers):
+        """Creating a configuration stores it, encrypts the key, and activates it"""
+        response = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(),
+        )
+
+        assert response.status_code == 200, response.json()
+        data = response.json()
+        assert data["name"] == "Test Config"
+        assert data["provider"] == "openai"
+        assert data["model_name"] == "gpt-4o-mini"
+        assert data["has_api_key"] is True
+        # Raw API key must never be returned
+        assert "sk-test123456789" not in response.text
+
+        # First configuration becomes the active one
+        status_response = client.get("/api/llm-settings/status", headers=user_token_headers)
+        status = status_response.json()
+        assert status["has_settings"] is True
+        assert status["total_configurations"] == 1
+
+    def test_create_duplicate_name_rejected(self, client, user_token_headers):
+        """Creating two configurations with the same name is rejected"""
+        first = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(name="Dup Config"),
+        )
+        assert first.status_code == 200
+
+        duplicate = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(name="Dup Config"),
+        )
+        assert duplicate.status_code == 400
+        assert "already exists" in duplicate.json()["detail"]
+
+    def test_test_connection_invalid_provider(self, client, user_token_headers):
+        """Unknown providers are rejected by schema validation"""
+        response = client.post(
+            "/api/llm-settings/test",
+            headers=user_token_headers,
+            json={"provider": "invalid_provider", "model_name": "test-model"},
+        )
+        assert response.status_code == 422
+
+    def test_endpoints_require_auth(self, client):
+        """All LLM settings endpoints require authentication"""
+        assert client.get("/api/llm-settings").status_code == 401
+        assert client.get("/api/llm-settings/status").status_code == 401
+        assert client.post("/api/llm-settings", json=_create_config_payload()).status_code == 401
 
 
-@pytest.mark.skipif(
-    os.environ.get("RUN_LLM_TESTS", "false").lower() != "true",
-    reason="LLM settings schema tests need review (set RUN_LLM_TESTS=true to run)",
-)
+@_llm_gate
 class TestLLMSettingsSchemas:
     """Test LLM settings Pydantic schemas"""
 
     def test_llm_settings_create_validation(self):
         """Test creation schema validation"""
-        # Valid data
-        valid_data = {
-            "provider": "openai",
-            "model_name": "gpt-4o-mini",
-            "max_tokens": 2000,
-            "temperature": "0.3",
-            "timeout": 60,
-        }
-
-        settings = schemas.UserLLMSettingsCreate(**valid_data)
-        assert settings.provider == "openai"
-        assert settings.max_tokens == 2000
+        settings_obj = schemas.UserLLMSettingsCreate(
+            name="Schema Test",
+            provider="openai",
+            model_name="gpt-4o-mini",
+            max_tokens=2000,
+            temperature="0.3",
+        )
+        assert settings_obj.provider == "openai"
+        assert settings_obj.max_tokens == 2000
 
     def test_llm_settings_validation_errors(self):
         """Test schema validation errors"""
-        # Invalid max_tokens
+        # Invalid max_tokens (below the 512 floor)
         with pytest.raises(ValueError, match="max_tokens must be between"):
             schemas.UserLLMSettingsCreate(
+                name="Bad Tokens",
                 provider="openai",
                 model_name="gpt-4",
-                max_tokens=0,  # Too low
+                max_tokens=0,
             )
 
-        # Invalid temperature
+        # Out-of-range temperature
         with pytest.raises(ValueError, match="temperature must be between"):
             schemas.UserLLMSettingsCreate(
+                name="Bad Temp",
                 provider="openai",
                 model_name="gpt-4",
-                temperature="3.0",  # Too high
+                temperature="3.0",
             )
 
-        # Invalid timeout
-        with pytest.raises(ValueError, match="timeout must be between"):
+        # Non-numeric temperature
+        with pytest.raises(ValueError, match="temperature must be a valid number"):
             schemas.UserLLMSettingsCreate(
+                name="NaN Temp",
                 provider="openai",
                 model_name="gpt-4",
-                timeout=1,  # Too low
+                temperature="warm",
             )
+
+        # Missing required name
+        with pytest.raises(ValueError):
+            schemas.UserLLMSettingsCreate(provider="openai", model_name="gpt-4")
 
     def test_connection_test_request(self):
         """Test connection test request schema"""
@@ -321,11 +253,11 @@ class TestLLMSettingsSchemas:
             provider="vllm",
             model_name="llama2:7b",
             base_url="http://localhost:8012/v1",
-            timeout=30,
         )
 
         assert request.provider == "vllm"
-        assert request.timeout == 30
+        assert request.base_url == "http://localhost:8012/v1"
+        assert request.config_id is None
 
     def test_provider_defaults(self):
         """Test provider defaults schema"""
@@ -344,49 +276,46 @@ class TestLLMSettingsSchemas:
         assert defaults.max_context_length == 128000
 
 
-@pytest.mark.skipif(
-    os.environ.get("RUN_LLM_TESTS", "false").lower() != "true",
-    reason="LLM service integration tests need review (set RUN_LLM_TESTS=true to run)",
-)
-@pytest.mark.asyncio
+@_llm_gate
 class TestLLMServiceIntegration:
-    """Test LLM service integration with user settings"""
+    """Test LLMService factory methods (mocked DB session, no external calls)"""
 
-    async def test_create_from_user_settings_not_found(self):
-        """Test creating LLM service when user settings don't exist"""
-        with patch("app.services.llm_service.SessionLocal") as mock_session_local:
+    def test_create_from_user_settings_not_found(self):
+        """No active configuration and no system provider -> service is None"""
+        with patch("app.db.base.SessionLocal") as mock_session_local:
             mock_db = Mock()
+            # No active_llm_config_id UserSetting row
             mock_db.query.return_value.filter.return_value.first.return_value = None
             mock_session_local.return_value = mock_db
 
             from app.services.llm_service import LLMService
 
             service = LLMService.create_from_user_settings(user_id=999)
+            # Falls through to system settings; LLM_PROVIDER is unset in tests
             assert service is None
 
-    async def test_create_from_user_settings_success(self):
-        """Test creating LLM service from valid user settings"""
-        with (
-            patch("app.services.llm_service.SessionLocal") as mock_session_local,
-            patch("app.utils.encryption.decrypt_api_key") as mock_decrypt,
-        ):
-            # Mock database
-            mock_settings = Mock()
-            mock_settings.provider = "openai"
-            mock_settings.model_name = "gpt-4o-mini"
-            mock_settings.api_key = "encrypted_key"
-            mock_settings.base_url = "https://api.openai.com/v1"
-            mock_settings.max_tokens = 2000
-            mock_settings.temperature = "0.3"
-            mock_settings.timeout = 60
-            mock_settings.is_active = True
+    def test_create_from_user_settings_success(self):
+        """An active configuration row produces a configured service"""
+        active_setting = Mock()
+        active_setting.setting_value = "1"
 
+        mock_config = Mock()
+        mock_config.provider = "openai"
+        mock_config.model_name = "gpt-4o-mini"
+        mock_config.api_key = encrypt_api_key("sk-test123456789")
+        mock_config.base_url = "https://api.openai.com/v1"
+        mock_config.max_tokens = 2000
+        mock_config.temperature = "0.3"
+        mock_config.is_active = True
+
+        with patch("app.db.base.SessionLocal") as mock_session_local:
             mock_db = Mock()
-            mock_db.query.return_value.filter.return_value.first.return_value = mock_settings
+            # First query: UserSetting active config id; second: the config itself
+            mock_db.query.return_value.filter.return_value.first.side_effect = [
+                active_setting,
+                mock_config,
+            ]
             mock_session_local.return_value = mock_db
-
-            # Mock decryption
-            mock_decrypt.return_value = "sk-test123456789"
 
             from app.services.llm_service import LLMService
 
@@ -395,39 +324,30 @@ class TestLLMServiceIntegration:
             assert service is not None
             assert service.config.provider.value == "openai"
             assert service.config.model == "gpt-4o-mini"
+            assert service.config.max_tokens == 2000
 
-    async def test_create_from_settings_with_fallback(self):
-        """Test creating LLM service with fallback to system defaults"""
-        with (
-            patch(
-                "app.services.llm_service.LLMService.create_from_user_settings"
-            ) as mock_user_settings,
-            patch(
-                "app.services.llm_service.LLMService.create_from_system_settings"
-            ) as mock_system_settings,
-        ):
-            # Mock user settings failure
+    def test_create_from_settings_with_fallback(self):
+        """create_from_settings tries user settings and returns None without them"""
+        with patch(
+            "app.services.llm_service.LLMService.create_from_user_settings"
+        ) as mock_user_settings:
             mock_user_settings.return_value = None
-            mock_system_settings.return_value = Mock()
 
             from app.services.llm_service import LLMService
 
-            LLMService.create_from_settings(user_id=1)
+            service = LLMService.create_from_settings(user_id=1)
 
             mock_user_settings.assert_called_once_with(1)
-            mock_system_settings.assert_called_once()
+            # No system fallback inside create_from_settings — explicit config required
+            assert service is None
 
 
-@pytest.mark.skipif(
-    os.environ.get("RUN_LLM_TESTS", "false").lower() != "true",
-    reason="LLM settings integration tests need review (set RUN_LLM_TESTS=true to run)",
-)
+@_llm_gate
 class TestLLMSettingsIntegration:
     """Integration tests for LLM settings"""
 
     def test_encryption_integration(self):
         """Test that encryption works end-to-end"""
-        # Test with various API key formats
         test_keys = [
             "sk-1234567890abcdef",
             "api_key_123",
@@ -443,35 +363,25 @@ class TestLLMSettingsIntegration:
             decrypted = decrypt_api_key(encrypted)
             assert decrypted == key
 
-    @patch("app.services.llm_service.SessionLocal")
-    def test_user_llm_service_creation_flow(self, mock_session_local):
-        """Test complete flow of creating LLM service from user settings"""
-        from app.services.llm_service import LLMService
+    def test_full_configuration_flow(self, client, user_token_headers):
+        """Create -> list -> status flow against the real API"""
+        create = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(name="Flow Config", max_tokens=4000),
+        )
+        assert create.status_code == 200, create.json()
+        config_uuid = create.json()["uuid"]
 
-        # Mock successful user settings retrieval
-        mock_settings = Mock()
-        mock_settings.provider = "openai"
-        mock_settings.model_name = "gpt-4o-mini"
-        mock_settings.api_key = encrypt_api_key("sk-test123")
-        mock_settings.base_url = None
-        mock_settings.max_tokens = 4000
-        mock_settings.temperature = "0.5"
-        mock_settings.timeout = 120
-        mock_settings.is_active = True
+        listing = client.get("/api/llm-settings", headers=user_token_headers)
+        assert listing.status_code == 200
+        data = listing.json()
+        assert data["total"] == 1
+        assert data["configurations"][0]["uuid"] == config_uuid
+        assert data["configurations"][0]["max_tokens"] == 4000
 
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_settings
-        mock_session_local.return_value = mock_db
-
-        # Test service creation
-        service = LLMService.create_from_user_settings(user_id=1)
-
-        assert service is not None
-        assert service.config.provider.value == "openai"
-        assert service.config.model == "gpt-4o-mini"
-        assert service.config.max_tokens == 4000
-        assert float(service.config.temperature) == 0.5  # type: ignore[arg-type]
-        # Note: timeout is not part of LLMConfig, it's a session parameter
+        status = client.get("/api/llm-settings/status", headers=user_token_headers)
+        assert status.json()["has_settings"] is True
 
 
 if __name__ == "__main__":

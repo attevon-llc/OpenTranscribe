@@ -36,10 +36,10 @@ class TestPasswordPolicy:
         """Password must meet minimum length requirement."""
         from app.auth.password_policy import validate_password
 
-        # Too short
+        # Too short — message reads "must be at least 12 characters long"
         result = validate_password("Short1!", "test@example.com")
         assert not result.is_valid
-        assert any("length" in e.lower() for e in result.errors)
+        assert any("characters" in e.lower() for e in result.errors)
 
         # Meets minimum (12 chars default)
         result = validate_password("SecureP@ss12", "test@example.com")
@@ -182,14 +182,19 @@ class TestMFAService:
     def test_backup_code_hashing_and_verification(self):
         """Backup codes should be securely hashed and verifiable."""
         from app.auth.mfa import MFAService
+        from app.core.config import settings
 
         codes = MFAService.generate_backup_codes(5)
         hashed_codes = MFAService.hash_backup_codes(codes)
 
-        # Hashes should be different from plaintext (bcrypt format: $2b$XX$...)
+        # Hashes should differ from plaintext; scheme follows FIPS mode
+        # (PBKDF2-SHA256 in FIPS mode, bcrypt otherwise)
         for code, hashed in zip(codes, hashed_codes):
             assert code != hashed
-            assert hashed.startswith("$2b$")  # bcrypt hash prefix
+            if settings.FIPS_MODE:
+                assert hashed.startswith("$pbkdf2-sha256$")
+            else:
+                assert hashed.startswith(("$2b$", "$2a$", "$bcrypt-sha256$"))
 
         # Verification should work
         is_valid, matched_hash = MFAService.verify_backup_code(codes[0], hashed_codes)
@@ -213,8 +218,8 @@ class TestTokenService:
         token = "test_token_value"  # noqa: S105 - test fixture
         hashed = service._hash_token(token)
 
-        # Hash should be SHA-256 (64 hex chars)
-        assert len(hashed) == 64
+        # Hash should be SHA-512 (128 hex chars) per FIPS 140-3
+        assert len(hashed) == 128
         assert token not in hashed
 
         # Same token should produce same hash
@@ -266,15 +271,15 @@ class TestAuditLogging:
         from app.auth.audit import AuditEventType
 
         required_events = [
-            "LOGIN_SUCCESS",
-            "LOGIN_FAILURE",
-            "LOGOUT",
-            "MFA_SETUP",
-            "MFA_VERIFY",
-            "PASSWORD_CHANGE",
-            "ACCOUNT_LOCKOUT",
-            "TOKEN_REFRESH",
-            "TOKEN_REVOKE",
+            "AUTH_LOGIN_SUCCESS",
+            "AUTH_LOGIN_FAILURE",
+            "AUTH_LOGOUT",
+            "AUTH_MFA_SETUP",
+            "AUTH_MFA_VERIFY",
+            "AUTH_PASSWORD_CHANGE",
+            "AUTH_ACCOUNT_LOCKOUT",
+            "AUTH_TOKEN_REFRESH",
+            "AUTH_TOKEN_REVOKE",
         ]
 
         for event in required_events:

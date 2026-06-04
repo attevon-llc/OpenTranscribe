@@ -39,14 +39,18 @@ class TestFIPS140_3PasswordHashing:
         test_password = "TestPassword123!"
         hashed = pwd_context.hash(test_password)
 
-        # PBKDF2-SHA256 hashes start with $pbkdf2-sha256$
-        if settings.FIPS_VERSION == "140-3":
+        # PBKDF2-SHA256 only applies when FIPS mode is actually enabled
+        # (the app gates on FIPS_MODE *and* FIPS_VERSION — see core/security.py)
+        if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3":
             assert "$pbkdf2-sha256$" in hashed
             # Extract iteration count from hash format: $pbkdf2-sha256$<rounds>$...
             parts = hashed.split("$")
             if len(parts) >= 3:
                 rounds = int(parts[2])
                 assert rounds == settings.PBKDF2_ITERATIONS_V3
+        else:
+            # Non-FIPS default is bcrypt_sha256
+            assert hashed.startswith(("$bcrypt-sha256$", "$2"))
 
     def test_password_verification(self):
         """Test password verification works correctly."""
@@ -70,8 +74,8 @@ class TestFIPS140_3PasswordHashing:
             # FIPS mode should use PBKDF2-SHA256
             assert "$pbkdf2-sha256$" in hashed
         else:
-            # Non-FIPS mode uses bcrypt_sha256 or bcrypt
-            assert "$2" in hashed or "$pbkdf2" in hashed
+            # Non-FIPS mode uses bcrypt_sha256 (or legacy bcrypt / pbkdf2)
+            assert hashed.startswith(("$bcrypt-sha256$", "$2", "$pbkdf2"))
 
     def test_password_upgrade_detection(self):
         """Test that legacy passwords are flagged for upgrade."""
@@ -116,10 +120,12 @@ class TestFIPS140_3PasswordHashing:
         if settings.FIPS_MODE:
             assert needs_rehash_for_fips_v3(bcrypt_hash)
 
-        # PBKDF2 with insufficient iterations should also need rehash
-        low_iteration_hash = "$pbkdf2-sha256$10000$salt$hash"
+        # A real PBKDF2 hash with insufficient iterations should also need rehash
+        from passlib.hash import pbkdf2_sha256
+
+        low_iteration_hash = pbkdf2_sha256.using(rounds=10000).hash("password123")
         if settings.FIPS_VERSION == "140-3":
-            # This should need upgrade due to low iteration count
+            # This should need upgrade due to low iteration count (< 600,000)
             assert needs_rehash_for_fips_v3(low_iteration_hash)
 
 
@@ -246,7 +252,7 @@ class TestFIPS140_3JWT:
         # Decode header to check algorithm
         header = jwt.get_unverified_header(token)
 
-        if settings.FIPS_VERSION == "140-3":
+        if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3":
             assert header["alg"] == "HS512"
         else:
             assert header["alg"] == "HS256"
@@ -289,7 +295,7 @@ class TestFIPS140_3JWT:
         token = create_access_token(subject="test-uuid")
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256", "HS512"])
 
-        if settings.FIPS_VERSION == "140-3":
+        if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3":
             assert payload["alg_version"] == "v3"
         else:
             assert payload["alg_version"] == "v2"
@@ -345,7 +351,7 @@ class TestFIPS140_3MFA:
         codes = ["ABCD-1234", "EFGH-5678"]
         hashed = MFAService.hash_backup_codes(codes)
 
-        if settings.FIPS_VERSION == "140-3":
+        if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3":
             # PBKDF2-SHA256 hashes start with $pbkdf2-sha256$
             for h in hashed:
                 assert "$pbkdf2-sha256$" in h
@@ -388,11 +394,14 @@ class TestFIPS140_3MFA:
 
     def test_totp_sha1_allowed(self):
         """Document that SHA-1 TOTP is FIPS-allowed for HMAC."""
+        import hashlib
+
         from app.auth.mfa import get_totp_algorithm
 
-        # Default should be SHA1 for authenticator app compatibility
+        # Returns a hashlib constructor for pyotp; SHA-1 is the default for
+        # authenticator-app compatibility (FIPS-approved for HMAC use).
         algo = get_totp_algorithm()
-        assert algo in ["SHA1", "SHA256", "SHA512"]
+        assert algo in (hashlib.sha1, hashlib.sha256, hashlib.sha512)
 
     def test_totp_secret_generation(self):
         """Test TOTP secret generation."""
@@ -482,7 +491,7 @@ class TestFIPS140_3TokenService:
 
         header = jwt.get_unverified_header(token)
 
-        if settings.FIPS_VERSION == "140-3":
+        if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3":
             assert header["alg"] == "HS512"
         else:
             assert header["alg"] == "HS256"

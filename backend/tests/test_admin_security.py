@@ -64,7 +64,9 @@ class TestPasswordResetSecurity:
         # The important thing is it accepts JSON body, not query params
         assert response.status_code in [200, 403]  # 403 if not super_admin
 
-    def test_password_reset_rejects_query_params(self, client, db_session, admin_token_headers):
+    def test_password_reset_rejects_query_params(
+        self, client, db_session, super_admin_token_headers
+    ):
         """Test that password reset does NOT accept password in query params."""
         # Create a target user
         target_user = User(
@@ -79,10 +81,12 @@ class TestPasswordResetSecurity:
         db_session.commit()
         db_session.refresh(target_user)
 
-        # Try to reset with password in query params (INSECURE - should fail)
+        # Try to reset with password in query params (INSECURE - should fail).
+        # Super admin passes the auth gate, so the rejection is purely the
+        # missing JSON body — proving query params are never accepted.
         response = client.post(
             f"/api/admin/users/{target_user.uuid}/reset-password",
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
             params={"new_password": "InsecureQueryPassword123!"},
         )
 

@@ -100,6 +100,8 @@ Dockerfile*
 # Development and testing
 tests/
 scripts/
+# Dockerfile.blackwell needs the SM_121 patch script at build time
+!scripts/blackwell_patches.py
 pyproject.toml
 
 # OS generated files

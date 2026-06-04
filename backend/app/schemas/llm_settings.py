@@ -59,10 +59,10 @@ class UserLLMSettingsBase(BaseModel):
     def validate_temperature(cls, v):
         try:
             temp_float = float(v)
-            if temp_float < 0.0 or temp_float > 2.0:
-                raise ValueError("temperature must be between 0.0 and 2.0")
         except ValueError as e:
             raise ValueError("temperature must be a valid number") from e
+        if temp_float < 0.0 or temp_float > 2.0:
+            raise ValueError("temperature must be between 0.0 and 2.0")
         return v
 
 
@@ -98,10 +98,10 @@ class UserLLMSettingsUpdate(BaseModel):
         if v is not None:
             try:
                 temp_float = float(v)
-                if temp_float < 0.0 or temp_float > 2.0:
-                    raise ValueError("temperature must be between 0.0 and 2.0")
             except ValueError as e:
                 raise ValueError("temperature must be a valid number") from e
+            if temp_float < 0.0 or temp_float > 2.0:
+                raise ValueError("temperature must be between 0.0 and 2.0")
         return v
 
 

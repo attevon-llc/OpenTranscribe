@@ -159,8 +159,14 @@ class TokenService:
             }
         )
 
-        # Use FIPS 140-3 compliant algorithm
-        algorithm = settings.JWT_ALGORITHM_V3 if settings.FIPS_VERSION == "140-3" else "HS256"
+        # Use FIPS 140-3 compliant algorithm. FIPS_MODE is the master switch —
+        # FIPS_VERSION alone defaults to "140-3" even on non-FIPS deployments
+        # (keeps token creation consistent with core/security.create_access_token).
+        algorithm = (
+            settings.JWT_ALGORITHM_V3
+            if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3"
+            else "HS256"
+        )
 
         return str(
             jwt.encode(

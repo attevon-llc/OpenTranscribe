@@ -1,10 +1,10 @@
 """Task endpoint tests.
 
-These tests require MinIO/S3 storage which is disabled in the test environment.
-They are marked as skipped by default. Run with actual storage services for full testing.
+These tests require MinIO/S3 storage (uploads create the tasks under test).
+They activate automatically when the dev stack is reachable (see conftest.py
+service auto-detection) and skip otherwise.
 """
 
-import io
 import os
 
 import pytest
@@ -17,10 +17,13 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_list_tasks(client, user_token_headers):
-    """Test listing user's tasks"""
+    """Test listing user's tasks (paginated response)"""
     response = client.get("/api/tasks", headers=user_token_headers)
     assert response.status_code == 200
-    assert isinstance(response.json(), list)
+    data = response.json()
+    assert "items" in data
+    assert isinstance(data["items"], list)
+    assert "total" in data
 
 
 def test_list_tasks_unauthorized(client):
@@ -30,27 +33,26 @@ def test_list_tasks_unauthorized(client):
 
 
 def test_get_task_not_found(client, user_token_headers):
-    """Test getting a non-existent task"""
-    import uuid as uuid_module
-
-    fake_task_id = f"task_{uuid_module.uuid4()}"
-    response = client.get(f"/api/tasks/{fake_task_id}", headers=user_token_headers)
+    """A well-formed task ID for a non-existent file returns 404"""
+    response = client.get("/api/tasks/task_999999999", headers=user_token_headers)
     assert response.status_code == 404  # Not found
 
 
-def test_get_task(client, user_token_headers, db_session):
+def test_get_task_invalid_format(client, user_token_headers):
+    """A malformed task ID is rejected with 400 (format is task_<media_file_id>)"""
+    response = client.get("/api/tasks/not-a-task-id", headers=user_token_headers)
+    assert response.status_code == 400
+
+
+def test_get_task(client, user_token_headers, upload_test_file):
     """Test getting a specific task"""
     # First upload a file to create an associated task
-    sample_file = {"file": ("task_test.mp3", io.BytesIO(b"test content"), "audio/mpeg")}
-    upload_response = client.post("/api/files", headers=user_token_headers, files=sample_file)
-    assert upload_response.status_code == 200, f"File upload failed: {upload_response.json()}"
-
-    file_data = upload_response.json()
+    file_data = upload_test_file(user_token_headers, filename="task_test.wav")
     file_uuid = file_data.get("uuid") or file_data.get("id")
 
     # Get tasks to find the one associated with this file
     tasks_response = client.get("/api/tasks", headers=user_token_headers)
-    tasks = tasks_response.json()
+    tasks = tasks_response.json()["items"]
 
     # Find task associated with the file we just uploaded
     task = next(
@@ -72,5 +74,5 @@ def test_get_task(client, user_token_headers, db_session):
         task_data_id = task_data.get("uuid") or task_data.get("id")
         assert task_data_id == task_id
     else:
-        # Skip test if no task was created (some implementations might not auto-create tasks)
+        # Tasks are only auto-created when Celery dispatch runs (SKIP_CELERY=True here)
         pytest.skip("No task was created for the uploaded file")

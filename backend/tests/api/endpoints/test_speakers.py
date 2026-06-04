@@ -17,14 +17,9 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-def test_media_file(client, user_token_headers, db_session):
+def test_media_file(user_token_headers, upload_test_file):
     """Create a test media file that we can add speakers to."""
-    import io
-
-    file_data = {"file": ("speaker_test.mp3", io.BytesIO(b"test audio content"), "audio/mpeg")}
-    response = client.post("/api/files", headers=user_token_headers, files=file_data)
-    assert response.status_code == 200, f"File upload failed: {response.json()}"
-    data = response.json()
+    data = upload_test_file(user_token_headers, filename="speaker_test.wav")
     return data.get("uuid") or data.get("id")
 
 

@@ -1,4 +1,5 @@
 import os
+import socket
 import sys
 import tempfile
 from pathlib import Path
@@ -22,9 +23,11 @@ _env_values = {}
 if _env_file.exists():
     _env_values = dotenv_values(_env_file)
 
-# Set only the database credentials we need from .env
+# Set only the service credentials we need from .env (DB always; MinIO for the
+# S3-backed tests that activate when the dev stack is reachable).
 _db_vars = ["POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"]
-for _var in _db_vars:
+_minio_vars = ["MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD", "MEDIA_BUCKET_NAME"]
+for _var in _db_vars + _minio_vars:
     if _var in _env_values:
         os.environ[_var] = _env_values[_var]
 
@@ -39,14 +42,42 @@ _test_temp_subdir = os.path.join(_test_temp_dir, "temp")
 for _dir in [_test_data_dir, _test_upload_dir, _test_models_dir, _test_temp_subdir]:
     os.makedirs(_dir, exist_ok=True)
 
+
+def _service_reachable(host: str, port: int, timeout: float = 0.3) -> bool:
+    """Return True if a TCP connection to host:port succeeds within timeout."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 # Set testing environment flag and disable external services in tests
 os.environ["TESTING"] = "True"
 os.environ["SKIP_CELERY"] = "True"
-os.environ["SKIP_S3"] = "True"
 os.environ["SKIP_REDIS"] = "True"
 os.environ["SKIP_WEBSOCKET"] = "True"
-os.environ["SKIP_OPENSEARCH"] = "True"
 os.environ["RATE_LIMIT_ENABLED"] = "false"  # Disable rate limiting for tests
+
+# Auto-detect MinIO and OpenSearch from the dev stack so the gated S3/search tests
+# run when the services are up and skip when they aren't (e.g. bare CI runners).
+# An explicit SKIP_S3 / SKIP_OPENSEARCH in the shell always wins over detection.
+os.environ.setdefault("SKIP_S3", "False" if _service_reachable("localhost", 5178) else "True")
+os.environ.setdefault(
+    "SKIP_OPENSEARCH", "False" if _service_reachable("localhost", 5180) else "True"
+)
+if os.environ["SKIP_S3"] == "False":
+    # The dev stack maps the MinIO S3 API to localhost:5178 (console is 5179).
+    os.environ.setdefault("MINIO_HOST", "localhost")
+    os.environ.setdefault("MINIO_PORT", "5178")
+if os.environ["SKIP_OPENSEARCH"] == "False":
+    # The dev stack exposes OpenSearch on localhost:5180 (not the in-cluster 9200).
+    os.environ.setdefault("OPENSEARCH_HOST", "localhost")
+    os.environ.setdefault("OPENSEARCH_PORT", "5180")
+# The audit logger has its own OpenSearch switch (app/auth/audit.py). Always off
+# in unit tests: savepoint rollback cannot undo OpenSearch writes, so leaving it
+# on would pollute the live dev audit index with thousands of test login events.
+os.environ.setdefault("AUDIT_LOG_TO_OPENSEARCH", "false")
 
 # Set paths to use temporary directories for testing (must be set before importing config)
 os.environ["DATA_DIR"] = _test_data_dir
@@ -259,6 +290,53 @@ def super_admin_token_headers(client, super_admin_user):
     headers = {"Authorization": f"Bearer {access_token}"}
     headers["_test_user_email"] = super_admin_user.email
     return headers
+
+
+@pytest.fixture(scope="session")
+def test_wav_bytes() -> bytes:
+    """A minimal valid PCM WAV file that passes magic-byte upload validation.
+
+    0.1 s of 16 kHz mono silence (~3.2 KB). Generated with the stdlib so tests
+    never depend on fixture files or external downloads.
+    """
+    import io
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b"\x00\x00" * 1600)
+    return buf.getvalue()
+
+
+@pytest.fixture
+def upload_test_file(client, test_wav_bytes):
+    """Factory that uploads a real WAV via the API and cleans up MinIO afterwards.
+
+    The DB row rolls back with the savepoint, but the MinIO object does not —
+    the finalizer deletes the file through the API so the dev bucket stays clean.
+    """
+    import io
+
+    uploaded: list[tuple[str, dict]] = []
+
+    def _upload(headers: dict, filename: str = "test_audio.wav") -> dict:
+        files = {"file": (filename, io.BytesIO(test_wav_bytes), "audio/wav")}
+        response = client.post("/api/files", headers=headers, files=files)
+        assert response.status_code == 200, f"File upload failed: {response.json()}"
+        data: dict = response.json()
+        uploaded.append((str(data.get("uuid") or data.get("id")), headers))
+        return data
+
+    yield _upload
+
+    for file_id, headers in uploaded:
+        try:
+            client.delete(f"/api/files/{file_id}", headers=headers)
+        except Exception:
+            pass  # DB rollback removes the row; MinIO orphans are best-effort
 
 
 # --- Fixture aliases for test_media_security.py and other tests ---

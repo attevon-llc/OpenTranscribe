@@ -14,6 +14,7 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.media import Comment as CommentSchema
 from app.schemas.media import CommentCreate
+from app.schemas.media import CommentCreateStandalone
 from app.schemas.media import CommentUpdate
 from app.services.permission_service import PermissionService
 from app.utils.uuid_helpers import get_comment_by_uuid
@@ -94,15 +95,24 @@ def create_comment_for_file_nested(
 
 @router.get("", response_model=list[CommentSchema])
 def get_comments_for_file(
-    media_file_uuid: str,
+    media_file_id: str | None = None,
+    media_file_uuid: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """List all comments for a media file using query parameter.
 
-    Requires viewer+ permission on the file.
+    Accepts the file's public UUID as ``media_file_id`` (what the frontend
+    fallback sends) or the legacy ``media_file_uuid`` name. Requires viewer+
+    permission on the file.
     """
-    media_file = _check_file_access(db, media_file_uuid, current_user)
+    file_ref = media_file_id or media_file_uuid
+    if not file_ref:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Query parameter 'media_file_id' is required",
+        )
+    media_file = _check_file_access(db, file_ref, current_user)
     media_file_id = media_file.id
 
     # Get comments for this file (eager-load relationships to avoid N+1)
@@ -118,16 +128,18 @@ def get_comments_for_file(
 
 
 @router.post("", response_model=CommentSchema)
-def create_comment_query_param(
-    comment: CommentCreate,
+def create_comment_standalone(
+    comment: CommentCreateStandalone,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Add a comment to a media file using query parameter.
+    """Add a comment to a media file referenced by UUID in the request body.
 
-    Requires viewer+ permission on the file.
+    Fallback route used by the frontend when the nested
+    ``POST /files/{file_uuid}/comments`` route is unavailable. Requires
+    viewer+ permission on the file.
     """
-    media_file = _check_file_access(db, comment.media_file_id, current_user)  # type: ignore[attr-defined]
+    media_file = _check_file_access(db, str(comment.media_file_id), current_user)
     file_id = media_file.id
 
     # Create new comment

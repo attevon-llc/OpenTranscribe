@@ -25,11 +25,13 @@ from typing import Any
 
 import pytest
 import requests
+
+# Absolute import — the e2e dir is not a package, so a relative import breaks
+# collection when invoked as `pytest backend/tests/e2e/` from the repo root.
+from conftest import TEST_ADMIN_EMAIL
+from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
 from playwright.sync_api import expect
-
-from .conftest import TEST_ADMIN_EMAIL
-from .conftest import TEST_ADMIN_PASSWORD
 
 # Test data
 TEST_FILE_TITLE = "PyTorch at Tesla"

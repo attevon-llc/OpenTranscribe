@@ -6,7 +6,6 @@ from typing import Optional
 
 import numpy as np
 import torch
-from pyannote.audio import Inference
 
 from app.core.config import settings
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
@@ -59,6 +58,9 @@ class SpeakerEmbeddingService:
     def _initialize_model(self):
         """Initialize the pyannote embedding model."""
         try:
+            # Lazy import: pyannote is GPU-worker-only; keeping it out of the
+            # module top level spares the API server (and CI) the import cost.
+            from pyannote.audio import Inference
             from pyannote.audio import Model
 
             # Check if we have a Hugging Face token

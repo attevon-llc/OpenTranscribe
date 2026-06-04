@@ -108,6 +108,7 @@ htmlcov/
 nosetests.xml
 coverage.xml
 frontend/coverage/
+backend/tests/e2e/fixtures/
 *.cover
 *.py,cover
 .hypothesis/

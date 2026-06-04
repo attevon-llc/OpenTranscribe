@@ -20,6 +20,9 @@ Run with specific base URL:
 """
 
 import os
+import shutil
+import subprocess
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -83,6 +86,58 @@ def authenticated_page(page: Page, base_url: str):
     page.wait_for_load_state("networkidle")
 
     return page
+
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def _generate_media(filename: str, ffmpeg_args: list[str]) -> Path:
+    """Generate a small media fixture with ffmpeg (cached across runs)."""
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg not available — cannot generate media fixtures")
+    FIXTURES_DIR.mkdir(exist_ok=True)
+    out = FIXTURES_DIR / filename
+    if not out.exists():
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", *ffmpeg_args, str(out)],
+            check=True,
+            timeout=60,
+        )
+    return out
+
+
+@pytest.fixture(scope="session")
+def sample_audio() -> Path:
+    """2-second 440 Hz mono WAV — small, valid, passes magic-byte validation."""
+    return _generate_media(
+        "sample_audio.wav",
+        ["-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-ac", "1", "-ar", "16000"],
+    )
+
+
+@pytest.fixture(scope="session")
+def sample_video() -> Path:
+    """2-second test-pattern MP4 with a sine audio track."""
+    return _generate_media(
+        "sample_video.mp4",
+        [
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=2:size=320x240:rate=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+        ],
+    )
 
 
 @pytest.fixture
@@ -235,6 +290,16 @@ class APIHelper:
             f"{self.backend_url}{endpoint}", json=data, headers=headers, timeout=30
         )
         return cast(dict, response.json())
+
+    def delete(self, endpoint: str) -> int:
+        """Make authenticated DELETE request; returns the status code."""
+        import requests
+
+        headers: dict[str, str] = {}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        response = requests.delete(f"{self.backend_url}{endpoint}", headers=headers, timeout=30)
+        return response.status_code
 
 
 @pytest.fixture

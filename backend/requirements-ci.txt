@@ -1,0 +1,92 @@
+# CI dependency set — CPU-only mirror of requirements.txt for GitHub Actions.
+#
+# KEEP IN SYNC with requirements.txt. Differences (deliberate):
+#   - torch/torchaudio resolve from the CPU wheel index (~200 MB vs ~3 GB cu128)
+#   - onnxruntime (CPU) instead of onnxruntime-gpu
+#   - pyannote.audio git fork OMITTED — it is lazy-imported by GPU worker code
+#     only and never reached by the unit/API test suite
+#   - whisperx OMITTED for the same reason (Dockerfile installs it separately
+#     in production images)
+#
+# Used by the backend-tests CI job:
+#   pip install -r backend/requirements-ci.txt -r backend/requirements-dev.txt
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+fastapi>=0.103.1
+uvicorn[standard]>=0.46.0
+websockets>=11.0.3
+sqlalchemy>=2.0.20
+alembic>=1.12.0
+pydantic>=2.3.0
+pydantic-settings>=2.0.0
+python-jose[cryptography]>=3.3.0
+python-multipart>=0.0.6
+passlib[bcrypt]>=1.7.4
+bcrypt==3.2.2
+email-validator
+
+# Asynchronous Tasks
+celery>=5.3.4
+redis>=5.0.0
+psycopg2-binary>=2.9.7
+minio>=7.2.18
+imohash>=1.1.0
+
+opensearch-py>=3.0.0,<4.0.0
+httpx>=0.24.1
+python-dotenv>=1.0.0
+ldap3>=2.9.1
+slowapi>=0.1.9
+cryptography>=42.0.0
+pyotp>=2.9.0
+qrcode[pil]>=8.2
+
+# AI/ML stack (CPU wheels via the extra index above)
+numpy>=2.1.0
+torch==2.8.0
+torchaudio==2.8.0
+ctranslate2>=4.6.0,<5
+faster-whisper>=1.1.1
+transformers>=4.48.0
+huggingface-hub<1.0.0
+onnx>=1.21.0
+onnxruntime==1.26.0
+omegaconf>=2.3.0
+
+# Supporting libraries
+ffmpeg-python>=0.2.0
+gender-guesser>=0.4.0
+sentencepiece>=0.1.99
+psutil>=5.9.5
+pyexiftool>=0.5.0
+yt-dlp[default]>=2026.3.17
+
+# Semantic search and NLP
+sentence-transformers>=5.5.1
+nltk>=3.9.1
+
+# Cloud ASR provider SDKs (lazily imported)
+deepgram-sdk>=6.1.1
+assemblyai>=0.30.0
+google-cloud-speech>=2.39.0
+azure-cognitiveservices-speech>=1.35.0
+speechmatics-batch>=0.4.8
+boto3>=1.28.0
+openai>=1.0.0
+requests>=2.31.0
+
+# Diarization metrics (cpWER) — exercised by tests/unit/test_diarization_metrics.py
+meeteval>=0.4.0
+
+# Content redaction (wordlist/config tests run in the default suite;
+# model-weight tests carry @pytest.mark.models and skip in CI)
+presidio-analyzer>=2.2.355
+presidio-anonymizer>=2.2.355
+gliner>=0.2.13
+detoxify>=0.5.2
+
+# Watch sources
+watchdog>=4.0.0
+smbprotocol>=1.12.0
+msal>=1.26.0

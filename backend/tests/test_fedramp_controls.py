@@ -267,9 +267,9 @@ class TestAuditLogQueryExportAU6:
         # Regular user should be forbidden
         assert response.status_code in [401, 403]
 
-    def test_audit_log_query_parameters(self, client, admin_token_headers):
+    def test_audit_log_query_parameters(self, client, super_admin_token_headers):
         """Test that audit log endpoint supports filtering parameters."""
-        # Test that the endpoint accepts filter parameters
+        # Test that the endpoint accepts filter parameters (super admin only)
         response = client.get(
             "/api/admin/audit-logs",
             params={
@@ -280,7 +280,7 @@ class TestAuditLogQueryExportAU6:
                 "limit": 50,
                 "offset": 0,
             },
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         # Should return 200 or indicate OpenSearch not enabled
         assert response.status_code == 200
@@ -288,32 +288,32 @@ class TestAuditLogQueryExportAU6:
         # Should have logs array and total count
         assert "logs" in data or "error" in data
 
-    def test_audit_log_export_csv_format(self, client, admin_token_headers):
+    def test_audit_log_export_csv_format(self, client, super_admin_token_headers):
         """Test that audit log export supports CSV format."""
         response = client.get(
             "/api/admin/audit-logs/export",
             params={"export_format": "csv"},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         # Should return CSV or error if OpenSearch not enabled
         assert response.status_code in [200, 400]
 
-    def test_audit_log_export_json_format(self, client, admin_token_headers):
+    def test_audit_log_export_json_format(self, client, super_admin_token_headers):
         """Test that audit log export supports JSON format."""
         response = client.get(
             "/api/admin/audit-logs/export",
             params={"export_format": "json"},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         # Should return JSON or error if OpenSearch not enabled
         assert response.status_code in [200, 400]
 
-    def test_audit_log_export_invalid_format_rejected(self, client, admin_token_headers):
+    def test_audit_log_export_invalid_format_rejected(self, client, super_admin_token_headers):
         """Test that invalid export formats are rejected."""
         response = client.get(
             "/api/admin/audit-logs/export",
             params={"export_format": "xml"},  # Not supported
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         assert response.status_code == 400
 

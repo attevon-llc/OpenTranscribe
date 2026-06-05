@@ -102,16 +102,10 @@ class TestLoginSuccess:
         page.fill("#password", "password")
         page.click("button[type=submit]")
 
-        page.wait_for_url("**/**", timeout=15000)
-        page.wait_for_load_state("networkidle")
-
-        # Should be on gallery or dashboard
-        on_dashboard = (
-            "/gallery" in page.url
-            or page.url.rstrip("/").split("/")[-1] == "/"
-            or page.locator("text=Gallery").is_visible()
-        )
-        assert on_dashboard, f"Should be on dashboard. URL: {page.url}"
+        # The gallery/dashboard is the SPA root — wait for the navigation off
+        # /login, then for the gallery toolbar to render.
+        page.wait_for_url(lambda url: "/login" not in url, timeout=15000)
+        page.wait_for_selector(".gallery-action-buttons", timeout=15000)
 
     def test_login_shows_user_info(self, page: Page, base_url: str):
         """Test logged in state shows user information."""
@@ -133,11 +127,16 @@ class TestLoginFailure:
     """Test login failure scenarios."""
 
     def test_wrong_password(self, page: Page, base_url: str):
-        """Test login fails with wrong password."""
+        """Test login fails with wrong password.
+
+        Uses a NONEXISTENT account (same 401 path) — failing against the real
+        admin account trips the per-account lockout (threshold 5, progressive)
+        and poisons every later test in the suite.
+        """
         page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
-        page.fill("#email", "admin@example.com")
+        page.fill("#email", "nosuchuser-e2e@example.com")
         page.fill("#password", "wrongpassword")
         page.click("button[type=submit]")
 
@@ -192,11 +191,14 @@ class TestLoginFailure:
         assert page.is_visible("body")
 
     def test_error_message_displayed(self, page: Page, base_url: str):
-        """Test error message is displayed on failed login."""
+        """Test error message is displayed on failed login.
+
+        Nonexistent account — see test_wrong_password (lockout poisoning).
+        """
         page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
-        page.fill("#email", "admin@example.com")
+        page.fill("#email", "nosuchuser-e2e@example.com")
         page.fill("#password", "wrongpassword")
         page.click("button[type=submit]")
 
@@ -251,9 +253,11 @@ class TestLoginSecurity:
         page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
-        # Attempt multiple failed logins
+        # Attempt multiple failed logins against a NONEXISTENT account —
+        # hammering the real admin account trips the progressive per-account
+        # lockout and breaks every later test in the suite.
         for i in range(6):
-            page.fill("#email", "admin@example.com")
+            page.fill("#email", "nosuchuser-e2e@example.com")
             page.fill("#password", f"wrongpassword{i}")
             page.click("button[type=submit]")
             page.wait_for_timeout(1000)

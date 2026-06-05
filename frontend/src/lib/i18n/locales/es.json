@@ -3685,5 +3685,7 @@
   "settings.watchSources.collectionCreateFailed": "No se pudo crear la colección",
   "settings.emailNotifications.experimental": "Experimental",
   "settings.emailNotifications.experimentalNote": "El envío de correo es experimental — envía una prueba antes de confiar en él.",
-  "settings.emailNotifications.setupTitle": "Configurar correo con proveedores modernos"
+  "settings.emailNotifications.setupTitle": "Configurar correo con proveedores modernos",
+  "settings.contentRedaction.showOriginalTooltip": "Mostrar el texto original sin censura (solo propietarios y administradores; las categorías forzadas por el administrador permanecen ocultas)",
+  "settings.contentRedaction.showRedactedTooltip": "Volver a la vista censurada con el contenido sensible oculto"
 }

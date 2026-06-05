@@ -16,8 +16,24 @@ Run with:
 
 import uuid
 
+from conftest import TEST_ADMIN_EMAIL
+from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+
+
+def _delete_user_by_email(api_helper, email: str) -> None:
+    """Best-effort cleanup of a user this test registered (dev data hygiene)."""
+    try:
+        api_helper.login(TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD)
+        users = api_helper.get("/api/admin/users")
+        items = users if isinstance(users, list) else users.get("items", [])
+        for user in items:
+            if user.get("email") == email:
+                api_helper.delete(f"/api/admin/users/{user['uuid']}")
+                return
+    except Exception:
+        pass  # cleanup is best-effort; scripts/cleanup-test-users.py catches strays
 
 
 class TestRegistrationFormValidation:
@@ -344,88 +360,81 @@ class TestDuplicatePrevention:
         )
         assert error_visible, "Should prevent duplicate email registration"
 
-    def test_duplicate_username_rejected(self, page: Page, base_url: str):
-        """Test registration fails for existing username."""
-        page.goto(f"{base_url}/register")
-        page.wait_for_selector("#username", timeout=10000)
-
-        unique_email = f"unique_{uuid.uuid4().hex[:8]}@example.com"
-        page.fill("#username", "admin")  # Likely existing username
-        page.fill("#email", unique_email)
-        page.fill("#password", "ValidPassword123!")
-        page.fill("#confirmPassword", "ValidPassword123!")
-
-        page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(3000)
-
-        # May or may not be rejected depending on if admin username exists
-        assert page.is_visible("body")
+    # NOTE: there is deliberately no "duplicate username" test — the register
+    # form's "username" maps to User.full_name, which is NOT unique (only
+    # email is: app/models/user.py). test_duplicate_email_rejected covers the
+    # real uniqueness constraint.
 
 
 class TestRegistrationSuccess:
     """Test successful registration flow."""
 
-    def test_successful_registration_redirects(self, page: Page, base_url: str):
-        """Test successful registration redirects appropriately."""
+    def test_successful_registration_redirects(self, page: Page, base_url: str, api_helper):
+        """Successful registration auto-logs-in and lands on the gallery."""
         unique_id = uuid.uuid4().hex[:8]
         username = f"testuser_{unique_id}"
         email = f"testuser_{unique_id}@example.com"
         password = "ValidPassword123!"
 
-        page.goto(f"{base_url}/register")
-        page.wait_for_selector("#username", timeout=10000)
+        try:
+            page.goto(f"{base_url}/register")
+            page.wait_for_selector("#username", timeout=10000)
 
-        page.fill("#username", username)
-        page.fill("#email", email)
-        page.fill("#password", password)
-        page.fill("#confirmPassword", password)
+            page.fill("#username", username)
+            page.fill("#email", email)
+            page.fill("#password", password)
+            page.fill("#confirmPassword", password)
 
-        page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(5000)
+            page.click("button:has-text('Create Account')")
 
-        # Should redirect to login or show success
-        redirected = "register" not in page.url.lower()
-        success_message = (
-            page.locator("text=success").is_visible()
-            or page.locator("text=created").is_visible()
-            or page.locator("text=registered").is_visible()
-        )
+            # register/+page.svelte logs the new user in and goto("/").
+            # Wait for the NAVIGATION (the navbar user-button can render a
+            # beat before goto("/") completes — asserting on it races).
+            page.wait_for_url(lambda url: "register" not in url.lower(), timeout=15000)
+            page.wait_for_selector(".user-button", timeout=15000)
+        finally:
+            _delete_user_by_email(api_helper, email)
 
-        assert redirected or success_message, (
-            f"Registration should succeed. Current URL: {page.url}"
-        )
-
-    def test_can_login_after_registration(self, page: Page, base_url: str):
-        """Test that newly registered user can login."""
+    def test_can_login_after_registration(self, page: Page, base_url: str, api_helper):
+        """Newly registered user is auto-logged-in, and can log in again later."""
         unique_id = uuid.uuid4().hex[:8]
         username = f"newuser_{unique_id}"
         email = f"newuser_{unique_id}@example.com"
         password = "ValidPassword123!"
 
-        # Register
-        page.goto(f"{base_url}/register")
-        page.wait_for_selector("#username", timeout=10000)
+        try:
+            # Register
+            page.goto(f"{base_url}/register")
+            page.wait_for_selector("#username", timeout=10000)
 
-        page.fill("#username", username)
-        page.fill("#email", email)
-        page.fill("#password", password)
-        page.fill("#confirmPassword", password)
+            page.fill("#username", username)
+            page.fill("#email", email)
+            page.fill("#password", password)
+            page.fill("#confirmPassword", password)
 
-        page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(5000)
+            page.click("button:has-text('Create Account')")
 
-        # Now try to login
-        page.goto(f"{base_url}/login")
-        page.wait_for_selector("#email", timeout=10000)
+            # Successful registration auto-logs-in and lands on the gallery
+            # (frontend/src/routes/register/+page.svelte: register -> login -> goto "/").
+            # Wait for the navigation itself — the navbar button can render
+            # a beat before goto("/") completes.
+            page.wait_for_url(lambda url: "register" not in url.lower(), timeout=15000)
+            page.wait_for_selector(".user-button", timeout=15000)
 
-        page.fill("#email", email)
-        page.fill("#password", password)
-        page.click("button[type=submit]")
-        page.wait_for_timeout(5000)
+            # Drop the session cookies, then log in fresh with the new creds
+            page.context.clear_cookies()
+            page.goto(f"{base_url}/login")
+            page.wait_for_selector("#email", timeout=10000)
 
-        # Should be logged in (not on login page)
-        logged_in = "/login" not in page.url or page.locator(".user-button").is_visible()
-        assert logged_in, "Should be able to login after registration"
+            page.fill("#email", email)
+            page.fill("#password", password)
+            page.click("button[type=submit]")
+            # Wait for the post-login NAVIGATION (the navbar can render before
+            # the SPA finishes goto("/") — asserting on page.url races).
+            page.wait_for_url(lambda url: "/login" not in url, timeout=15000)
+            page.wait_for_selector(".user-button", timeout=15000)
+        finally:
+            _delete_user_by_email(api_helper, email)
 
 
 class TestRegistrationUI:
@@ -464,7 +473,9 @@ class TestRegistrationUI:
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
-        # Check labels exist
-        expect(page.locator("label:has-text('Username')")).to_be_visible()
-        expect(page.locator("label:has-text('Email')")).to_be_visible()
-        expect(page.locator("label:has-text('Password')")).to_be_visible()
+        # Check labels exist — match by `for` attribute ("Password" text alone
+        # is ambiguous with "Confirm Password" under strict mode)
+        expect(page.locator("label[for=username]")).to_be_visible()
+        expect(page.locator("label[for=email]")).to_be_visible()
+        expect(page.locator("label[for=password]")).to_be_visible()
+        expect(page.locator("label[for=confirmPassword]")).to_be_visible()

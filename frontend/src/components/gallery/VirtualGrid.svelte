@@ -172,7 +172,7 @@
   // Kick off prefetch on mousedown (slightly earlier than click) to get a
   // head start on loading detail data.
   function handleCardMouseDown(file: MediaFile) {
-    if (!isSelecting) prefetchFileDetails(file.uuid);
+    if (!isSelecting) prefetchFileDetails(file.uuid, file.status);
   }
 
   function handleCheckboxChange(fileId: string, e: Event) {
@@ -238,7 +238,7 @@
             class="file-card-link"
             on:click={(e) => handleCardClick(file, e)}
             on:mousedown={() => handleCardMouseDown(file)}
-            on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid)}
+            on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid, file.status)}
             on:mouseleave={cancelPrefetch}
             aria-busy={navigatingTo === file.uuid}
           >

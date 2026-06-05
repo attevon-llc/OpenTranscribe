@@ -817,7 +817,20 @@ class TestPromptClone:
     def test_clone_system_prompt(self, client, db_session, other_user, other_user_auth_headers):
         """A system prompt can be cloned into a user's library."""
         sys_prompt = _get_system_prompt(db_session)
-        assert sys_prompt is not None, "No system default prompt seeded in DB"
+        if sys_prompt is None:
+            # Fresh databases (CI) have no startup-seeded prompts — create one
+            # inside the savepoint so the test is self-sufficient.
+            sys_prompt = SummaryPrompt(
+                name="CI System Prompt",
+                prompt_text="Summarize the transcript.",
+                is_system_default=True,
+                is_active=True,
+                user_id=None,
+                content_type="general",
+            )
+            db_session.add(sys_prompt)
+            db_session.commit()
+            db_session.refresh(sys_prompt)
 
         resp = client.post(f"/api/prompts/{sys_prompt.uuid}/clone", headers=other_user_auth_headers)
         assert resp.status_code == 200

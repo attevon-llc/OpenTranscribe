@@ -3685,5 +3685,7 @@
   "settings.watchSources.collectionCreateFailed": "Не удалось создать коллекцию",
   "settings.emailNotifications.experimental": "Экспериментально",
   "settings.emailNotifications.experimentalNote": "Отправка почты экспериментальна — отправьте тест, прежде чем полагаться на неё.",
-  "settings.emailNotifications.setupTitle": "Настройка почты с современными провайдерами"
+  "settings.emailNotifications.setupTitle": "Настройка почты с современными провайдерами",
+  "settings.contentRedaction.showOriginalTooltip": "Показать исходный текст без цензуры (только для владельцев и администраторов; категории, заданные администратором, остаются скрытыми)",
+  "settings.contentRedaction.showRedactedTooltip": "Вернуться к отредактированному виду со скрытым конфиденциальным содержимым"
 }

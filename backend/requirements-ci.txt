@@ -1,0 +1,101 @@
+# CI dependency set — CPU-only mirror of requirements.txt for GitHub Actions.
+#
+# KEEP IN SYNC with requirements.txt. Differences (deliberate):
+#   - torch/torchaudio resolve from the CPU wheel index (~200 MB vs ~3 GB cu128)
+#   - onnxruntime (CPU) instead of onnxruntime-gpu
+#   - pyannote.audio git fork OMITTED — it is lazy-imported by GPU worker code
+#     only and never reached by the unit/API test suite
+#   - whisperx OMITTED for the same reason (Dockerfile installs it separately
+#     in production images)
+#
+# Test tooling is included HERE (do NOT also install requirements-dev.txt in
+# CI — it pulls requirements.txt and with it the cu128 GPU wheels).
+#
+# Used by the backend-tests CI job:
+#   pip install -r backend/requirements-ci.txt
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+fastapi>=0.136.3
+uvicorn[standard]>=0.48.0
+websockets>=11.0.3
+sqlalchemy>=2.0.50
+alembic>=1.18.4
+pydantic>=2.13.4
+pydantic-settings>=2.14.1
+python-jose[cryptography]>=3.5.0
+python-multipart>=0.0.30
+passlib[bcrypt]>=1.7.4
+bcrypt==3.2.2
+email-validator
+
+# Asynchronous Tasks
+celery>=5.6.3
+redis>=8.0.0
+psycopg2-binary>=2.9.12
+minio>=7.2.20
+imohash>=1.1.0
+
+opensearch-py>=3.2.0,<4.0.0
+httpx>=0.28.1
+python-dotenv>=1.2.2
+ldap3>=2.9.1
+slowapi>=0.1.9
+cryptography>=48.0.0
+pyotp>=2.9.0
+qrcode[pil]>=8.2
+
+# AI/ML stack (CPU wheels via the extra index above)
+numpy>=2.1.0
+torch==2.8.0
+torchaudio==2.8.0
+ctranslate2>=4.7.2,<5
+faster-whisper>=1.2.1
+transformers>=4.48.0
+huggingface-hub<1.0.0
+onnx>=1.21.0
+onnxruntime==1.26.0
+omegaconf>=2.3.0
+
+# Supporting libraries
+ffmpeg-python>=0.2.0
+gender-guesser>=0.4.0
+sentencepiece>=0.2.1
+psutil>=7.2.2
+pyexiftool>=0.5.6
+yt-dlp[default]>=2026.3.17
+
+# Semantic search and NLP
+sentence-transformers>=5.5.1
+nltk>=3.9.4
+
+# Cloud ASR provider SDKs (lazily imported)
+deepgram-sdk>=7.3.0
+assemblyai>=0.64.4
+google-cloud-speech>=2.39.0
+azure-cognitiveservices-speech>=1.50.0
+speechmatics-batch>=0.4.8
+boto3>=1.43.21
+openai>=2.40.0
+requests>=2.34.2
+
+# Diarization metrics (cpWER) — exercised by tests/unit/test_diarization_metrics.py
+meeteval>=0.4.0
+
+# Content redaction (wordlist/config tests run in the default suite;
+# model-weight tests carry @pytest.mark.models and skip in CI)
+presidio-analyzer>=2.2.355
+presidio-anonymizer>=2.2.355
+gliner>=0.2.13
+detoxify>=0.5.2
+
+# Watch sources
+watchdog>=4.0.0
+smbprotocol>=1.12.0
+msal>=1.26.0
+
+# Test tooling (mirrors the test section of requirements-dev.txt)
+pytest>=8.4.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+pytest-xdist>=3.8.0

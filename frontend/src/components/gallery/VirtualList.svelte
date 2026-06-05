@@ -127,7 +127,7 @@
   }
 
   function handleRowMouseDown(file: MediaFile) {
-    if (!isSelecting) prefetchFileDetails(file.uuid);
+    if (!isSelecting) prefetchFileDetails(file.uuid, file.status);
   }
 
   function handleCheckboxChange(fileId: string, e: Event) {
@@ -206,7 +206,7 @@
           class="file-list-link"
           on:click={(e) => handleRowClick(file, e)}
           on:mousedown={() => handleRowMouseDown(file)}
-          on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid)}
+          on:mouseenter={() => !isSelecting && prefetchFileDetails(file.uuid, file.status)}
           on:mouseleave={cancelPrefetch}
         >
           <!-- Type Icon -->

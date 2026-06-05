@@ -20,6 +20,9 @@ Run with specific base URL:
 """
 
 import os
+import shutil
+import subprocess
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -76,13 +79,115 @@ def authenticated_page(page: Page, base_url: str):
     page.fill("#password", TEST_ADMIN_PASSWORD)
     page.click("button[type=submit]")
 
-    # Wait for redirect to gallery/dashboard
-    page.wait_for_url(f"{base_url}/**", timeout=15000)
+    # Wait for the redirect OFF the login page (a bare f"{base_url}/**"
+    # pattern matches /login itself and returns before navigation happens)
+    page.wait_for_url(lambda url: "/login" not in url, timeout=15000)
 
     # Wait for page to be fully loaded
     page.wait_for_load_state("networkidle")
 
     return page
+
+
+@pytest.fixture(scope="session")
+def shared_auth_state(browser):
+    """Login ONCE per session and persist browser storage state.
+
+    Repeated per-test logins trip the backend's login rate limiting in larger
+    runs — prefer this with a fresh context per test (see gallery_page).
+    """
+    import tempfile
+
+    context = browser.new_context(
+        viewport={"width": 1920, "height": 1080},
+        ignore_https_errors=True,
+    )
+    page = context.new_page()
+    page.goto(FRONTEND_URL)
+    page.wait_for_selector("#email", timeout=15000)
+    page.fill("#email", TEST_ADMIN_EMAIL)
+    page.fill("#password", TEST_ADMIN_PASSWORD)
+    page.click("button[type=submit]")
+    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+
+    fd, state_file = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    context.storage_state(path=state_file)
+    page.close()
+    context.close()
+
+    yield state_file
+
+    if os.path.exists(state_file):
+        os.unlink(state_file)
+
+
+@pytest.fixture
+def gallery_page(browser, shared_auth_state):
+    """A fresh pre-authenticated page on the gallery (no per-test login)."""
+    context = browser.new_context(
+        storage_state=shared_auth_state,
+        viewport={"width": 1920, "height": 1080},
+        ignore_https_errors=True,
+    )
+    page = context.new_page()
+    page.goto(FRONTEND_URL)
+    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    yield page
+    page.close()
+    context.close()
+
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def _generate_media(filename: str, ffmpeg_args: list[str]) -> Path:
+    """Generate a small media fixture with ffmpeg (cached across runs)."""
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg not available — cannot generate media fixtures")
+    FIXTURES_DIR.mkdir(exist_ok=True)
+    out = FIXTURES_DIR / filename
+    if not out.exists():
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", *ffmpeg_args, str(out)],
+            check=True,
+            timeout=60,
+        )
+    return out
+
+
+@pytest.fixture(scope="session")
+def sample_audio() -> Path:
+    """2-second 440 Hz mono WAV — small, valid, passes magic-byte validation."""
+    return _generate_media(
+        "sample_audio.wav",
+        ["-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-ac", "1", "-ar", "16000"],
+    )
+
+
+@pytest.fixture(scope="session")
+def sample_video() -> Path:
+    """2-second test-pattern MP4 with a sine audio track."""
+    return _generate_media(
+        "sample_video.mp4",
+        [
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=2:size=320x240:rate=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+        ],
+    )
 
 
 @pytest.fixture
@@ -200,18 +305,24 @@ class APIHelper:
         self._token: str | None = None
 
     def login(self, email: str, password: str) -> dict:
-        """Login via API and store token."""
+        """Login via API and store token (retry through transient rate limiting)."""
+        import time
+
         import requests
 
-        response = requests.post(
-            f"{self.backend_url}/api/auth/token",
-            data={"username": email, "password": password},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=30,
-        )
-        result = cast(dict, response.json())
-        if response.status_code == 200:
-            self._token = cast(str, result["access_token"])
+        result: dict = {}
+        for attempt in range(4):
+            response = requests.post(
+                f"{self.backend_url}/api/auth/token",
+                data={"username": email, "password": password},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=30,
+            )
+            result = cast(dict, response.json())
+            if response.status_code == 200:
+                self._token = cast(str, result["access_token"])
+                return result
+            time.sleep(5 * (attempt + 1))
         return result
 
     def get(self, endpoint: str) -> dict:
@@ -235,6 +346,16 @@ class APIHelper:
             f"{self.backend_url}{endpoint}", json=data, headers=headers, timeout=30
         )
         return cast(dict, response.json())
+
+    def delete(self, endpoint: str) -> int:
+        """Make authenticated DELETE request; returns the status code."""
+        import requests
+
+        headers: dict[str, str] = {}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        response = requests.delete(f"{self.backend_url}{endpoint}", headers=headers, timeout=30)
+        return response.status_code
 
 
 @pytest.fixture

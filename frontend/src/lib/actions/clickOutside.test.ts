@@ -11,7 +11,8 @@ describe('clickOutside action', () => {
     outside = document.createElement('button');
     document.body.append(node, outside);
     handler = vi.fn();
-    node.addEventListener('click_outside', handler);
+    // vitest 4's Mock type no longer structurally matches EventListener
+    node.addEventListener('click_outside', handler as unknown as EventListener);
   });
 
   afterEach(() => {

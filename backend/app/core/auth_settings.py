@@ -239,6 +239,11 @@ class DynamicAuthSettings:
         """Check if certificate revocation should be verified."""
         return self.get_bool("pki_verify_revocation", False)
 
+    @property
+    def pki_admin_dns(self) -> str:
+        """Semicolon-separated certificate DNs granted admin on PKI login."""
+        return self.get_str("pki_admin_dns", "")
+
     # MFA Settings Properties
     @property
     def mfa_enabled(self) -> bool:

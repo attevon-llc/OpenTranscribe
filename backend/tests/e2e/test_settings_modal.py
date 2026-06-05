@@ -28,6 +28,8 @@ import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
+pytestmark = pytest.mark.settings
+
 FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
@@ -184,3 +186,53 @@ class TestSettingsModal:
         _open_settings_modal(app_page)
         app_page.locator(".settings-modal .modal-close-button").click()
         expect(app_page.locator(".settings-modal")).to_have_count(0, timeout=8000)
+
+
+def _open_section(page: Page, nav_label: str) -> None:
+    """Open the Settings modal and switch to the given sidebar section."""
+    _open_settings_modal(page)
+    nav_item = page.locator(".settings-sidebar .nav-item", has_text=nav_label)
+    if nav_item.count() == 0:
+        pytest.skip(f"Settings section '{nav_label}' not available for this user")
+    nav_item.first.click()
+    expect(page.locator(".settings-content .section-title").first).to_be_visible(timeout=8000)
+
+
+class TestProfileSection:
+    """Profile & Security section (issue #123 Phase 3) — mutation-free checks."""
+
+    def test_account_fields_render(self, app_page: Page) -> None:
+        """Email (read-only) and full-name fields render with current values."""
+        _open_section(app_page, "Profile & Security")
+        email = app_page.locator("#email")
+        expect(email).to_be_visible(timeout=8000)
+        expect(email).to_be_disabled()
+        expect(email).to_have_value(TEST_ADMIN_EMAIL)
+        expect(app_page.locator("#fullName")).to_be_visible()
+        expect(app_page.locator("#fullName")).to_be_editable()
+
+    def test_password_change_rejects_wrong_current(self, app_page: Page) -> None:
+        """A wrong current password is rejected server-side (nothing persists)."""
+        _open_section(app_page, "Profile & Security")
+        current = app_page.locator("#currentPassword")
+        expect(current).to_be_visible(timeout=8000)
+        current.fill("definitely-not-the-password-123!")
+        app_page.fill("#newPassword", "SomeNewSecure123!")
+        app_page.fill("#confirmPassword", "SomeNewSecure123!")
+        # Locale-independent: the submit button of the change-password form
+        app_page.locator("form:has(#currentPassword) button[type=submit]").click()
+        # The backend rejects the wrong current password -> error toast shown
+        expect(app_page.locator(".toast.toast-error")).to_be_visible(timeout=10000)
+
+
+class TestTranscriptionSection:
+    """Transcription Settings section (issue #123 Phase 3) — read-only checks."""
+
+    def test_transcription_controls_render(self, app_page: Page) -> None:
+        """Speaker-behavior selector renders; min/max inputs when applicable."""
+        _open_section(app_page, "Transcription Settings")
+        expect(app_page.locator("#speaker-behavior")).to_be_visible(timeout=8000)
+        # min/max inputs render only for the defaults/saved behaviors
+        if app_page.locator("#min-speakers").count():
+            expect(app_page.locator("#min-speakers")).to_be_visible()
+            expect(app_page.locator("#max-speakers")).to_be_visible()

@@ -54,20 +54,24 @@ def _create_backup_code_context() -> CryptContext:
     Returns:
         CryptContext: Configured password hashing context
     """
-    if settings.FIPS_VERSION == "140-3":
-        # Use PBKDF2-SHA256 with 600k iterations for FIPS 140-3
+    if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3":
+        # Use PBKDF2-SHA256 with 600k iterations for FIPS 140-3.
+        # FIPS_MODE is the master switch — FIPS_VERSION alone defaults to
+        # "140-3" even on non-FIPS deployments (matches core/security.py).
         return CryptContext(
             schemes=["pbkdf2_sha256"],
             default="pbkdf2_sha256",
             pbkdf2_sha256__rounds=settings.PBKDF2_ITERATIONS_V3,
         )
     else:
-        # Legacy: bcrypt (still used for non-FIPS environments)
-        # Using cost factor 12 for balance between security and performance
+        # Non-FIPS: bcrypt by default (cost factor 12 balances security and
+        # performance). pbkdf2_sha256 stays verifiable so backup codes hashed
+        # while the old FIPS_VERSION-only branch was active keep working.
         return CryptContext(
-            schemes=["bcrypt"],
+            schemes=["bcrypt", "pbkdf2_sha256"],
             default="bcrypt",
             bcrypt__rounds=12,
+            pbkdf2_sha256__rounds=settings.PBKDF2_ITERATIONS_V3,
         )
 
 

@@ -20,6 +20,15 @@ services:
       - ./backend:/app  # Mount source code for development
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload  # Enable hot reload
+    environment:
+      # Dev-only security-limit relaxation. The e2e suite performs hundreds of
+      # real logins (plus deliberate failed ones) per run; the production
+      # limits are security controls, not test gates. This file is NEVER
+      # loaded in prod, so deployed stacks keep the strict .env defaults
+      # (10/min per IP, lockout after 5 failures). Tune via DEV_* in .env.
+      RATE_LIMIT_AUTH_PER_MINUTE: ${DEV_RATE_LIMIT_AUTH_PER_MINUTE:-120}
+      ACCOUNT_LOCKOUT_THRESHOLD: ${DEV_ACCOUNT_LOCKOUT_THRESHOLD:-100}
+      ACCOUNT_LOCKOUT_DURATION_MINUTES: ${DEV_ACCOUNT_LOCKOUT_DURATION_MINUTES:-1}
 
   celery-worker:
     image: opentranscribe-backend:latest
@@ -102,6 +111,10 @@ services:
     volumes:
       - ./frontend:/app  # Mount source code for development
       - /app/node_modules  # Exclude node_modules from host mount
+      # Exclude SvelteKit's generated dir: host-side `npm run build/check`
+      # writes .svelte-kit files from the HOST toolchain into the bind mount,
+      # which breaks the container's vite SSR ("Cannot find module '$app/env'").
+      - /app/.svelte-kit
     ports:
       - "${FRONTEND_PORT:-5173}:5173"  # Dev Vite server port
     environment:

@@ -747,7 +747,11 @@ REDACTION_STYLES = ["label", "asterisks", "first_letter", "blur"]
 # display until the scan completes, so users enable it explicitly. Admins can force it.
 DEFAULT_REDACTION_ENABLED = False
 DEFAULT_REDACTION_DETECTORS = ["profanity", "pii", "toxicity"]  # llm opt-in
-DEFAULT_REDACTION_CATEGORIES = ["profanity", "pii", "toxicity", "custom"]
+# PII is deliberately NOT a default masking category: name masking is aggressive on
+# conversational transcripts (every "[NAME]" interrupts reading) and the primary ask
+# is profanity/toxicity masking. PII spans are still DETECTED and cached (detectors
+# above), so enabling the category later applies instantly at read time.
+DEFAULT_REDACTION_CATEGORIES = ["profanity", "toxicity", "custom"]
 # ORGANIZATION is excluded from defaults: spaCy NER over-tags acronyms/common nouns as
 # ORG (e.g. "SSN" → ORGANIZATION), and org names are rarely sensitive PII. Still selectable.
 DEFAULT_REDACTION_PII_ENTITIES = [e for e in REDACTION_PII_ENTITIES if e != "ORGANIZATION"]

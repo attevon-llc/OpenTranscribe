@@ -16,12 +16,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture
-def sample_audio_file():
-    """Create a mock audio file for testing"""
-    return {"file": ("test_audio.mp3", io.BytesIO(b"mock audio content"), "audio/mpeg")}
-
-
 def test_list_files(client, user_token_headers):
     """Test listing user's files"""
     response = client.get("/api/files", headers=user_token_headers)
@@ -37,21 +31,20 @@ def test_list_files_unauthorized(client):
     assert response.status_code == 401  # Unauthorized
 
 
-def test_upload_file(client, user_token_headers, sample_audio_file, db_session):
-    """Test uploading a file"""
-    response = client.post("/api/files", headers=user_token_headers, files=sample_audio_file)
-    assert response.status_code == 200
-    file_data = response.json()
+def test_upload_file(user_token_headers, upload_test_file):
+    """Test uploading a file (real WAV — passes magic-byte validation)"""
+    file_data = upload_test_file(user_token_headers, filename="test_audio.wav")
 
     # Basic schema validation - uses uuid not id
     assert "uuid" in file_data
     assert "filename" in file_data
-    assert file_data["filename"] == "test_audio.mp3"
+    assert file_data["filename"] == "test_audio.wav"
 
 
-def test_upload_file_unauthorized(client, sample_audio_file):
+def test_upload_file_unauthorized(client, test_wav_bytes):
     """Test that unauthorized users cannot upload files"""
-    response = client.post("/api/files", files=sample_audio_file)
+    files = {"file": ("test_audio.wav", io.BytesIO(test_wav_bytes), "audio/wav")}
+    response = client.post("/api/files", files=files)
     assert response.status_code == 401  # Unauthorized
 
 

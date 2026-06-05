@@ -15,6 +15,13 @@ import pytest
 import torch
 from torchaudio.compliance import kaldi
 
+# compute_fbank_batched lives in the pyannote-audio fork (GPU worker dep) —
+# skip cleanly in environments without it (e.g. the CPU-only CI venv).
+pytest.importorskip(
+    "pyannote.audio.onnx.runtime",
+    reason="requires the pyannote-audio fork (GPU worker dependency)",
+)
+
 
 @pytest.fixture
 def fbank_fn():

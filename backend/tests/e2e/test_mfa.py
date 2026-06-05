@@ -405,14 +405,15 @@ class TestMFAStatusDisplay:
         _login_browser(page, ADMIN_EMAIL, ADMIN_PASSWORD)
         _wait_for_gallery(page)
 
+        # Auth is an httpOnly cookie (no JS-readable token since the 0.4.0
+        # cookie migration) — same-origin fetch sends it automatically.
         result = page.evaluate(
             """
             async () => {
-                const token = localStorage.getItem('token');
-                if (!token) return { error: 'No token found' };
                 const resp = await fetch('/api/auth/mfa/status', {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    credentials: 'same-origin'
                 });
+                if (!resp.ok) return { error: `HTTP ${resp.status}` };
                 return await resp.json();
             }
         """

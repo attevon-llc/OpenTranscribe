@@ -13,8 +13,24 @@ Run with visible browser:
 
 import uuid
 
+from conftest import TEST_ADMIN_EMAIL
+from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+
+
+def _delete_user_by_email(api_helper, email: str) -> None:
+    """Best-effort cleanup of a user this test registered (dev data hygiene)."""
+    try:
+        api_helper.login(TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD)
+        users = api_helper.get("/api/admin/users")
+        items = users if isinstance(users, list) else users.get("items", [])
+        for user in items:
+            if user.get("email") == email:
+                api_helper.delete(f"/api/admin/users/{user['uuid']}")
+                return
+    except Exception:
+        pass  # cleanup is best-effort; scripts/cleanup-test-users.py catches strays
 
 
 class TestLoginFlow:
@@ -36,8 +52,9 @@ class TestLoginFlow:
         login_page.fill("#password", "password")
         login_page.click("button[type=submit]")
 
-        # Should redirect to gallery/dashboard
-        login_page.wait_for_url(f"{base_url}/**", timeout=15000)
+        # Should redirect to gallery/dashboard (a bare base_url/** pattern
+        # matches /login itself — wait for the navigation off the login page)
+        login_page.wait_for_url(lambda url: "/login" not in url, timeout=15000)
 
         # Verify we're logged in - check for user menu or gallery content
         expect(
@@ -47,8 +64,13 @@ class TestLoginFlow:
         ).to_be_visible(timeout=10000)
 
     def test_login_failure_invalid_password(self, login_page: Page):
-        """Test login fails with invalid password."""
-        login_page.fill("#email", "admin@example.com")
+        """Test login fails with invalid password.
+
+        Nonexistent account (same 401 path) — failing against the real admin
+        account trips the progressive per-account lockout (threshold 5) and
+        poisons every later test in the suite.
+        """
+        login_page.fill("#email", "nosuchuser-e2e@example.com")
         login_page.fill("#password", "wrongpassword")
         login_page.click("button[type=submit]")
 
@@ -153,28 +175,30 @@ class TestRegistrationFlow:
         email = f"testuser_{unique_id}@example.com"
         password = "TestPassword123!"
 
-        # Navigate to registration page
-        page.goto(f"{base_url}/login")
-        page.wait_for_selector("a[href*=register]")
-        page.click("a[href*=register]")
-        page.wait_for_timeout(1000)
+        try:
+            # Navigate to registration page
+            page.goto(f"{base_url}/login")
+            page.wait_for_selector("a[href*=register]")
+            page.click("a[href*=register]")
+            page.wait_for_timeout(1000)
 
-        # Fill registration form
-        page.fill("#username", username)
-        page.fill("#email", email)
-        page.fill("#password", password)
-        page.fill("#confirmPassword", password)
+            # Fill registration form
+            page.fill("#username", username)
+            page.fill("#email", email)
+            page.fill("#password", password)
+            page.fill("#confirmPassword", password)
 
-        # Submit
-        page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(3000)
+            # Submit
+            page.click("button:has-text('Create Account')")
 
-        # Should either redirect to login or show success message
-        # Check if we're on login page or got a success indication
-        on_login = "/login" in page.url and "register" not in page.url
-        success_msg = page.locator("text=success, text=created, text=registered").first.is_visible()
-
-        assert on_login or success_msg, f"Registration should succeed. URL: {page.url}"
+            # Successful registration auto-logs-in and lands on the gallery
+            # (frontend/src/routes/register/+page.svelte: register -> login -> goto "/").
+            # Wait for the navigation itself — the navbar button can render
+            # a beat before goto("/") completes.
+            page.wait_for_url(lambda url: "register" not in url.lower(), timeout=15000)
+            page.wait_for_selector(".user-button", timeout=15000)
+        finally:
+            _delete_user_by_email(api_helper, email)
 
     def test_registration_password_mismatch(self, page: Page, base_url: str):
         """Test registration fails when passwords don't match."""
@@ -241,25 +265,10 @@ class TestRegistrationFlow:
         )
         assert error_shown, "Should show error for duplicate email"
 
-    def test_registration_duplicate_username_fails(self, page: Page, base_url: str):
-        """Test registration fails for existing username."""
-        page.goto(f"{base_url}/login")
-        page.wait_for_selector("a[href*=register]")
-        page.click("a[href*=register]")
-        page.wait_for_timeout(1000)
-
-        # Try to register with likely existing username
-        unique_email = f"unique_{uuid.uuid4().hex[:8]}@example.com"
-        page.fill("#username", "admin")  # Likely exists
-        page.fill("#email", unique_email)
-        page.fill("#password", "ValidPassword123!")
-        page.fill("#confirmPassword", "ValidPassword123!")
-
-        page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
-        # Should show error about existing username or stay on page
-        assert "register" in page.url or page.locator("#username").is_visible()
+    # NOTE: there is deliberately no "duplicate username" test — the register
+    # form's "username" maps to User.full_name, which is NOT unique (only
+    # email is: app/models/user.py). The duplicate-email test above covers
+    # the real uniqueness constraint.
 
 
 class TestAuthenticationPersistence:

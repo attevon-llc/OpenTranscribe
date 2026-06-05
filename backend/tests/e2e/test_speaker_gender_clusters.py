@@ -81,9 +81,12 @@ class TestGenderChipsOnClusterCards:
         if gender_chips.count() > 0:
             first_chip = gender_chips.first
             expect(first_chip).to_be_visible()
-            text = first_chip.text_content() or ""
-            assert "\u2642" in text or "\u2640" in text, (
-                "Gender chip should contain male or female symbol"
+            # Chips render an SVG gender icon + the composition label
+            # ("100% Male" etc.) \u2014 SpeakerClusterCard.svelte
+            expect(first_chip.locator("svg.gender-svg")).to_be_visible()
+            text = (first_chip.text_content() or "").lower()
+            assert "male" in text or "female" in text, (
+                f"Gender chip should contain the composition label, got: {text!r}"
             )
 
     def test_gender_chip_coherent_vs_conflict(self, authenticated_page: Page):
@@ -132,8 +135,13 @@ class TestGenderIconsOnMemberRows:
         if gender_icons.count() > 0:
             first_icon = gender_icons.first
             expect(first_icon).to_be_visible()
-            text = first_icon.text_content() or ""
-            assert "\u2642" in text or "\u2640" in text
+            # Member rows render an SVG icon whose title carries the gender
+            # label (ClusterMemberList.svelte) \u2014 there is no text glyph.
+            expect(first_icon.locator("svg.gender-svg")).to_be_visible()
+            title = (first_icon.get_attribute("title") or "").lower()
+            assert "male" in title or "female" in title, (
+                f"Gender icon title should name the gender, got: {title!r}"
+            )
 
     def test_outlier_highlighting(self, authenticated_page: Page):
         """Verify outlier members get highlighted styling."""
@@ -192,12 +200,17 @@ class TestProfileGenderConfirmation:
         if gender_btns.count() == 0:
             pytest.skip("No gender buttons found")
 
-        first_btn = gender_btns.first
-        first_btn.click()
+        # E2E must NOT mutate dev data: only re-click an ALREADY-active gender
+        # button (re-confirms the same gender — no net change). Real mutation
+        # is covered by tests/test_speaker_gender_confirm.py.
+        active_btns = authenticated_page.locator(".gender-toggle-btn.active")
+        if active_btns.count() == 0:
+            pytest.skip("No confirmed-gender profile — mutation covered by unit tests")
+
+        active_btns.first.click()
         authenticated_page.wait_for_timeout(1000)
 
-        active_btns = authenticated_page.locator(".gender-toggle-btn.active")
-        expect(active_btns.first).to_be_visible()
+        expect(authenticated_page.locator(".gender-toggle-btn.active").first).to_be_visible()
 
 
 # ---------------------------------------------------------------------------
@@ -259,15 +272,28 @@ class TestSpeakerClustersAPI:
         if not members:
             pytest.skip("No members in cluster")
 
-        speaker_uuid = members[0]["speaker_uuid"]
+        # E2E must NOT mutate dev data (it drifts the speakers visual
+        # baselines). Only re-confirm a member that is ALREADY confirmed with
+        # its existing gender — a no-op write. Mutation behavior is covered by
+        # tests/test_speaker_gender_confirm.py (savepoint-rolled-back).
+        confirmed = [
+            m
+            for m in members
+            if m.get("gender_confirmed_by_user") and m.get("predicted_gender") in ("male", "female")
+        ]
+        if not confirmed:
+            pytest.skip("No already-confirmed member — mutation covered by unit tests")
+
+        speaker_uuid = confirmed[0]["speaker_uuid"]
+        gender = confirmed[0]["predicted_gender"]
 
         confirm_resp = api_session.post(
-            f"{BACKEND_URL}/api/speakers/{speaker_uuid}/confirm-gender?gender=male",
+            f"{BACKEND_URL}/api/speakers/{speaker_uuid}/confirm-gender?gender={gender}",
             timeout=10,
         )
         assert confirm_resp.status_code == 200
         result = confirm_resp.json()
-        assert result["predicted_gender"] == "male"
+        assert result["predicted_gender"] == gender
         assert result["gender_confirmed_by_user"] is True
 
     def test_confirm_speaker_gender_invalid(self, api_session: requests.Session):
@@ -294,20 +320,27 @@ class TestSpeakerClustersAPI:
         assert bad_resp.status_code == 400
 
     def test_confirm_profile_gender_endpoint(self, api_session: requests.Session):
-        """POST /speaker-profiles/profiles/{uuid}/confirm-gender bulk-updates."""
+        """POST /speaker-profiles/profiles/{uuid}/confirm-gender bulk-updates.
+
+        E2E must NOT mutate dev data — only re-confirm a profile's EXISTING
+        gender (no-op write). See tests/test_speaker_gender_confirm.py for
+        the mutating coverage.
+        """
         resp = api_session.get(f"{BACKEND_URL}/api/speaker-profiles/profiles", timeout=10)
         assert resp.status_code == 200
         profiles = resp.json()
-        if not profiles:
-            pytest.skip("No profiles exist")
+        confirmed = [p for p in profiles if p.get("predicted_gender") in ("male", "female")]
+        if not confirmed:
+            pytest.skip("No profile with a set gender — mutation covered by unit tests")
 
-        profile_uuid = profiles[0]["uuid"]
+        profile_uuid = confirmed[0]["uuid"]
+        gender = confirmed[0]["predicted_gender"]
 
         confirm_resp = api_session.post(
-            f"{BACKEND_URL}/api/speaker-profiles/profiles/{profile_uuid}/confirm-gender?gender=female",
+            f"{BACKEND_URL}/api/speaker-profiles/profiles/{profile_uuid}/confirm-gender?gender={gender}",
             timeout=10,
         )
         assert confirm_resp.status_code == 200
         result = confirm_resp.json()
-        assert result["predicted_gender"] == "female"
+        assert result["predicted_gender"] == gender
         assert "updated_count" in result

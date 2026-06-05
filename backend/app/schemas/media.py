@@ -568,6 +568,16 @@ class CommentCreate(CommentBase):
     pass  # media_file_id will be from URL path
 
 
+class CommentCreateStandalone(CommentBase):
+    """Comment creation where the file reference travels in the body.
+
+    Used by ``POST /api/comments`` (the non-nested fallback route); the
+    frontend sends the file's public UUID as ``media_file_id``.
+    """
+
+    media_file_id: UUID
+
+
 class CommentUpdate(BaseModel):
     text: Optional[str] = None
     timestamp: Optional[float] = None

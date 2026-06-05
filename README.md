@@ -889,12 +889,22 @@ npm run lint                     # Lint code
 ```
 
 ### **Testing**
+
+Testing is **local-first**: GitHub Actions runs the unit/API suite as a
+safety net, but the complete suite (S3/OpenSearch integration, browser E2E)
+needs the live dev stack and runs locally.
+
 ```bash
-# Backend tests
-./opentr.sh shell backend
+# The pre-merge gate — runs EVERYTHING against the live stack
+# (ungated suite, security-gated suites in both FIPS modes, integration tests)
+./scripts/run-integration-tests.sh              # add --coverage / --e2e-smoke
+
+# Backend tests (host venv; MinIO/OpenSearch tests auto-enable when the stack is up)
+source backend/venv/bin/activate
+cd backend/
 pytest tests/                    # All tests
 pytest tests/api/                # API tests only
-pytest --cov=app tests/          # With coverage
+pytest --cov=app tests/          # With coverage (report-only, no threshold yet)
 
 # Frontend tests
 cd frontend/
@@ -904,9 +914,11 @@ npm run check                    # svelte-check (types + a11y)
 npm run lint                     # ESLint (flat config)
 npm run check:i18n               # locale key-parity across all 8 languages
 
-# Frontend end-to-end (Playwright via pytest, against the live stack)
-source backend/venv/bin/activate
-pytest backend/tests/e2e/ -v                 # headless
+# Browser end-to-end (Playwright via pytest, against the live stack)
+./scripts/e2e/run-e2e.sh                     # full e2e suite, headless
+./scripts/e2e/run-e2e-smoke.sh               # quick read-mostly subset
+./scripts/e2e/run-e2e.sh -m upload           # one marker: upload/search/settings/
+                                             # transcription/gallery/auth/visual
 pytest backend/tests/e2e/test_a11y.py -v     # axe-core accessibility
 pytest backend/tests/e2e/test_visual_regression.py -v   # screenshot baselines
 ```

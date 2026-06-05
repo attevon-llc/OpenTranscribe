@@ -19,12 +19,50 @@ import os
 import tempfile
 
 import pytest
+import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
 FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
+BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
+
+
+@pytest.fixture(scope="module")
+def local_watch_capability() -> bool:
+    """Whether the stack exposes the local-folder watch capability.
+
+    The stepper defaults to a *local* source when the watch overlay is up
+    (./opentr.sh start dev --with-watch mounts WATCH_HOST_PATH). Without it
+    the form defaults to S3 (bucket+keys required), so the name-only stepper
+    walkthroughs cannot advance — that's environment, not a bug.
+    """
+    try:
+        resp = requests.post(
+            f"{BACKEND_URL}/api/auth/token",
+            data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
+            timeout=15,
+        )
+        token = resp.json().get("access_token")
+        caps = requests.get(
+            f"{BACKEND_URL}/api/watch-sources/capabilities",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        ).json()
+        return bool(caps.get("local_enabled"))
+    except Exception:
+        return False
+
+
+@pytest.fixture
+def require_local_watch(local_watch_capability: bool) -> None:
+    if not local_watch_capability:
+        pytest.skip(
+            "local watch capability not enabled — start the stack with "
+            "./opentr.sh start dev --with-watch"
+        )
+
 
 BENIGN_CONSOLE_SUBSTRINGS = (
     "Failed to load resource",
@@ -115,7 +153,7 @@ class TestWatchSourcesPanel:
         # The "Add Watch Source" button should be present.
         expect(app_page.get_by_role("button", name="Add Watch Source")).to_be_visible(timeout=8000)
 
-    def test_stepper_walks_all_steps(self, app_page: Page) -> None:
+    def test_stepper_walks_all_steps(self, app_page: Page, require_local_watch: None) -> None:
         """The Add editor is a guided stepper: Next walks every step to Save."""
         _open_watch_sources(app_page)
         app_page.get_by_role("button", name="Add Watch Source").click()
@@ -141,7 +179,9 @@ class TestWatchSourcesPanel:
         unexpected = _unexpected_console_errors(app_page._console_errors)  # type: ignore[attr-defined]
         assert not unexpected, f"Unexpected console errors: {unexpected}"
 
-    def test_create_and_delete_local_source(self, app_page: Page) -> None:
+    def test_create_and_delete_local_source(
+        self, app_page: Page, require_local_watch: None
+    ) -> None:
         """Create a local watch source through the stepper, see it listed, delete it."""
         _open_watch_sources(app_page)
         name = "E2E Created Source"

@@ -3685,5 +3685,7 @@
   "settings.watchSources.collectionCreateFailed": "Échec de la création de la collection",
   "settings.emailNotifications.experimental": "Expérimental",
   "settings.emailNotifications.experimentalNote": "L'envoi d'e-mail est expérimental — testez avant de vous y fier.",
-  "settings.emailNotifications.setupTitle": "Configurer l'e-mail avec les fournisseurs modernes"
+  "settings.emailNotifications.setupTitle": "Configurer l'e-mail avec les fournisseurs modernes",
+  "settings.contentRedaction.showOriginalTooltip": "Afficher le texte original non expurgé (propriétaires et administrateurs uniquement ; les catégories imposées par l'administrateur restent masquées)",
+  "settings.contentRedaction.showRedactedTooltip": "Revenir à la vue expurgée avec le contenu sensible masqué"
 }

@@ -25,7 +25,14 @@
   const dispatch = createEventDispatcher<{
     close: void;
     loadMore: void;
+    toggleRedaction: void;
   }>();
+
+  // Content redaction toggle (owner/admin only) — state lives on the file
+  // detail page; the modal just renders the same control for consistency.
+  export let showRedactionToggle: boolean = false;
+  export let showOriginal: boolean = false;
+  export let redactionToggleBusy: boolean = false;
 
   let loading = false;
   let error: string | null = null;
@@ -254,6 +261,25 @@
 <BaseModal {isOpen} maxWidth="1200px" onClose={handleClose}>
       <svelte:fragment slot="header">
         <h2 class="modal-title">{$t('transcriptModal.title', { fileName })}</h2>
+        {#if showRedactionToggle}
+          <!-- Left of the header actions — keep it away from the close X -->
+          <button
+            type="button"
+            class="redaction-link-btn"
+            on:click={() => dispatch('toggleRedaction')}
+            disabled={redactionToggleBusy}
+            title={showOriginal
+              ? $t('settings.contentRedaction.showRedactedTooltip')
+              : $t('settings.contentRedaction.showOriginalTooltip')}
+          >
+            {#if redactionToggleBusy}
+              <Spinner size="small" />
+            {/if}
+            {showOriginal
+              ? $t('settings.contentRedaction.showRedacted')
+              : $t('settings.contentRedaction.showOriginal')}
+          </button>
+        {/if}
         <div class="header-actions">
           {#if consolidatedTranscript}
             <button
@@ -589,6 +615,35 @@
     background-color: var(--success-bg);
     border-color: var(--success-color);
     color: var(--success-color);
+  }
+
+  /* Matches .redaction-link-btn on the file detail page for UI consistency */
+  .redaction-link-btn {
+    background: none;
+    border: none;
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--primary-color);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      color 0.12s ease,
+      background-color 0.12s ease;
+  }
+  .redaction-link-btn:hover {
+    color: var(--primary-hover);
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+  }
+  .redaction-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .redaction-link-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
   }
 
   .modal-title {

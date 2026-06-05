@@ -50,11 +50,10 @@ def _login_local(page: Page, email: str, password: str):
 
 def _wait_for_gallery(page: Page, timeout: int = 15000):
     """Helper: wait for the gallery/main page to load after login."""
-    # Wait until the login form disappears (SPA navigation — URL may or may not change)
-    page.wait_for_function(
-        "() => !document.querySelector('#email') || document.querySelector('#email').offsetParent === null",
-        timeout=timeout,
-    )
+    # Wait for the SPA NAVIGATION itself — the login form / navbar state can
+    # update a beat before goto("/") completes, so element-based waits race
+    # any later assertion on page.url.
+    page.wait_for_url(lambda url: "/login" not in url, timeout=timeout)
     page.wait_for_load_state("networkidle", timeout=timeout)
 
 

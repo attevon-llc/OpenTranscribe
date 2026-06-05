@@ -25,16 +25,38 @@ from typing import Any
 
 import pytest
 import requests
+
+# Absolute import — the e2e dir is not a package, so a relative import breaks
+# collection when invoked as `pytest backend/tests/e2e/` from the repo root.
+from conftest import TEST_ADMIN_EMAIL
+from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
 from playwright.sync_api import expect
-
-from .conftest import TEST_ADMIN_EMAIL
-from .conftest import TEST_ADMIN_PASSWORD
 
 # Test data
 TEST_FILE_TITLE = "PyTorch at Tesla"
 FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
 BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+
+
+def _assert_zip_of(download: Any, extension: str) -> None:
+    """Assert a gallery export download is a ZIP whose entries match `extension`.
+
+    Bulk export always produces a presigned ZIP (even for one file) since the
+    download-architecture rollout — see /api/files/bulk-export/prepare.
+    """
+    import zipfile
+
+    assert download.suggested_filename.endswith(".zip"), (
+        f"Expected a .zip archive, got: {download.suggested_filename}"
+    )
+    with tempfile.NamedTemporaryFile(suffix=".zip") as tmp:
+        download.save_as(tmp.name)
+        with zipfile.ZipFile(tmp.name) as archive:
+            names = archive.namelist()
+            assert names, "Export ZIP is empty"
+            wrong = [n for n in names if not n.endswith(extension)]
+            assert not wrong, f"Expected only {extension} entries, got: {names}"
 
 
 # ---------------------------------------------------------------------------
@@ -258,8 +280,21 @@ class TestSelectionModeButtons:
         menu = self.page.locator(".dropdown-menu")
         expect(menu).to_be_visible(timeout=3000)
 
+        # Assert by label, not raw count — counts silently break when actions
+        # are added (e.g. Redact arrived with the content-redaction feature).
         items = menu.locator(".dropdown-item")
-        assert items.count() == 5, f"Expected 5 process items, got {items.count()}"
+        labels = [items.nth(i).inner_text().strip() for i in range(items.count())]
+        for expected in (
+            "Reprocess",
+            "Summarize",
+            "Redact",
+            "Retry Failed",
+            "Speaker ID",
+            "Cancel Processing",
+        ):
+            assert any(expected.lower() in lbl.lower() for lbl in labels), (
+                f"Process dropdown missing '{expected}'. Items: {labels}"
+            )
 
     def test_process_dropdown_items_have_tooltips(self) -> None:
         """Each Process dropdown item should have a tooltip."""
@@ -421,7 +456,8 @@ class TestBulkActions:
         self.page.click(".process-btn")
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
-        cancel_item = menu.locator(".dropdown-item").nth(4)
+        # Select by text, not index — positional locators break when items are added
+        cancel_item = menu.locator(".dropdown-item", has_text="Cancel Processing")
         assert cancel_item.is_disabled(), (
             "Cancel Processing should be disabled when no processing files selected"
         )
@@ -500,9 +536,9 @@ class TestBulkActions:
         with self.page.expect_download(timeout=30000) as download_info:
             srt_btn.click()
         download = download_info.value
-        assert download.suggested_filename.endswith(".srt"), (
-            f"Expected .srt file, got: {download.suggested_filename}"
-        )
+        # Bulk export always delivers a presigned ZIP (download-architecture
+        # rollout, commit c40c9a8) — verify the archive holds .srt entries.
+        _assert_zip_of(download, ".srt")
 
     def test_export_webvtt_via_ui(self) -> None:
         """Clicking Export WebVTT should trigger a download."""
@@ -517,10 +553,8 @@ class TestBulkActions:
         with self.page.expect_download(timeout=30000) as download_info:
             webvtt_btn.click()
         download = download_info.value
-        # Frontend converts 'webvtt' to '.vtt' extension
-        assert download.suggested_filename.endswith(".vtt"), (
-            f"Expected .vtt file, got: {download.suggested_filename}"
-        )
+        # ZIP of .vtt files (bulk export always zips; 'webvtt' format -> .vtt)
+        _assert_zip_of(download, ".vtt")
 
     def test_export_txt_via_ui(self) -> None:
         """Clicking Export Text should trigger a download."""
@@ -535,9 +569,7 @@ class TestBulkActions:
         with self.page.expect_download(timeout=30000) as download_info:
             txt_btn.click()
         download = download_info.value
-        assert download.suggested_filename.endswith(".txt"), (
-            f"Expected .txt file, got: {download.suggested_filename}"
-        )
+        _assert_zip_of(download, ".txt")
 
     def test_bulk_reprocess_shows_confirmation(self) -> None:
         """Clicking Reprocess should show a confirmation dialog."""

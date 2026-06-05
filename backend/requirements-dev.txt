@@ -5,27 +5,28 @@
 -r requirements.txt
 
 # Code Quality & Formatting
-black>=25.1.0
-ruff>=0.12.0
-mypy>=2.0.0
+black>=26.5.1
+ruff>=0.15.15
+mypy>=2.1.0
 mypy-extensions>=1.1.0
 
 # Testing
-pytest>=8.4.0
-pytest-asyncio>=0.23.0  # For testing async code
-pytest-cov>=4.1.0  # Code coverage reports
+pytest>=9.0.3
+pytest-asyncio>=1.4.0  # For testing async code
+pytest-cov>=7.1.0  # Code coverage reports
+pytest-xdist>=3.8.0  # Parallel execution — pyproject addopts uses "-n auto"
 
 # E2E (Playwright) test infrastructure
-pytest-playwright>=0.7.2  # Playwright pytest plugin (browser fixtures)
+pytest-playwright>=0.8.0  # Playwright pytest plugin (browser fixtures)
 axe-playwright-python>=0.1.7  # Bundled axe-core a11y scans (no CDN fetch at runtime)
 
 # Git Hooks & Pre-commit
-pre-commit>=4.3.0
+pre-commit>=4.6.0
 
 # Type Stubs for Better Type Checking
 types-redis>=4.6.0.20241004
-types-passlib>=1.7.0
+types-passlib>=1.7.7.20260211
 
 # Development Utilities
-ipython>=8.12.0  # Enhanced Python shell
-ipdb>=0.13.0  # IPython debugger
+ipython>=9.14.0  # Enhanced Python shell
+ipdb>=0.13.13  # IPython debugger

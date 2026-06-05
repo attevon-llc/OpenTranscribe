@@ -143,42 +143,60 @@ npm run check
 
 ### Testing Requirements
 
+Testing is **local-first**: the GitHub Actions `backend-tests` and
+`frontend-tests` jobs are a safety net (unit/API tests against a fresh
+Postgres, vitest), but the complete suite needs the live dev stack
+(`./opentr.sh start dev`) and runs locally:
+
+```bash
+# THE pre-merge gate — runs everything (ungated + security-gated suites in
+# both FIPS modes + integration tests) against the live stack
+./scripts/run-integration-tests.sh        # flags: --coverage --e2e-smoke --cleanup
+```
+
 #### Backend Tests
 - **Unit Tests**: Test individual functions and classes
 - **Integration Tests**: Test API endpoints and database operations
 - **Service Tests**: Test business logic and external integrations
 
+MinIO- and OpenSearch-backed tests auto-enable when the dev stack is
+reachable (see `backend/tests/conftest.py` service detection) and skip
+otherwise. Security suites are opt-in via `RUN_*` env vars (the gate
+script sets them all).
+
 ```bash
-# Run all tests
+source backend/venv/bin/activate && cd backend/
+
+# Run all tests (parallel by default, integration-marked tests excluded)
 pytest tests/
 
 # Run specific test file
 pytest tests/api/endpoints/test_files.py
 
-# Run with coverage
+# Run with coverage (report-only — no enforced threshold yet)
 pytest --cov=app tests/
 
-# Run only fast tests (exclude integration)
-pytest -m "not integration" tests/
+# Run the integration-marked tests (live stack required)
+pytest -m integration tests/
 ```
 
 #### Frontend Tests
-- **Component Tests**: Test individual Svelte components
-- **Store Tests**: Test state management
-- **Integration Tests**: Test user workflows
+- **Component Tests**: Test individual Svelte components (vitest + Testing Library)
+- **Store/Util Tests**: Test state management and pure helpers
 
 ```bash
-# Run unit tests
-npm run test
+cd frontend/
+npm run test              # vitest, single pass
+npm run test:watch        # watch mode
+npm run test:coverage     # with coverage (report-only)
+```
 
-# Run component tests
-npm run test:components
-
-# Run E2E tests
-npm run test:e2e
-
-# Watch mode
-npm run test:watch
+#### Browser E2E Tests (Playwright, against the live stack)
+```bash
+./scripts/e2e/run-e2e.sh                # full suite, headless
+./scripts/e2e/run-e2e-smoke.sh          # quick read-mostly subset
+./scripts/e2e/run-e2e.sh -m upload      # by marker: upload, search, settings,
+                                        # transcription, gallery, auth, visual
 ```
 
 ### Code Quality Standards

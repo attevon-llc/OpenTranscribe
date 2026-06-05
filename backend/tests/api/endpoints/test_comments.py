@@ -4,7 +4,6 @@ These tests require MinIO/S3 storage which is disabled in the test environment.
 They are marked as skipped by default. Run with actual storage services for full testing.
 """
 
-import io
 import os
 
 import pytest
@@ -17,13 +16,9 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-def test_file_with_comment(client, user_token_headers, db_session):
+def test_file_with_comment(user_token_headers, upload_test_file):
     """Create a test file that we can add comments to"""
-    # Upload a file
-    file_data = {"file": ("comment_test.mp3", io.BytesIO(b"test audio content"), "audio/mpeg")}
-    response = client.post("/api/files", headers=user_token_headers, files=file_data)
-    assert response.status_code == 200, f"File upload failed: {response.json()}"
-    data = response.json()
+    data = upload_test_file(user_token_headers, filename="comment_test.wav")
     # Return uuid if available, otherwise id
     return data.get("uuid") or data.get("id")
 

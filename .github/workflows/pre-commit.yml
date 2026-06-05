@@ -27,7 +27,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'  # matches frontend/Dockerfile.prod build stage (node:22-alpine)
+          node-version: '24' # matches frontend/Dockerfile.prod build stage (node:24-alpine, active LTS)
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -66,6 +66,101 @@ jobs:
           echo "- Shell script validation (shellcheck)" >> $GITHUB_STEP_SUMMARY
           echo "- Dockerfile linting (Hadolint)" >> $GITHUB_STEP_SUMMARY
 
+  backend-tests:
+    # Best-effort safety net: runs the unit/API suite + security-gated suites
+    # against a fresh Postgres with CPU-only deps (requirements-ci.txt — no
+    # Docker app images, no GPU wheels). The COMPLETE suite (S3/OpenSearch/
+    # integration/E2E) runs locally via scripts/run-integration-tests.sh,
+    # which remains the pre-merge source of truth.
+    name: Backend Tests (pytest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: transcribe_app
+        ports:
+          - 5176:5432 # the port backend/tests/conftest.py expects
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5176'
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: transcribe_app
+      # No MinIO/OpenSearch services here — keep those suites skipped
+      SKIP_S3: 'True'
+      SKIP_OPENSEARCH: 'True'
+      DATA_DIR: /tmp/ci-data
+      MODELS_DIR: /tmp/ci-models
+      TEMP_DIR: /tmp/ci-temp
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements-ci.txt
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies (CPU wheels)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-ci.txt
+
+      - name: Verify app imports
+        working-directory: backend
+        run: python -c "import app.main"
+        env:
+          TESTING: 'True'
+
+      - name: Run database migrations
+        working-directory: backend
+        run: python -m alembic upgrade head
+
+      - name: Run unit/API test suite (with coverage, report-only)
+        working-directory: backend
+        run: |
+          pytest tests/ --cov=app --cov-report=term | tee pytest-output.txt
+          {
+            echo "## Backend Test Coverage (report-only)"
+            echo '```'
+            tail -40 pytest-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run security-gated suites (FIPS 140-3 mode)
+        working-directory: backend
+        env:
+          RUN_PKI_TESTS: 'true'
+          RUN_MFA_TESTS: 'true'
+          RUN_LLM_TESTS: 'true'
+          RUN_FEDRAMP_TESTS: 'true'
+          RUN_FIPS_TESTS: 'true'
+          FIPS_MODE: 'true'
+          RUN_AUTH_CONFIG_TESTS: 'true'
+          RUN_ADVANCED_ADMIN_TESTS: 'true'
+          # RUN_SEARCH_QUALITY_TESTS deliberately omitted — corpus-dependent
+          # relevance harness, local-only via run-integration-tests.sh
+        run: >-
+          pytest tests/test_pki_auth.py tests/test_mfa_security.py
+          tests/test_llm_settings.py tests/test_fedramp_compliance.py
+          tests/test_fedramp_controls.py tests/test_fips_140_3.py
+          tests/test_auth_config_service.py tests/test_admin_security.py
+          tests/test_admin_endpoints.py
+          -o addopts="" -n auto --dist loadgroup -q --tb=short
+
   frontend-tests:
     name: Frontend Unit Tests (Vitest)
     runs-on: ubuntu-latest
@@ -76,7 +171,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 

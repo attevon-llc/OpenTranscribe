@@ -98,6 +98,12 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
                 "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
             },
         )
+    except FileNotFoundError as e:
+        # Thumbnail referenced in the DB but missing from storage
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thumbnail not found in storage",
+        ) from e
     except Exception as e:
         logger.error(f"Error retrieving thumbnail: {e}")
         raise HTTPException(

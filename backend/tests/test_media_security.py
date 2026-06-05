@@ -171,14 +171,39 @@ def test_media_file(db_session, test_user):
 
 @pytest.fixture
 def test_media_file_with_thumbnail(db_session, test_user):
-    """Create a test media file with thumbnail for the test user."""
+    """Create a test media file with a real thumbnail object in storage.
+
+    When MinIO is reachable (SKIP_S3=False) the thumbnail bytes are uploaded so
+    the 200 path is genuinely exercised; the object is removed on teardown.
+    The path is UUID-unique so parallel test workers never collide.
+    """
+    import io
+    import os
+
     from app.models.media import MediaFile
 
+    file_uuid = str(uuid.uuid4())
+    thumbnail_path = f"media/test/thumbs/{file_uuid}.webp"
+    s3_live = os.environ.get("SKIP_S3", "True").lower() != "true"
+
+    if s3_live:
+        from app.core.config import settings
+        from app.services.minio_service import minio_client
+
+        thumb_bytes = b"RIFF\x1a\x00\x00\x00WEBPVP8 "  # minimal WebP-flavoured payload
+        minio_client.put_object(
+            settings.MEDIA_BUCKET_NAME,
+            thumbnail_path,
+            io.BytesIO(thumb_bytes),
+            length=len(thumb_bytes),
+            content_type="image/webp",
+        )
+
     file = MediaFile(
-        uuid=str(uuid.uuid4()),
+        uuid=file_uuid,
         filename="test_video_thumb.mp4",
-        storage_path="media/test/test_video_thumb.mp4",
-        thumbnail_path="media/test/thumbs/test_video_thumb.webp",
+        storage_path=f"media/test/{file_uuid}.mp4",
+        thumbnail_path=thumbnail_path,
         content_type="video/mp4",
         file_size=1024000,
         user_id=test_user.id,
@@ -188,4 +213,11 @@ def test_media_file_with_thumbnail(db_session, test_user):
     db_session.add(file)
     db_session.commit()
     db_session.refresh(file)
-    return file
+
+    yield file
+
+    if s3_live:
+        try:
+            minio_client.remove_object(settings.MEDIA_BUCKET_NAME, thumbnail_path)
+        except Exception:
+            pass  # best-effort cleanup of the test object

@@ -39,6 +39,23 @@ def test_user_opts_in(monkeypatch):
     _patch(monkeypatch, {"redaction_enabled": "true"}, dict(_EMPTY_ADMIN))
     cfg = resolve_effective_config(None, 1)
     assert cfg.enabled is True
+    # Default categories mask language, not identities: PII is deliberately
+    # opt-in (every "[NAME]" interrupts reading conversational transcripts).
+    assert cfg.enabled_categories == {"profanity", "toxicity", "custom"}
+    assert "pii" not in cfg.enabled_categories
+
+
+def test_user_opts_into_pii(monkeypatch):
+    _patch(
+        monkeypatch,
+        {
+            "redaction_enabled": "true",
+            "redaction_categories": '["profanity", "toxicity", "custom", "pii"]',
+        },
+        dict(_EMPTY_ADMIN),
+    )
+    cfg = resolve_effective_config(None, 1)
+    assert cfg.enabled is True
     assert "pii" in cfg.enabled_categories
 
 

@@ -45,6 +45,8 @@ from PIL import Image
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
+pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet stack)
+
 FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
 BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")

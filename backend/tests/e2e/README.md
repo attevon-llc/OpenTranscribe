@@ -274,6 +274,29 @@ def test_async_operation(self, page: Page, base_url: str):
 - **Admin user:** `admin@example.com` / `password`
 - **Test user creation:** Uses unique UUID-based emails to avoid conflicts
 
+## Security limits vs fast testing (IMPORTANT)
+
+Production auth security stays strict (`.env`: 10 logins/min per IP, account
+lockout after 5 failures, progressive duration). The **dev stack only**
+relaxes these via `docker-compose.override.yml` (never loaded in prod):
+`RATE_LIMIT_AUTH_PER_MINUTE=120`, `ACCOUNT_LOCKOUT_THRESHOLD=100`,
+`ACCOUNT_LOCKOUT_DURATION_MINUTES=1` (tunable via `DEV_*` vars in `.env`).
+
+Suite rules that keep auth healthy regardless:
+
+- **Never submit wrong passwords for `admin@example.com`.** Negative login
+  tests must use a nonexistent account (e.g. `nosuchuser-e2e@example.com`) —
+  same 401 path, but it can't trip the per-account lockout and poison every
+  test that follows.
+- **Prefer the shared-auth fixtures** (`gallery_page`, module-scoped
+  storage-state fixtures) over per-test logins — one login per session.
+- **Registration tests must delete the users they create** (see
+  `_delete_user_by_email` in `test_registration.py`) and wait for the
+  post-register NAVIGATION (`page.wait_for_url`), not just the navbar button.
+- Auth is **httpOnly-cookie based** — there is no JS-readable token. In
+  `page.evaluate`, call APIs with `fetch(url, {credentials: 'same-origin'})`,
+  never `localStorage.getItem('token')`.
+
 ## Troubleshooting
 
 ### Tests fail with "element detached from DOM"

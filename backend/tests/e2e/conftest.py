@@ -79,8 +79,9 @@ def authenticated_page(page: Page, base_url: str):
     page.fill("#password", TEST_ADMIN_PASSWORD)
     page.click("button[type=submit]")
 
-    # Wait for redirect to gallery/dashboard
-    page.wait_for_url(f"{base_url}/**", timeout=15000)
+    # Wait for the redirect OFF the login page (a bare f"{base_url}/**"
+    # pattern matches /login itself and returns before navigation happens)
+    page.wait_for_url(lambda url: "/login" not in url, timeout=15000)
 
     # Wait for page to be fully loaded
     page.wait_for_load_state("networkidle")

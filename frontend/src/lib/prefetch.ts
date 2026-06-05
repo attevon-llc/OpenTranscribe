@@ -21,8 +21,12 @@ let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 /**
  * Prefetch file details and stream URL on hover.
  * Debounced at 200ms to handle virtual scroll thrashing.
+ *
+ * Pass the file's `status` when known: stream URLs only exist for completed
+ * files, so prefetching one for an error/processing file is a guaranteed 404
+ * (browser logs it as a console error on every gallery hover).
  */
-export function prefetchFileDetails(fileUuid: string): void {
+export function prefetchFileDetails(fileUuid: string, status?: string): void {
   cancelPrefetch();
 
   pendingTimer = setTimeout(() => {
@@ -39,15 +43,19 @@ export function prefetchFileDetails(fileUuid: string): void {
 
     inflight.add(fileUuid);
 
-    // Fire both requests in parallel, silently
-    Promise.all([
+    const requests: Promise<unknown>[] = [
       apiCache.getOrFetch(
         cacheKey.fileDetail(fileUuid),
         () => axiosInstance.get(`/files/${fileUuid}`).then((r) => r.data),
         CacheTTL.FILES
       ),
-      getMediaStreamUrl(fileUuid, 'video').catch(() => null),
-    ])
+    ];
+    if (status === undefined || status === 'completed') {
+      requests.push(getMediaStreamUrl(fileUuid, 'video').catch(() => null));
+    }
+
+    // Fire requests in parallel, silently
+    Promise.all(requests)
       .catch(() => {
         failedCache.set(fileUuid, Date.now());
       })

@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -25,6 +26,29 @@ from app.services.protected_media_providers import get_protected_media_auth_conf
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/capabilities")
+async def get_system_capabilities(request: Request) -> dict[str, Any]:
+    """Edition + capability map driving server-side feature gating.
+
+    The frontend calls this once at bootstrap and renders only the surfaces
+    listed as enabled; gated endpoints independently 404 when off (the
+    backend gate is the authority — see app.core.capabilities). Community
+    edition returns everything-on defaults; the cloud edition's resolver
+    computes edition ∩ subscription tier.
+    """
+    from app.core.capabilities import CAPABILITY_AUDIENCE
+    from app.core.capabilities import edition
+    from app.core.capabilities import get_capabilities
+
+    return {
+        "edition": edition(),
+        "capabilities": get_capabilities(request),
+        # WHO each surface is for (user|team|org_admin|platform) — drives
+        # which UI area renders it; roles below the audience see nothing.
+        "audience": CAPABILITY_AUDIENCE,
+    }
 
 
 def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:

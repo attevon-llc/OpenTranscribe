@@ -38,6 +38,8 @@ class SummaryPrompt(Base):
     prompt_text = Column(Text, nullable=False)
     is_system_default = Column(Boolean, nullable=False, default=False)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=True, index=True)
+    # Cloud-edition seam: tenant scope (NULL = personal). Written by the cloud layer.
+    organization_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     is_active = Column(Boolean, nullable=False, default=True)
     content_type = Column(
         String(50), nullable=True, index=True
@@ -74,6 +76,7 @@ class UserSetting(Base):
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
     )
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     setting_key = Column(String(100), nullable=False, index=True)
     setting_value = Column(Text, nullable=True)  # Can store JSON or simple values
     created_at = Column(DateTime(timezone=True), server_default=func.now())

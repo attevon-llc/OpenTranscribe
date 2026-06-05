@@ -36,6 +36,10 @@ class User(Base):
     )  # When True: user can authenticate via password even if auth_type != 'local'
     ldap_uid = Column(String, nullable=True, unique=True, index=True)  # sAMAccountName from AD
     keycloak_id = Column(String(255), unique=True, nullable=True, index=True)  # Keycloak subject ID
+    clerk_id = Column(String(255), unique=True, nullable=True, index=True)  # Clerk subject (sub)
+    clerk_org_id = Column(
+        String(255), nullable=True
+    )  # Last-seen Clerk org — convenience only, never authorization authority
     keycloak_refresh_token = Column(
         Text, nullable=True
     )  # Encrypted KC refresh token for federated logout
@@ -112,6 +116,10 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
         order_by="desc(PasswordHistory.created_at)",
+    )
+    # Organization (tenant) memberships — cloud-edition seam, empty for self-host
+    org_memberships = relationship(
+        "OrganizationMembership", back_populates="user", cascade="all, delete-orphan"
     )
     # Groups and sharing relationships
     owned_groups = relationship("UserGroup", back_populates="owner", cascade="all, delete-orphan")

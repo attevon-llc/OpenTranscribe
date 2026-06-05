@@ -31,6 +31,8 @@ class CustomVocabulary(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=True, index=True)
+    # Cloud-edition seam: tenant scope (NULL = personal). Written by the cloud layer.
+    organization_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     term = Column(String(200), nullable=False)
     domain = Column(String(50), nullable=False, default="general")
     category = Column(String(100), nullable=True)  # Sub-category within domain

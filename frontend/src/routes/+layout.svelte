@@ -12,6 +12,7 @@
 
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods } from "$stores/auth";
+  import { loadCapabilities } from "$stores/capabilities";
   import { theme } from "../stores/theme";
   import { locale } from "../stores/locale";
   import { llmStatusStore } from "../stores/llmStatus";
@@ -76,6 +77,10 @@
 
       // Initialize network connectivity monitoring
       networkStore.initialize();
+
+      // Edition capabilities (cloud hides platform/self-host surfaces).
+      // Fail-open: errors leave community defaults (everything visible).
+      void loadCapabilities();
 
       // Fetch auth methods to get banner settings
       try {

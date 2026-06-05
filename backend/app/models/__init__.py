@@ -28,6 +28,8 @@ from .media import SpeakerProfile
 from .media import Tag
 from .media import Task
 from .media import TranscriptSegment
+from .organization import Organization
+from .organization import OrganizationMembership
 from .password_history import PasswordHistory
 from .password_reset import PasswordResetToken
 from .pipeline_timing import FilePipelineTiming
@@ -37,6 +39,7 @@ from .refresh_token import RefreshToken
 from .sharing import CollectionShare
 from .topic import TopicSuggestion
 from .upload_batch import UploadBatch
+from .usage_event import UsageEvent
 from .user import User
 from .user_asr_settings import UserASRSettings
 from .user_diarization_settings import UserDiarizationSettings
@@ -88,4 +91,7 @@ __all__ = [
     "WatchSourceFile",
     "EmailNotificationConfig",
     "WatchSourceEmail",
+    "Organization",
+    "OrganizationMembership",
+    "UsageEvent",
 ]

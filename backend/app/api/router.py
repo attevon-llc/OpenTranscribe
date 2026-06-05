@@ -43,7 +43,7 @@ api_router = APIRouter()
 
 
 # Function to include routers with proper route handling for consistent frontend-backend communication
-def include_router_with_consistency(router, prefix, tags=None):
+def include_router_with_consistency(router, prefix, tags=None, capability=None):
     """Include a router with consistent route handling that works both with and without trailing slashes
 
     This ensures consistent API behavior regardless of whether the frontend sends requests
@@ -53,6 +53,10 @@ def include_router_with_consistency(router, prefix, tags=None):
         router: The router to include
         prefix: The prefix for the router (e.g., '/users')
         tags: Tags for the router for API documentation
+        capability: Optional capability key gating the whole router — routes
+            return 404 when the deployment's capability resolver disables it
+            (community default: everything enabled, so no behavior change;
+            platform staff bypass applies). See app.core.capabilities.
     """
     if tags is None:
         tags = [prefix.strip("/")]  # Default tag based on prefix
@@ -60,8 +64,18 @@ def include_router_with_consistency(router, prefix, tags=None):
     # Ensure prefix starts with / but doesn't end with one
     normalized_prefix = "/" + prefix.strip("/")
 
+    dependencies = None
+    if capability is not None:
+        from fastapi import Depends
+
+        from app.core.capabilities import require_capability
+
+        dependencies = [Depends(require_capability(capability))]
+
     # Include the router with the normalized prefix
-    api_router.include_router(router, prefix=normalized_prefix, tags=tags)
+    api_router.include_router(
+        router, prefix=normalized_prefix, tags=tags, dependencies=dependencies
+    )
 
 
 # Include routers from different endpoints with consistent path handling
@@ -80,13 +94,19 @@ include_router_with_consistency(comments.router, prefix="/comments", tags=["comm
 include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])
 include_router_with_consistency(
-    watch_sources.router, prefix="/watch-sources", tags=["watch-sources"]
+    watch_sources.router,
+    prefix="/watch-sources",
+    tags=["watch-sources"],
+    capability="watch_sources",
 )
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])
 include_router_with_consistency(
-    auth_config.router, prefix="/admin/auth-config", tags=["auth-config"]
+    auth_config.router,
+    prefix="/admin/auth-config",
+    tags=["auth-config"],
+    capability="auth.config_ui",
 )
 include_router_with_consistency(system.router, prefix="/system", tags=["system"])
 include_router_with_consistency(
@@ -96,11 +116,24 @@ include_router_with_consistency(groups.router, prefix="/groups", tags=["groups"]
 include_router_with_consistency(user_files.router, prefix="/my-files", tags=["user-files"])
 include_router_with_consistency(summarization.router, prefix="/files", tags=["summarization"])
 include_router_with_consistency(prompts.router, prefix="/prompts", tags=["prompts"])
-include_router_with_consistency(llm_settings.router, prefix="/llm-settings", tags=["llm-settings"])
-include_router_with_consistency(llm_status.router, prefix="/llm", tags=["llm-status"])
-include_router_with_consistency(asr_settings.router, prefix="/asr-settings", tags=["asr-settings"])
 include_router_with_consistency(
-    engine_settings.router, prefix="/admin/engine-settings", tags=["admin"]
+    llm_settings.router,
+    prefix="/llm-settings",
+    tags=["llm-settings"],
+    capability="llm.user_settings",
+)
+include_router_with_consistency(llm_status.router, prefix="/llm", tags=["llm-status"])
+include_router_with_consistency(
+    asr_settings.router,
+    prefix="/asr-settings",
+    tags=["asr-settings"],
+    capability="asr.user_providers",
+)
+include_router_with_consistency(
+    engine_settings.router,
+    prefix="/admin/engine-settings",
+    tags=["admin"],
+    capability="engine.settings",
 )
 include_router_with_consistency(
     custom_vocabulary.router, prefix="/custom-vocabulary", tags=["custom-vocabulary"]

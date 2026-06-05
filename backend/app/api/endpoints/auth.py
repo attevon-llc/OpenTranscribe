@@ -123,6 +123,24 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Cloud-edition seam: offer the token to registered external verifiers
+    # (e.g. Clerk) before the local-JWT path. The community edition registers
+    # none, so this branch is a no-op there.
+    from app.auth.provider_registry import has_verifiers
+
+    if has_verifiers():
+        from app.auth.external_sync import sync_external_user_to_db
+        from app.auth.provider_registry import verify_external_token
+
+        external_identity = verify_external_token(token, request)
+        if external_identity is not None:
+            external_user = sync_external_user_to_db(db, external_identity)
+            if not external_user.is_active:
+                raise HTTPException(status_code=400, detail="Inactive user")
+            # Stash for get_current_context() so org scoping doesn't re-verify.
+            request.state.external_identity = external_identity
+            return external_user
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -1521,11 +1539,20 @@ async def get_auth_methods(db: Session = Depends(get_db)):
     if pki_enabled:
         methods.append("pki")
 
+    # Registry-based external providers (cloud edition registers e.g. "clerk";
+    # community registers none). Presence in the registry == enabled.
+    from app.auth.provider_registry import get_registered_providers
+
+    external_providers = get_registered_providers()
+    methods.extend(p for p in external_providers if p not in methods)
+
     return {
         "methods": methods,
         "keycloak_enabled": keycloak_enabled,
         "pki_enabled": pki_enabled,
         "ldap_enabled": ldap_enabled,
+        "external_providers": external_providers,
+        "clerk_enabled": "clerk" in external_providers,
         "mfa_enabled": mfa_enabled,
         "mfa_required": mfa_required,
         "login_banner_enabled": login_banner_enabled,

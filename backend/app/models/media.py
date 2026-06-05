@@ -27,6 +27,8 @@ class MediaFile(Base):
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
     )
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    # Cloud-edition seam: tenant scope (NULL = personal). Written by the cloud layer.
+    organization_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     filename = Column(String, index=True)
     storage_path = Column(String, nullable=False)  # Path in MinIO/S3
     upload_time = Column(DateTime(timezone=True), server_default=func.now())
@@ -208,6 +210,7 @@ class SpeakerProfile(Base):
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
     )
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    organization_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     name = Column(String, nullable=False)  # User-assigned name (e.g., "John Doe")
     description = Column(Text, nullable=True)  # Optional description or notes
 
@@ -259,6 +262,7 @@ class Speaker(Base):
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
     )
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    organization_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     media_file_id = Column(Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False)
     profile_id = Column(
         Integer, ForeignKey("speaker_profile.id", ondelete="SET NULL"), nullable=True
@@ -398,6 +402,7 @@ class Collection(Base):
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    organization_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     is_public = Column(Boolean, default=False)
     default_summary_prompt_id = Column(
         Integer,
@@ -459,6 +464,7 @@ class SpeakerCollection(Base):
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    organization_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
     is_public = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

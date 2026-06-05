@@ -135,16 +135,30 @@ export async function initAuth() {
   localStorage.removeItem('user');
 
   try {
-    // Verify session by calling /auth/me — cookies are sent automatically
-    const userData = await fetchUserInfo();
-    if (!userData) {
-      authStore.reset();
+    // Probe /auth/session — returns 200 whether or not a session exists, so
+    // anonymous page loads don't produce 401 console errors or side effects.
+    const { data } = await axiosInstance.get('/auth/session');
+
+    if (data.authenticated) {
+      authStore.setUser(data.user);
+      authStore.setToken('cookie');
+      authStore.setReady(true);
       return;
     }
 
-    // Mark as authenticated (token is in httpOnly cookie, not accessible to JS)
-    authStore.setToken('cookie');
-    authStore.setReady(true);
+    if (data.refreshable) {
+      // Access token expired but a refresh cookie is present — restore the
+      // session silently instead of bouncing the user to the login page.
+      await axiosInstance.post('/auth/token/refresh', {});
+      const userData = await fetchUserInfo();
+      if (userData) {
+        authStore.setToken('cookie');
+        authStore.setReady(true);
+        return;
+      }
+    }
+
+    authStore.reset();
   } catch (error) {
     authStore.reset();
   }
@@ -159,8 +173,13 @@ export async function fetchUserInfo() {
     authStore.setUser(userData);
     return userData;
   } catch (error: unknown) {
-    console.error('auth.ts: Failed to fetch user info:', error);
-    logout();
+    // No logout() here: callers decide what a failed probe means. The old
+    // logout() side effect aborted unrelated in-flight requests (e.g. the
+    // login page's getAuthMethods) on every anonymous page load.
+    const status = asAuthError(error).response?.status;
+    if (status !== 401) {
+      console.error('auth.ts: Failed to fetch user info:', error);
+    }
     return null;
   }
 }

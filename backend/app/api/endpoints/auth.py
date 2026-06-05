@@ -1085,6 +1085,41 @@ def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+@router.get("/session", summary="Cookie-session status probe (never 401s)")
+def session_status(
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Report whether the caller has a valid session — with 200 either way.
+
+    The SPA's initAuth probes this on every page load. Anonymous visitors
+    must not receive a 401 (the browser logs every 401 as a console error
+    and the old /auth/me probe triggered a spurious logout cascade).
+
+    ``refreshable`` is true when no valid access token was presented but a
+    refresh_token cookie is — the client should attempt one silent refresh
+    before treating the visitor as logged out.
+    """
+    from app.auth.cookies import get_refresh_token_from_cookie
+
+    try:
+        user = get_current_user(request, token=token, db=db)
+        return {
+            "authenticated": True,
+            "refreshable": False,
+            "user": UserSchema.model_validate(user).model_dump(mode="json"),
+        }
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_401_UNAUTHORIZED:
+            raise
+        return {
+            "authenticated": False,
+            "refreshable": get_refresh_token_from_cookie(request) is not None,
+            "user": None,
+        }
+
+
 @router.get("/me/certificate", summary="Get current user's certificate info")
 def get_user_certificate_info(
     db: Session = Depends(get_db),

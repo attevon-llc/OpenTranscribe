@@ -38,10 +38,17 @@ async def get_system_capabilities(request: Request) -> dict[str, Any]:
     edition returns everything-on defaults; the cloud edition's resolver
     computes edition ∩ subscription tier.
     """
+    from app.core.capabilities import CAPABILITY_AUDIENCE
     from app.core.capabilities import edition
     from app.core.capabilities import get_capabilities
 
-    return {"edition": edition(), "capabilities": get_capabilities(request)}
+    return {
+        "edition": edition(),
+        "capabilities": get_capabilities(request),
+        # WHO each surface is for (user|team|org_admin|platform) — drives
+        # which UI area renders it; roles below the audience see nothing.
+        "audience": CAPABILITY_AUDIENCE,
+    }
 
 
 def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:

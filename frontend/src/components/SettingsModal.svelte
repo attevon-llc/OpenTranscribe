@@ -3,6 +3,7 @@
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { page } from '$app/stores';
   import { user as userStore } from '$stores/auth';
+  import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
   import { toastStore } from '$stores/toast';
   import axiosInstance from '$lib/axios';
@@ -125,12 +126,21 @@
   let confirmModalMessage = '';
   let confirmCallback: (() => void) | null = null;
 
-  // Define sidebar sections
+  // Edition capability gating (server-driven entitlements): a section item
+  // tagged with `cap` renders only when the backend lists that capability as
+  // enabled for this deployment. Community = everything on (no change);
+  // cloud hides platform/self-host surfaces so the product "just works".
+  // The backend independently 404s gated endpoints — this is cosmetic only.
+  $: capState = $capabilities;
+  const capOn = (state: typeof $capabilities, key?: string) =>
+    !key || isCapabilityEnabled(state, key);
+
+  // Define sidebar sections (filtered by capability; empty sections drop out)
   $: sidebarSections = [
     {
       title: $t('settings.sections.system'),
       items: [
-        { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart' }
+        { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart', cap: 'system.hardware_stats' }
       ]
     },
     ...(isAdmin ? [
@@ -139,9 +149,9 @@
         items: [
           ...(isSuperAdmin ? [
             { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list' },
-            { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key' }
+            { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key', cap: 'auth.config_ui' }
           ] : []),
-          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users' }
+          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users', cap: 'users.local_admin' }
         ]
       },
       {
@@ -158,24 +168,24 @@
     {
       title: $t('settings.sections.account'),
       items: [
-        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group' },
+        { id: 'groups' as SettingsSection, label: $t('groups.title'), icon: 'group', cap: 'sharing.teams' },
         { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' }
       ]
     },
     {
       title: $t('settings.sections.transcriptionAi'),
       items: [
-        { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
-        { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic' },
-        ...(isAdmin ? [{ id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu' }] : []),
-        ...(isAdmin ? [{ id: 'redaction-policy' as SettingsSection, label: $t('settings.redactionPolicy.title'), icon: 'shield' }] : []),
+        { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message', cap: 'prompts.user' },
+        { id: 'asr-provider' as SettingsSection, label: $t('settings.asrProvider.title'), icon: 'mic', cap: 'asr.user_providers' },
+        ...(isAdmin ? [{ id: 'engine-settings' as SettingsSection, label: $t('settings.engineSettings.title'), icon: 'cpu', cap: 'engine.settings' }] : []),
+        ...(isAdmin ? [{ id: 'redaction-policy' as SettingsSection, label: $t('settings.redactionPolicy.title'), icon: 'shield', cap: 'redaction.policy' }] : []),
         { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' },
-        { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list' },
-        { id: 'content-redaction' as SettingsSection, label: $t('settings.contentRedaction.title'), icon: 'eye-off' },
-        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
+        { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list', cap: 'vocab.user' },
+        { id: 'content-redaction' as SettingsSection, label: $t('settings.contentRedaction.title'), icon: 'eye-off', cap: 'redaction.user' },
+        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain', cap: 'llm.user_settings' },
         { id: 'organization-context' as SettingsSection, label: $t('settings.orgContext.title'), icon: 'briefcase' },
         { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
-        { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' }
+        { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform', cap: 'transcription.prefs' }
       ]
     },
     {
@@ -183,12 +193,17 @@
       items: [
         { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
         { id: 'media-sources' as SettingsSection, label: $t('settings.mediaSources.title'), icon: 'link' },
-        { id: 'watch-sources' as SettingsSection, label: $t('settings.watchSources.title'), icon: 'eye' },
-        { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
-        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download' }
+        { id: 'watch-sources' as SettingsSection, label: $t('settings.watchSources.title'), icon: 'eye', cap: 'watch_sources' },
+        { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic', cap: 'recording' },
+        { id: 'download' as SettingsSection, label: $t('settings.download.title'), icon: 'download', cap: 'exports' }
       ]
     }
-  ];
+  ]
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => capOn(capState, (item as { cap?: string }).cap))
+    }))
+    .filter((section) => section.items.length > 0);
 
   // Reactive recording settings change detection
   $: {

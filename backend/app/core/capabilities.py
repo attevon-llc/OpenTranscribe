@@ -28,25 +28,87 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# ---- Audience taxonomy -------------------------------------------------------
+# WHO a surface is for when it is enabled. Orthogonal to enabled-ness: the
+# capability map says whether the surface EXISTS in this deployment; the
+# audience says which role's UI/permissions it belongs to. End users are
+# never admins; org admins manage their tenant only (billing, members,
+# policies) and are NEVER platform admins; "platform" = Attevon staff in
+# cloud / the operator in self-host.
+AUDIENCE_USER = "user"  # individual end users (their own content/prefs)
+AUDIENCE_TEAM = "team"  # inner-team collaboration among org/group members
+AUDIENCE_ORG_ADMIN = "org_admin"  # tenant administrators (billing, seats, policies)
+AUDIENCE_PLATFORM = "platform"  # platform staff / self-host operator (config & ops)
+
 # Known capability keys with their COMMUNITY defaults (everything on except
 # the cloud-only surfaces, which don't exist without the cloud layer).
 COMMUNITY_CAPABILITIES: dict[str, bool] = {
-    # Feature surfaces that exist today
-    "watch_sources": True,  # local/S3/SMB auto-import (Settings → Watch Sources)
-    "asr.user_providers": True,  # per-user cloud-ASR provider configs + keys
-    "asr.model_selection": True,  # admin local-model pinning UI
-    "engine.settings": True,  # diarization/boundary tuning admin panel
-    "llm.user_settings": True,  # per-user LLM provider/endpoint/keys
-    "auth.config_ui": True,  # LDAP/Keycloak/PKI admin configuration UI
-    "users.local_admin": True,  # local user CRUD admin UI
-    "system.hardware_stats": True,  # GPU/CPU stats, benchmarks
-    "url_ingest": True,  # yt-dlp URL ingestion
+    # -- user-facing ------------------------------------------------------------
+    "upload": True,  # file upload + presigned flow
     "recording": True,  # in-browser recording
-    # Cloud-only surfaces (no implementation in core — the cloud layer
-    # flips these on and mounts the corresponding routers/UI)
+    "url_ingest": True,  # yt-dlp URL ingestion
+    "search": True,  # hybrid/semantic search
+    "exports": True,  # SRT/VTT/TXT/bulk exports
+    "comments": True,  # per-transcript comments
+    "transcription.prefs": True,  # language/translate/speaker prefs
+    "vocab.user": True,  # custom vocabulary (own terms)
+    "prompts.user": True,  # own summary prompts
+    "redaction.user": True,  # personal redaction preferences
+    "asr.user_providers": True,  # per-user cloud-ASR provider configs + keys
+    "llm.user_settings": True,  # per-user LLM provider/endpoint/keys
+    "watch_sources": True,  # local/S3/SMB auto-import (Settings → Watch Sources)
+    # -- team-facing (inner-team collaboration) ----------------------------------
+    "sharing.teams": True,  # groups + collection shares
+    "collections.shared": True,  # shared/org-visible collections
+    "speakers.shared": True,  # shared speaker profiles
+    "prompts.shared": True,  # shared prompt library
+    # -- org-admin (tenant administration; cloud-only surfaces) ------------------
     "billing": False,
     "usage_dashboard": False,
-    "organizations": False,
+    "organizations": False,  # member/seat management surface
+    "org.defaults": False,  # org-level default settings/policies
+    "redaction.policy": True,  # enforcement floor (org admin in cloud; operator here)
+    # -- platform (staff / self-host operator config & ops) ----------------------
+    "auth.config_ui": True,  # LDAP/Keycloak/PKI admin configuration UI
+    "users.local_admin": True,  # local user CRUD admin UI
+    "asr.model_selection": True,  # admin local-model pinning UI
+    "engine.settings": True,  # diarization/boundary tuning admin panel
+    "system.hardware_stats": True,  # GPU/CPU stats, benchmarks
+}
+
+# Every capability key MUST be classified (tested). The frontend uses this to
+# place surfaces in the right area (user settings / team / org admin /
+# platform admin) — and to render nothing at all for roles below the audience.
+CAPABILITY_AUDIENCE: dict[str, str] = {
+    "upload": AUDIENCE_USER,
+    "recording": AUDIENCE_USER,
+    "url_ingest": AUDIENCE_USER,
+    "search": AUDIENCE_USER,
+    "exports": AUDIENCE_USER,
+    "comments": AUDIENCE_USER,
+    "transcription.prefs": AUDIENCE_USER,
+    "vocab.user": AUDIENCE_USER,
+    "prompts.user": AUDIENCE_USER,
+    "redaction.user": AUDIENCE_USER,
+    "asr.user_providers": AUDIENCE_USER,
+    "llm.user_settings": AUDIENCE_USER,
+    "watch_sources": AUDIENCE_USER,
+    "sharing.teams": AUDIENCE_TEAM,
+    "collections.shared": AUDIENCE_TEAM,
+    "speakers.shared": AUDIENCE_TEAM,
+    "prompts.shared": AUDIENCE_TEAM,
+    "billing": AUDIENCE_ORG_ADMIN,
+    "usage_dashboard": AUDIENCE_ORG_ADMIN,
+    "organizations": AUDIENCE_ORG_ADMIN,
+    "org.defaults": AUDIENCE_ORG_ADMIN,
+    "redaction.policy": AUDIENCE_ORG_ADMIN,
+    "auth.config_ui": AUDIENCE_PLATFORM,
+    "users.local_admin": AUDIENCE_PLATFORM,
+    "asr.model_selection": AUDIENCE_PLATFORM,
+    "engine.settings": AUDIENCE_PLATFORM,
+    "system.hardware_stats": AUDIENCE_PLATFORM,
+    # Cloud-only tier-gated extras (resolver-added)
+    "llm.byok": AUDIENCE_ORG_ADMIN,
 }
 
 # Resolver signature: (request | None) -> capability dict. The request is
@@ -93,16 +155,38 @@ def capability_enabled(key: str, request: Optional[Request] = None) -> bool:
     return bool(get_capabilities(request).get(key, False))
 
 
-def require_capability(key: str) -> Callable:
+def require_capability(key: str, *, platform_admin_bypass: bool = True) -> Callable:
     """FastAPI dependency factory: 404 when the capability is off.
 
     404 (not 403) on purpose — a disabled feature surface should not exist
     at all for this deployment, exactly like an unknown route.
+
+    ``platform_admin_bypass`` (default on) lets platform staff
+    (``is_superuser``) through even when the capability is hidden from
+    tenants — cloud tenants can never become superusers (external_sync never
+    grants it), so this exactly implements the capabilities matrix's
+    "invisible to org users / available to platform staff" column.
     """
 
     def _dependency(request: Request) -> None:
-        if not capability_enabled(key, request):
-            raise HTTPException(status_code=404, detail="Not Found")
+        if capability_enabled(key, request):
+            return
+        if platform_admin_bypass:
+            try:
+                from app.api.endpoints.auth import get_optional_current_user
+                from app.db.base import SessionLocal
+
+                db = SessionLocal()
+                try:
+                    user = get_optional_current_user(request, db)
+                    if user is not None and bool(user.is_superuser):
+                        return
+                finally:
+                    db.close()
+            except Exception:
+                # Bypass is best-effort; any failure falls through to 404.
+                logger.debug("platform-admin bypass check failed", exc_info=True)
+        raise HTTPException(status_code=404, detail="Not Found")
 
     return _dependency
 

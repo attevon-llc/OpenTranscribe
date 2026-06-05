@@ -104,6 +104,56 @@ class TestCapabilities:
         assert body["edition"] == "community"
         assert body["capabilities"]["watch_sources"] is True
         assert body["capabilities"]["billing"] is False
+        assert body["audience"]["billing"] == "org_admin"
+        assert body["audience"]["engine.settings"] == "platform"
+
+    def test_every_capability_has_an_audience(self):
+        from app.core.capabilities import CAPABILITY_AUDIENCE
+
+        unclassified = set(COMMUNITY_CAPABILITIES) - set(CAPABILITY_AUDIENCE)
+        assert not unclassified, f"capabilities missing audience: {unclassified}"
+        valid = {"user", "team", "org_admin", "platform"}
+        assert set(CAPABILITY_AUDIENCE.values()) <= valid
+
+    def test_audience_separation_invariants(self):
+        """Org admins manage their tenant, never the platform: no org_admin
+        surface may be a platform config surface and vice versa."""
+        from app.core.capabilities import CAPABILITY_AUDIENCE
+
+        platform_keys = {k for k, a in CAPABILITY_AUDIENCE.items() if a == "platform"}
+        org_keys = {k for k, a in CAPABILITY_AUDIENCE.items() if a == "org_admin"}
+        assert not platform_keys & org_keys
+        # The dangerous platform surfaces are classified as platform
+        for key in ("auth.config_ui", "users.local_admin", "engine.settings"):
+            assert CAPABILITY_AUDIENCE[key] == "platform"
+
+
+class TestRouterGating:
+    """Capability-gated routers: visible in community, 404 when a cloud-style
+    resolver disables the surface, capabilities endpoint never gated."""
+
+    def test_community_router_reachable(self, client):
+        # Unauthenticated -> 401/403 (auth gate), NOT 404 (capability gate)
+        assert client.get("/api/watch-sources").status_code != 404
+        assert client.get("/api/llm-settings").status_code != 404
+
+    def test_cloud_resolver_hides_gated_routers(self, client):
+        set_capability_resolver(
+            lambda _req: {
+                "watch_sources": False,
+                "asr.user_providers": False,
+                "engine.settings": False,
+                "llm.user_settings": False,
+                "auth.config_ui": False,
+            }
+        )
+        assert client.get("/api/watch-sources").status_code == 404
+        assert client.get("/api/llm-settings").status_code == 404
+        assert client.get("/api/asr-settings/providers").status_code == 404
+        assert client.get("/api/admin/engine-settings").status_code == 404
+        assert client.get("/api/admin/auth-config").status_code == 404
+        # The capabilities endpoint itself must NEVER be gated
+        assert client.get("/api/system/capabilities").status_code == 200
 
 
 class TestPipelineHooks:

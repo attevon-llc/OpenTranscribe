@@ -127,6 +127,8 @@ DISPLAY=:11 pytest backend/tests/e2e/ -v --headed               # visible on XRD
 ```
 Test fixtures (in `conftest.py`): `login_page`, `authenticated_page`, `gallery_page` (shared one-login-per-session auth state — avoids login rate limiting), `auth_helper`, `api_helper`, ffmpeg-generated `sample_audio`/`sample_video`. Test creds: `admin@example.com` / `password`. E2E suites must never persist changes to dev data (upload tests delete what they create; edit tests use the cancel path).
 
+Auth-vs-testing rules: the **dev stack relaxes auth security limits** (`docker-compose.override.yml`: rate limit 120/min, lockout threshold 100 — `DEV_*` tunable in `.env`; prod keeps the strict `.env` values since the override is never loaded there). Negative login tests must use a **nonexistent account**, never wrong passwords for `admin@example.com` (progressive per-account lockout poisons the whole suite). Frontend auth is **httpOnly-cookie based** — no JS-readable token; in-page API calls use `fetch(..., {credentials: 'same-origin'})`. `GET /api/auth/session` is the SPA's session probe (200 for anonymous, never 401).
+
 ### Browser automation (interactive debugging)
 
 System tool at `~/bin/browser-tools/browse.js` — opens URL, runs actions (`fill:`, `click:`, `screenshot:`, `wait:`, `eval:`), captures console errors. Full action list and setup in `~/bin/browser-tools/README.md`. On XRDP, pass `--display=:13`.

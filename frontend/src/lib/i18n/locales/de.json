@@ -3685,5 +3685,7 @@
   "settings.watchSources.collectionCreateFailed": "Sammlung konnte nicht erstellt werden",
   "settings.emailNotifications.experimental": "Experimentell",
   "settings.emailNotifications.experimentalNote": "Der E-Mail-Versand ist experimentell — senden Sie einen Test, bevor Sie sich darauf verlassen.",
-  "settings.emailNotifications.setupTitle": "E-Mail mit modernen Anbietern einrichten"
+  "settings.emailNotifications.setupTitle": "E-Mail mit modernen Anbietern einrichten",
+  "settings.contentRedaction.showOriginalTooltip": "Den ursprünglichen, unzensierten Text anzeigen (nur Eigentümer und Administratoren; vom Administrator erzwungene Kategorien bleiben maskiert)",
+  "settings.contentRedaction.showRedactedTooltip": "Zurück zur zensierten Ansicht mit maskierten sensiblen Inhalten"
 }

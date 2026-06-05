@@ -3685,5 +3685,7 @@
   "settings.watchSources.collectionCreateFailed": "コレクションの作成に失敗しました",
   "settings.emailNotifications.experimental": "実験的",
   "settings.emailNotifications.experimentalNote": "メール送信は実験的機能です。依存する前にテスト送信してください。",
-  "settings.emailNotifications.setupTitle": "最新メールプロバイダーでの設定方法"
+  "settings.emailNotifications.setupTitle": "最新メールプロバイダーでの設定方法",
+  "settings.contentRedaction.showOriginalTooltip": "編集されていない元のテキストを表示（所有者と管理者のみ。管理者が強制したカテゴリはマスクされたままです）",
+  "settings.contentRedaction.showRedactedTooltip": "機密コンテンツがマスクされた編集済みビューに戻す"
 }

@@ -307,12 +307,56 @@
 
   /**
    * Toggle between the redacted view and the original (owner/admin only).
-   * Re-fetches the transcript from scratch with the appropriate redact flag.
+   * Refreshes ONLY the transcript data — no isLoading flip, no video/player
+   * re-setup — so the text swaps in place without a full-page flicker.
    * Admin-forced categories always remain masked regardless of this toggle.
    */
+  let redactionToggleBusy = false;
+
   async function toggleShowOriginal(): Promise<void> {
+    if (redactionToggleBusy) return;
+    redactionToggleBusy = true;
     showOriginal = !showOriginal;
-    await fetchFileDetails(fileId);
+    try {
+      await refreshTranscriptOnly();
+    } finally {
+      redactionToggleBusy = false;
+    }
+  }
+
+  /**
+   * Re-fetch transcript segments (honoring the current redact flag) and update
+   * transcript-related state in place. Everything else on the page — player,
+   * metadata, analytics — is left untouched.
+   */
+  async function refreshTranscriptOnly(): Promise<void> {
+    try {
+      const response = await axiosInstance.get(`/files/${fileId}`, {
+        params: showOriginal ? { redact: false } : {},
+      });
+      if (response.data && typeof response.data === 'object') {
+        // Replace BOTH segment representations: TranscriptDisplay prefers the
+        // backend-pre-grouped `grouped_segments`, so leaving the stale copy in
+        // place would keep rendering the old (masked/unmasked) text.
+        file = {
+          ...file,
+          transcript_segments: response.data.transcript_segments,
+          grouped_segments: response.data.grouped_segments
+        };
+        redactionPending = response.data.redaction_pending || false;
+        redactionStatus = response.data.redaction_status || '';
+        if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
+          if (response.data.transcript_segments.some((s: any) => s?.redactions?.length)) {
+            redactionActive = true;
+          }
+        }
+        reactiveFile.set(file);
+        processTranscriptData();
+      }
+    } catch (error) {
+      console.error('Error refreshing transcript:', error);
+      toastStore.error($t('fileDetail.failedToLoadFile'));
+    }
   }
 
   /**
@@ -2181,7 +2225,18 @@
                     {$t('settings.contentRedaction.rescan')}
                   </button>
                 {/if}
-                <button type="button" class="redaction-link-btn" on:click={toggleShowOriginal}>
+                <button
+                  type="button"
+                  class="redaction-link-btn"
+                  on:click={toggleShowOriginal}
+                  disabled={redactionToggleBusy}
+                  title={showOriginal
+                    ? $t('settings.contentRedaction.showRedactedTooltip')
+                    : $t('settings.contentRedaction.showOriginalTooltip')}
+                >
+                  {#if redactionToggleBusy}
+                    <Spinner size="small" />
+                  {/if}
                   {showOriginal
                     ? $t('settings.contentRedaction.showRedacted')
                     : $t('settings.contentRedaction.showOriginal')}
@@ -2375,6 +2430,10 @@
     {hasMoreSegments}
     {loadingMoreSegments}
     {diarizationDisabled}
+    {showRedactionToggle}
+    {showOriginal}
+    {redactionToggleBusy}
+    on:toggleRedaction={toggleShowOriginal}
     on:close={() => showTranscriptModal = false}
     on:loadMore={loadMoreSegments}
   />
@@ -2819,6 +2878,15 @@
   .redaction-link-btn:hover {
     color: var(--primary-hover);
     background-color: rgba(var(--primary-color-rgb), 0.1);
+  }
+  .redaction-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .redaction-link-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
   }
   .modal-footer {
     display: flex;

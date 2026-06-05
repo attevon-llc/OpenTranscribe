@@ -701,6 +701,20 @@ services:
     depends_on:
       - redis
       - celery-worker
+    # Override the backend image's HEALTHCHECK (it probes the API on :8080,
+    # which flower doesn't serve — the container reported unhealthy forever).
+    # Flower's own /healthcheck endpoint bypasses basic auth; the url_prefix
+    # puts it at /flower/healthcheck.
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fs http://127.0.0.1:5555/${FLOWER_URL_PREFIX:-flower}/healthcheck || exit 1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     volumes:
       # Flower only needs persistent database for monitoring, not AI models
       - flower_data:/app

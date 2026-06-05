@@ -304,18 +304,24 @@ class APIHelper:
         self._token: str | None = None
 
     def login(self, email: str, password: str) -> dict:
-        """Login via API and store token."""
+        """Login via API and store token (retry through transient rate limiting)."""
+        import time
+
         import requests
 
-        response = requests.post(
-            f"{self.backend_url}/api/auth/token",
-            data={"username": email, "password": password},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=30,
-        )
-        result = cast(dict, response.json())
-        if response.status_code == 200:
-            self._token = cast(str, result["access_token"])
+        result: dict = {}
+        for attempt in range(4):
+            response = requests.post(
+                f"{self.backend_url}/api/auth/token",
+                data={"username": email, "password": password},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=30,
+            )
+            result = cast(dict, response.json())
+            if response.status_code == 200:
+                self._token = cast(str, result["access_token"])
+                return result
+            time.sleep(5 * (attempt + 1))
         return result
 
     def get(self, endpoint: str) -> dict:

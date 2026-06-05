@@ -390,6 +390,50 @@
   // Track the next segment index for grouping continuity
   let nextSegIdx = 0;
 
+  // Content redaction: transcripts arrive redacted by default (read-time
+  // masking, incl. admin-forced categories which never reveal). Owners can
+  // toggle the original; the toggle refreshes ONLY the loaded segments in
+  // place — no loading-state flip, no flicker.
+  let showOriginal = false;
+  let redactionActive = false;
+  let myPermission: string | null = null;
+  $: canViewOriginal = myPermission === null || myPermission === 'owner';
+  $: showRedactionToggle = canViewOriginal && (redactionActive || showOriginal);
+
+  function redactParams(): Record<string, unknown> {
+    return showOriginal ? { redact: false } : {};
+  }
+
+  let redactionToggleBusy = false;
+
+  async function toggleShowOriginal() {
+    if (redactionToggleBusy) return;
+    redactionToggleBusy = true;
+    showOriginal = !showOriginal;
+    try {
+      // Re-fetch the already-loaded range with the new redact flag and
+      // rebuild the grouped view in place (matches stay highlighted).
+      const res = await axiosInstance.get(`/files/${fileUuid}`, {
+        params: {
+          segment_limit: Math.max(loadedSegmentOffset, SEGMENTS_PER_PAGE),
+          segment_offset: 0,
+          ...redactParams()
+        }
+      });
+      const segments = res.data.transcript_segments || [];
+      const { keywordRanges, semanticRanges } = buildTimeRanges();
+      const result = processSegments(segments, keywordRanges, semanticRanges, 0, null, 0);
+      nextSegIdx = result.nextSegIdx;
+      groupedSegments = result.grouped;
+      matchPositions = buildMatchPositions(result.grouped);
+    } catch (e: unknown) {
+      console.error('Failed to toggle redaction view:', e);
+      showOriginal = !showOriginal; // revert on failure
+    } finally {
+      redactionToggleBusy = false;
+    }
+  }
+
   async function loadTranscript() {
     if (!fileUuid) return;
     loading = true;
@@ -409,11 +453,16 @@
       const res = await axiosInstance.get(`/files/${fileUuid}`, {
         params: {
           segment_limit: SEGMENTS_PER_PAGE,
-          segment_offset: 0
+          segment_offset: 0,
+          ...redactParams()
         }
       });
 
       const segments = res.data.transcript_segments || [];
+      myPermission = res.data.my_permission || null;
+      if (!showOriginal && segments.some((s: any) => s?.redactions?.length)) {
+        redactionActive = true;
+      }
       if (segments.length === 0) {
         loading = false;
         return;
@@ -468,7 +517,8 @@
       const res = await axiosInstance.get(`/files/${fileUuid}`, {
         params: {
           segment_limit: SEGMENTS_PER_PAGE,
-          segment_offset: loadedSegmentOffset
+          segment_offset: loadedSegmentOffset,
+          ...redactParams()
         }
       });
 
@@ -756,6 +806,24 @@
               <span class="legend-swatch semantic-swatch"></span>
               {$t('searchTranscript.semanticLegend')}
             </span>
+            {#if showRedactionToggle}
+              <button
+                type="button"
+                class="redaction-link-btn"
+                on:click={toggleShowOriginal}
+                disabled={redactionToggleBusy}
+                title={showOriginal
+                  ? $t('settings.contentRedaction.showRedactedTooltip')
+                  : $t('settings.contentRedaction.showOriginalTooltip')}
+              >
+                {#if redactionToggleBusy}
+                  <Spinner size="small" />
+                {/if}
+                {showOriginal
+                  ? $t('settings.contentRedaction.showRedacted')
+                  : $t('settings.contentRedaction.showOriginal')}
+              </button>
+            {/if}
           </div>
         </div>
       </svelte:fragment>
@@ -898,6 +966,36 @@
     display: flex;
     align-items: center;
     gap: 0.375rem;
+  }
+
+  /* Matches .redaction-link-btn on the file detail page for UI consistency.
+     Kept on the LEFT with the legend — right would sit next to the close X. */
+  .redaction-link-btn {
+    background: none;
+    border: none;
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--primary-color);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      color 0.12s ease,
+      background-color 0.12s ease;
+  }
+  .redaction-link-btn:hover {
+    color: var(--primary-hover);
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+  }
+  .redaction-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .redaction-link-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
   }
 
   .legend-swatch {

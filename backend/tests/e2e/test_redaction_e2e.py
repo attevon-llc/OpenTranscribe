@@ -45,31 +45,42 @@ def token(api_helper) -> str:
 
 
 def test_user_redaction_settings_roundtrip(api_helper, backend_url, token):
-    # Defaults
-    settings = api_helper.get("/api/user-settings/redaction")
-    assert settings["enabled"] is True
-    assert settings["style"] in ("label", "asterisks", "first_letter", "blur")
+    # Snapshot current settings so the live dev user's preferences survive the test
+    before = api_helper.get("/api/user-settings/redaction")
+    assert isinstance(before.get("enabled"), bool)
+    assert before["style"] in ("label", "asterisks", "first_letter", "blur")
 
-    # Update style + custom words
-    resp = _put(
-        backend_url,
-        token,
-        "/api/user-settings/redaction",
-        {"style": "asterisks", "custom_words": ["Bluefin"]},
-    )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["style"] == "asterisks"
-    assert "Bluefin" in body["custom_words"]
+    try:
+        # Update style + custom words
+        resp = _put(
+            backend_url,
+            token,
+            "/api/user-settings/redaction",
+            {"style": "asterisks", "custom_words": ["Bluefin"]},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["style"] == "asterisks"
+        assert "Bluefin" in body["custom_words"]
 
-    # Reset
-    resp = _delete(backend_url, token, "/api/user-settings/redaction")
-    assert resp.status_code == 200, resp.text
-    after = api_helper.get("/api/user-settings/redaction")
-    assert after["style"] == "label"  # back to default
+        # Reset wipes stored prefs -> coded defaults (redaction is opt-out: disabled)
+        resp = _delete(backend_url, token, "/api/user-settings/redaction")
+        assert resp.status_code == 200, resp.text
+        after = api_helper.get("/api/user-settings/redaction")
+        assert after["style"] == "label"
+        assert after["enabled"] is False  # DEFAULT_REDACTION_ENABLED
+        assert "pii" not in after["categories"]  # PII is opt-in by default
+    finally:
+        # Restore the user's pre-test settings (dev data must not be mutated)
+        restore = {
+            k: before[k]
+            for k in ("enabled", "categories", "style", "custom_words", "pii_entities")
+            if k in before
+        }
+        _put(backend_url, token, "/api/user-settings/redaction", restore)
 
 
-def test_system_defaults_expose_locked_set(api_helper):
+def test_system_defaults_expose_locked_set(api_helper, token):
     defaults = api_helper.get("/api/user-settings/redaction/defaults")
     assert "available_detectors" in defaults
     assert "locked_categories" in defaults

@@ -102,6 +102,10 @@ services:
     volumes:
       - ./frontend:/app  # Mount source code for development
       - /app/node_modules  # Exclude node_modules from host mount
+      # Exclude SvelteKit's generated dir: host-side `npm run build/check`
+      # writes .svelte-kit files from the HOST toolchain into the bind mount,
+      # which breaks the container's vite SSR ("Cannot find module '$app/env'").
+      - /app/.svelte-kit
     ports:
       - "${FRONTEND_PORT:-5173}:5173"  # Dev Vite server port
     environment:

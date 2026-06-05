@@ -113,6 +113,11 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     DEBUG: bool = ENVIRONMENT == "development"
 
+    # Edition: "community" (self-hosted, default — everything enabled) or
+    # "cloud" (commercial managed edition; the private cloud layer overrides
+    # the capability resolver to hide platform-managed features from tenants).
+    DEPLOYMENT_EDITION: str = os.getenv("DEPLOYMENT_EDITION", "community")
+
     # JWT Token settings (NIST SP 800-63B compliant)
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "this_should_be_changed_in_production")
     JWT_ALGORITHM: str = "HS256"

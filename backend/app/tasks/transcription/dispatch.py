@@ -110,6 +110,26 @@ def dispatch_transcription_pipeline(
         file_id = int(media_file.id)
         user_id = int(media_file.user_id)
 
+        # Cloud-edition seam: quota reservation hook (no-op in community).
+        # QuotaExceededError (HTTP 402) propagates BEFORE the task record is
+        # created, so a blocked job leaves no trace and nothing dispatches.
+        from decimal import Decimal
+
+        from .hooks import DispatchContext
+        from .hooks import fire_before_dispatch
+
+        duration_s = media_file.duration
+        fire_before_dispatch(
+            DispatchContext(
+                file_id=file_id,
+                file_uuid=file_uuid,
+                user_id=user_id,
+                organization_id=media_file.organization_id,
+                est_audio_hours=(Decimal(str(duration_s)) / Decimal(3600) if duration_s else None),
+                task_id=task_id,
+            )
+        )
+
         # Auto-resolve queue from user's ASR provider if not specified
         if not use_cpu and gpu_queue is None:
             gpu_queue = _resolve_gpu_queue(user_id, db)

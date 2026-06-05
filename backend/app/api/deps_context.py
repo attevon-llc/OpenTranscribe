@@ -1,0 +1,105 @@
+"""Request context with tenant (organization) scope — cloud-edition seam.
+
+``get_current_context`` wraps ``get_current_user`` and resolves the active
+organization for this request:
+  - community / personal: no org -> personal scope (user_id filtering)
+  - cloud: the external verifier stashed the verified identity (with the
+    provider org id) on ``request.state``; we map it to our Organization row
+    and authorize against the **membership mirror**, never the token alone,
+    so a removed member loses access before their token expires.
+
+``scope_to_context`` is the default-deny query helper every org-aware
+endpoint uses: org context -> filter by organization_id, else by user_id.
+"""
+
+import logging
+from dataclasses import dataclass
+from typing import Any
+from typing import Optional
+
+from fastapi import Depends
+from fastapi import Request
+from sqlalchemy.orm import Query
+from sqlalchemy.orm import Session
+
+from app.api.endpoints.auth import get_current_user
+from app.db.base import get_db
+from app.models.user import User
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class RequestContext:
+    """Authenticated user + active tenant scope for this request."""
+
+    user: User
+    org_id: Optional[int] = None  # our organization.id (NOT the provider's string id)
+    org_role: Optional[str] = None  # "org:admin" | "org:member" | None
+
+    @property
+    def is_org_context(self) -> bool:
+        return self.org_id is not None
+
+    @property
+    def is_org_admin(self) -> bool:
+        return self.org_role == "org:admin"
+
+
+def get_current_context(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> RequestContext:
+    """Resolve the request's tenant context (personal when no org applies)."""
+    identity = getattr(request.state, "external_identity", None)
+    if identity is None or not getattr(identity, "org_id", None):
+        return RequestContext(user=current_user)
+
+    from app.models.organization import Organization
+    from app.models.organization import OrganizationMembership
+
+    org = (
+        db.query(Organization)
+        .filter(Organization.clerk_org_id == identity.org_id, Organization.is_active.is_(True))
+        .first()
+    )
+    if org is None:
+        # Org not mirrored (webhook lag) — fall back to personal scope rather
+        # than failing the request; the next webhook/login sync repairs it.
+        logger.warning(f"Unknown org in token: {identity.org_id} (falling back to personal)")
+        return RequestContext(user=current_user)
+
+    membership = (
+        db.query(OrganizationMembership)
+        .filter(
+            OrganizationMembership.organization_id == org.id,
+            OrganizationMembership.user_id == current_user.id,
+        )
+        .first()
+    )
+    if membership is None:
+        # Token claims an org the mirror doesn't confirm (e.g. member just
+        # removed). Authorization follows the mirror: personal scope only.
+        logger.warning(
+            f"User {current_user.id} carries org {identity.org_id} in token "
+            "but has no membership row — personal scope applied"
+        )
+        return RequestContext(user=current_user)
+
+    return RequestContext(user=current_user, org_id=org.id, org_role=membership.role)
+
+
+def scope_to_context(query: Query, model: Any, ctx: RequestContext) -> Query:
+    """Default-deny tenancy filter: org scope when active, else personal.
+
+    Personal scope = the user's PERSONAL rows (``organization_id IS NULL``):
+    a file uploaded into an org belongs to the org space, not the uploader's
+    personal space. In the community edition ``organization_id`` is always
+    NULL, so this is behavior-identical to plain user_id filtering there.
+
+    ``model`` must expose ``organization_id`` and ``user_id`` columns.
+    """
+    if ctx.is_org_context:
+        return query.filter(model.organization_id == ctx.org_id)
+    return query.filter(model.user_id == ctx.user.id, model.organization_id.is_(None))

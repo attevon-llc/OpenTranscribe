@@ -333,41 +333,12 @@ copy_configuration() {
     print_info "Copying docker-compose.gpu-scale.yml (multi-GPU scaling)..."
     cp docker-compose.gpu-scale.yml "${PACKAGE_DIR}/config/docker-compose.gpu-scale.yml"
 
-    # Generate secure .env with auto-generated passwords for Windows installation
-    print_info "Creating .env with auto-generated secure passwords..."
+    # Ship .env with placeholders intact - secrets are generated ON THE USER'S
+    # MACHINE at first run (generate-secrets.ps1, invoked by run_opentranscribe.bat).
+    # Baking secrets in at build time would give every installation of this
+    # package identical passwords and encryption keys.
+    print_info "Creating .env (credentials generated at first run on the target machine)..."
     cp .env.example "${PACKAGE_DIR}/.env"
-
-    # Generate all secure credentials using openssl
-    print_info "Generating secure credentials (64-char JWT/encryption, 32-char passwords)..."
-    local POSTGRES_PASSWORD
-    local MINIO_ROOT_PASSWORD
-    local JWT_SECRET
-    local ENCRYPTION_KEY
-    local REDIS_PASSWORD
-    local OPENSEARCH_PASSWORD
-    local FLOWER_PASSWORD
-    local MINIO_KMS_KEY
-    POSTGRES_PASSWORD=$(openssl rand -hex 32)
-    MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
-    JWT_SECRET=$(openssl rand -hex 64)
-    # ENCRYPTION_KEY: Add prefix to make it invalid base64, forcing backend exception handler path
-    ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
-    REDIS_PASSWORD=$(openssl rand -hex 32)
-    OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
-    FLOWER_PASSWORD=$(openssl rand -hex 16)
-    # MinIO server-side encryption key - must be <name>:<base64-32-bytes> or MinIO refuses to start
-    # (MINIO_KMS_AUTO_ENCRYPTION=on by default in .env.example)
-    MINIO_KMS_KEY="opentranscribe-key:$(openssl rand -base64 32)"
-
-    # Update .env with generated passwords
-    sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|g" "${PACKAGE_DIR}/.env"
-    sed -i "s|MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}|g" "${PACKAGE_DIR}/.env"
-    sed -i "s|JWT_SECRET_KEY=.*|JWT_SECRET_KEY=${JWT_SECRET}|g" "${PACKAGE_DIR}/.env"
-    sed -i "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|g" "${PACKAGE_DIR}/.env"
-    sed -i "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=${REDIS_PASSWORD}|g" "${PACKAGE_DIR}/.env"
-    sed -i "s|OPENSEARCH_PASSWORD=.*|OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}|g" "${PACKAGE_DIR}/.env"
-    sed -i "s|^FLOWER_PASSWORD=.*|FLOWER_PASSWORD=${FLOWER_PASSWORD}|g" "${PACKAGE_DIR}/.env"
-    sed -i "s|^MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=${MINIO_KMS_KEY}|g" "${PACKAGE_DIR}/.env"
 
     # Configure for offline/air-gapped deployment
     print_info "Configuring offline mode settings..."
@@ -380,9 +351,10 @@ copy_configuration() {
     # The installer will be at C:\Program Files\OpenTranscribe, but Docker sees it as /host_mnt/c/...
     # We keep relative paths which work correctly with Docker Desktop's automatic path mounting
 
-    print_success "Secure credentials generated and offline mode configured for Windows installer"
+    print_success "Offline mode configured for Windows installer"
     print_info "✓ Offline mode enabled (HF_HUB_OFFLINE=1) - AI models pre-installed"
     print_info "✓ HUGGINGFACE_TOKEN not required for offline operation"
+    print_info "✓ Unique credentials will be generated per-install at first run"
 
     # Also copy .env.example as template for reference
     print_info "Copying .env.example as template..."
@@ -438,6 +410,10 @@ copy_windows_installer_files() {
         print_info "Copying prerequisite checker..."
         cp windows-installer/check-prerequisites.ps1 "${PACKAGE_DIR}/"
     fi
+
+    # Copy first-run secret generator (required - secrets are not baked into the package)
+    print_info "Copying first-run secret generator..."
+    cp windows-installer/generate-secrets.ps1 "${PACKAGE_DIR}/"
 
     # Copy Windows-specific README
     print_info "Copying Windows README..."

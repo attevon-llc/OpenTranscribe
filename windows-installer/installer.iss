@@ -102,6 +102,8 @@ Source: "{#BuildDir}\checksums.sha256"; DestDir: "{app}"; Flags: ignoreversion
 
 ; PowerShell scripts (if they exist)
 Source: "{#BuildDir}\check-prerequisites.ps1"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; First-run secret generation - secrets are NOT baked into the package
+Source: "{#BuildDir}\generate-secrets.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Docker images (largest files - 10-30GB total)
 ; Use nocompression to dramatically speed up installer build (tar files are already compressed)

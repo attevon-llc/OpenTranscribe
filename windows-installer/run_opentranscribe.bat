@@ -53,6 +53,32 @@ if %errorlevel% neq 0 (
 echo Docker Desktop is running.
 echo.
 
+REM ============================================================================
+REM First run: generate secure credentials on THIS machine.
+REM Secrets are not baked into the installer package - every installation
+REM gets its own unique passwords and encryption keys.
+REM ============================================================================
+findstr /c:"CHANGE_ME_auto_generated_on_install" "%INSTALL_DIR%.env" >nul 2>&1
+if %errorlevel% equ 0 (
+    echo ========================================
+    echo   First Run: Generating Credentials
+    echo ========================================
+    echo Generating unique secure credentials for this installation...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%INSTALL_DIR%generate-secrets.ps1"
+    if !errorlevel! neq 0 (
+        echo.
+        echo ERROR: Failed to generate secure credentials!
+        echo.
+        echo OpenTranscribe cannot start with placeholder passwords.
+        echo Try running this manually from PowerShell:
+        echo   powershell -ExecutionPolicy Bypass -File "%INSTALL_DIR%generate-secrets.ps1"
+        echo.
+        pause
+        exit /b 1
+    )
+    echo.
+)
+
 REM Check if docker-images directory exists (first run)
 if exist "%INSTALL_DIR%docker-images" (
     echo ========================================

@@ -87,6 +87,11 @@ def get_current_context(
         )
         return RequestContext(user=current_user)
 
+    # Cloud contract: refine the access-log org_id from the provider's raw
+    # string (stashed by get_current_user) to OUR local Organization.id, now
+    # that org context is confirmed against the membership mirror. Access log
+    # only — never a Prometheus label. Cloud inherits this on submodule bump.
+    request.state.org_id = org.id
     return RequestContext(user=current_user, org_id=org.id, org_role=membership.role)
 
 

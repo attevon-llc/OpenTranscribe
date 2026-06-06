@@ -89,6 +89,17 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
         return user  # type: ignore[no-any-return]
 
     logger.info(f"Creating new user from {identity.provider}: {identity.external_id} ({email})")
+    # Product metric: external/JIT signup. The single point ALL external methods
+    # funnel through (including the cloud Clerk webhook, which calls this same
+    # core function). Bound the label to the fixed provider registry so the
+    # cardinality stays in {local,ldap,keycloak,pki,clerk}; anything else maps
+    # to "external".
+    from app.auth.constants import VALID_AUTH_TYPES
+    from app.core.metrics import user_signups_total
+
+    method = identity.provider if identity.provider in VALID_AUTH_TYPES else "external"
+    user_signups_total.labels(method=method).inc()
+
     user = User(
         email=email,
         full_name=identity.full_name or email.split("@")[0],

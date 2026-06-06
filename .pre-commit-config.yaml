@@ -45,6 +45,9 @@ repos:
           - types-python-dateutil
           - types-pyyaml
           - types-redis
+          # py.typed runtime deps the hook's isolated env must see, or their
+          # APIs degrade to Any and no-any-return fires in importing code.
+          - prometheus-client
         args: [--ignore-missing-imports, --check-untyped-defs]
 
   # Frontend formatting with Prettier

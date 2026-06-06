@@ -515,6 +515,11 @@ async def process_file_upload(
             task_id=task_id,
         )
 
+        # Product metric: file accepted via direct (legacy) upload (API process).
+        from app.core.metrics import files_uploaded_total
+
+        files_uploaded_total.labels(source="upload").inc()
+
         benchmark_timing.mark(task_id, "http_response_end")
         logger.info(f"File processed: {file.filename} (ID: {db_file.id})")
         return db_file

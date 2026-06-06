@@ -139,6 +139,13 @@ def get_current_user(
                 raise HTTPException(status_code=400, detail="Inactive user")
             # Stash for get_current_context() so org scoping doesn't re-verify.
             request.state.external_identity = external_identity
+            # Cloud contract: the access log / observability layer reads these
+            # off request.state. user_id is always set; org_id is the provider's
+            # raw org string here and is refined to our local Organization.id in
+            # deps_context.get_current_context() when org context applies. Never
+            # used as a Prometheus label — access log only.
+            request.state.user_id = external_user.id
+            request.state.org_id = getattr(external_user, "clerk_org_id", None)
             return external_user
 
     credentials_exception = HTTPException(
@@ -191,6 +198,12 @@ def get_current_user(
                 f"DB has '{user.role}'. Using DB role. User should re-login."
             )
 
+        # Cloud contract: observability/access-log reads these off request.state.
+        # org_id is None for self-hosted/local users; deps_context refines it to
+        # our local Organization.id when org context applies. Access log only —
+        # never a Prometheus label.
+        request.state.user_id = user.id
+        request.state.org_id = getattr(user, "clerk_org_id", None)
         return user  # type: ignore[no-any-return]
     except Exception as e:
         # Handle database connection errors or other issues
@@ -1012,6 +1025,12 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+
+    # Product metric: local self-registration (API process). External/JIT
+    # signups are counted in app.auth.external_sync.
+    from app.core.metrics import user_signups_total
+
+    user_signups_total.labels(method=AUTH_TYPE_LOCAL).inc()
 
     # Store initial password in history (FedRAMP IA-5)
     add_password_to_history(db, int(db_user.id), password_hash)

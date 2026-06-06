@@ -354,6 +354,14 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = max(_int_env("DB_POOL_SIZE", 20), 1)
     DB_MAX_OVERFLOW: int = max(_int_env("DB_MAX_OVERFLOW", 40), 0)
 
+    # Observability. LOG_FORMAT="json" switches the root logger to structured
+    # JSON lines (Loki/CloudWatch-ready); "text" keeps the human-readable format.
+    # SLOW_QUERY_MS gates the slow-query WARNING in app.core.db_metrics.
+    LOG_FORMAT: str = "text"
+    SLOW_QUERY_MS: int = 500
+    SETTINGS_CACHE_TTL: int = 30
+    READ_CACHE_ENABLED: bool = True
+
     # OpenSearch Neural Search settings (ML Commons-based)
     # When enabled, embeddings are generated server-side by OpenSearch instead of Python
     OPENSEARCH_NEURAL_SEARCH_ENABLED: bool = (

@@ -29,6 +29,11 @@ passlib[bcrypt]>=1.7.4
 bcrypt==3.2.2
 email-validator
 
+# Observability (Prometheus metrics + structured JSON logs) — CI imports app.main
+prometheus-client>=0.25,<0.26
+python-json-logger>=3.1
+cachetools>=7,<8
+
 # Asynchronous Tasks
 celery>=5.6.3
 redis>=8.0.0

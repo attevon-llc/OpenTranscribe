@@ -213,6 +213,12 @@ async def complete_upload(
         task_id=request.task_id,
     )
 
+    # Product metric: file accepted via direct upload (API process). The
+    # watch-source path dispatches in a worker, whose registry is never scraped.
+    from app.core.metrics import files_uploaded_total
+
+    files_uploaded_total.labels(source="upload").inc()
+
     benchmark_timing.mark(request.task_id, "http_response_end")
 
     # Invalidate caches so gallery picks up the new file

@@ -66,8 +66,8 @@ from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.services import system_settings_service
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# No basicConfig here — this module is imported via the API router before
+# configure_logging() runs; a default root handler would double every log line.
 logger = logging.getLogger(__name__)
 
 router = APIRouter()

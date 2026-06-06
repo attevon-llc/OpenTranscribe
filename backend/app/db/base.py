@@ -22,6 +22,13 @@ engine = create_engine(
     max_overflow=settings.DB_MAX_OVERFLOW,
 )
 
+# Observability: attach per-statement timing + per-request query-count listeners
+# (see app.core.db_metrics). Registered here, on the shared engine, so the same
+# instrumentation applies to API requests, Celery tasks, and scripts.
+from app.core.db_metrics import register_listeners  # noqa: E402
+
+register_listeners(engine)
+
 # Create sessionmaker
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

@@ -535,6 +535,12 @@ def _dispatch_video_task(
         logger.info(
             f"Dispatched media processing task {task_result.id} for MediaFile {media_file.id}"
         )
+        # Product metric: media accepted via URL ingestion (API process). The
+        # download worker later runs dispatch_upload_pipeline, but that registry
+        # is never scraped, so the source="url" count is recorded here.
+        from app.core.metrics import files_uploaded_total
+
+        files_uploaded_total.labels(source="url").inc()
     except Exception as e:
         logger.error(f"Failed to dispatch media processing task: {e}")
         db.delete(media_file)

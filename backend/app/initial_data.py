@@ -21,7 +21,9 @@ from app.models.media import Tag
 from app.models.prompt import SummaryPrompt
 from app.models.user import User
 
-logging.basicConfig(level=logging.INFO)
+# No module-level basicConfig: this module is imported during app startup and
+# a default root handler here would double every log line. configure_logging()
+# (app.core.logging_config) owns the root handler.
 logger = logging.getLogger(__name__)
 
 

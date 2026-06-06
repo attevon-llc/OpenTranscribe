@@ -33,8 +33,22 @@ async def cancel_upload(
     this router registers DELETE /{file_uuid} first, so a separate
     full-delete route would be unreachable.
     """
-    # Get the media file by UUID
+    # Reject a malformed UUID up front. Without this, the unparametrized
+    # ``MediaFile.uuid == file_uuid`` query below sends the raw string to
+    # Postgres, which raises ``invalid input syntax for type uuid`` — an
+    # unhandled 500 that also poisons the request's DB transaction. Every
+    # other delete entry point (get_by_uuid) maps a bad UUID to 404, so do
+    # the same here for parity.
+    import uuid as _uuid
 
+    try:
+        _uuid.UUID(str(file_uuid))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+        ) from None
+
+    # Get the media file by UUID
     db_file = (
         db.query(MediaFile)
         .filter(

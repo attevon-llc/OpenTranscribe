@@ -1076,17 +1076,22 @@ configure_environment() {
             OPENSEARCH_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
             FLOWER_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(16))")
             MINIO_KMS_KEY=$(python3 -c "import secrets, base64; print('opentranscribe-key:' + base64.b64encode(secrets.token_bytes(32)).decode())")
+        elif [[ -r /dev/urandom ]]; then
+            # /dev/urandom fallback - cryptographically secure, needs only coreutils
+            POSTGRES_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+            MINIO_ROOT_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+            JWT_SECRET=$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+            # ENCRYPTION_KEY: Add prefix to make it invalid base64, forcing backend exception handler path
+            ENCRYPTION_KEY="opentranscribe_$(head -c 48 /dev/urandom | base64 | tr -d '\n')"
+            REDIS_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+            OPENSEARCH_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+            FLOWER_PASSWORD=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
+            MINIO_KMS_KEY="opentranscribe-key:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
         else
-            # Basic fallback (not recommended for production)
-            POSTGRES_PASSWORD="postgres_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-            MINIO_ROOT_PASSWORD="minio_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-            JWT_SECRET="jwt_secret_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-            ENCRYPTION_KEY="encryption_key_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-            REDIS_PASSWORD="redis_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-            OPENSEARCH_PASSWORD="opensearch_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-            FLOWER_PASSWORD="flower_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
-            MINIO_KMS_KEY="opentranscribe-key:$(date +%s | md5sum | head -c 32 | base64)"
-            echo "⚠️  Using basic secrets - install openssl or python3 for cryptographically secure generation"
+            # Never fall back to predictable secrets - timestamp/$RANDOM-derived keys are brute-forceable
+            print_error "Cannot generate secure credentials: openssl, python3, or /dev/urandom is required."
+            echo "   Install openssl (e.g. 'apt install openssl' or 'brew install openssl') and re-run setup."
+            exit 1
         fi
 
         print_success "Secure credentials generated (64-char JWT/encryption, 32-char passwords)"

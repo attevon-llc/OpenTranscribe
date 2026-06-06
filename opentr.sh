@@ -50,6 +50,7 @@ show_help() {
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod)"
   echo "  --with-watch         - Mount the host watch folder (WATCH_HOST_PATH, default ./watch) for auto-import"
   echo "  --with-smb-test      - Start a Samba test share for watch-source testing (localhost:4450)"
+  echo "  --with-monitoring    - Start Prometheus (:5186) + Grafana (:5185) observability stack"
   echo ""
   echo "Reset & Database Commands:"
   echo "  reset [dev|prod] [options]             - Reset and reinitialize (deletes all data!)"
@@ -275,6 +276,7 @@ start_app() {
   WITH_KEYCLOAK_TEST_FLAG=""
   WITH_WATCH_FLAG=""
   WITH_SMB_TEST_FLAG=""
+  WITH_MONITORING_FLAG=""
   LITE_FLAG=""
   CPU_FLAG=""
 
@@ -326,6 +328,10 @@ start_app() {
         ;;
       --with-smb-test)
         WITH_SMB_TEST_FLAG="--with-smb-test"
+        shift
+        ;;
+      --with-monitoring)
+        WITH_MONITORING_FLAG="--with-monitoring"
         shift
         ;;
       *)
@@ -610,6 +616,18 @@ start_app() {
     fi
   fi
 
+  # Add Monitoring overlay if requested (Prometheus + Grafana for the /metrics endpoint)
+  if [ -n "$WITH_MONITORING_FLAG" ]; then
+    if [ -f "docker-compose.monitoring.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.monitoring.yml"
+      echo "📈 Adding Monitoring overlay (docker-compose.monitoring.yml)"
+      echo "   Prometheus: http://localhost:${PROMETHEUS_PORT:-5186}"
+      echo "   Grafana:    http://localhost:${GRAFANA_PORT:-5185}  (admin / \$GRAFANA_PASSWORD, default admin)"
+    else
+      echo "⚠️  --with-monitoring specified but docker-compose.monitoring.yml not found"
+    fi
+  fi
+
   # Start services with appropriate compose files
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES up -d $BUILD_CMD
@@ -665,6 +683,7 @@ reset_and_init() {
   WITH_KEYCLOAK_TEST_FLAG=""
   WITH_WATCH_FLAG=""
   WITH_SMB_TEST_FLAG=""
+  WITH_MONITORING_FLAG=""
   LITE_FLAG=""
   CPU_FLAG=""
 
@@ -716,6 +735,10 @@ reset_and_init() {
         ;;
       --with-smb-test)
         WITH_SMB_TEST_FLAG="--with-smb-test"
+        shift
+        ;;
+      --with-monitoring)
+        WITH_MONITORING_FLAG="--with-monitoring"
         shift
         ;;
       *)
@@ -984,6 +1007,18 @@ reset_and_init() {
       echo "   SMB share: smb://localhost:4450/media  (testuser / testpass)"
     else
       echo "⚠️  --with-smb-test specified but docker-compose.smb-test.yml not found"
+    fi
+  fi
+
+  # Add Monitoring overlay if requested (Prometheus + Grafana for the /metrics endpoint)
+  if [ -n "$WITH_MONITORING_FLAG" ]; then
+    if [ -f "docker-compose.monitoring.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.monitoring.yml"
+      echo "📈 Adding Monitoring overlay (docker-compose.monitoring.yml)"
+      echo "   Prometheus: http://localhost:${PROMETHEUS_PORT:-5186}"
+      echo "   Grafana:    http://localhost:${GRAFANA_PORT:-5185}  (admin / \$GRAFANA_PASSWORD, default admin)"
+    else
+      echo "⚠️  --with-monitoring specified but docker-compose.monitoring.yml not found"
     fi
   fi
 

@@ -1,0 +1,46 @@
+# Grafana datasource provisioning.
+#
+# Two datasources back the bundled dashboards:
+#   - prometheus      : ops/infra metrics from the backend /metrics endpoint
+#   - opentranscribe-pg: PostgreSQL, for product/usage metrics that live in the
+#                        DB (worker-side events are never Prometheus counters)
+#
+# Grafana 12 enforces strict provisioned-datasource UID validation
+# (must match [a-zA-Z0-9-_], <=40 chars), so the UIDs are kept plain.
+# Values prefixed with `$` are interpolated from the container environment
+# (set in docker-compose.monitoring.yml from the stack's .env).
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+
+  # PostgreSQL datasource for product metrics (DAU/WAU, files processed,
+  # transcription minutes, error-status counts). In dev it reuses the stack's
+  # postgres credentials; in PRODUCTION create a dedicated read-only role and
+  # point this datasource at it (see docs-site/docs/operations/monitoring.md).
+  # Marked editable so the URL/user can be repointed from the Grafana UI.
+  - name: OpenTranscribe PostgreSQL
+    uid: opentranscribe-pg
+    type: postgres
+    access: proxy
+    url: $POSTGRES_HOST:$POSTGRES_PORT
+    user: $POSTGRES_USER
+    database: $POSTGRES_DB
+    isDefault: false
+    editable: true
+    secureJsonData:
+      password: $POSTGRES_PASSWORD
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1700
+      timescaledb: false

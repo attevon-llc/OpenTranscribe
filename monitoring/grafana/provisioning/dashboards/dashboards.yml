@@ -1,0 +1,19 @@
+# Grafana dashboard provisioning — file provider.
+#
+# Loads every dashboard JSON from /var/lib/grafana/dashboards (mounted
+# read-only from monitoring/grafana/dashboards/). The bundled dashboards are
+# opentranscribe.json (ops/infra) and product.json (product/usage).
+
+apiVersion: 1
+
+providers:
+  - name: OpenTranscribe
+    orgId: 1
+    folder: OpenTranscribe
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

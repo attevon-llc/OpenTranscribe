@@ -1,0 +1,241 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "OpenTranscribe product / usage metrics. Signups & uploads from Prometheus (API process); DAU/WAU, files processed, transcription minutes, and error counts from PostgreSQL (source of truth for worker-side events).",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "liveNow": false,
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["opentranscribe", "product"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30d", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "OpenTranscribe — Product & Usage",
+  "uid": "opentranscribe-product",
+  "version": 1,
+  "weekStart": "",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Signups & uploads (Prometheus — API process)",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Signups over time by method",
+      "description": "rate(user_signups_total[1d]) by method. Covers local register + all external/JIT methods (the cloud Clerk webhook funnels through the same core path).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 1,
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 50, "showPoints": "never", "stacking": { "mode": "normal", "group": "A" } } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(user_signups_total[1d])) by (method)",
+          "legendFormat": "{{method}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Uploads over time by source",
+      "description": "rate(files_uploaded_total[1d]) by source (upload, url, watch). Counted at dispatch in the API process.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 2,
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 50, "showPoints": "never", "stacking": { "mode": "normal", "group": "A" } } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(files_uploaded_total[1d])) by (source)",
+          "legendFormat": "{{source}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Active users (PostgreSQL — refresh_token logins)",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "id": 101,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "DAU (distinct users, last 24h)",
+      "description": "Distinct user_id with a refresh token minted in the last 24h (a refresh token is issued per login).",
+      "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 10 },
+      "id": 3,
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+          "rawQuery": true,
+          "rawSql": "SELECT count(DISTINCT user_id) AS dau FROM refresh_token WHERE created_at > now() - interval '1 day';",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "WAU (distinct users, last 7d)",
+      "description": "Distinct user_id with a refresh token minted in the last 7 days.",
+      "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 10 },
+      "id": 4,
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "purple", "value": null } ] } }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+          "rawQuery": true,
+          "rawSql": "SELECT count(DISTINCT user_id) AS wau FROM refresh_token WHERE created_at > now() - interval '7 days';",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Daily active users (distinct, by day)",
+      "description": "Distinct user_id per day from refresh_token logins.",
+      "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 10 },
+      "id": 5,
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 50, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '1d'), count(DISTINCT user_id) AS \"active users\" FROM refresh_token WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1;",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Files processed & transcription volume (PostgreSQL)",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "id": 102,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Files completed per day",
+      "description": "media_file rows reaching status='completed', bucketed by completed_at.",
+      "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
+      "id": 6,
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 50, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(completed_at, '1d'), count(*) AS \"files completed\" FROM media_file WHERE status = 'completed' AND completed_at IS NOT NULL AND $__timeFilter(completed_at) GROUP BY 1 ORDER BY 1;",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Transcription minutes processed per day",
+      "description": "Sum of file_pipeline_timing.audio_duration_s (converted to minutes) per day, bucketed by created_at (row written at postprocess flush).",
+      "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 17 },
+      "id": 7,
+      "fieldConfig": { "defaults": { "unit": "m", "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 50, "showPoints": "never" } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '1d'), coalesce(sum(audio_duration_s), 0) / 60.0 AS \"minutes\" FROM file_pipeline_timing WHERE audio_duration_s IS NOT NULL AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1;",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Errors (PostgreSQL)",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "id": 103,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Files in error / orphaned state (current)",
+      "description": "Current count of media_file rows in a terminal failure status.",
+      "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 26 },
+      "id": 8,
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 10 } ] } }, "overrides": [] },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS errors FROM media_file WHERE status IN ('error', 'orphaned');",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Files by status over time (uploaded)",
+      "description": "media_file rows bucketed by upload_time, split by status. Shows completion vs error trends across uploads.",
+      "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 26 },
+      "id": 9,
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 60, "showPoints": "never", "stacking": { "mode": "normal", "group": "A" } } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "opentranscribe-pg" },
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(upload_time, '1d'), status AS metric, count(*) AS value FROM media_file WHERE $__timeFilter(upload_time) GROUP BY 1, status ORDER BY 1;",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

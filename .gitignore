@@ -251,9 +251,13 @@ docs/build/
 # Container runtime data
 .dockerignore.local
 
-# Monitoring and metrics
+# Monitoring and metrics (runtime data dirs). The monitoring/ stack CONFIG
+# (Prometheus scrape config, Grafana provisioning + dashboards) is the
+# version-controlled monitoring overlay and must be tracked — un-ignore it.
 metrics/
 monitoring/
+!monitoring/
+!monitoring/**/
 
 # Backup files
 *.sql.bak

@@ -359,6 +359,8 @@ Access the web interface at http://localhost:5173
    - 🔍 **Search Engine**: http://localhost:9200
    - 📁 **File Storage**: http://localhost:9091
    - 📖 **Documentation**: http://localhost:5183/docs/
+   - 📈 **Prometheus**: http://localhost:5186 (with `--with-monitoring`)
+   - 📊 **Grafana**: http://localhost:5185 (with `--with-monitoring`)
 
 ## 📋 OpenTranscribe Utility Commands
 
@@ -419,6 +421,13 @@ WATCH_HOST_PATH=/path/to/your/media ./opentr.sh start dev --with-watch
 bash scripts/setup-watch-source-test-data.sh ./watch
 ```
 Then configure sources in **Settings → Watch Sources** (local folder, S3, or SMB). Without `--with-watch`, the local-folder type is hidden and only S3/SMB are available. All connection, schedule, and credential settings are managed in the UI — no restart required.
+
+### **Monitoring (Prometheus + Grafana)**
+```bash
+# Start the optional observability stack alongside the app
+./opentr.sh start dev --with-monitoring
+```
+Prometheus scrapes the backend's `/metrics` endpoint; Grafana (`:5185`, default login `admin` / `$GRAFANA_PASSWORD`) ships with pre-provisioned **ops** and **product** dashboards. The overlay is fully optional — omit the flag and the stack runs unchanged. See [Monitoring & Logging](docs-site/docs/operations/monitoring.md) for the dashboard tour, JSON access-log analysis, and AWS notes.
 
 ### **Development Workflow**
 ```bash

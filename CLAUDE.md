@@ -293,6 +293,8 @@ Backend containers run as non-root (`appuser`, UID 1000, group `video` for GPU).
 | MinIO console | http://localhost:5179 |
 | Flower | http://localhost:5175/flower |
 | OpenSearch | http://localhost:5180 |
+| Prometheus (`--with-monitoring`) | http://localhost:5186 |
+| Grafana (`--with-monitoring`) | http://localhost:5185 |
 
 ## Conventions
 

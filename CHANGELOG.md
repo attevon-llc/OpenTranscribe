@@ -17,6 +17,14 @@ This release also incorporates the substantial pipeline work that landed since v
 
 ### Added
 
+#### Backend observability & monitoring
+
+- **Prometheus metrics**: new root-mounted `/metrics` endpoint (internal-network only; denied by nginx) exposing request-duration histograms by route template/method/status, request counters, in-flight gauge, **per-request DB-query-count histograms** (`db_queries_per_request` — surfaces N+1/duplicate queries per endpoint), DB query latency, cache hit/miss counters, priority-aware Celery queue-depth gauges, and product counters (`user_signups_total` by auth method, `files_uploaded_total` by source). No user IDs or raw paths in labels (cardinality-safe).
+- **Structured access logs**: every request emits one access-log line carrying `user_id`, `org_id`, `request_id`, route template, status, `duration_ms`, and `db_query_count` — human-readable in `LOG_FORMAT=text` (default), single-line JSON (Loki/CloudWatch-ready) in `LOG_FORMAT=json`. Slow SQL statements (> `SLOW_QUERY_MS`, default 500 ms) log a parameter-free WARNING with the request ID.
+- **Request-ID propagation into Celery**: tasks dispatched during a request now carry its `X-Request-ID`, so API requests and their background work correlate in logs; worker logging is configured via Celery's `setup_logging` signal (JSON-capable like the API).
+- **Readiness probe** `GET /health/ready`: probes PostgreSQL/Redis (critical → 503) and OpenSearch/MinIO (reported, non-critical) for load balancers and orchestrators; `/health` is unchanged.
+- **Optional Prometheus + Grafana overlay**: `./opentr.sh start dev --with-monitoring` starts Prometheus (:5184) and Grafana (:5185) with a provisioned datasource pair (Prometheus + read-only PostgreSQL) and two prebuilt dashboards — an ops dashboard (latency p50/p95/p99 by route, RPS, 5xx rate, DB queries/request, cache hit ratio, queue depth) and a product/usage dashboard (signups, uploads, DAU/WAU, transcription minutes). Fully optional; nothing changes when the flag is absent. Docs: `docs-site/docs/operations/monitoring.md`.
+
 #### Diarization boundary correction (issue #193)
 
 - **Word-boundary smoothing (default ON, pure-CPU)**: a post-processing pass (`boundary_resolver.smooth_word_speakers`) that collapses 1–3 word "wrong-speaker islands" at turn seams, guarded by silent-gap and flanking-speaker checks. It relabels existing words only — never fabricating speech — and runs at the path-agnostic `finalize_segments()` chokepoint so every transcription path gets it identically. Measured −32% relative WSER and islands 82→15 on the reporter's hand-labeled clip; AMI-regression-safe.

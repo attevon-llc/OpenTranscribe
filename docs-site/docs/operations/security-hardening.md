@@ -52,8 +52,15 @@ Use this checklist before deploying to production.
 ### Pre-Deployment
 
 - [ ] Change all default passwords (database, MinIO, Redis, admin account)
-- [ ] Generate a strong `JWT_SECRET` (minimum 64 characters): `openssl rand -hex 64`
+- [ ] Generate a strong `JWT_SECRET_KEY` (minimum 64 characters): `openssl rand -hex 64`
 - [ ] Generate a strong `ENCRYPTION_KEY`: `openssl rand -hex 32`
+
+:::tip
+The installer (`setup-opentranscribe.sh`) generates all of these automatically on fresh
+install, including the MinIO encryption key. The items above only need manual attention if you
+created `.env` by hand from `.env.example` — the backend refuses to start in production mode
+if placeholder keys are detected.
+:::
 - [ ] Set `DEBUG=false` in `.env`
 - [ ] Configure TLS certificates for HTTPS
 - [ ] Review and restrict CORS origins (`CORS_ORIGINS`)
@@ -216,25 +223,55 @@ Ensure TLS certificates are:
 
 ## Data Protection
 
+### Where Your Data Lives
+
+Transcripts and personal data exist in **several places**, not just the database. An at-rest
+encryption strategy must cover all of them:
+
+| Store | Sensitive content | At-rest encryption |
+|---|---|---|
+| **PostgreSQL** | Transcript text, summaries, speaker names, user emails | No native encryption — use volume/disk encryption (below) |
+| **OpenSearch** | Full transcript text (search index) + embeddings | No native encryption — use volume/disk encryption (below) |
+| **MinIO** | Original media files, exports, thumbnails | **AES-256-GCM server-side encryption, enabled by default** |
+| **Redis** | In-flight task payloads, notifications | Volume/disk encryption (if persistence enabled) |
+| **Backups** | Complete database dump (all transcripts) | `./opentr.sh backup --encrypt` (GPG AES-256) |
+
 ### Encryption at Rest
 
-**MinIO Storage**: Configure server-side encryption for stored media files:
+**MinIO Storage** (media files): Server-side AES-256-GCM encryption is **enabled automatically
+by the installer**, which generates `MINIO_KMS_SECRET_KEY` and sets
+`MINIO_KMS_AUTO_ENCRYPTION=on`. Manual configuration:
 
 ```bash
 # .env configuration
-MINIO_KMS_SECRET_KEY=your-256-bit-key  # AES-256 encryption key
+MINIO_KMS_SECRET_KEY=opentranscribe-key:$(openssl rand -base64 32)
+MINIO_KMS_AUTO_ENCRYPTION=on
 ```
 
-MinIO supports AES-256-GCM for server-side encryption of objects (transcripts, audio/video files).
-
-**Database**: Sensitive fields (API keys, TOTP secrets, LLM provider credentials) are encrypted in the database using AES-256-GCM with:
-- 256-bit key derived via PBKDF2-SHA256
+**Database fields**: Sensitive fields (API keys, TOTP secrets, LLM provider credentials,
+watch-source passwords) are encrypted at the application layer using AES-256-GCM with:
+- 256-bit key derived via PBKDF2-SHA256 (600k iterations)
 - 96-bit random nonce per encryption
 - 128-bit authentication tag
 
 Data format: `v3:base64(salt):base64(nonce):base64(ciphertext+tag)`
 
-**PostgreSQL**: Enable PostgreSQL's built-in encryption for the data directory if required by your compliance framework.
+**PostgreSQL and OpenSearch data directories**: Vanilla PostgreSQL and OpenSearch have **no
+built-in at-rest encryption**. The standard approach is encrypting the storage layer beneath
+them:
+
+- **Full-disk encryption**: LUKS/dm-crypt on the host (or FileVault on macOS, BitLocker on
+  Windows). Protects against stolen or improperly decommissioned disks; transparent to Docker.
+- **Encrypted volumes**: Place the Docker volume directories (`POSTGRES_DATA_PATH`,
+  `OPENSEARCH_DATA_PATH`, etc.) on an encrypted filesystem or encrypted block device.
+- **Cloud block storage**: If running on cloud VMs, enable the provider's volume encryption
+  (e.g., encrypted EBS).
+
+Note: transcript *text* in PostgreSQL/OpenSearch is intentionally **not** encrypted at the
+application layer — full-text search, semantic search, and LLM features require the backend to
+read it. Access is protected by authentication, per-user authorization on every query, and
+audit logging. For masking PII/profanity at display and export time, see
+[Content Redaction](../features/content-redaction.md).
 
 ### Encryption in Transit
 
@@ -248,14 +285,20 @@ All inter-service communication should use TLS in production:
 
 ### Backup Encryption
 
-```bash
-# Encrypted backup
-./opentr.sh backup
-gpg --symmetric --cipher-algo AES256 backups/backup_*.sql
+Database backups contain **every user's transcripts in plaintext SQL**. Encrypt any backup
+that leaves the host:
 
-# Encrypted restore
-gpg --decrypt backups/backup_*.sql.gpg | ./opentr.sh restore -
+```bash
+# Encrypted backup - pg_dump is piped directly into GPG (AES-256);
+# the plaintext dump never touches disk. Prompts for a passphrase.
+./opentr.sh backup --encrypt
+
+# Restore - .gpg files are detected and decrypted automatically
+./opentr.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql.gpg
 ```
+
+Store the passphrase in a password manager — an encrypted backup without its passphrase is
+unrecoverable.
 
 ## API Security
 

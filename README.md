@@ -441,7 +441,8 @@ Then configure sources in **Settings → Watch Sources** (local folder, S3, or S
 
 # Backup and restore
 ./opentr.sh backup               # Create timestamped database backup
-./opentr.sh restore [file]       # Restore from backup file
+./opentr.sh backup --encrypt     # GPG-encrypted backup (AES-256, no plaintext on disk)
+./opentr.sh restore [file]       # Restore from backup file (.sql or .gpg)
 ```
 
 ### **System Administration**

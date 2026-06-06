@@ -425,10 +425,19 @@ Yes! All processing happens locally:
 
 ### Are transcripts encrypted?
 
-Database data is not encrypted by default, but you can:
-- Use encrypted Docker volumes
-- Enable PostgreSQL encryption at rest
-- Use full disk encryption on your server
+It depends on the store:
+
+- **Media files (MinIO)**: encrypted at rest by default — the installer enables AES-256-GCM
+  server-side encryption automatically.
+- **Credentials and secrets** (API keys, TOTP secrets): encrypted at the application layer
+  with AES-256-GCM before they reach the database.
+- **Transcript text (PostgreSQL and OpenSearch)**: not encrypted at the application layer —
+  search and AI features require the backend to read it. PostgreSQL has no built-in at-rest
+  encryption, so use **full-disk encryption** (LUKS/dm-crypt, FileVault, BitLocker) or place
+  the data volumes on an encrypted filesystem.
+- **Backups**: use `./opentr.sh backup --encrypt` for GPG AES-256 encrypted dumps.
+
+See [Security Hardening](operations/security-hardening.md) for the complete picture.
 
 ### Who can access my transcriptions?
 

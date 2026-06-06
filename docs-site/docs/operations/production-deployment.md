@@ -338,7 +338,8 @@ mc policy get local/opentranscribe
 
 ### Encryption at Rest
 
-MinIO supports server-side encryption (AES-256-GCM). Enable it in `.env`:
+MinIO supports server-side encryption (AES-256-GCM). The installer enables it automatically on
+fresh installs; to configure it manually in `.env`:
 
 ```bash
 # Generate a key
@@ -350,6 +351,14 @@ MINIO_KMS_AUTO_ENCRYPTION=on
 ```
 
 All new objects will be automatically encrypted. Existing unencrypted objects remain readable.
+
+:::note
+MinIO encryption covers **media files only**. Transcript text also lives in PostgreSQL and the
+OpenSearch index, neither of which has built-in at-rest encryption — protect those with
+full-disk encryption (LUKS/dm-crypt) or by placing the data volumes on an encrypted
+filesystem. See [Security Hardening](security-hardening.md#data-protection) for the full
+data-protection picture, including encrypted backups (`./opentr.sh backup --encrypt`).
+:::
 
 ### Access Key Rotation
 

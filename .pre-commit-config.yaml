@@ -48,6 +48,10 @@ repos:
           # py.typed runtime deps the hook's isolated env must see, or their
           # APIs degrade to Any and no-any-return fires in importing code.
           - prometheus-client
+          # SQLAlchemy 2.0 ships py.typed — the hook's isolated env needs it so
+          # Mapped[...] columns resolve to real types (not Column[Any]); this is
+          # what makes the typed-models conversion's type info visible to mypy.
+          - sqlalchemy>=2.0
         args: [--ignore-missing-imports, --check-untyped-defs]
 
   # Frontend formatting with Prettier

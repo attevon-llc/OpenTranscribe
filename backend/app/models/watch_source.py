@@ -9,11 +9,13 @@ status, skip reason, and (on success) a link to the created ``MediaFile``.
 """
 
 import uuid as uuid_pkg
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON
 from sqlalchemy import BigInteger
 from sqlalchemy import Boolean
-from sqlalchemy import Column
 from sqlalchemy import DateTime
 from sqlalchemy import Float
 from sqlalchemy import ForeignKey
@@ -24,10 +26,17 @@ from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.email_notification_config import WatchSourceEmail
+    from app.models.media import MediaFile
+    from app.models.user import User
 
 # Default regex for multi-part split recordings: name_P001.ext, name_P002.ext …
 DEFAULT_MULTIPART_REGEX = r"^(.+?)_P(\d{3})(\.[^.]+)$"
@@ -39,83 +48,105 @@ class WatchSource(Base):
     __tablename__ = "watch_source"
 
     # ----- identity -----
-    id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    uuid: Mapped[uuid_pkg.UUID] = mapped_column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
     )
-    name = Column(String(200), nullable=False)
-    source_type = Column(String(20), nullable=False)  # local | s3 | smb
-    is_enabled = Column(Boolean, default=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False)  # local | s3 | smb
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # ----- local -----
-    local_path = Column(String(2000), nullable=True)  # relative to WATCH_FOLDER_PATH
-    delete_after_import = Column(Boolean, default=False, nullable=False)
+    local_path: Mapped[str | None] = mapped_column(
+        String(2000), nullable=True
+    )  # relative to WATCH_FOLDER_PATH
+    delete_after_import: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # ----- s3 -----
-    s3_endpoint_url = Column(String(500), nullable=True)
-    s3_bucket_name = Column(String(255), nullable=True)
-    s3_prefix = Column(String(1000), nullable=True)
-    s3_region = Column(String(100), nullable=True)
-    s3_access_key_id = Column(Text, nullable=True)
-    encrypted_s3_secret_key = Column(Text, nullable=True)  # AES-256-GCM encrypted
-    s3_use_ssl = Column(Boolean, default=True, nullable=False)
+    s3_endpoint_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    s3_bucket_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    s3_prefix: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    s3_region: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    s3_access_key_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    encrypted_s3_secret_key: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # AES-256-GCM encrypted
+    s3_use_ssl: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # ----- smb -----
-    smb_server = Column(String(255), nullable=True)
-    smb_share = Column(String(255), nullable=True)
-    smb_path = Column(String(2000), nullable=True, default="/")
-    smb_username = Column(String(255), nullable=True)
-    encrypted_smb_password = Column(Text, nullable=True)  # AES-256-GCM encrypted
-    smb_domain = Column(String(255), nullable=True)
-    smb_port = Column(Integer, default=445, nullable=False)
+    smb_server: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smb_share: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smb_path: Mapped[str | None] = mapped_column(String(2000), nullable=True, default="/")
+    smb_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    encrypted_smb_password: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # AES-256-GCM encrypted
+    smb_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smb_port: Mapped[int] = mapped_column(Integer, default=445, nullable=False)
 
     # ----- processing -----
-    user_id = Column(
+    user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
     )  # owner of imported files
-    polling_interval_minutes = Column(Integer, default=15, nullable=False)
-    use_fs_events = Column(Boolean, default=False, nullable=False)  # local-only watchdog opt-in
-    file_extensions = Column(Text, nullable=True)  # CSV, e.g. ".mp4,.mp3"; null → all media
+    polling_interval_minutes: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    use_fs_events: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )  # local-only watchdog opt-in
+    file_extensions: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # CSV, e.g. ".mp4,.mp3"; null → all media
     # No column default: null must mean "no age skip". New-source default (30) is
     # supplied by the Pydantic schema, so an explicit null from the UI is stored
     # as null (a column default=30 would silently override it — see issue #26).
-    skip_files_older_than_days = Column(Integer, nullable=True)
-    recursive = Column(Boolean, default=True, nullable=False)
-    auto_transcribe = Column(Boolean, default=True, nullable=False)
-    min_speakers = Column(Integer, default=1, nullable=True)
-    max_speakers = Column(Integer, default=20, nullable=True)
-    collection_ids = Column(JSON, nullable=True)  # list[str] of collection UUIDs
-    tag_names = Column(JSON, nullable=True)  # list[str]
+    skip_files_older_than_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recursive: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    auto_transcribe: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    min_speakers: Mapped[int | None] = mapped_column(Integer, default=1, nullable=True)
+    max_speakers: Mapped[int | None] = mapped_column(Integer, default=20, nullable=True)
+    collection_ids: Mapped[list | None] = mapped_column(
+        JSON, nullable=True
+    )  # list[str] of collection UUIDs
+    tag_names: Mapped[list | None] = mapped_column(JSON, nullable=True)  # list[str]
 
     # ----- multipart stitching -----
-    multipart_enabled = Column(Boolean, default=False, nullable=False)
-    multipart_regex = Column(String(500), nullable=False, default=DEFAULT_MULTIPART_REGEX)
-    multipart_time_window_hours = Column(Integer, default=24, nullable=False)
-    multipart_wait_scans = Column(Integer, default=3, nullable=False)
-    upload_stitched_to_source = Column(Boolean, default=False, nullable=False)
+    multipart_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    multipart_regex: Mapped[str] = mapped_column(
+        String(500), nullable=False, default=DEFAULT_MULTIPART_REGEX
+    )
+    multipart_time_window_hours: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
+    multipart_wait_scans: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    upload_stitched_to_source: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # ----- status (last scan) -----
-    last_scan_at = Column(DateTime(timezone=True), nullable=True)
-    last_scan_status = Column(String(20), nullable=True)  # success | error | running
-    last_scan_message = Column(Text, nullable=True)
-    last_scan_files_found = Column(Integer, default=0, nullable=False)
-    last_scan_files_imported = Column(Integer, default=0, nullable=False)
-    last_scan_files_skipped = Column(Integer, default=0, nullable=False)
-    last_scan_duration_seconds = Column(Float, nullable=True)
-    total_files_imported = Column(Integer, default=0, nullable=False)
+    last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_scan_status: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # success | error | running
+    last_scan_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_scan_files_found: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_scan_files_imported: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_scan_files_skipped: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_scan_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_files_imported: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # ----- audit -----
-    created_by = Column(Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_by: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # ----- relationships -----
-    user = relationship("User", foreign_keys=[user_id])
-    creator = relationship("User", foreign_keys=[created_by])
-    files = relationship(
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+    creator: Mapped["User | None"] = relationship("User", foreign_keys=[created_by])
+    files: Mapped[list["WatchSourceFile"]] = relationship(
         "WatchSourceFile", back_populates="watch_source", cascade="all, delete-orphan"
     )
-    email_links = relationship(
+    email_links: Mapped[list["WatchSourceEmail"]] = relationship(
         "WatchSourceEmail", back_populates="watch_source", cascade="all, delete-orphan"
     )
 
@@ -144,7 +175,6 @@ class WatchSource(Base):
         ``..`` traversal) or the feature is not configured.
         """
         import os
-        from pathlib import Path
 
         from app.core.config import settings
 
@@ -169,32 +199,38 @@ class WatchSourceFile(Base):
 
     __tablename__ = "watch_source_file"
 
-    id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    uuid: Mapped[uuid_pkg.UUID] = mapped_column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
     )
-    watch_source_id = Column(
+    watch_source_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("watch_source.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    remote_path = Column(String(2000), nullable=False)  # path within the source
-    filename = Column(String(500), nullable=False)
-    file_size = Column(BigInteger, nullable=True)
-    file_modified_at = Column(DateTime(timezone=True), nullable=True)
-    imohash = Column(String(64), nullable=True, index=True)
-    media_file_id = Column(
+    remote_path: Mapped[str] = mapped_column(String(2000), nullable=False)  # path within the source
+    filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    file_modified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    imohash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    media_file_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("media_file.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    status = Column(String(30), nullable=False, default="pending")
-    skip_reason = Column(String(50), nullable=True)
-    part_group = Column(String(500), nullable=True)  # base name for a multi-part group
-    part_number = Column(Integer, nullable=True)
-    error_message = Column(Text, nullable=True)
-    retry_count = Column(Integer, default=0, nullable=False)
-    processed_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending")
+    skip_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    part_group: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )  # base name for a multi-part group
+    part_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
-    watch_source = relationship("WatchSource", back_populates="files")
-    media_file = relationship("MediaFile", foreign_keys=[media_file_id])
+    watch_source: Mapped["WatchSource"] = relationship("WatchSource", back_populates="files")
+    media_file: Mapped["MediaFile | None"] = relationship("MediaFile", foreign_keys=[media_file_id])
 
     __table_args__ = (
         UniqueConstraint("watch_source_id", "remote_path", name="_watch_source_file_path_unique"),

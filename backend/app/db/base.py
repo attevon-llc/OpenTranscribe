@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
@@ -32,8 +32,11 @@ register_listeners(engine)
 # Create sessionmaker
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Create base class for models
-Base = declarative_base()
+
+# Create base class for models (SQLAlchemy 2.0 typed declarative).
+# NO naming_convention: adding one would rename existing constraints = schema change.
+class Base(DeclarativeBase):
+    pass
 
 
 # Dependency for database session

@@ -4,11 +4,14 @@ System Settings SQLAlchemy model.
 Provides a key-value store for system-wide configuration settings.
 """
 
-from sqlalchemy import Column
+from datetime import datetime
+
 from sqlalchemy import DateTime
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
 from sqlalchemy.sql import func
 
 from app.db.base import Base
@@ -24,11 +27,11 @@ class SystemSettings(Base):
 
     __tablename__ = "system_settings"
 
-    id = Column(Integer, primary_key=True, index=True)
-    key = Column(String(100), unique=True, nullable=False, index=True)
-    value = Column(Text, nullable=True)
-    description = Column(Text, nullable=True)
-    updated_at = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=True
     )
 

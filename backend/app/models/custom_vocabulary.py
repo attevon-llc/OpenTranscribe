@@ -9,17 +9,24 @@ all supported ASR providers:
 Supported domains: medical, legal, corporate, government, technical, general
 """
 
+from datetime import datetime
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Boolean
-from sqlalchemy import Column
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
 from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 SUPPORTED_DOMAINS = ("medical", "legal", "corporate", "government", "technical", "general")
 
@@ -29,18 +36,28 @@ class CustomVocabulary(Base):
 
     __tablename__ = "custom_vocabulary"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     # Cloud-edition seam: tenant scope (NULL = personal). Written by the cloud layer.
-    organization_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
-    term = Column(String(200), nullable=False)
-    domain = Column(String(50), nullable=False, default="general")
-    category = Column(String(100), nullable=True)  # Sub-category within domain
-    is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organization.id"), nullable=True, index=True
+    )
+    term: Mapped[str] = mapped_column(String(200), nullable=False)
+    domain: Mapped[str] = mapped_column(String(50), nullable=False, default="general")
+    category: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )  # Sub-category within domain
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
-    user = relationship("User", back_populates="custom_vocabulary")
+    user: Mapped["User | None"] = relationship("User", back_populates="custom_vocabulary")
 
     __table_args__ = (
         # NOTE: The uniqueness constraint for this table is a functional unique index on

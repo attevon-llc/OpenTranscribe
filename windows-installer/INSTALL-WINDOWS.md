@@ -435,6 +435,7 @@ After prerequisites pass, installation takes 5-15 minutes:
    - AI models (~5-40GB, 2-10 minutes)
 
 2. **First run initialization**
+   - Generate unique secure credentials (on your machine, not shipped in the package)
    - Load Docker images into Docker Desktop
    - Configure environment variables
    - Initialize database schema
@@ -456,11 +457,16 @@ After prerequisites pass, installation takes 5-15 minutes:
 
 The first time you run OpenTranscribe:
 
-1. **Docker images load** (one-time, 5-10 minutes)
+1. **Unique credentials are generated** (one-time, instant)
+   - Secure passwords and encryption keys are generated **on your machine**
+     (`generate-secrets.ps1`) — they are not shipped in the installer, so every
+     installation gets its own unique secrets
+
+2. **Docker images load** (one-time, 5-10 minutes)
    - Images are loaded from tar files
    - Tar files deleted after loading (saves space)
 
-2. **Services start**
+3. **Services start**
    - PostgreSQL database
    - MinIO storage
    - Redis cache
@@ -469,7 +475,7 @@ The first time you run OpenTranscribe:
    - FastAPI backend
    - Svelte frontend
 
-3. **Browser opens** automatically
+4. **Browser opens** automatically
    - Navigate to: http://localhost:5173
 
 ### Initial Configuration

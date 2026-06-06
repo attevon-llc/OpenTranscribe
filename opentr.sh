@@ -54,8 +54,8 @@ show_help() {
   echo "Reset & Database Commands:"
   echo "  reset [dev|prod] [options]             - Reset and reinitialize (deletes all data!)"
   echo "                                           (Accepts same options as 'start' command)"
-  echo "  backup              - Create a database backup"
-  echo "  restore [file]      - Restore database from backup"
+  echo "  backup [--encrypt]  - Create a database backup (--encrypt: GPG AES-256, no plaintext on disk)"
+  echo "  restore [file]      - Restore database from backup (.sql or .gpg)"
   echo ""
   echo "Development Commands:"
   echo "  restart-backend     - Restart backend, all celery workers, celery-beat & flower without database reset"
@@ -1023,18 +1023,49 @@ reset_and_init() {
 }
 
 # Function to backup the database
+# Usage: backup_database [--encrypt]
+#   --encrypt: pipe pg_dump straight into gpg (AES-256, passphrase prompt) so the
+#              plaintext dump never touches disk. Backups contain every user's
+#              transcripts - encrypt anything that leaves this machine.
 backup_database() {
+  ENCRYPT_BACKUP=false
+  if [[ "$1" == "--encrypt" ]]; then
+    ENCRYPT_BACKUP=true
+    if ! command -v gpg &> /dev/null; then
+      echo "❌ Error: gpg is required for encrypted backups (e.g. 'apt install gnupg')."
+      exit 1
+    fi
+  elif [[ -n "$1" ]]; then
+    echo "❌ Error: unknown backup option: $1"
+    echo "Usage: ./opentr.sh backup [--encrypt]"
+    exit 1
+  fi
+
   TIMESTAMP=$(date +%Y%m%d_%H%M%S)
   BACKUP_FILE="opentranscribe_backup_${TIMESTAMP}.sql"
-
-  echo "📦 Creating database backup: ${BACKUP_FILE}..."
   mkdir -p ./backups
 
-  if docker compose exec -T postgres pg_dump -U postgres opentranscribe > "./backups/${BACKUP_FILE}"; then
-    echo "✅ Backup created successfully: ./backups/${BACKUP_FILE}"
+  if [[ "$ENCRYPT_BACKUP" == true ]]; then
+    echo "📦 Creating encrypted database backup: ${BACKUP_FILE}.gpg..."
+    # Subshell with pipefail so a pg_dump failure isn't masked by gpg succeeding
+    if (set -o pipefail; docker compose exec -T postgres pg_dump -U postgres opentranscribe \
+        | gpg --symmetric --cipher-algo AES256 --output "./backups/${BACKUP_FILE}.gpg"); then
+      echo "✅ Encrypted backup created successfully: ./backups/${BACKUP_FILE}.gpg"
+      echo "   Restore with: ./opentr.sh restore ./backups/${BACKUP_FILE}.gpg"
+    else
+      rm -f "./backups/${BACKUP_FILE}.gpg"
+      echo "❌ Backup failed."
+      exit 1
+    fi
   else
-    echo "❌ Backup failed."
-    exit 1
+    echo "📦 Creating database backup: ${BACKUP_FILE}..."
+    if docker compose exec -T postgres pg_dump -U postgres opentranscribe > "./backups/${BACKUP_FILE}"; then
+      echo "✅ Backup created successfully: ./backups/${BACKUP_FILE}"
+      echo "ℹ️  Tip: backups contain all user transcripts in plaintext - use './opentr.sh backup --encrypt' for off-box storage."
+    else
+      echo "❌ Backup failed."
+      exit 1
+    fi
   fi
 }
 
@@ -1053,17 +1084,39 @@ restore_database() {
     exit 1
   fi
 
+  # Transparently decrypt GPG-encrypted backups (created with './opentr.sh backup --encrypt')
+  RESTORE_SOURCE="$BACKUP_FILE"
+  TEMP_SQL=""
+  case "$BACKUP_FILE" in
+    *.gpg|*.asc)
+      if ! command -v gpg &> /dev/null; then
+        echo "❌ Error: gpg is required to restore encrypted backups (e.g. 'apt install gnupg')."
+        exit 1
+      fi
+      echo "🔓 Decrypting backup..."
+      TEMP_SQL=$(mktemp ./backups/.restore_XXXXXX)
+      if ! gpg --yes --output "$TEMP_SQL" --decrypt "$BACKUP_FILE"; then
+        rm -f "$TEMP_SQL"
+        echo "❌ Decryption failed."
+        exit 1
+      fi
+      RESTORE_SOURCE="$TEMP_SQL"
+      ;;
+  esac
+
   echo "🔄 Restoring database from ${BACKUP_FILE}..."
 
   # Stop services that use the database
   docker compose stop backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
 
   # Restore the database
-  if docker compose exec -T postgres psql -U postgres opentranscribe < "$BACKUP_FILE"; then
+  if docker compose exec -T postgres psql -U postgres opentranscribe < "$RESTORE_SOURCE"; then
+    [ -n "$TEMP_SQL" ] && rm -f "$TEMP_SQL"
     echo "✅ Database restored successfully."
     echo "🔄 Restarting services..."
     docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
   else
+    [ -n "$TEMP_SQL" ] && rm -f "$TEMP_SQL"
     echo "❌ Database restore failed."
     echo "🔄 Restarting services anyway..."
     docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
@@ -1283,7 +1336,7 @@ case "$1" in
     ;;
 
   backup)
-    backup_database
+    backup_database "$2"
     ;;
 
   restore)

@@ -482,6 +482,12 @@ create_env_file() {
     REDIS_PASSWORD=$(openssl rand -hex 32)
     local OPENSEARCH_PASSWORD
     OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
+    local FLOWER_PASSWORD
+    FLOWER_PASSWORD=$(openssl rand -hex 16)
+    # MinIO server-side encryption key - must be <name>:<base64-32-bytes> or MinIO refuses to start
+    # (MINIO_KMS_AUTO_ENCRYPTION=on by default in .env.example)
+    local MINIO_KMS_KEY
+    MINIO_KMS_KEY="opentranscribe-key:$(openssl rand -base64 32)"
 
     # Replace placeholders with generated passwords
     sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|g" "$INSTALL_DIR/.env"
@@ -490,6 +496,8 @@ create_env_file() {
     sed -i "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|g" "$INSTALL_DIR/.env"
     sed -i "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=${REDIS_PASSWORD}|g" "$INSTALL_DIR/.env"
     sed -i "s|OPENSEARCH_PASSWORD=.*|OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}|g" "$INSTALL_DIR/.env"
+    sed -i "s|^FLOWER_PASSWORD=.*|FLOWER_PASSWORD=${FLOWER_PASSWORD}|g" "$INSTALL_DIR/.env"
+    sed -i "s|^MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=${MINIO_KMS_KEY}|g" "$INSTALL_DIR/.env"
 
     # Update hardware-specific settings (auto-detected)
     sed -i "s|USE_GPU=.*|USE_GPU=${use_gpu}|g" "$INSTALL_DIR/.env"

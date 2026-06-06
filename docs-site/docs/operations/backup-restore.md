@@ -56,6 +56,31 @@ The built-in backup command creates a timestamped SQL dump:
 
 This creates a file at `./backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql`.
 
+### Encrypted Backup
+
+:::warning
+Plain backups contain **every user's transcripts in plaintext SQL**. Encrypt any backup that
+leaves the host (offsite copies, cloud storage, USB drives).
+:::
+
+```bash
+./opentr.sh backup --encrypt
+```
+
+This pipes `pg_dump` directly into GPG symmetric encryption (AES-256) — the plaintext dump
+never touches disk — and prompts for a passphrase. The result is
+`./backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql.gpg`.
+
+Restore detects `.gpg` files automatically:
+
+```bash
+./opentr.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql.gpg
+```
+
+Store the passphrase in a password manager — an encrypted backup without its passphrase is
+unrecoverable. (`--encrypt` requires `gpg`; install with `apt install gnupg` /
+`brew install gnupg`.)
+
 ### Manual pg_dump
 
 For more control over the backup process:

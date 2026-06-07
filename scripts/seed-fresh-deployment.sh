@@ -22,12 +22,35 @@ SEED_EMAIL="${SEED_EMAIL:-admin@example.com}"
 SEED_PASSWORD="${SEED_PASSWORD:-password}"
 WAIT_TIMEOUT="${SEED_WAIT_TIMEOUT:-120}"
 
-# Candidate SMALL media files (a few KB each) — never the multi-GB benchmark
-# corpus. Add more here if richer seed data is wanted.
-CANDIDATES=(
-  "backend/tests/e2e/fixtures/sample_audio.wav"
-  "backend/tests/e2e/fixtures/sample_video.mp4"
-)
+# Seed-media selection, best first:
+#   1. SEED_MEDIA_DIR (or ./benchmark/test_audio when present, gitignored):
+#      REAL speech recordings — picks the SEED_MAX_FILES smallest media files,
+#      so a fresh deployment starts with genuine transcripts/speakers.
+#   2. Fallback: the tiny e2e fixtures. These are SYNTHETIC SILENCE — the
+#      pipeline will (correctly) mark them "no audio content detected", which
+#      is still a useful end-to-end smoke but looks like an error in the UI,
+#      so we say so loudly.
+SEED_MEDIA_DIR="${SEED_MEDIA_DIR:-benchmark/test_audio}"
+SEED_MAX_FILES="${SEED_MAX_FILES:-3}"
+SEED_MAX_MB="${SEED_MAX_MB:-200}"
+
+CANDIDATES=()
+SYNTHETIC_FALLBACK=0
+if [ -d "$SEED_MEDIA_DIR" ]; then
+  while IFS= read -r f; do
+    CANDIDATES+=("$f")
+  done < <(find "$SEED_MEDIA_DIR" -maxdepth 1 -type f \
+             \( -name '*.wav' -o -name '*.mp3' -o -name '*.m4a' -o -name '*.mp4' -o -name '*.mkv' -o -name '*.webm' \) \
+             -size "-${SEED_MAX_MB}M" -printf '%s\t%p\n' 2>/dev/null \
+           | sort -n | head -n "$SEED_MAX_FILES" | cut -f2-)
+fi
+if [ "${#CANDIDATES[@]}" -eq 0 ]; then
+  SYNTHETIC_FALLBACK=1
+  CANDIDATES=(
+    "backend/tests/e2e/fixtures/sample_audio.wav"
+    "backend/tests/e2e/fixtures/sample_video.mp4"
+  )
+fi
 
 if ! command -v curl >/dev/null 2>&1; then
   echo "⚠️  seed: curl not found — skipping seed."
@@ -65,6 +88,13 @@ TOKEN="$(curl -fsS -X POST "${BACKEND_URL}/api/auth/login" \
 if [ -z "${TOKEN}" ]; then
   echo "⚠️  seed: could not obtain an access token (admin not seeded yet?) — skipping."
   exit 0
+fi
+
+if [ "$SYNTHETIC_FALLBACK" -eq 1 ]; then
+  echo "⚠️  seed: no real media found in '${SEED_MEDIA_DIR}' — seeding the synthetic e2e"
+  echo "   fixtures instead. They contain NO SPEECH: the pipeline will correctly mark"
+  echo "   them 'no audio content detected' (shows as an error chip in the gallery)."
+  echo "   Set SEED_MEDIA_DIR=/path/to/real/media for genuine seed transcripts."
 fi
 
 uploaded=0

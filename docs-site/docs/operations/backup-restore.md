@@ -96,9 +96,52 @@ docker compose exec -T postgres pg_dump -U postgres opentranscribe | gzip > back
 docker compose exec -T postgres pg_dump -U postgres -Fc opentranscribe > backup.dump
 ```
 
-### Automated Backup with Cron
+### Automated Backups (in-app, recommended)
 
-Set up automatic daily backups:
+OpenTranscribe ships a **built-in scheduled-backup system** that runs on the
+stack's existing `celery-beat` service — no host cron, no systemd timer, and
+no shell scripting. Everything is configured in the admin UI under
+**Settings → System Management → Backups** and stored in the database, so
+schedule changes take effect with no restart.
+
+Start the stack with the backup overlay so a destination is mounted:
+
+```bash
+# Mounts BACKUP_HOST_PATH (default ./backups) to /backups in the backend + worker
+./opentr.sh start dev --with-backup
+```
+
+Then, in the admin UI:
+
+- **Enable** scheduled backups and set a **cron schedule** (default `0 3 * * *` — 03:00 daily, UTC).
+- Choose a **destination**:
+  - **Local folder** — the mounted `/backups` path (set via `BACKUP_HOST_PATH`).
+  - **S3-compatible bucket** — any AWS S3 / MinIO / Backblaze-style endpoint. Provide endpoint URL, region, bucket, prefix, and access/secret keys. The secret is encrypted at rest (AES-256-GCM) and never returned by the API; a **Test Connection** button validates it. This lets backups land **off the host machine** entirely.
+- Set **GFS retention** (grandfather-father-son: daily / weekly / monthly counts; default 7 / 4 / 12).
+- Optionally enable **gpg encryption** (provide a passphrase file path).
+- Use **Run Now** to take an immediate backup and see the last result.
+
+Under the hood: a lightweight `backup.check_schedule` beat task fires every few
+minutes, evaluates the DB-stored cron against the last run, and dispatches
+`backup.run`, which executes `pg_dump --format=custom` directly from the worker
+(the backend image ships `postgresql-client`), optionally gpg-encrypts, uploads
+to the chosen destination, and prunes old backups by the GFS policy. If the
+destination isn't mounted/reachable the task records a clear status and never
+crashes.
+
+:::tip Off-host backups
+For real disaster resilience, point the destination at an **S3-compatible
+bucket on a different machine or provider** — a host failure then can't take
+your backups with it. The bucket can be your own MinIO on another box.
+:::
+
+Restore an in-app backup the same way as any custom-format dump — see
+[Restore Procedures](#restore-procedures) below (`pg_restore`).
+
+### Automated Backup with Cron (alternative)
+
+If you prefer OS-level scheduling instead of the in-app scheduler, set up
+automatic daily backups with cron:
 
 ```bash
 # Edit crontab

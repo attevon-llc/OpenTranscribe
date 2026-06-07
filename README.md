@@ -459,6 +459,15 @@ and command without launching anything.
 ```
 Prometheus scrapes the backend's `/metrics` endpoint; Grafana (`:5185`, default login `admin` / `$GRAFANA_PASSWORD`) ships with pre-provisioned **ops** and **product** dashboards. The overlay is fully optional — omit the flag and the stack runs unchanged. See [Monitoring & Logging](docs-site/docs/operations/monitoring.md) for the dashboard tour, JSON access-log analysis, and AWS notes.
 
+### **Scheduled backups & storage recovery**
+```bash
+# Mount a backup destination, then configure schedule/destination in the admin UI
+./opentr.sh start dev --with-backup
+```
+Built-in scheduled database backups run on the existing `celery-beat` service — **no host cron**. Configure everything in **Settings → System Management → Backups**: cron schedule, GFS retention, optional gpg encryption, and a destination that is either a **mounted folder** or an **S3-compatible bucket** (AWS S3 / MinIO / Backblaze — keeps backups off the host machine). See [Backup & Restore](docs-site/docs/operations/backup-restore.md).
+
+If the database is ever lost but the MinIO media survives, [**Storage Recovery**](docs-site/docs/operations/storage-recovery.md) rebuilds the catalog in place (`python -m app.scripts.reingest_minio`) — no re-download, no duplication.
+
 ### **Development Workflow**
 ```bash
 # Service management

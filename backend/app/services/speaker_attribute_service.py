@@ -46,8 +46,11 @@ class SpeakerAttributeService:
             from transformers import Wav2Vec2FeatureExtractor
             from transformers import Wav2Vec2ForSequenceClassification
 
-            self._feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(MODEL_NAME)
-            self._model = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_NAME)
+            # nosec B615 - MODEL_NAME is a fixed, trusted repo (Apache-2.0, ~380MB)
+            # pre-downloaded into the controlled MODEL_CACHE_DIR by scripts/download-models.py;
+            # not user-controlled. Same posture as the diarizer/embedding from_pretrained calls.
+            self._feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(MODEL_NAME)  # nosec B615
+            self._model = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_NAME)  # nosec B615
             self._model.eval()
 
             # Use GPU only on GPU workers (PRELOAD_GPU_MODELS=true).

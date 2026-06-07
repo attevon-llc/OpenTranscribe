@@ -1,0 +1,37 @@
+# Scheduled Database Backups overlay (Feature C)
+#
+# Mounts a host directory into the services that read/write backups and exposes it
+# at the in-container path /backups (the coded DEFAULT_BACKUP_DESTINATION). Load via:
+#   ./opentr.sh start dev --with-backup        (when wired into opentr.sh)
+# or explicitly:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#                  -f docker-compose.backup.yml up -d
+#
+#   BACKUP_HOST_PATH  host directory that receives the .dump files (default ./backups)
+#                     → /backups in the containers below
+#
+# All other backup settings (enabled, cron schedule, GFS retention, encryption,
+# passphrase-file path, destination override) are DB-backed and managed from the admin
+# UI (Settings → Database Backups) — NO env vars except this physical mount.
+#
+# Services that touch the destination:
+#   - backend           : list backups + report mount status to the admin UI (read)
+#   - celery-cpu-worker : consumes the `utility` queue → runs `backup.run` (read/write)
+#
+# Without this overlay the feature degrades gracefully: /backups is unmounted, the
+# admin UI flags "destination not mounted", and the scheduled task no-ops with a
+# logged warning instead of failing.
+#
+# To ENCRYPT backups, also mount a passphrase file (its contents are the gpg
+# symmetric passphrase) and set backup.passphrase_file to its in-container path in
+# the admin UI, e.g. add under each service's volumes:
+#   - ${BACKUP_PASSPHRASE_HOST_FILE:-./backups/.passphrase}:/backups/.passphrase:ro
+
+services:
+  backend:
+    volumes:
+      - ${BACKUP_HOST_PATH:-./backups}:/backups
+
+  celery-cpu-worker:
+    volumes:
+      - ${BACKUP_HOST_PATH:-./backups}:/backups

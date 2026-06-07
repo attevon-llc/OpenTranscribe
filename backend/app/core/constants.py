@@ -439,6 +439,27 @@ DEFAULT_WATCH_FILE_STABILITY_SECONDS = 30  # skip files modified within N s (sti
 DEFAULT_WATCH_MAX_CONCURRENT_IMPORTS = 5  # files imported concurrently per scan
 DEFAULT_WATCH_FS_EVENTS_ENABLED = False  # optional watchdog layer (polling is the baseline)
 
+# Scheduled database backups (Feature C, issue: data-loss incident).
+# DB-backed via SystemSettings (admin-UI managed, no beat restart). Coded defaults
+# here are the single source of truth — there are NO backup .env vars. The ONLY
+# physical env is BACKUP_HOST_PATH (docker-compose.backup.yml mount) which lands at
+# the container path DEFAULT_BACKUP_DESTINATION. SystemSettings keys: backup.enabled /
+# backup.schedule / backup.destination / backup.retention_daily|weekly|monthly /
+# backup.encrypt / backup.passphrase_file / backup.include_opensearch /
+# backup.last_run_at / backup.last_result.
+DEFAULT_BACKUP_ENABLED = False  # opt-in: writes data off the live DB volume
+DEFAULT_BACKUP_SCHEDULE = "0 3 * * *"  # cron: daily at 03:00 (worker timezone = UTC)
+DEFAULT_BACKUP_DESTINATION = "/backups"  # container path; mount a host dir here
+# GFS retention: keep N most-recent daily, N weekly (Mondays), N monthly (1st-of-month).
+DEFAULT_BACKUP_RETENTION_DAILY = 7
+DEFAULT_BACKUP_RETENTION_WEEKLY = 4
+DEFAULT_BACKUP_RETENTION_MONTHLY = 12
+DEFAULT_BACKUP_ENCRYPT = False  # gpg AES-256 symmetric; needs a passphrase file
+# Path (in-container) to a file whose contents are the gpg symmetric passphrase.
+# Empty = no passphrase configured (encryption requested but unconfigured → task errors).
+DEFAULT_BACKUP_PASSPHRASE_FILE = ""  # noqa: S105  # nosec B105 - a file PATH default (empty = unset), not a password
+DEFAULT_BACKUP_INCLUDE_OPENSEARCH = False  # OS is derived/rebuildable; pg-only this round
+
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
 DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)
 DEFAULT_VAD_MIN_SILENCE_MS = 2000  # Min silence to split segments (ms)

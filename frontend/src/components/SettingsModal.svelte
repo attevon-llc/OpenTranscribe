@@ -24,6 +24,7 @@
   import EmbeddingConsistencySettings from '$components/settings/EmbeddingConsistencySettings.svelte';
   import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
   import RetentionSettings from '$components/settings/RetentionSettings.svelte';
+  import BackupSettings from '$components/settings/BackupSettings.svelte';
   import SpeakerAttributeSettings from '$components/settings/SpeakerAttributeSettings.svelte';
   import AutoLabelSettings from '$components/settings/AutoLabelSettings.svelte';
   import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
@@ -159,6 +160,7 @@
         items: [
           { id: 'data-integrity' as SettingsSection, label: $t('settings.dataIntegrity.title'), icon: 'shield' },
           { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock' },
+          { id: 'backup' as SettingsSection, label: $t('settings.backup.title'), icon: 'database' },
           { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' },
           { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' },
           { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' }
@@ -869,6 +871,13 @@
           {#if activeSection === 'retention' && isAdmin}
             <div class="content-section">
               <RetentionSettings />
+            </div>
+          {/if}
+
+          <!-- Scheduled Database Backups Section -->
+          {#if activeSection === 'backup' && isAdmin}
+            <div class="content-section">
+              <BackupSettings />
             </div>
           {/if}
 

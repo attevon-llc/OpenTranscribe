@@ -31,6 +31,13 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Explicit NAS-overlay directives**: the silent `.env` auto-load now announces itself with the resolved data paths; `--no-nas` suppresses it, `--nas` opts in explicitly.
 - **Live-data guardrails**: every NAS-overlay start writes a `.opentranscribe-live-data` marker README into each bind-mounted data directory AND its parent (a tripwire for cleanup scripts and humans), and `./opentr.sh data-paths` prints exactly which host paths hold live data so they can be checked before any cleanup.
 
+#### In-app scheduled database backups (no host cron)
+
+- **Admin UI–configured backups** (Settings → System Management → Backups): enable/disable, cron schedule, destination, GFS retention (7 daily / 4 weekly / 12 monthly), optional gpg encryption (passphrase file), Run Now with last-result display. All settings are DB-backed (`backup.*` SystemSettings) — **no host cron, no new env vars, no new Python deps** (native minimal cron parser; no croniter).
+- **Execution**: the existing celery-beat fires a lightweight `backup.check_schedule` every 5 minutes; when the DB-stored cron is due it dispatches `backup.run` → `pg_dump --format=custom` directly from the worker (the backend image now ships `postgresql-client`) to the mounted destination, then prunes by GFS. Schedule changes apply with no restarts.
+- **Destination mounting**: new optional `docker-compose.backup.yml` overlay maps `BACKUP_HOST_PATH` → `/backups`; when unmounted the feature degrades gracefully (UI warning, task no-ops with a logged result — never crashes).
+- Deferred by design: OpenSearch snapshots (derived data — rebuildable from Postgres; a setting + extension seam exist) and MinIO media mirroring.
+
 #### Storage recovery: in-place re-ingestion of orphaned MinIO objects
 
 - **`python -m app.scripts.reingest_minio`** (run in the backend container; `--dry-run`, `--limit N`, `--user-email`, `--no-dispatch`, `--throttle N`): registers media objects that exist in MinIO but have no database row — each new `MediaFile` points at the **existing** object key in place (zero bytes copied or duplicated), gets a real imohash fingerprint, and is dispatched through the standard processing pipeline. Idempotent: re-runs skip already-referenced objects. Born from a data-loss incident where the database was destroyed but all original media survived in MinIO.

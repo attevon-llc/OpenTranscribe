@@ -114,11 +114,15 @@ class OpenAIASRProvider(ASRProvider):
                         model="whisper-1", file=af, response_format="verbose_json"
                     )
                 elif self._model_name == "whisper-1":
-                    resp = client.audio.transcriptions.create(
-                        model="whisper-1", file=af, language=lang, response_format="verbose_json"
+                    # language may be None (auto-detect); SDK stub types it as str | Omit
+                    resp = client.audio.transcriptions.create(  # type: ignore[call-overload]
+                        model="whisper-1",
+                        file=af,
+                        language=lang,
+                        response_format="verbose_json",
                     )
                 else:
-                    resp = client.audio.transcriptions.create(
+                    resp = client.audio.transcriptions.create(  # type: ignore[call-overload]
                         model=self._model_name,
                         file=af,
                         language=lang,

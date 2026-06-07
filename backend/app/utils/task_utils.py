@@ -337,7 +337,7 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
     for file in candidates:
         # For failed files, check retry eligibility
         if file.status == FileStatus.ERROR and not system_settings_service.should_retry_file(
-            db, int(file.retry_count)
+            db, int(file.retry_count or 0)
         ):
             continue
 
@@ -406,7 +406,7 @@ def _recover_failed_file(db: Session, media_file: MediaFile) -> bool:
         True if recovery was successful, False otherwise
     """
     logger.info(
-        f"File {media_file.id} failed, attempting retry (attempt {int(media_file.retry_count) + 1})"
+        f"File {media_file.id} failed, attempting retry (attempt {int(media_file.retry_count or 0) + 1})"
     )
 
     success = reset_file_for_retry(db, int(media_file.id), reset_retry_count=False)
@@ -445,7 +445,7 @@ def _update_recovery_tracking(db: Session, media_file: MediaFile) -> None:
         db: Database session
         media_file: The media file to update
     """
-    media_file.recovery_attempts += 1  # type: ignore[assignment]
+    media_file.recovery_attempts += 1  # type: ignore[assignment,operator]
     media_file.last_recovery_attempt = datetime.now(timezone.utc)  # type: ignore[assignment]
     media_file.active_task_id = None  # type: ignore[assignment]
     media_file.task_started_at = None  # type: ignore[assignment]

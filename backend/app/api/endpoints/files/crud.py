@@ -2,7 +2,6 @@ import logging
 import os
 from datetime import datetime
 from typing import Any
-from typing import cast
 
 from fastapi import HTTPException
 from fastapi import status
@@ -149,28 +148,30 @@ def set_file_urls(db_file: MediaFile) -> None:
     if db_file.storage_path:
         # Skip S3 operations in test environment
         if os.environ.get("SKIP_S3", "False").lower() == "true":
-            db_file.download_url = f"/api/files/{db_file.uuid}/prepare-download"
+            # download_url/thumbnail_url are response-only fields stapled onto the ORM
+            # instance for serialization (declared on schemas.media.MediaFile, not the model)
+            db_file.download_url = f"/api/files/{db_file.uuid}/prepare-download"  # type: ignore[attr-defined]
             if db_file.thumbnail_path:
-                db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
+                db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"  # type: ignore[attr-defined]
             return
 
         # download_url is a presence/availability gate for the frontend download dropdown,
         # which performs the actual download via the async prepare-download + presigned-URL
         # flow (see TranscriptDisplay.downloadMedia). It is not a byte-proxy endpoint.
-        db_file.download_url = f"/api/files/{db_file.uuid}/prepare-download"
+        db_file.download_url = f"/api/files/{db_file.uuid}/prepare-download"  # type: ignore[attr-defined]
 
         # Set thumbnail URL as presigned URL (industry standard)
         # This allows <img> tags to load without auth headers
         if db_file.thumbnail_path:
             try:
-                db_file.thumbnail_url = get_file_url(
+                db_file.thumbnail_url = get_file_url(  # type: ignore[attr-defined]
                     str(db_file.thumbnail_path),
                     expires=settings.THUMBNAIL_URL_EXPIRE_SECONDS,
                 )
             except Exception as e:
                 logger.warning(f"Failed to generate presigned thumbnail URL: {e}")
                 # Fallback to API endpoint (requires auth)
-                db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
+                db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"  # type: ignore[attr-defined]
 
 
 def _get_or_compute_analytics(db: Session, file_id: int, file_status: str) -> Analytics | None:
@@ -421,12 +422,12 @@ def _resolve_redaction_for_request(
     try:
         from app.services.redaction.config import resolve_effective_config
 
-        cfg = resolve_effective_config(db, int(current_user.id))
+        cfg = resolve_effective_config(db, current_user.id)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to resolve redaction config: {e}")
         return None, set()
 
-    can_reveal = bool(db_file.user_id == int(current_user.id)) or bool(is_admin)
+    can_reveal = bool(db_file.user_id == current_user.id) or bool(is_admin)
     reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
 
     if reveal:
@@ -438,10 +439,10 @@ def _resolve_redaction_for_request(
             audit_logger.log(
                 event_type="transcript.view_unredacted",  # type: ignore[arg-type]
                 outcome=AuditOutcome.SUCCESS,
-                user_id=int(current_user.id),
+                user_id=current_user.id,
                 username=str(current_user.email),
                 details={
-                    "file_id": int(db_file.id),
+                    "file_id": db_file.id,
                     "file_uuid": str(db_file.uuid),
                     "revealed_categories": sorted(reveal),
                 },
@@ -462,7 +463,7 @@ def _lazy_dispatch_redaction(db: Session, db_file: MediaFile) -> None:
         db.commit()
         from app.tasks.redaction_task import redaction_detect_task
 
-        redaction_detect_task.delay(file_id=int(db_file.id), user_id=int(db_file.user_id))
+        redaction_detect_task.delay(file_id=db_file.id, user_id=int(db_file.user_id))
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Lazy redaction dispatch failed for file {db_file.id}: {e}")
 
@@ -540,9 +541,7 @@ def _build_media_file_response(
     # Add formatted fields
     # Extract values to ensure type compatibility
     duration_val: float | None = float(db_file.duration) if db_file.duration else None
-    upload_time_val: datetime | None = (
-        cast(datetime, db_file.upload_time) if db_file.upload_time else None
-    )
+    upload_time_val: datetime | None = db_file.upload_time if db_file.upload_time else None
     file_size_val: int | None = int(db_file.file_size) if db_file.file_size else None
 
     response.formatted_duration = FormattingService.format_duration(duration_val)
@@ -597,15 +596,15 @@ def get_media_file_detail(
     """
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
         # Expire heavy JSONB columns so they're not loaded unless explicitly accessed
         # (waveform_data fetched via /waveform, summary via /summary, metadata_raw rarely needed)
         db.expire(db_file, ["waveform_data", "metadata_raw"])
-        file_id = int(db_file.id)
+        file_id = db_file.id
 
         # Get related data
         tags = get_file_tags(db, file_id)
-        collections = get_file_collections(db, file_id, int(current_user.id))
+        collections = get_file_collections(db, file_id, current_user.id)
 
         # Get speakers and add computed status
         speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
@@ -624,21 +623,21 @@ def get_media_file_detail(
         total_speaker_segments = _count_speaker_segments(db, file_id)
 
         # Add computed status to segment speakers (skip already-processed)
-        processed_speaker_ids = {int(s.id) for s in speakers}
+        processed_speaker_ids = {s.id for s in speakers}
         for segment in transcript_segments:
             if segment.speaker and int(segment.speaker.id) not in processed_speaker_ids:
                 SpeakerStatusService.add_computed_status(segment.speaker)
                 processed_speaker_ids.add(int(segment.speaker.id))
 
         # Compute caller's effective permission for frontend
-        if db_file.user_id == int(current_user.id):
+        if db_file.user_id == current_user.id:
             my_permission = None  # Actual owner (frontend convention: null = owner)
         elif is_admin:
             my_permission = "owner"  # Admin viewing someone else's file
         else:
             from app.services.permission_service import PermissionService
 
-            my_permission = PermissionService.get_file_permission(db, file_id, int(current_user.id))
+            my_permission = PermissionService.get_file_permission(db, file_id, current_user.id)
 
         # Set URLs
         set_file_urls(db_file)
@@ -708,8 +707,8 @@ def update_media_file(
         Updated MediaFile object
     """
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-    file_id = int(db_file.id)  # Get internal ID for OpenSearch update
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    file_id = db_file.id  # Get internal ID for OpenSearch update
 
     # Track if title was updated for OpenSearch reindexing
     update_data = media_file_update.model_dump(exclude_unset=True)
@@ -734,7 +733,7 @@ def update_media_file(
     try:
         from app.services.redis_cache_service import redis_cache
 
-        redis_cache.invalidate_user_files(int(current_user.id))
+        redis_cache.invalidate_user_files(current_user.id)
     except Exception as e:
         logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
@@ -755,8 +754,8 @@ def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bo
     from app.utils.task_utils import is_file_safe_to_delete
 
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-    file_id = int(db_file.id)  # Get internal ID for task operations
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    file_id = db_file.id  # Get internal ID for task operations
 
     # Check if file is safe to delete
     is_safe, reason = is_file_safe_to_delete(db, file_id)
@@ -821,8 +820,8 @@ def update_single_transcript_segment(
     """
     # Verify user owns the file or is admin
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-    file_id = int(db_file.id)  # Get internal ID for segment query
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    file_id = db_file.id  # Get internal ID for segment query
 
     # Find the specific segment by UUID with speaker eagerly loaded
     segment = (
@@ -876,7 +875,7 @@ def update_single_transcript_segment(
         end_time=float(segment.end_time),
         text=str(segment.text),
         speaker_id=segment.speaker.uuid if segment.speaker else None,
-        speaker=segment.speaker,
+        speaker=segment.speaker,  # type: ignore[arg-type]  # ORM Speaker coerced via from_attributes
         formatted_timestamp=format_timestamp(float(segment.start_time)),
         display_timestamp=format_timestamp(float(segment.start_time)),
         speaker_label=(segment.speaker.name if segment.speaker else None),
@@ -897,7 +896,7 @@ def get_stream_url_info(db: Session, file_uuid: str, current_user: User) -> dict
         Dictionary with URL and content type information
     """
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
 
     # Skip S3 operations in test environment
     if os.environ.get("SKIP_S3", "False").lower() == "true":

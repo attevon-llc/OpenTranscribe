@@ -537,7 +537,7 @@ def scan_watch_source(
     source = _get_source_or_404(db, source_uuid, current_user)
     if not source.is_enabled:
         raise HTTPException(status_code=400, detail="Enable the source before scanning")
-    task = scan_single.delay(int(source.id))
+    task = scan_single.delay(source.id)
     return ScanResponse(status="started", message="Scan dispatched", task_id=task.id)
 
 
@@ -597,12 +597,13 @@ def source_file_stats(
     from sqlalchemy import func
 
     source = _get_source_or_404(db, source_uuid, current_user)
-    counts: dict[str, int] = dict(
-        db.query(WatchSourceFile.status, func.count(WatchSourceFile.id))
+    counts: dict[str, int] = {
+        status: count
+        for status, count in db.query(WatchSourceFile.status, func.count(WatchSourceFile.id))
         .filter(WatchSourceFile.watch_source_id == source.id)
         .group_by(WatchSourceFile.status)
         .all()
-    )
+    }
     skipped = sum(v for k, v in counts.items() if k.startswith("skipped"))
     return WatchSourceStats(
         total=sum(counts.values()),

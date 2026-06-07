@@ -222,7 +222,7 @@ async def update_config_category(
             db=db,
             category=category,
             config_dict=config,
-            user_id=int(current_user.id),
+            user_id=current_user.id,
             request=request,
         )
 
@@ -341,7 +341,7 @@ async def migrate_from_env(
     logger.info(f"Auth config migration from env initiated by super admin {current_user.email}")
 
     try:
-        count = AuthConfigService.migrate_from_env(db, int(current_user.id))
+        count = AuthConfigService.migrate_from_env(db, current_user.id)
 
         return {
             "success": True,

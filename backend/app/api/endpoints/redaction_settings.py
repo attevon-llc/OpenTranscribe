@@ -130,7 +130,7 @@ def get_redaction_settings(
     current_user: models.User = Depends(get_current_active_user),
 ) -> RedactionSettings:
     """Return the user's redaction preferences (coded defaults for unset fields)."""
-    return _read_user_settings(db, int(current_user.id))
+    return _read_user_settings(db, current_user.id)
 
 
 @user_router.put("/redaction", response_model=RedactionSettings)
@@ -144,9 +144,9 @@ def update_redaction_settings(
 
     updates = body.model_dump(exclude_none=True)
     for field, value in updates.items():
-        _upsert_user_setting(db, int(current_user.id), _USER_KEY[field], _store_value(field, value))
+        _upsert_user_setting(db, current_user.id, _USER_KEY[field], _store_value(field, value))
     db.commit()
-    return _read_user_settings(db, int(current_user.id))
+    return _read_user_settings(db, current_user.id)
 
 
 @user_router.delete("/redaction")

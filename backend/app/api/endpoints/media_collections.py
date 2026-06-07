@@ -132,7 +132,7 @@ def _resolve_prompt_uuid(db: Session, prompt_uuid: str | None, user_id: int) -> 
             detail="Summary prompt not found or not accessible",
         )
 
-    return int(prompt.id)
+    return prompt.id
 
 
 def _get_prompt_info(collection: Collection) -> tuple:
@@ -168,6 +168,7 @@ def _build_share_response(db: Session, share: CollectionShare) -> Share:
     else:
         raise HTTPException(status_code=500, detail="Invalid share target")
 
+    assert share.created_at is not None  # server_default=now()
     return Share(
         uuid=share.uuid,
         target_type=share.target_type,
@@ -194,7 +195,7 @@ async def list_shared_collections(
     current_user: User = Depends(get_current_active_user),
 ):
     """List collections shared with the current user (not owned by them)."""
-    accessible = PermissionService.get_accessible_collection_ids(db, int(current_user.id))
+    accessible = PermissionService.get_accessible_collection_ids(db, current_user.id)
 
     # Filter to only shared collections (not owned)
     shared_ids = [(cid, perm) for cid, perm in accessible if perm != "owner"]
@@ -253,18 +254,19 @@ async def list_shared_collections(
 
     results = []
     for coll in collections:
-        share = share_map.get(coll.id)
+        coll_share = share_map.get(coll.id)
         shared_by_brief = UserBrief(
             uuid=coll.user.uuid,
             full_name=coll.user.full_name,
             email=coll.user.email,
         )
-        shared_at = share.created_at if share else coll.created_at
-        if share and share.shared_by:
+        shared_at = coll_share.created_at if coll_share else coll.created_at
+        assert shared_at is not None  # both created_at columns have server_default=now()
+        if coll_share and coll_share.shared_by:
             shared_by_brief = UserBrief(
-                uuid=share.shared_by.uuid,
-                full_name=share.shared_by.full_name,
-                email=share.shared_by.email,
+                uuid=coll_share.shared_by.uuid,
+                full_name=coll_share.shared_by.full_name,
+                email=coll_share.shared_by.email,
             )
 
         results.append(
@@ -301,7 +303,7 @@ async def list_collections(
     - 'shared': Only collections shared with current user
     - 'all': Both owned and shared collections
     """
-    user_id = int(current_user.id)
+    user_id = current_user.id
 
     if ownership == "mine":
         # Original behavior: only owned collections
@@ -484,7 +486,7 @@ async def create_collection(
     prompt_internal_id = None
     if collection.default_prompt_id:
         prompt_internal_id = _resolve_prompt_uuid(
-            db, str(collection.default_prompt_id), int(current_user.id)
+            db, str(collection.default_prompt_id), current_user.id
         )
 
     db_collection = Collection(
@@ -522,7 +524,7 @@ async def get_collection(
 
     Uses PermissionService: any user with viewer+ permission can access.
     """
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
 
     # Reload with joined data
     reloaded_collection = (
@@ -545,7 +547,8 @@ async def get_collection(
 
     # Build response with prompt info
     result = CollectionResponse.model_validate(collection)
-    result.media_files = media_files
+    # ORM MediaFile list coerced to schema via response_model serialization
+    result.media_files = media_files  # type: ignore[assignment]
     prompt_uuid, prompt_name = _get_prompt_info(collection)
     result.default_prompt_id = prompt_uuid
     result.default_prompt_name = prompt_name
@@ -562,7 +565,7 @@ async def update_collection(
 ):
     """Update a collection. Requires editor+ permission."""
     collection, permission = get_collection_by_uuid_with_sharing(
-        db, collection_uuid, int(current_user.id), min_permission="editor"
+        db, collection_uuid, current_user.id, min_permission="editor"
     )
     collection_id = collection.id
 
@@ -594,7 +597,7 @@ async def update_collection(
             # Explicitly clearing the prompt
             collection.default_summary_prompt_id = None  # type: ignore[assignment]
         else:
-            prompt_internal_id = _resolve_prompt_uuid(db, str(prompt_uuid), int(current_user.id))
+            prompt_internal_id = _resolve_prompt_uuid(db, str(prompt_uuid), current_user.id)
             collection.default_summary_prompt_id = prompt_internal_id  # type: ignore[assignment]
 
     for field, value in update_data.items():
@@ -622,7 +625,7 @@ async def delete_collection(
 ):
     """Delete a collection. Only the original owner can delete."""
     collection, permission = get_collection_by_uuid_with_sharing(
-        db, collection_uuid, int(current_user.id), min_permission="owner"
+        db, collection_uuid, current_user.id, min_permission="owner"
     )
 
     # Only original owner can delete
@@ -657,7 +660,7 @@ async def add_media_to_collection(
 ):
     """Add media files to a collection. Requires editor+ permission."""
     collection, permission = get_collection_by_uuid_with_sharing(
-        db, collection_uuid, int(current_user.id), min_permission="editor"
+        db, collection_uuid, current_user.id, min_permission="editor"
     )
     collection_id = collection.id
 
@@ -732,7 +735,7 @@ async def remove_media_from_collection(
 ):
     """Remove media files from a collection. Requires editor+ permission."""
     collection, permission = get_collection_by_uuid_with_sharing(
-        db, collection_uuid, int(current_user.id), min_permission="editor"
+        db, collection_uuid, current_user.id, min_permission="editor"
     )
     collection_id = collection.id
 
@@ -803,7 +806,7 @@ async def get_collection_media(
 ):
     """Get media files in a collection with filtering, sorting, and pagination."""
     # Verify collection exists and user has access
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
     collection_id = collection.id
 
     # Eager-loading strategy matching the main list endpoint
@@ -846,7 +849,7 @@ async def get_collection_media(
         "file_type": file_type,
         "status": status,
         "transcript_search": transcript_search,
-        "user_id": int(current_user.id) if current_user.role != "admin" and not is_shared else None,
+        "user_id": current_user.id if current_user.role != "admin" and not is_shared else None,
     }
 
     # Apply all filters
@@ -923,8 +926,8 @@ async def list_collection_shares(
     current_user: User = Depends(get_current_active_user),
 ):
     """List all shares on a collection. Requires direct collection ownership."""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
-    _require_collection_owner(collection, int(current_user.id))
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    _require_collection_owner(collection, current_user.id)
 
     shares = (
         db.query(CollectionShare)
@@ -955,8 +958,8 @@ async def create_collection_share(
     current_user: User = Depends(get_current_active_user),
 ):
     """Share a collection with a user or group. Requires direct collection ownership."""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
-    _require_collection_owner(collection, int(current_user.id))
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    _require_collection_owner(collection, current_user.id)
 
     target_user_id = None
     target_group_id = None
@@ -1036,7 +1039,7 @@ async def create_collection_share(
     db.refresh(share)
 
     # Reload with relationships
-    share = (
+    reloaded_share = (
         db.query(CollectionShare)
         .options(
             joinedload(CollectionShare.shared_by),
@@ -1046,6 +1049,8 @@ async def create_collection_share(
         .filter(CollectionShare.id == share.id)
         .first()
     )
+    assert reloaded_share is not None  # just committed above
+    share = reloaded_share
 
     # Reindex OpenSearch accessible_user_ids for files in this collection
     file_ids = [
@@ -1072,8 +1077,8 @@ async def update_collection_share(
     current_user: User = Depends(get_current_active_user),
 ):
     """Update a share's permission level. Requires direct collection ownership."""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
-    _require_collection_owner(collection, int(current_user.id))
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    _require_collection_owner(collection, current_user.id)
 
     share = get_by_uuid(db, CollectionShare, share_uuid, "Share not found")
 
@@ -1089,7 +1094,7 @@ async def update_collection_share(
     db.refresh(share)
 
     # Reload with relationships
-    share = (
+    reloaded_share = (
         db.query(CollectionShare)
         .options(
             joinedload(CollectionShare.shared_by),
@@ -1099,6 +1104,8 @@ async def update_collection_share(
         .filter(CollectionShare.id == share.id)
         .first()
     )
+    assert reloaded_share is not None  # just committed above
+    share = reloaded_share
 
     # Reindex files since permission level changed
     file_ids = [
@@ -1127,8 +1134,8 @@ async def delete_collection_share(
     current_user: User = Depends(get_current_active_user),
 ):
     """Revoke a share on a collection. Requires direct collection ownership."""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
-    _require_collection_owner(collection, int(current_user.id))
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    _require_collection_owner(collection, current_user.id)
 
     share = get_by_uuid(db, CollectionShare, share_uuid, "Share not found")
 

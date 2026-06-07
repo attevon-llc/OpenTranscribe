@@ -136,7 +136,7 @@ def update_current_user(
         new_password = update_data.pop("password")
 
         # Check password history (FedRAMP IA-5)
-        if not check_password_against_history(db, int(current_user.id), new_password):
+        if not check_password_against_history(db, current_user.id, new_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Password has been used recently. Please choose a different password. "
@@ -148,7 +148,7 @@ def update_current_user(
         update_data["password_changed_at"] = datetime.now(timezone.utc)
 
         # Store password in history after successful change
-        add_password_to_history(db, int(current_user.id), new_hash)
+        add_password_to_history(db, current_user.id, new_hash)
         logger.info(f"Password changed for user {current_user.id}")
     else:
         # Remove current_password if no password change is being made
@@ -256,7 +256,7 @@ def update_user(
         new_password = update_data.pop("password")
 
         # Check password history (FedRAMP IA-5) - admins must also comply
-        if not check_password_against_history(db, int(user.id), new_password):
+        if not check_password_against_history(db, user.id, new_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Password has been used recently. Please choose a different password. "
@@ -268,7 +268,7 @@ def update_user(
         update_data["password_changed_at"] = datetime.now(timezone.utc)
 
         # Store password in history after successful change
-        add_password_to_history(db, int(user.id), new_hash)
+        add_password_to_history(db, user.id, new_hash)
         logger.info(f"Admin {current_user.id} changed password for user {user.id}")
 
     # Remove current_password from update_data as it's not a model field
@@ -307,7 +307,7 @@ def delete_user(
     from app.api.endpoints.admin import _delete_user_owned_records
     from app.api.endpoints.admin import _delete_user_speakers
 
-    user_id = int(user.id)
+    user_id = user.id
     _delete_user_owned_records(db, user_id)
     _delete_user_speakers(db, user_id)
     _delete_user_media_files(db, user_id)

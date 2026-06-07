@@ -101,7 +101,7 @@ class FileCleanupService:
             return False
 
         # Check if we've already tried recovery too many times
-        if media_file.recovery_attempts >= self.max_recovery_attempts:
+        if (media_file.recovery_attempts or 0) >= self.max_recovery_attempts:
             logger.warning(
                 f"File {file_id} has exceeded max recovery attempts ({self.max_recovery_attempts})"
             )
@@ -216,7 +216,7 @@ class FileCleanupService:
         eligible_files = (
             db.query(MediaFile)
             .filter(
-                MediaFile.force_delete_eligible,
+                MediaFile.force_delete_eligible.is_(True),
                 MediaFile.status.in_([FileStatus.ORPHANED, FileStatus.ERROR]),
             )
             .all()
@@ -299,7 +299,9 @@ class FileCleanupService:
         stats["stuck_files_detected"] = len(stuck_files)
 
         # Count files eligible for cleanup
-        eligible_count = db.query(MediaFile).filter(MediaFile.force_delete_eligible).count()
+        eligible_count = (
+            db.query(MediaFile).filter(MediaFile.force_delete_eligible.is_(True)).count()
+        )
         stats["files_eligible_for_cleanup"] = eligible_count
 
         # Calculate average processing time via SQL aggregation (avoids full ORM hydration)

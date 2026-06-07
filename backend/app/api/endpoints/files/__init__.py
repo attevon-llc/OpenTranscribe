@@ -169,7 +169,7 @@ async def upload_media_file(
     try:
         from app.services.redis_cache_service import redis_cache
 
-        redis_cache.invalidate_user_files(int(current_user.id))
+        redis_cache.invalidate_user_files(current_user.id)
     except Exception as e:
         logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
@@ -247,7 +247,7 @@ def list_media_files(
         defer(MediaFile.waveform_data),  # type: ignore[arg-type]
     ]
 
-    user_id = int(current_user.id)
+    user_id = current_user.id
 
     # Admin users can see all files regardless of ownership param
     if current_user.is_admin:
@@ -360,7 +360,7 @@ def get_metadata_filters_endpoint(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get available metadata filters like formats, codecs, etc."""
-    return get_metadata_filters(db, int(current_user.id), ownership=ownership)
+    return get_metadata_filters(db, current_user.id, ownership=ownership)
 
 
 # =============================================================================
@@ -424,9 +424,10 @@ def get_media_file_info(
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
-        db, str(file_uuid), int(current_user.id), is_admin=current_user.is_admin
+        db, str(file_uuid), current_user.id, is_admin=current_user.is_admin
     )
 
+    assert media_file.filename is not None  # required by MediaFilePublicInfo.filename
     return MediaFilePublicInfo(
         uuid=media_file.uuid,
         filename=media_file.filename,
@@ -496,7 +497,7 @@ def get_media_file_stream_url(
 
     # Verify user has permission (ownership check)
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
 
     # Determine storage path and expiration based on media type
     if media_type == "thumbnail":
@@ -603,7 +604,7 @@ def _resolve_ready_download(db_file: MediaFile, mode: str) -> dict | None:
     if mode == "video_subtitles":
         if db_file.status != "completed":
             raise HTTPException(status_code=422, detail="Transcript is not ready yet.")
-        cache_key = service.generate_cache_key(int(db_file.id), filename, include_speakers=True)
+        cache_key = service.generate_cache_key(db_file.id, filename, include_speakers=True)
         if service.is_video_cached(cache_key):
             dl_name = f"{base_name}_with_subtitles.mp4"
             return {
@@ -640,7 +641,7 @@ def _ensure_prepare_enqueued(db_file: MediaFile, user_id: int, mode: str) -> Non
     except Exception:
         first = True  # Redis hiccup → don't block the download
     if first:
-        prepare_media_download_task.delay(file_id=int(db_file.id), user_id=user_id, mode=mode)
+        prepare_media_download_task.delay(file_id=db_file.id, user_id=user_id, mode=mode)
 
 
 @router.post("/{file_uuid}/prepare-download")
@@ -664,15 +665,13 @@ def prepare_download(
     if mode not in _DOWNLOAD_MODES:
         raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
 
-    db_file = get_media_file_by_uuid(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
-    )
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=current_user.is_admin)
 
     ready = _resolve_ready_download(db_file, mode)
     if ready:
         return {"status": "ready", **ready}
 
-    _ensure_prepare_enqueued(db_file, int(current_user.id), mode)
+    _ensure_prepare_enqueued(db_file, current_user.id, mode)
     return {"status": "processing", "file_id": str(db_file.uuid)}
 
 
@@ -704,10 +703,8 @@ async def download_stream(
     if mode not in _DOWNLOAD_MODES:
         raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
 
-    db_file = get_media_file_by_uuid(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
-    )
-    user_id = int(current_user.id)
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=current_user.is_admin)
+    user_id = current_user.id
 
     def sse(event: str, payload: dict) -> str:
         return f"event: {event}\ndata: {_json.dumps(payload)}\n\n"
@@ -821,7 +818,7 @@ async def get_thumbnail(
         if not is_admin and db_file.user_id != current_user.id:
             from app.services.permission_service import PermissionService
 
-            perm = PermissionService.get_file_permission(db, int(db_file.id), int(current_user.id))
+            perm = PermissionService.get_file_permission(db, db_file.id, current_user.id)
             if not perm:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -889,8 +886,8 @@ def clear_video_cache(
     try:
         # Verify user owns the file or is admin
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-        file_id = int(db_file.id)  # Get internal ID for cache operations
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for cache operations
 
         # Clear the cache using video processing service
         from app.services.minio_service import MinIOService
@@ -924,8 +921,8 @@ def get_file_analytics(
     from app.schemas.media import Analytics as AnalyticsSchema
 
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-    analytics = _get_or_compute_analytics(db, int(db_file.id), str(db_file.status))
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    analytics = _get_or_compute_analytics(db, db_file.id, str(db_file.status))
     return {
         "analytics": AnalyticsSchema.model_validate(analytics) if analytics else None,
     }
@@ -941,8 +938,8 @@ def refresh_analytics(
     try:
         # Verify user owns the file or is admin
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-        file_id = int(db_file.id)  # Get internal ID for analytics refresh
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for analytics refresh
 
         # Refresh analytics using the analytics service
         from app.services.analytics_service import AnalyticsService

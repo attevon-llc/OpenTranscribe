@@ -112,7 +112,7 @@ def _get_new_speaker_id(
         from app.services.permission_service import PermissionService
 
         perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), int(current_user.id)
+            db, int(speaker.media_file_id), current_user.id
         )
         if not perm or perm == "viewer":
             raise HTTPException(
@@ -120,7 +120,7 @@ def _get_new_speaker_id(
                 detail="Not authorized to use this speaker",
             )
 
-    return int(speaker.id)
+    return speaker.id
 
 
 def _handle_speaker_change(
@@ -260,10 +260,10 @@ def update_segment_speaker(
         db,
         original_speaker_id,
         new_speaker_id,
-        int(media_file.id),
+        media_file.id,
         segment_uuid=segment_uuid,
         media_file_uuid=str(media_file.uuid),
-        user_id=int(current_user.id),
+        user_id=current_user.id,
     )
 
     # Format the response with speaker details
@@ -274,7 +274,7 @@ def update_segment_speaker(
         end_time=float(segment.end_time),
         text=str(segment.text),
         speaker_id=segment.speaker.uuid if segment.speaker else None,
-        speaker=segment.speaker,
+        speaker=segment.speaker,  # type: ignore[arg-type]  # ORM Speaker coerced via from_attributes
         formatted_timestamp=format_timestamp(float(segment.start_time)),
         display_timestamp=format_timestamp(float(segment.start_time)),
         speaker_label=(segment.speaker.name if segment.speaker else None),  # Original speaker ID

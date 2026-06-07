@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from typing import Any
 from typing import Optional
+from typing import cast
 
 import numpy as np
 import torch
@@ -194,7 +195,8 @@ class SpeakerEmbeddingService:
 
             # Pass as waveform dict to avoid torchcodec/AudioDecoder issues
             audio_input = {"waveform": waveform, "sample_rate": sample_rate}
-            embedding = self.inference(audio_input)
+            # Inference(window="whole") returns a single np.ndarray embedding
+            embedding = cast(np.ndarray, self.inference(audio_input))
 
             # L2 normalize for optimal cosine similarity in OpenSearch
             if embedding is not None:
@@ -202,7 +204,7 @@ class SpeakerEmbeddingService:
                 if norm > 0:
                     embedding = embedding / norm
 
-            return embedding  # type: ignore[no-any-return]
+            return embedding
 
         except Exception as e:
             logger.error(f"Error extracting embedding from {audio_path}: {e}")
@@ -265,14 +267,15 @@ class SpeakerEmbeddingService:
 
         try:
             audio_input = {"waveform": waveform, "sample_rate": 16000}
-            embedding = self.inference(audio_input)
+            # Inference(window="whole") returns a single np.ndarray embedding
+            embedding = cast(np.ndarray, self.inference(audio_input))
 
             if embedding is not None:
                 norm = np.linalg.norm(embedding)
                 if norm > 0:
                     embedding = embedding / norm
 
-            return embedding  # type: ignore[no-any-return]
+            return embedding
         except Exception as e:
             logger.error(f"Error extracting embedding from segment: {e}")
             return None
@@ -307,14 +310,15 @@ class SpeakerEmbeddingService:
                 wav = wav.mean(dim=0, keepdim=True)
 
             audio_input = {"waveform": wav, "sample_rate": sample_rate}
-            embedding = self.inference(audio_input)
+            # Inference(window="whole") returns a single np.ndarray embedding
+            embedding = cast(np.ndarray, self.inference(audio_input))
 
             if embedding is not None:
                 norm = np.linalg.norm(embedding)
                 if norm > 0:
                     embedding = embedding / norm
 
-            return embedding  # type: ignore[no-any-return]
+            return embedding
         except Exception as e:
             logger.error(f"Error extracting embedding from waveform segment: {e}")
             return None

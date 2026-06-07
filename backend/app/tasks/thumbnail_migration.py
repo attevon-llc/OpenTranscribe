@@ -59,7 +59,6 @@ def migrate_thumbnails_to_webp(self, batch_size: int = 20) -> dict:
                     defer(MediaFile.summary_data),
                     defer(MediaFile.metadata_raw),
                     defer(MediaFile.waveform_data),
-                    defer(MediaFile.transcript_text),
                 )
                 .filter(
                     MediaFile.thumbnail_path.like("%.jpg"),

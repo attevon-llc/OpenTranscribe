@@ -47,7 +47,7 @@ def list_speaker_profiles(
             owned_ids: set[int] = set()  # Will compute below for is_shared flag
         else:
             accessible = PermissionService.get_accessible_profile_ids_with_source(
-                db, int(current_user.id)
+                db, current_user.id
             )
             if not accessible:
                 return []
@@ -82,18 +82,16 @@ def list_speaker_profiles(
             }
 
         # Pre-fetch owner names for shared profiles
-        owner_user_ids = {
-            int(p.user_id) for p in profiles if int(p.user_id) != int(current_user.id)
-        }
+        owner_user_ids = {int(p.user_id) for p in profiles if int(p.user_id) != current_user.id}
         owner_names: dict[int, str] = {}
         if owner_user_ids:
             owners = db.query(User).filter(User.id.in_(owner_user_ids)).all()
             for owner in owners:
-                owner_names[int(owner.id)] = owner.full_name or owner.email or f"User {owner.id}"
+                owner_names[owner.id] = owner.full_name or owner.email or f"User {owner.id}"
 
         from sqlalchemy import func as sa_func
 
-        profile_ids = [int(p.id) for p in profiles]
+        profile_ids = [p.id for p in profiles]
 
         # Batch query: media count and instance count per profile (1 query)
         count_rows = (
@@ -142,7 +140,10 @@ def list_speaker_profiles(
 
         result = []
         for profile in profiles:
-            profile_id = int(profile.id)
+            # created_at/updated_at have server_default=now() (non-None on persisted rows)
+            assert profile.created_at is not None
+            assert profile.updated_at is not None
+            profile_id = profile.id
             is_shared = profile_id not in owned_ids
             media_count, instance_count = counts_by_profile.get(profile_id, (0, 0))
 
@@ -208,6 +209,9 @@ def create_speaker_profile(
         db.commit()
         db.refresh(profile)
 
+        # created_at/updated_at populated by server_default after refresh
+        assert profile.created_at is not None
+        assert profile.updated_at is not None
         return {
             "uuid": str(profile.uuid),
             "name": profile.name,
@@ -267,6 +271,8 @@ def update_speaker_profile(
         db.commit()
         db.refresh(profile)
 
+        # updated_at populated by server_default after refresh
+        assert profile.updated_at is not None
         return {
             "uuid": str(profile.uuid),
             "name": profile.name,
@@ -298,7 +304,7 @@ def assign_speaker_to_profile(
             "owner"
             if current_user.is_admin
             else PermissionService.get_file_permission(
-                db, int(speaker.media_file_id), int(current_user.id)
+                db, int(speaker.media_file_id), current_user.id
             )
         )
         if not file_perm:
@@ -307,8 +313,8 @@ def assign_speaker_to_profile(
 
         # Verify profile exists and is accessible (own or shared)
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
-        if int(profile.id) not in accessible_ids:
+        accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
+        if profile.id not in accessible_ids:
             raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id
 
@@ -371,7 +377,7 @@ def _get_embedding_suggestions(
         profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
             db,
             speaker_embedding,
-            int(current_user.id),
+            current_user.id,
             threshold=threshold,
             accessible_profile_ids=accessible_profile_ids,
         )
@@ -487,7 +493,7 @@ def get_speaker_profile_suggestions(
             "owner"
             if current_user.is_admin
             else PermissionService.get_file_permission(
-                db, int(speaker.media_file_id), int(current_user.id)
+                db, int(speaker.media_file_id), current_user.id
             )
         )
         if not file_perm:
@@ -504,7 +510,7 @@ def get_speaker_profile_suggestions(
             return []
 
         # Compute accessible profiles for cross-user matching
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
+        accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
 
         # Get suggestions from different sources
         suggestions: list[dict[str, Any]] = []
@@ -546,8 +552,8 @@ def get_speaker_profile_occurrences(
     try:
         # Verify profile exists and is accessible (own or shared)
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
-        if int(profile.id) not in accessible_ids:
+        accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
+        if profile.id not in accessible_ids:
             raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id
 
@@ -556,9 +562,7 @@ def get_speaker_profile_occurrences(
         matching_service = SpeakerMatchingService(db, embedding_service)
 
         # Get occurrences
-        occurrences = matching_service.find_speaker_occurrences(
-            int(profile_id), int(current_user.id)
-        )
+        occurrences = matching_service.find_speaker_occurrences(int(profile_id), current_user.id)
 
         return occurrences
 
@@ -796,6 +800,9 @@ def list_speaker_collections(
 
         result = []
         for collection in collections:
+            # created_at/updated_at have server_default=now() (non-None on persisted rows)
+            assert collection.created_at is not None
+            assert collection.updated_at is not None
             result.append(
                 {
                     "uuid": str(collection.uuid),
@@ -849,6 +856,9 @@ def create_speaker_collection(
         db.commit()
         db.refresh(collection)
 
+        # created_at/updated_at populated by server_default after refresh
+        assert collection.created_at is not None
+        assert collection.updated_at is not None
         return {
             "uuid": str(collection.uuid),
             "name": collection.name,

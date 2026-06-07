@@ -205,7 +205,7 @@ async def complete_upload(
     # the pre-minted task_id keeps every downstream marker in one benchmark hash.
     dispatch_upload_pipeline(
         db_file,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         whisper_model=whisper_model,
         min_speakers=request.min_speakers,
         max_speakers=request.max_speakers,
@@ -225,7 +225,7 @@ async def complete_upload(
     try:
         from app.services.redis_cache_service import redis_cache
 
-        redis_cache.invalidate_user_files(int(current_user.id))
+        redis_cache.invalidate_user_files(current_user.id)
     except Exception as cache_err:
         logger.debug(f"Cache invalidation failed (non-critical): {cache_err}")
 

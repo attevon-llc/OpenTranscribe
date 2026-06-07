@@ -34,14 +34,14 @@ def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
     try:
         from app.services.redaction.config import resolve_effective_config
 
-        cfg = resolve_effective_config(db, int(current_user.id))
+        cfg = resolve_effective_config(db, current_user.id)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to resolve redaction config for subtitles: {e}")
         return None, set()
 
     if getattr(cfg, "export_locked", False):
         return cfg, set()  # forced — never reveal on export
-    can_reveal = (media_file.user_id == int(current_user.id)) or current_user.is_admin
+    can_reveal = (media_file.user_id == current_user.id) or current_user.is_admin
     reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
     return cfg, reveal
 
@@ -63,9 +63,9 @@ async def get_subtitles(
     """
     # Get media file and check permissions
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
-    file_id = int(media_file.id)  # Get internal ID for subtitle generation
+    file_id = media_file.id  # Get internal ID for subtitle generation
 
     if media_file.status != "completed":
         raise HTTPException(status_code=400, detail="Transcription not completed yet")
@@ -100,12 +100,9 @@ async def get_subtitles(
         }
         content_type = content_type_map.get(format_lower, "text/plain")
 
-        # Generate filename
-        base_filename = (
-            media_file.filename.rsplit(".", 1)[0]
-            if "." in media_file.filename
-            else media_file.filename
-        )
+        # Generate filename (filename column is nullable; fall back to the file UUID)
+        source_name = media_file.filename or str(media_file.uuid)
+        base_filename = source_name.rsplit(".", 1)[0] if "." in source_name else source_name
         filename = f"{base_filename}.{format_lower}"
 
         return Response(
@@ -138,9 +135,9 @@ async def validate_subtitles(
     """
     # Get media file and check permissions
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
-    file_id = int(media_file.id)  # Get internal ID for validation
+    file_id = media_file.id  # Get internal ID for validation
 
     if media_file.status != "completed":
         raise HTTPException(status_code=400, detail="Transcription not completed yet")
@@ -213,7 +210,7 @@ def prepare_bulk_export(
     for file_uuid in request.file_uuids:
         try:
             media_file = get_file_by_uuid_with_permission(
-                db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+                db, file_uuid, current_user.id, is_admin=current_user.is_admin
             )
         except HTTPException:
             continue  # inaccessible file — skip silently, mirrors prior per-file skip
@@ -221,7 +218,7 @@ def prepare_bulk_export(
             continue
         filename = str(media_file.filename)
         base = filename.rsplit(".", 1)[0] if "." in filename else filename
-        file_specs.append((int(media_file.id), base))
+        file_specs.append((media_file.id, base))
 
     if not file_specs:
         raise HTTPException(

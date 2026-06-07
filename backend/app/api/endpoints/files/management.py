@@ -87,8 +87,8 @@ async def get_file_status_detail(
     """Get detailed status information for a file."""
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-        file_id = int(db_file.id)  # Get internal ID for task operations
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for task operations
 
         # Check if file is safe to delete
         is_safe, delete_reason = is_file_safe_to_delete(db, file_id)
@@ -112,7 +112,7 @@ async def get_file_status_detail(
             FileStatus.ORPHANED,
         ]:
             actions.append("retry")
-            if db_file.retry_count < db_file.max_retries:
+            if (db_file.retry_count or 0) < (db_file.max_retries or 3):
                 recommendations.append("This file can be retried for processing.")
             else:
                 recommendations.append(
@@ -139,8 +139,8 @@ async def get_file_status_detail(
                 db_file.status == FileStatus.PROCESSING and db_file.active_task_id is not None
             ),
             is_stuck=is_stuck,
-            retry_count=int(db_file.retry_count),
-            max_retries=int(db_file.max_retries),
+            retry_count=int(db_file.retry_count or 0),
+            max_retries=int(db_file.max_retries or 3),
             active_task_id=str(db_file.active_task_id) if db_file.active_task_id else None,
             task_started_at=db_file.task_started_at.isoformat()
             if db_file.task_started_at
@@ -151,7 +151,7 @@ async def get_file_status_detail(
             last_error_message=str(db_file.last_error_message)
             if db_file.last_error_message
             else None,
-            recovery_attempts=int(db_file.recovery_attempts),
+            recovery_attempts=int(db_file.recovery_attempts or 0),
             force_delete_eligible=bool(db_file.force_delete_eligible),
             actions_available=actions,
             recommendations=recommendations,
@@ -176,8 +176,8 @@ async def cancel_file_processing(
     """Cancel active processing for a file."""
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-        file_id = int(db_file.id)  # Get internal ID for task operations
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for task operations
 
         if db_file.status != FileStatus.PROCESSING:
             raise HTTPException(
@@ -220,8 +220,8 @@ async def retry_file_processing(
     """Retry processing for a failed file."""
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-        file_id = int(db_file.id)  # Get internal ID for task operations
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for task operations
 
         # Check if file can be retried
         if db_file.status not in [
@@ -235,7 +235,11 @@ async def retry_file_processing(
             )
 
         # Check retry limits
-        if db_file.retry_count >= db_file.max_retries and not reset_retry_count and not is_admin:
+        if (
+            (db_file.retry_count or 0) >= (db_file.max_retries or 3)
+            and not reset_retry_count
+            and not is_admin
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"File has reached maximum retry attempts ({db_file.max_retries}). Contact admin for help.",
@@ -293,8 +297,8 @@ async def recover_file(
     """Attempt to recover a stuck file."""
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-        file_id = int(db_file.id)  # Get internal ID for task operations
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for task operations
 
         success = recover_stuck_file(db, file_id)
         if not success:
@@ -369,7 +373,7 @@ async def get_stuck_files(
                 # Use internal ID lookup for stuck files (file_id is int from check_for_stuck_files)
                 from app.api.endpoints.files.crud import get_media_file_by_id
 
-                db_file = get_media_file_by_id(db, file_id, int(current_user.id), is_admin=is_admin)
+                db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
                 stuck_files.append(
                     {
                         "uuid": str(db_file.uuid),
@@ -646,8 +650,8 @@ def _process_single_file_action(
     num_speakers: int | None = None,
 ) -> BulkActionResult:
     """Process a single file action, returning the result."""
-    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-    file_id = int(db_file.id)
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    file_id = db_file.id
 
     action_handlers = {
         "delete": lambda: _handle_delete_action(db, file_uuid, current_user, force),
@@ -657,7 +661,7 @@ def _process_single_file_action(
         "reprocess": lambda: _handle_reprocess_action(
             db, file_uuid, file_id, stages, min_speakers, max_speakers, num_speakers
         ),
-        "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, int(current_user.id)),
+        "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, current_user.id),
         "redact": lambda: _handle_redact_action(db, file_uuid, file_id),
     }
 

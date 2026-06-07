@@ -95,7 +95,7 @@ class SpeakerMatchingService:
             .filter(
                 Speaker.id == match["speaker_id"],
                 Speaker.user_id == user_id,
-                Speaker.verified,
+                Speaker.verified.is_(True),
                 Speaker.display_name.isnot(None),
             )
             .first()
@@ -183,7 +183,7 @@ class SpeakerMatchingService:
                 .filter(
                     Speaker.profile_id == profile.id,  # Use integer profile.id
                     Speaker.user_id == user_id,
-                    Speaker.verified,
+                    Speaker.verified.is_(True),
                     Speaker.display_name.isnot(None),
                 )
                 .first()
@@ -819,6 +819,7 @@ class SpeakerMatchingService:
         occurrences = []
         for speaker in speakers:
             media_file = speaker.media_file
+            assert media_file.upload_time is not None  # server_default=now()
             occurrences.append(
                 {
                     "media_file_id": media_file.id,
@@ -832,7 +833,7 @@ class SpeakerMatchingService:
             )
 
         # Sort by upload time (newest first)
-        occurrences.sort(key=lambda x: x["upload_time"], reverse=True)
+        occurrences.sort(key=lambda x: str(x["upload_time"]), reverse=True)
 
         return occurrences
 
@@ -1293,7 +1294,7 @@ class SpeakerMatchingService:
         Returns:
             List of matched speakers with details
         """
-        matches = []
+        matches: list[dict[str, Any]] = []
 
         try:
             # Query matches where speaker is either speaker1 or speaker2

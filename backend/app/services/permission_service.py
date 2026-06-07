@@ -6,6 +6,7 @@ and resolves access via direct ownership, direct user shares, and group shares.
 """
 
 import logging
+from typing import Any
 from typing import Optional
 
 from sqlalchemy import case
@@ -236,7 +237,7 @@ class PermissionService:
         Returns list of (collection_id, permission) tuples.
         """
         # Owned collections
-        owned = (
+        owned: list[Any] = (
             db.query(Collection.id, literal_column("'owner'").label("permission"))
             .filter(Collection.user_id == user_id)
             .all()

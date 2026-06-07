@@ -15,6 +15,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 from typing import Protocol
+from typing import cast
 from typing import runtime_checkable
 
 import numpy as np
@@ -79,7 +80,10 @@ class EmbeddingModelAdapter:
 
         try:
             waveform = torch.from_numpy(audio_np).unsqueeze(0)  # [1, samples]
-            return self._service.extract_embedding_from_waveform(waveform, sample_rate)
+            return cast(
+                "np.ndarray | None",
+                self._service.extract_embedding_from_waveform(waveform, sample_rate),
+            )
         except Exception as e:
             logger.debug("Embedding extraction failed: %s", e)
             return None

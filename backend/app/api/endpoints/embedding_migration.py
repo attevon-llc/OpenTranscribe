@@ -438,12 +438,12 @@ async def retry_failed_files(
         already_migrated = _get_already_migrated_file_ids()
 
         # Only retry files that have embeddable speakers (>= 0.5s segments)
-        embeddable_counts = _count_embeddable_speakers_per_file([int(f.id) for f in completed_rows])
+        embeddable_counts = _count_embeddable_speakers_per_file([f.id for f in completed_rows])
 
         missing_rows = [
             f
             for f in completed_rows
-            if f.id not in already_migrated and embeddable_counts.get(int(f.id), 0) > 0
+            if f.id not in already_migrated and embeddable_counts.get(f.id, 0) > 0
         ]
         if not missing_rows:
             return {

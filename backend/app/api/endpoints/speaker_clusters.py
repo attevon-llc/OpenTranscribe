@@ -48,7 +48,7 @@ def list_clusters(
     try:
         service = SpeakerClusteringService(db)
         return service.list_clusters(
-            user_id=int(current_user.id),
+            user_id=current_user.id,
             page=page,
             per_page=per_page,
             has_label=has_label,
@@ -70,7 +70,7 @@ def trigger_recluster(
         from app.tasks.speaker_clustering import recluster_all_speakers
 
         threshold = data.threshold if data and data.threshold is not None else None
-        user_id = int(current_user.id)
+        user_id = current_user.id
         task = recluster_all_speakers.delay(user_id, threshold)
 
         # Send immediate "queued" notification so the UI shows status while
@@ -109,7 +109,7 @@ def get_unverified_inbox(
     """Get paginated list of unverified speakers for the inbox."""
     service = SpeakerClusteringService(db)
     return service.get_unverified_speakers(
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         page=page,
         per_page=per_page,
     )
@@ -125,7 +125,7 @@ def batch_verify(
     service = SpeakerClusteringService(db)
     return service.batch_verify_speakers(
         speaker_uuids=[str(u) for u in data.speaker_uuids],
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         action=data.action,
         profile_uuid=str(data.profile_uuid) if data.profile_uuid else None,
         display_name=data.display_name,
@@ -145,7 +145,7 @@ def get_speaker_media_preview(
     """
     speaker = (
         db.query(Speaker)
-        .filter(Speaker.uuid == speaker_uuid, Speaker.user_id == int(current_user.id))
+        .filter(Speaker.uuid == speaker_uuid, Speaker.user_id == current_user.id)
         .first()
     )
     if not speaker:
@@ -194,7 +194,7 @@ def get_clustering_stats(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get aggregate speaker clustering statistics."""
-    user_id = int(current_user.id)
+    user_id = current_user.id
     total_speakers = db.query(Speaker).filter(Speaker.user_id == user_id).count()
     clustered = (
         db.query(Speaker)
@@ -229,7 +229,7 @@ async def analyze_outliers(
     """Analyze minority-gender speakers for potential outliers."""
     service = SpeakerClusteringService(db)
     try:
-        result = service.analyze_gender_outliers(cluster_uuid, int(current_user.id))
+        result = service.analyze_gender_outliers(cluster_uuid, current_user.id)
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
@@ -248,7 +248,7 @@ async def unassign_speakers(
         result = service.unassign_speakers(
             cluster_uuid,
             [str(u) for u in request.speaker_uuids],
-            int(current_user.id),
+            current_user.id,
             request.blacklist,
         )
         return result
@@ -269,7 +269,7 @@ def get_cluster_detail(
 ):
     """Get cluster detail with all members."""
     service = SpeakerClusteringService(db)
-    result = service.get_cluster_detail(cluster_uuid, int(current_user.id))
+    result = service.get_cluster_detail(cluster_uuid, current_user.id)
     if not result:
         raise HTTPException(status_code=404, detail="Cluster not found")
     return result
@@ -288,7 +288,7 @@ def update_cluster(
             db.query(SpeakerCluster)
             .filter(
                 SpeakerCluster.uuid == cluster_uuid,
-                SpeakerCluster.user_id == int(current_user.id),
+                SpeakerCluster.user_id == current_user.id,
             )
             .first()
         )
@@ -307,7 +307,7 @@ def update_cluster(
             "uuid": str(cluster.uuid),
             "label": cluster.label,
             "description": cluster.description,
-            "member_count": int(cluster.member_count),
+            "member_count": int(cluster.member_count or 0),
             "updated_at": cluster.updated_at,
         }
 
@@ -331,7 +331,7 @@ def delete_cluster(
             db.query(SpeakerCluster)
             .filter(
                 SpeakerCluster.uuid == cluster_uuid,
-                SpeakerCluster.user_id == int(current_user.id),
+                SpeakerCluster.user_id == current_user.id,
             )
             .first()
         )
@@ -372,7 +372,7 @@ def promote_cluster(
     profile = service.promote_cluster_to_profile(
         cluster_uuid=cluster_uuid,
         name=data.name,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         description=data.description,
     )
     if not profile:
@@ -397,13 +397,13 @@ def merge_clusters(
         raise HTTPException(status_code=400, detail="Cannot merge cluster with itself")
 
     service = SpeakerClusteringService(db)
-    result = service.merge_clusters(source_uuid, target_uuid, int(current_user.id))
+    result = service.merge_clusters(source_uuid, target_uuid, current_user.id)
     if not result:
         raise HTTPException(status_code=400, detail="Failed to merge clusters")
 
     return {
         "uuid": str(result.uuid),
-        "member_count": int(result.member_count),
+        "member_count": int(result.member_count or 0),
         "message": "Clusters merged successfully",
     }
 
@@ -420,13 +420,13 @@ def split_cluster(
     new_cluster = service.split_cluster(
         cluster_uuid=cluster_uuid,
         speaker_uuids=[str(u) for u in data.speaker_uuids],
-        user_id=int(current_user.id),
+        user_id=current_user.id,
     )
     if not new_cluster:
         raise HTTPException(status_code=400, detail="Failed to split cluster")
 
     return {
         "uuid": str(new_cluster.uuid),
-        "member_count": int(new_cluster.member_count),
+        "member_count": int(new_cluster.member_count or 0),
         "message": "Cluster split successfully",
     }

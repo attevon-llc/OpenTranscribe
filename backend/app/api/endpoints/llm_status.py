@@ -33,14 +33,14 @@ async def get_llm_status(
     """
     try:
         # Check if LLM is available for this user
-        is_available = await is_llm_available(user_id=int(current_user.id))
+        is_available = await is_llm_available(user_id=current_user.id)
 
-        status_info = {"available": is_available, "user_id": current_user.id}
+        status_info: dict[str, Any] = {"available": is_available, "user_id": current_user.id}
 
         if is_available:
             # Get additional info about the configured LLM
             try:
-                llm_service = LLMService.create_from_settings(user_id=int(current_user.id))
+                llm_service = LLMService.create_from_settings(user_id=current_user.id)
                 if llm_service:
                     status_info.update(
                         {
@@ -127,7 +127,7 @@ async def test_llm_connection(
         Dictionary containing connection test results
     """
     try:
-        llm_service = LLMService.create_from_settings(user_id=int(current_user.id))
+        llm_service = LLMService.create_from_settings(user_id=current_user.id)
         if llm_service is None:
             return {
                 "success": False,

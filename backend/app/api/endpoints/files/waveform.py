@@ -259,8 +259,8 @@ async def get_audio_waveform(
     """
     # Get the media file and verify user access
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=bool(is_admin))
-    file_id = int(db_file.id)
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=bool(is_admin))
+    file_id = db_file.id
 
     # Validate the file is suitable for waveform generation
     _validate_media_file_for_waveform(db_file)
@@ -298,8 +298,8 @@ async def get_audio_waveform_peaks(
     """
     # Get the media file and verify user access
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=bool(is_admin))
-    file_id = int(db_file.id)
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=bool(is_admin))
+    file_id = db_file.id
 
     # Validate the file is suitable for waveform generation
     _validate_media_file_for_waveform(db_file)
@@ -345,10 +345,8 @@ async def generate_waveform_for_file(
     try:
         # Verify user access to the file
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(
-            db, file_uuid, int(current_user.id), is_admin=bool(is_admin)
-        )
-        file_id = int(db_file.id)  # Get internal ID for task trigger
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=bool(is_admin))
+        file_id = db_file.id  # Get internal ID for task trigger
 
         # Check if file is audio/video
         is_audio_video = db_file.content_type.startswith(

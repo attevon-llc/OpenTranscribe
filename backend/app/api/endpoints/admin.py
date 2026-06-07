@@ -1069,7 +1069,15 @@ async def add_media_source(
         source.hostname,
         source.provider_type,
     )
-    return MediaSource(**new_source)
+    return MediaSource(
+        id=str(new_source["id"]),
+        hostname=source.hostname,
+        provider_type=source.provider_type,
+        username=source.username,
+        password=source.password,
+        verify_ssl=source.verify_ssl,
+        label=source.label,
+    )
 
 
 @router.put("/settings/media-sources/{source_id}", response_model=MediaSource)
@@ -1185,7 +1193,7 @@ async def admin_reset_user_password(
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_UPDATE,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         outcome=AuditOutcome.SUCCESS,
         details={
@@ -1214,7 +1222,7 @@ async def admin_unlock_account(
 
     audit_logger.log(
         event_type=AuditEventType.AUTH_ACCOUNT_UNLOCK,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         outcome=AuditOutcome.SUCCESS,
         details={
@@ -1244,7 +1252,7 @@ async def admin_lock_account(
 
     audit_logger.log(
         event_type=AuditEventType.AUTH_ACCOUNT_DISABLED,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         outcome=AuditOutcome.SUCCESS,
         details={
@@ -1288,7 +1296,7 @@ async def admin_terminate_user_sessions(
 
     audit_logger.log(
         event_type=AuditEventType.AUTH_LOGOUT_ALL,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         outcome=AuditOutcome.SUCCESS,
         details={
@@ -1360,7 +1368,7 @@ async def admin_change_user_role(
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_ROLE_CHANGE,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         outcome=AuditOutcome.SUCCESS,
         details={
@@ -1396,7 +1404,7 @@ async def admin_reset_user_mfa(
 
     audit_logger.log(
         event_type=AuditEventType.AUTH_MFA_DISABLE,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         outcome=AuditOutcome.SUCCESS,
         details={
@@ -1833,7 +1841,7 @@ async def repair_profile_embeddings(
     if not profiles:
         return {"status": "ok", "message": "No profiles found", "total": 0}
 
-    profile_ids = [int(p.id) for p in profiles]
+    profile_ids = [p.id for p in profiles]
     results = ProfileEmbeddingService.batch_update_profile_embeddings(db, profile_ids)
 
     success = sum(1 for v in results.values() if v)

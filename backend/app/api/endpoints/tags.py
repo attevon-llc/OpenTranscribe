@@ -79,7 +79,7 @@ def list_tags(db: Session = Depends(get_db), current_user: User = Depends(get_cu
         from app.services.permission_service import PermissionService
 
         # Get tags with usage counts for files accessible by this user (owned + shared)
-        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, int(current_user.id))
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, current_user.id)
         tag_counts = (
             db.query(Tag, func.count(FileTag.id).label("usage_count"))
             .outerjoin(FileTag)
@@ -181,7 +181,7 @@ async def add_tag_to_file(
 
     # Get file by UUID and verify permission
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
     file_id = media_file.id  # Get internal ID for database operations
 
@@ -219,8 +219,8 @@ async def add_tag_to_file(
         try:
             from app.services.redis_cache_service import redis_cache
 
-            redis_cache.invalidate_tags(int(current_user.id))
-            redis_cache.invalidate_user_files(int(current_user.id))
+            redis_cache.invalidate_tags(current_user.id)
+            redis_cache.invalidate_user_files(current_user.id)
         except Exception as e:
             logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
@@ -241,7 +241,7 @@ def remove_tag_from_file(
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
     file_id = media_file.id
 
@@ -263,8 +263,8 @@ def remove_tag_from_file(
         try:
             from app.services.redis_cache_service import redis_cache
 
-            redis_cache.invalidate_tags(int(current_user.id))
-            redis_cache.invalidate_user_files(int(current_user.id))
+            redis_cache.invalidate_tags(current_user.id)
+            redis_cache.invalidate_user_files(current_user.id)
         except Exception as e:
             logger.debug(f"Cache invalidation failed (non-critical): {e}")
 

@@ -179,11 +179,9 @@ async def prepare_upload(
         duplicate_id: str | None = None
         if request.file_hash:
             # First clean up any failed files with the same hash to allow re-upload
-            await cleanup_failed_duplicates(db, request.file_hash, int(current_user.id))
+            await cleanup_failed_duplicates(db, request.file_hash, current_user.id)
 
-            duplicate_id = await check_duplicate_by_hash(
-                db, request.file_hash, int(current_user.id)
-            )
+            duplicate_id = await check_duplicate_by_hash(db, request.file_hash, current_user.id)
 
             if duplicate_id:
                 logger.info(
@@ -206,9 +204,7 @@ async def prepare_upload(
         # This allows future uploads with the same file to recognize it as a duplicate
         from app.utils.filename import get_safe_storage_filename
 
-        storage_path = get_safe_storage_filename(
-            request.filename, int(current_user.id), int(db_file.id)
-        )
+        storage_path = get_safe_storage_filename(request.filename, current_user.id, db_file.id)
         db_file.storage_path = storage_path  # type: ignore[assignment]
 
         # Store the user's requested whisper model (if any)
@@ -226,7 +222,7 @@ async def prepare_upload(
         # Link file to upload batch if a batch UUID was provided
         if request.upload_batch_id:
             batch = get_or_create_upload_batch(
-                db, request.upload_batch_id, int(current_user.id), source="multi_upload"
+                db, request.upload_batch_id, current_user.id, source="multi_upload"
             )
             db_file.upload_batch_id = batch.id  # type: ignore[assignment]
             batch.file_count = (batch.file_count or 0) + 1  # type: ignore[assignment]
@@ -235,13 +231,11 @@ async def prepare_upload(
 
         # Assign to collections if specified
         if request.collection_ids:
-            add_file_to_collections(
-                db, int(db_file.id), int(current_user.id), request.collection_ids
-            )
+            add_file_to_collections(db, db_file.id, current_user.id, request.collection_ids)
 
         # Apply tags if specified
         if request.tag_names:
-            add_tags_to_file(db, int(db_file.id), request.tag_names)
+            add_tags_to_file(db, db_file.id, request.tag_names)
 
         # Commit all assignments (batch, collections, tags)
         db.commit()

@@ -241,7 +241,7 @@ def dispatch_task_by_name(
 
             with session_scope() as db:
                 media_file = get_file_by_uuid(db, file_uuid)
-                file_id = int(media_file.id)
+                file_id = media_file.id
                 user_id = int(media_file.user_id)
 
         index_transcript_search_task.delay(file_id=file_id, file_uuid=file_uuid, user_id=user_id)
@@ -375,10 +375,10 @@ async def process_file_reprocess(
             media_file = get_file_by_uuid(db, file_uuid)
         else:
             media_file = get_file_by_uuid_with_permission(
-                db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+                db, file_uuid, current_user.id, is_admin=current_user.is_admin
             )
 
-        file_id = int(media_file.id)  # Get internal ID for task operations
+        file_id = media_file.id  # Get internal ID for task operations
 
         # Check if file is currently processing
         if media_file.status == FileStatus.PROCESSING and media_file.active_task_id:
@@ -397,7 +397,7 @@ async def process_file_reprocess(
 
         # Check retry limits based on system settings (unless admin)
         if not is_admin and not system_settings_service.should_retry_file(
-            db, int(media_file.retry_count)
+            db, int(media_file.retry_count or 0)
         ):
             config = system_settings_service.get_retry_config(db)
             raise HTTPException(
@@ -441,7 +441,7 @@ async def process_file_reprocess(
                 max_speakers,
                 num_speakers,
                 file_id=file_id,
-                user_id=int(current_user.id),
+                user_id=current_user.id,
                 whisper_model=whisper_model,
             )
 
@@ -468,7 +468,7 @@ async def process_file_reprocess(
                 max_speakers,
                 num_speakers,
                 whisper_model=whisper_model,
-                user_id=int(current_user.id),
+                user_id=current_user.id,
                 db=db,
             )
 

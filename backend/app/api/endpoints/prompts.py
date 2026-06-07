@@ -122,7 +122,7 @@ def get_prompts(
         conditions.append(or_(*ownership_conditions))
 
     # Only active prompts
-    conditions.append(models.SummaryPrompt.is_active)
+    conditions.append(models.SummaryPrompt.is_active.is_(True))
 
     # Get prompts
     query = db.query(models.SummaryPrompt)
@@ -337,7 +337,7 @@ def create_prompt(
         HTTPException: If user has reached the prompt limit (50) or creation fails
     """
     # Check if user already has too many prompts
-    _assert_under_prompt_limit(db, int(current_user.id))
+    _assert_under_prompt_limit(db, current_user.id)
 
     prompt_data = prompt_in.model_dump()
     prompt_data.update({"user_id": current_user.id, "is_system_default": False})
@@ -445,7 +445,7 @@ def get_active_prompt(
 
     return schemas.ActivePromptResponse(
         active_prompt_id=active_prompt_uuid,  # type: ignore[arg-type]
-        active_prompt=active_prompt,
+        active_prompt=active_prompt,  # type: ignore[arg-type]  # ORM coerced via from_attributes
     )
 
 
@@ -645,7 +645,7 @@ def share_prompt(
         if share_data.is_shared
         else AuditEventType.PROMPT_UNSHARE,
         outcome=AuditOutcome.SUCCESS,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         source_ip=ctx["source_ip"],
         user_agent=ctx["user_agent"],
@@ -761,7 +761,7 @@ def clone_prompt(
         raise HTTPException(status_code=403, detail="Cannot clone other users' private prompts")
 
     # Clones count toward the per-user cap.
-    _assert_under_prompt_limit(db, int(current_user.id))
+    _assert_under_prompt_limit(db, current_user.id)
 
     clone = models.SummaryPrompt(
         user_id=current_user.id,
@@ -785,7 +785,7 @@ def clone_prompt(
     audit_logger.log(
         event_type=AuditEventType.PROMPT_CLONE,
         outcome=AuditOutcome.SUCCESS,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         source_ip=ctx["source_ip"],
         user_agent=ctx["user_agent"],

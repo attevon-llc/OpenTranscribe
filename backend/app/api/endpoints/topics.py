@@ -69,7 +69,7 @@ async def batch_extract_topics(
     for file_uuid in file_uuids:
         try:
             media_file = get_file_by_uuid_with_permission(
-                db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+                db, file_uuid, current_user.id, is_admin=current_user.is_admin
             )
             if media_file.transcript_segments:
                 verified_uuids.append(file_uuid)
@@ -85,9 +85,7 @@ async def batch_extract_topics(
         )
 
     # Check if LLM is configured
-    extraction_service = TopicExtractionService.create_from_settings(
-        user_id=int(current_user.id), db=db
-    )
+    extraction_service = TopicExtractionService.create_from_settings(user_id=current_user.id, db=db)
 
     if not extraction_service:
         raise HTTPException(
@@ -112,7 +110,7 @@ async def batch_extract_topics(
 
             batch = UploadBatch(
                 uuid=uuid_pkg.uuid4(),
-                user_id=int(current_user.id),
+                user_id=current_user.id,
                 source="batch_extract",
                 file_count=len(batch_files),
             )
@@ -159,7 +157,7 @@ async def get_retroactive_auto_label_status(
     from app.core.redis import get_redis
 
     redis = get_redis()
-    user_id = int(current_user.id)
+    user_id = current_user.id
     lock_key = f"auto_label_lock:{user_id}"
     progress_key = f"auto_label_progress:{user_id}"
 
@@ -187,7 +185,9 @@ async def get_retroactive_auto_label_status(
 
 @router.post("/retroactive-auto-label", status_code=status.HTTP_202_ACCEPTED)
 async def retroactive_auto_label(
-    request_data: RetroactiveAutoLabelRequest = Body(default=RetroactiveAutoLabelRequest()),
+    request_data: RetroactiveAutoLabelRequest = Body(
+        default=RetroactiveAutoLabelRequest()  # type: ignore[call-arg]  # file_uuids defaults to None
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
@@ -195,7 +195,7 @@ async def retroactive_auto_label(
     from app.tasks.auto_labeling import retroactive_auto_label_task
 
     task = retroactive_auto_label_task.delay(
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         file_uuids=request_data.file_uuids,
     )
 
@@ -218,13 +218,13 @@ async def auto_label_single_file(
 ) -> dict:
     """Apply auto-labeling to a single file's pending suggestions."""
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
 
     from app.services.auto_label_service import AutoLabelService
 
     service = AutoLabelService(db)
-    user_settings = service.get_user_auto_label_settings(int(current_user.id))
+    user_settings = service.get_user_auto_label_settings(current_user.id)
 
     if not user_settings.get("enabled"):
         raise HTTPException(
@@ -233,9 +233,7 @@ async def auto_label_single_file(
         )
 
     suggestion = (
-        db.query(TopicSuggestion)
-        .filter(TopicSuggestion.media_file_id == int(media_file.id))
-        .first()
+        db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == media_file.id).first()
     )
 
     if not suggestion:
@@ -247,7 +245,7 @@ async def auto_label_single_file(
     result = service.auto_apply_suggestions(
         media_file=media_file,
         suggestion=suggestion,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         confidence_threshold=user_settings.get(
             "confidence_threshold", DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
         ),
@@ -283,9 +281,9 @@ async def get_topic_suggestions(
     """
     # Get file and verify permission
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
-    file_id = int(media_file.id)
+    file_id = media_file.id
 
     # Get suggestion from PostgreSQL
     suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
@@ -352,7 +350,7 @@ async def extract_topics(
     """
     # Get file and verify permission
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
 
     # Check if file has transcript
@@ -363,9 +361,7 @@ async def extract_topics(
         )
 
     # Check if LLM is configured
-    extraction_service = TopicExtractionService.create_from_settings(
-        user_id=int(current_user.id), db=db
-    )
+    extraction_service = TopicExtractionService.create_from_settings(user_id=current_user.id, db=db)
 
     if not extraction_service:
         raise HTTPException(
@@ -375,9 +371,7 @@ async def extract_topics(
 
     # Check if suggestion already exists
     existing = (
-        db.query(TopicSuggestion)
-        .filter(TopicSuggestion.media_file_id == int(media_file.id))
-        .first()
+        db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == media_file.id).first()
     )
 
     if existing and not request_data.force_regenerate:
@@ -425,9 +419,9 @@ async def apply_topic_suggestions(
     """
     # Get file and verify permission
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
-    file_id = int(media_file.id)
+    file_id = media_file.id
 
     # Get suggestion
     suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
@@ -441,7 +435,7 @@ async def apply_topic_suggestions(
     # Track user decisions
     extraction_service = TopicExtractionService(db)
     success = extraction_service.apply_suggestions(
-        suggestion_id=int(suggestion.id),
+        suggestion_id=suggestion.id,
         accepted_collections=request_data.accepted_collections,
         accepted_tags=request_data.accepted_tags,
     )
@@ -478,9 +472,9 @@ async def dismiss_topic_suggestions(
     """
     # Get file and verify permission
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
-    file_id = int(media_file.id)
+    file_id = media_file.id
 
     # Get suggestion
     suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()

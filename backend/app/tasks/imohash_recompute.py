@@ -95,7 +95,6 @@ def recompute_all(self, batch_size: int = 100, after_id: int = 0) -> dict:
                     defer(MediaFile.summary_data),
                     defer(MediaFile.metadata_raw),
                     defer(MediaFile.waveform_data),
-                    defer(MediaFile.transcript_text),
                 )
                 .filter(
                     MediaFile.id > after_id,

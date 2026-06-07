@@ -68,9 +68,9 @@ async def trigger_summarization(
     """
     # Verify file exists and belongs to user
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
-    file_id = int(media_file.id)
+    file_id = media_file.id
 
     # Check if file has completed transcription
     if not media_file.transcript_segments:
@@ -102,7 +102,7 @@ async def trigger_summarization(
         )
 
     # Check LLM availability before starting the task
-    llm_available = await is_llm_available(user_id=int(current_user.id))
+    llm_available = await is_llm_available(user_id=current_user.id)
     if not llm_available:
         raise HTTPException(
             status_code=503,
@@ -125,7 +125,7 @@ async def trigger_summarization(
         from app.tasks.summarization import send_summary_notification
 
         send_summary_notification(
-            int(current_user.id),
+            current_user.id,
             file_id,
             "queued",
             f"AI summary {'regeneration' if request.force_regenerate else 'generation'} has been queued for processing",
@@ -186,16 +186,14 @@ async def get_file_summary(
     """
     # Verify file exists and belongs to user
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
-    file_id = int(media_file.id)
+    file_id = media_file.id
 
     try:
         # Try to get structured summary from OpenSearch
         summary_service = OpenSearchSummaryService()
-        opensearch_result = await summary_service.get_summary_by_file_id(
-            file_id, int(current_user.id)
-        )
+        opensearch_result = await summary_service.get_summary_by_file_id(file_id, current_user.id)
 
         if opensearch_result and opensearch_result.get("summary_data"):
             # Return flexible summary structure - no field normalization needed
@@ -280,7 +278,7 @@ async def search_summaries(
         # Execute search
         results = await summary_service.search_summaries(
             query=search_params,
-            user_id=int(current_user.id),
+            user_id=current_user.id,
             size=search_request.size,
             from_=search_request.offset,
         )
@@ -342,7 +340,7 @@ async def get_summary_analytics(
 
         # Get analytics data
         analytics = await summary_service.get_summary_analytics(
-            user_id=int(current_user.id), filters=filters
+            user_id=current_user.id, filters=filters
         )
 
         return SummaryAnalyticsResponse(**analytics)
@@ -391,16 +389,16 @@ async def identify_speakers(
     """
     # Verify file exists and belongs to user
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
-    file_id = int(media_file.id)
+    file_id = media_file.id
 
     # Check if file has speakers to identify
     if not media_file.speakers:
         raise HTTPException(status_code=400, detail="No speakers found in this file to identify")
 
     # Check LLM availability before starting the task
-    llm_available = await is_llm_available(user_id=int(current_user.id))
+    llm_available = await is_llm_available(user_id=current_user.id)
     if not llm_available:
         raise HTTPException(
             status_code=503,
@@ -452,9 +450,9 @@ async def delete_summary(
     """
     # Verify file exists and belongs to user
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
-    file_id = int(media_file.id)
+    file_id = media_file.id
 
     try:
         summary_service = OpenSearchSummaryService()

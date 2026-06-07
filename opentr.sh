@@ -404,8 +404,13 @@ write_live_data_markers() {
   local marker=".opentranscribe-live-data"
   local content="LIVE DATA — bind-mounted into the OpenTranscribe stack. DO NOT delete or 'clean up'. Managed by opentr.sh. See ./opentr.sh data-paths."
   local dir
-  for dir in "$MINIO_NAS_PATH" "$POSTGRES_DATA_PATH" "$OPENSEARCH_DATA_PATH"; do
+  # Also mark the PARENTS of the pg/os dirs: the 2026-06 data-loss incident was
+  # an `rm -rf` of the parent (/mnt/nvm/opentranscribe), not the leaf dirs.
+  for dir in "$MINIO_NAS_PATH" "$POSTGRES_DATA_PATH" "$OPENSEARCH_DATA_PATH" \
+             "${POSTGRES_DATA_PATH:+$(dirname "$POSTGRES_DATA_PATH")}" \
+             "${OPENSEARCH_DATA_PATH:+$(dirname "$OPENSEARCH_DATA_PATH")}"; do
     [ -z "$dir" ] && continue
+    [ "$dir" = "/" ] && continue
     [ -d "$dir" ] || continue
     printf '%s\n' "$content" > "${dir}/${marker}" 2>/dev/null || true
   done

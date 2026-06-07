@@ -29,6 +29,7 @@ from app.schemas.group import GroupUpdate
 from app.schemas.user import UserBrief
 from app.tasks.search_indexing_task import update_file_access_index
 from app.utils.uuid_helpers import get_by_uuid
+from app.utils.uuid_helpers import require_resource_owner
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
@@ -328,11 +329,12 @@ def delete_group(
     """Delete a group. Only the group owner can delete it."""
     group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
 
-    if group.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the group owner can delete this group",
-        )
+    require_resource_owner(
+        group,
+        current_user,
+        forbidden_detail="Only the group owner can delete this group",
+        owner_attr="owner_id",
+    )
 
     # Reindex files BEFORE deletion (cascade will remove shares)
     _reindex_group_shared_files(db, group.id)

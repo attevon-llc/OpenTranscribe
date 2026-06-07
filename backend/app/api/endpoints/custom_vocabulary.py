@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.utils.uuid_helpers import require_resource_owner
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -214,11 +215,9 @@ def update_vocabulary_term(  # noqa: C901
             status_code=403,
             detail="System vocabulary terms are read-only",
         )
-    if term.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to modify this vocabulary term",
-        )
+    require_resource_owner(
+        term, current_user, forbidden_detail="Not authorized to modify this vocabulary term"
+    )
 
     if "term" in body:
         new_text = (body["term"] or "").strip()
@@ -299,11 +298,9 @@ def delete_vocabulary_term(
             status_code=403,
             detail="System vocabulary terms cannot be deleted",
         )
-    if term.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to delete this vocabulary term",
-        )
+    require_resource_owner(
+        term, current_user, forbidden_detail="Not authorized to delete this vocabulary term"
+    )
 
     db.delete(term)
     db.commit()

@@ -19,6 +19,7 @@ from app.schemas.media import CommentUpdate
 from app.services.permission_service import PermissionService
 from app.utils.uuid_helpers import get_comment_by_uuid
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+from app.utils.uuid_helpers import require_resource_owner
 
 router = APIRouter()
 
@@ -201,11 +202,12 @@ def update_comment(
     """Update a comment. Only the comment author can edit."""
     comment = get_comment_by_uuid(db, comment_uuid)
 
-    if not current_user.is_admin and comment.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to edit this comment",
-        )
+    require_resource_owner(
+        comment,
+        current_user,
+        forbidden_detail="You do not have permission to edit this comment",
+        allow_admin=True,
+    )
 
     # Update fields
     for field, value in comment_update.model_dump(exclude_unset=True).items():

@@ -132,6 +132,26 @@ class ErrorHandler:
         return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=message)
 
     @staticmethod
+    def internal_error(message: str = "Internal server error") -> HTTPException:
+        """Create a standardized opaque 500 response.
+
+        Centralizes the ``HTTPException(500, "Internal server error")`` literal
+        repeated across endpoint exception handlers. Call sites keep their own
+        ``logger.error(...)`` so the specific failure context is still logged;
+        this only builds the (intentionally opaque) client-facing response.
+
+        Args:
+            message: Client-facing detail (defaults to "Internal server error").
+
+        Returns:
+            HTTPException with 500 status and ``message`` as detail.
+        """
+        return HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=message,
+        )
+
+    @staticmethod
     def file_processing_error(operation: str, error: Exception) -> HTTPException:
         """
         Create standardized file processing error response.

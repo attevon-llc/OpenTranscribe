@@ -18,6 +18,7 @@ from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.transcript import SegmentSpeakerUpdate
 from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import get_by_uuid
+from app.utils.uuid_helpers import require_resource_owner
 
 logger = logging.getLogger(__name__)
 
@@ -238,11 +239,11 @@ def update_segment_speaker(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
     # Verify the user owns this file
-    if media_file.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to modify this transcript segment",
-        )
+    require_resource_owner(
+        media_file,
+        current_user,
+        forbidden_detail="Not authorized to modify this transcript segment",
+    )
 
     # Track original speaker_id for change detection
     original_speaker_id: int | None = int(segment.speaker_id) if segment.speaker_id else None

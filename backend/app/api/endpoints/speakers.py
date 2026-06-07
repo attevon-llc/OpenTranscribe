@@ -25,6 +25,7 @@ from app.schemas.media import SpeakerUpdate
 from app.services.opensearch_service import update_speaker_display_name
 from app.services.permission_service import PermissionService
 from app.services.speaker_status_service import SpeakerStatusService
+from app.utils.error_handlers import ErrorHandler
 from app.utils.uuid_helpers import get_speaker_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -694,7 +695,7 @@ def cleanup_orphaned_embeddings(
         }
     except Exception as e:
         logger.error(f"Error during cleanup: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.get("/debug/cross-media-data", response_model=dict[str, Any])
@@ -848,7 +849,7 @@ def debug_cross_media_data(
 
     except Exception as e:
         logger.error(f"Error in debug endpoint: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.get("/debug/cross-media-by-name", response_model=dict[str, Any])
@@ -959,7 +960,7 @@ def debug_cross_media_by_name(
 
     except Exception as e:
         logger.error(f"Error in cross-media-by-name debug endpoint: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 # =============================================================================
@@ -1017,7 +1018,7 @@ def get_speaker_cross_media_occurrences(
         raise
     except Exception as e:
         logger.error(f"Error getting cross-media occurrences: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/{speaker_uuid}/verify", response_model=dict[str, Any])
@@ -1060,7 +1061,7 @@ def verify_speaker_identification(
     except Exception as e:
         logger.error(f"Error verifying speaker: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/{speaker_uuid}/confirm-gender", response_model=dict[str, Any])

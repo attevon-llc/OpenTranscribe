@@ -28,6 +28,7 @@ from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
 from app.utils.uuid_helpers import get_llm_config_by_uuid
+from app.utils.uuid_helpers import require_resource_owner
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -299,10 +300,11 @@ def get_user_configuration(
     """
     user_config = get_llm_config_by_uuid(db, config_uuid)
 
-    if user_config.user_id != current_user.id and not user_config.is_shared:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to access this configuration",
+    if not user_config.is_shared:
+        require_resource_owner(
+            user_config,
+            current_user,
+            forbidden_detail="Not authorized to access this configuration",
         )
 
     # Convert to public schema (excludes API key)
@@ -385,11 +387,11 @@ def update_user_llm_configuration(
     """
     user_config = get_llm_config_by_uuid(db, config_uuid)
 
-    if user_config.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to access this configuration",
-        )
+    require_resource_owner(
+        user_config,
+        current_user,
+        forbidden_detail="Not authorized to access this configuration",
+    )
 
     config_id = user_config.id
 
@@ -472,10 +474,11 @@ def set_active_configuration(
     # Verify the configuration exists and belongs to the user (or is shared) using UUID
     user_config = get_llm_config_by_uuid(db, request.configuration_id)
 
-    if user_config.user_id != current_user.id and not user_config.is_shared:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to access this configuration",
+    if not user_config.is_shared:
+        require_resource_owner(
+            user_config,
+            current_user,
+            forbidden_detail="Not authorized to access this configuration",
         )
 
     # Set as active using the integer ID (internal)
@@ -495,11 +498,11 @@ def delete_user_llm_configuration(
     """
     user_config = get_llm_config_by_uuid(db, config_uuid)
 
-    if user_config.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to access this configuration",
-        )
+    require_resource_owner(
+        user_config,
+        current_user,
+        forbidden_detail="Not authorized to access this configuration",
+    )
 
     config_id = user_config.id
 
@@ -760,10 +763,11 @@ async def test_specific_configuration(
     """
     user_config = get_llm_config_by_uuid(db, config_uuid)
 
-    if user_config.user_id != current_user.id and not user_config.is_shared:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to access this configuration",
+    if not user_config.is_shared:
+        require_resource_owner(
+            user_config,
+            current_user,
+            forbidden_detail="Not authorized to access this configuration",
         )
 
     # Decrypt API key
@@ -807,11 +811,11 @@ async def get_config_api_key(
     """
     user_config = get_llm_config_by_uuid(db, config_uuid)
 
-    if user_config.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to access this configuration",
-        )
+    require_resource_owner(
+        user_config,
+        current_user,
+        forbidden_detail="Not authorized to access this configuration",
+    )
 
     if not user_config.api_key:
         return {"api_key": None}

@@ -25,8 +25,10 @@ from app.services.permission_service import PermissionService
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
+from app.utils.error_handlers import ErrorHandler
 from app.utils.uuid_helpers import get_speaker_by_uuid
 from app.utils.uuid_helpers import get_speaker_profile_by_uuid
+from app.utils.uuid_helpers import require_resource_owner
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +63,11 @@ def list_speaker_profiles(
             from app.utils.uuid_helpers import get_by_uuid
 
             collection = get_by_uuid(db, SpeakerCollection, collection_uuid)
-            if collection.user_id != current_user.id:
-                raise HTTPException(
-                    status_code=403, detail="Not authorized to access this collection"
-                )
+            require_resource_owner(
+                collection,
+                current_user,
+                forbidden_detail="Not authorized to access this collection",
+            )
             collection_id = collection.id
 
             query = query.join(SpeakerCollectionMember).filter(
@@ -174,12 +177,12 @@ def list_speaker_profiles(
         return result
 
     except HTTPException:
-        # Intentional API errors (e.g. the 403 collection-access gate above)
-        # must propagate — the generic handler below was masking them as 500s.
+        # Intentional auth/validation errors (e.g. the foreign-collection 403 at
+        # :65) must propagate unchanged — do not mask them as a generic 500.
         raise
     except Exception as e:
         logger.error(f"Error listing speaker profiles: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/profiles", response_model=dict[str, Any])
@@ -230,7 +233,7 @@ def create_speaker_profile(
     except Exception as e:
         logger.error(f"Error creating speaker profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.put("/profiles/{profile_uuid}", response_model=dict[str, Any])
@@ -245,8 +248,9 @@ def update_speaker_profile(
     try:
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
 
-        if profile.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        require_resource_owner(
+            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        )
 
         profile_id = profile.id
 
@@ -290,7 +294,7 @@ def update_speaker_profile(
     except Exception as e:
         logger.error(f"Error updating speaker profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/speakers/{speaker_uuid}/assign-profile", response_model=dict[str, Any])
@@ -352,7 +356,7 @@ def assign_speaker_to_profile(
     except Exception as e:
         logger.error(f"Error assigning speaker to profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 def _get_embedding_suggestions(
@@ -544,7 +548,7 @@ def get_speaker_profile_suggestions(
         raise
     except Exception as e:
         logger.error(f"Error getting speaker suggestions: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.get("/profiles/{profile_uuid}/occurrences", response_model=list[dict[str, Any]])
@@ -575,7 +579,7 @@ def get_speaker_profile_occurrences(
         raise
     except Exception as e:
         logger.error(f"Error getting speaker occurrences: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.delete("/profiles/{profile_uuid}", status_code=status.HTTP_204_NO_CONTENT)
@@ -587,8 +591,9 @@ def delete_speaker_profile(
     """Delete a speaker profile."""
     try:
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        if profile.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        require_resource_owner(
+            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        )
         profile_id = profile.id
 
         # Unassign all speakers from this profile
@@ -628,7 +633,7 @@ def delete_speaker_profile(
     except Exception as e:
         logger.error(f"Error deleting speaker profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -645,8 +650,9 @@ async def upload_profile_avatar(
     """Upload an avatar image for a speaker profile."""
     try:
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        if profile.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        require_resource_owner(
+            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        )
 
         # Validate content type
         if file.content_type not in ALLOWED_AVATAR_TYPES:
@@ -702,7 +708,7 @@ async def upload_profile_avatar(
     except Exception as e:
         logger.error(f"Error uploading avatar: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.delete("/profiles/{profile_uuid}/avatar", status_code=status.HTTP_204_NO_CONTENT)
@@ -714,8 +720,9 @@ def delete_profile_avatar(
     """Remove a speaker profile's avatar."""
     try:
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        if profile.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        require_resource_owner(
+            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        )
 
         if profile.avatar_path:
             try:
@@ -735,7 +742,7 @@ def delete_profile_avatar(
     except Exception as e:
         logger.error(f"Error deleting avatar: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/profiles/{profile_uuid}/confirm-gender", response_model=dict[str, Any])
@@ -753,8 +760,9 @@ def confirm_profile_gender(
         )
 
     profile = get_speaker_profile_by_uuid(db, profile_uuid)
-    if profile.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+    require_resource_owner(
+        profile, current_user, forbidden_detail="Not authorized to access this profile"
+    )
 
     # Update profile DB column for consistency
     profile.predicted_gender = gender  # type: ignore[assignment]
@@ -826,7 +834,7 @@ def list_speaker_collections(
 
     except Exception as e:
         logger.error(f"Error listing speaker collections: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/collections", response_model=dict[str, Any])
@@ -880,4 +888,4 @@ def create_speaker_collection(
     except Exception as e:
         logger.error(f"Error creating speaker collection: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e

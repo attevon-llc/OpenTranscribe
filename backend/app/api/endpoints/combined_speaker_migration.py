@@ -10,7 +10,6 @@ import logging
 
 from fastapi import APIRouter
 from fastapi import Depends
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
@@ -18,6 +17,7 @@ from app.core.redis import get_redis
 from app.db.base import get_db
 from app.models.user import User
 from app.tasks.combined_speaker_analysis_task import combined_migration_progress
+from app.utils.error_handlers import ErrorHandler
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ async def get_combined_migration_status(
 
     except Exception as e:
         logger.error("Error getting combined migration status: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal error") from e
+        raise ErrorHandler.internal_error("Internal error") from e
 
 
 @router.post("/start")
@@ -73,7 +73,7 @@ async def start_combined_migration(
 
     except Exception as e:
         logger.error("Error starting combined migration: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal error") from e
+        raise ErrorHandler.internal_error("Internal error") from e
 
 
 @router.post("/stop")
@@ -147,7 +147,7 @@ async def stop_combined_migration(
 
     except Exception as e:
         logger.error("Error stopping combined migration: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal error") from e
+        raise ErrorHandler.internal_error("Internal error") from e
 
 
 @router.delete("/progress")
@@ -172,4 +172,4 @@ async def clear_combined_progress(
 
     except Exception as e:
         logger.error("Error clearing combined progress: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal error") from e
+        raise ErrorHandler.internal_error("Internal error") from e

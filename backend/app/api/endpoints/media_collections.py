@@ -51,6 +51,7 @@ from app.tasks.search_indexing_task import update_file_access_index
 from app.utils.uuid_helpers import get_by_uuid
 from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
 from app.utils.uuid_helpers import get_collection_by_uuid_with_sharing
+from app.utils.uuid_helpers import require_resource_owner
 from app.utils.uuid_helpers import validate_uuids
 from app.utils.websocket_notify import send_ws_event
 
@@ -628,12 +629,12 @@ async def delete_collection(
         db, collection_uuid, current_user.id, min_permission="owner"
     )
 
-    # Only original owner can delete
-    if collection.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the collection owner can delete it",
-        )
+    # Only original owner can delete (note: a stranger is already rejected by the
+    # min_permission="owner" sharing helper above; this gate is reachable only for
+    # an admin who is not the direct owner).
+    require_resource_owner(
+        collection, current_user, forbidden_detail="Only the collection owner can delete it"
+    )
 
     # Reindex files BEFORE deletion (cascade will remove shares + members)
     file_ids = [

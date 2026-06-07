@@ -254,27 +254,24 @@ class TestSpeakerProfileOwnership:
 # SpeakerCollection — speaker_profiles.py:63-65 (list filtered by collection)
 # --------------------------------------------------------------------------- #
 class TestSpeakerCollectionOwnership:
-    def test_list_profiles_filtered_by_other_collection_masked_to_500(
+    def test_list_profiles_filtered_by_other_collection_403(
         self, client, db_session, normal_user, other_user, other_user_auth_headers
     ):
-        # BUG(app/api/endpoints/speaker_profiles.py): the collection-ownership
-        # check at :63-65 DOES raise 403 "Not authorized to access this
-        # collection", but list_speaker_profiles wraps the whole body in a bare
-        # `except Exception` (:174-176) that swallows the intentional
-        # HTTPException and re-raises it as 500 "Internal server error". So the
-        # ACTUAL client-visible contract for a foreign-collection filter is a
-        # 500, not the 403 the inner code intends. Snapshotting the real current
-        # behavior keeps the suite honest; Phase 6 should narrow that except so
-        # HTTPException propagates, at which point this flips to 403 and the
-        # assertion below must be updated alongside the fix.
+        # FIXED (Phase 6, cluster 1): the collection-ownership check at :63-65
+        # raises 403 "Not authorized to access this collection". Previously
+        # list_speaker_profiles wrapped its whole body in a bare `except
+        # Exception` that swallowed the intentional HTTPException and re-raised
+        # it as 500 "Internal server error". The handler now re-raises
+        # HTTPException untouched (`except HTTPException: raise` before the
+        # generic handler), so the client-visible contract is the intended 403.
         _make_speaker_profile(db_session, other_user)
         col = _make_speaker_collection(db_session, normal_user)
         resp = client.get(
             f"/api/speaker-profiles/profiles?collection_uuid={col.uuid}",
             headers=other_user_auth_headers,
         )
-        assert resp.status_code == 500
-        assert resp.json()["detail"] == "Internal server error"
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "Not authorized to access this collection"
 
     def test_list_profiles_no_accessible_profiles_returns_empty(
         self, client, db_session, normal_user, other_user, other_user_auth_headers

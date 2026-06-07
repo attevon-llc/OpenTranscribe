@@ -173,6 +173,10 @@ def list_speaker_profiles(
 
         return result
 
+    except HTTPException:
+        # Intentional API errors (e.g. the 403 collection-access gate above)
+        # must propagate — the generic handler below was masking them as 500s.
+        raise
     except Exception as e:
         logger.error(f"Error listing speaker profiles: {e}")
         raise HTTPException(status_code=500, detail="Internal server error") from e

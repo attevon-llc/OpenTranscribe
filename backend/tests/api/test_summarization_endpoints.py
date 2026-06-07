@@ -7,7 +7,7 @@ Covers ``summarization.py`` (mounted at ``/api/files`` + ``/api/files/...``):
 - ``DELETE /api/files/{uuid}/summary``            (delete; no-summary 404)
 - ``POST   /api/files/{uuid}/identify-speakers``  (LLM speaker-id)
 - ``POST   /api/files/search``                    (envelope)
-- ``GET    /api/files/analytics``                 (envelope)
+- ``GET    /api/files/analytics``                 (handler removed — still 422, shadowed)
 
 This stack has NO LLM provider configured, so the live default for the
 LLM-gated endpoints is the 503 unconfigured path — that is the primary thing we
@@ -259,15 +259,15 @@ def test_search_summaries_envelope(client, user_token_headers):
     assert body["query"] == "budget"
 
 
-def test_analytics_shadowed_by_file_detail_route(client, user_token_headers):
-    """COMMITTED behavior: ``GET /api/files/analytics`` is unreachable.
+def test_analytics_path_shadowed_by_file_detail_route(client, user_token_headers):
+    """``GET /api/files/analytics`` resolves to the files router's
+    ``GET /api/files/{file_uuid}`` (file_uuid: UUID), which 422s on the non-UUID
+    ``analytics`` segment.
 
-    The files router registers ``GET /api/files/{file_uuid}`` (file_uuid: UUID)
-    BEFORE the summarization router's ``GET /api/files/analytics``. Route
-    precedence makes the literal ``analytics`` match the parameterized detour
-    route, which declares ``file_uuid: UUID`` and so 422s on the non-UUID
-    segment — the analytics handler never runs. This is a real routing artifact
-    of mounting both routers under ``/files``; characterized here, not "fixed".
+    A summarization ``GET /analytics`` handler used to be mounted here but was
+    permanently shadowed by that earlier parameterized route (it never ran), had
+    no frontend caller, and has been removed. Observable behavior is unchanged
+    (still 422); pinned so the path can't silently start routing somewhere else.
     """
     response = client.get("/api/files/analytics", headers=user_token_headers)
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

@@ -2,8 +2,12 @@
 
 Covers ``app/api/endpoints/llm_status.py`` mounted at ``/api/llm``:
 - ``GET  /llm/status``           (per-user availability shape)
-- ``GET  /llm/providers``        (committed behavior — see note below)
 - ``POST /llm/test-connection``  (active-config connection probe)
+
+The former ``GET /llm/providers`` handler was removed (it called a nonexistent
+``LLMService`` method and always 500'd, and had no live frontend caller). The
+canonical provider catalog lives at ``GET /api/llm-settings/providers`` and is
+covered by ``test_llm_settings_endpoints.py``.
 
 External provider reachability is mocked at the service boundary
 (``is_llm_available`` / ``LLMService.create_from_settings`` /
@@ -31,8 +35,13 @@ def test_status_unauthorized(client):
     assert client.get(f"{_BASE}/status").status_code == status.HTTP_401_UNAUTHORIZED
 
 
-def test_providers_unauthorized(client):
-    assert client.get(f"{_BASE}/providers").status_code == status.HTTP_401_UNAUTHORIZED
+def test_providers_route_removed(client, user_token_headers):
+    """The dead ``GET /api/llm/providers`` handler was removed; the path no longer
+    routes (404). The real catalog is ``GET /api/llm-settings/providers``."""
+    assert (
+        client.get(f"{_BASE}/providers", headers=user_token_headers).status_code
+        == status.HTTP_404_NOT_FOUND
+    )
 
 
 def test_test_connection_unauthorized(client):
@@ -109,24 +118,6 @@ def test_status_swallows_availability_error(client, user_token_headers):
     data = resp.json()
     assert data["available"] is False
     assert data["provider"] is None
-
-
-# ---------------------------------------------------------------------------
-# GET /providers
-# ---------------------------------------------------------------------------
-
-
-def test_providers_committed_500_contract(client, user_token_headers):
-    """COMMITTED BEHAVIOR: ``LLMService.get_supported_providers`` does not exist
-    on the service (the call carries a ``# type: ignore[attr-defined]``), so the
-    handler's broad ``except`` converts the AttributeError into a 500 with a
-    generic detail. The real provider catalog lives at ``/api/llm-settings/providers``;
-    this endpoint is effectively dead but its observable contract is pinned here so
-    a later refactor can't silently change it.
-    """
-    resp = client.get(f"{_BASE}/providers", headers=user_token_headers)
-    assert resp.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert resp.json()["detail"] == "An internal error occurred. Please try again."
 
 
 # ---------------------------------------------------------------------------

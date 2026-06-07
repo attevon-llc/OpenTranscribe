@@ -7,7 +7,6 @@ from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
@@ -87,33 +86,6 @@ async def get_llm_status(
             "model": None,
             "message": "An error occurred while checking LLM status. Check server logs for details.",
         }
-
-
-@router.get("/providers")
-async def get_available_providers(
-    current_user: User = Depends(get_current_active_user),
-) -> dict[str, Any]:
-    """
-    Get list of supported LLM providers
-
-    Returns:
-        Dictionary containing supported providers and their info
-    """
-    try:
-        providers = LLMService.get_supported_providers()  # type: ignore[attr-defined]
-
-        return {
-            "providers": providers,
-            "total": len(providers),
-            "message": "List of supported LLM providers",
-        }
-
-    except Exception as e:
-        logger.error("Error getting LLM providers: %s", e, exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="An internal error occurred. Please try again.",
-        ) from e
 
 
 @router.post("/test-connection")

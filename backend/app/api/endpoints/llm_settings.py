@@ -152,8 +152,17 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
 
 @router.get("/providers", response_model=schemas.SupportedProvidersResponse)
 def get_supported_providers() -> Any:
-    """
-    Get list of supported LLM providers with their default configurations
+    """Get list of supported LLM providers with their default configurations.
+
+    This is the canonical provider catalog (the former ``GET /api/llm/providers``
+    handler was dead — it called a nonexistent ``LLMService`` method and always
+    500'd — and has been removed).
+
+    Deliberate posture: this route declares NO ``current_user`` dependency, so it
+    is served WITHOUT authentication. The payload is non-sensitive static metadata
+    (provider names, default models, capability flags) with no per-user or secret
+    data, so an open catalog is intentional. Pinned by
+    ``test_providers_no_auth_dependency`` so the auth posture can't change silently.
     """
     providers = _get_provider_defaults()
     return schemas.SupportedProvidersResponse(providers=providers)

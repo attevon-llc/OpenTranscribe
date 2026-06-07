@@ -64,6 +64,9 @@ celery_app = Celery(
         "app.tasks.recovery",
         "app.tasks.youtube_processing",
         "app.tasks.media_download",
+        # Re-export shim (NOT dead) — keeps legacy task-name routing working by
+        # re-exporting from speaker_{identification,update,embedding}_task. See
+        # app/tasks/speaker_tasks.py. Must stay in this include list.
         "app.tasks.speaker_tasks",
         "app.tasks.speaker_identification_task",
         "app.tasks.speaker_update_task",

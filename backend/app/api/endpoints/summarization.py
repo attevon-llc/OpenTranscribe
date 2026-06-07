@@ -13,14 +13,12 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Path
-from fastapi import Query
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.summary import SpeakerIdentificationResponse
-from app.schemas.summary import SummaryAnalyticsResponse
 from app.schemas.summary import SummaryResponse
 from app.schemas.summary import SummarySearchRequest
 from app.schemas.summary import SummarySearchResponse
@@ -299,60 +297,13 @@ async def search_summaries(
         ) from e
 
 
-@router.get("/analytics", response_model=SummaryAnalyticsResponse)
-async def get_summary_analytics(
-    date_from: str | None = Query(None, description="Start date filter (YYYY-MM-DD)"),
-    date_to: str | None = Query(None, description="End date filter (YYYY-MM-DD)"),
-    current_user: User = Depends(get_current_active_user),
-):
-    """
-    Get comprehensive analytics across all user summaries
-
-    Provides insights and trends from meeting summaries including:
-    - Speaker participation patterns
-    - Action item trends over time
-    - Common discussion topics
-    - Decision-making patterns
-    - Processing statistics
-
-    **Analytics Include:**
-    - **Speaker Stats**: Participation, talk time, contribution analysis
-    - **Action Item Trends**: Creation, completion, assignment patterns
-    - **Topic Analysis**: Most discussed themes and subjects
-    - **Productivity Metrics**: Meeting efficiency, decision rates
-    - **Provider Usage**: Model performance and usage statistics
-
-    **Use Cases:**
-    - Track team member engagement across meetings
-    - Identify action item completion rates
-    - Find common discussion themes
-    - Measure meeting effectiveness over time
-    """
-    try:
-        summary_service = OpenSearchSummaryService()
-
-        # Build filter parameters
-        filters = {}
-        if date_from:
-            filters["date_from"] = date_from
-        if date_to:
-            filters["date_to"] = date_to
-
-        # Get analytics data
-        analytics = await summary_service.get_summary_analytics(
-            user_id=current_user.id, filters=filters
-        )
-
-        return SummaryAnalyticsResponse(**analytics)
-
-    except Exception as e:
-        logger.error(
-            "Analytics generation failed for user %s: %s", current_user.id, e, exc_info=True
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="An internal error occurred. Please try again.",
-        ) from e
+# NOTE: A ``GET /analytics`` handler (summary analytics) was removed here. Mounted
+# under the ``/files`` prefix it resolved to ``GET /api/files/analytics``, which is
+# permanently shadowed by the files router's earlier ``GET /api/files/{file_uuid}``
+# (UUID-typed) route → the literal ``analytics`` segment 422'd and the handler never
+# ran. It had no frontend caller. The underlying
+# ``OpenSearchSummaryService.get_summary_analytics`` service method is retained for
+# any future, correctly-mounted endpoint.
 
 
 @router.post("/{file_uuid}/identify-speakers", response_model=SpeakerIdentificationResponse)

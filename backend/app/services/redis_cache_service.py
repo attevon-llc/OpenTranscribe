@@ -24,6 +24,17 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _record(result: str) -> None:
+    """Record a Redis cache hit/miss on the Prometheus counter (best-effort)."""
+    try:
+        from app.core.metrics import cache_operations_total
+
+        cache_operations_total.labels(cache="redis", result=result).inc()
+    except Exception:  # noqa: S110  # nosec B110 - metrics must never break caching
+        pass  # pragma: no cover
+
+
 # Default TTLs in seconds
 TTL_TAGS = 300  # 5 minutes
 TTL_SPEAKERS = 300
@@ -78,9 +89,11 @@ class RedisCacheService:
         try:
             raw = client.get(key)
             if raw is not None:
+                _record("hit")
                 return json.loads(raw)
         except Exception as e:
             logger.debug(f"Cache GET error for {key}: {e}")
+        _record("miss")
         return None
 
     def set(self, key: str, value: Any, ttl: int = 300) -> None:
@@ -120,6 +133,24 @@ class RedisCacheService:
         """Invalidate tag caches for a user."""
         self.delete_pattern(f"cache:tags:{user_id}")
         self._push_invalidation(user_id, "tags")
+
+    def invalidate_tags_for_file(self, db: Any, file_id: int) -> None:
+        """Invalidate the owning user's tag + file caches for a file.
+
+        Used by back-door tag-mutation paths (upload helpers, auto-labeling)
+        that operate on ``file_id`` and don't carry ``current_user`` — resolves
+        the file owner so the read-through tag cache never goes stale.
+        Best-effort: a lookup failure must not break the mutation.
+        """
+        try:
+            from app.models.media import MediaFile
+
+            owner_id = db.query(MediaFile.user_id).filter(MediaFile.id == file_id).scalar()
+            if owner_id is not None:
+                self.invalidate_tags(int(owner_id))
+                self.invalidate_user_files(int(owner_id))
+        except Exception as e:
+            logger.debug(f"invalidate_tags_for_file failed (non-critical): {e}")
 
     def invalidate_speakers(self, user_id: int) -> None:
         """Invalidate speaker caches for a user."""

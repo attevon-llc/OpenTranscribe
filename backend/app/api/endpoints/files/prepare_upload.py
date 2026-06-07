@@ -159,6 +159,14 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> None:
 
     db.flush()
 
+    # Bust the owning user's read-through tag cache. Best-effort.
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_tags_for_file(db, file_id)
+    except Exception as e:
+        logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
+
 
 @router.post("/prepare", response_model=dict[str, Any])
 async def prepare_upload(

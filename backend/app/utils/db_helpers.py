@@ -18,6 +18,16 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+def _invalidate_tag_cache_for_file(db: Session, file_id: int) -> None:
+    """Bust the owning user's tag/file caches after a tag mutation."""
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_tags_for_file(db, file_id)
+    except Exception as e:  # pragma: no cover - cache must never break writes
+        logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
+
+
 def get_user_files_query(db: Session, user_id: int) -> Query:
     """
     Standard query for user's files.
@@ -224,6 +234,7 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> bool:
                 db.add(file_tag)
 
         db.commit()
+        _invalidate_tag_cache_for_file(db, file_id)
         return True
     except SQLAlchemyError as e:
         logger.error(f"Error adding tags to file {file_id}: {e}")
@@ -254,6 +265,7 @@ def remove_tags_from_file(db: Session, file_id: int, tag_names: list[str]) -> bo
         ).delete(synchronize_session=False)
 
         db.commit()
+        _invalidate_tag_cache_for_file(db, file_id)
         return True
     except SQLAlchemyError as e:
         logger.error(f"Error removing tags from file {file_id}: {e}")

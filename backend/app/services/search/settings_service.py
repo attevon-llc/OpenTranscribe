@@ -134,5 +134,10 @@ def _set_setting(key: str, value: str, description: str = "") -> None:
             else:
                 db.add(SystemSettings(key=key, value=value, description=description))
             db.commit()
+        # Bust the in-process settings cache — this writes the same
+        # SystemSettings table that system_settings_service.get_setting reads.
+        from app.core import settings_cache
+
+        settings_cache.invalidate(key)
     except Exception as e:
         logger.error(f"Could not save setting '{key}': {e}")

@@ -279,6 +279,15 @@ class AutoLabelService:
             )
             self.db.add(file_tag)
             self.db.flush()
+            # Bust the owning user's read-through tag cache (auto-labeling is a
+            # back-door tag-mutation path that doesn't carry current_user).
+            try:
+                from app.services.redis_cache_service import redis_cache
+
+                redis_cache.invalidate_tags(int(media_file.user_id))
+                redis_cache.invalidate_user_files(int(media_file.user_id))
+            except Exception as e:
+                logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
         except IntegrityError:
             nested.rollback()
             logger.debug(f"Duplicate file_tag for file={media_file.id} tag={tag.id}, skipping")

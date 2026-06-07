@@ -66,6 +66,7 @@ show_help() {
   echo "  --with-watch         - Mount the host watch folder (WATCH_HOST_PATH, default ./watch) for auto-import"
   echo "  --with-smb-test      - Start a Samba test share for watch-source testing (localhost:4450)"
   echo "  --with-monitoring    - Start Prometheus (:5186) + Grafana (:5185) observability stack"
+  echo "  --with-backup        - Mount BACKUP_HOST_PATH (default ./backups) for in-app scheduled backups"
   echo ""
   echo "Reset & Database Commands:"
   echo "  reset [dev|prod] [options]             - Reset and reinitialize (deletes all data!)"
@@ -576,6 +577,7 @@ start_app() {
   WITH_WATCH_FLAG=""
   WITH_SMB_TEST_FLAG=""
   WITH_MONITORING_FLAG=""
+  WITH_BACKUP_FLAG=""
   LITE_FLAG=""
   CPU_FLAG=""
   NO_NAS_FLAG=""
@@ -663,6 +665,10 @@ start_app() {
         ;;
       --with-monitoring)
         WITH_MONITORING_FLAG="--with-monitoring"
+        shift
+        ;;
+      --with-backup)
+        WITH_BACKUP_FLAG="--with-backup"
         shift
         ;;
       *)
@@ -1034,6 +1040,20 @@ start_app() {
     fi
   fi
 
+  # Add Backup overlay if requested (mounts BACKUP_HOST_PATH for scheduled backups)
+  if [ -n "$WITH_BACKUP_FLAG" ]; then
+    if [ -f "docker-compose.backup.yml" ]; then
+      BACKUP_HOST_PATH="${BACKUP_HOST_PATH:-./backups}"
+      mkdir -p "$BACKUP_HOST_PATH" 2>/dev/null || true
+      export BACKUP_HOST_PATH
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.backup.yml"
+      echo "💾 Adding Backup overlay (docker-compose.backup.yml)"
+      echo "   Backup destination: $BACKUP_HOST_PATH → /backups (configure in admin UI → Backups)"
+    else
+      echo "⚠️  --with-backup specified but docker-compose.backup.yml not found"
+    fi
+  fi
+
   # Fresh-mode overlays go LAST so their container_name + port re-pinning wins.
   if [ -n "$FRESH_FLAG" ]; then
     [ -n "$FRESH_OVERLAY" ] && COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_OVERLAY"
@@ -1136,6 +1156,7 @@ reset_and_init() {
   WITH_WATCH_FLAG=""
   WITH_SMB_TEST_FLAG=""
   WITH_MONITORING_FLAG=""
+  WITH_BACKUP_FLAG=""
   LITE_FLAG=""
   CPU_FLAG=""
 
@@ -1191,6 +1212,10 @@ reset_and_init() {
         ;;
       --with-monitoring)
         WITH_MONITORING_FLAG="--with-monitoring"
+        shift
+        ;;
+      --with-backup)
+        WITH_BACKUP_FLAG="--with-backup"
         shift
         ;;
       *)
@@ -1471,6 +1496,20 @@ reset_and_init() {
       echo "   Grafana:    http://localhost:${GRAFANA_PORT:-5185}  (admin / \$GRAFANA_PASSWORD, default admin)"
     else
       echo "⚠️  --with-monitoring specified but docker-compose.monitoring.yml not found"
+    fi
+  fi
+
+  # Add Backup overlay if requested (mounts BACKUP_HOST_PATH for scheduled backups)
+  if [ -n "$WITH_BACKUP_FLAG" ]; then
+    if [ -f "docker-compose.backup.yml" ]; then
+      BACKUP_HOST_PATH="${BACKUP_HOST_PATH:-./backups}"
+      mkdir -p "$BACKUP_HOST_PATH" 2>/dev/null || true
+      export BACKUP_HOST_PATH
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.backup.yml"
+      echo "💾 Adding Backup overlay (docker-compose.backup.yml)"
+      echo "   Backup destination: $BACKUP_HOST_PATH → /backups (configure in admin UI → Backups)"
+    else
+      echo "⚠️  --with-backup specified but docker-compose.backup.yml not found"
     fi
   fi
 

@@ -2,6 +2,7 @@
 
 import logging
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -26,6 +27,25 @@ from app.services.speaker_clustering_service import SpeakerClusteringService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _require_uuid(value: str, *, not_found_detail: str) -> None:
+    """Reject a malformed UUID path param with the route's 404 detail.
+
+    Cluster/speaker UUIDs arrive as raw ``str`` path params and flow straight into
+    ``WHERE uuid = <value>`` against a Postgres ``uuid`` column. A non-UUID string
+    makes Postgres raise ``invalid input syntax for type uuid`` mid-query, which
+    poisons the transaction and surfaces as an unhandled 500 on the routes that
+    have no ``try/except`` (detail, analyze-outliers, unassign, promote, merge,
+    split, media-preview). Validating up front turns that into the same 404 these
+    routes already return for an unknown UUID — no behavior change for valid input.
+    """
+    try:
+        UUID(value)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=not_found_detail
+        ) from None
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +163,7 @@ def get_speaker_media_preview(
     Returns the source media file URL and the longest transcript segment
     for this speaker so the player can seek directly to their voice.
     """
+    _require_uuid(speaker_uuid, not_found_detail="Speaker not found")
     speaker = (
         db.query(Speaker)
         .filter(Speaker.uuid == speaker_uuid, Speaker.user_id == current_user.id)
@@ -227,6 +248,7 @@ def analyze_outliers(
     current_user: User = Depends(get_current_active_user),
 ):
     """Analyze minority-gender speakers for potential outliers."""
+    _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     service = SpeakerClusteringService(db)
     try:
         result = service.analyze_gender_outliers(cluster_uuid, current_user.id)
@@ -243,6 +265,7 @@ def unassign_speakers(
     current_user: User = Depends(get_current_active_user),
 ):
     """Unassign speakers from a cluster with optional blacklisting."""
+    _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     service = SpeakerClusteringService(db)
     try:
         result = service.unassign_speakers(
@@ -268,6 +291,7 @@ def get_cluster_detail(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get cluster detail with all members."""
+    _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     service = SpeakerClusteringService(db)
     result = service.get_cluster_detail(cluster_uuid, current_user.id)
     if not result:
@@ -283,6 +307,7 @@ def update_cluster(
     current_user: User = Depends(get_current_active_user),
 ):
     """Update cluster label and description."""
+    _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     try:
         cluster = (
             db.query(SpeakerCluster)
@@ -326,6 +351,7 @@ def delete_cluster(
     current_user: User = Depends(get_current_active_user),
 ):
     """Delete a cluster."""
+    _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     try:
         cluster = (
             db.query(SpeakerCluster)
@@ -368,6 +394,7 @@ def promote_cluster(
     current_user: User = Depends(get_current_active_user),
 ):
     """Promote a cluster to a speaker profile."""
+    _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     service = SpeakerClusteringService(db)
     profile = service.promote_cluster_to_profile(
         cluster_uuid=cluster_uuid,
@@ -396,6 +423,8 @@ def merge_clusters(
     if source_uuid == target_uuid:
         raise HTTPException(status_code=400, detail="Cannot merge cluster with itself")
 
+    _require_uuid(source_uuid, not_found_detail="Cluster not found")
+    _require_uuid(target_uuid, not_found_detail="Cluster not found")
     service = SpeakerClusteringService(db)
     result = service.merge_clusters(source_uuid, target_uuid, current_user.id)
     if not result:
@@ -416,6 +445,7 @@ def split_cluster(
     current_user: User = Depends(get_current_active_user),
 ):
     """Split speakers from a cluster into a new cluster."""
+    _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     service = SpeakerClusteringService(db)
     new_cluster = service.split_cluster(
         cluster_uuid=cluster_uuid,

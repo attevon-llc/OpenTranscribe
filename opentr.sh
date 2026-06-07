@@ -401,12 +401,19 @@ resolve_data_paths() {
 # Best-effort write of a live-data marker into each bind data dir so humans AND
 # cleanup agents can see the directory is in use before deleting it. Never fails
 # startup — a read-only or missing dir is silently skipped.
+#
+# Note: the PostgreSQL data dir legitimately ends up WITHOUT a marker — postgres
+# requires an empty dir at initdb and then owns it 0700 as uid 70, so the host
+# user can't drop a file in it. That's fine: the data-loss incident this guards
+# against was an `rm -rf` of the PARENT (/mnt/nvm/opentranscribe), and the parent
+# (plus the os + minio dirs) IS marked below.
 write_live_data_markers() {
   local marker=".opentranscribe-live-data"
   local content="LIVE DATA — bind-mounted into the OpenTranscribe stack. DO NOT delete or 'clean up'. Managed by opentr.sh. See ./opentr.sh data-paths."
   local dir
-  # Also mark the PARENTS of the pg/os dirs: the 2026-06 data-loss incident was
-  # an `rm -rf` of the parent (/mnt/nvm/opentranscribe), not the leaf dirs.
+  # Mark the leaf bind dirs AND the PARENTS of the pg/os dirs: the 2026-06
+  # data-loss incident was an `rm -rf` of the parent (/mnt/nvm/opentranscribe),
+  # not the leaf dirs. (The postgres leaf dir silently fails — see note above.)
   for dir in "$MINIO_NAS_PATH" "$POSTGRES_DATA_PATH" "$OPENSEARCH_DATA_PATH" \
              "${POSTGRES_DATA_PATH:+$(dirname "$POSTGRES_DATA_PATH")}" \
              "${OPENSEARCH_DATA_PATH:+$(dirname "$OPENSEARCH_DATA_PATH")}"; do

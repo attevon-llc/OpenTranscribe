@@ -70,10 +70,22 @@ fi
 uploaded=0
 for f in "${FILES[@]}"; do
   name="$(basename "$f")"
-  echo "📤 seed: uploading ${name}..."
+  # curl defaults the part to application/octet-stream, which the upload
+  # endpoint rejects ("File must be an audio or video format") — declare the
+  # real MIME type from the extension.
+  case "$name" in
+    *.wav) mime="audio/wav" ;;
+    *.mp3) mime="audio/mpeg" ;;
+    *.m4a) mime="audio/mp4" ;;
+    *.mp4) mime="video/mp4" ;;
+    *.mkv) mime="video/x-matroska" ;;
+    *.webm) mime="video/webm" ;;
+    *) mime="application/octet-stream" ;;
+  esac
+  echo "📤 seed: uploading ${name} (${mime})..."
   if curl -fsS -X POST "${BACKEND_URL}/api/files" \
        -H "Authorization: Bearer ${TOKEN}" \
-       -F "file=@${f}" >/dev/null 2>&1; then
+       -F "file=@${f};type=${mime}" >/dev/null 2>&1; then
     uploaded=$((uploaded + 1))
     echo "   ✓ ${name}"
   else

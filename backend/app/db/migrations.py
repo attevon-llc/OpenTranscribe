@@ -217,8 +217,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     has_cloud_seams = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'organization')"
     )
+    # v368 guard: every column named 'uuid' is already native uuid type. If any
+    # legacy character-varying 'uuid' column remains, the DB pre-dates v368 and
+    # must be stamped at v367 so v368's idempotent conversion runs on upgrade.
+    has_legacy_varchar_uuid = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema='public' AND column_name='uuid' AND data_type <> 'uuid')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v368: native-uuid type guard (no-op on current schemas; converts any
+    # lingering varchar(36) uuid identifier columns to native uuid).
+    if has_cloud_seams and not has_legacy_varchar_uuid:
+        return "v368_uuid_native_type_guard"
     # v367: cloud-edition seams (organization/usage_event tables, clerk columns)
     if has_cloud_seams:
         return "v367_add_cloud_seams"

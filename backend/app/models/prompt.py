@@ -20,6 +20,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -37,7 +38,7 @@ class SummaryPrompt(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -89,7 +90,7 @@ class UserSetting(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True

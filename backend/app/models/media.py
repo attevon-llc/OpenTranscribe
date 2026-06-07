@@ -21,6 +21,7 @@ from sqlalchemy.sql import func
 
 from app.core.enums import FileStatus  # noqa: F401 — re-exported for backward compat
 from app.db.base import Base
+from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from app.models.prompt import SummaryPrompt
@@ -35,7 +36,7 @@ class MediaFile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
     # Cloud-edition seam: tenant scope (NULL = personal). Written by the cloud layer.
@@ -278,7 +279,7 @@ class TranscriptSegment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"), nullable=False)
     speaker_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("speaker.id"), nullable=True)
@@ -324,7 +325,7 @@ class SpeakerProfile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
     organization_id: Mapped[int | None] = mapped_column(
@@ -392,7 +393,7 @@ class Speaker(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
     organization_id: Mapped[int | None] = mapped_column(
@@ -479,7 +480,7 @@ class Comment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"), nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
@@ -501,7 +502,7 @@ class Tag(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     source: Mapped[str | None] = mapped_column(
@@ -515,7 +516,7 @@ class FileTag(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     media_file_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("media_file.id"))
     tag_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("tag.id"))
@@ -566,7 +567,7 @@ class Analytics(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     media_file_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("media_file.id"), unique=True
@@ -592,7 +593,7 @@ class Collection(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -639,7 +640,7 @@ class CollectionMember(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     collection_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("collection.id", ondelete="CASCADE"), nullable=False
@@ -676,7 +677,7 @@ class SpeakerCollection(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -711,7 +712,7 @@ class SpeakerCollectionMember(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     collection_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("speaker_collection.id", ondelete="CASCADE"), nullable=False
@@ -746,7 +747,7 @@ class SpeakerCluster(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False
@@ -787,7 +788,7 @@ class SpeakerClusterMember(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     cluster_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("speaker_cluster.id", ondelete="CASCADE"), nullable=False
@@ -815,7 +816,7 @@ class SpeakerMatch(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     speaker1_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False

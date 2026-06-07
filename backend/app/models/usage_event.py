@@ -26,6 +26,7 @@ from sqlalchemy.orm import mapped_column
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.utils.uuid7 import uuid7
 
 
 class UsageEvent(Base):
@@ -35,9 +36,7 @@ class UsageEvent(Base):
         Index("idx_usage_event_user_time", "user_id", "created_at"),
     )
 
-    id: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid_pkg.uuid4
-    )
+    id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )

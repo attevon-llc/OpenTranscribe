@@ -32,6 +32,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from app.models.email_notification_config import WatchSourceEmail
@@ -50,7 +51,7 @@ class WatchSource(Base):
     # ----- identity -----
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     source_type: Mapped[str] = mapped_column(String(20), nullable=False)  # local | s3 | smb
@@ -201,7 +202,7 @@ class WatchSourceFile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
     watch_source_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("watch_source.id", ondelete="CASCADE"), nullable=False, index=True

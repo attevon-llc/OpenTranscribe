@@ -17,6 +17,7 @@ from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
+from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -34,7 +35,7 @@ class AuthConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7
     )
     config_key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     config_value: Mapped[str | None] = mapped_column(
@@ -77,7 +78,7 @@ class AuthConfigAudit(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7
     )
     config_key: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     old_value: Mapped[str | None] = mapped_column(

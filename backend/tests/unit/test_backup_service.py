@@ -25,6 +25,16 @@ from app.services import system_settings_service as sss
 # Settings round-trip (DB-backed)
 # =============================================================================
 def test_get_settings_returns_coded_defaults(db_session):
+    # Precondition: no backup.* rows persisted. The dev stack may carry admin
+    # overrides from earlier manual testing, so clear them within this savepoint
+    # (rolled back at teardown) to assert the unset/coded-default behavior
+    # deterministically — never depends on ambient DB state.
+    from app.models.system_settings import SystemSettings
+
+    db_session.query(SystemSettings).filter(SystemSettings.key.like("backup.%")).delete(
+        synchronize_session=False
+    )
+
     cfg = bs.get_settings(db_session)
     assert cfg["enabled"] is C.DEFAULT_BACKUP_ENABLED
     assert cfg["schedule"] == C.DEFAULT_BACKUP_SCHEDULE

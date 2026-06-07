@@ -15,6 +15,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from app.models.media import MediaFile
@@ -28,7 +29,7 @@ class UploadBatch(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7
     )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False

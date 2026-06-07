@@ -22,6 +22,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -39,7 +40,7 @@ class UserMFA(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
 
     # Foreign key to user table (one MFA record per user)

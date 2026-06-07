@@ -23,6 +23,7 @@ import os
 import re
 import shutil
 import subprocess  # noqa: S404 - pg_dump/gpg invoked with a fixed argv list, no shell
+import tempfile
 import time
 from collections.abc import Iterator
 from datetime import datetime
@@ -35,6 +36,8 @@ from sqlalchemy.orm import Session
 from app.core import constants as C  # noqa: N812
 from app.core.config import settings
 from app.services import system_settings_service as sss
+from app.utils.encryption import decrypt_api_key
+from app.utils.encryption import encrypt_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,20 @@ KEY_PASSPHRASE_FILE = "backup.passphrase_file"  # noqa: S105  # nosec B105 - set
 KEY_INCLUDE_OPENSEARCH = "backup.include_opensearch"
 KEY_LAST_RUN_AT = "backup.last_run_at"
 KEY_LAST_RESULT = "backup.last_result"
+# S3-compatible destination (off-host backups).
+KEY_DESTINATION_TYPE = "backup.destination_type"
+KEY_S3_ENDPOINT_URL = "backup.s3_endpoint_url"
+KEY_S3_REGION = "backup.s3_region"
+KEY_S3_BUCKET = "backup.s3_bucket"
+KEY_S3_PREFIX = "backup.s3_prefix"
+KEY_S3_ACCESS_KEY_ID = "backup.s3_access_key_id"
+KEY_S3_SECRET_KEY = "backup.s3_secret_key"  # noqa: S105  # nosec B105 - settings key name, not a secret
+
+DEST_LOCAL = "local"
+DEST_S3 = "s3"
+
+_S3_CONNECT_TIMEOUT = 10
+_S3_READ_TIMEOUT = 60
 
 # Filenames we own. ``-Fc`` custom-format dumps + their optional gpg envelope.
 _DUMP_PREFIX = "opentranscribe-"
@@ -95,6 +112,13 @@ def get_settings(db: Session | None = None) -> dict[str, Any]:
                 KEY_PASSPHRASE_FILE,
                 KEY_INCLUDE_OPENSEARCH,
                 KEY_LAST_RUN_AT,
+                KEY_DESTINATION_TYPE,
+                KEY_S3_ENDPOINT_URL,
+                KEY_S3_REGION,
+                KEY_S3_BUCKET,
+                KEY_S3_PREFIX,
+                KEY_S3_ACCESS_KEY_ID,
+                KEY_S3_SECRET_KEY,
             ],
         )
 
@@ -130,6 +154,14 @@ def get_settings(db: Session | None = None) -> dict[str, Any]:
             "include_opensearch": _b(KEY_INCLUDE_OPENSEARCH, C.DEFAULT_BACKUP_INCLUDE_OPENSEARCH),
             "last_run_at": vals.get(KEY_LAST_RUN_AT),
             "last_result": last_result,
+            "destination_type": vals.get(KEY_DESTINATION_TYPE) or C.DEFAULT_BACKUP_DESTINATION_TYPE,
+            "s3_endpoint_url": vals.get(KEY_S3_ENDPOINT_URL) or C.DEFAULT_BACKUP_S3_ENDPOINT_URL,
+            "s3_region": vals.get(KEY_S3_REGION) or C.DEFAULT_BACKUP_S3_REGION,
+            "s3_bucket": vals.get(KEY_S3_BUCKET) or C.DEFAULT_BACKUP_S3_BUCKET,
+            "s3_prefix": vals.get(KEY_S3_PREFIX) or C.DEFAULT_BACKUP_S3_PREFIX,
+            "s3_access_key_id": vals.get(KEY_S3_ACCESS_KEY_ID) or C.DEFAULT_BACKUP_S3_ACCESS_KEY_ID,
+            # NEVER expose the secret — only whether one is configured.
+            "s3_secret_key_set": bool(vals.get(KEY_S3_SECRET_KEY)),
         }
 
 
@@ -145,8 +177,19 @@ def update_settings(
     encrypt: bool | None = None,
     passphrase_file: str | None = None,
     include_opensearch: bool | None = None,
+    destination_type: str | None = None,
+    s3_endpoint_url: str | None = None,
+    s3_region: str | None = None,
+    s3_bucket: str | None = None,
+    s3_prefix: str | None = None,
+    s3_access_key_id: str | None = None,
+    s3_secret_key: str | None = None,
 ) -> dict[str, Any]:
-    """Persist any provided backup settings; return the full current set."""
+    """Persist any provided backup settings; return the full current set.
+
+    ``s3_secret_key`` is AES-256-GCM encrypted before storage and is never echoed back
+    (``get_settings`` exposes only ``s3_secret_key_set``).
+    """
     if enabled is not None:
         sss.set_setting(db, KEY_ENABLED, enabled, "Scheduled database backups master toggle")
     if schedule is not None:
@@ -178,7 +221,46 @@ def update_settings(
             include_opensearch,
             "Also snapshot OpenSearch (not yet implemented — pg only)",
         )
+    if destination_type is not None:
+        if destination_type not in (DEST_LOCAL, DEST_S3):
+            raise ValueError(f"Invalid destination_type: {destination_type!r}")
+        sss.set_setting(
+            db, KEY_DESTINATION_TYPE, destination_type, "Backup destination type (local | s3)"
+        )
+    # Plain (non-secret) S3 string fields — data-driven to keep this function simple.
+    _s3_plain = (
+        (s3_endpoint_url, KEY_S3_ENDPOINT_URL, "S3 endpoint URL (empty = real AWS S3)"),
+        (s3_region, KEY_S3_REGION, "S3 region (e.g. us-east-1)"),
+        (s3_bucket, KEY_S3_BUCKET, "S3 destination bucket"),
+        (s3_prefix, KEY_S3_PREFIX, "S3 key prefix within the bucket"),
+        (s3_access_key_id, KEY_S3_ACCESS_KEY_ID, "S3 access key id"),
+    )
+    for value, key, desc in _s3_plain:
+        if value is not None:
+            sss.set_setting(db, key, value, desc)
+    if s3_secret_key is not None:
+        _store_s3_secret(db, s3_secret_key)
     return get_settings(db)
+
+
+def _store_s3_secret(db: Session, s3_secret_key: str) -> None:
+    """Encrypt + persist the S3 secret (empty string clears it)."""
+    if not s3_secret_key:
+        sss.set_setting(db, KEY_S3_SECRET_KEY, "", "S3 secret access key (encrypted)")
+        return
+    encrypted = encrypt_api_key(s3_secret_key)
+    if not encrypted:
+        raise ValueError("Failed to encrypt S3 secret key")
+    sss.set_setting(db, KEY_S3_SECRET_KEY, encrypted, "S3 secret access key (encrypted)")
+
+
+def _get_s3_secret_key(db: Session | None) -> str | None:
+    """Decrypt and return the stored S3 secret key (runtime-only — never exposed via API)."""
+    with _session(db) as s:
+        raw = sss.get_setting(s, KEY_S3_SECRET_KEY)
+    if not raw:
+        return None
+    return decrypt_api_key(raw)
 
 
 def update_settings_last_run(db: Session, run_at_iso: str) -> None:
@@ -419,6 +501,158 @@ def prune_backups(destination: str, settings_dict: dict[str, Any]) -> list[str]:
 
 
 # =============================================================================
+# S3-compatible destination (boto3 — AWS S3 / MinIO / Backblaze / Wasabi / etc.)
+# =============================================================================
+def _build_s3_client(cfg: dict[str, Any], secret_key: str | None):
+    """Construct a boto3 S3 client for the configured endpoint (path-style for non-AWS).
+
+    Mirrors ``watch_sources/s3_client.py``: explicit ``endpoint_url`` for S3-compatible
+    services, path-style addressing so a bare hostname like ``minio:9000`` works, bounded
+    timeouts + retries. Returns the boto3 client; raises ``ValueError`` if no bucket is set.
+    """
+    bucket = (cfg.get("s3_bucket") or "").strip()
+    if not bucket:
+        raise ValueError("S3 destination requires a bucket name")
+
+    import boto3
+    from botocore.config import Config
+
+    endpoint = (cfg.get("s3_endpoint_url") or "").strip() or None
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=(cfg.get("s3_access_key_id") or "").strip() or None,
+        aws_secret_access_key=secret_key or None,
+        region_name=(cfg.get("s3_region") or "").strip() or None,
+        config=Config(
+            connect_timeout=_S3_CONNECT_TIMEOUT,
+            read_timeout=_S3_READ_TIMEOUT,
+            retries={"max_attempts": 3, "mode": "standard"},
+            # Path-style addressing — required for MinIO/Backblaze and bare-host endpoints.
+            s3={"addressing_style": "path"} if endpoint else {},
+        ),
+    )
+
+
+def _s3_prefix(cfg: dict[str, Any]) -> str:
+    """Return the normalized key prefix (no leading slash, trailing slash kept if present)."""
+    return (cfg.get("s3_prefix") or "").lstrip("/")
+
+
+def s3_bucket_status(cfg: dict[str, Any], db: Session | None = None) -> dict[str, Any]:
+    """Cheap head_bucket reachability check — graceful, never raises."""
+    bucket = (cfg.get("s3_bucket") or "").strip()
+    result: dict[str, Any] = {
+        "destination_type": DEST_S3,
+        "bucket": bucket,
+        "prefix": _s3_prefix(cfg),
+        "endpoint_url": (cfg.get("s3_endpoint_url") or "").strip(),
+        "reachable": False,
+        "error": None,
+    }
+    if not bucket:
+        result["error"] = "No S3 bucket configured"
+        return result
+    try:
+        client = _build_s3_client(cfg, _get_s3_secret_key(db))
+        client.head_bucket(Bucket=bucket)
+        result["reachable"] = True
+    except Exception as exc:  # noqa: BLE001 - report any failure, never raise to the caller
+        result["error"] = str(exc)
+    return result
+
+
+def _s3_list_keys(client, bucket: str, prefix: str) -> list[str]:
+    """List object keys under ``prefix`` that match our backup-filename pattern."""
+    paginator = client.get_paginator("list_objects_v2")
+    keys: list[str] = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if _TS_RE.search(key):
+                keys.append(key)
+    return keys
+
+
+def list_backups_s3(cfg: dict[str, Any], db: Session | None = None) -> list[dict[str, Any]]:
+    """List backup objects in the configured bucket/prefix, newest first. Graceful on error."""
+    bucket = (cfg.get("s3_bucket") or "").strip()
+    if not bucket:
+        return []
+    prefix = _s3_prefix(cfg)
+    try:
+        client = _build_s3_client(cfg, _get_s3_secret_key(db))
+        paginator = client.get_paginator("list_objects_v2")
+        out: list[dict[str, Any]] = []
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                ts = _backup_timestamp(key)
+                if ts is None:
+                    continue
+                name = key[len(prefix) :] if key.startswith(prefix) else key
+                out.append(
+                    {
+                        "filename": name,
+                        "size_bytes": int(obj.get("Size", 0)),
+                        "created_at": ts.isoformat(),
+                        "encrypted": key.endswith(_GPG_SUFFIX),
+                    }
+                )
+        out.sort(key=lambda b: b["created_at"], reverse=True)
+        return out
+    except Exception as exc:  # noqa: BLE001 - graceful; UI shows empty list + status banner
+        logger.warning("Could not list S3 backups: %s", exc)
+        return []
+
+
+def prune_backups_s3(cfg: dict[str, Any], client=None, db: Session | None = None) -> list[str]:
+    """Delete GFS-excess backup objects in the bucket. Returns deleted object keys."""
+    bucket = (cfg.get("s3_bucket") or "").strip()
+    if not bucket:
+        return []
+    prefix = _s3_prefix(cfg)
+    if client is None:
+        client = _build_s3_client(cfg, _get_s3_secret_key(db))
+    keys = _s3_list_keys(client, bucket, prefix)
+    to_delete = select_backups_to_delete(
+        keys,
+        retention_daily=int(cfg["retention_daily"]),
+        retention_weekly=int(cfg["retention_weekly"]),
+        retention_monthly=int(cfg["retention_monthly"]),
+    )
+    deleted: list[str] = []
+    for key in to_delete:
+        try:
+            client.delete_object(Bucket=bucket, Key=key)
+            deleted.append(key)
+        except Exception as exc:  # noqa: BLE001 - one bad delete shouldn't abort the run
+            logger.warning("Could not delete old S3 backup %s: %s", key, exc)
+    return deleted
+
+
+def test_s3_connection(
+    cfg: dict[str, Any], db: Session | None = None, override_secret: str | None = None
+) -> dict[str, Any]:
+    """Admin connection test: head_bucket + a cheap list. Returns an ok/error envelope.
+
+    ``override_secret`` lets the API test a just-submitted secret without persisting it
+    first; when omitted the stored (encrypted) secret is decrypted and used.
+    """
+    bucket = (cfg.get("s3_bucket") or "").strip()
+    if not bucket:
+        return {"ok": False, "error": "No S3 bucket configured", "bucket": bucket}
+    secret = override_secret if override_secret else _get_s3_secret_key(db)
+    try:
+        client = _build_s3_client(cfg, secret)
+        client.head_bucket(Bucket=bucket)
+        client.list_objects_v2(Bucket=bucket, Prefix=_s3_prefix(cfg), MaxKeys=1)
+        return {"ok": True, "error": None, "bucket": bucket}
+    except Exception as exc:  # noqa: BLE001 - surface the failure as data, never raise
+        return {"ok": False, "error": str(exc), "bucket": bucket}
+
+
+# =============================================================================
 # pg_dump execution
 # =============================================================================
 def _read_passphrase(passphrase_file: str) -> str:
@@ -488,11 +722,19 @@ def run_pg_dump(
 def perform_backup(db: Session | None = None) -> dict[str, Any]:
     """Execute one backup run end-to-end and record the result in SystemSettings.
 
+    Dispatches to the local-dir or S3 backend based on ``backup.destination_type``.
     Returns a result dict (``ok``, ``path``/``filename``, ``size_bytes``, ``duration_s``,
     ``error``, ``pruned``). No-ops gracefully (``ok=False``, status ``"no_destination"``)
-    when the destination isn't a writable mount — never raises for that case.
+    when the destination isn't usable — never raises for that case.
     """
     cfg = get_settings(db)
+    if cfg["destination_type"] == DEST_S3:
+        return _perform_backup_s3(cfg, db)
+    return _perform_backup_local(cfg, db)
+
+
+def _perform_backup_local(cfg: dict[str, Any], db: Session | None) -> dict[str, Any]:
+    """Local-dir backend: pg_dump straight to the mounted destination, prune in-place."""
     destination = cfg["destination"]
     started = time.monotonic()
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -561,6 +803,109 @@ def perform_backup(db: Session | None = None) -> dict[str, Any]:
             "started_at": now_iso,
         }
         logger.error("Backup failed: %s", exc)
+
+    _record_result(db, now_iso, result)
+    return result
+
+
+def _scratch_dir(cfg: dict[str, Any]) -> Path:
+    """Pick a scratch dir for the temp dump: the mounted dir if writable, else a system temp.
+
+    Reusing the mounted ``/backups`` volume (when present) avoids filling the container's
+    ephemeral layer with a large dump; falls back to a fresh ``mkdtemp`` otherwise.
+    """
+    dest = cfg.get("destination") or ""
+    if dest and destination_status(dest)["writable"]:
+        return Path(dest)
+    return Path(tempfile.mkdtemp(prefix="ot-backup-"))
+
+
+def _perform_backup_s3(cfg: dict[str, Any], db: Session | None) -> dict[str, Any]:
+    """S3 backend: pg_dump to a temp file, upload to the bucket, prune over the listing.
+
+    The temp file (scratch dir or system temp) is always removed afterwards. Bucket
+    unreachability / upload failure is recorded as an error result — never raises.
+    """
+    started = time.monotonic()
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    bucket = (cfg.get("s3_bucket") or "").strip()
+    if not bucket:
+        msg = "S3 backup destination has no bucket configured — skipping."
+        logger.warning(msg)
+        result = {"ok": False, "status": "no_destination", "error": msg, "started_at": now_iso}
+        _record_result(db, now_iso, result)
+        return result
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    scratch = _scratch_dir(cfg)
+    using_temp_scratch = scratch != Path(cfg.get("destination") or "")
+    tmp_dump = scratch / f"{_DUMP_PREFIX}{ts}{_DUMP_SUFFIX}"
+    artifact: Path | None = None
+
+    try:
+        artifact = run_pg_dump(
+            tmp_dump,
+            encrypt=bool(cfg["encrypt"]),
+            passphrase_file=cfg["passphrase_file"],
+        )
+        size = artifact.stat().st_size
+        secret = _get_s3_secret_key(db)
+        client = _build_s3_client(cfg, secret)
+        prefix = _s3_prefix(cfg)
+        key = f"{prefix}{artifact.name}"
+        logger.info("Uploading backup → s3://%s/%s (%.1f MB)", bucket, key, size / 1_048_576)
+        client.upload_file(str(artifact), bucket, key)
+        pruned = prune_backups_s3(cfg, client=client)
+        duration = round(time.monotonic() - started, 2)
+        result = {
+            "ok": True,
+            "status": "success",
+            "filename": artifact.name,
+            "path": f"s3://{bucket}/{key}",
+            "size_bytes": size,
+            "duration_s": duration,
+            "encrypted": artifact.name.endswith(_GPG_SUFFIX),
+            "pruned": pruned,
+            "started_at": now_iso,
+        }
+        logger.info(
+            "S3 backup complete: %s (%.1f MB, %.2fs, pruned %d)",
+            key,
+            size / 1_048_576,
+            duration,
+            len(pruned),
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or b"").decode("utf-8", "replace")[-2000:] if exc.stderr else ""
+        duration = round(time.monotonic() - started, 2)
+        result = {
+            "ok": False,
+            "status": "error",
+            "error": f"{exc.cmd[0]} failed (exit {exc.returncode}): {stderr}",
+            "duration_s": duration,
+            "started_at": now_iso,
+        }
+        logger.error("S3 backup failed: %s", result["error"])
+    except Exception as exc:  # noqa: BLE001 - boto3/network/value errors → recorded, never raised
+        duration = round(time.monotonic() - started, 2)
+        result = {
+            "ok": False,
+            "status": "error",
+            "error": str(exc),
+            "duration_s": duration,
+            "started_at": now_iso,
+        }
+        logger.error("S3 backup failed: %s", exc)
+    finally:
+        # Always remove the local temp artifact (dump and/or gpg envelope).
+        _cleanup_partial(tmp_dump)
+        if artifact is not None:
+            with contextlib.suppress(OSError):
+                artifact.unlink(missing_ok=True)
+        if using_temp_scratch:
+            with contextlib.suppress(OSError):
+                scratch.rmdir()
 
     _record_result(db, now_iso, result)
     return result

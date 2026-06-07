@@ -10,10 +10,13 @@
     getBackupStatus,
     runBackupNow,
     listBackups,
+    testS3Connection,
     type BackupSettings,
     type BackupStatus,
     type BackupFile,
     type DestinationStatus,
+    type S3Status,
+    type BackupDestinationType,
   } from '$lib/api/backupApi';
 
   // ---- State ---------------------------------------------------------------
@@ -32,11 +35,26 @@
   let encrypt = false;
   let passphraseFile = '';
 
+  // Destination type + S3 fields
+  let destinationType: BackupDestinationType = 'local';
+  let s3EndpointUrl = '';
+  let s3Region = '';
+  let s3Bucket = '';
+  let s3Prefix = 'opentranscribe/';
+  let s3AccessKeyId = '';
+  let s3SecretKey = ''; // write-only; blank means "leave the stored secret unchanged"
+  let s3SecretKeySet = false;
+
   // Status
   let destinationStatus: DestinationStatus | null = null;
+  let s3Status: S3Status | null = null;
   let pgDumpAvailable = true;
   let lastRunAt: string | null = null;
   let lastResult: BackupStatus['last_result'] = null;
+
+  // S3 connection-test state
+  let s3TestLoading = false;
+  let s3TestResult: { ok: boolean; error?: string | null } | null = null;
 
   // Original values for dirty tracking
   let origEnabled = false;
@@ -47,6 +65,12 @@
   let origRetentionMonthly = 12;
   let origEncrypt = false;
   let origPassphraseFile = '';
+  let origDestinationType: BackupDestinationType = 'local';
+  let origS3EndpointUrl = '';
+  let origS3Region = '';
+  let origS3Bucket = '';
+  let origS3Prefix = 'opentranscribe/';
+  let origS3AccessKeyId = '';
 
   // Run-now / list state
   let runNowPending = false;
@@ -92,7 +116,16 @@
     retentionMonthly = cfg.retention_monthly;
     encrypt = cfg.encrypt;
     passphraseFile = cfg.passphrase_file;
+    destinationType = cfg.destination_type;
+    s3EndpointUrl = cfg.s3_endpoint_url;
+    s3Region = cfg.s3_region;
+    s3Bucket = cfg.s3_bucket;
+    s3Prefix = cfg.s3_prefix;
+    s3AccessKeyId = cfg.s3_access_key_id;
+    s3SecretKeySet = cfg.s3_secret_key_set;
+    s3SecretKey = ''; // never populate the secret field from the server
     destinationStatus = cfg.destination_status;
+    s3Status = cfg.s3_status ?? null;
 
     origEnabled = cfg.enabled;
     origSchedule = cfg.schedule;
@@ -102,6 +135,12 @@
     origRetentionMonthly = cfg.retention_monthly;
     origEncrypt = cfg.encrypt;
     origPassphraseFile = cfg.passphrase_file;
+    origDestinationType = cfg.destination_type;
+    origS3EndpointUrl = cfg.s3_endpoint_url;
+    origS3Region = cfg.s3_region;
+    origS3Bucket = cfg.s3_bucket;
+    origS3Prefix = cfg.s3_prefix;
+    origS3AccessKeyId = cfg.s3_access_key_id;
 
     hasChanges = false;
   }
@@ -118,6 +157,14 @@
         retention_monthly: retentionMonthly,
         encrypt,
         passphrase_file: passphraseFile,
+        destination_type: destinationType,
+        s3_endpoint_url: s3EndpointUrl,
+        s3_region: s3Region,
+        s3_bucket: s3Bucket,
+        s3_prefix: s3Prefix,
+        s3_access_key_id: s3AccessKeyId,
+        // Only send the secret when the admin actually typed one (keeps the stored value).
+        ...(s3SecretKey ? { s3_secret_key: s3SecretKey } : {}),
       });
       applySettings(cfg);
       await refreshStatus(false);
@@ -138,6 +185,7 @@
       lastRunAt = st.last_run_at ?? null;
       lastResult = st.last_result ?? null;
       destinationStatus = st.destination_status;
+      s3Status = st.s3_status ?? null;
       pgDumpAvailable = st.pg_dump_available;
       if (notify) toastStore.success($t('settings.backup.statusRefreshed'));
     } catch (err) {
@@ -154,10 +202,38 @@
       const res = await listBackups();
       backups = res.backups;
       destinationStatus = res.destination_status;
+      s3Status = res.s3_status ?? null;
     } catch (err) {
       console.error('Error listing backups:', err);
     } finally {
       backupsLoading = false;
+    }
+  }
+
+  async function testS3() {
+    s3TestLoading = true;
+    s3TestResult = null;
+    try {
+      const res = await testS3Connection({
+        s3_endpoint_url: s3EndpointUrl,
+        s3_region: s3Region,
+        s3_bucket: s3Bucket,
+        s3_prefix: s3Prefix,
+        s3_access_key_id: s3AccessKeyId,
+        ...(s3SecretKey ? { s3_secret_key: s3SecretKey } : {}),
+      });
+      s3TestResult = { ok: res.ok, error: res.error };
+      if (res.ok) {
+        toastStore.success($t('settings.backup.s3TestOk'));
+      } else {
+        toastStore.error($t('settings.backup.s3TestFailed'));
+      }
+    } catch (err) {
+      console.error('Error testing S3 connection:', err);
+      s3TestResult = { ok: false, error: $t('settings.backup.s3TestFailed') };
+      toastStore.error($t('settings.backup.s3TestFailed'));
+    } finally {
+      s3TestLoading = false;
     }
   }
 
@@ -200,6 +276,13 @@
     retentionMonthly;
     encrypt;
     passphraseFile;
+    destinationType;
+    s3EndpointUrl;
+    s3Region;
+    s3Bucket;
+    s3Prefix;
+    s3AccessKeyId;
+    s3SecretKey;
     hasChanges =
       enabled !== origEnabled ||
       schedule !== origSchedule ||
@@ -208,11 +291,21 @@
       retentionWeekly !== origRetentionWeekly ||
       retentionMonthly !== origRetentionMonthly ||
       encrypt !== origEncrypt ||
-      passphraseFile !== origPassphraseFile;
+      passphraseFile !== origPassphraseFile ||
+      destinationType !== origDestinationType ||
+      s3EndpointUrl !== origS3EndpointUrl ||
+      s3Region !== origS3Region ||
+      s3Bucket !== origS3Bucket ||
+      s3Prefix !== origS3Prefix ||
+      s3AccessKeyId !== origS3AccessKeyId ||
+      s3SecretKey !== '';
     settingsModalStore.setDirty('backup', hasChanges);
   }
 
+  $: isS3 = destinationType === 's3';
   $: mountOk = destinationStatus?.mounted ?? false;
+  // The destination is "ready" (run-now allowed) when the active backend is usable.
+  $: destinationReady = isS3 ? (s3Status?.reachable ?? false) : mountOk;
   $: saveDisabled = saving || !hasChanges;
 </script>
 
@@ -227,10 +320,15 @@
       <Spinner size="small" />
     </div>
   {:else}
-    <!-- Mount status banner -->
-    {#if !mountOk}
+    <!-- Mount status banner (local destination only) -->
+    {#if !isS3 && !mountOk}
       <div class="banner banner-warning">
         {$t('settings.backup.mountMissing', { destination })}
+      </div>
+    {/if}
+    {#if isS3 && s3Status && !s3Status.reachable}
+      <div class="banner banner-warning">
+        {$t('settings.backup.s3Unreachable')}{s3Status.error ? `: ${s3Status.error}` : ''}
       </div>
     {/if}
     {#if !pgDumpAvailable}
@@ -246,7 +344,7 @@
       </label>
     </div>
 
-    <!-- Config fields -->
+    <!-- Schedule -->
     <div class="fields-grid">
       <div class="field-group">
         <label class="field-label" for="backup-schedule">{$t('settings.backup.schedule')}</label>
@@ -260,19 +358,92 @@
         />
         <span class="field-hint">{$t('settings.backup.scheduleHint')}</span>
       </div>
-
-      <div class="field-group">
-        <label class="field-label" for="backup-destination">{$t('settings.backup.destination')}</label>
-        <input id="backup-destination" type="text" bind:value={destination} class="form-input" spellcheck="false" />
-        <span class="field-hint">
-          {#if mountOk}
-            <span class="mount-ok">● {$t('settings.backup.mountOk')}</span>
-          {:else}
-            <span class="mount-bad">● {$t('settings.backup.mountNotReady')}</span>
-          {/if}
-        </span>
-      </div>
     </div>
+
+    <!-- Destination type -->
+    <h4 class="subsection-title">{$t('settings.backup.destinationTitle')}</h4>
+    <div class="field-group destination-type-group">
+      <label class="field-label" for="backup-dest-type">{$t('settings.backup.destinationType')}</label>
+      <select id="backup-dest-type" class="form-input" bind:value={destinationType}>
+        <option value="local">{$t('settings.backup.destinationLocal')}</option>
+        <option value="s3">{$t('settings.backup.destinationS3')}</option>
+      </select>
+    </div>
+
+    {#if !isS3}
+      <!-- Local destination -->
+      <div class="fields-grid">
+        <div class="field-group">
+          <label class="field-label" for="backup-destination">{$t('settings.backup.destination')}</label>
+          <input id="backup-destination" type="text" bind:value={destination} class="form-input" spellcheck="false" />
+          <span class="field-hint">
+            {#if mountOk}
+              <span class="mount-ok">● {$t('settings.backup.mountOk')}</span>
+            {:else}
+              <span class="mount-bad">● {$t('settings.backup.mountNotReady')}</span>
+            {/if}
+          </span>
+        </div>
+      </div>
+    {:else}
+      <!-- S3-compatible destination -->
+      <p class="subsection-desc">{$t('settings.backup.s3Hint')}</p>
+      <div class="fields-grid">
+        <div class="field-group">
+          <label class="field-label" for="s3-endpoint">{$t('settings.backup.s3Endpoint')}</label>
+          <input id="s3-endpoint" type="text" bind:value={s3EndpointUrl} class="form-input" placeholder="https://s3.amazonaws.com" spellcheck="false" />
+          <span class="field-hint">{$t('settings.backup.s3EndpointHint')}</span>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="s3-region">{$t('settings.backup.s3Region')}</label>
+          <input id="s3-region" type="text" bind:value={s3Region} class="form-input" placeholder="us-east-1" spellcheck="false" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="s3-bucket">{$t('settings.backup.s3Bucket')}</label>
+          <input id="s3-bucket" type="text" bind:value={s3Bucket} class="form-input" spellcheck="false" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="s3-prefix">{$t('settings.backup.s3Prefix')}</label>
+          <input id="s3-prefix" type="text" bind:value={s3Prefix} class="form-input" placeholder="opentranscribe/" spellcheck="false" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="s3-access-key">{$t('settings.backup.s3AccessKey')}</label>
+          <input id="s3-access-key" type="text" bind:value={s3AccessKeyId} class="form-input" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="s3-secret-key">{$t('settings.backup.s3SecretKey')}</label>
+          <input
+            id="s3-secret-key"
+            type="password"
+            bind:value={s3SecretKey}
+            class="form-input"
+            autocomplete="new-password"
+            spellcheck="false"
+            placeholder={s3SecretKeySet ? $t('settings.backup.s3SecretConfigured') : ''}
+          />
+          <span class="field-hint">
+            {#if s3SecretKeySet}
+              <span class="mount-ok">● {$t('settings.backup.s3SecretConfigured')}</span>
+            {:else}
+              <span class="mount-bad">● {$t('settings.backup.s3SecretNotSet')}</span>
+            {/if}
+          </span>
+        </div>
+      </div>
+      <div class="action-row">
+        <button type="button" class="btn btn-secondary" on:click={testS3} disabled={s3TestLoading || !s3Bucket}>
+          {#if s3TestLoading}<Spinner size="small" />{/if}
+          {$t('settings.backup.s3TestButton')}
+        </button>
+        {#if s3TestResult}
+          {#if s3TestResult.ok}
+            <span class="mount-ok">● {$t('settings.backup.s3TestOk')}</span>
+          {:else}
+            <span class="mount-bad" title={s3TestResult.error ?? ''}>● {$t('settings.backup.s3TestFailed')}</span>
+          {/if}
+        {/if}
+      </div>
+    {/if}
 
     <!-- Retention (GFS) -->
     <h4 class="subsection-title">{$t('settings.backup.retentionTitle')}</h4>
@@ -329,7 +500,7 @@
     <!-- Actions -->
     <div class="action-row">
       {#if !runNowPending}
-        <button type="button" class="btn btn-secondary" on:click={() => (runNowPending = true)} disabled={runNowLoading || !mountOk}>
+        <button type="button" class="btn btn-secondary" on:click={() => (runNowPending = true)} disabled={runNowLoading || !destinationReady}>
           {$t('settings.backup.runNowButton')}
         </button>
       {:else}
@@ -470,6 +641,15 @@
 
   .encryption-field {
     max-width: 400px;
+  }
+
+  .destination-type-group {
+    max-width: 280px;
+    margin: 0.5rem 0 0.75rem 0;
+  }
+
+  select.form-input {
+    cursor: pointer;
   }
 
   .field-label {

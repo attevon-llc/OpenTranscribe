@@ -30,6 +30,16 @@ export interface DestinationStatus {
   mounted: boolean;
 }
 
+export interface S3Status {
+  bucket: string;
+  prefix: string;
+  endpoint_url: string;
+  reachable: boolean;
+  error?: string | null;
+}
+
+export type BackupDestinationType = 'local' | 's3';
+
 export interface BackupSettings {
   enabled: boolean;
   schedule: string;
@@ -40,9 +50,17 @@ export interface BackupSettings {
   encrypt: boolean;
   passphrase_file: string;
   include_opensearch: boolean;
+  destination_type: BackupDestinationType;
+  s3_endpoint_url: string;
+  s3_region: string;
+  s3_bucket: string;
+  s3_prefix: string;
+  s3_access_key_id: string;
+  s3_secret_key_set: boolean;
   last_run_at?: string | null;
   last_result?: BackupResult | null;
   destination_status: DestinationStatus;
+  s3_status?: S3Status | null;
 }
 
 export interface BackupSettingsUpdate {
@@ -55,16 +73,32 @@ export interface BackupSettingsUpdate {
   encrypt?: boolean;
   passphrase_file?: string;
   include_opensearch?: boolean;
+  destination_type?: BackupDestinationType;
+  s3_endpoint_url?: string;
+  s3_region?: string;
+  s3_bucket?: string;
+  s3_prefix?: string;
+  s3_access_key_id?: string;
+  // Write-only: sent on save, never returned by the API.
+  s3_secret_key?: string;
 }
 
 export interface BackupStatus {
   enabled: boolean;
   schedule: string;
+  destination_type: BackupDestinationType;
   last_run_at?: string | null;
   last_result?: BackupResult | null;
   next_due: boolean;
   destination_status: DestinationStatus;
+  s3_status?: S3Status | null;
   pg_dump_available: boolean;
+}
+
+export interface S3ConnectionTestResponse {
+  ok: boolean;
+  error?: string | null;
+  bucket?: string | null;
 }
 
 export interface BackupFile {
@@ -77,6 +111,7 @@ export interface BackupFile {
 export interface BackupListResponse {
   backups: BackupFile[];
   destination_status: DestinationStatus;
+  s3_status?: S3Status | null;
 }
 
 export interface BackupRunResponse {
@@ -107,5 +142,12 @@ export async function runBackupNow(): Promise<BackupRunResponse> {
 
 export async function listBackups(): Promise<BackupListResponse> {
   const res = await axiosInstance.get<BackupListResponse>(`${BASE}/list`);
+  return res.data;
+}
+
+export async function testS3Connection(
+  body: BackupSettingsUpdate
+): Promise<S3ConnectionTestResponse> {
+  const res = await axiosInstance.post<S3ConnectionTestResponse>(`${BASE}/test-s3`, body);
   return res.data;
 }

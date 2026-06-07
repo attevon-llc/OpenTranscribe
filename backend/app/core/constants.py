@@ -460,6 +460,20 @@ DEFAULT_BACKUP_ENCRYPT = False  # gpg AES-256 symmetric; needs a passphrase file
 DEFAULT_BACKUP_PASSPHRASE_FILE = ""  # noqa: S105  # nosec B105 - a file PATH default (empty = unset), not a password
 DEFAULT_BACKUP_INCLUDE_OPENSEARCH = False  # OS is derived/rebuildable; pg-only this round
 
+# Backup destination: "local" (mounted dir, default) or "s3" (S3-compatible bucket).
+# The s3 path lets homelab/cloud users push dumps off-host to AWS S3 / MinIO / Backblaze /
+# Wasabi / etc. All s3.* settings are DB-backed SystemSettings (NO .env); the secret key is
+# AES-256-GCM encrypted at rest (app.utils.encryption.encrypt_api_key) and never returned by
+# the API (write-only — only a backup.s3_secret_key_set bool is exposed). SystemSettings keys:
+# backup.destination_type / backup.s3_endpoint_url / backup.s3_region / backup.s3_bucket /
+# backup.s3_prefix / backup.s3_access_key_id / backup.s3_secret_key (encrypted).
+DEFAULT_BACKUP_DESTINATION_TYPE = "local"  # "local" | "s3"
+DEFAULT_BACKUP_S3_ENDPOINT_URL = ""  # empty = real AWS S3; set for MinIO/B2/Wasabi/etc.
+DEFAULT_BACKUP_S3_REGION = ""  # e.g. us-east-1; empty when the endpoint doesn't need one
+DEFAULT_BACKUP_S3_BUCKET = ""  # target bucket (must already exist)
+DEFAULT_BACKUP_S3_PREFIX = "opentranscribe/"  # key prefix within the bucket
+DEFAULT_BACKUP_S3_ACCESS_KEY_ID = ""
+
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
 DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)
 DEFAULT_VAD_MIN_SILENCE_MS = 2000  # Min silence to split segments (ms)

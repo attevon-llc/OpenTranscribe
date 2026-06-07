@@ -18,6 +18,7 @@ import pytest
 
 from app.core import constants as C  # noqa: N812
 from app.services import backup_service as bs
+from app.services import system_settings_service as sss
 
 
 # =============================================================================
@@ -314,3 +315,245 @@ def test_last_result_json_roundtrips(db_session):
     raw = sss.get_setting(db_session, bs.KEY_LAST_RESULT)
     assert raw is not None  # perform_backup always records a result
     assert json.loads(raw)["status"] == "no_destination"
+
+
+# =============================================================================
+# S3 destination — settings, secret contract, retention, upload path
+# =============================================================================
+def test_s3_settings_defaults(db_session):
+    cfg = bs.get_settings(db_session)
+    assert cfg["destination_type"] == C.DEFAULT_BACKUP_DESTINATION_TYPE == "local"
+    assert cfg["s3_bucket"] == ""
+    assert cfg["s3_prefix"] == C.DEFAULT_BACKUP_S3_PREFIX == "opentranscribe/"
+    assert cfg["s3_secret_key_set"] is False
+
+
+def test_destination_type_validation(db_session):
+    with pytest.raises(ValueError, match="destination_type"):
+        bs.update_settings(db_session, destination_type="ftp")
+
+
+def test_destination_type_switching(db_session):
+    bs.update_settings(db_session, destination_type="s3", s3_bucket="mybucket")
+    cfg = bs.get_settings(db_session)
+    assert cfg["destination_type"] == "s3"
+    assert cfg["s3_bucket"] == "mybucket"
+    bs.update_settings(db_session, destination_type="local")
+    assert bs.get_settings(db_session)["destination_type"] == "local"
+
+
+def test_s3_secret_is_encrypted_and_never_echoed(db_session):
+    bs.update_settings(db_session, s3_secret_key="super-secret-value")
+    cfg = bs.get_settings(db_session)
+    # The settings dict NEVER contains the secret — only a bool flag.
+    assert "s3_secret_key" not in cfg
+    assert cfg["s3_secret_key_set"] is True
+    # Stored value is encrypted at rest (not the plaintext).
+    raw = sss.get_setting(db_session, bs.KEY_S3_SECRET_KEY)
+    assert raw is not None
+    assert raw != "super-secret-value"
+    # But the service can decrypt it back for runtime use.
+    assert bs._get_s3_secret_key(db_session) == "super-secret-value"
+
+
+def test_s3_secret_blank_leaves_unset_then_can_clear(db_session):
+    # Setting a secret then clearing it with an empty string removes it.
+    bs.update_settings(db_session, s3_secret_key="abc123")
+    assert bs.get_settings(db_session)["s3_secret_key_set"] is True
+    bs.update_settings(db_session, s3_secret_key="")
+    assert bs.get_settings(db_session)["s3_secret_key_set"] is False
+
+
+def test_select_to_delete_works_on_s3_keys():
+    # The retention selector is backend-agnostic — feed it full object keys.
+    prefix = "opentranscribe/"
+    keys = [f"{prefix}{_name(_utc(2026, 6, d, 3, 0))}" for d in range(1, 11)]
+    to_delete = bs.select_backups_to_delete(
+        keys, retention_daily=7, retention_weekly=0, retention_monthly=0
+    )
+    assert len(to_delete) == 3
+    assert f"{prefix}{_name(_utc(2026, 6, 1, 3, 0))}" in to_delete
+    assert f"{prefix}{_name(_utc(2026, 6, 10, 3, 0))}" not in to_delete
+
+
+class _FakeS3Client:
+    """Minimal in-memory S3 stand-in for the boto3 client boundary."""
+
+    def __init__(self, *, bucket_ok=True, objects=None):
+        self._bucket_ok = bucket_ok
+        # objects: {key: size}
+        self.objects: dict[str, int] = dict(objects or {})
+        self.uploaded: list[tuple[str, str]] = []
+        self.deleted: list[str] = []
+
+    def head_bucket(self, Bucket):  # noqa: N803 - boto3 kwarg name
+        if not self._bucket_ok:
+            raise RuntimeError("bucket not found")
+        return {}
+
+    def upload_file(self, local_path, bucket, key):
+        size = Path(local_path).stat().st_size
+        self.objects[key] = size
+        self.uploaded.append((bucket, key))
+
+    def delete_object(self, Bucket, Key):  # noqa: N803
+        self.objects.pop(Key, None)
+        self.deleted.append(Key)
+
+    def list_objects_v2(self, **kwargs):
+        prefix = kwargs.get("Prefix", "")
+        contents = [{"Key": k, "Size": v} for k, v in self.objects.items() if k.startswith(prefix)]
+        return {"Contents": contents}
+
+    def get_paginator(self, _name):
+        client = self
+
+        class _Paginator:
+            def paginate(self, **kwargs):
+                yield client.list_objects_v2(**kwargs)
+
+        return _Paginator()
+
+
+def _pgdump_writes(payload=b"FAKE PGDUMP DATA"):
+    def fake_run(cmd, **kwargs):
+        out = kwargs.get("stdout")
+        if out is not None:
+            out.write(payload)
+            out.flush()
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    return fake_run
+
+
+def test_s3_backup_success_uploads_and_cleans_temp(db_session, tmp_path):
+    bs.update_settings(
+        db_session,
+        destination_type="s3",
+        destination=str(tmp_path),  # scratch dir for the temp dump
+        s3_bucket="backups",
+        s3_prefix="ot/",
+        encrypt=False,
+    )
+    fake = _FakeS3Client()
+
+    with (
+        mock.patch("app.services.backup_service.subprocess.run", side_effect=_pgdump_writes()),
+        mock.patch("app.services.backup_service._build_s3_client", return_value=fake),
+    ):
+        result = bs.perform_backup(db_session)
+
+    assert result["ok"] is True
+    assert result["status"] == "success"
+    assert result["path"].startswith("s3://backups/ot/")
+    # The object landed in the bucket under the prefix.
+    assert len(fake.uploaded) == 1
+    bucket, key = fake.uploaded[0]
+    assert bucket == "backups"
+    assert key.startswith("ot/opentranscribe-")
+    assert key.endswith(".dump")
+    # No temp dump left behind in the scratch dir.
+    assert list(Path(tmp_path).glob("*.dump")) == []
+
+
+def test_s3_backup_prunes_bucket(db_session, tmp_path):
+    bs.update_settings(
+        db_session,
+        destination_type="s3",
+        destination=str(tmp_path),
+        s3_bucket="backups",
+        s3_prefix="ot/",
+        retention_daily=2,
+        retention_weekly=0,
+        retention_monthly=0,
+    )
+    # Seed 5 older daily backups already in the bucket.
+    existing = {f"ot/{_name(_utc(2026, 6, d, 3, 0))}": 100 for d in range(1, 6)}
+    fake = _FakeS3Client(objects=existing)
+
+    with (
+        mock.patch("app.services.backup_service.subprocess.run", side_effect=_pgdump_writes()),
+        mock.patch("app.services.backup_service._build_s3_client", return_value=fake),
+    ):
+        result = bs.perform_backup(db_session)
+
+    assert result["ok"] is True
+    # daily=2 → only the 2 newest survive across (5 seeded + 1 new) = 6; 4 pruned.
+    assert len(result["pruned"]) == 4
+    assert len(fake.deleted) == 4
+
+
+def test_s3_backup_no_bucket_is_graceful(db_session):
+    bs.update_settings(db_session, destination_type="s3", s3_bucket="")
+    result = bs.perform_backup(db_session)
+    assert result["ok"] is False
+    assert result["status"] == "no_destination"
+
+
+def test_s3_backup_upload_failure_recorded_not_raised(db_session, tmp_path):
+    bs.update_settings(
+        db_session,
+        destination_type="s3",
+        destination=str(tmp_path),
+        s3_bucket="backups",
+    )
+
+    class _Boom(_FakeS3Client):
+        def upload_file(self, *a, **k):
+            raise RuntimeError("network unreachable")
+
+    with (
+        mock.patch("app.services.backup_service.subprocess.run", side_effect=_pgdump_writes()),
+        mock.patch("app.services.backup_service._build_s3_client", return_value=_Boom()),
+    ):
+        result = bs.perform_backup(db_session)
+
+    assert result["ok"] is False
+    assert result["status"] == "error"
+    assert "network unreachable" in result["error"]
+    # Temp dump cleaned up despite the failure.
+    assert list(Path(tmp_path).glob("*.dump")) == []
+
+
+def test_s3_bucket_status_graceful_on_failure(db_session):
+    cfg = bs.get_settings(db_session)
+    cfg["s3_bucket"] = "backups"
+    with mock.patch(
+        "app.services.backup_service._build_s3_client",
+        return_value=_FakeS3Client(bucket_ok=False),
+    ):
+        status = bs.s3_bucket_status(cfg, db_session)
+    assert status["reachable"] is False
+    assert status["error"] is not None
+
+
+def test_s3_connection_test_uses_override_secret(db_session):
+    cfg = bs.get_settings(db_session)
+    cfg["s3_bucket"] = "backups"
+    fake = _FakeS3Client()
+    with mock.patch("app.services.backup_service._build_s3_client", return_value=fake) as m:
+        result = bs.test_s3_connection(cfg, db_session, override_secret="typed-secret")
+    assert result["ok"] is True
+    # The override secret was passed straight to the client builder (not the stored one).
+    assert m.call_args.args[1] == "typed-secret"
+
+
+def test_list_backups_s3_parses_and_sorts(db_session):
+    cfg = bs.get_settings(db_session)
+    cfg["s3_bucket"] = "backups"
+    cfg["s3_prefix"] = "ot/"
+    objects = {
+        "ot/opentranscribe-20260601-030000.dump": 10,
+        "ot/opentranscribe-20260603-030000.dump.gpg": 20,
+        "ot/not-a-backup.txt": 5,
+    }
+    with mock.patch(
+        "app.services.backup_service._build_s3_client",
+        return_value=_FakeS3Client(objects=objects),
+    ):
+        listed = bs.list_backups_s3(cfg, db_session)
+    # Unknown file ignored; newest first; prefix stripped from filename.
+    assert len(listed) == 2
+    assert listed[0]["filename"] == "opentranscribe-20260603-030000.dump.gpg"
+    assert listed[0]["encrypted"] is True
+    assert listed[1]["filename"] == "opentranscribe-20260601-030000.dump"

@@ -80,7 +80,38 @@ def _session(db: Session | None) -> Iterator[Session]:
 def get_settings(db: Session | None = None) -> dict[str, Any]:
     """Return all backup settings as a plain dict (coded defaults for unset keys)."""
     with _session(db) as s:
-        last_result_raw = sss.get_setting(s, KEY_LAST_RESULT)
+        # One SELECT for every backup key instead of 11 round-trips.
+        vals = sss.get_settings_map(
+            s,
+            [
+                KEY_LAST_RESULT,
+                KEY_ENABLED,
+                KEY_SCHEDULE,
+                KEY_DESTINATION,
+                KEY_RETENTION_DAILY,
+                KEY_RETENTION_WEEKLY,
+                KEY_RETENTION_MONTHLY,
+                KEY_ENCRYPT,
+                KEY_PASSPHRASE_FILE,
+                KEY_INCLUDE_OPENSEARCH,
+                KEY_LAST_RUN_AT,
+            ],
+        )
+
+        def _b(key: str, default: bool) -> bool:
+            v = vals.get(key)
+            return v.lower() in ("true", "1", "yes", "on") if v is not None else default
+
+        def _i(key: str, default: int) -> int:
+            v = vals.get(key)
+            if v is None:
+                return default
+            try:
+                return int(v)
+            except (ValueError, TypeError):
+                return default
+
+        last_result_raw = vals.get(KEY_LAST_RESULT)
         last_result: dict[str, Any] | None = None
         if last_result_raw:
             try:
@@ -88,25 +119,16 @@ def get_settings(db: Session | None = None) -> dict[str, Any]:
             except (ValueError, TypeError):
                 last_result = None
         return {
-            "enabled": sss.get_setting_bool(s, KEY_ENABLED, C.DEFAULT_BACKUP_ENABLED),
-            "schedule": sss.get_setting(s, KEY_SCHEDULE) or C.DEFAULT_BACKUP_SCHEDULE,
-            "destination": sss.get_setting(s, KEY_DESTINATION) or C.DEFAULT_BACKUP_DESTINATION,
-            "retention_daily": sss.get_setting_int(
-                s, KEY_RETENTION_DAILY, C.DEFAULT_BACKUP_RETENTION_DAILY
-            ),
-            "retention_weekly": sss.get_setting_int(
-                s, KEY_RETENTION_WEEKLY, C.DEFAULT_BACKUP_RETENTION_WEEKLY
-            ),
-            "retention_monthly": sss.get_setting_int(
-                s, KEY_RETENTION_MONTHLY, C.DEFAULT_BACKUP_RETENTION_MONTHLY
-            ),
-            "encrypt": sss.get_setting_bool(s, KEY_ENCRYPT, C.DEFAULT_BACKUP_ENCRYPT),
-            "passphrase_file": sss.get_setting(s, KEY_PASSPHRASE_FILE)
-            or C.DEFAULT_BACKUP_PASSPHRASE_FILE,
-            "include_opensearch": sss.get_setting_bool(
-                s, KEY_INCLUDE_OPENSEARCH, C.DEFAULT_BACKUP_INCLUDE_OPENSEARCH
-            ),
-            "last_run_at": sss.get_setting(s, KEY_LAST_RUN_AT),
+            "enabled": _b(KEY_ENABLED, C.DEFAULT_BACKUP_ENABLED),
+            "schedule": vals.get(KEY_SCHEDULE) or C.DEFAULT_BACKUP_SCHEDULE,
+            "destination": vals.get(KEY_DESTINATION) or C.DEFAULT_BACKUP_DESTINATION,
+            "retention_daily": _i(KEY_RETENTION_DAILY, C.DEFAULT_BACKUP_RETENTION_DAILY),
+            "retention_weekly": _i(KEY_RETENTION_WEEKLY, C.DEFAULT_BACKUP_RETENTION_WEEKLY),
+            "retention_monthly": _i(KEY_RETENTION_MONTHLY, C.DEFAULT_BACKUP_RETENTION_MONTHLY),
+            "encrypt": _b(KEY_ENCRYPT, C.DEFAULT_BACKUP_ENCRYPT),
+            "passphrase_file": vals.get(KEY_PASSPHRASE_FILE) or C.DEFAULT_BACKUP_PASSPHRASE_FILE,
+            "include_opensearch": _b(KEY_INCLUDE_OPENSEARCH, C.DEFAULT_BACKUP_INCLUDE_OPENSEARCH),
+            "last_run_at": vals.get(KEY_LAST_RUN_AT),
             "last_result": last_result,
         }
 

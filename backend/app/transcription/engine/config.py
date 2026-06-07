@@ -63,50 +63,69 @@ class EngineConfig:
     @classmethod
     def from_db_with_env_fallback(cls, db) -> EngineConfig:
         """Read engine settings from SystemSettings DB, fall back to env vars."""
-        from app.services.system_settings_service import get_setting
-        from app.services.system_settings_service import get_setting_bool
+        from app.services.system_settings_service import get_settings_map
+
+        # Single SELECT for every engine key instead of one round-trip per key.
+        vals = get_settings_map(
+            db,
+            [
+                "engine.transcriber_backend",
+                "engine.diarizer_backend",
+                "engine.gpu_split",
+                "engine.precompute_vad",
+                "engine.boundary_acoustic_recheck_enabled",
+                "engine.boundary_acoustic_cosine_margin",
+                "engine.boundary_acoustic_max_word_dur",
+                "engine.shared_volume_path",
+            ],
+        )
+
+        def _bool(key: str, env: str) -> bool:
+            v = vals.get(key)
+            if v is not None:
+                return v.lower() in ("true", "1", "yes", "on")
+            return os.getenv(env, "false").lower() == "true"
+
+        def _float(key: str, env: str, default: float) -> float:
+            raw = vals.get(key)
+            if raw is None:
+                raw = os.getenv(env)
+            if raw is None or raw == "":
+                return default
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                return default
 
         return cls(
             transcriber_backend=(
-                get_setting(db, "engine.transcriber_backend")
+                vals.get("engine.transcriber_backend")
                 or os.getenv("ENGINE_TRANSCRIBER_BACKEND")
                 or "faster_whisper"
             ),
             diarizer_backend=(
-                get_setting(db, "engine.diarizer_backend")
+                vals.get("engine.diarizer_backend")
                 or os.getenv("ENGINE_DIARIZER_BACKEND")
                 or "pyannote"
             ),
-            gpu_split=get_setting_bool(
-                db,
-                "engine.gpu_split",
-                default=os.getenv("ENGINE_GPU_SPLIT", "false").lower() == "true",
-            ),
-            precompute_vad=get_setting_bool(
-                db,
-                "engine.precompute_vad",
-                default=os.getenv("ENGINE_PRECOMPUTE_VAD", "false").lower() == "true",
-            ),
-            boundary_acoustic_recheck_enabled=get_setting_bool(
-                db,
+            gpu_split=_bool("engine.gpu_split", "ENGINE_GPU_SPLIT"),
+            precompute_vad=_bool("engine.precompute_vad", "ENGINE_PRECOMPUTE_VAD"),
+            boundary_acoustic_recheck_enabled=_bool(
                 "engine.boundary_acoustic_recheck_enabled",
-                default=os.getenv("ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", "false").lower()
-                == "true",
+                "ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED",
             ),
-            boundary_acoustic_cosine_margin=cls._db_env_float(
-                db,
+            boundary_acoustic_cosine_margin=_float(
                 "engine.boundary_acoustic_cosine_margin",
                 "ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN",
                 0.05,
             ),
-            boundary_acoustic_max_word_dur=cls._db_env_float(
-                db,
+            boundary_acoustic_max_word_dur=_float(
                 "engine.boundary_acoustic_max_word_dur",
                 "ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR",
                 1.0,
             ),
             shared_volume_path=(
-                get_setting(db, "engine.shared_volume_path")
+                vals.get("engine.shared_volume_path")
                 or os.getenv("ENGINE_SHARED_VOLUME_PATH")
                 or "/tmp"  # noqa: S108  # nosec B108
             ),

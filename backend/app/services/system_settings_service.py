@@ -76,10 +76,20 @@ def get_setting_bool(db: Session, key: str, default: bool = False) -> bool:
     return value.lower() in ("true", "1", "yes", "on")
 
 
-def _get_settings_map(db: Session, keys: list[str]) -> dict[str, str | None]:
-    """Fetch multiple settings in a single query. Returns {key: value_str | None}."""
+def get_settings_map(db: Session, keys: list[str]) -> dict[str, str | None]:
+    """Fetch multiple settings in a single query. Returns {key: value_str | None}.
+
+    Only keys that exist in the table are present in the result; callers should
+    use ``.get(key)`` with their own default. Prefer this over multiple
+    ``get_setting`` calls whenever a code path reads two or more keys — it
+    collapses N round-trips into one SELECT.
+    """
     rows = db.query(SystemSettings).filter(SystemSettings.key.in_(keys)).all()
     return {str(row.key): (str(row.value) if row.value is not None else None) for row in rows}
+
+
+# Backwards-compatible private alias (internal callers predate the public name).
+_get_settings_map = get_settings_map
 
 
 def _bool_val(v: str | None, default: bool) -> bool:

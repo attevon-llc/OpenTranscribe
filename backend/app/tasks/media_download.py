@@ -13,7 +13,7 @@ import logging
 
 from app.core.celery import celery_app
 from app.core.constants import DownloadPriority
-from app.db.base import SessionLocal
+from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.download_events import publish_download_event
 from app.services.minio_service import MinIOService
@@ -41,49 +41,52 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
     Returns:
         Result dict with ``status`` and (on success) the cache key.
     """
-    db = SessionLocal()
     file_uuid = ""
     try:
-        db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-        if not db_file:
-            return {"status": "error", "message": "File not found"}
+        # session_scope auto-commits/rolls-back/closes. This task only reads the
+        # MediaFile row (the heavy ffmpeg/MinIO work writes its own cache rows via
+        # the service), so there are no mid-task commits to preserve.
+        with session_scope() as db:
+            db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+            if not db_file:
+                return {"status": "error", "message": "File not found"}
 
-        file_uuid = str(db_file.uuid)
-        filename = str(db_file.filename)
-        base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
-        storage_path = str(db_file.storage_path)
+            file_uuid = str(db_file.uuid)
+            filename = str(db_file.filename)
+            base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
+            storage_path = str(db_file.storage_path)
 
-        publish_download_event(
-            file_uuid, status="processing", mode=mode, message="Preparing your download…"
-        )
-
-        service = VideoProcessingService(MinIOService())
-
-        if mode == "video_subtitles":
-            cache_key = service.process_video_with_subtitles(
-                db=db,
-                file_id=file_id,
-                original_object_name=storage_path,
-                user_id=None,  # SSE owns the messaging for this download
-                include_speakers=True,
-                output_format="mp4",
-            )
-            content_type = "video/mp4"
-            download_filename = f"{base_name}_with_subtitles.mp4"
-        elif mode.startswith("audio_"):
-            audio_format = mode.split("_", 1)[1]  # mp3 | wav | original
-            cache_key, ext, content_type = service.extract_audio(
-                db=db,
-                file_id=file_id,
-                original_object_name=storage_path,
-                audio_format=audio_format,
-            )
-            download_filename = f"{base_name}.{ext}"
-        else:
             publish_download_event(
-                file_uuid, status="error", mode=mode, message=f"Unsupported mode: {mode}"
+                file_uuid, status="processing", mode=mode, message="Preparing your download…"
             )
-            return {"status": "error", "message": f"Unsupported mode {mode}"}
+
+            service = VideoProcessingService(MinIOService())
+
+            if mode == "video_subtitles":
+                cache_key = service.process_video_with_subtitles(
+                    db=db,
+                    file_id=file_id,
+                    original_object_name=storage_path,
+                    user_id=None,  # SSE owns the messaging for this download
+                    include_speakers=True,
+                    output_format="mp4",
+                )
+                content_type = "video/mp4"
+                download_filename = f"{base_name}_with_subtitles.mp4"
+            elif mode.startswith("audio_"):
+                audio_format = mode.split("_", 1)[1]  # mp3 | wav | original
+                cache_key, ext, content_type = service.extract_audio(
+                    db=db,
+                    file_id=file_id,
+                    original_object_name=storage_path,
+                    audio_format=audio_format,
+                )
+                download_filename = f"{base_name}.{ext}"
+            else:
+                publish_download_event(
+                    file_uuid, status="error", mode=mode, message=f"Unsupported mode: {mode}"
+                )
+                return {"status": "error", "message": f"Unsupported mode {mode}"}
 
         url = service.presigned_download_url(cache_key, download_filename, content_type)
 
@@ -108,8 +111,6 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
                 file_uuid, status="error", mode=mode, message="Failed to prepare download."
             )
         return {"status": "error", "message": str(e)}
-    finally:
-        db.close()
 
 
 @celery_app.task(
@@ -138,15 +139,16 @@ def prepare_bulk_subtitles_task(
     from app.services.minio_service import get_presigned_download_url
     from app.services.subtitle_service import SubtitleService
 
-    db = SessionLocal()
     try:
-        publish_bulk_event(job_id, status="processing", message="Building subtitle archive…")
-        zip_bytes, exported, skipped = SubtitleService.build_subtitle_archive(
-            db,
-            [(int(fid), str(name)) for fid, name in file_specs],
-            subtitle_format,
-            include_speakers,
-        )
+        # session_scope auto-commits/rolls-back/closes; the archive build is read-only.
+        with session_scope() as db:
+            publish_bulk_event(job_id, status="processing", message="Building subtitle archive…")
+            zip_bytes, exported, skipped = SubtitleService.build_subtitle_archive(
+                db,
+                [(int(fid), str(name)) for fid, name in file_specs],
+                subtitle_format,
+                include_speakers,
+            )
         if exported == 0:
             publish_bulk_event(
                 job_id, status="error", message="No files could be exported.", skipped=skipped
@@ -188,5 +190,3 @@ def prepare_bulk_subtitles_task(
         logger.error(f"prepare_bulk_subtitles_task failed (job {job_id}): {e}")
         publish_bulk_event(job_id, status="error", message="Failed to build export.")
         return {"status": "error", "message": str(e)}
-    finally:
-        db.close()

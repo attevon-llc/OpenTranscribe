@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import selectinload
 
 from app.core import constants as C  # noqa: N812
 from app.models.media import Analytics
@@ -226,9 +227,12 @@ def _get_transcript_segments(
         .scalar()
     )
 
+    # Eager-load each segment's speaker AND that speaker's linked profile so the
+    # downstream add_computed_status (which reads speaker.profile) never triggers a
+    # lazy SELECT per distinct speaker.
     segment_query = (
         db.query(TranscriptSegment)
-        .options(joinedload(TranscriptSegment.speaker))
+        .options(joinedload(TranscriptSegment.speaker).selectinload(Speaker.profile))
         .filter(TranscriptSegment.media_file_id == file_id)
         .order_by(TranscriptSegment.start_time)
     )
@@ -606,8 +610,15 @@ def get_media_file_detail(
         tags = get_file_tags(db, file_id)
         collections = get_file_collections(db, file_id, current_user.id)
 
-        # Get speakers and add computed status
-        speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
+        # Get speakers and add computed status. Eager-load the linked profile so
+        # add_computed_status (which reads speaker.profile) doesn't fire one lazy
+        # SELECT per speaker.
+        speakers = (
+            db.query(Speaker)
+            .options(selectinload(Speaker.profile))
+            .filter(Speaker.media_file_id == file_id)
+            .all()
+        )
         for speaker in speakers:
             SpeakerStatusService.add_computed_status(speaker)
 

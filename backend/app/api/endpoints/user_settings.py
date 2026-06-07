@@ -1262,23 +1262,30 @@ def get_speaker_attribute_system_defaults(
     """Get system-level speaker attribute defaults."""
     import os
 
-    from app.services.system_settings_service import get_setting_bool
+    from app.services.system_settings_service import get_settings_map
 
     env_enabled = os.environ.get("SPEAKER_ATTRIBUTE_DETECTION_ENABLED", "true").lower() == "true"
 
+    # Single SELECT for all four keys instead of four round-trips.
+    vals = get_settings_map(
+        db,
+        [
+            "speaker_attribute.detection_enabled",
+            "speaker_attribute.gender_detection_enabled",
+            "speaker_attribute.age_detection_enabled",
+            "speaker_attribute.show_on_cards",
+        ],
+    )
+
+    def _b(key: str, default: bool) -> bool:
+        v = vals.get(key)
+        return v.lower() in ("true", "1", "yes", "on") if v is not None else default
+
     return SpeakerAttributeSystemDefaults(
-        detection_enabled=get_setting_bool(
-            db, "speaker_attribute.detection_enabled", default=env_enabled
-        ),
-        gender_detection_enabled=get_setting_bool(
-            db, "speaker_attribute.gender_detection_enabled", default=True
-        ),
-        age_detection_enabled=get_setting_bool(
-            db, "speaker_attribute.age_detection_enabled", default=True
-        ),
-        show_attributes_on_cards=get_setting_bool(
-            db, "speaker_attribute.show_on_cards", default=True
-        ),
+        detection_enabled=_b("speaker_attribute.detection_enabled", env_enabled),
+        gender_detection_enabled=_b("speaker_attribute.gender_detection_enabled", True),
+        age_detection_enabled=_b("speaker_attribute.age_detection_enabled", True),
+        show_attributes_on_cards=_b("speaker_attribute.show_on_cards", True),
     )
 
 

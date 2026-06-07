@@ -154,18 +154,25 @@ async def get_retroactive_auto_label_status(
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """Get the current auto-label retroactive apply progress."""
+    from redis.exceptions import RedisError
+
     from app.core.redis import get_redis
 
-    redis = get_redis()
     user_id = current_user.id
     lock_key = f"auto_label_lock:{user_id}"
     progress_key = f"auto_label_progress:{user_id}"
 
-    running = redis.exists(lock_key)
-    if not running:
+    # Graceful degradation: if Redis is unreachable, report "not running" rather
+    # than 500 — matching the repo's graceful-degradation pattern (celery_metrics,
+    # redis_cache_service). A progress probe must never hard-fail the UI.
+    try:
+        redis = get_redis()
+        running = redis.exists(lock_key)
+        if not running:
+            return {"running": False}
+        raw = redis.hgetall(progress_key)
+    except RedisError:
         return {"running": False}
-
-    raw = redis.hgetall(progress_key)
     if not raw:
         return {"running": True, "total": 0, "processed": 0}
 

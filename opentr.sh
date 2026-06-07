@@ -33,9 +33,18 @@ show_help() {
   echo ""
   echo "Basic Commands:"
   echo "  start [dev|prod] [options]             - Start the application (dev mode by default)"
-  echo "  stop                                   - Stop OpenTranscribe containers"
-  echo "  status                                 - Show container status"
+  echo "  stop [--fresh [name]]                  - Stop OpenTranscribe containers (or a fresh deployment)"
+  echo "  status [--fresh [name]]                - Show container status (or a fresh deployment)"
   echo "  logs [service]                         - View logs (all services by default)"
+  echo "  data-paths                             - Print resolved live data locations (check before deleting!)"
+  echo ""
+  echo "Fresh Deployment Commands (isolated, guard-railed — never touch real data):"
+  echo "  start dev --fresh [name] [--port-offset N] [--seed-benchmark]"
+  echo "                                         - Start an isolated dev stack (own project + volumes)"
+  echo "  stop --fresh [name]                    - Stop a fresh deployment (volumes kept)"
+  echo "  status --fresh [name]                  - Status of a fresh deployment"
+  echo "  fresh-list                             - List all fresh deployments + their volumes"
+  echo "  fresh-destroy <name>                   - Remove a fresh deployment (containers+volumes, confirmed)"
   echo ""
   echo "Start/Reset Options:"
   echo "  --build              - Build prod images locally (test before push)"
@@ -43,6 +52,12 @@ show_help() {
   echo "  --gpu-scale          - Enable multi-GPU worker scaling (multiple workers on one GPU)"
   echo "  --with-gpu-split     - Enable GPU split: separate gpu-transcribe / gpu-diarize workers"
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
+  echo "  --no-nas             - Suppress the auto-loaded NAS overlay (use Docker named volumes)"
+  echo "  --fresh [name]       - Isolated dev deployment: own project + named volumes, NAS"
+  echo "                         overlay NEVER loaded, real data untouched (dev mode only)"
+  echo "  --port-offset N      - With --fresh: offset every published port by N (run side-by-side)"
+  echo "  --seed-benchmark     - With --fresh: upload small benchmark media once healthy"
+  echo "  --dry-run            - Print the compose files + command that WOULD run; start nothing"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
   echo "  --cpu                - CPU-only mode (local transcription, no GPU overlay)"
   echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
@@ -260,6 +275,285 @@ add_nas_overlay() {
   echo "   OpenSearch:   $OS_PATH"
 }
 
+#######################
+# FRESH DEPLOYMENT HELPERS
+#######################
+# A "fresh" deployment is a fully isolated stack: its own compose project name
+# (otfresh-<name>) so containers AND named volumes never collide with the real
+# dev/prod deployment, the NAS overlay is NEVER loaded (so the live bind-mounted
+# data at MINIO_NAS_PATH/POSTGRES_DATA_PATH/OPENSEARCH_DATA_PATH is untouched),
+# and container_name collisions with the hard-coded opentranscribe-* names are
+# resolved by a generated overlay (.fresh/<name>.yml) that re-pins every
+# container_name to otfresh-<name>-*.
+
+# Directory holding generated per-deployment overlays (gitignored).
+FRESH_OVERLAY_DIR=".fresh"
+
+# Services in docker-compose.yml that hard-code a container_name. These must be
+# re-pinned in fresh mode so `docker exec opentranscribe-postgres` can't hit the
+# wrong container and teardown stays deterministic. The gpu-split/gpu-scale
+# workers already use ${COMPOSE_PROJECT_NAME}-* in the base file, so the project
+# name namespaces those automatically — they're intentionally omitted here.
+FRESH_NAMED_SERVICES=(
+  postgres minio redis opensearch backend
+  celery-worker celery-download-worker celery-cpu-worker celery-redaction
+  celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
+  frontend flower docs
+)
+
+# Sanitize a fresh deployment name to a safe slug (lowercase alnum + dashes).
+fresh_sanitize_name() {
+  local raw="${1:-default}"
+  local slug
+  slug="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
+  echo "${slug:-default}"
+}
+
+# Project name for a fresh deployment.
+fresh_project_name() {
+  echo "otfresh-$(fresh_sanitize_name "$1")"
+}
+
+# Generate (idempotently) the container_name override overlay for a fresh
+# deployment and echo its path. Re-pins every hard-coded container_name to
+# otfresh-<name>-* so there is zero collision with the real opentranscribe-*
+# containers. Compose cannot UNSET container_name via an overlay, so we set an
+# explicit per-service value instead.
+fresh_generate_overlay() {
+  local name="$1"
+  local proj
+  proj="$(fresh_project_name "$name")"
+  mkdir -p "$FRESH_OVERLAY_DIR"
+  local file="${FRESH_OVERLAY_DIR}/${name}.yml"
+  {
+    echo "# AUTO-GENERATED by opentr.sh for fresh deployment '${name}'."
+    echo "# Re-pins every hard-coded container_name to ${proj}-* so this"
+    echo "# isolated stack never collides with the real opentranscribe-* stack."
+    echo "# Safe to delete; regenerated on demand. Do NOT edit by hand."
+    echo "services:"
+    local svc
+    for svc in "${FRESH_NAMED_SERVICES[@]}"; do
+      echo "  ${svc}:"
+      echo "    container_name: ${proj}-${svc}"
+    done
+  } > "$file"
+  echo "$file"
+}
+
+# Apply a published-port offset to COMPOSE_FILES via a generated overlay so a
+# fresh stack can run side-by-side with the main stack. Echoes the overlay path.
+# offset is added to every default host port; container ports are unchanged.
+fresh_generate_port_overlay() {
+  local name="$1"
+  local offset="$2"
+  mkdir -p "$FRESH_OVERLAY_DIR"
+  local file="${FRESH_OVERLAY_DIR}/${name}-ports.yml"
+  {
+    echo "# AUTO-GENERATED by opentr.sh — port offset +${offset} for fresh '${name}'."
+    echo "services:"
+    echo "  postgres:"
+    echo "    ports: [\"$((5176 + offset)):5432\"]"
+    echo "  redis:"
+    echo "    ports: [\"$((5177 + offset)):6379\"]"
+    echo "  minio:"
+    echo "    ports: [\"$((5178 + offset)):9000\", \"$((5179 + offset)):9001\"]"
+    echo "  opensearch:"
+    echo "    ports: [\"$((5180 + offset)):9200\", \"$((5181 + offset)):9600\"]"
+    echo "  backend:"
+    echo "    ports: [\"$((5174 + offset)):8080\"]"
+    echo "  flower:"
+    echo "    ports: [\"$((5175 + offset)):5555\"]"
+    echo "  frontend:"
+    echo "    ports: [\"$((5173 + offset)):5173\"]"
+    echo "  docs:"
+    echo "    ports: [\"$((5183 + offset)):8080\"]"
+  } > "$file"
+  echo "$file"
+}
+
+# The default published host ports the dev stack binds. Used to refuse a fresh
+# start when the main stack is already up (zero offset).
+FRESH_DEFAULT_PORTS=(5173 5174 5175 5176 5177 5178 5179 5180 5181)
+
+# Return 0 if a TCP port is already bound on localhost, 1 otherwise.
+fresh_port_in_use() {
+  local port="$1"
+  # bash /dev/tcp probe — no netstat/ss dependency.
+  (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null && { exec 3>&- 3<&-; return 0; }
+  return 1
+}
+
+# Compute the resolved live data paths (NAS overlay active or not) and print
+# them. Shared by the `data-paths` subcommand and the guardrail marker writer.
+# Sets globals: DP_NAS_ACTIVE, DP_NAS_PATH, DP_PG_PATH, DP_OS_PATH.
+resolve_data_paths() {
+  DP_NAS_PATH="${MINIO_NAS_PATH:-}"
+  DP_PG_PATH="${POSTGRES_DATA_PATH:-}"
+  DP_OS_PATH="${OPENSEARCH_DATA_PATH:-}"
+  if [ -n "$DP_NAS_PATH" ] || [ -n "$DP_PG_PATH" ] || [ -n "$DP_OS_PATH" ]; then
+    DP_NAS_ACTIVE="true"
+  else
+    DP_NAS_ACTIVE="false"
+  fi
+}
+
+# Best-effort write of a live-data marker into each bind data dir so humans AND
+# cleanup agents can see the directory is in use before deleting it. Never fails
+# startup — a read-only or missing dir is silently skipped.
+write_live_data_markers() {
+  local marker=".opentranscribe-live-data"
+  local content="LIVE DATA — bind-mounted into the OpenTranscribe stack. DO NOT delete or 'clean up'. Managed by opentr.sh. See ./opentr.sh data-paths."
+  local dir
+  for dir in "$MINIO_NAS_PATH" "$POSTGRES_DATA_PATH" "$OPENSEARCH_DATA_PATH"; do
+    [ -z "$dir" ] && continue
+    [ -d "$dir" ] || continue
+    printf '%s\n' "$content" > "${dir}/${marker}" 2>/dev/null || true
+  done
+}
+
+# `data-paths` subcommand — print resolved live data locations so nothing gets
+# deleted by accident. Read-only; never starts or stops anything.
+print_data_paths() {
+  resolve_data_paths
+  echo "📍 OpenTranscribe data locations"
+  echo "--------------------------------"
+  if [ "$DP_NAS_ACTIVE" = "true" ]; then
+    echo "NAS/bind overlay: ACTIVE (docker-compose.nas.yml auto-loads from .env)"
+    echo ""
+    echo "⚠️  LIVE BIND-MOUNTED DATA — DO NOT delete or 'clean up' these paths:"
+    echo "   MinIO media:  ${MINIO_NAS_PATH:-<unset> (default /mnt/nas/opentranscribe-minio)}"
+    echo "   PostgreSQL:   ${POSTGRES_DATA_PATH:-<unset> (default /mnt/nvm/opentranscribe/pg)}"
+    echo "   OpenSearch:   ${OPENSEARCH_DATA_PATH:-<unset> (default /mnt/nvm/opentranscribe/os)}"
+    echo ""
+    echo "   These dirs carry a '.opentranscribe-live-data' marker after a non-fresh start."
+  else
+    echo "NAS/bind overlay: INACTIVE — data lives in Docker NAMED VOLUMES (project 'opentranscribe'):"
+    echo "   opentranscribe_postgres_data, opentranscribe_minio_data,"
+    echo "   opentranscribe_opensearch_data, opentranscribe_redis_data"
+    echo "   (inspect with: docker volume ls | grep opentranscribe)"
+  fi
+  echo ""
+  echo "Fresh deployments (isolated, never touch the above):"
+  if [ -d "$FRESH_OVERLAY_DIR" ] && ls "${FRESH_OVERLAY_DIR}"/*.yml >/dev/null 2>&1; then
+    local f n
+    for f in "${FRESH_OVERLAY_DIR}"/*.yml; do
+      case "$f" in *-ports.yml) continue;; esac
+      n="$(basename "$f" .yml)"
+      echo "   otfresh-${n} → named volumes otfresh-${n}_{postgres,minio,opensearch,redis}_data"
+    done
+  else
+    echo "   (none — create with ./opentr.sh start dev --fresh <name>)"
+  fi
+}
+
+# Build the compose-file chain used to address a fresh deployment for
+# stop/status/destroy. Mirrors the dev chain (base + override + gpu) plus the
+# generated container_name overlay; NAS is never included. Echoes the chain.
+fresh_compose_chain() {
+  local name="$1"
+  local chain="-f docker-compose.yml -f docker-compose.override.yml"
+  [ -f "docker-compose.gpu.yml" ] && chain="$chain -f docker-compose.gpu.yml"
+  [ -f "${FRESH_OVERLAY_DIR}/${name}.yml" ] && chain="$chain -f ${FRESH_OVERLAY_DIR}/${name}.yml"
+  [ -f "${FRESH_OVERLAY_DIR}/${name}-ports.yml" ] && chain="$chain -f ${FRESH_OVERLAY_DIR}/${name}-ports.yml"
+  echo "$chain"
+}
+
+# `stop --fresh [name]` — stop a fresh deployment's containers (volumes kept).
+fresh_stop() {
+  local name
+  name="$(fresh_sanitize_name "$1")"
+  local proj
+  proj="$(fresh_project_name "$name")"
+  local chain
+  chain="$(fresh_compose_chain "$name")"
+  echo "🛑 Stopping fresh deployment '${name}' (project ${proj})..."
+  # shellcheck disable=SC2086
+  COMPOSE_PROJECT_NAME="$proj" docker compose $chain down 2>/dev/null || true
+  echo "✅ Stopped. Volumes preserved — use 'fresh-destroy ${name}' to remove them."
+}
+
+# `status --fresh [name]` — show a fresh deployment's containers.
+fresh_status() {
+  local name
+  name="$(fresh_sanitize_name "$1")"
+  local proj
+  proj="$(fresh_project_name "$name")"
+  local chain
+  chain="$(fresh_compose_chain "$name")"
+  echo "📊 Fresh deployment '${name}' (project ${proj}):"
+  # shellcheck disable=SC2086
+  COMPOSE_PROJECT_NAME="$proj" docker compose $chain ps 2>/dev/null || true
+}
+
+# `fresh-list` — list all known fresh deployments (by generated overlay) plus
+# their running containers and volumes.
+fresh_list() {
+  echo "🧪 Fresh deployments:"
+  if [ -d "$FRESH_OVERLAY_DIR" ] && ls "${FRESH_OVERLAY_DIR}"/*.yml >/dev/null 2>&1; then
+    local f n proj running
+    for f in "${FRESH_OVERLAY_DIR}"/*.yml; do
+      case "$f" in *-ports.yml) continue;; esac
+      n="$(basename "$f" .yml)"
+      proj="$(fresh_project_name "$n")"
+      running="$(docker ps --filter "name=^${proj}-" --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')"
+      echo "  • ${n}  (project ${proj}, ${running} container(s) running)"
+    done
+  else
+    echo "  (none — create with ./opentr.sh start dev --fresh <name>)"
+  fi
+  echo ""
+  echo "Fresh named volumes:"
+  docker volume ls --format '{{.Name}}' 2>/dev/null | grep '^otfresh-' || echo "  (none)"
+}
+
+# `fresh-destroy <name>` — the ONLY destructive fresh op. Removes containers AND
+# named volumes for one fresh deployment after explicit y/N confirmation. Never
+# touches any bind path.
+fresh_destroy() {
+  local raw="$1"
+  if [ -z "$raw" ]; then
+    echo "❌ Usage: ./opentr.sh fresh-destroy <name>"
+    exit 1
+  fi
+  local name
+  name="$(fresh_sanitize_name "$raw")"
+  local proj
+  proj="$(fresh_project_name "$name")"
+  local chain
+  chain="$(fresh_compose_chain "$name")"
+
+  local vols
+  vols="$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep "^${proj}_" || true)"
+  local containers
+  containers="$(docker ps -a --filter "name=^${proj}-" --format '{{.Names}}' 2>/dev/null || true)"
+
+  echo "⚠️  About to DESTROY fresh deployment '${name}' (project ${proj})."
+  echo ""
+  echo "   Containers to remove:"
+  if [ -n "$containers" ]; then echo "$containers" | sed 's/^/     - /'; else echo "     (none)"; fi
+  echo "   Named volumes to remove:"
+  if [ -n "$vols" ]; then echo "$vols" | sed 's/^/     - /'; else echo "     (none)"; fi
+  echo "   Generated overlays to remove:"
+  ls "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null | sed 's/^/     - /' || true
+  echo ""
+  echo "   This touches ONLY this isolated project — no bind paths, no other stack."
+  printf "   Proceed? (y/N) "
+  read -r confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "❌ Destroy cancelled."
+    return 0
+  fi
+
+  # shellcheck disable=SC2086
+  COMPOSE_PROJECT_NAME="$proj" docker compose $chain down -v 2>/dev/null || true
+  # Catch any stragglers the compose chain didn't own.
+  if [ -n "$vols" ]; then
+    echo "$vols" | xargs -r docker volume rm 2>/dev/null || true
+  fi
+  rm -f "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null || true
+  echo "✅ Fresh deployment '${name}' destroyed (containers + volumes + overlays)."
+}
+
 # Function to start the environment
 start_app() {
   ENVIRONMENT=${1:-dev}
@@ -279,6 +573,12 @@ start_app() {
   WITH_MONITORING_FLAG=""
   LITE_FLAG=""
   CPU_FLAG=""
+  NO_NAS_FLAG=""
+  FRESH_FLAG=""
+  FRESH_NAME=""
+  PORT_OFFSET=""
+  DRY_RUN_FLAG=""
+  SEED_BENCHMARK_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -300,6 +600,32 @@ start_app() {
         ;;
       --nas)
         NAS_FLAG="--nas"
+        shift
+        ;;
+      --no-nas)
+        NO_NAS_FLAG="--no-nas"
+        shift
+        ;;
+      --fresh)
+        FRESH_FLAG="--fresh"
+        shift
+        # Optional name argument (anything not starting with '-').
+        if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
+          FRESH_NAME="$1"
+          shift
+        fi
+        ;;
+      --port-offset)
+        shift
+        PORT_OFFSET="$1"
+        shift
+        ;;
+      --dry-run)
+        DRY_RUN_FLAG="--dry-run"
+        shift
+        ;;
+      --seed-benchmark)
+        SEED_BENCHMARK_FLAG="--seed-benchmark"
         shift
         ;;
       --lite)
@@ -340,6 +666,63 @@ start_app() {
         ;;
     esac
   done
+
+  # ── Fresh deployment mode ───────────────────────────────────────────────
+  # Isolated project + named volumes; NAS overlay forced OFF; container_name
+  # collisions resolved via a generated overlay. Real data is never touched.
+  FRESH_PROJECT=""
+  FRESH_OVERLAY=""
+  FRESH_PORT_OVERLAY=""
+  if [ -n "$FRESH_FLAG" ]; then
+    if [ "$ENVIRONMENT" != "dev" ]; then
+      echo "❌ --fresh is only supported in dev mode (./opentr.sh start dev --fresh [name])"
+      exit 1
+    fi
+    FRESH_NAME="$(fresh_sanitize_name "$FRESH_NAME")"
+    FRESH_PROJECT="$(fresh_project_name "$FRESH_NAME")"
+
+    # Resolve port offset (default 0 → standard dev ports so conftest works).
+    local _offset="${PORT_OFFSET:-0}"
+    if ! [[ "$_offset" =~ ^[0-9]+$ ]]; then
+      echo "❌ --port-offset must be a non-negative integer (got '$_offset')"
+      exit 1
+    fi
+
+    # Refuse to start on standard ports if the main stack already holds them.
+    if [ "$_offset" -eq 0 ]; then
+      local _busy=""
+      local _p
+      for _p in "${FRESH_DEFAULT_PORTS[@]}"; do
+        if fresh_port_in_use "$_p"; then _busy="$_busy $_p"; fi
+      done
+      if [ -n "$_busy" ]; then
+        echo "❌ Cannot start fresh deployment on the standard dev ports — already bound:${_busy}"
+        echo "   The main stack appears to be running. Either stop it, or run side-by-side:"
+        echo "   ./opentr.sh start dev --fresh ${FRESH_NAME} --port-offset 100"
+        exit 1
+      fi
+    fi
+
+    FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME")"
+    if [ "$_offset" -ne 0 ]; then
+      FRESH_PORT_OVERLAY="$(fresh_generate_port_overlay "$FRESH_NAME" "$_offset")"
+    fi
+    export COMPOSE_PROJECT_NAME="$FRESH_PROJECT"
+
+    echo ""
+    echo "🧪 FRESH DEPLOYMENT '${FRESH_NAME}': isolated project + volumes; NAS overlay IGNORED; real data untouched."
+    echo "   Project: ${FRESH_PROJECT}  (containers: ${FRESH_PROJECT}-*)"
+    if [ "$_offset" -ne 0 ]; then
+      echo "   Port offset: +${_offset} (e.g. backend on $((5174 + _offset)), frontend on $((5173 + _offset)))"
+    else
+      echo "   Ports: standard dev ports (5173-5181)"
+    fi
+    echo ""
+
+    # Force NAS off in fresh mode regardless of .env.
+    NO_NAS_FLAG="--no-nas"
+    NAS_FLAG=""
+  fi
 
   # PKI requires production mode (nginx with mTLS)
   if [ -n "$WITH_PKI_FLAG" ] && [ "$ENVIRONMENT" = "dev" ]; then
@@ -461,10 +844,20 @@ start_app() {
   # No extra overlay file is needed.
 
   # Add NAS/NVMe storage overlay if requested via --nas flag
-  # or auto-detect when storage path env vars are set
-  if [ -z "$NAS_FLAG" ] && { [ -n "$MINIO_NAS_PATH" ] || [ -n "$POSTGRES_DATA_PATH" ] || [ -n "$OPENSEARCH_DATA_PATH" ]; }; then
+  # or auto-detect when storage path env vars are set.
+  #
+  # --no-nas (and fresh mode, which forces it) suppresses both the explicit and
+  # the auto-detect path so the live bind-mounted data is never attached.
+  if [ -n "$NO_NAS_FLAG" ]; then
+    if [ -n "$FRESH_FLAG" ]; then
+      :  # banner already printed by fresh mode
+    elif [ -n "$MINIO_NAS_PATH" ] || [ -n "$POSTGRES_DATA_PATH" ] || [ -n "$OPENSEARCH_DATA_PATH" ]; then
+      echo "🚫 --no-nas: NAS overlay suppressed (using Docker named volumes; live bind data untouched)"
+    fi
+    NAS_FLAG=""
+  elif [ -z "$NAS_FLAG" ] && { [ -n "$MINIO_NAS_PATH" ] || [ -n "$POSTGRES_DATA_PATH" ] || [ -n "$OPENSEARCH_DATA_PATH" ]; }; then
     NAS_FLAG="--nas"
-    echo "ℹ️  Auto-detected custom storage paths in .env, enabling NAS overlay"
+    echo "💾 NAS overlay AUTO-LOADED from .env (storage at MinIO=${MINIO_NAS_PATH:-default}, PG=${POSTGRES_DATA_PATH:-default}, OS=${OPENSEARCH_DATA_PATH:-default}). Use --no-nas to skip."
   fi
   if [ -n "$NAS_FLAG" ]; then
     if [ -f "docker-compose.nas.yml" ]; then
@@ -628,6 +1021,36 @@ start_app() {
     fi
   fi
 
+  # Fresh-mode overlays go LAST so their container_name + port re-pinning wins.
+  if [ -n "$FRESH_FLAG" ]; then
+    [ -n "$FRESH_OVERLAY" ] && COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_OVERLAY"
+    [ -n "$FRESH_PORT_OVERLAY" ] && COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_PORT_OVERLAY"
+  fi
+
+  # Dry-run: print exactly what WOULD run and exit without touching Docker.
+  if [ -n "$DRY_RUN_FLAG" ]; then
+    echo ""
+    echo "🔎 DRY RUN — no containers started."
+    echo "   COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-opentranscribe (default)}"
+    echo "   Compose files:"
+    # shellcheck disable=SC2086
+    for _f in $COMPOSE_FILES; do
+      [ "$_f" = "-f" ] && continue
+      echo "     - $_f"
+    done
+    echo "   Command that WOULD run:"
+    echo "     docker compose $COMPOSE_FILES up -d $BUILD_CMD"
+    [ -n "$FRESH_FLAG" ] && echo "   (fresh mode: NAS overlay omitted by design; real data untouched)"
+    [ -n "$SEED_BENCHMARK_FLAG" ] && echo "   (would seed benchmark media via scripts/seed-fresh-deployment.sh after healthy)"
+    return 0
+  fi
+
+  # Best-effort live-data guardrail markers (only when the NAS overlay is active
+  # and we are NOT in fresh mode — fresh uses named volumes, no bind dirs).
+  if [ -n "$NAS_FLAG" ] && [ -z "$FRESH_FLAG" ]; then
+    write_live_data_markers
+  fi
+
   # Start services with appropriate compose files
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES up -d $BUILD_CMD
@@ -665,6 +1088,22 @@ start_app() {
 
   # Print help information
   print_help_commands
+
+  # Seed benchmark media into a fresh deployment once it is healthy.
+  if [ -n "$SEED_BENCHMARK_FLAG" ]; then
+    if [ -z "$FRESH_FLAG" ]; then
+      echo "⚠️  --seed-benchmark is only honored in fresh mode (--fresh); skipping."
+    elif [ -f "scripts/seed-fresh-deployment.sh" ]; then
+      local _seed_offset="${PORT_OFFSET:-0}"
+      local _seed_backend_port=$((5174 + _seed_offset))
+      echo ""
+      echo "🌱 Seeding benchmark media into fresh deployment '${FRESH_NAME}' (backend :${_seed_backend_port})..."
+      BACKEND_URL="http://localhost:${_seed_backend_port}" \
+        bash scripts/seed-fresh-deployment.sh || echo "⚠️  Seeding did not complete (non-fatal)."
+    else
+      echo "⚠️  --seed-benchmark requested but scripts/seed-fresh-deployment.sh not found."
+    fi
+  fi
 }
 
 # Function to reset and initialize the environment
@@ -1318,8 +1757,19 @@ if [ $# -eq 0 ]; then
   exit 0
 fi
 
-# Check Docker is available for all commands
-check_docker
+# Check Docker is available for all commands EXCEPT purely read-only ones that
+# must work even when the daemon is down/recovering (data-paths, help). A
+# start --dry-run also skips it — it never talks to Docker.
+case "$1" in
+  data-paths|help|--help|-h) ;;
+  start)
+    case " $* " in
+      *" --dry-run "*) ;;
+      *) check_docker ;;
+    esac
+    ;;
+  *) check_docker ;;
+esac
 
 # Process the command
 case "$1" in
@@ -1329,12 +1779,16 @@ case "$1" in
     ;;
 
   stop)
-    echo "🛑 Stopping all containers..."
-    # Stop containers from both dev and prod compose chains, plus any stragglers.
-    # Using MAX_COMPOSE_FILES with conflicting overlays (prod + override) can fail
-    # silently, so we run each chain separately.
-    stop_all_containers down
-    echo "✅ All containers stopped."
+    if [ "${2:-}" = "--fresh" ]; then
+      fresh_stop "${3:-default}"
+    else
+      echo "🛑 Stopping all containers..."
+      # Stop containers from both dev and prod compose chains, plus any stragglers.
+      # Using MAX_COMPOSE_FILES with conflicting overlays (prod + override) can fail
+      # silently, so we run each chain separately.
+      stop_all_containers down
+      echo "✅ All containers stopped."
+    fi
     ;;
 
   reset)
@@ -1360,8 +1814,24 @@ case "$1" in
     ;;
 
   status)
-    echo "📊 Container status:"
-    docker compose ps
+    if [ "${2:-}" = "--fresh" ]; then
+      fresh_status "${3:-default}"
+    else
+      echo "📊 Container status:"
+      docker compose ps
+    fi
+    ;;
+
+  data-paths)
+    print_data_paths
+    ;;
+
+  fresh-list)
+    fresh_list
+    ;;
+
+  fresh-destroy)
+    fresh_destroy "${2:-}"
     ;;
 
   shell)

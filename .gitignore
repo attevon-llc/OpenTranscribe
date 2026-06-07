@@ -299,3 +299,6 @@ test-results/
 
 # Watch Sources local mount (test/runtime media — issue #26)
 /watch/
+
+# Fresh deployment generated compose overlays (opentr.sh --fresh)
+.fresh/

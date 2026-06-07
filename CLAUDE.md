@@ -49,6 +49,26 @@ Core services:
 ./opentr.sh restore backups/<file>.sql
 ```
 
+### Fresh / isolated deployments (data-safety guardrails)
+
+**Use `--fresh` for any throwaway or experimental stack — never develop against the live NAS data again.** A fresh deployment runs in its own `otfresh-<name>` compose project (separate containers AND named volumes) and the NAS/bind overlay is **never** loaded, so the real dataset can't be touched.
+
+```bash
+./opentr.sh start dev --fresh test1                    # isolated stack, standard dev ports (5173-5181)
+./opentr.sh start dev --fresh test1 --port-offset 100  # side-by-side with main stack (all ports +100)
+./opentr.sh start dev --fresh test1 --seed-benchmark   # upload small sample media once healthy
+./opentr.sh stop   --fresh test1                       # stop (volumes kept)
+./opentr.sh status --fresh test1
+./opentr.sh fresh-list                                 # list fresh deployments + volumes
+./opentr.sh fresh-destroy test1                        # remove containers+volumes (y/N confirm; ONLY destructive op)
+./opentr.sh data-paths                                 # print resolved live data paths — CHECK before deleting anything
+./opentr.sh start dev --dry-run                        # print compose files + command, start nothing
+```
+
+Mechanics: `--fresh` refuses to start on the standard ports if the main stack is up (offers `--port-offset N`); `container_name` collisions with the hard-coded `opentranscribe-*` names are solved by a generated `.fresh/<name>.yml` overlay (gitignored) that re-pins every service to `otfresh-<name>-*`. `--port-offset` generates a second `.fresh/<name>-ports.yml`. Seeding is `scripts/seed-fresh-deployment.sh` (degrades gracefully if media missing).
+
+**NAS overlay directives** (non-fresh `start`): auto-detect from `.env` (`MINIO_NAS_PATH`/`POSTGRES_DATA_PATH`/`OPENSEARCH_DATA_PATH`) is kept for back-compat but now prints a `💾 NAS overlay AUTO-LOADED` banner; `--no-nas` suppresses it; `--nas` is explicit opt-in. On every non-fresh start with the NAS overlay active, a best-effort `.opentranscribe-live-data` marker is written into each bind dir warning agents/humans not to delete it. Full map: `docs-site/docs/operations/fresh-deployments.md`.
+
 ### Auth method overlays
 
 Configure auth via Admin UI (Settings → Authentication); DB config takes precedence over `.env`. Pass test-container flags to spin up local IdPs:

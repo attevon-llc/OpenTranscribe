@@ -422,6 +422,36 @@ bash scripts/setup-watch-source-test-data.sh ./watch
 ```
 Then configure sources in **Settings → Watch Sources** (local folder, S3, or SMB). Without `--with-watch`, the local-folder type is hidden and only S3/SMB are available. All connection, schedule, and credential settings are managed in the UI — no restart required.
 
+### **Fresh Deployments (Isolated, Guard-Railed)**
+```bash
+# Brand-new isolated stack: own compose project + named volumes, NAS overlay
+# NEVER loaded, real data untouched. Runs on the standard dev ports by default
+# (refuses to start if the main stack already holds them).
+./opentr.sh start dev --fresh test1
+
+# Run side-by-side with the main stack by offsetting every published port:
+./opentr.sh start dev --fresh test1 --port-offset 100   # backend :5274, frontend :5273, ...
+
+# Upload a couple of small sample files once the stack is healthy:
+./opentr.sh start dev --fresh test1 --seed-benchmark
+
+# Manage fresh deployments:
+./opentr.sh stop --fresh test1        # stop (keep volumes)
+./opentr.sh status --fresh test1      # status
+./opentr.sh fresh-list                # list all fresh deployments + volumes
+./opentr.sh fresh-destroy test1       # remove containers + volumes (confirmed)
+
+# See exactly where your live data lives before deleting anything:
+./opentr.sh data-paths
+```
+Fresh deployments are the safe way to spin up throwaway stacks. They use an
+isolated `otfresh-<name>` compose project (separate containers **and** named
+volumes), and the NAS/bind-mount overlay is never attached — so the production
+dataset can never be touched. The non-fresh `start` auto-loads the NAS overlay
+when storage paths are set in `.env` (with a prominent banner); pass `--no-nas`
+to suppress it. Add `--dry-run` to any `start` to print the exact compose files
+and command without launching anything.
+
 ### **Monitoring (Prometheus + Grafana)**
 ```bash
 # Start the optional observability stack alongside the app

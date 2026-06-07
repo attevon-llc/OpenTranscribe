@@ -79,7 +79,7 @@ class BulkActionResult(BaseModel):
 
 
 @router.get("/{file_uuid}/status-detail", response_model=FileStatusDetail)
-async def get_file_status_detail(
+def get_file_status_detail(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -168,7 +168,7 @@ async def get_file_status_detail(
 
 
 @router.post("/{file_uuid}/cancel")
-async def cancel_file_processing(
+def cancel_file_processing(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -211,7 +211,7 @@ async def cancel_file_processing(
 
 
 @router.post("/{file_uuid}/retry")
-async def retry_file_processing(
+def retry_file_processing(
     file_uuid: str,
     reset_retry_count: bool = Query(False, description="Reset retry count to 0"),
     db: Session = Depends(get_db),
@@ -289,7 +289,7 @@ async def retry_file_processing(
 
 
 @router.post("/{file_uuid}/recover")
-async def recover_file(
+def recover_file(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -328,7 +328,7 @@ async def recover_file(
 
 
 @router.delete("/{file_uuid}/force")
-async def force_delete_file(
+def force_delete_file(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -355,7 +355,7 @@ async def force_delete_file(
 
 
 @router.get("/management/stuck")
-async def get_stuck_files(
+def get_stuck_files(
     threshold_hours: float = Query(2.0, description="Hours threshold for stuck detection"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -678,7 +678,7 @@ def _process_single_file_action(
 
 
 @router.post("/management/bulk-action", response_model=list[BulkActionResult])
-async def bulk_file_action(
+def bulk_file_action(
     request: BulkActionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -735,7 +735,7 @@ async def bulk_file_action(
 
 
 @router.post("/management/cleanup-orphaned")
-async def cleanup_orphaned_files(
+def cleanup_orphaned_files(
     dry_run: bool = Query(False, description="Preview changes without applying them"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

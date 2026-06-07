@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from fastapi import UploadFile
 from fastapi import status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.constants import UPLOAD_CHUNK_SIZE
 from app.models.media import FileStatus
@@ -466,7 +467,8 @@ async def process_file_upload(
 
         # Upload to storage
         with benchmark_timing.stage(task_id, "minio_put"):
-            upload_file_to_storage(
+            await run_in_threadpool(
+                upload_file_to_storage,
                 file_content,
                 file_size,
                 storage_path,

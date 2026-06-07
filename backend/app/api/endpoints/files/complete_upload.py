@@ -83,7 +83,7 @@ def _record_client_markers(task_id: str | None, req: CompleteUploadRequest) -> N
 
 
 @router.post("/complete", response_model=dict[str, Any])
-async def complete_upload(
+def complete_upload(
     request: CompleteUploadRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

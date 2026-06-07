@@ -334,7 +334,7 @@ def dispatch_selective_tasks(
             dispatch_task_by_name(stage, file_uuid, file_id=file_id, user_id=user_id)
 
 
-async def process_file_reprocess(
+def process_file_reprocess(
     file_uuid: str,
     db: Session,
     current_user: User,

@@ -787,7 +787,7 @@ async def download_stream(
 
 
 @router.get("/{file_uuid}/thumbnail")
-async def get_thumbnail(
+def get_thumbnail(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
@@ -850,7 +850,7 @@ def update_transcript_segment(
 
 
 @router.post("/{file_uuid}/reprocess", response_model=MediaFileSchema)
-async def reprocess_media_file(
+def reprocess_media_file(
     file_uuid: str,
     reprocess_request: Optional[ReprocessRequest] = None,
     db: Session = Depends(get_db),
@@ -864,7 +864,7 @@ async def reprocess_media_file(
     stages: list[str] = list(reprocess_request.stages) if reprocess_request else []
     whisper_model = reprocess_request.whisper_model if reprocess_request else None
 
-    return await process_file_reprocess(
+    return process_file_reprocess(
         file_uuid,
         db,
         current_user,

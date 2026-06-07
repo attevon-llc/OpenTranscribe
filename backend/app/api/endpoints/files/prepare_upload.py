@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.auth import get_current_user
 from app.api.endpoints.files.upload import create_media_file_record
@@ -251,7 +252,7 @@ async def prepare_upload(
             from app.services.minio_service import presigned_put_url
 
             task_id = str(uuid_lib.uuid4())
-            put_url = presigned_put_url(storage_path)
+            put_url = await run_in_threadpool(presigned_put_url, storage_path)
             benchmark_timing.mark(task_id, "prepare_upload_end")
             benchmark_timing.set_context(
                 task_id,

@@ -221,7 +221,7 @@ def get_clustering_stats(
 
 
 @router.post("/{cluster_uuid}/analyze-outliers")
-async def analyze_outliers(
+def analyze_outliers(
     cluster_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -236,7 +236,7 @@ async def analyze_outliers(
 
 
 @router.post("/{cluster_uuid}/unassign")
-async def unassign_speakers(
+def unassign_speakers(
     cluster_uuid: str,
     request: ClusterUnassignRequest,
     db: Session = Depends(get_db),

@@ -1504,7 +1504,7 @@ async def get_account_status_report(
 
 
 @router.get("/audit-logs")
-async def get_audit_logs(
+def get_audit_logs(
     start_date: Optional[datetime] = Query(None, description="Start date for log query"),
     end_date: Optional[datetime] = Query(None, description="End date for log query"),
     event_type: Optional[str] = Query(None, description="Filter by event type"),
@@ -1590,7 +1590,7 @@ async def get_audit_logs(
 
 
 @router.get("/audit-logs/export")
-async def export_audit_logs(
+def export_audit_logs(
     export_format: str = Query("csv", description="Export format (csv or json)"),
     start_date: Optional[datetime] = Query(None, description="Start date for export"),
     end_date: Optional[datetime] = Query(None, description="End date for export"),

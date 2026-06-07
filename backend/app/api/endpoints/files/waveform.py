@@ -238,7 +238,7 @@ def _extract_waveform_from_file(storage_path: str, target_samples: int) -> dict:
 
 
 @router.get("/{file_uuid}/waveform")
-async def get_audio_waveform(
+def get_audio_waveform(
     file_uuid: str,
     samples: int = Query(1000, description="Number of samples to return", ge=100, le=10000),
     refresh_cache: bool = Query(False, description="Force refresh of cached waveform data"),
@@ -277,7 +277,7 @@ async def get_audio_waveform(
 
 
 @router.get("/{file_uuid}/waveform/peaks")
-async def get_audio_waveform_peaks(
+def get_audio_waveform_peaks(
     file_uuid: str,
     width: int = Query(1000, description="Target width in pixels", ge=100, le=10000),
     height: int = Query(100, description="Target height in pixels", ge=50, le=500),
@@ -332,7 +332,7 @@ async def get_audio_waveform_peaks(
 
 
 @router.post("/{file_uuid}/waveform/generate")
-async def generate_waveform_for_file(
+def generate_waveform_for_file(
     file_uuid: str,
     force_regenerate: bool = False,
     db: Session = Depends(get_db),
@@ -384,7 +384,7 @@ async def generate_waveform_for_file(
 
 
 @router.post("/waveforms/generate")
-async def generate_waveforms_for_files(
+def generate_waveforms_for_files(
     force_regenerate: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

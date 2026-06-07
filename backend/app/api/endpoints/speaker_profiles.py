@@ -10,6 +10,7 @@ from fastapi import Query
 from fastapi import UploadFile
 from fastapi import status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
@@ -669,7 +670,7 @@ async def upload_profile_avatar(
             try:
                 from app.services.minio_service import delete_file
 
-                delete_file(profile.avatar_path)
+                await run_in_threadpool(delete_file, profile.avatar_path)
             except Exception:
                 logger.warning(f"Failed to delete old avatar for profile {profile.uuid}")
 
@@ -680,14 +681,16 @@ async def upload_profile_avatar(
         from app.services.minio_service import upload_file
 
         object_name = f"avatars/{current_user.id}/{profile.uuid}.{ext}"
-        upload_file(io.BytesIO(content), len(content), object_name, file.content_type)
+        await run_in_threadpool(
+            upload_file, io.BytesIO(content), len(content), object_name, file.content_type
+        )
 
         # Update profile
         profile.avatar_path = object_name  # type: ignore[assignment]
         db.commit()
         db.refresh(profile)
 
-        avatar_url = get_file_url(object_name, expires=3600)
+        avatar_url = await run_in_threadpool(get_file_url, object_name, expires=3600)
         return {"uuid": str(profile.uuid), "avatar_url": avatar_url}
 
     except HTTPException:

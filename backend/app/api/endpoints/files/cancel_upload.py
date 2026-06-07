@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.delete("/{file_uuid}", status_code=status.HTTP_204_NO_CONTENT)
-async def cancel_upload(
+def cancel_upload(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

@@ -693,7 +693,9 @@ start_app() {
       exit 1
     fi
 
-    # Refuse to start on standard ports if the main stack already holds them.
+    # Refuse to start on standard ports if ANOTHER stack already holds them.
+    # Exception: when THIS SAME fresh project is what's bound to them, proceed —
+    # `compose up -d` just recreates changed services (e.g. after a .env edit).
     if [ "$_offset" -eq 0 ]; then
       local _busy=""
       local _p
@@ -701,10 +703,16 @@ start_app() {
         if fresh_port_in_use "$_p"; then _busy="$_busy $_p"; fi
       done
       if [ -n "$_busy" ]; then
-        echo "❌ Cannot start fresh deployment on the standard dev ports — already bound:${_busy}"
-        echo "   The main stack appears to be running. Either stop it, or run side-by-side:"
-        echo "   ./opentr.sh start dev --fresh ${FRESH_NAME} --port-offset 100"
-        exit 1
+        local _holder
+        _holder="$(docker ps --filter "label=com.docker.compose.project=${FRESH_PROJECT}" --format '{{.Names}}' 2>/dev/null | head -1)"
+        if [ -n "$_holder" ]; then
+          echo "ℹ️  Standard ports are held by this same fresh deployment (${FRESH_PROJECT}) — re-upping in place."
+        else
+          echo "❌ Cannot start fresh deployment on the standard dev ports — already bound:${_busy}"
+          echo "   The main stack appears to be running. Either stop it, or run side-by-side:"
+          echo "   ./opentr.sh start dev --fresh ${FRESH_NAME} --port-offset 100"
+          exit 1
+        fi
       fi
     fi
 

@@ -1431,6 +1431,8 @@ async def admin_search_users(
     current_user: User = Depends(get_current_admin_user),
 ):
     """Advanced user search with filtering and pagination."""
+    from app.utils.pagination import paginate
+
     q = db.query(User)
 
     if query:
@@ -1445,8 +1447,7 @@ async def admin_search_users(
     if is_active is not None:
         q = q.filter(User.is_active == is_active)
 
-    total = q.count()
-    users = q.offset(offset).limit(limit).all()
+    users, total = paginate(q, offset, limit)
 
     return {
         "total": total,

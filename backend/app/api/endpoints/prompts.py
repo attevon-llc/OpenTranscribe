@@ -28,6 +28,7 @@ from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
+from app.utils.pagination import paginate
 from app.utils.uuid_helpers import get_prompt_by_uuid
 
 router = APIRouter()
@@ -129,15 +130,13 @@ def get_prompts(
     if conditions:
         query = query.filter(and_(*conditions))
 
-    total = query.count()
-    prompts = (
+    prompts, total = paginate(
         query.order_by(
             models.SummaryPrompt.is_system_default.desc(),  # System prompts first
             models.SummaryPrompt.name,
-        )
-        .offset(skip)
-        .limit(limit)
-        .all()
+        ),
+        skip,
+        limit,
     )
 
     # Get collections that use each prompt as default (for current user only)
@@ -545,8 +544,6 @@ def get_shared_prompt_library(
             )
         )
 
-    total = query.count()
-
     if sort_by == "popular":
         query = query.order_by(models.SummaryPrompt.usage_count.desc())
     elif sort_by == "name":
@@ -554,7 +551,7 @@ def get_shared_prompt_library(
     else:
         query = query.order_by(models.SummaryPrompt.shared_at.desc())
 
-    prompts = query.offset(skip).limit(limit).all()
+    prompts, total = paginate(query, skip, limit)
 
     # Batch-fetch users referenced for attribution: creators + sharers
     referenced_ids = {p.user_id for p in prompts if p.user_id}

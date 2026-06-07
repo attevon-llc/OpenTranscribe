@@ -89,6 +89,8 @@ celery_app = Celery(
         "app.tasks.combined_speaker_analysis_task",
         "app.tasks.speaker_embedding_consistency",
         "app.tasks.embedding_consistency_repair",
+        "app.tasks.recovery_tasks",
+        "app.tasks.backup_tasks",
     ],
 )
 
@@ -203,6 +205,9 @@ celery_app.conf.update(
         "watch_source.stitch_and_import": {"queue": CeleryQueues.CPU},
         "watch_source.send_notification": {"queue": CeleryQueues.UTILITY},
         "watch_source.cleanup_temp": {"queue": CeleryQueues.UTILITY},
+        # Scheduled database backups (Feature C)
+        "backup.check_schedule": {"queue": CeleryQueues.UTILITY},
+        "backup.run": {"queue": CeleryQueues.UTILITY},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -260,6 +265,14 @@ celery_app.conf.update(
             "task": "watch_source.cleanup_temp",
             "schedule": crontab(minute=25),  # hourly at :25, offset from other jobs
             "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+        },
+        "backup-check-schedule": {
+            "task": "backup.check_schedule",
+            # Every 5 minutes the check task loads DB-backed backup settings and
+            # decides (against the stored cron + last_run_at) whether a backup is
+            # due — fully DB-driven, no beat restart when the schedule changes.
+            "schedule": crontab(minute="*/5"),
+            "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
         },
     },
 )

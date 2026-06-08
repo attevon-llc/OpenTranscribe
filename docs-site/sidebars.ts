@@ -90,6 +90,7 @@ const sidebars: SidebarsConfig = {
         'operations/fresh-deployments',
         'operations/backup-restore',
         'operations/storage-recovery',
+        'operations/backup-audit',
         'operations/upgrading',
         'operations/monitoring',
         'operations/performance-tuning',

@@ -219,7 +219,7 @@ def update_settings(
             db,
             KEY_INCLUDE_OPENSEARCH,
             include_opensearch,
-            "Also snapshot OpenSearch (not yet implemented — pg only)",
+            "Also take an OpenSearch snapshot alongside the pg dump (convenience; rebuildable)",
         )
     if destination_type is not None:
         if destination_type not in (DEST_LOCAL, DEST_S3):
@@ -733,6 +733,24 @@ def perform_backup(db: Session | None = None) -> dict[str, Any]:
     return _perform_backup_local(cfg, db)
 
 
+def _maybe_snapshot_opensearch(cfg: dict[str, Any], ts: str) -> dict[str, Any] | None:
+    """Take an OpenSearch snapshot when ``include_opensearch`` is on — never raises.
+
+    Returns the snapshot status sub-object (``{"status": ok|skipped|unsupported|error, ...}``)
+    to fold into ``last_result["opensearch"]``, or None when the toggle is off (so the
+    result stays unchanged for pg-only runs). Called only AFTER a successful pg dump, and
+    its outcome is independent of pg success — a snapshot failure never flips ``ok``.
+
+    ``ts`` is the same ``YYYYMMDD-HHMMSS`` stamp as the pg dump so the snapshot name shares
+    the stem (GFS pruning over names lines up across both artifacts).
+    """
+    if not cfg.get("include_opensearch"):
+        return None
+    from app.services import opensearch_snapshot
+
+    return opensearch_snapshot.perform_snapshot(cfg, ts=ts)
+
+
 def _perform_backup_local(cfg: dict[str, Any], db: Session | None) -> dict[str, Any]:
     """Local-dir backend: pg_dump straight to the mounted destination, prune in-place."""
     destination = cfg["destination"]
@@ -773,6 +791,9 @@ def _perform_backup_local(cfg: dict[str, Any], db: Session | None) -> dict[str, 
             "pruned": pruned,
             "started_at": now_iso,
         }
+        os_result = _maybe_snapshot_opensearch(cfg, ts)
+        if os_result is not None:
+            result["opensearch"] = os_result
         logger.info(
             "Backup complete: %s (%.1f MB, %.2fs, pruned %d)",
             artifact.name,
@@ -869,6 +890,9 @@ def _perform_backup_s3(cfg: dict[str, Any], db: Session | None) -> dict[str, Any
             "pruned": pruned,
             "started_at": now_iso,
         }
+        os_result = _maybe_snapshot_opensearch(cfg, ts)
+        if os_result is not None:
+            result["opensearch"] = os_result
         logger.info(
             "S3 backup complete: %s (%.1f MB, %.2fs, pruned %d)",
             key,

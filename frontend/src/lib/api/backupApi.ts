@@ -10,6 +10,21 @@ import axiosInstance from '$lib/axios';
 
 const BASE = '/admin/backup';
 
+export interface OpenSearchSnapshotResult {
+  status: string; // ok | skipped | unsupported | error
+  error?: string | null;
+  snapshot?: string | null;
+  repository?: string | null;
+  duration_s?: number | null;
+  pruned?: string[] | null;
+}
+
+export interface OpenSearchSnapshotStatus {
+  reachable: boolean;
+  repository_registered: boolean;
+  last_snapshot?: string | null;
+}
+
 export interface BackupResult {
   ok: boolean;
   status: string;
@@ -21,6 +36,7 @@ export interface BackupResult {
   encrypted?: boolean | null;
   pruned?: string[] | null;
   started_at?: string | null;
+  opensearch?: OpenSearchSnapshotResult | null;
 }
 
 export interface DestinationStatus {
@@ -93,6 +109,8 @@ export interface BackupStatus {
   destination_status: DestinationStatus;
   s3_status?: S3Status | null;
   pg_dump_available: boolean;
+  include_opensearch: boolean;
+  opensearch_snapshot_status?: OpenSearchSnapshotStatus | null;
 }
 
 export interface S3ConnectionTestResponse {

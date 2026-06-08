@@ -26,6 +26,15 @@
 # symmetric passphrase) and set backup.passphrase_file to its in-container path in
 # the admin UI, e.g. add under each service's volumes:
 #   - ${BACKUP_PASSPHRASE_HOST_FILE:-./backups/.passphrase}:/backups/.passphrase:ro
+#
+# OpenSearch snapshots (admin UI → Backups → "Include OpenSearch"):
+#   This overlay also allow-lists a snapshot path on the OpenSearch container
+#   (path.repo) and bind-mounts BACKUP_HOST_PATH/opensearch-snapshots into it, so an
+#   `fs` snapshot repository can be registered and snapshots land beside the .dump
+#   files. Without this overlay the snapshot leg degrades gracefully: the backup task
+#   records an "unsupported" OpenSearch status (path.repo not allow-listed) while the
+#   pg_dump still succeeds. The shipped OpenSearch image has NO repository-s3 plugin,
+#   so snapshots always use this fs repo (even for the S3 dump destination).
 
 services:
   backend:
@@ -35,3 +44,13 @@ services:
   celery-cpu-worker:
     volumes:
       - ${BACKUP_HOST_PATH:-./backups}:/backups
+
+  opensearch:
+    environment:
+      # Allow-list the snapshot directory so `fs` snapshot repositories can be
+      # registered under it. Must be the PARENT of REPO_LOCATION in
+      # app/services/opensearch_snapshot.py (/usr/share/opensearch/backups/...).
+      - path.repo=/usr/share/opensearch/backups
+    volumes:
+      # Snapshot files land here → under BACKUP_HOST_PATH/opensearch-snapshots on the host.
+      - ${BACKUP_HOST_PATH:-./backups}/opensearch-snapshots:/usr/share/opensearch/backups/opensearch-snapshots

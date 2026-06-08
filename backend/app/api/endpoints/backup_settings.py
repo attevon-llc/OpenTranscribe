@@ -33,6 +33,17 @@ router = APIRouter()
 
 
 # --- Schemas -----------------------------------------------------------------
+class OpenSearchSnapshotResult(BaseModel):
+    """Outcome of the OpenSearch snapshot leg of a backup run (independent of pg success)."""
+
+    status: str  # ok | skipped | unsupported | error
+    error: str | None = None
+    snapshot: str | None = None
+    repository: str | None = None
+    duration_s: float | None = None
+    pruned: list[str] | None = None
+
+
 class BackupResultModel(BaseModel):
     ok: bool
     status: str
@@ -44,6 +55,16 @@ class BackupResultModel(BaseModel):
     encrypted: bool | None = None
     pruned: list[str] | None = None
     started_at: str | None = None
+    # Present only when include_opensearch was on for the run.
+    opensearch: OpenSearchSnapshotResult | None = None
+
+
+class OpenSearchSnapshotStatus(BaseModel):
+    """Live OpenSearch snapshot reachability for the admin status panel."""
+
+    reachable: bool
+    repository_registered: bool
+    last_snapshot: str | None = None
 
 
 class DestinationStatus(BaseModel):
@@ -115,6 +136,9 @@ class BackupStatus(BaseModel):
     destination_status: DestinationStatus
     s3_status: S3Status | None = None
     pg_dump_available: bool
+    include_opensearch: bool
+    # Present only when include_opensearch is enabled (a live reachability probe).
+    opensearch_snapshot_status: OpenSearchSnapshotStatus | None = None
 
 
 class S3ConnectionTestResponse(BaseModel):
@@ -212,6 +236,11 @@ def get_backup_status(
             )
         except ValueError:
             next_due = False
+    os_snapshot_status = None
+    if cfg["include_opensearch"]:
+        from app.services import opensearch_snapshot
+
+        os_snapshot_status = OpenSearchSnapshotStatus(**opensearch_snapshot.snapshot_status())
     return BackupStatus(
         enabled=cfg["enabled"],
         schedule=cfg["schedule"],
@@ -224,6 +253,8 @@ def get_backup_status(
         ),
         s3_status=_s3_status(cfg, db),
         pg_dump_available=backup_service.pg_dump_available(),
+        include_opensearch=cfg["include_opensearch"],
+        opensearch_snapshot_status=os_snapshot_status,
     )
 
 

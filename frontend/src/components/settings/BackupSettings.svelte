@@ -34,6 +34,7 @@
   let retentionMonthly = 12;
   let encrypt = false;
   let passphraseFile = '';
+  let includeOpensearch = false;
 
   // Destination type + S3 fields
   let destinationType: BackupDestinationType = 'local';
@@ -51,6 +52,7 @@
   let pgDumpAvailable = true;
   let lastRunAt: string | null = null;
   let lastResult: BackupStatus['last_result'] = null;
+  let osSnapshotStatus: BackupStatus['opensearch_snapshot_status'] = null;
 
   // S3 connection-test state
   let s3TestLoading = false;
@@ -65,6 +67,7 @@
   let origRetentionMonthly = 12;
   let origEncrypt = false;
   let origPassphraseFile = '';
+  let origIncludeOpensearch = false;
   let origDestinationType: BackupDestinationType = 'local';
   let origS3EndpointUrl = '';
   let origS3Region = '';
@@ -116,6 +119,7 @@
     retentionMonthly = cfg.retention_monthly;
     encrypt = cfg.encrypt;
     passphraseFile = cfg.passphrase_file;
+    includeOpensearch = cfg.include_opensearch;
     destinationType = cfg.destination_type;
     s3EndpointUrl = cfg.s3_endpoint_url;
     s3Region = cfg.s3_region;
@@ -135,6 +139,7 @@
     origRetentionMonthly = cfg.retention_monthly;
     origEncrypt = cfg.encrypt;
     origPassphraseFile = cfg.passphrase_file;
+    origIncludeOpensearch = cfg.include_opensearch;
     origDestinationType = cfg.destination_type;
     origS3EndpointUrl = cfg.s3_endpoint_url;
     origS3Region = cfg.s3_region;
@@ -157,6 +162,7 @@
         retention_monthly: retentionMonthly,
         encrypt,
         passphrase_file: passphraseFile,
+        include_opensearch: includeOpensearch,
         destination_type: destinationType,
         s3_endpoint_url: s3EndpointUrl,
         s3_region: s3Region,
@@ -187,6 +193,7 @@
       destinationStatus = st.destination_status;
       s3Status = st.s3_status ?? null;
       pgDumpAvailable = st.pg_dump_available;
+      osSnapshotStatus = st.opensearch_snapshot_status ?? null;
       if (notify) toastStore.success($t('settings.backup.statusRefreshed'));
     } catch (err) {
       console.error('Error refreshing backup status:', err);
@@ -276,6 +283,7 @@
     retentionMonthly;
     encrypt;
     passphraseFile;
+    includeOpensearch;
     destinationType;
     s3EndpointUrl;
     s3Region;
@@ -292,6 +300,7 @@
       retentionMonthly !== origRetentionMonthly ||
       encrypt !== origEncrypt ||
       passphraseFile !== origPassphraseFile ||
+      includeOpensearch !== origIncludeOpensearch ||
       destinationType !== origDestinationType ||
       s3EndpointUrl !== origS3EndpointUrl ||
       s3Region !== origS3Region ||
@@ -479,6 +488,30 @@
       </div>
     {/if}
 
+    <!-- OpenSearch snapshot -->
+    <div class="field-row opensearch-row">
+      <label class="toggle-label">
+        <input type="checkbox" class="toggle-input" bind:checked={includeOpensearch} />
+        <span class="toggle-switch"></span>
+        <span class="toggle-text">{$t('settings.backup.includeOpensearchLabel')}</span>
+      </label>
+      <span class="field-hint opensearch-hint">{$t('settings.backup.includeOpensearchHint')}</span>
+    </div>
+    {#if includeOpensearch && osSnapshotStatus}
+      <div class="field-hint opensearch-status">
+        {#if osSnapshotStatus.reachable && osSnapshotStatus.repository_registered}
+          <span class="mount-ok">● {$t('settings.backup.opensearchReady')}</span>
+        {:else if osSnapshotStatus.reachable}
+          <span class="mount-bad">● {$t('settings.backup.opensearchRepoMissing')}</span>
+        {:else}
+          <span class="mount-bad">● {$t('settings.backup.opensearchUnreachable')}</span>
+        {/if}
+        {#if osSnapshotStatus.last_snapshot}
+          <span class="status-value"> · {$t('settings.backup.opensearchLastSnapshot', { name: osSnapshotStatus.last_snapshot })}</span>
+        {/if}
+      </div>
+    {/if}
+
     <!-- Status display -->
     <div class="status-block">
       <div class="status-item">
@@ -494,6 +527,21 @@
       </div>
       {#if lastResult && !lastResult.ok && lastResult.error}
         <div class="status-error">{lastResult.error}</div>
+      {/if}
+      {#if lastResult?.opensearch}
+        <div class="status-item">
+          <span class="status-label">{$t('settings.backup.opensearchSnapshotSection')}:</span>
+          {#if lastResult.opensearch.status === 'ok'}
+            <span class="status-badge ok">{lastResult.opensearch.snapshot}</span>
+          {:else if lastResult.opensearch.status === 'skipped'}
+            <span class="status-value">{$t('settings.backup.opensearchSkipped')}</span>
+          {:else}
+            <span class="status-badge bad" title={lastResult.opensearch.error ?? ''}>{$t('settings.backup.opensearchSnapshotFailed')}</span>
+          {/if}
+        </div>
+        {#if lastResult.opensearch.status !== 'ok' && lastResult.opensearch.status !== 'skipped' && lastResult.opensearch.error}
+          <div class="status-error">{lastResult.opensearch.error}</div>
+        {/if}
       {/if}
     </div>
 
@@ -623,6 +671,22 @@
 
   .encryption-row {
     margin-top: 1rem;
+  }
+
+  .opensearch-row {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: flex-start;
+  }
+
+  .opensearch-hint {
+    margin-left: 2.75rem;
+  }
+
+  .opensearch-status {
+    margin: 0.25rem 0 0.25rem 2.75rem;
   }
 
   .fields-grid {

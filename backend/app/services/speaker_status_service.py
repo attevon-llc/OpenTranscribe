@@ -283,5 +283,5 @@ class SpeakerStatusService:
         speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
         speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
         speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
-        speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment]
-        speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment]
+        speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment,attr-defined]
+        speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment,attr-defined]

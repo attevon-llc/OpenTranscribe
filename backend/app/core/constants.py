@@ -439,6 +439,41 @@ DEFAULT_WATCH_FILE_STABILITY_SECONDS = 30  # skip files modified within N s (sti
 DEFAULT_WATCH_MAX_CONCURRENT_IMPORTS = 5  # files imported concurrently per scan
 DEFAULT_WATCH_FS_EVENTS_ENABLED = False  # optional watchdog layer (polling is the baseline)
 
+# Scheduled database backups (Feature C, issue: data-loss incident).
+# DB-backed via SystemSettings (admin-UI managed, no beat restart). Coded defaults
+# here are the single source of truth — there are NO backup .env vars. The ONLY
+# physical env is BACKUP_HOST_PATH (docker-compose.backup.yml mount) which lands at
+# the container path DEFAULT_BACKUP_DESTINATION. SystemSettings keys: backup.enabled /
+# backup.schedule / backup.destination / backup.retention_daily|weekly|monthly /
+# backup.encrypt / backup.passphrase_file / backup.include_opensearch /
+# backup.last_run_at / backup.last_result.
+DEFAULT_BACKUP_ENABLED = False  # opt-in: writes data off the live DB volume
+DEFAULT_BACKUP_SCHEDULE = "0 3 * * *"  # cron: daily at 03:00 (worker timezone = UTC)
+DEFAULT_BACKUP_DESTINATION = "/backups"  # container path; mount a host dir here
+# GFS retention: keep N most-recent daily, N weekly (Mondays), N monthly (1st-of-month).
+DEFAULT_BACKUP_RETENTION_DAILY = 7
+DEFAULT_BACKUP_RETENTION_WEEKLY = 4
+DEFAULT_BACKUP_RETENTION_MONTHLY = 12
+DEFAULT_BACKUP_ENCRYPT = False  # gpg AES-256 symmetric; needs a passphrase file
+# Path (in-container) to a file whose contents are the gpg symmetric passphrase.
+# Empty = no passphrase configured (encryption requested but unconfigured → task errors).
+DEFAULT_BACKUP_PASSPHRASE_FILE = ""  # noqa: S105  # nosec B105 - a file PATH default (empty = unset), not a password
+DEFAULT_BACKUP_INCLUDE_OPENSEARCH = False  # OS is derived/rebuildable; pg-only this round
+
+# Backup destination: "local" (mounted dir, default) or "s3" (S3-compatible bucket).
+# The s3 path lets homelab/cloud users push dumps off-host to AWS S3 / MinIO / Backblaze /
+# Wasabi / etc. All s3.* settings are DB-backed SystemSettings (NO .env); the secret key is
+# AES-256-GCM encrypted at rest (app.utils.encryption.encrypt_api_key) and never returned by
+# the API (write-only — only a backup.s3_secret_key_set bool is exposed). SystemSettings keys:
+# backup.destination_type / backup.s3_endpoint_url / backup.s3_region / backup.s3_bucket /
+# backup.s3_prefix / backup.s3_access_key_id / backup.s3_secret_key (encrypted).
+DEFAULT_BACKUP_DESTINATION_TYPE = "local"  # "local" | "s3"
+DEFAULT_BACKUP_S3_ENDPOINT_URL = ""  # empty = real AWS S3; set for MinIO/B2/Wasabi/etc.
+DEFAULT_BACKUP_S3_REGION = ""  # e.g. us-east-1; empty when the endpoint doesn't need one
+DEFAULT_BACKUP_S3_BUCKET = ""  # target bucket (must already exist)
+DEFAULT_BACKUP_S3_PREFIX = "opentranscribe/"  # key prefix within the bucket
+DEFAULT_BACKUP_S3_ACCESS_KEY_ID = ""
+
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
 DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)
 DEFAULT_VAD_MIN_SILENCE_MS = 2000  # Min silence to split segments (ms)

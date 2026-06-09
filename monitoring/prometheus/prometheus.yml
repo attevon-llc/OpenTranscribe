@@ -1,0 +1,23 @@
+# Prometheus scrape configuration for OpenTranscribe.
+#
+# Loaded by the monitoring overlay (docker-compose.monitoring.yml) at
+# /etc/prometheus/prometheus.yml. The single job scrapes the backend's
+# in-app /metrics endpoint (Phase 1) over the compose network.
+#
+# The backend exposes /metrics unauthenticated at its root (next to /health),
+# never proxied by nginx — it is reachable only from inside the Docker network.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    monitor: opentranscribe
+
+scrape_configs:
+  - job_name: opentranscribe-backend
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - backend:8080
+        labels:
+          service: backend

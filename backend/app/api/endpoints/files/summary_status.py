@@ -40,13 +40,13 @@ async def get_summary_status(
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
     file_id = media_file.id
 
     try:
         # Check LLM availability for current user
-        llm_available = await is_llm_available(user_id=int(current_user.id))
+        llm_available = await is_llm_available(user_id=current_user.id)
     except Exception as e:
         logger.warning(f"Failed to check LLM availability for file {file_id}: {e}")
         llm_available = False
@@ -56,7 +56,7 @@ async def get_summary_status(
     from app.utils.summary_settings import is_summary_enabled_system
 
     system_enabled = is_summary_enabled_system(db)
-    user_enabled = is_summary_enabled_for_user(db, int(current_user.id))
+    user_enabled = is_summary_enabled_for_user(db, current_user.id)
 
     # Determine if retry is possible (not for disabled status)
     summary_status_str = media_file.summary_status or "pending"
@@ -99,7 +99,7 @@ async def retry_summary(
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
     file_id = media_file.id
 
@@ -127,7 +127,7 @@ async def retry_summary(
 
     # Check LLM availability for current user
     try:
-        llm_available = await is_llm_available(user_id=int(current_user.id))
+        llm_available = await is_llm_available(user_id=current_user.id)
     except Exception as e:
         logger.error(f"Failed to check LLM availability for retry of file {file_id}: {e}")
         raise HTTPException(

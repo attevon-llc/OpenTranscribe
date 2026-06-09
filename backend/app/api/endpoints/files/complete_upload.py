@@ -83,7 +83,7 @@ def _record_client_markers(task_id: str | None, req: CompleteUploadRequest) -> N
 
 
 @router.post("/complete", response_model=dict[str, Any])
-async def complete_upload(
+def complete_upload(
     request: CompleteUploadRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -205,7 +205,7 @@ async def complete_upload(
     # the pre-minted task_id keeps every downstream marker in one benchmark hash.
     dispatch_upload_pipeline(
         db_file,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         whisper_model=whisper_model,
         min_speakers=request.min_speakers,
         max_speakers=request.max_speakers,
@@ -213,13 +213,19 @@ async def complete_upload(
         task_id=request.task_id,
     )
 
+    # Product metric: file accepted via direct upload (API process). The
+    # watch-source path dispatches in a worker, whose registry is never scraped.
+    from app.core.metrics import files_uploaded_total
+
+    files_uploaded_total.labels(source="upload").inc()
+
     benchmark_timing.mark(request.task_id, "http_response_end")
 
     # Invalidate caches so gallery picks up the new file
     try:
         from app.services.redis_cache_service import redis_cache
 
-        redis_cache.invalidate_user_files(int(current_user.id))
+        redis_cache.invalidate_user_files(current_user.id)
     except Exception as cache_err:
         logger.debug(f"Cache invalidation failed (non-critical): {cache_err}")
 

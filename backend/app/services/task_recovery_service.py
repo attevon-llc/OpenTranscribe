@@ -94,6 +94,7 @@ class TaskRecoveryService:
             )
 
             # Check if we need to update the media file status
+            assert task.media_file_id is not None  # media-processing task always has a file
             media_file = get_refreshed_object(db, MediaFile, int(task.media_file_id))
             if not media_file:
                 logger.error(f"Media file {task.media_file_id} not found for task {task.id}")
@@ -317,7 +318,9 @@ class TaskRecoveryService:
                     time_since_failure = (
                         datetime.now(timezone.utc) - media_file.completed_at
                     ).total_seconds()
-                    required_delay = get_retry_delay(error_category, int(media_file.retry_count))
+                    required_delay = get_retry_delay(
+                        error_category, int(media_file.retry_count or 0)
+                    )
                     if time_since_failure < required_delay:
                         logger.debug(
                             f"Skipping file {media_file.id} - retry delay not met "
@@ -327,7 +330,7 @@ class TaskRecoveryService:
                         continue
 
                 # Check if retry is allowed based on error classification
-                if not should_retry(error_category, int(media_file.retry_count)):
+                if not should_retry(error_category, int(media_file.retry_count or 0)):
                     logger.info(
                         f"Skipping retry for file {media_file.id} - "
                         f"error category {error_category.value}, "
@@ -338,7 +341,9 @@ class TaskRecoveryService:
                     continue
 
                 # Also check system-level retry settings
-                if not system_settings_service.should_retry_file(db, int(media_file.retry_count)):
+                if not system_settings_service.should_retry_file(
+                    db, int(media_file.retry_count or 0)
+                ):
                     logger.info(
                         f"Skipping retry for file {media_file.id} - system retry limit reached "
                         f"(count: {media_file.retry_count})"
@@ -373,7 +378,7 @@ class TaskRecoveryService:
                     stats["tasks_failed"] += 1
 
                 # Increment retry count and reset file status to pending for retry
-                media_file.retry_count += 1  # type: ignore[assignment]
+                media_file.retry_count += 1  # type: ignore[assignment,operator]
                 update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                 stats["files_recovered"] += 1
 
@@ -444,7 +449,9 @@ class TaskRecoveryService:
         for media_file in problem_files:
             try:
                 # Check if retry is allowed based on system settings
-                if not system_settings_service.should_retry_file(db, int(media_file.retry_count)):
+                if not system_settings_service.should_retry_file(
+                    db, int(media_file.retry_count or 0)
+                ):
                     logger.info(
                         f"Skipping retry for file {media_file.id} - retry limit reached "
                         f"(count: {media_file.retry_count})"
@@ -460,6 +467,7 @@ class TaskRecoveryService:
                     .count()
                 )
 
+                assert media_file.upload_time is not None  # server_default=now()
                 file_age = datetime.now(timezone.utc) - media_file.upload_time
 
                 if active_tasks == 0 and media_file.status == FileStatus.PROCESSING:
@@ -479,7 +487,7 @@ class TaskRecoveryService:
                             f"File {media_file.id} stuck in PROCESSING with incomplete transcription - "
                             f"resetting to PENDING"
                         )
-                        media_file.retry_count += 1  # type: ignore[assignment]
+                        media_file.retry_count += 1  # type: ignore[assignment,operator]
                         update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                         stats["files_recovered"] += 1
 
@@ -490,7 +498,7 @@ class TaskRecoveryService:
                     hours=self.config.PENDING_FILE_RETRY_THRESHOLD
                 ):
                     # File has been pending too long, retry it
-                    media_file.retry_count += 1  # type: ignore[assignment]
+                    media_file.retry_count += 1  # type: ignore[assignment,operator]
                     if self.schedule_file_retry(int(media_file.id)):
                         stats["tasks_retried"] += 1
 
@@ -562,7 +570,7 @@ class TaskRecoveryService:
             stats["files_checked"] += 1
 
             # Check if retry is allowed based on system settings
-            if not system_settings_service.should_retry_file(db, int(media_file.retry_count)):
+            if not system_settings_service.should_retry_file(db, int(media_file.retry_count or 0)):
                 logger.warning(
                     f"OOM retry limit exhausted for file {media_file.id} ({media_file.filename}) - "
                     f"retry_count: {media_file.retry_count}, max_retries: {media_file.max_retries}"
@@ -574,12 +582,12 @@ class TaskRecoveryService:
             try:
                 logger.info(
                     f"Retrying OOM error for file {media_file.id} ({media_file.filename}) - "
-                    f"attempt {media_file.retry_count + 1}/{media_file.max_retries}"
+                    f"attempt {(media_file.retry_count or 0) + 1}/{media_file.max_retries}"
                 )
 
                 # Update recovery tracking fields
-                media_file.retry_count += 1  # type: ignore[assignment]
-                media_file.recovery_attempts += 1  # type: ignore[assignment]
+                media_file.retry_count += 1  # type: ignore[assignment,operator]
+                media_file.recovery_attempts += 1  # type: ignore[assignment,operator]
                 media_file.last_recovery_attempt = datetime.now(timezone.utc)  # type: ignore[assignment]
                 db.commit()
 
@@ -645,12 +653,12 @@ class TaskRecoveryService:
                 logger.info(
                     f"Retrying ERROR file {media_file.id} ({media_file.filename}) - "
                     f"category: {media_file.error_category}, "
-                    f"attempt {int(media_file.retry_count) + 1}"
+                    f"attempt {int(media_file.retry_count or 0) + 1}"
                 )
 
                 # Increment retry count and reset status
-                media_file.retry_count += 1  # type: ignore[assignment]
-                media_file.recovery_attempts += 1  # type: ignore[assignment]
+                media_file.retry_count += 1  # type: ignore[assignment,operator]
+                media_file.recovery_attempts += 1  # type: ignore[assignment,operator]
                 media_file.last_recovery_attempt = datetime.now(timezone.utc)  # type: ignore[assignment]
 
                 # Clear old task records and reset to PENDING
@@ -843,12 +851,12 @@ class TaskRecoveryService:
             error_category = categorize_error(media_file.last_error_message or "")  # type: ignore[arg-type]
             media_file.error_category = error_category.value  # type: ignore[assignment]
 
-            if should_retry(error_category, int(media_file.retry_count)):
+            if should_retry(error_category, int(media_file.retry_count or 0)):
                 logger.info(
                     f"Retriable error for file {media_file.id} "
                     f"({error_category.value}), resetting to PENDING"
                 )
-                media_file.retry_count += 1  # type: ignore[assignment]
+                media_file.retry_count += 1  # type: ignore[assignment,operator]
                 update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                 if not self.schedule_file_retry(int(media_file.id)):
                     logger.warning(
@@ -982,6 +990,7 @@ class TaskRecoveryService:
 
         for task in stuck_tasks:
             try:
+                assert task.created_at is not None  # server_default=now()
                 logger.warning(
                     f"Marking stuck LLM task {task.id} ({task.task_type}) as failed - "
                     f"stuck in progress for {datetime.now(timezone.utc) - task.created_at}"

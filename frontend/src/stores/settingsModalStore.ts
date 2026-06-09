@@ -28,6 +28,7 @@ export type SettingsSection =
   | 'embedding-migration'
   | 'data-integrity'
   | 'retention'
+  | 'backup'
   | 'cache'
   | 'media-sources'
   | 'watch-sources'
@@ -69,6 +70,7 @@ const initialState: SettingsModalState = {
     'embedding-migration': false,
     'data-integrity': false,
     retention: false,
+    backup: false,
     cache: false,
     'media-sources': false,
     'watch-sources': false,

@@ -28,7 +28,10 @@ if not _SKIP_CELERY:
 # Imports must come after torch.load patch to prevent caching issues
 from celery import Celery  # noqa: E402
 from celery.schedules import crontab  # noqa: E402
+from celery.signals import before_task_publish  # noqa: E402
+from celery.signals import setup_logging  # noqa: E402
 from celery.signals import task_postrun  # noqa: E402
+from celery.signals import task_prerun  # noqa: E402
 from celery.signals import worker_process_init  # noqa: E402
 from celery.signals import worker_ready  # noqa: E402
 from kombu import Queue  # noqa: E402
@@ -61,6 +64,9 @@ celery_app = Celery(
         "app.tasks.recovery",
         "app.tasks.youtube_processing",
         "app.tasks.media_download",
+        # Re-export shim (NOT dead) — keeps legacy task-name routing working by
+        # re-exporting from speaker_{identification,update,embedding}_task. See
+        # app/tasks/speaker_tasks.py. Must stay in this include list.
         "app.tasks.speaker_tasks",
         "app.tasks.speaker_identification_task",
         "app.tasks.speaker_update_task",
@@ -86,6 +92,8 @@ celery_app = Celery(
         "app.tasks.combined_speaker_analysis_task",
         "app.tasks.speaker_embedding_consistency",
         "app.tasks.embedding_consistency_repair",
+        "app.tasks.recovery_tasks",
+        "app.tasks.backup_tasks",
     ],
 )
 
@@ -200,6 +208,9 @@ celery_app.conf.update(
         "watch_source.stitch_and_import": {"queue": CeleryQueues.CPU},
         "watch_source.send_notification": {"queue": CeleryQueues.UTILITY},
         "watch_source.cleanup_temp": {"queue": CeleryQueues.UTILITY},
+        # Scheduled database backups (Feature C)
+        "backup.check_schedule": {"queue": CeleryQueues.UTILITY},
+        "backup.run": {"queue": CeleryQueues.UTILITY},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -258,8 +269,55 @@ celery_app.conf.update(
             "schedule": crontab(minute=25),  # hourly at :25, offset from other jobs
             "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
         },
+        "backup-check-schedule": {
+            "task": "backup.check_schedule",
+            # Every 5 minutes the check task loads DB-backed backup settings and
+            # decides (against the stored cron + last_run_at) whether a backup is
+            # due — fully DB-driven, no beat restart when the schedule changes.
+            "schedule": crontab(minute="*/5"),
+            "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
+        },
     },
 )
+
+
+# Apply our logging config (text/JSON per settings.LOG_FORMAT) to Celery.
+# Connecting setup_logging ALSO disables Celery's root-logger hijack
+# (worker_hijack_root_logger), so the configuration survives worker startup.
+# We deliberately use setup_logging — NOT worker_process_init, which only fires
+# in prefork child processes and never under this app's default --pool=threads.
+@setup_logging.connect
+def configure_celery_logging(**kwargs):
+    """Configure structured/text logging for Celery workers and the beat."""
+    from app.core.logging_config import configure_logging
+
+    configure_logging()
+
+
+# Correlate background-task logs with the HTTP request that spawned them: the
+# request_id rides in the task headers and is adopted into the audit ContextVar
+# for the duration of the task (reset in close_session_after_task below). Tasks
+# that spawn sub-tasks propagate automatically — publish happens inside the
+# task context, so before_task_publish re-reads the now-set ContextVar.
+@before_task_publish.connect
+def inject_request_id_header(headers=None, **kwargs):
+    """Stamp the current request_id onto outgoing task headers (no-op if empty)."""
+    from app.middleware.audit import get_request_id
+
+    request_id = get_request_id()
+    if request_id and headers is not None:
+        headers["request_id"] = request_id
+
+
+@task_prerun.connect
+def adopt_request_id(task=None, **kwargs):
+    """Adopt the inbound request_id header into the task's ContextVar."""
+    from app.middleware.audit import set_request_id
+
+    request = getattr(task, "request", None)
+    request_id = getattr(request, "request_id", None) if request is not None else None
+    if request_id:
+        set_request_id(request_id)
 
 
 # Signal handlers for proper database connection management
@@ -438,7 +496,12 @@ def _validate_task_routes():
 
 @task_postrun.connect
 def close_session_after_task(**kwargs):
-    """Close database connections after each task to prevent stale connections."""
+    """Close DB connections and clear the per-task request_id correlation."""
     from app.db.base import engine
+    from app.middleware.audit import set_request_id
+
+    # Clear the request_id adopted in task_prerun so it can't leak into the next
+    # task that reuses this thread/process (threads pool reuses workers).
+    set_request_id("")
 
     engine.dispose()

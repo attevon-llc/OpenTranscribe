@@ -5,15 +5,22 @@ Stores refresh token metadata for token revocation and session tracking.
 Part of FedRAMP AC-12 compliance for token management.
 """
 
-from sqlalchemy import Column
+from datetime import datetime
+from typing import TYPE_CHECKING
+
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
 from sqlalchemy import String
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class RefreshToken(Base):
@@ -41,18 +48,24 @@ class RefreshToken(Base):
 
     __tablename__ = "refresh_token"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
-    token_hash = Column(String(128), unique=True, nullable=False, index=True)
-    jti = Column(String(36), unique=True, nullable=False, index=True)  # UUID format
-    expires_at = Column(DateTime(timezone=True), nullable=False)
-    revoked_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    user_agent = Column(String(512), nullable=True)
-    ip_address = Column(String(45), nullable=True)  # IPv6 max length
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    jti: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=False, index=True
+    )  # UUID format
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)  # IPv6 max length
 
     # Relationship to user
-    user = relationship("User", back_populates="refresh_tokens")
+    user: Mapped["User"] = relationship("User", back_populates="refresh_tokens")
 
     @property
     def is_revoked(self) -> bool:

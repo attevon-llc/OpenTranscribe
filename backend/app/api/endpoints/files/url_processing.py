@@ -535,6 +535,12 @@ def _dispatch_video_task(
         logger.info(
             f"Dispatched media processing task {task_result.id} for MediaFile {media_file.id}"
         )
+        # Product metric: media accepted via URL ingestion (API process). The
+        # download worker later runs dispatch_upload_pipeline, but that registry
+        # is never scraped, so the source="url" count is recorded here.
+        from app.core.metrics import files_uploaded_total
+
+        files_uploaded_total.labels(source="url").inc()
     except Exception as e:
         logger.error(f"Failed to dispatch media processing task: {e}")
         db.delete(media_file)
@@ -629,7 +635,7 @@ async def process_media_url(
         from app.services.youtube_rate_limiter import youtube_rate_limiter
 
         if settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
-            allowed, reason = youtube_rate_limiter.check_rate_limit(int(current_user.id))
+            allowed, reason = youtube_rate_limiter.check_rate_limit(current_user.id)
             if not allowed:
                 raise HTTPException(status_code=429, detail=reason)
 
@@ -638,13 +644,13 @@ async def process_media_url(
 
         # Record download attempt after rate check passes
         if settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
-            youtube_rate_limiter.record_download(int(current_user.id))
+            youtube_rate_limiter.record_download(current_user.id)
 
         # Handle playlist processing (early return) - currently YouTube only
         if media_service.is_playlist_url(normalized_url):
             return _handle_playlist_processing(
                 normalized_url,
-                int(current_user.id),
+                current_user.id,
                 collection_ids=request_data.collection_ids,
                 tag_names=request_data.tag_names,
                 video_quality=request_data.video_quality,
@@ -658,15 +664,15 @@ async def process_media_url(
             normalized_url,
             media_username=request_data.media_username,
             media_password=request_data.media_password,
-            user_id=int(current_user.id),
+            user_id=current_user.id,
         )
 
         # Check for duplicate video
-        _check_duplicate_video(db, int(current_user.id), video_id, normalized_url)
+        _check_duplicate_video(db, current_user.id, video_id, normalized_url)
 
         # Create placeholder MediaFile record
         media_file = _create_media_file_record(
-            db, int(current_user.id), normalized_url, video_id, video_title, video_info
+            db, current_user.id, normalized_url, video_id, video_title, video_info
         )
 
         # Per-file skip summary: mark as disabled before pipeline starts
@@ -684,12 +690,12 @@ async def process_media_url(
 
                 add_file_to_collections(
                     db,
-                    int(media_file.id),
-                    int(current_user.id),
+                    media_file.id,
+                    current_user.id,
                     [_UUID(c) for c in request_data.collection_ids],
                 )
             if request_data.tag_names:
-                add_tags_to_file(db, int(media_file.id), request_data.tag_names)
+                add_tags_to_file(db, media_file.id, request_data.tag_names)
             db.commit()
 
         # Dispatch background task (pass credentials only for this processing request)
@@ -697,7 +703,7 @@ async def process_media_url(
             db,
             media_file,
             normalized_url,
-            int(current_user.id),
+            current_user.id,
             media_username=request_data.media_username,
             media_password=request_data.media_password,
             collection_ids=request_data.collection_ids,
@@ -708,10 +714,11 @@ async def process_media_url(
         )
 
         # Send WebSocket notification
-        await _send_file_created_notification(media_file, int(current_user.id))
+        await _send_file_created_notification(media_file, current_user.id)
 
         logger.info(f"Created placeholder MediaFile {media_file.id} for media URL processing")
-        return media_file
+        # ORM MediaFile serialized to the schema via response_model (from_attributes)
+        return media_file  # type: ignore[return-value]
 
     except HTTPException:
         raise
@@ -738,7 +745,7 @@ async def get_youtube_download_quota(
     """
     from app.services.youtube_rate_limiter import youtube_rate_limiter
 
-    quota = youtube_rate_limiter.get_remaining_quota(int(current_user.id))
+    quota = youtube_rate_limiter.get_remaining_quota(current_user.id)
     return quota
 
 

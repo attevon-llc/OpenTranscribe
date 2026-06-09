@@ -88,7 +88,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                 from app.services.profile_embedding_service import ProfileEmbeddingService
 
                 ProfileEmbeddingService.add_speaker_to_profile_embedding(
-                    db, int(speaker.id), int(existing_profile.id)
+                    db, speaker.id, existing_profile.id
                 )
             except Exception as e:
                 logger.warning(f"Failed to update profile embedding: {e}")
@@ -134,7 +134,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                 from app.services.profile_embedding_service import ProfileEmbeddingService
 
                 ProfileEmbeddingService.add_speaker_to_profile_embedding(
-                    db, int(speaker.id), int(new_profile.id)
+                    db, speaker.id, new_profile.id
                 )
             except Exception as e:
                 logger.warning(f"Failed to initialize profile embedding: {e}")
@@ -213,7 +213,7 @@ def _apply_high_confidence_match(speaker: Speaker, updated_speaker: Speaker, db:
 
     if updated_speaker.profile_id:
         speaker.profile_id = updated_speaker.profile_id  # type: ignore[assignment]
-        _update_profile_embedding(db, int(speaker.id), int(updated_speaker.profile_id))
+        _update_profile_embedding(db, speaker.id, int(updated_speaker.profile_id))
 
     _sync_speaker_to_opensearch(speaker, db)
     logger.info(
@@ -263,7 +263,7 @@ def _process_speaker_match(
     speaker.confidence = similarity  # type: ignore[assignment]
     speaker.suggested_name = updated_speaker.display_name  # type: ignore[assignment]
     speaker.suggestion_source = "voice_match"  # type: ignore[assignment]
-    store_speaker_match(int(updated_speaker.id), int(speaker.id), similarity, db)
+    store_speaker_match(updated_speaker.id, speaker.id, similarity, db)
 
     if similarity >= 0.75:
         _apply_high_confidence_match(speaker, updated_speaker, db)
@@ -316,7 +316,7 @@ def _send_bulk_update_notification(
             user_id=int(updated_speaker.user_id),
             notification_type="speakers_bulk_updated",
             data={
-                "trigger_speaker_id": int(updated_speaker.id),
+                "trigger_speaker_id": updated_speaker.id,
                 "display_name": str(updated_speaker.display_name),
                 "auto_applied_count": auto_applied_count,
                 "suggested_count": suggested_count,

@@ -97,4 +97,4 @@ omit = [
 show_missing = true
 skip_empty = true
 precision = 1
-fail_under = 35
+fail_under = 37

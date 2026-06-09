@@ -140,6 +140,8 @@ class TaskDetectionService:
 
         stuck_files = []
         for media_file in processing_files:
+            # task_last_update is non-None here: filtered on `< stuck_threshold` above
+            assert media_file.task_last_update is not None
             active_tasks = active_tasks_by_file.get(media_file.id, [])  # type: ignore[call-overload]
 
             if not active_tasks:
@@ -341,7 +343,7 @@ class TaskDetectionService:
             )
             tasks_by_file: dict[int, list[Task]] = {}
             for task in all_active_tasks:
-                tasks_by_file.setdefault(int(task.media_file_id), []).append(task)
+                tasks_by_file.setdefault(task.media_file_id, []).append(task)  # type: ignore[arg-type]
         else:
             tasks_by_file = {}
 
@@ -428,7 +430,7 @@ class TaskDetectionService:
         )
         tasks_by_file: dict[int, list] = {}
         for task in active_dl_tasks:
-            tasks_by_file.setdefault(task.media_file_id, []).append(task)
+            tasks_by_file.setdefault(task.media_file_id, []).append(task)  # type: ignore[arg-type]
 
         for media_file in downloading_files:
             file_tasks = tasks_by_file.get(media_file.id, [])
@@ -550,13 +552,13 @@ class TaskDetectionService:
 
             # Check retry count against error classification
             error_category = ErrorCategory(media_file.error_category)
-            if not should_retry(error_category, int(media_file.retry_count)):
+            if not should_retry(error_category, int(media_file.retry_count or 0)):
                 continue
 
             # Enforce retry delay based on error category
             if media_file.completed_at:
                 time_since_failure = (now - media_file.completed_at).total_seconds()
-                required_delay = get_retry_delay(error_category, int(media_file.retry_count))
+                required_delay = get_retry_delay(error_category, int(media_file.retry_count or 0))
                 if time_since_failure < required_delay:
                     continue
 
@@ -617,12 +619,12 @@ class TaskDetectionService:
 
         for media_file in error_files:
             error_category = ErrorCategory(media_file.error_category)
-            if not should_retry(error_category, int(media_file.retry_count)):
+            if not should_retry(error_category, int(media_file.retry_count or 0)):
                 continue
 
             if media_file.completed_at:
                 time_since_failure = (now - media_file.completed_at).total_seconds()
-                required_delay = get_retry_delay(error_category, int(media_file.retry_count))
+                required_delay = get_retry_delay(error_category, int(media_file.retry_count or 0))
                 if time_since_failure < required_delay:
                     continue
 
@@ -677,6 +679,7 @@ class TaskDetectionService:
         age_threshold = timedelta(hours=self.config.FILE_RECOVERY_AGE_THRESHOLD)
 
         for media_file in problem_files:
+            assert media_file.upload_time is not None  # server_default=now()
             file_age = datetime.now(timezone.utc) - media_file.upload_time
             if file_age > age_threshold:
                 aged_files.append(media_file)
@@ -964,7 +967,7 @@ class TaskDetectionService:
         )
         tasks_by_file: dict[int, list] = {}
         for task in active_proc_tasks:
-            tasks_by_file.setdefault(task.media_file_id, []).append(task)
+            tasks_by_file.setdefault(task.media_file_id, []).append(task)  # type: ignore[arg-type]
 
         files_without_tasks = []
         for media_file in processing_files:

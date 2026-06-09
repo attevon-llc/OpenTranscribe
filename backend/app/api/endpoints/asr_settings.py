@@ -564,7 +564,7 @@ def create_asr_config(
 
     # Auto-activate if this is the user's first config (no pre-existing configs).
     if not has_existing:
-        _set_active_asr_configuration(db, int(current_user.id), int(config.id))
+        _set_active_asr_configuration(db, current_user.id, config.id)
 
     return _config_to_dict(config)
 
@@ -674,9 +674,7 @@ def update_asr_config(  # noqa: C901
         elif not new_shared and config.is_shared:
             config.is_shared = False  # type: ignore[assignment]
             config.shared_at = None  # type: ignore[assignment]
-            _clear_asr_shared_active_references(
-                db, int(config.id), exclude_user_id=int(current_user.id)
-            )
+            _clear_asr_shared_active_references(db, config.id, exclude_user_id=current_user.id)
 
     db.add(config)
     db.commit()
@@ -697,7 +695,7 @@ def set_active_asr_config(
         raise HTTPException(status_code=400, detail="config_uuid (or uuid) is required")
 
     config = _get_config_or_404(db, config_uuid, current_user.id, allow_shared=True)
-    _set_active_asr_configuration(db, int(current_user.id), int(config.id))
+    _set_active_asr_configuration(db, current_user.id, config.id)
 
     return {
         "message": "Active ASR configuration updated",
@@ -718,14 +716,12 @@ def delete_asr_config(
 
     # Clean up other users who had this shared config active (preserve owner's for auto-promote)
     if config.is_shared:
-        _clear_asr_shared_active_references(
-            db, int(config.id), exclude_user_id=int(current_user.id)
-        )
+        _clear_asr_shared_active_references(db, config.id, exclude_user_id=current_user.id)
 
     active_config_id = _get_active_asr_config_id(db, current_user.id)
-    was_active = active_config_id == int(config.id)
+    was_active = active_config_id == config.id
 
-    config_id = int(config.id)
+    config_id = config.id
     db.delete(config)
     db.commit()
 
@@ -740,9 +736,9 @@ def delete_asr_config(
             .first()
         )
         if another:
-            _set_active_asr_configuration(db, int(current_user.id), int(another.id))
+            _set_active_asr_configuration(db, current_user.id, another.id)
         else:
-            _clear_active_asr_setting(db, int(current_user.id))
+            _clear_active_asr_setting(db, current_user.id)
 
 
 @router.post("/clear-active")
@@ -751,7 +747,7 @@ def clear_active_asr_config(
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Clear the active ASR configuration, reverting to local GPU default."""
-    _clear_active_asr_setting(db, int(current_user.id))
+    _clear_active_asr_setting(db, current_user.id)
     return {"message": "Reverted to local ASR default"}
 
 
@@ -764,7 +760,7 @@ def delete_all_asr_configs(
     from app.models.user_asr_settings import UserASRSettings  # type: ignore[import]
 
     db.query(UserASRSettings).filter(UserASRSettings.user_id == current_user.id).delete()
-    _clear_active_asr_setting(db, int(current_user.id))
+    _clear_active_asr_setting(db, current_user.id)
     db.commit()
 
 

@@ -331,6 +331,8 @@ class TokenService:
 
             # Check database revocation status
             if refresh_token.is_revoked:
+                # is_revoked is True iff revoked_at is not None (see model property)
+                assert refresh_token.revoked_at is not None
                 logger.warning(
                     f"Token verification failed: token revoked at "
                     f"{refresh_token.revoked_at.isoformat()}"

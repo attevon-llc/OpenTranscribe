@@ -18,6 +18,7 @@ from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.transcript import SegmentSpeakerUpdate
 from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import get_by_uuid
+from app.utils.uuid_helpers import require_resource_owner
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ def _get_new_speaker_id(
         from app.services.permission_service import PermissionService
 
         perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), int(current_user.id)
+            db, int(speaker.media_file_id), current_user.id
         )
         if not perm or perm == "viewer":
             raise HTTPException(
@@ -120,7 +121,7 @@ def _get_new_speaker_id(
                 detail="Not authorized to use this speaker",
             )
 
-    return int(speaker.id)
+    return speaker.id
 
 
 def _handle_speaker_change(
@@ -238,11 +239,11 @@ def update_segment_speaker(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
     # Verify the user owns this file
-    if media_file.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to modify this transcript segment",
-        )
+    require_resource_owner(
+        media_file,
+        current_user,
+        forbidden_detail="Not authorized to modify this transcript segment",
+    )
 
     # Track original speaker_id for change detection
     original_speaker_id: int | None = int(segment.speaker_id) if segment.speaker_id else None
@@ -260,10 +261,10 @@ def update_segment_speaker(
         db,
         original_speaker_id,
         new_speaker_id,
-        int(media_file.id),
+        media_file.id,
         segment_uuid=segment_uuid,
         media_file_uuid=str(media_file.uuid),
-        user_id=int(current_user.id),
+        user_id=current_user.id,
     )
 
     # Format the response with speaker details
@@ -274,7 +275,7 @@ def update_segment_speaker(
         end_time=float(segment.end_time),
         text=str(segment.text),
         speaker_id=segment.speaker.uuid if segment.speaker else None,
-        speaker=segment.speaker,
+        speaker=segment.speaker,  # type: ignore[arg-type]  # ORM Speaker coerced via from_attributes
         formatted_timestamp=format_timestamp(float(segment.start_time)),
         display_timestamp=format_timestamp(float(segment.start_time)),
         speaker_label=(segment.speaker.name if segment.speaker else None),  # Original speaker ID

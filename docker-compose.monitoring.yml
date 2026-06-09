@@ -1,0 +1,73 @@
+# Monitoring overlay (Phase 2 — observability)
+#
+# Adds a Prometheus + Grafana stack that scrapes the backend's in-app
+# /metrics endpoint (Phase 1) and renders the ops + product dashboards.
+# Load via: ./opentr.sh start dev --with-monitoring
+#
+#   PROMETHEUS_PORT  host port for the Prometheus UI (default 5186) → :9090
+#   GRAFANA_PORT     host port for the Grafana UI    (default 5185) → :3000
+#   GRAFANA_PASSWORD admin password for Grafana      (default admin — CHANGE IN PRODUCTION)
+#   POSTGRES_*       reused (from .env) to provision Grafana's read-only PostgreSQL datasource
+#
+# Both services join the stack's default bridge network automatically (same
+# compose project), so Prometheus reaches the backend at backend:8080 and
+# Grafana reaches postgres at postgres:5432 — no extra network config needed.
+#
+# This overlay is intentionally generic so the cloud repo (which pins this
+# repo as a submodule) can append it as an extra `-f` file unchanged.
+#
+# FUTURE ADD-ON (not included): a celery-exporter container. The backend
+# already publishes `celery_queue_depth` per queue via /metrics, so queue
+# depth is covered without it; add an exporter later if per-task Celery
+# metrics (runtime, retries, success/failure) are wanted in Prometheus.
+
+services:
+  prometheus:
+    container_name: opentranscribe-prometheus
+    image: prom/prometheus:v3.12.0
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-5186}:9090"
+
+  grafana:
+    container_name: opentranscribe-grafana
+    # Pinned to the current stable Grafana 12.x (12.4.4, 2026-06-02). Bump the
+    # minor as new 12.x releases land; Grafana 12's strict provisioned-datasource
+    # UID validation is why the datasource UIDs are plain (prometheus / opentranscribe-pg).
+    image: grafana/grafana:12.4.4
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      # Passed through to the provisioned PostgreSQL datasource (read-only product metrics).
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-5185}:3000"
+    depends_on:
+      - prometheus
+
+# Overlay-local named volumes (overlays may declare their own — watch overlay precedent).
+volumes:
+  prometheus_data:
+  grafana_data:

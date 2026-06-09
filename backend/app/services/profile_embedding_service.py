@@ -403,6 +403,8 @@ class ProfileEmbeddingService:
         """Group speakers by their profile ID."""
         speakers_by_profile: dict[int, list[Speaker]] = {}
         for speaker in speakers:
+            # Callers pass speakers filtered on profile_id (non-None grouping key)
+            assert speaker.profile_id is not None
             profile_id = int(speaker.profile_id)
             if profile_id not in speakers_by_profile:
                 speakers_by_profile[profile_id] = []

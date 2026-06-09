@@ -226,7 +226,7 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
             return
 
     # Register the authenticated connection
-    await manager.connect(websocket, int(user.id))
+    await manager.connect(websocket, user.id)
 
     # Send initial connection status
     await websocket.send_text(
@@ -253,10 +253,10 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
             # Echo back for debugging/heartbeat
             await websocket.send_text(json.dumps({"type": "echo", "data": data}))
     except WebSocketDisconnect:
-        manager.disconnect(websocket, int(user.id))
+        manager.disconnect(websocket, user.id)
     except Exception as e:
         logger.error(f"WebSocket error: {str(e)}")
-        manager.disconnect(websocket, int(user.id))
+        manager.disconnect(websocket, user.id)
 
 
 # Function to send notification to a user

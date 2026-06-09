@@ -207,6 +207,41 @@ def get_asr_config_by_uuid(db: Session, uuid: "UUID | str") -> "Any":
     return get_by_uuid(db, UserASRSettings, uuid, error_message="ASR configuration not found")
 
 
+# Generic ownership gate
+def require_resource_owner(
+    resource: Any,
+    user: User,
+    *,
+    forbidden_detail: str,
+    owner_attr: str = "user_id",
+    allow_admin: bool = False,
+) -> None:
+    """Raise 403 with the caller's detail when ``user`` does not own ``resource``.
+
+    Behavior-preserving consolidation of the copy-pasted ``if resource.user_id !=
+    current_user.id: raise HTTPException(403, ...)`` pattern across endpoints.
+
+    Args:
+        resource: ORM instance bearing the owner foreign-key attribute.
+        user: Current authenticated user.
+        forbidden_detail: Exact ``detail`` string for the 403 (per-site message).
+        owner_attr: Attribute on ``resource`` holding the owner user id (e.g.
+            ``"user_id"`` or ``"owner_id"``).
+        allow_admin: When True, admins (``user.is_admin``) bypass the gate.
+
+    Raises:
+        HTTPException: 403 ``forbidden_detail`` when the user is neither the
+            owner nor (when permitted) an admin.
+    """
+    if allow_admin and user.is_admin:
+        return
+    if getattr(resource, owner_attr) != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=forbidden_detail,
+        )
+
+
 # Permission checking helpers
 def get_file_by_uuid_with_permission(
     db: Session,

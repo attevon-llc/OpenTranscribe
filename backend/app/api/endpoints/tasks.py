@@ -162,7 +162,7 @@ def get_active_progress(
     """
     from app.services.progress_tracker import ProgressTracker
 
-    return ProgressTracker.get_active_tasks(int(current_user.id))
+    return ProgressTracker.get_active_tasks(current_user.id)
 
 
 # =============================================================================
@@ -646,10 +646,10 @@ async def retry_file_processing(
             media_file = get_file_by_uuid(db, file_uuid)
         else:
             media_file = get_file_by_uuid_with_permission(
-                db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+                db, file_uuid, current_user.id, is_admin=current_user.is_admin
             )
 
-        file_id = int(media_file.id)
+        file_id = media_file.id
 
         # Check if the file is in a state where retry makes sense
         if media_file.status not in [FileStatus.ERROR, FileStatus.PROCESSING]:

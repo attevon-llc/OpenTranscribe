@@ -8,6 +8,128 @@ description: System monitoring, log management, and alerting best practices
 
 OpenTranscribe runs as a multi-service Docker Compose application with GPU-accelerated AI processing, background task queues, and several data stores. Effective monitoring ensures reliable operation and early detection of issues.
 
+OpenTranscribe ships with a **built-in, fully self-hosted observability stack** — Prometheus + Grafana scraping a native FastAPI `/metrics` endpoint, plus structured JSON access logs. There is no Google Analytics or third-party SaaS telemetry: all metrics stay on your infrastructure. The sections immediately below cover this built-in stack; later sections cover the standing operational tooling (Flower, health checks, `nvidia-smi`, log management) and how to plug into external monitoring (CloudWatch, Datadog, etc.).
+
+## Built-in Metrics & Dashboards
+
+### What the backend exposes
+
+The backend instruments every HTTP request and database query and exposes them in Prometheus format. Two unauthenticated endpoints are mounted at the application root (next to `/health`), **not** under `/api` and **never proxied by nginx** — they are reachable only from inside the Docker network:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /metrics` | Prometheus exposition format. Request latency/RPS/errors by route template, **DB queries per request** (the duplicate-call / N+1 detector), DB query latency, in-flight requests, cache hit/miss counters, Celery queue depth, and product counters (signups, uploads). |
+| `GET /health/ready` | Readiness probe for load balancers / Kubernetes. Checks Postgres + Redis (critical → 503 if down) and OpenSearch + MinIO (degraded-but-ready). Returns `{"status": "ready", "checks": {...}}`. The original `GET /health` (static 200) is unchanged and still drives the Docker healthcheck. |
+
+Key metric names (stable; dashboards are built against these):
+
+| Metric | Type | Labels |
+|--------|------|--------|
+| `http_request_duration_seconds` | Histogram | `method`, `route`, `status` |
+| `http_requests_total` | Counter | `method`, `route`, `status` (5xx rate derived in Grafana) |
+| `http_requests_in_flight` | Gauge | — |
+| `db_query_duration_seconds` | Histogram | — (no statement/table labels — cardinality) |
+| `db_queries_per_request` | Histogram | `method`, `route` |
+| `cache_operations_total` | Counter | `cache` (`redis`/`settings`), `result` (`hit`/`miss`) |
+| `celery_queue_depth` | Gauge | `queue` |
+| `user_signups_total` | Counter | `method` (`local`/`ldap`/`keycloak`/`pki`/`clerk`) |
+| `files_uploaded_total` | Counter | `source` (`upload`/`url`/`watch`) |
+
+:::note Route labels use the route **template** (e.g. `/api/files/{file_id}`), never the raw path or query string — this bounds cardinality and keeps tokens/PII out of metrics. `user_id`/`org_id` are written to the JSON **access log** only, never as Prometheus labels.
+:::
+
+:::info Worker-side product events (transcription outcomes, processed minutes, watch-source imports) happen in Celery workers, whose Prometheus registries are never scraped. Those are dashboarded from the database via Grafana's PostgreSQL datasource (the Product dashboard below), not from Prometheus counters.
+:::
+
+### Starting the stack
+
+The Prometheus + Grafana overlay is **optional** and started with a single flag:
+
+```bash
+./opentr.sh start dev --with-monitoring
+```
+
+This loads `docker-compose.monitoring.yml` and brings up:
+
+| Service | URL | Notes |
+|---------|-----|-------|
+| Prometheus | http://localhost:5186 | 15s scrape of `backend:8080/metrics`; 15-day retention |
+| Grafana | http://localhost:5185 | Login `admin` / `$GRAFANA_PASSWORD` (default `admin`) |
+
+Both containers run `no-new-privileges`, `restart: unless-stopped`, with read-only config mounts and named data volumes. Grafana anonymous access and self-signup are disabled. Override the host ports with `PROMETHEUS_PORT` / `GRAFANA_PORT` and the password with `GRAFANA_PASSWORD` in `.env`.
+
+Omit the flag and the stack runs completely unchanged — the overlay adds nothing to the base services.
+
+Verify after start: Prometheus → **Status → Targets** shows `opentranscribe-backend` UP; Grafana → **Dashboards → OpenTranscribe** lists both dashboards and renders data after you click around the app.
+
+### Dashboard tour
+
+Two dashboards are auto-provisioned into the **OpenTranscribe** folder:
+
+**OpenTranscribe — Backend Ops** (`opentranscribe.json`, Prometheus datasource):
+
+- **Request latency p50 / p95 / p99 by route** — `histogram_quantile(...)` over `http_request_duration_seconds_bucket`. The histogram buckets run out to 600s so long uploads don't saturate p99 at `+Inf`.
+- **Requests per second by route** and **5xx error rate** (fraction of all requests).
+- **Requests in flight** — a stat panel off `http_requests_in_flight`; watch this near the DB pool ceiling.
+- **DB queries per request — p95 by route** — the duplicate-call radar. A route whose p95 jumps to dozens of queries is doing N+1 or repeated identical lookups within one request.
+- **DB query latency p99 / p95** and **cache hit ratio by cache** (split by the `redis` / `settings` cache label).
+- **Celery queue depth by queue** (summed across priority sub-keys).
+- **Signups / uploads rate** product counters (API-process events).
+
+**OpenTranscribe — Product & Usage** (`product.json`, mixed datasources):
+
+- **Signups over time by method** and **uploads over time by source** — from Prometheus (`user_signups_total`, `files_uploaded_total`).
+- **DAU / WAU** and **daily active users** — distinct `user_id` from the `refresh_token` table (a refresh token is minted per login), via the PostgreSQL datasource.
+- **Files completed per day**, **transcription minutes processed per day** (`file_pipeline_timing.audio_duration_s`), and **files by status over time** / **current error+orphaned count** — straight from `media_file` / `file_pipeline_timing`. This is how worker-side product events are tracked without Prometheus.
+
+### The PostgreSQL datasource (read-only role for production)
+
+The Product dashboard reads the database directly through a provisioned Grafana **PostgreSQL datasource** (UID `opentranscribe-pg`). In dev it reuses the stack's Postgres credentials for convenience. **In production, point it at a dedicated read-only role** instead of the application superuser. Create one (idempotently) and grant it read access:
+
+```sql
+-- Run once against the OpenTranscribe database, as a superuser.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'grafana_ro') THEN
+    CREATE ROLE grafana_ro LOGIN PASSWORD 'CHANGE_ME_strong_password';
+  END IF;
+END
+$$;
+
+GRANT CONNECT ON DATABASE opentranscribe TO grafana_ro;
+GRANT USAGE ON SCHEMA public TO grafana_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana_ro;
+-- Make future tables readable too:
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana_ro;
+```
+
+Then set the datasource's user/password to `grafana_ro` (the datasource is provisioned `editable: true`, so you can repoint it from **Connections → Data sources** in the Grafana UI, or pass `grafana_ro` credentials via the `POSTGRES_*` env vars the overlay forwards). OpenTranscribe does **not** create this role for you — provision it deliberately as part of your production setup.
+
+### Per-user / per-tenant analysis via JSON access logs
+
+Set `LOG_FORMAT=json` (in `.env`, then recreate the backend container — env changes need a recreate, not just a restart) to emit one structured JSON object per request on the `access` logger. Each line carries `user_id`, `org_id` (null in the self-hosted edition), `request_id`, `route` (template), `method`, `status`, `duration_ms`, `db_query_count`, and `client_ip`.
+
+Because Prometheus deliberately omits `user_id` (cardinality), this is where per-user and per-tenant analysis lives — DAU/WAU by tenant, onboarding funnels (first login → first upload → first transcript view, by route template), and per-user request volumes. Pipe the logs into any log-analytics tool:
+
+```bash
+# Quick local analysis: top routes by request count today
+./opentr.sh logs backend | grep '"message": "request"' | jq -r '.route' | sort | uniq -c | sort -rn | head
+```
+
+In `text` mode (the default) the same fields are folded into a human-readable one-liner, so logs stay readable without JSON tooling.
+
+### AWS / cloud notes
+
+The built-in stack is portable to managed AWS services with no code change:
+
+- **Amazon Managed Prometheus (AMP)** scrapes the identical `backend:8080/metrics` endpoint — point an AMP scraper or an ADOT/Prometheus agent (or a Kubernetes `podMonitor`) at it. Keep `/metrics` off any public Ingress; it is internal-only by design.
+- **Amazon Managed Grafana (AMG)**: import both dashboard JSONs as-is. The Ops dashboard is pure PromQL (fully portable); the Product dashboard's PostgreSQL panels just need an AMG PostgreSQL datasource pointed at your RDS instance (use the read-only role above on RDS).
+- **CloudWatch Logs**: set `LOG_FORMAT=json` and let Fluent Bit / the CloudWatch agent ship the structured access lines. **CloudWatch Logs Insights** then queries `user_id` / `org_id` / `route` / `duration_ms` directly for DAU/WAU and funnels.
+- **Readiness**: switch your load balancer / Kubernetes `readinessProbe` from `/health` to `/health/ready` so traffic is only routed once Postgres and Redis are actually reachable.
+
+:::tip Future tweak: uvicorn emits its own access log line next to OpenTranscribe's structured one (duplicate request lines). This is left as-is because changing the container `CMD` is a behavior change for existing log consumers; in production you can add `--no-access-log` to the uvicorn command to drop the duplicate and rely solely on the structured access logger.
+:::
+
 ## Monitoring Architecture
 
 ```mermaid
@@ -320,9 +442,9 @@ docker logs --tail 100 opentranscribe-celery-worker
 
 ## Integration with External Monitoring
 
-OpenTranscribe does not ship with built-in Prometheus/Grafana integration, but its services expose standard interfaces that work with external monitoring stacks.
+OpenTranscribe ships with a built-in Prometheus + Grafana stack for application-level metrics (see [Built-in Metrics & Dashboards](#built-in-metrics--dashboards) above). The exporters below complement it with host, GPU, and data-store metrics that the in-app `/metrics` endpoint does not cover.
 
-### Prometheus + Grafana
+### Prometheus + Grafana (host / infra exporters)
 
 - **Node Exporter**: Install on the host for CPU, memory, disk, and network metrics
 - **NVIDIA GPU Exporter**: Use [dcgm-exporter](https://github.com/NVIDIA/dcgm-exporter) for GPU metrics in Prometheus format

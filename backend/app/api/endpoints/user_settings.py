@@ -795,7 +795,7 @@ def update_transcription_settings(
     for frontend_key, value in update_data.items():
         db_key, transform = setting_mappings[frontend_key]
         db_value = transform(value) if transform else value
-        _upsert_user_setting(db, int(current_user.id), db_key, db_value)
+        _upsert_user_setting(db, current_user.id, db_key, db_value)
 
     db.commit()
 
@@ -971,7 +971,7 @@ def get_organization_context(
         OrganizationContextSettings containing context_text, include_in_default_prompts,
         and include_in_custom_prompts
     """
-    return _build_org_context_response(db, int(current_user.id))
+    return _build_org_context_response(db, current_user.id)
 
 
 @router.put("/organization-context", response_model=OrganizationContextSettings)
@@ -995,7 +995,7 @@ def update_organization_context(
     update_data = settings_data.model_dump(exclude_none=True)
 
     if not update_data:
-        return _build_org_context_response(db, int(current_user.id))
+        return _build_org_context_response(db, current_user.id)
 
     # Map frontend keys to database keys
     setting_mappings = {
@@ -1008,7 +1008,7 @@ def update_organization_context(
     for frontend_key, value in update_data.items():
         db_key = setting_mappings.get(frontend_key)
         if db_key:
-            _upsert_user_setting(db, int(current_user.id), db_key, value)
+            _upsert_user_setting(db, current_user.id, db_key, value)
 
     # If unsharing, clean up other users who were using this shared context
     if update_data.get("is_shared") is False:
@@ -1019,7 +1019,7 @@ def update_organization_context(
 
     db.commit()
 
-    return _build_org_context_response(db, int(current_user.id))
+    return _build_org_context_response(db, current_user.id)
 
 
 @router.delete("/organization-context")
@@ -1085,9 +1085,7 @@ def get_shared_organization_contexts(
     text_map = {int(s.user_id): str(s.setting_value) for s in context_texts}
 
     # Batch-fetch owners for attribution
-    owners = {
-        int(u.id): u for u in db.query(models.User).filter(models.User.id.in_(sharer_ids)).all()
-    }
+    owners = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(sharer_ids)).all()}
 
     # Check which shared context the current user is using
     using_setting = (
@@ -1136,7 +1134,7 @@ def use_shared_organization_context(
             models.UserSetting.setting_key == "org_context_use_shared_from",
         ).delete(synchronize_session=False)
         db.commit()
-        return _build_org_context_response(db, int(current_user.id))
+        return _build_org_context_response(db, current_user.id)
 
     # Verify the target user's context is actually shared
     is_shared = (
@@ -1151,12 +1149,10 @@ def use_shared_organization_context(
     if not is_shared:
         raise HTTPException(status_code=404, detail="Shared organization context not found")
 
-    _upsert_user_setting(
-        db, int(current_user.id), "org_context_use_shared_from", str(shared_user_id)
-    )
+    _upsert_user_setting(db, current_user.id, "org_context_use_shared_from", str(shared_user_id))
     db.commit()
 
-    return _build_org_context_response(db, int(current_user.id))
+    return _build_org_context_response(db, current_user.id)
 
 
 # =============================================================================
@@ -1226,7 +1222,7 @@ def update_speaker_attribute_settings(
     }
 
     for frontend_key, value in update_data.items():
-        _upsert_user_setting(db, int(current_user.id), setting_mappings[frontend_key], value)
+        _upsert_user_setting(db, current_user.id, setting_mappings[frontend_key], value)
 
     db.commit()
 
@@ -1266,23 +1262,30 @@ def get_speaker_attribute_system_defaults(
     """Get system-level speaker attribute defaults."""
     import os
 
-    from app.services.system_settings_service import get_setting_bool
+    from app.services.system_settings_service import get_settings_map
 
     env_enabled = os.environ.get("SPEAKER_ATTRIBUTE_DETECTION_ENABLED", "true").lower() == "true"
 
+    # Single SELECT for all four keys instead of four round-trips.
+    vals = get_settings_map(
+        db,
+        [
+            "speaker_attribute.detection_enabled",
+            "speaker_attribute.gender_detection_enabled",
+            "speaker_attribute.age_detection_enabled",
+            "speaker_attribute.show_on_cards",
+        ],
+    )
+
+    def _b(key: str, default: bool) -> bool:
+        v = vals.get(key)
+        return v.lower() in ("true", "1", "yes", "on") if v is not None else default
+
     return SpeakerAttributeSystemDefaults(
-        detection_enabled=get_setting_bool(
-            db, "speaker_attribute.detection_enabled", default=env_enabled
-        ),
-        gender_detection_enabled=get_setting_bool(
-            db, "speaker_attribute.gender_detection_enabled", default=True
-        ),
-        age_detection_enabled=get_setting_bool(
-            db, "speaker_attribute.age_detection_enabled", default=True
-        ),
-        show_attributes_on_cards=get_setting_bool(
-            db, "speaker_attribute.show_on_cards", default=True
-        ),
+        detection_enabled=_b("speaker_attribute.detection_enabled", env_enabled),
+        gender_detection_enabled=_b("speaker_attribute.gender_detection_enabled", True),
+        age_detection_enabled=_b("speaker_attribute.age_detection_enabled", True),
+        show_attributes_on_cards=_b("speaker_attribute.show_on_cards", True),
     )
 
 
@@ -1370,7 +1373,7 @@ def update_download_settings(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Unknown download setting field: '{frontend_key}'",
             )
-        _upsert_user_setting(db, int(current_user.id), db_key, value)
+        _upsert_user_setting(db, current_user.id, db_key, value)
 
     db.commit()
 
@@ -1427,7 +1430,7 @@ async def get_auto_label_settings(
     from app.services.auto_label_service import AutoLabelService
 
     service = AutoLabelService(db)
-    return service.get_user_auto_label_settings(int(current_user.id))
+    return service.get_user_auto_label_settings(current_user.id)
 
 
 @router.put("/auto-label")
@@ -1440,8 +1443,8 @@ async def update_auto_label_settings(
     from app.services.auto_label_service import AutoLabelService
 
     service = AutoLabelService(db)
-    service.save_user_auto_label_settings(int(current_user.id), settings_data.model_dump())
-    return service.get_user_auto_label_settings(int(current_user.id))
+    service.save_user_auto_label_settings(current_user.id, settings_data.model_dump())
+    return service.get_user_auto_label_settings(current_user.id)
 
 
 # =============================================================================
@@ -1461,7 +1464,7 @@ def get_ai_summary_setting(
     """
     from app.utils.summary_settings import is_summary_enabled_for_user
 
-    enabled = is_summary_enabled_for_user(db, int(current_user.id))
+    enabled = is_summary_enabled_for_user(db, current_user.id)
     return {"ai_summary_enabled": enabled}
 
 
@@ -1480,7 +1483,7 @@ def update_ai_summary_setting(
     Returns:
         Updated setting and confirmation message.
     """
-    _upsert_user_setting(db, int(current_user.id), "ai_summary_enabled", enabled)
+    _upsert_user_setting(db, current_user.id, "ai_summary_enabled", enabled)
     db.commit()
     state = "enabled" if enabled else "disabled"
     return {

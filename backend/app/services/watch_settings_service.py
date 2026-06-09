@@ -76,21 +76,40 @@ def fs_events_enabled(db: Session | None = None) -> bool:
 
 
 def get_global_settings(db: Session | None = None) -> dict[str, Any]:
-    """Return all global watch settings as a dict (one read of each key)."""
+    """Return all global watch settings as a dict (single SELECT for all keys)."""
     with _session(db) as s:
+        vals = system_settings_service.get_settings_map(
+            s,
+            [
+                KEY_ENABLED,
+                KEY_FILE_STABILITY_SECONDS,
+                KEY_MAX_CONCURRENT_IMPORTS,
+                KEY_FS_EVENTS_ENABLED,
+            ],
+        )
+
+        def _b(key: str, default: bool) -> bool:
+            v = vals.get(key)
+            return v.lower() in ("true", "1", "yes", "on") if v is not None else default
+
+        def _i(key: str, default: int) -> int:
+            v = vals.get(key)
+            if v is None:
+                return default
+            try:
+                return int(v)
+            except (ValueError, TypeError):
+                return default
+
         return {
-            "enabled": system_settings_service.get_setting_bool(
-                s, KEY_ENABLED, DEFAULT_WATCH_ENABLED
+            "enabled": _b(KEY_ENABLED, DEFAULT_WATCH_ENABLED),
+            "file_stability_seconds": _i(
+                KEY_FILE_STABILITY_SECONDS, DEFAULT_WATCH_FILE_STABILITY_SECONDS
             ),
-            "file_stability_seconds": system_settings_service.get_setting_int(
-                s, KEY_FILE_STABILITY_SECONDS, DEFAULT_WATCH_FILE_STABILITY_SECONDS
+            "max_concurrent_imports": _i(
+                KEY_MAX_CONCURRENT_IMPORTS, DEFAULT_WATCH_MAX_CONCURRENT_IMPORTS
             ),
-            "max_concurrent_imports": system_settings_service.get_setting_int(
-                s, KEY_MAX_CONCURRENT_IMPORTS, DEFAULT_WATCH_MAX_CONCURRENT_IMPORTS
-            ),
-            "fs_events_enabled": system_settings_service.get_setting_bool(
-                s, KEY_FS_EVENTS_ENABLED, DEFAULT_WATCH_FS_EVENTS_ENABLED
-            ),
+            "fs_events_enabled": _b(KEY_FS_EVENTS_ENABLED, DEFAULT_WATCH_FS_EVENTS_ENABLED),
         }
 
 

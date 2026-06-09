@@ -133,7 +133,7 @@ class SpeakerClusteringService:
                         continue
 
                     # Gender-aware threshold: cross-gender matches need higher similarity
-                    if speaker.predicted_gender and cluster.member_count >= 2:
+                    if speaker.predicted_gender and (cluster.member_count or 0) >= 2:
                         dominant = self._get_cluster_dominant_gender(cluster)
                         if (
                             dominant
@@ -302,6 +302,7 @@ class SpeakerClusteringService:
             profile_groups: dict[int, list[Speaker]] = defaultdict(list)
             profiled_speaker_ids: set[int] = set()
             for spk in profile_speakers:
+                assert spk.profile_id is not None  # filtered on profile_id.isnot(None) above
                 profile_groups[int(spk.profile_id)].append(spk)
                 profiled_speaker_ids.add(int(spk.id))
 
@@ -845,18 +846,18 @@ class SpeakerClusteringService:
                             threshold=threshold,
                         )
                         for match in matches:
-                            pc = profile_cluster_map.get(match["cluster_uuid"])
-                            if not pc:
+                            matched_cluster = profile_cluster_map.get(match["cluster_uuid"])
+                            if not matched_cluster:
                                 continue
                             # Check constraints before assigning singleton
-                            if self._is_speaker_blocked_from_cluster(int(spk.id), pc):
+                            if self._is_speaker_blocked_from_cluster(int(spk.id), matched_cluster):
                                 logger.debug(
                                     "Singleton %s blocked from cluster %s by constraint",
                                     spk.id,
-                                    pc.uuid,
+                                    matched_cluster.uuid,
                                 )
                                 continue
-                            self._add_speaker_to_cluster(spk, pc, match["similarity"])
+                            self._add_speaker_to_cluster(spk, matched_cluster, match["similarity"])
                             speakers_assigned += 1
                             matched_singletons += 1
                             break  # Assigned to first valid match
@@ -1469,7 +1470,7 @@ class SpeakerClusteringService:
                     for remaining_id in remaining_member_ids:
                         # Add both directions
                         for a, b in [(s.id, remaining_id), (remaining_id, s.id)]:
-                            existing = (
+                            existing_link = (
                                 self.db.query(SpeakerCannotLink)
                                 .filter(
                                     SpeakerCannotLink.speaker_id == a,
@@ -1477,7 +1478,7 @@ class SpeakerClusteringService:
                                 )
                                 .first()
                             )
-                            if not existing:
+                            if not existing_link:
                                 self.db.add(
                                     SpeakerCannotLink(
                                         speaker_id=a,
@@ -1571,7 +1572,7 @@ class SpeakerClusteringService:
                     else None,
                     "cluster_uuid": str(cluster.uuid) if cluster else None,
                     "cluster_label": cluster.label if cluster else None,
-                    "cluster_member_count": int(cluster.member_count) if cluster else 0,
+                    "cluster_member_count": int(cluster.member_count or 0) if cluster else 0,
                     "verified": False,
                     "predicted_gender": speaker.predicted_gender,
                     "predicted_age_range": speaker.predicted_age_range,
@@ -1809,7 +1810,7 @@ class SpeakerClusteringService:
                     "label": cluster.label,
                     "description": cluster.description,
                     "user_id": int(cluster.user_id),
-                    "member_count": int(cluster.member_count),
+                    "member_count": int(cluster.member_count or 0),
                     "promoted_to_profile_id": cluster.promoted_to_profile_id,
                     "promoted_to_profile_uuid": str(promoted_profile.uuid)
                     if promoted_profile
@@ -1912,7 +1913,7 @@ class SpeakerClusteringService:
                     "media_file_title": (
                         media_file.title or media_file.filename if media_file else None
                     ),
-                    "confidence": float(m.confidence),
+                    "confidence": float(m.confidence or 0.0),
                     "margin": float(m.margin) if m.margin is not None else None,
                     "verified": bool(speaker.verified),
                     "predicted_gender": speaker.predicted_gender,
@@ -1932,7 +1933,7 @@ class SpeakerClusteringService:
             "label": cluster.label,
             "description": cluster.description,
             "user_id": int(cluster.user_id),
-            "member_count": int(cluster.member_count),
+            "member_count": int(cluster.member_count or 0),
             "promoted_to_profile_id": cluster.promoted_to_profile_id,
             "promoted_to_profile_uuid": str(promoted_profile.uuid) if promoted_profile else None,
             "promoted_to_profile_name": promoted_profile.name if promoted_profile else None,

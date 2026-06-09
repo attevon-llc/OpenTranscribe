@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from fastapi import UploadFile
 from fastapi import status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.constants import UPLOAD_CHUNK_SIZE
 from app.models.media import FileStatus
@@ -211,7 +212,7 @@ def dispatch_thumbnail_for_video(db_file: MediaFile, user_id: int) -> None:
         from app.tasks.thumbnail import generate_thumbnail_task
 
         generate_thumbnail_task.delay(
-            file_id=int(db_file.id),
+            file_id=db_file.id,
             user_id=int(user_id),
             storage_path=str(db_file.storage_path),
         )
@@ -243,7 +244,7 @@ def dispatch_upload_pipeline(
         whisper_model = str(db_file.requested_whisper_model)
     dispatch_thumbnail_for_video(db_file, user_id)
     return start_transcription_task(
-        int(db_file.id),
+        db_file.id,
         str(db_file.uuid),
         min_speakers,
         max_speakers,
@@ -401,7 +402,7 @@ async def process_file_upload(
     if client_file_hash and not existing_file_uuid:
         from app.utils.file_hash import check_duplicate_by_hash
 
-        duplicate_uuid = await check_duplicate_by_hash(db, client_file_hash, int(current_user.id))
+        duplicate_uuid = await check_duplicate_by_hash(db, client_file_hash, current_user.id)
         if duplicate_uuid:
             logger.info(
                 f"Duplicate upload rejected for {file.filename} "
@@ -425,7 +426,7 @@ async def process_file_upload(
 
     # Generate storage path with sanitized filename
     storage_path = get_safe_storage_filename(
-        file.filename or "unknown", int(current_user.id), int(db_file.id)
+        file.filename or "unknown", current_user.id, db_file.id
     )
 
     try:
@@ -466,7 +467,8 @@ async def process_file_upload(
 
         # Upload to storage
         with benchmark_timing.stage(task_id, "minio_put"):
-            upload_file_to_storage(
+            await run_in_threadpool(
+                upload_file_to_storage,
                 file_content,
                 file_size,
                 storage_path,
@@ -507,13 +509,18 @@ async def process_file_upload(
         # tail so this route stays in lockstep with the presigned /complete one.
         dispatch_upload_pipeline(
             db_file,
-            user_id=int(current_user.id),
+            user_id=current_user.id,
             whisper_model=whisper_model,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             task_id=task_id,
         )
+
+        # Product metric: file accepted via direct (legacy) upload (API process).
+        from app.core.metrics import files_uploaded_total
+
+        files_uploaded_total.labels(source="upload").inc()
 
         benchmark_timing.mark(task_id, "http_response_end")
         logger.info(f"File processed: {file.filename} (ID: {db_file.id})")

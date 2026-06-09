@@ -17,7 +17,6 @@ from app.core.constants import NOTIFICATION_TYPE_ATTRIBUTE_MIGRATION_PROGRESS
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.core.constants import CPUPriority
 from app.core.constants import GPUPriority
-from app.db.base import SessionLocal
 from app.db.session_utils import session_scope
 from app.services.migration_progress_service import MigrationProgressService
 from app.services.progress_tracker import ProgressTracker
@@ -231,8 +230,9 @@ def migrate_speaker_attributes_task(self, user_id: int, force: bool = False):
         }
 
     try:
-        db = SessionLocal()
-        try:
+        # _reset_all_speaker_attributes does its own explicit commit (preserved);
+        # session_scope's exit commit is then a harmless no-op. Reads use the same scope.
+        with session_scope() as db:
             if force:
                 reset_count = _reset_all_speaker_attributes(db)
                 logger.info("Force mode: reset %d speaker attributes", reset_count)
@@ -248,8 +248,6 @@ def migrate_speaker_attributes_task(self, user_id: int, force: bool = False):
                 return {"status": "skipped", "message": "No files to process"}
 
             file_uuids = [str(f.uuid) for f in files_to_process]
-        finally:
-            db.close()
 
         attribute_migration_progress.start_migration(total_files=total_files, task_id=task_id)
 

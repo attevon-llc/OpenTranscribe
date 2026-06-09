@@ -139,6 +139,13 @@ def get_current_user(
                 raise HTTPException(status_code=400, detail="Inactive user")
             # Stash for get_current_context() so org scoping doesn't re-verify.
             request.state.external_identity = external_identity
+            # Cloud contract: the access log / observability layer reads these
+            # off request.state. user_id is always set; org_id is the provider's
+            # raw org string here and is refined to our local Organization.id in
+            # deps_context.get_current_context() when org context applies. Never
+            # used as a Prometheus label — access log only.
+            request.state.user_id = external_user.id
+            request.state.org_id = getattr(external_user, "clerk_org_id", None)
             return external_user
 
     credentials_exception = HTTPException(
@@ -191,6 +198,12 @@ def get_current_user(
                 f"DB has '{user.role}'. Using DB role. User should re-login."
             )
 
+        # Cloud contract: observability/access-log reads these off request.state.
+        # org_id is None for self-hosted/local users; deps_context refines it to
+        # our local Organization.id when org context applies. Access log only —
+        # never a Prometheus label.
+        request.state.user_id = user.id
+        request.state.org_id = getattr(user, "clerk_org_id", None)
         return user  # type: ignore[no-any-return]
     except Exception as e:
         # Handle database connection errors or other issues
@@ -239,6 +252,7 @@ def get_optional_current_user(
 
     # Check for Authorization header first
     authorization = request.headers.get("Authorization")
+    token: str | None
     if authorization and authorization.startswith("Bearer "):
         token = authorization.replace("Bearer ", "")
     else:
@@ -726,7 +740,7 @@ def _check_mfa_requirement(
     ):
         return None
 
-    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(user.id)).first()
+    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == user.id).first()
 
     if user_mfa and user_mfa.totp_enabled:
         # User has MFA enabled - return MFA token instead of access token
@@ -775,7 +789,7 @@ def _generate_login_tokens(
     # Generate refresh token (FedRAMP AC-12)
     refresh_token, _ = token_service.create_refresh_token(
         db=db,
-        user_id=int(user.id),
+        user_id=user.id,
         user_uuid=user_uuid_str,
         role=user_role,
         user_agent=user_agent,
@@ -784,7 +798,7 @@ def _generate_login_tokens(
 
     # Log successful login
     audit_logger.log_login_success(
-        user_id=int(user.id),
+        user_id=user.id,
         username=str(user.email),
         source_ip=client_ip,
         user_agent=user_agent,
@@ -930,7 +944,7 @@ def login_for_access_token(
 
                     audit_logger.log(
                         event_type=AuditEventType.AUTH_SESSION_EXPIRED,
-                        user_id=int(user_db.id),
+                        user_id=user_db.id,
                         username=str(user_db.email),
                         outcome=AuditOutcome.SUCCESS,
                         source_ip=client_ip,
@@ -1013,15 +1027,21 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
     db.commit()
     db.refresh(db_user)
 
+    # Product metric: local self-registration (API process). External/JIT
+    # signups are counted in app.auth.external_sync.
+    from app.core.metrics import user_signups_total
+
+    user_signups_total.labels(method=AUTH_TYPE_LOCAL).inc()
+
     # Store initial password in history (FedRAMP IA-5)
-    add_password_to_history(db, int(db_user.id), password_hash)
+    add_password_to_history(db, db_user.id, password_hash)
     db.commit()
 
     # Log user registration
     client_ip, user_agent = _get_client_info(request)
     audit_logger.log_admin_action(
         event_type=AuditEventType.ADMIN_USER_CREATE,
-        admin_user_id=int(db_user.id),  # Self-registration
+        admin_user_id=db_user.id,  # Self-registration
         admin_username=str(db_user.email),
         source_ip=client_ip,
         user_agent=user_agent,
@@ -1383,7 +1403,7 @@ async def keycloak_callback(
     # Generate refresh token for Keycloak users too
     refresh_token, _ = token_service.create_refresh_token(
         db=db,
-        user_id=int(user.id),
+        user_id=user.id,
         user_uuid=str(user.uuid),
         role=str(user.role),
         user_agent=user_agent,
@@ -1483,7 +1503,7 @@ async def pki_login(request: Request, db: Session = Depends(get_db)):
     # Generate refresh token for PKI users too
     refresh_token, _ = token_service.create_refresh_token(
         db=db,
-        user_id=int(user.id),
+        user_id=user.id,
         user_uuid=str(user.uuid),
         role=str(user.role),
         user_agent=user_agent,
@@ -1610,7 +1630,7 @@ async def acknowledge_banner(
     client_ip, user_agent = _get_client_info(request)
     audit_logger.log(
         event_type=AuditEventType.AUTH_BANNER_ACKNOWLEDGED,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         outcome=AuditOutcome.SUCCESS,
         source_ip=client_ip,
@@ -1954,7 +1974,7 @@ def _complete_mfa_verification(
         audit_logger.log_mfa_event(
             event_type=AuditEventType.AUTH_MFA_BACKUP_USED,
             outcome=AuditOutcome.SUCCESS,
-            user_id=int(user.id),
+            user_id=user.id,
             username=str(user.email),
             source_ip=client_ip,
             user_agent=user_agent,
@@ -1962,7 +1982,7 @@ def _complete_mfa_verification(
     audit_logger.log_mfa_event(
         event_type=AuditEventType.AUTH_MFA_VERIFY,
         outcome=AuditOutcome.SUCCESS,
-        user_id=int(user.id),
+        user_id=user.id,
         username=str(user.email),
         source_ip=client_ip,
         user_agent=user_agent,
@@ -1976,7 +1996,7 @@ def _complete_mfa_verification(
     # Generate refresh token
     refresh_token, _ = token_service.create_refresh_token(
         db=db,
-        user_id=int(user.id),
+        user_id=user.id,
         user_uuid=user_uuid_str,
         role=user_role,
         user_agent=user_agent,
@@ -2013,7 +2033,7 @@ def get_mfa_status(
     whether the system requires MFA.
     """
     # Check if user has MFA configured
-    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(current_user.id)).first()
+    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == current_user.id).first()
 
     mfa_enabled = _is_mfa_enabled(db)
 
@@ -2053,7 +2073,7 @@ def setup_mfa(
         )
 
     # Check if user already has MFA enabled
-    existing_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(current_user.id)).first()
+    existing_mfa = db.query(UserMFA).filter(UserMFA.user_id == current_user.id).first()
     if existing_mfa and existing_mfa.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2082,7 +2102,7 @@ def setup_mfa(
         existing_mfa.backup_codes = []  # type: ignore[assignment]
     else:
         new_mfa = UserMFA(
-            user_id=int(current_user.id),
+            user_id=current_user.id,
             totp_secret=encrypted_secret,
             totp_enabled=False,
             backup_codes=[],
@@ -2096,7 +2116,7 @@ def setup_mfa(
     audit_logger.log_mfa_event(
         event_type=AuditEventType.AUTH_MFA_SETUP,
         outcome=AuditOutcome.PARTIAL,  # Setup initiated but not completed
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         source_ip=client_ip,
         user_agent=user_agent,
@@ -2131,7 +2151,7 @@ def verify_mfa_setup(
         )
 
     # Get user's MFA record
-    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(current_user.id)).first()
+    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == current_user.id).first()
 
     if not user_mfa:
         raise HTTPException(
@@ -2163,7 +2183,7 @@ def verify_mfa_setup(
         audit_logger.log_mfa_event(
             event_type=AuditEventType.AUTH_MFA_SETUP,
             outcome=AuditOutcome.FAILURE,
-            user_id=int(current_user.id),
+            user_id=current_user.id,
             username=str(current_user.email),
             source_ip=client_ip,
             user_agent=user_agent,
@@ -2187,7 +2207,7 @@ def verify_mfa_setup(
     audit_logger.log_mfa_event(
         event_type=AuditEventType.AUTH_MFA_SETUP,
         outcome=AuditOutcome.SUCCESS,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         source_ip=client_ip,
         user_agent=user_agent,
@@ -2257,7 +2277,7 @@ def verify_mfa(
         audit_logger.log_mfa_event(
             event_type=AuditEventType.AUTH_MFA_VERIFY,
             outcome=AuditOutcome.FAILURE,
-            user_id=int(user.id),
+            user_id=user.id,
             username=str(user.email),
             source_ip=client_ip,
             user_agent=user_agent,
@@ -2302,7 +2322,7 @@ def disable_mfa(
         )
 
     # Get user's MFA record
-    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(current_user.id)).first()
+    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == current_user.id).first()
 
     if not user_mfa or not user_mfa.totp_enabled:
         raise HTTPException(
@@ -2341,7 +2361,7 @@ def disable_mfa(
         audit_logger.log_mfa_event(
             event_type=AuditEventType.AUTH_MFA_DISABLE,
             outcome=AuditOutcome.FAILURE,
-            user_id=int(current_user.id),
+            user_id=current_user.id,
             username=str(current_user.email),
             source_ip=client_ip,
             user_agent=user_agent,
@@ -2360,7 +2380,7 @@ def disable_mfa(
     audit_logger.log_mfa_event(
         event_type=AuditEventType.AUTH_MFA_DISABLE,
         outcome=AuditOutcome.SUCCESS,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         source_ip=client_ip,
         user_agent=user_agent,
@@ -2445,7 +2465,7 @@ def refresh_access_token(
         )
 
     if not user.is_active:
-        logger.warning(f"Token refresh failed: user inactive (id={int(user.id)})")
+        logger.warning(f"Token refresh failed: user inactive (id={user.id})")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account is inactive",
@@ -2463,7 +2483,7 @@ def refresh_access_token(
         db=db,
         old_token=refresh_token_value,
         old_token_record=refresh_token_record,
-        user_id=int(user.id),
+        user_id=user.id,
         user_uuid=user_uuid_str,
         role=str(user.role),
         user_agent=user_agent,
@@ -2472,13 +2492,13 @@ def refresh_access_token(
 
     # Log token refresh with rotation
     audit_logger.log_token_refresh(
-        user_id=int(user.id),
+        user_id=user.id,
         username=str(user.email),
         source_ip=client_ip,
         user_agent=user_agent,
     )
 
-    logger.info(f"Token refresh with rotation successful for user {int(user.id)}")
+    logger.info(f"Token refresh with rotation successful for user {user.id}")
 
     response = JSONResponse(
         content={
@@ -2578,7 +2598,7 @@ async def logout(
                             db.commit()
 
                     audit_logger.log_logout(
-                        user_id=int(user.id),
+                        user_id=user.id,
                         username=str(user.email),
                         source_ip=client_ip,
                         user_agent=user_agent,
@@ -2624,7 +2644,7 @@ async def logout_all_sessions(
     Returns:
         Success message with count of revoked sessions
     """
-    count = token_service.revoke_all_user_tokens(db, int(current_user.id))
+    count = token_service.revoke_all_user_tokens(db, current_user.id)
 
     # Keycloak federated logout (issue #125)
     if current_user.auth_type == AUTH_TYPE_KEYCLOAK and current_user.keycloak_refresh_token:
@@ -2642,16 +2662,14 @@ async def logout_all_sessions(
     # Log logout from all sessions
     client_ip, user_agent = _get_client_info(request)
     audit_logger.log_logout(
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         username=str(current_user.email),
         source_ip=client_ip,
         user_agent=user_agent,
         all_sessions=True,
     )
 
-    logger.info(
-        f"User {int(current_user.id)} logged out from all sessions ({count} tokens revoked)"
-    )
+    logger.info(f"User {current_user.id} logged out from all sessions ({count} tokens revoked)")
 
     from app.auth.cookies import clear_auth_cookies
 
@@ -2683,7 +2701,7 @@ def get_active_sessions(
     Returns:
         List of active session info
     """
-    sessions = token_service.get_user_active_sessions(db, int(current_user.id))
+    sessions = token_service.get_user_active_sessions(db, current_user.id)
 
     return {
         "sessions": sessions,

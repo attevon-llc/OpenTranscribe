@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.auth import get_current_user
 from app.api.endpoints.files.upload import create_media_file_record
@@ -158,6 +159,14 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> None:
 
     db.flush()
 
+    # Bust the owning user's read-through tag cache. Best-effort.
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_tags_for_file(db, file_id)
+    except Exception as e:
+        logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
+
 
 @router.post("/prepare", response_model=dict[str, Any])
 async def prepare_upload(
@@ -179,11 +188,9 @@ async def prepare_upload(
         duplicate_id: str | None = None
         if request.file_hash:
             # First clean up any failed files with the same hash to allow re-upload
-            await cleanup_failed_duplicates(db, request.file_hash, int(current_user.id))
+            await cleanup_failed_duplicates(db, request.file_hash, current_user.id)
 
-            duplicate_id = await check_duplicate_by_hash(
-                db, request.file_hash, int(current_user.id)
-            )
+            duplicate_id = await check_duplicate_by_hash(db, request.file_hash, current_user.id)
 
             if duplicate_id:
                 logger.info(
@@ -206,9 +213,7 @@ async def prepare_upload(
         # This allows future uploads with the same file to recognize it as a duplicate
         from app.utils.filename import get_safe_storage_filename
 
-        storage_path = get_safe_storage_filename(
-            request.filename, int(current_user.id), int(db_file.id)
-        )
+        storage_path = get_safe_storage_filename(request.filename, current_user.id, db_file.id)
         db_file.storage_path = storage_path  # type: ignore[assignment]
 
         # Store the user's requested whisper model (if any)
@@ -226,7 +231,7 @@ async def prepare_upload(
         # Link file to upload batch if a batch UUID was provided
         if request.upload_batch_id:
             batch = get_or_create_upload_batch(
-                db, request.upload_batch_id, int(current_user.id), source="multi_upload"
+                db, request.upload_batch_id, current_user.id, source="multi_upload"
             )
             db_file.upload_batch_id = batch.id  # type: ignore[assignment]
             batch.file_count = (batch.file_count or 0) + 1  # type: ignore[assignment]
@@ -235,13 +240,11 @@ async def prepare_upload(
 
         # Assign to collections if specified
         if request.collection_ids:
-            add_file_to_collections(
-                db, int(db_file.id), int(current_user.id), request.collection_ids
-            )
+            add_file_to_collections(db, db_file.id, current_user.id, request.collection_ids)
 
         # Apply tags if specified
         if request.tag_names:
-            add_tags_to_file(db, int(db_file.id), request.tag_names)
+            add_tags_to_file(db, db_file.id, request.tag_names)
 
         # Commit all assignments (batch, collections, tags)
         db.commit()
@@ -257,7 +260,7 @@ async def prepare_upload(
             from app.services.minio_service import presigned_put_url
 
             task_id = str(uuid_lib.uuid4())
-            put_url = presigned_put_url(storage_path)
+            put_url = await run_in_threadpool(presigned_put_url, storage_path)
             benchmark_timing.mark(task_id, "prepare_upload_end")
             benchmark_timing.set_context(
                 task_id,

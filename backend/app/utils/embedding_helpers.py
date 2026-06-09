@@ -15,7 +15,8 @@ def l2_normalize(vec: np.ndarray) -> np.ndarray:
     """L2-normalize a vector. Returns zero vector if norm is 0."""
     norm = np.linalg.norm(vec)
     if norm > 0:
-        return vec / norm
+        normalized: np.ndarray = vec / norm
+        return normalized
     return vec
 
 

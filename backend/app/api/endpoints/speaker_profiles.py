@@ -10,6 +10,7 @@ from fastapi import Query
 from fastapi import UploadFile
 from fastapi import status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
@@ -24,8 +25,10 @@ from app.services.permission_service import PermissionService
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
+from app.utils.error_handlers import ErrorHandler
 from app.utils.uuid_helpers import get_speaker_by_uuid
 from app.utils.uuid_helpers import get_speaker_profile_by_uuid
+from app.utils.uuid_helpers import require_resource_owner
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +50,7 @@ def list_speaker_profiles(
             owned_ids: set[int] = set()  # Will compute below for is_shared flag
         else:
             accessible = PermissionService.get_accessible_profile_ids_with_source(
-                db, int(current_user.id)
+                db, current_user.id
             )
             if not accessible:
                 return []
@@ -60,10 +63,11 @@ def list_speaker_profiles(
             from app.utils.uuid_helpers import get_by_uuid
 
             collection = get_by_uuid(db, SpeakerCollection, collection_uuid)
-            if collection.user_id != current_user.id:
-                raise HTTPException(
-                    status_code=403, detail="Not authorized to access this collection"
-                )
+            require_resource_owner(
+                collection,
+                current_user,
+                forbidden_detail="Not authorized to access this collection",
+            )
             collection_id = collection.id
 
             query = query.join(SpeakerCollectionMember).filter(
@@ -82,18 +86,16 @@ def list_speaker_profiles(
             }
 
         # Pre-fetch owner names for shared profiles
-        owner_user_ids = {
-            int(p.user_id) for p in profiles if int(p.user_id) != int(current_user.id)
-        }
+        owner_user_ids = {int(p.user_id) for p in profiles if int(p.user_id) != current_user.id}
         owner_names: dict[int, str] = {}
         if owner_user_ids:
             owners = db.query(User).filter(User.id.in_(owner_user_ids)).all()
             for owner in owners:
-                owner_names[int(owner.id)] = owner.full_name or owner.email or f"User {owner.id}"
+                owner_names[owner.id] = owner.full_name or owner.email or f"User {owner.id}"
 
         from sqlalchemy import func as sa_func
 
-        profile_ids = [int(p.id) for p in profiles]
+        profile_ids = [p.id for p in profiles]
 
         # Batch query: media count and instance count per profile (1 query)
         count_rows = (
@@ -142,7 +144,10 @@ def list_speaker_profiles(
 
         result = []
         for profile in profiles:
-            profile_id = int(profile.id)
+            # created_at/updated_at have server_default=now() (non-None on persisted rows)
+            assert profile.created_at is not None
+            assert profile.updated_at is not None
+            profile_id = profile.id
             is_shared = profile_id not in owned_ids
             media_count, instance_count = counts_by_profile.get(profile_id, (0, 0))
 
@@ -171,9 +176,13 @@ def list_speaker_profiles(
 
         return result
 
+    except HTTPException:
+        # Intentional auth/validation errors (e.g. the foreign-collection 403 at
+        # :65) must propagate unchanged — do not mask them as a generic 500.
+        raise
     except Exception as e:
         logger.error(f"Error listing speaker profiles: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/profiles", response_model=dict[str, Any])
@@ -208,6 +217,9 @@ def create_speaker_profile(
         db.commit()
         db.refresh(profile)
 
+        # created_at/updated_at populated by server_default after refresh
+        assert profile.created_at is not None
+        assert profile.updated_at is not None
         return {
             "uuid": str(profile.uuid),
             "name": profile.name,
@@ -221,7 +233,7 @@ def create_speaker_profile(
     except Exception as e:
         logger.error(f"Error creating speaker profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.put("/profiles/{profile_uuid}", response_model=dict[str, Any])
@@ -236,8 +248,9 @@ def update_speaker_profile(
     try:
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
 
-        if profile.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        require_resource_owner(
+            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        )
 
         profile_id = profile.id
 
@@ -267,6 +280,8 @@ def update_speaker_profile(
         db.commit()
         db.refresh(profile)
 
+        # updated_at populated by server_default after refresh
+        assert profile.updated_at is not None
         return {
             "uuid": str(profile.uuid),
             "name": profile.name,
@@ -279,7 +294,7 @@ def update_speaker_profile(
     except Exception as e:
         logger.error(f"Error updating speaker profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/speakers/{speaker_uuid}/assign-profile", response_model=dict[str, Any])
@@ -298,7 +313,7 @@ def assign_speaker_to_profile(
             "owner"
             if current_user.is_admin
             else PermissionService.get_file_permission(
-                db, int(speaker.media_file_id), int(current_user.id)
+                db, int(speaker.media_file_id), current_user.id
             )
         )
         if not file_perm:
@@ -307,8 +322,8 @@ def assign_speaker_to_profile(
 
         # Verify profile exists and is accessible (own or shared)
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
-        if int(profile.id) not in accessible_ids:
+        accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
+        if profile.id not in accessible_ids:
             raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id
 
@@ -341,7 +356,7 @@ def assign_speaker_to_profile(
     except Exception as e:
         logger.error(f"Error assigning speaker to profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 def _get_embedding_suggestions(
@@ -371,7 +386,7 @@ def _get_embedding_suggestions(
         profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
             db,
             speaker_embedding,
-            int(current_user.id),
+            current_user.id,
             threshold=threshold,
             accessible_profile_ids=accessible_profile_ids,
         )
@@ -487,7 +502,7 @@ def get_speaker_profile_suggestions(
             "owner"
             if current_user.is_admin
             else PermissionService.get_file_permission(
-                db, int(speaker.media_file_id), int(current_user.id)
+                db, int(speaker.media_file_id), current_user.id
             )
         )
         if not file_perm:
@@ -504,7 +519,7 @@ def get_speaker_profile_suggestions(
             return []
 
         # Compute accessible profiles for cross-user matching
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
+        accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
 
         # Get suggestions from different sources
         suggestions: list[dict[str, Any]] = []
@@ -533,7 +548,7 @@ def get_speaker_profile_suggestions(
         raise
     except Exception as e:
         logger.error(f"Error getting speaker suggestions: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.get("/profiles/{profile_uuid}/occurrences", response_model=list[dict[str, Any]])
@@ -546,8 +561,8 @@ def get_speaker_profile_occurrences(
     try:
         # Verify profile exists and is accessible (own or shared)
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
-        if int(profile.id) not in accessible_ids:
+        accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
+        if profile.id not in accessible_ids:
             raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id
 
@@ -556,9 +571,7 @@ def get_speaker_profile_occurrences(
         matching_service = SpeakerMatchingService(db, embedding_service)
 
         # Get occurrences
-        occurrences = matching_service.find_speaker_occurrences(
-            int(profile_id), int(current_user.id)
-        )
+        occurrences = matching_service.find_speaker_occurrences(int(profile_id), current_user.id)
 
         return occurrences
 
@@ -566,7 +579,7 @@ def get_speaker_profile_occurrences(
         raise
     except Exception as e:
         logger.error(f"Error getting speaker occurrences: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.delete("/profiles/{profile_uuid}", status_code=status.HTTP_204_NO_CONTENT)
@@ -578,8 +591,9 @@ def delete_speaker_profile(
     """Delete a speaker profile."""
     try:
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        if profile.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        require_resource_owner(
+            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        )
         profile_id = profile.id
 
         # Unassign all speakers from this profile
@@ -619,7 +633,7 @@ def delete_speaker_profile(
     except Exception as e:
         logger.error(f"Error deleting speaker profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -636,8 +650,9 @@ async def upload_profile_avatar(
     """Upload an avatar image for a speaker profile."""
     try:
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        if profile.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        require_resource_owner(
+            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        )
 
         # Validate content type
         if file.content_type not in ALLOWED_AVATAR_TYPES:
@@ -665,7 +680,7 @@ async def upload_profile_avatar(
             try:
                 from app.services.minio_service import delete_file
 
-                delete_file(profile.avatar_path)
+                await run_in_threadpool(delete_file, profile.avatar_path)
             except Exception:
                 logger.warning(f"Failed to delete old avatar for profile {profile.uuid}")
 
@@ -676,14 +691,16 @@ async def upload_profile_avatar(
         from app.services.minio_service import upload_file
 
         object_name = f"avatars/{current_user.id}/{profile.uuid}.{ext}"
-        upload_file(io.BytesIO(content), len(content), object_name, file.content_type)
+        await run_in_threadpool(
+            upload_file, io.BytesIO(content), len(content), object_name, file.content_type
+        )
 
         # Update profile
         profile.avatar_path = object_name  # type: ignore[assignment]
         db.commit()
         db.refresh(profile)
 
-        avatar_url = get_file_url(object_name, expires=3600)
+        avatar_url = await run_in_threadpool(get_file_url, object_name, expires=3600)
         return {"uuid": str(profile.uuid), "avatar_url": avatar_url}
 
     except HTTPException:
@@ -691,7 +708,7 @@ async def upload_profile_avatar(
     except Exception as e:
         logger.error(f"Error uploading avatar: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.delete("/profiles/{profile_uuid}/avatar", status_code=status.HTTP_204_NO_CONTENT)
@@ -703,8 +720,9 @@ def delete_profile_avatar(
     """Remove a speaker profile's avatar."""
     try:
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
-        if profile.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        require_resource_owner(
+            profile, current_user, forbidden_detail="Not authorized to access this profile"
+        )
 
         if profile.avatar_path:
             try:
@@ -724,7 +742,7 @@ def delete_profile_avatar(
     except Exception as e:
         logger.error(f"Error deleting avatar: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/profiles/{profile_uuid}/confirm-gender", response_model=dict[str, Any])
@@ -742,8 +760,9 @@ def confirm_profile_gender(
         )
 
     profile = get_speaker_profile_by_uuid(db, profile_uuid)
-    if profile.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+    require_resource_owner(
+        profile, current_user, forbidden_detail="Not authorized to access this profile"
+    )
 
     # Update profile DB column for consistency
     profile.predicted_gender = gender  # type: ignore[assignment]
@@ -796,6 +815,9 @@ def list_speaker_collections(
 
         result = []
         for collection in collections:
+            # created_at/updated_at have server_default=now() (non-None on persisted rows)
+            assert collection.created_at is not None
+            assert collection.updated_at is not None
             result.append(
                 {
                     "uuid": str(collection.uuid),
@@ -812,7 +834,7 @@ def list_speaker_collections(
 
     except Exception as e:
         logger.error(f"Error listing speaker collections: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/collections", response_model=dict[str, Any])
@@ -849,6 +871,9 @@ def create_speaker_collection(
         db.commit()
         db.refresh(collection)
 
+        # created_at/updated_at populated by server_default after refresh
+        assert collection.created_at is not None
+        assert collection.updated_at is not None
         return {
             "uuid": str(collection.uuid),
             "name": collection.name,
@@ -863,4 +888,4 @@ def create_speaker_collection(
     except Exception as e:
         logger.error(f"Error creating speaker collection: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e

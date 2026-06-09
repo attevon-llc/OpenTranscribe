@@ -46,8 +46,8 @@ def get_file_segments(
     speakers list, analytics, or other file metadata.
     """
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, str(file_uuid), int(current_user.id), is_admin=is_admin)
-    file_id = int(db_file.id)
+    db_file = get_media_file_by_uuid(db, str(file_uuid), current_user.id, is_admin=is_admin)
+    file_id = db_file.id
     redaction_cfg, reveal_categories = _resolve_redaction_for_request(
         db, db_file, current_user, is_admin=is_admin, redact=redact
     )

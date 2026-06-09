@@ -25,6 +25,7 @@ from app.schemas.media import SpeakerUpdate
 from app.services.opensearch_service import update_speaker_display_name
 from app.services.permission_service import PermissionService
 from app.services.speaker_status_service import SpeakerStatusService
+from app.utils.error_handlers import ErrorHandler
 from app.utils.uuid_helpers import get_speaker_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ def create_speaker(
 
     # Get media file by UUID and verify permission
     media_file = get_file_by_uuid_with_permission(
-        db, media_file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, media_file_uuid, current_user.id, is_admin=current_user.is_admin
     )
 
     # Generate a UUID for the new speaker
@@ -147,7 +148,7 @@ def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dic
         ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
     ]
     if not current_user.is_admin:
-        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, int(current_user.id))
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, current_user.id)
         base_filter.append(Speaker.media_file_id.in_(select(accessible_sq)))
 
     # Step 1: Get one representative speaker per display_name using DISTINCT ON
@@ -194,9 +195,9 @@ def _resolve_file_uuid_to_id(file_uuid: str | None, current_user: User, db: Sess
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
-    return int(media_file.id)
+    return media_file.id
 
 
 def _get_segment_counts_for_speakers(speaker_ids: list[int], db: Session) -> dict[int, int]:
@@ -417,6 +418,7 @@ def _build_speaker_dict(
         else None
     )
 
+    assert speaker.created_at is not None  # server_default=now()
     speaker_dict: dict[str, Any] = {
         "uuid": str(speaker.uuid),
         "name": speaker.name,
@@ -479,13 +481,13 @@ def _process_single_speaker(
     speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
     speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
     speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
-    speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment]
-    speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment]
+    speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment,attr-defined]
+    speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment,attr-defined]
 
     # Get smart, consolidated speaker suggestions
     smart_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions(
-        speaker_id=int(speaker.id),
-        user_id=int(current_user.id),
+        speaker_id=speaker.id,
+        user_id=current_user.id,
         db=db,
         confidence_threshold=SPEAKER_SUGGESTION_MIN_CONFIDENCE,
         max_suggestions=SPEAKER_SUGGESTION_MAX_COUNT,
@@ -540,8 +542,8 @@ def _process_single_speaker_with_suggestions(
     speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
     speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
     speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
-    speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment]
-    speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment]
+    speaker.profile_name = status_info["profile_name"]  # type: ignore[assignment,attr-defined]
+    speaker.profile_status = status_info["profile_status"]  # type: ignore[assignment,attr-defined]
 
     raw_cross_video_matches = SmartSpeakerSuggestionService.format_for_api(smart_suggestions)
     profile_suggestions = _get_profile_suggestions(raw_cross_video_matches)
@@ -632,7 +634,7 @@ def list_speakers(
         speakers = _sort_speakers(speakers)
 
         # Pre-calculate segment counts for all speakers in one query
-        speaker_ids = [int(s.id) for s in speakers]
+        speaker_ids = [s.id for s in speakers]
         segment_counts = _get_segment_counts_for_speakers(speaker_ids, db)
 
         # Pre-fetch first 4 segment timestamps per speaker for jump-to-timestamp UI
@@ -645,7 +647,7 @@ def list_speakers(
 
         batch_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions_batch(
             speakers=speakers,
-            user_id=int(current_user.id),
+            user_id=current_user.id,
             db=db,
             confidence_threshold=SPEAKER_SUGGESTION_MIN_CONFIDENCE,
             max_suggestions=SPEAKER_SUGGESTION_MAX_COUNT,
@@ -656,9 +658,9 @@ def list_speakers(
             _process_single_speaker_with_suggestions(
                 speaker,
                 current_user,
-                segment_counts.get(int(speaker.id), 0),
-                batch_suggestions.get(int(speaker.id), []),
-                all_timestamps.get(int(speaker.id)),
+                segment_counts.get(speaker.id, 0),
+                batch_suggestions.get(speaker.id, []),
+                all_timestamps.get(speaker.id),
             )
             for speaker in speakers
         ]
@@ -684,7 +686,7 @@ def cleanup_orphaned_embeddings(
     try:
         from app.services.opensearch_service import cleanup_orphaned_speaker_embeddings
 
-        deleted_count = cleanup_orphaned_speaker_embeddings(int(current_user.id))
+        deleted_count = cleanup_orphaned_speaker_embeddings(current_user.id)
 
         return {
             "status": "success",
@@ -693,7 +695,7 @@ def cleanup_orphaned_embeddings(
         }
     except Exception as e:
         logger.error(f"Error during cleanup: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.get("/debug/cross-media-data", response_model=dict[str, Any])
@@ -847,7 +849,7 @@ def debug_cross_media_data(
 
     except Exception as e:
         logger.error(f"Error in debug endpoint: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.get("/debug/cross-media-by-name", response_model=dict[str, Any])
@@ -958,7 +960,7 @@ def debug_cross_media_by_name(
 
     except Exception as e:
         logger.error(f"Error in cross-media-by-name debug endpoint: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 # =============================================================================
@@ -996,7 +998,7 @@ def get_speaker_cross_media_occurrences(
             "owner"
             if current_user.is_admin
             else PermissionService.get_file_permission(
-                db, int(speaker.media_file_id), int(current_user.id)
+                db, int(speaker.media_file_id), current_user.id
             )
         )
         if not file_perm:
@@ -1016,7 +1018,7 @@ def get_speaker_cross_media_occurrences(
         raise
     except Exception as e:
         logger.error(f"Error getting cross-media occurrences: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/{speaker_uuid}/verify", response_model=dict[str, Any])
@@ -1042,7 +1044,7 @@ def verify_speaker_identification(
             "owner"
             if current_user.is_admin
             else PermissionService.get_file_permission(
-                db, int(speaker.media_file_id), int(current_user.id)
+                db, int(speaker.media_file_id), current_user.id
             )
         )
         if not file_perm:
@@ -1051,7 +1053,7 @@ def verify_speaker_identification(
         profile_id = _resolve_profile_uuid_to_id(profile_uuid, current_user, db)
 
         return _dispatch_verify_action(
-            action, speaker, int(speaker.id), profile_id, profile_name, current_user, db
+            action, speaker, speaker.id, profile_id, profile_name, current_user, db
         )
 
     except HTTPException:
@@ -1059,7 +1061,7 @@ def verify_speaker_identification(
     except Exception as e:
         logger.error(f"Error verifying speaker: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise ErrorHandler.internal_error() from e
 
 
 @router.post("/{speaker_uuid}/confirm-gender", response_model=dict[str, Any])
@@ -1079,7 +1081,7 @@ def confirm_speaker_gender(
     speaker = get_speaker_by_uuid(db, speaker_uuid)
     if not current_user.is_admin and speaker.user_id != current_user.id:
         perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), int(current_user.id)
+            db, int(speaker.media_file_id), current_user.id
         )
         if not perm or perm == "viewer":
             raise HTTPException(
@@ -1114,7 +1116,7 @@ def merge_speakers(
         for spk in (source_speaker, target_speaker):
             if spk.user_id != current_user.id:
                 perm = PermissionService.get_file_permission(
-                    db, int(spk.media_file_id), int(current_user.id)
+                    db, int(spk.media_file_id), current_user.id
                 )
                 if not perm or perm == "viewer":
                     raise HTTPException(
@@ -1125,7 +1127,7 @@ def merge_speakers(
     # Store profile IDs for embedding updates
     source_profile_id = int(source_speaker.profile_id) if source_speaker.profile_id else None
     target_profile_id = int(target_speaker.profile_id) if target_speaker.profile_id else None
-    source_speaker_id = int(source_speaker.id)
+    source_speaker_id = source_speaker.id
 
     # Update all transcript segments from source to target
     db.query(TranscriptSegment).filter(TranscriptSegment.speaker_id == source_speaker.id).update(
@@ -1161,8 +1163,8 @@ def merge_speakers(
     try:
         from app.services.redis_cache_service import redis_cache
 
-        redis_cache.invalidate_speakers(int(current_user.id))
-        redis_cache.invalidate_user_files(int(current_user.id))
+        redis_cache.invalidate_speakers(current_user.id)
+        redis_cache.invalidate_user_files(current_user.id)
     except Exception as e:
         logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
@@ -1188,7 +1190,7 @@ def get_speaker(
 
     # Verify file-level access (own or shared via collection)
     file_perm = PermissionService.get_file_permission(
-        db, int(speaker.media_file_id), int(current_user.id)
+        db, int(speaker.media_file_id), current_user.id
     )
     if not file_perm:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
@@ -1459,7 +1461,7 @@ def _send_websocket_notification(speaker: Speaker, current_user: User, db: Sessi
             loop = asyncio.get_running_loop()
             loop.create_task(
                 publish_notification(
-                    user_id=int(current_user.id),
+                    user_id=current_user.id,
                     notification_type="speaker_updated",
                     data=notification_data,
                 )
@@ -1509,14 +1511,14 @@ def update_speaker(
     speaker = get_speaker_by_uuid(db, speaker_uuid)
     if not current_user.is_admin and speaker.user_id != current_user.id:
         perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), int(current_user.id)
+            db, int(speaker.media_file_id), current_user.id
         )
         if not perm or perm == "viewer":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Requires editor permission"
             )
 
-    speaker_id = int(speaker.id)
+    speaker_id = speaker.id
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
     was_auto_labeled = speaker.suggested_name is not None and not speaker.verified
     media_file_id = int(speaker.media_file_id)
@@ -1553,7 +1555,7 @@ def update_speaker(
     if display_name_changed or old_profile_id != new_profile_id:
         process_speaker_update_background.delay(
             speaker_uuid=str(speaker.uuid),
-            user_id=int(current_user.id),
+            user_id=current_user.id,
             display_name=display_name,
             speaker_id=speaker_id,
             old_profile_id=old_profile_id,
@@ -1568,8 +1570,8 @@ def update_speaker(
     try:
         from app.services.redis_cache_service import redis_cache
 
-        redis_cache.invalidate_speakers(int(current_user.id))
-        redis_cache.invalidate_user_files(int(current_user.id))
+        redis_cache.invalidate_speakers(current_user.id)
+        redis_cache.invalidate_user_files(current_user.id)
     except Exception as e:
         logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
@@ -1595,7 +1597,7 @@ def delete_speaker(
     # Verify ownership or shared editor permission
     if not current_user.is_admin and speaker.user_id != current_user.id:
         perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), int(current_user.id)
+            db, int(speaker.media_file_id), current_user.id
         )
         if not perm or perm == "viewer":
             raise HTTPException(
@@ -1621,8 +1623,8 @@ def delete_speaker(
     try:
         from app.services.redis_cache_service import redis_cache
 
-        redis_cache.invalidate_speakers(int(current_user.id))
-        redis_cache.invalidate_user_files(int(current_user.id))
+        redis_cache.invalidate_speakers(current_user.id)
+        redis_cache.invalidate_user_files(current_user.id)
     except Exception as e:
         logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
@@ -1635,7 +1637,7 @@ def _accept_speaker_profile_match(
 ) -> dict[str, Any]:
     """Handle acceptance of a speaker profile match."""
     # Verify profile exists and is accessible (own or shared)
-    accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
+    accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
     profile = (
         db.query(SpeakerProfile)
         .filter(
@@ -1747,7 +1749,7 @@ def _create_new_speaker_profile(
         from app.services.profile_embedding_service import ProfileEmbeddingService
 
         success = ProfileEmbeddingService.add_speaker_to_profile_embedding(
-            db, speaker_id, int(new_profile.id)
+            db, speaker_id, new_profile.id
         )
         if success:
             logger.info(
@@ -1779,10 +1781,10 @@ def _resolve_profile_uuid_to_id(
     from app.utils.uuid_helpers import get_speaker_profile_by_uuid
 
     profile = get_speaker_profile_by_uuid(db, profile_uuid)
-    accessible_ids = PermissionService.get_accessible_profile_ids(db, int(current_user.id))
-    if int(profile.id) not in accessible_ids:
+    accessible_ids = PermissionService.get_accessible_profile_ids(db, current_user.id)
+    if profile.id not in accessible_ids:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
-    return int(profile.id)
+    return profile.id
 
 
 def _dispatch_verify_action(
@@ -1840,7 +1842,7 @@ def _merge_speaker_embeddings(source_speaker: Speaker, target_speaker: Speaker) 
             # Store the averaged embedding in OpenSearch
             add_speaker_embedding(
                 speaker_uuid=str(target_speaker.uuid),
-                speaker_id=int(target_speaker.id),
+                speaker_id=target_speaker.id,
                 user_id=int(target_speaker.user_id),
                 name=str(target_speaker.name),
                 embedding=averaged_embedding,
@@ -1978,7 +1980,7 @@ def _get_profile_based_occurrences(
                 _build_occurrence_dict(
                     profile_speaker.media_file,
                     profile_speaker,
-                    same_speaker=(int(profile_speaker.id) == int(speaker.id)),
+                    same_speaker=(profile_speaker.id == speaker.id),
                 )
             )
     return result

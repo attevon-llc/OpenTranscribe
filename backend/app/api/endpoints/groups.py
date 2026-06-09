@@ -29,6 +29,7 @@ from app.schemas.group import GroupUpdate
 from app.schemas.user import UserBrief
 from app.tasks.search_indexing_task import update_file_access_index
 from app.utils.uuid_helpers import get_by_uuid
+from app.utils.uuid_helpers import require_resource_owner
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ def _require_group_admin(db: Session, group: UserGroup, user_id: int) -> UserGro
     Raises:
         HTTPException: 403 if user lacks owner/admin role.
     """
-    membership = _get_membership(db, int(group.id), user_id)
+    membership = _get_membership(db, group.id, user_id)
     if not membership or membership.role not in ("owner", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -90,7 +91,7 @@ def _reindex_group_shared_files(db: Session, group_id: int) -> None:
 def _build_group_response(db: Session, group: UserGroup, current_user_id: int) -> GroupSchema:
     """Build a Group response schema with computed fields."""
     member_count = db.query(UserGroupMember).filter(UserGroupMember.group_id == group.id).count()
-    my_membership = _get_membership(db, int(group.id), current_user_id)
+    my_membership = _get_membership(db, group.id, current_user_id)
     my_role = my_membership.role if my_membership else None
 
     owner_brief = UserBrief(
@@ -99,6 +100,7 @@ def _build_group_response(db: Session, group: UserGroup, current_user_id: int) -
         email=group.owner.email,
     )
 
+    assert group.created_at is not None  # server_default=now()
     return GroupSchema(
         uuid=group.uuid,
         name=group.name,
@@ -151,6 +153,7 @@ def list_groups(
 
     results = []
     for group in groups:
+        assert group.created_at is not None  # server_default=now()
         owner_brief = UserBrief(
             uuid=group.owner.uuid,
             full_name=group.owner.full_name,
@@ -214,7 +217,7 @@ def create_group(
     # Load owner relationship for response
     db.refresh(group, ["owner"])
 
-    return _build_group_response(db, group, int(current_user.id))
+    return _build_group_response(db, group, current_user.id)
 
 
 @router.get("/{group_uuid}", response_model=GroupDetail)
@@ -227,7 +230,7 @@ def get_group(
     group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
 
     # Verify user is a member
-    my_membership = _get_membership(db, int(group.id), int(current_user.id))
+    my_membership = _get_membership(db, group.id, current_user.id)
     if not my_membership:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -242,17 +245,19 @@ def get_group(
         .all()
     )
 
-    members = [
-        GroupMember(
-            uuid=m.uuid,
-            user_uuid=m.user.uuid,
-            email=m.user.email,
-            full_name=m.user.full_name,
-            role=m.role,
-            joined_at=m.joined_at,
+    members = []
+    for m in members_db:
+        assert m.joined_at is not None  # server_default=now()
+        members.append(
+            GroupMember(
+                uuid=m.uuid,
+                user_uuid=m.user.uuid,
+                email=m.user.email,
+                full_name=m.user.full_name,
+                role=m.role,
+                joined_at=m.joined_at,
+            )
         )
-        for m in members_db
-    ]
 
     member_count = len(members)
     owner_brief = UserBrief(
@@ -261,6 +266,8 @@ def get_group(
         email=group.owner.email,
     )
 
+    assert group.created_at is not None  # server_default=now()
+    assert group.updated_at is not None  # server_default=now()
     return GroupDetail(
         uuid=group.uuid,
         name=group.name,
@@ -283,7 +290,7 @@ def update_group(
 ):
     """Update group name/description. Requires owner or admin role."""
     group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
-    _require_group_admin(db, group, int(current_user.id))
+    _require_group_admin(db, group, current_user.id)
 
     update_data = group_update.model_dump(exclude_unset=True)
 
@@ -310,7 +317,7 @@ def update_group(
     db.commit()
     db.refresh(group)
 
-    return _build_group_response(db, group, int(current_user.id))
+    return _build_group_response(db, group, current_user.id)
 
 
 @router.delete("/{group_uuid}", status_code=status.HTTP_204_NO_CONTENT)
@@ -322,14 +329,15 @@ def delete_group(
     """Delete a group. Only the group owner can delete it."""
     group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
 
-    if group.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the group owner can delete this group",
-        )
+    require_resource_owner(
+        group,
+        current_user,
+        forbidden_detail="Only the group owner can delete this group",
+        owner_attr="owner_id",
+    )
 
     # Reindex files BEFORE deletion (cascade will remove shares)
-    _reindex_group_shared_files(db, int(group.id))
+    _reindex_group_shared_files(db, group.id)
 
     db.delete(group)
     db.commit()
@@ -350,13 +358,13 @@ def add_member(
 ):
     """Add a member to a group. Requires owner or admin role."""
     group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
-    _require_group_admin(db, group, int(current_user.id))
+    _require_group_admin(db, group, current_user.id)
 
     # Resolve target user
     target_user = get_by_uuid(db, User, str(member_add.user_uuid), "User not found")
 
     # Check not already a member
-    existing = _get_membership(db, int(group.id), int(target_user.id))
+    existing = _get_membership(db, group.id, target_user.id)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -373,11 +381,11 @@ def add_member(
     db.refresh(member)
 
     # Reindex files in collections shared with this group
-    _reindex_group_shared_files(db, int(group.id))
+    _reindex_group_shared_files(db, group.id)
 
     # Notify the new member
     send_ws_event(
-        int(target_user.id),
+        target_user.id,
         NOTIFICATION_TYPE_GROUP_MEMBER_ADDED,
         {
             "group_uuid": str(group.uuid),
@@ -387,6 +395,7 @@ def add_member(
         },
     )
 
+    assert member.joined_at is not None  # server_default=now()
     return GroupMember(
         uuid=member.uuid,
         user_uuid=target_user.uuid,
@@ -407,10 +416,10 @@ def update_member_role(
 ):
     """Update a member's role. Requires owner or admin role."""
     group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
-    caller_membership = _require_group_admin(db, group, int(current_user.id))
+    caller_membership = _require_group_admin(db, group, current_user.id)
 
     target_user = get_by_uuid(db, User, user_uuid, "User not found")
-    target_membership = _get_membership(db, int(group.id), int(target_user.id))
+    target_membership = _get_membership(db, group.id, target_user.id)
 
     if not target_membership:
         raise HTTPException(
@@ -439,8 +448,9 @@ def update_member_role(
     db.refresh(target_membership)
 
     # Reindex files in collections shared with this group
-    _reindex_group_shared_files(db, int(group.id))
+    _reindex_group_shared_files(db, group.id)
 
+    assert target_membership.joined_at is not None  # server_default=now()
     return GroupMember(
         uuid=target_membership.uuid,
         user_uuid=target_user.uuid,
@@ -469,7 +479,7 @@ def remove_member(
     group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
     target_user = get_by_uuid(db, User, user_uuid, "User not found")
 
-    target_membership = _get_membership(db, int(group.id), int(target_user.id))
+    target_membership = _get_membership(db, group.id, target_user.id)
     if not target_membership:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -487,15 +497,15 @@ def remove_member(
 
     # If not self-remove, require owner/admin role
     if not is_self_remove:
-        _require_group_admin(db, group, int(current_user.id))
+        _require_group_admin(db, group, current_user.id)
 
-    removed_user_id = int(target_user.id)
+    removed_user_id = target_user.id
 
     db.delete(target_membership)
     db.commit()
 
     # Reindex files in collections shared with this group
-    _reindex_group_shared_files(db, int(group.id))
+    _reindex_group_shared_files(db, group.id)
 
     # Notify the removed member (skip if self-removal)
     if not is_self_remove:

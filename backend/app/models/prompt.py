@@ -3,9 +3,10 @@ SQLAlchemy models for AI summarization prompt management
 """
 
 import uuid as uuid_pkg
+from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean
-from sqlalchemy import Column
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
@@ -13,10 +14,16 @@ from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.utils.uuid7 import uuid7
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class SummaryPrompt(Base):
@@ -29,37 +36,47 @@ class SummaryPrompt(Base):
 
     __tablename__ = "summary_prompt"
 
-    id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    uuid: Mapped[uuid_pkg.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
-    name = Column(String(255), nullable=False, index=True)
-    description = Column(Text, nullable=True)
-    prompt_text = Column(Text, nullable=False)
-    is_system_default = Column(Boolean, nullable=False, default=False)
-    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
+    is_system_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     # Cloud-edition seam: tenant scope (NULL = personal). Written by the cloud layer.
-    organization_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
-    is_active = Column(Boolean, nullable=False, default=True)
-    content_type = Column(
+    organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organization.id"), nullable=True, index=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    content_type: Mapped[str | None] = mapped_column(
         String(50), nullable=True, index=True
     )  # 'meeting', 'interview', 'podcast', 'documentary', 'general'
 
     # Sharing
-    is_shared = Column(Boolean, nullable=False, default=False)
-    shared_at = Column(DateTime(timezone=True), nullable=True)
+    is_shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    shared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Admin/owner who flipped sharing on (may differ from creator)
-    shared_by = Column(Integer, ForeignKey("user.id"), nullable=True)
-    tags = Column(JSONB, nullable=False, default=list)
-    usage_count = Column(Integer, nullable=False, default=0)
+    shared_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("user.id"), nullable=True)
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     # Two FKs to user (creator + sharer) require explicit foreign_keys to disambiguate.
-    user = relationship("User", back_populates="summary_prompts", foreign_keys=[user_id])
-    shared_by_user = relationship("User", foreign_keys=[shared_by])
+    user: Mapped["User | None"] = relationship(
+        "User", back_populates="summary_prompts", foreign_keys=[user_id]
+    )
+    shared_by_user: Mapped["User | None"] = relationship("User", foreign_keys=[shared_by])
 
 
 class UserSetting(Base):
@@ -71,19 +88,29 @@ class UserSetting(Base):
 
     __tablename__ = "user_setting"
 
-    id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    uuid: Mapped[uuid_pkg.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
-    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
-    organization_id = Column(Integer, ForeignKey("organization.id"), nullable=True, index=True)
-    setting_key = Column(String(100), nullable=False, index=True)
-    setting_value = Column(Text, nullable=True)  # Can store JSON or simple values
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organization.id"), nullable=True, index=True
+    )
+    setting_key: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    setting_value: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # Can store JSON or simple values
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
-    user = relationship("User", back_populates="settings")
+    user: Mapped["User"] = relationship("User", back_populates="settings")
 
     __table_args__ = (
         # Ensure unique setting keys per user

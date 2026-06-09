@@ -115,6 +115,16 @@ server {
         proxy_read_timeout 3600s;
     }
 
+    # Prometheus metrics: internal-network only. Prometheus scrapes the backend
+    # directly over the compose network; the public reverse proxy must never
+    # expose /metrics. Return 404 (not 403) so the endpoint's existence isn't
+    # advertised. Note: /health/ready is intentionally NOT proxied or denied — it
+    # is not under /api/ so nginx never routes it to the backend anyway.
+    location = /metrics {
+        deny all;
+        return 404;
+    }
+
     # Backend REST API
     location /api/ {
         proxy_pass http://backend:8080/api/;

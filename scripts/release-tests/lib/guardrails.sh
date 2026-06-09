@@ -43,9 +43,9 @@ readonly GR_PROTECTED_PATHS=(
     "/mnt/nas/opentranscribe"
     "/mnt/nvm/opentranscribe"
     "/mnt/nvm/repos/transcribe-app"
-    "/mnt/nas/Documents"
-    "/mnt/nas/Audiobooks"
-    "/mnt/nas/datasets"
+    "/mnt/nas/documents/personal"
+    "/mnt/nas/media/audiobooks"
+    "/mnt/nas/ai/datasets"
 )
 
 # Production volume names that must never be deleted by cleanup.

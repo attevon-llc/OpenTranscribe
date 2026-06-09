@@ -75,6 +75,13 @@ if os.environ["SKIP_OPENSEARCH"] == "False":
     # The dev stack exposes OpenSearch on localhost:5180 (not the in-cluster 9200).
     os.environ.setdefault("OPENSEARCH_HOST", "localhost")
     os.environ.setdefault("OPENSEARCH_PORT", "5180")
+# NOTE on Celery dispatch in tests: endpoints that .delay() a task (e.g.
+# PUT /speakers/{uuid}) used to publish into whatever Redis answered on the
+# host's default localhost:6379 — an unrelated container on this machine —
+# because SKIP_CELERY never covered the dispatch path and the stack's real
+# Redis (localhost:5177) requires auth. That worked by accident. The honest
+# fix is the autouse _skip_celery_dispatch fixture below, which no-ops
+# Task.apply_async (and therefore every .delay) whenever SKIP_CELERY is set.
 # The audit logger has its own OpenSearch switch (app/auth/audit.py). Always off
 # in unit tests: savepoint rollback cannot undo OpenSearch writes, so leaving it
 # on would pollute the live dev audit index with thousands of test login events.
@@ -104,6 +111,30 @@ from app.models.user import User  # noqa: E402
 SQLALCHEMY_TEST_DATABASE_URL = settings.DATABASE_URL
 engine = create_engine(SQLALCHEMY_TEST_DATABASE_URL, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _skip_celery_dispatch():
+    """No-op every Celery dispatch when SKIP_CELERY is set.
+
+    SKIP_CELERY historically only skipped worker wiring — endpoints calling
+    ``task.delay(...)`` still published to the broker. On a developer host that
+    silently targeted whatever Redis answered on localhost:6379 (an unrelated
+    container), and against the real stack Redis (localhost:5177, auth'd) it
+    500s. Patching ``Task.apply_async`` (which ``.delay`` wraps) makes the
+    skip-switch actually cover dispatch, with a fake AsyncResult id for code
+    that records task ids.
+    """
+    if os.environ.get("SKIP_CELERY") != "True":
+        yield
+        return
+    from unittest.mock import MagicMock
+    from unittest.mock import patch
+
+    fake_result = MagicMock(name="FakeAsyncResult")
+    fake_result.id = "test-task-id"
+    with patch("celery.app.task.Task.apply_async", return_value=fake_result):
+        yield
 
 
 @pytest.fixture(scope="function")

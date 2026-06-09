@@ -105,12 +105,30 @@ def _load_user_prefs(db: Session, user_id: int) -> dict[str, str]:
     return {str(r.setting_key): str(r.setting_value) for r in rows}
 
 
+_ADMIN_POLICY_KEYS = (
+    "redaction.force_pii",
+    "redaction.force_toxicity",
+    "redaction.force_profanity",
+    "redaction.force_pii_entities",
+    "redaction.force_custom_words",
+    "redaction.force_toxicity_threshold",
+    "redaction.force_export_redacted",
+    "redaction.force_redact_before_llm",
+)
+
+
 def _load_admin_policy(db: Session) -> dict:
-    """Load the admin-forced governance floor from SystemSettings."""
-    from app.services.system_settings_service import get_setting
+    """Load the admin-forced governance floor from SystemSettings.
+
+    Reads all eight policy keys in a single SELECT (via ``get_settings_map``)
+    instead of one round-trip per key.
+    """
+    from app.services.system_settings_service import get_settings_map
+
+    policy = get_settings_map(db, list(_ADMIN_POLICY_KEYS))
 
     def g(key: str) -> str | None:
-        return get_setting(db, key)
+        return policy.get(key)
 
     forced_categories: set[str] = set()
     if _parse_bool(g("redaction.force_pii"), False):

@@ -19,6 +19,7 @@ from app.schemas.media import CommentUpdate
 from app.services.permission_service import PermissionService
 from app.utils.uuid_helpers import get_comment_by_uuid
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+from app.utils.uuid_helpers import require_resource_owner
 
 router = APIRouter()
 
@@ -29,7 +30,7 @@ def _check_file_access(db: Session, file_uuid: str, current_user: User) -> Media
     Uses PermissionService to check ownership, direct shares, and group shares.
     """
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin
     )
     return media_file
 
@@ -113,13 +114,13 @@ def get_comments_for_file(
             detail="Query parameter 'media_file_id' is required",
         )
     media_file = _check_file_access(db, file_ref, current_user)
-    media_file_id = media_file.id
+    media_file_pk = media_file.id
 
     # Get comments for this file (eager-load relationships to avoid N+1)
     comments = (
         db.query(Comment)
         .options(joinedload(Comment.user), joinedload(Comment.media_file))
-        .filter(Comment.media_file_id == media_file_id)
+        .filter(Comment.media_file_id == media_file_pk)
         .order_by(Comment.timestamp)
         .all()
     )
@@ -180,7 +181,7 @@ def get_comment(
     # Verify the user has access to the comment's file via PermissionService
     if not current_user.is_admin:
         permission = PermissionService.get_file_permission(
-            db, int(comment.media_file_id), int(current_user.id)
+            db, int(comment.media_file_id), current_user.id
         )
         if permission is None:
             raise HTTPException(
@@ -201,11 +202,12 @@ def update_comment(
     """Update a comment. Only the comment author can edit."""
     comment = get_comment_by_uuid(db, comment_uuid)
 
-    if not current_user.is_admin and comment.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to edit this comment",
-        )
+    require_resource_owner(
+        comment,
+        current_user,
+        forbidden_detail="You do not have permission to edit this comment",
+        allow_admin=True,
+    )
 
     # Update fields
     for field, value in comment_update.model_dump(exclude_unset=True).items():

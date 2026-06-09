@@ -96,9 +96,112 @@ docker compose exec -T postgres pg_dump -U postgres opentranscribe | gzip > back
 docker compose exec -T postgres pg_dump -U postgres -Fc opentranscribe > backup.dump
 ```
 
-### Automated Backup with Cron
+### Automated Backups (in-app, recommended)
 
-Set up automatic daily backups:
+OpenTranscribe ships a **built-in scheduled-backup system** that runs on the
+stack's existing `celery-beat` service — no host cron, no systemd timer, and
+no shell scripting. Everything is configured in the admin UI under
+**Settings → System Management → Backups** and stored in the database, so
+schedule changes take effect with no restart.
+
+Start the stack with the backup overlay so a destination is mounted:
+
+```bash
+# Mounts BACKUP_HOST_PATH (default ./backups) to /backups in the backend + worker
+./opentr.sh start dev --with-backup
+```
+
+Then, in the admin UI:
+
+- **Enable** scheduled backups and set a **cron schedule** (default `0 3 * * *` — 03:00 daily, UTC).
+- Choose a **destination**:
+  - **Local folder** — the mounted `/backups` path (set via `BACKUP_HOST_PATH`).
+  - **S3-compatible bucket** — any AWS S3 / MinIO / Backblaze-style endpoint. Provide endpoint URL, region, bucket, prefix, and access/secret keys. The secret is encrypted at rest (AES-256-GCM) and never returned by the API; a **Test Connection** button validates it. This lets backups land **off the host machine** entirely.
+- Set **GFS retention** (grandfather-father-son: daily / weekly / monthly counts; default 7 / 4 / 12).
+- Optionally enable **gpg encryption** (provide a passphrase file path).
+- Use **Run Now** to take an immediate backup and see the last result.
+
+Under the hood: a lightweight `backup.check_schedule` beat task fires every few
+minutes, evaluates the DB-stored cron against the last run, and dispatches
+`backup.run`, which executes `pg_dump --format=custom` directly from the worker
+(the backend image ships `postgresql-client`), optionally gpg-encrypts, uploads
+to the chosen destination, and prunes old backups by the GFS policy. If the
+destination isn't mounted/reachable the task records a clear status and never
+crashes.
+
+:::tip Off-host backups
+For real disaster resilience, point the destination at an **S3-compatible
+bucket on a different machine or provider** — a host failure then can't take
+your backups with it. The bucket can be your own MinIO on another box.
+:::
+
+Restore an in-app backup the same way as any custom-format dump — see
+[Restore Procedures](#restore-procedures) below (`pg_restore`).
+
+#### OpenSearch snapshots (optional)
+
+The in-app scheduler can **also take an OpenSearch snapshot** alongside each
+`pg_dump`. Enable it in the admin UI under **Settings → Backups → "Include
+OpenSearch snapshot"**. Because every search index is **rebuildable from
+PostgreSQL**, this is a *convenience* (skip the reindex on restore), not a
+necessity — leave it off and nothing is lost.
+
+How it works:
+
+- The snapshot runs **only after a successful database dump** and its outcome is
+  **independent of the dump** — a snapshot failure never fails the backup. The
+  result panel shows a separate "OpenSearch snapshot" status (`ok` / `skipped` /
+  `unsupported` / `error`).
+- Snapshots use a filesystem (`fs`) repository named `opentranscribe_backup`.
+  OpenSearch only permits `fs` repositories whose location is in its
+  **`path.repo` allow-list**, so the path must be configured on the OpenSearch
+  container. The `--with-backup` overlay does this automatically: it sets
+  `path.repo` on the OpenSearch service and bind-mounts
+  `BACKUP_HOST_PATH/opensearch-snapshots` into it, so snapshots land beside the
+  `.dump` files.
+- Snapshot names share the `opentranscribe-YYYYMMDD-HHMMSS` stem of the dumps and
+  are pruned by the **same GFS retention** policy.
+
+**Requirement:** start the stack with the backup overlay so `path.repo` is
+allow-listed:
+
+```bash
+./opentr.sh start dev --with-backup
+```
+
+If you enable "Include OpenSearch" **without** the overlay, the feature degrades
+gracefully: the database dump still succeeds and the OpenSearch status is recorded
+as `unsupported` with a message that `path.repo` is not configured.
+
+**Restoring** an OpenSearch snapshot (only needed if you want to skip a reindex):
+
+```bash
+# List snapshots in the repository
+curl -s "http://localhost:5180/_snapshot/opentranscribe_backup/_all" | python3 -m json.tool
+
+# Close affected indices, then restore a specific snapshot
+curl -X POST "http://localhost:5180/_snapshot/opentranscribe_backup/opentranscribe-20260607-030000/_restore?wait_for_completion=true"
+```
+
+:::note S3 destination + snapshots
+The shipped OpenSearch image does **not** include the `repository-s3` plugin, so
+OpenSearch snapshots always use the local `fs` repository — even when the database
+dump destination is an S3 bucket. (The `.dump` files still go to S3; only the
+OpenSearch snapshots stay on the `fs` repo path.) Adding the `repository-s3` plugin
+to register an `s3` snapshot repository is a possible future enhancement.
+:::
+
+:::info MinIO media mirroring
+Mirroring the uploaded **media files** (MinIO objects) into the scheduled backup
+run is a **separate planned follow-up** (pending a bucket-versioning decision) and
+is not part of the in-app scheduler today. Back media up manually with `mc mirror`
+as described in [MinIO / Storage Backup](#minio--storage-backup) below.
+:::
+
+### Automated Backup with Cron (alternative)
+
+If you prefer OS-level scheduling instead of the in-app scheduler, set up
+automatic daily backups with cron:
 
 ```bash
 # Edit crontab

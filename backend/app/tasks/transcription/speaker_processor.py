@@ -149,6 +149,16 @@ def create_speaker_mapping(
         speaker = create_or_get_speaker(db, user_id, media_file_id, speaker_id)
         speaker_mapping[speaker_id] = int(speaker.id)
 
+    # Transcription creates this user's speakers — bust their speaker cache so
+    # the list reflects the new speakers (back-door mutation path). Best-effort.
+    if unique_speakers:
+        try:
+            from app.services.redis_cache_service import redis_cache
+
+            redis_cache.invalidate_speakers(int(user_id))
+        except Exception as e:
+            logger.debug(f"Speaker cache invalidation failed (non-critical): {e}")
+
     return speaker_mapping
 
 

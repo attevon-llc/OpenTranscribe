@@ -16,9 +16,29 @@ from app.models.system_settings import SystemSettings
 logger = logging.getLogger(__name__)
 
 
+def _db_get_setting(db: Session, key: str, default: Any = None) -> str | None:
+    """Read a single setting directly from the database (no cache).
+
+    Used by the in-process settings cache on a miss; kept separate so the cache
+    can fetch without re-entering ``get_setting`` (which routes back through the
+    cache).
+    """
+    setting = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+    if setting is None:
+        return default  # type: ignore[no-any-return]
+    return str(setting.value) if setting.value is not None else None
+
+
 def get_setting(db: Session, key: str, default: Any = None) -> str | None:
     """
     Get a system setting by key.
+
+    Reads are served from the in-process TTL cache
+    (``app.core.settings_cache``), which falls through to the database on a miss
+    and bypasses entirely under tests / when ``SETTINGS_CACHE_TTL == 0``. The
+    ``get_setting_int`` / ``get_setting_bool`` / ``get_media_sources`` wrappers
+    funnel through here, so they are cached for free. Writes via ``set_setting``
+    / ``_set_settings_batch`` (and ``search/settings_service``) bust the key.
 
     Args:
         db: Database session
@@ -28,10 +48,9 @@ def get_setting(db: Session, key: str, default: Any = None) -> str | None:
     Returns:
         Setting value as string, or default if not found
     """
-    setting = db.query(SystemSettings).filter(SystemSettings.key == key).first()
-    if setting is None:
-        return default  # type: ignore[no-any-return]
-    return str(setting.value) if setting.value is not None else None
+    from app.core import settings_cache
+
+    return settings_cache.cached_get(db, key, default)  # type: ignore[no-any-return]
 
 
 def get_setting_int(db: Session, key: str, default: int = 0) -> int:
@@ -76,10 +95,20 @@ def get_setting_bool(db: Session, key: str, default: bool = False) -> bool:
     return value.lower() in ("true", "1", "yes", "on")
 
 
-def _get_settings_map(db: Session, keys: list[str]) -> dict[str, str | None]:
-    """Fetch multiple settings in a single query. Returns {key: value_str | None}."""
+def get_settings_map(db: Session, keys: list[str]) -> dict[str, str | None]:
+    """Fetch multiple settings in a single query. Returns {key: value_str | None}.
+
+    Only keys that exist in the table are present in the result; callers should
+    use ``.get(key)`` with their own default. Prefer this over multiple
+    ``get_setting`` calls whenever a code path reads two or more keys — it
+    collapses N round-trips into one SELECT.
+    """
     rows = db.query(SystemSettings).filter(SystemSettings.key.in_(keys)).all()
     return {str(row.key): (str(row.value) if row.value is not None else None) for row in rows}
+
+
+# Backwards-compatible private alias (internal callers predate the public name).
+_get_settings_map = get_settings_map
 
 
 def _bool_val(v: str | None, default: bool) -> bool:
@@ -126,6 +155,12 @@ def set_setting(
 
     db.commit()
     db.refresh(setting)
+
+    # Bust the in-process cache so this writer (and every other reader in the
+    # process) sees the new value immediately.
+    from app.core import settings_cache
+
+    settings_cache.invalidate(key)
     return setting  # type: ignore[no-any-return]
 
 
@@ -153,6 +188,12 @@ def _set_settings_batch(db: Session, updates: dict[str, tuple[Any, str | None]])
         else:
             db.add(SystemSettings(key=key, value=str_value, description=description))
     db.commit()
+
+    # Bust every written key in the in-process cache.
+    from app.core import settings_cache
+
+    for key in updates:
+        settings_cache.invalidate(key)
 
 
 def get_all_settings(db: Session) -> dict[str, dict]:

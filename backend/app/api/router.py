@@ -8,6 +8,7 @@ from .endpoints import admin_timing
 from .endpoints import asr_settings
 from .endpoints import auth
 from .endpoints import auth_config
+from .endpoints import backup_settings
 from .endpoints import combined_speaker_migration
 from .endpoints import comments
 from .endpoints import custom_vocabulary
@@ -147,6 +148,7 @@ include_router_with_consistency(
 include_router_with_consistency(
     redaction_settings.admin_router, prefix="/admin/redaction-policy", tags=["admin"]
 )
+include_router_with_consistency(backup_settings.router, prefix="/admin/backup", tags=["admin"])
 include_router_with_consistency(topics.router, prefix="/files", tags=["topics"])
 include_router_with_consistency(
     transcript_segments.router, prefix="/transcripts", tags=["transcript-segments"]

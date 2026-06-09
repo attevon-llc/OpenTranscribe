@@ -167,7 +167,7 @@ def search_transcripts(
     search_service = HybridSearchService()
     response = search_service.search(
         query=q,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         page=page,
         page_size=page_size,
         speakers=speakers,
@@ -214,7 +214,7 @@ def search_suggestions(
     search_service = HybridSearchService()
     return search_service.get_suggestions(
         prefix=q,
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         limit=limit,
     )
 
@@ -232,7 +232,7 @@ def get_available_filters(
     from app.services.search.hybrid_search_service import HybridSearchService
 
     search_service = HybridSearchService()
-    return search_service.get_available_filters(user_id=int(current_user.id))
+    return search_service.get_available_filters(user_id=current_user.id)
 
 
 @router.post("/reindex")
@@ -272,7 +272,7 @@ def trigger_reindex(
             completed_files = (
                 db.query(MediaFile.uuid)
                 .filter(
-                    MediaFile.user_id == int(current_user.id),
+                    MediaFile.user_id == current_user.id,
                     MediaFile.status == FileStatus.COMPLETED,
                     has_segments,
                 )
@@ -297,7 +297,7 @@ def trigger_reindex(
                         index=index_name,
                         body={
                             "size": 0,
-                            "query": {"term": {"user_id": int(current_user.id)}},
+                            "query": {"term": {"user_id": current_user.id}},
                             "aggs": {
                                 "indexed_files": {
                                     "terms": {
@@ -336,7 +336,7 @@ def trigger_reindex(
     from app.tasks.reindex_task import reindex_transcripts_task
 
     task = reindex_transcripts_task.delay(
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         file_uuids=file_uuids,
     )
 
@@ -365,7 +365,7 @@ def stop_reindex(
     Returns:
         Dict with stop status.
     """
-    user_id = int(current_user.id)
+    user_id = current_user.id
 
     if not _check_reindex_task_active(user_id):
         return {
@@ -441,7 +441,7 @@ def reindex_status(
         total_files = (
             db.query(MediaFile)
             .filter(
-                MediaFile.user_id == int(current_user.id),
+                MediaFile.user_id == current_user.id,
                 MediaFile.status == FileStatus.COMPLETED,
                 has_segments,
             )
@@ -457,7 +457,7 @@ def reindex_status(
                 index=settings.OPENSEARCH_CHUNKS_INDEX,
                 body={
                     "size": 0,
-                    "query": {"term": {"user_id": int(current_user.id)}},
+                    "query": {"term": {"user_id": current_user.id}},
                     "aggs": {
                         "unique_files": {"cardinality": {"field": "file_uuid"}},
                         "last_indexed": {"max": {"field": "indexed_at"}},
@@ -471,14 +471,14 @@ def reindex_status(
             logger.error(f"Error checking index status: {e}")
 
     # Check if a reindex task is actively running for this user
-    in_progress = _check_reindex_task_active(int(current_user.id))
+    in_progress = _check_reindex_task_active(current_user.id)
 
     # Check if stop has been requested
     stop_requested = False
     if in_progress:
         try:
             redis_client = get_redis()
-            stop_requested = bool(redis_client.get(f"reindex_cancel:{int(current_user.id)}"))
+            stop_requested = bool(redis_client.get(f"reindex_cancel:{current_user.id}"))
         except Exception as e:
             logger.debug(f"Could not check reindex cancellation flag: {e}")
 
@@ -711,7 +711,7 @@ def set_embedding_model(
     from app.tasks.reindex_task import reindex_transcripts_task
 
     task = reindex_transcripts_task.delay(
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         file_uuids=None,
     )
 
@@ -1023,7 +1023,7 @@ def set_active_neural_model(
     from app.tasks.reindex_task import reindex_transcripts_task
 
     task = reindex_transcripts_task.delay(
-        user_id=int(current_user.id),
+        user_id=current_user.id,
         file_uuids=None,  # All files
     )
 

@@ -100,6 +100,7 @@ def get_user_file_status(
 
         problem_files = []
         for file in problem_query.all():
+            assert file.upload_time is not None  # filtered on upload_time above
             file_age = now - file.upload_time
             problem_files.append(
                 {
@@ -112,7 +113,7 @@ def get_user_file_status(
                     "formatted_duration": FormattingService.format_duration(
                         float(file.duration) if file.duration is not None else None
                     ),
-                    "formatted_file_age": FormattingService.format_file_age(file.upload_time),  # type: ignore[arg-type]
+                    "formatted_file_age": FormattingService.format_file_age(file.upload_time),
                     "formatted_file_size": FormattingService.format_bytes_detailed(
                         int(file.file_size) if file.file_size is not None else None
                     ),
@@ -145,6 +146,7 @@ def get_user_file_status(
 
         recent_files = []
         for file in recent_query.all():
+            assert file.upload_time is not None  # filtered on upload_time above
             file_age = now - file.upload_time
             recent_files.append(
                 {
@@ -157,7 +159,7 @@ def get_user_file_status(
                     "formatted_duration": FormattingService.format_duration(
                         float(file.duration) if file.duration is not None else None
                     ),
-                    "formatted_file_age": FormattingService.format_file_age(file.upload_time),  # type: ignore[arg-type]
+                    "formatted_file_age": FormattingService.format_file_age(file.upload_time),
                     "formatted_file_size": FormattingService.format_bytes_detailed(
                         int(file.file_size) if file.file_size is not None else None
                     ),
@@ -199,9 +201,9 @@ def get_file_detailed_status(
     try:
         # Get the file (ensure user owns it)
         media_file = get_file_by_uuid_with_permission(
-            db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+            db, file_uuid, current_user.id, is_admin=current_user.is_admin
         )
-        file_id = int(media_file.id)
+        file_id = media_file.id
 
         # Get task summary
         task_summary = get_task_summary_for_media_file(db, file_id)
@@ -222,28 +224,8 @@ def get_file_detailed_status(
                 "error_message": task.error_message,
                 # Add formatted processing time
                 "formatted_processing_time": FormattingService.format_processing_time(
-                    datetime(
-                        task.created_at.year,
-                        task.created_at.month,
-                        task.created_at.day,
-                        task.created_at.hour,
-                        task.created_at.minute,
-                        task.created_at.second,
-                        task.created_at.microsecond,
-                        tzinfo=task.created_at.tzinfo,
-                    ),
-                    datetime(
-                        task.completed_at.year,
-                        task.completed_at.month,
-                        task.completed_at.day,
-                        task.completed_at.hour,
-                        task.completed_at.minute,
-                        task.completed_at.second,
-                        task.completed_at.microsecond,
-                        tzinfo=task.completed_at.tzinfo,
-                    )
-                    if task.completed_at
-                    else None,
+                    task.created_at,
+                    task.completed_at,
                 ),
                 "status_display": task.status.title(),
             }
@@ -254,6 +236,7 @@ def get_file_detailed_status(
             task_details.append(task_detail)
 
         # Calculate file age and determine if retry is available
+        assert media_file.upload_time is not None  # server_default=now() on persisted row
         file_age = datetime.now(timezone.utc) - media_file.upload_time
         can_retry = media_file.status in [FileStatus.ERROR, FileStatus.PROCESSING]
 
@@ -281,18 +264,7 @@ def get_file_detailed_status(
                 "formatted_duration": FormattingService.format_duration(
                     float(media_file.duration) if media_file.duration is not None else None
                 ),
-                "formatted_file_age": FormattingService.format_file_age(
-                    datetime(
-                        media_file.upload_time.year,
-                        media_file.upload_time.month,
-                        media_file.upload_time.day,
-                        media_file.upload_time.hour,
-                        media_file.upload_time.minute,
-                        media_file.upload_time.second,
-                        media_file.upload_time.microsecond,
-                        tzinfo=media_file.upload_time.tzinfo,
-                    )
-                ),
+                "formatted_file_age": FormattingService.format_file_age(media_file.upload_time),
                 "display_status": FormattingService.format_status(FileStatus(media_file.status)),
                 "status_badge_class": FormattingService.get_status_badge_class(
                     media_file.status.value
@@ -341,9 +313,9 @@ async def retry_file_processing(
     try:
         # Get the file (ensure user owns it)
         media_file = get_file_by_uuid_with_permission(
-            db, file_uuid, int(current_user.id), is_admin=current_user.is_admin
+            db, file_uuid, current_user.id, is_admin=current_user.is_admin
         )
-        file_id = int(media_file.id)
+        file_id = media_file.id
 
         # Check if retry is appropriate
         if media_file.status not in [FileStatus.ERROR, FileStatus.PROCESSING]:

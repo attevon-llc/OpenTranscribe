@@ -18,12 +18,14 @@ from app.core.exceptions import LLMServiceError
 from app.core.exceptions import OpenTranscribeError
 from app.core.exceptions import SearchIndexError
 from app.core.exceptions import StorageError
+from app.core.logging_config import configure_logging
 from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
+from app.middleware.observability import ObservabilityMiddleware
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Set up logging (text or structured JSON per settings.LOG_FORMAT)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -655,6 +657,17 @@ app.add_middleware(AuditMiddleware)
 # CSRF protection for cookie-based authentication (C2 security hardening)
 app.add_middleware(CSRFMiddleware)
 
+# Observability MUST be the LAST add_middleware call so it runs OUTERMOST.
+# Starlette semantics (verified 0.48.0): add_middleware does
+# `user_middleware.insert(0, ...)` and the stack is built over `reversed(...)`,
+# so the LAST-added middleware is the OUTERMOST — NOT the add-call order. The
+# resulting runtime order is: Observability -> CSRF -> Audit -> CORS -> router.
+# That lets us record CSRF 403 rejections plus every routed request, and read
+# request.state.{request_id,user_id,client_ip} (set by inner layers during
+# call_next on the shared scope) after call_next returns. Do NOT "fix" the
+# order by reordering these calls.
+app.add_middleware(ObservabilityMiddleware)
+
 
 # Global handler for the application exception hierarchy.
 # Maps domain-specific exceptions to appropriate HTTP status codes so that
@@ -683,11 +696,84 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 
+# Prometheus scrape endpoint, mounted at ROOT (no API_PREFIX) next to /health.
+# Unauthenticated by design — nginx denies it and the host port is LAN-only.
+from app.api.endpoints.metrics import router as metrics_router  # noqa: E402
+
+app.include_router(metrics_router)
+
+
 # Health check endpoint
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "version": APP_VERSION}
+
+
+@app.get("/health/ready")
+def readiness_check():
+    """Readiness probe for load balancers / orchestrators.
+
+    Probes the critical dependencies (PostgreSQL, Redis) and the degraded-but-
+    serviceable ones (OpenSearch, MinIO). A failed CRITICAL dependency returns
+    503; OpenSearch/MinIO failures are reported but do not fail readiness, since
+    queued transcription survives a brief search/storage outage. Plain ``def``
+    so Starlette threadpools the short, synchronous probes.
+    """
+    from sqlalchemy import text
+
+    checks: dict[str, str] = {}
+
+    # PostgreSQL (critical) — short-lived session, SELECT 1.
+    try:
+        from app.db.base import SessionLocal
+
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            checks["postgres"] = "ok"
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001
+        checks["postgres"] = f"error: {type(exc).__name__}"
+
+    # Redis (critical) — ping the shared db-0 singleton.
+    try:
+        from app.core.redis import get_redis
+
+        get_redis().ping()
+        checks["redis"] = "ok"
+    except Exception as exc:  # noqa: BLE001
+        checks["redis"] = f"error: {type(exc).__name__}"
+
+    # OpenSearch (degraded-but-ready) — reuse the existing client singleton.
+    try:
+        from app.services.opensearch_service import get_opensearch_client
+
+        client = get_opensearch_client()
+        if client is not None and client.ping():
+            checks["opensearch"] = "ok"
+        else:
+            checks["opensearch"] = "unavailable"
+    except Exception as exc:  # noqa: BLE001
+        checks["opensearch"] = f"error: {type(exc).__name__}"
+
+    # MinIO (degraded-but-ready) — reuse the existing client singleton.
+    try:
+        from app.services.minio_service import minio_client
+
+        minio_client.bucket_exists(settings.MEDIA_BUCKET_NAME)
+        checks["minio"] = "ok"
+    except Exception as exc:  # noqa: BLE001
+        checks["minio"] = f"error: {type(exc).__name__}"
+
+    critical_ok = checks["postgres"] == "ok" and checks["redis"] == "ok"
+    if not critical_ok:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "checks": checks},
+        )
+    return {"status": "ready", "checks": checks}
 
 
 # Static files are served by nginx in production, not by FastAPI

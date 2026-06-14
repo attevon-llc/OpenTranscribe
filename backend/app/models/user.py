@@ -51,10 +51,14 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     full_name: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Derived mirror of (role == "super_admin"). Kept in sync at every write and
+    # enforced by a DB CHECK constraint (migration v369). Never set independently
+    # of role — see app.auth.roles.role_implies_superuser. role is the source of
+    # truth for authorization.
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     role: Mapped[str] = mapped_column(
         String, default="user", nullable=False
-    )  # "user", "admin", or "super_admin"
+    )  # "user", "admin", or "super_admin" (authorization source of truth)
     auth_type: Mapped[str] = mapped_column(
         String, default="local", nullable=False
     )  # "local", "ldap", "keycloak", "pki"
@@ -135,6 +139,11 @@ class User(Base):
     def is_admin(self) -> bool:
         """Check if user has admin or super_admin role."""
         return self.role in ("admin", "super_admin")
+
+    @property
+    def is_super_admin(self) -> bool:
+        """Check if user is a platform super_admin (authorization source of truth)."""
+        return self.role == "super_admin"
 
     # Relationships
     media_files: Mapped[list["MediaFile"]] = relationship("MediaFile", back_populates="user")

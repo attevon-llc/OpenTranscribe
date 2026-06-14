@@ -749,7 +749,8 @@ class TestFullAuthenticationFlow:
             full_name="Test Admin",
             hashed_password=get_password_hash("adminpass123"),
             is_active=True,
-            is_superuser=True,
+            # is_superuser mirrors (role == super_admin); an admin is not a superuser.
+            is_superuser=False,
             role="admin",
         )
         db_session.add(admin)

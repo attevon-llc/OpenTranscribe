@@ -44,6 +44,7 @@ from app.auth.pki_auth import pki_authenticate
 from app.auth.pki_auth import sync_pki_user_to_db
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.session import OIDCStateStore
 from app.auth.session import get_redis_client
 from app.auth.token_service import token_service
@@ -316,12 +317,16 @@ def get_current_active_superuser(
     current_user: User = Depends(get_current_user),
 ) -> User:
     """
-    Check if the current user is a superuser
+    Check if the current user is a platform super_admin.
+
+    role is the authorization source of truth; is_superuser is its derived
+    mirror (role == super_admin). We gate on role so this stays consistent
+    with the rest of the super_admin-tier endpoints.
     """
-    if not current_user.is_superuser:
+    if current_user.role != ROLE_SUPER_ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions - superuser required",
+            detail="Not enough permissions - super_admin required",
         )
     return current_user
 

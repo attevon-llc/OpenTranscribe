@@ -238,7 +238,9 @@ def admin_user(db_session):
         full_name="Admin User",
         hashed_password=get_password_hash("adminpass"),
         is_active=True,
-        is_superuser=True,
+        # is_superuser mirrors (role == super_admin); an 'admin' is not a superuser.
+        # Use the super_admin_user fixture for super_admin-tier endpoints.
+        is_superuser=False,
         role="admin",
     )
     db_session.add(user)

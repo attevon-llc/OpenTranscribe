@@ -15,6 +15,8 @@ import logging
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.roles import ROLE_SUPER_ADMIN
+from app.auth.roles import role_implies_superuser
 from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.models.media import Tag
@@ -28,19 +30,31 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_admin_user(db: Session) -> None:
-    """Create the default admin user if it doesn't exist."""
+    """Create the default admin user if it doesn't exist.
+
+    The default admin is the platform owner, so it gets ``super_admin`` (which
+    can configure authentication, change roles, etc.). ``is_superuser`` is the
+    derived mirror of ``role == super_admin`` — see ``app.auth.roles``.
+    """
     user = db.query(User).filter(User.email == "admin@example.com").first()
     if not user:
         user = User(
             email="admin@example.com",
             full_name="Admin User",
             hashed_password=get_password_hash("password"),
-            is_superuser=True,
-            role="admin",
+            role=ROLE_SUPER_ADMIN,
+            is_superuser=role_implies_superuser(ROLE_SUPER_ADMIN),
         )
         db.add(user)
         db.commit()
-        logger.info("Created default admin user: admin@example.com")
+        logger.info("Created default admin user: admin@example.com (super_admin)")
+    elif user.role != ROLE_SUPER_ADMIN and user.is_superuser:
+        # Self-heal a legacy default admin (role='admin' + is_superuser=True),
+        # which could not reach the super_admin-gated surfaces. Idempotent.
+        user.role = ROLE_SUPER_ADMIN
+        user.is_superuser = True
+        db.commit()
+        logger.info("Promoted legacy default admin admin@example.com to super_admin")
     else:
         logger.debug("Admin user already exists")
 

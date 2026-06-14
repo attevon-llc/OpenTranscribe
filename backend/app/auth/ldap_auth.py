@@ -602,7 +602,9 @@ def _create_ldap_user(db, username: str, email: str, ldap_data: LdapUserData):
         ldap_uid=username,
         role="admin" if ldap_data["is_admin"] else "user",
         is_active=True,
-        is_superuser=ldap_data["is_admin"],
+        # External IdPs grant at most 'admin'; super_admin is local-only, and
+        # is_superuser mirrors (role == super_admin) — so it is always False here.
+        is_superuser=False,
     )
     db.add(user)
 
@@ -638,7 +640,8 @@ def _update_ldap_user(db, user, username: str, email: str, ldap_data: LdapUserDa
         if user.role != "admin":
             logger.info(f"Promoting LDAP user {username} to admin")
         user.role = "admin"
-        user.is_superuser = True
+        # External IdPs grant at most 'admin'; is_superuser mirrors super_admin.
+        user.is_superuser = False
     elif user.role == "admin":
         logger.info(
             f"Demoting LDAP user {username} from admin (removed from LDAP admin_users/admin_groups)"

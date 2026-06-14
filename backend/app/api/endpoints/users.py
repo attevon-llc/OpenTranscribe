@@ -14,6 +14,9 @@ from app.api.endpoints.auth import get_current_admin_user
 from app.auth.ldap_auth import AUTH_TYPE_LOCAL
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
+from app.auth.roles import ROLE_USER
+from app.auth.roles import VALID_ROLES
+from app.auth.roles import role_implies_superuser
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.core.security import verify_password
@@ -44,14 +47,23 @@ def create_user(user_data: UserCreate, db: Session) -> User:
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
 
-    # Create new user with role and permissions from request data
+    # role is the authorization source of truth; is_superuser is derived from it
+    # (never taken from the client). Privilege of the *caller* is enforced by the
+    # endpoint (see admin.create_admin_user); this helper only validates the value.
+    role = user_data.role or ROLE_USER
+    if role not in VALID_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role: {role}",
+        )
+
     new_user = User(
         email=user_data.email,
         hashed_password=get_password_hash(user_data.password),
         full_name=user_data.full_name,
         is_active=user_data.is_active if user_data.is_active is not None else True,
-        is_superuser=user_data.is_superuser if user_data.is_superuser is not None else False,
-        role=user_data.role if user_data.role else "user",
+        role=role,
+        is_superuser=role_implies_superuser(role),
     )
 
     db.add(new_user)
@@ -240,6 +252,18 @@ def update_user(
                 f"Admin {current_user.id} attempted to set privileged fields "
                 f"{stripped} on user {user.id} — stripped"
             )
+
+    # is_superuser is derived from role and is never settable directly. If a
+    # super_admin changes the role, recompute is_superuser to keep the invariant
+    # (enforced by the v369 DB CHECK constraint) intact.
+    update_data.pop("is_superuser", None)
+    if "role" in update_data:
+        if update_data["role"] not in VALID_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid role: {update_data['role']}",
+            )
+        update_data["is_superuser"] = role_implies_superuser(update_data["role"])
 
     # Hash password if it's provided
     if "password" in update_data:

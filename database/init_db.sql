@@ -1078,7 +1078,7 @@ VALUES (
     'Admin User',
     TRUE,
     TRUE,
-    'admin',
+    'super_admin',  -- default admin is the platform owner; is_superuser mirrors this
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
 ) ON CONFLICT (email) DO NOTHING;

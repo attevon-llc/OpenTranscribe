@@ -16,6 +16,9 @@ from sqlalchemy.orm import Session
 
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.provider_registry import ExternalIdentity
+from app.auth.roles import ELEVATED_ROLES
+from app.auth.roles import ROLE_ADMIN
+from app.auth.roles import role_implies_superuser
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -39,10 +42,13 @@ def _apply_identity(user: User, identity: ExternalIdentity, id_col: str, org_col
     user.auth_type = identity.provider
     # PLATFORM admin only — customer org roles (org:admin) intentionally do
     # NOT map here; org-admin is a tenant capability, not a platform role.
-    if identity.is_admin and user.role != "admin":
+    # External IdPs grant at most 'admin' (never super_admin, which is local-only),
+    # and we never demote an existing local super_admin/admin.
+    if identity.is_admin and user.role not in ELEVATED_ROLES:
         logger.info(f"Promoting external user {identity.external_id} to platform admin")
-        user.role = "admin"
-        user.is_superuser = True
+        user.role = ROLE_ADMIN
+    # is_superuser is the derived mirror of (role == super_admin).
+    user.is_superuser = role_implies_superuser(user.role)
 
 
 def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
@@ -106,7 +112,8 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
         hashed_password=EXTERNAL_AUTH_NO_PASSWORD,
         auth_type=identity.provider,
         role="admin" if identity.is_admin else "user",
-        is_superuser=identity.is_admin,
+        # is_superuser mirrors super_admin; external IdPs grant at most 'admin'.
+        is_superuser=False,
         is_active=True,
     )
     setattr(user, id_col, identity.external_id)

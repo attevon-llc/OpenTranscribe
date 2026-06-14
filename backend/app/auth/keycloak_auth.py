@@ -628,11 +628,11 @@ def _update_keycloak_user(db, user, keycloak_data: KeycloakUserData):
         user.pki_fingerprint_sha256 = cert_fingerprint.replace(":", "")
 
     if keycloak_data["is_admin"]:
-        if user.role != "admin":
+        # External IdPs grant at most 'admin'; never demote a local super_admin.
+        if user.role not in ("admin", "super_admin"):
             logger.info(f"Promoting Keycloak user {keycloak_id} to admin")
-        user.role = "admin"
-        # External IdPs grant at most 'admin'; is_superuser mirrors super_admin.
-        user.is_superuser = False
+            user.role = "admin"
+        user.is_superuser = user.role == "super_admin"
     elif user.role == "admin":
         logger.info(f"Demoting Keycloak user {keycloak_id} from admin")
         user.role = "user"
@@ -663,11 +663,11 @@ def _convert_local_user_to_keycloak(db, user, keycloak_data: KeycloakUserData):
         user.full_name = keycloak_data["full_name"]
 
     if keycloak_data["is_admin"]:
-        if user.role != "admin":
+        # External IdPs grant at most 'admin'; never demote a local super_admin.
+        if user.role not in ("admin", "super_admin"):
             logger.info(f"Promoting converted Keycloak user {keycloak_id} to admin")
-        user.role = "admin"
-        # External IdPs grant at most 'admin'; is_superuser mirrors super_admin.
-        user.is_superuser = False
+            user.role = "admin"
+        user.is_superuser = user.role == "super_admin"
     elif user.role == "admin":
         logger.info(
             f"Demoting converted Keycloak user {keycloak_id} from admin (no admin role in Keycloak)"

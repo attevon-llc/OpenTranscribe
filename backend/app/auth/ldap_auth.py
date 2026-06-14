@@ -637,11 +637,11 @@ def _update_ldap_user(db, user, username: str, email: str, ldap_data: LdapUserDa
     user.auth_type = AUTH_TYPE_LDAP
 
     if ldap_data["is_admin"]:
-        if user.role != "admin":
+        # External IdPs grant at most 'admin'; never demote a local super_admin.
+        if user.role not in ("admin", "super_admin"):
             logger.info(f"Promoting LDAP user {username} to admin")
-        user.role = "admin"
-        # External IdPs grant at most 'admin'; is_superuser mirrors super_admin.
-        user.is_superuser = False
+            user.role = "admin"
+        user.is_superuser = user.role == "super_admin"
     elif user.role == "admin":
         logger.info(
             f"Demoting LDAP user {username} from admin (removed from LDAP admin_users/admin_groups)"

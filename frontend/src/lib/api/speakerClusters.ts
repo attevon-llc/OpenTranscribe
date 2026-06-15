@@ -111,6 +111,7 @@ export interface SpeakerMediaPreviewData {
   speaker_name: string;
   file_uuid: string;
   file_name: string;
+  title: string;
   content_type: string;
   start_time: number;
   end_time: number;

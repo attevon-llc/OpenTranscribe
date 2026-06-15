@@ -2447,6 +2447,8 @@
   "search.occurrence": "{{count}} occurrence",
   "search.occurrences": "{{count}} occurrences",
   "search.jumpTo": "Jump to",
+  "search.closePreview": "Close",
+  "search.closePreviewAriaLabel": "Close preview player",
   "search.filters": "Filters",
   "search.sortBy": "Sort by",
   "search.relevance": "Relevance",

@@ -176,11 +176,14 @@ def get_speaker_media_preview(
     if not media_file:
         raise HTTPException(status_code=404, detail="Media file not found")
 
-    # Presigned URL for source media (1 hour TTL)
+    # Presigned URL for source media (shared media-streaming TTL)
+    from app.core.config import settings
     from app.services.minio_service import get_file_url
 
     try:
-        media_presigned_url = get_file_url(media_file.storage_path, expires=3600)
+        media_presigned_url = get_file_url(
+            media_file.storage_path, expires=settings.MEDIA_URL_EXPIRE_SECONDS
+        )
     except Exception as e:
         logger.warning("Failed to generate presigned URL for %s: %s", media_file.storage_path, e)
         media_presigned_url = None
@@ -202,6 +205,8 @@ def get_speaker_media_preview(
         "speaker_name": speaker.display_name or speaker.name,
         "file_uuid": str(media_file.uuid),
         "file_name": media_file.filename,
+        # Display title (matches search results); falls back to the raw filename.
+        "title": media_file.title or media_file.filename,
         "content_type": media_file.content_type or "audio/unknown",
         "start_time": seg_start,
         "end_time": seg_end,

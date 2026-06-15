@@ -2443,6 +2443,8 @@
   "search.occurrence": "{{count}} 次出现",
   "search.occurrences": "{{count}} 次出现",
   "search.jumpTo": "跳转到",
+  "search.closePreview": "关闭",
+  "search.closePreviewAriaLabel": "关闭预览播放器",
   "search.filters": "筛选",
   "search.sortBy": "排序方式",
   "search.relevance": "相关性",

@@ -24,6 +24,9 @@
   let trackElement: HTMLTrackElement | null = null;
   let currentLoadHandler: ((event: Event) => void) | null = null;
   let isSeeking = false;
+  // URL currently loaded into the media element — lets a presigned-URL refresh
+  // hot-swap the credential without losing playback position (see hotSwapVideoSource).
+  let activeSrc = '';
 
 
   function handleRetry() {
@@ -235,6 +238,7 @@
       // Initialize Plyr
       const newPlayer = new Plyr(mediaElement, plyrConfig);
       player = newPlayer;
+      activeSrc = videoUrl;
 
       // Set up event listeners
       newPlayer.on('ready', () => {
@@ -346,6 +350,30 @@
   // Watch for changes to videoUrl or mediaElement to initialize player
   $: if (videoUrl && mediaElement && !player) {
     initializePlyr();
+  }
+
+  // Seamless presigned-URL refresh: reload the new credential but resume exactly
+  // where we left off. Changing the <source> src alone does not reload the element.
+  $: if (player && mediaElement && videoUrl && videoUrl !== activeSrc) {
+    hotSwapVideoSource(videoUrl);
+  }
+
+  async function hotSwapVideoSource(newUrl: string) {
+    activeSrc = newUrl;
+    if (!player || !mediaElement) return;
+    const media = ((player as any).media as HTMLMediaElement | undefined) ?? mediaElement;
+    const resumeAt = media.currentTime;
+    const wasPlaying = !media.paused && !media.ended;
+    const sourceEl = media.querySelector('source');
+    if (sourceEl) sourceEl.src = newUrl;
+    media.load();
+    await seekToTime(resumeAt);
+    if (wasPlaying) {
+      const playResult = player.play();
+      if (playResult && typeof playResult.catch === 'function') {
+        playResult.catch(() => {});
+      }
+    }
   }
 </script>
 

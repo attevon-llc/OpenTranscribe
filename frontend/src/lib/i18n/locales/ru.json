@@ -2433,6 +2433,8 @@
   "search.occurrence": "{{count}} вхождение",
   "search.occurrences": "{{count}} вхождений",
   "search.jumpTo": "Перейти к",
+  "search.closePreview": "Закрыть",
+  "search.closePreviewAriaLabel": "Закрыть предварительный проигрыватель",
   "search.filters": "Фильтры",
   "search.sortBy": "Сортировать по",
   "search.relevance": "Релевантность",

@@ -1,0 +1,323 @@
+"""GDPR / right-to-erasure service — edition-neutral core capability.
+
+The legacy ``user.deleted`` / ``organization.deleted`` paths only *deactivated*
+(set ``is_active = False``), which is a data **freeze**, not the **erasure** GDPR
+Art. 17 requires. This module provides the real cascade: object storage, the
+relational rows, AND — critically — the **OpenSearch voiceprint indices**, which
+hold biometric data (speaker embeddings) and are NOT reachable by a Postgres
+``ON DELETE CASCADE``.
+
+What gets erased
+----------------
+For a **user** (``erase_user``) or an **organization** (``erase_organization``):
+
+1. **Object storage (S3 / MinIO):** every media file's original, thumbnail, and
+   regenerable derived cache — via the canonical per-file destroy
+   ``purge_media_file`` (the same single source of truth every delete path uses).
+2. **Relational rows:** media files, transcript segments, speakers, speaker
+   profiles, collections, comments, tags, prompts, user settings, etc. Per-file
+   children go via ``purge_media_file``'s CASCADE; remaining owner-scoped rows
+   (speaker profiles, collections) are deleted explicitly; for a *user* erasure
+   the ``user`` row itself is finally deleted, whose FK CASCADEs sweep the rest.
+3. **OpenSearch voiceprint / biometric indices:** a ``delete_by_query`` on the
+   speaker indices (v3 + v4 + alias) scoped by ``user_id`` (user erasure) or
+   ``organization_id`` (org erasure) removes any speaker/profile embedding doc
+   not already swept by the per-file cleanup. This is the biometric-data
+   guarantee the per-file path alone cannot make for orphaned docs.
+
+SLA
+---
+**30-day completion** (GDPR Art. 12(3) "without undue delay and in any event
+within one month"). This service runs the erasure synchronously and is the
+callable the cloud ``user.deleted`` / ``organization.deleted`` webhooks invoke;
+the webhook handler is responsible only for *enqueueing* the call within the
+window. The operation is **idempotent** (re-running on an already-erased subject
+is a no-op that returns zeroed counters) and writes an ``admin.user.delete``
+audit event on completion so the erasure itself is on the compliance trail.
+
+Community-edition invariance
+----------------------------
+``erase_organization`` is only reachable with orgs present; in the
+self-host/community edition ``organization_id`` is NULL everywhere, so the
+org path never triggers. ``erase_user`` works in both editions (the speaker
+``delete_by_query`` simply matches the user's personal docs).
+"""
+
+import contextlib
+import logging
+from typing import Any
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
+from app.models.media import Collection
+from app.models.media import MediaFile
+from app.models.media import SpeakerCollection
+from app.models.media import SpeakerProfile
+from app.models.organization import Organization
+from app.models.organization import OrganizationMembership
+from app.models.user import User
+from app.services.file_cleanup_service import purge_media_file
+
+logger = logging.getLogger(__name__)
+
+# GDPR Art. 12(3): erasure must complete within one month of the request.
+ERASURE_SLA_DAYS = 30
+
+
+def _erase_speaker_voiceprints(
+    *, user_id: Optional[int] = None, organization_id: Optional[int] = None
+) -> int:
+    """Delete speaker/profile embedding docs (biometric data) from OpenSearch.
+
+    Scopes by ``user_id`` OR ``organization_id`` and runs a ``delete_by_query``
+    across the v3 + v4 + alias speaker indices. Best-effort: a down/absent
+    OpenSearch never blocks the relational + storage erasure (those are the
+    legally-binding deletions; this catches orphaned biometric docs).
+
+    Returns the number of voiceprint documents deleted (0 if OpenSearch is
+    unavailable).
+    """
+    if user_id is None and organization_id is None:
+        return 0
+
+    deleted = 0
+    try:
+        from app.core.constants import get_speaker_index
+        from app.core.constants import get_speaker_index_v3
+        from app.core.constants import get_speaker_index_v4
+        from app.services.opensearch_service import opensearch_client
+
+        if opensearch_client is None:
+            logger.warning("OpenSearch unavailable — skipping voiceprint erasure (orphan docs)")
+            return 0
+
+        field = "organization_id" if organization_id is not None else "user_id"
+        value = organization_id if organization_id is not None else user_id
+        body = {"query": {"term": {field: value}}}
+
+        indices = {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}
+        for idx in indices:
+            try:
+                if not opensearch_client.indices.exists(index=idx):
+                    continue
+                resp = opensearch_client.delete_by_query(
+                    index=idx,
+                    body=body,
+                    refresh=True,
+                    conflicts="proceed",
+                )
+                deleted += int(resp.get("deleted", 0))
+            except Exception as idx_err:  # noqa: BLE001 — best-effort per index
+                logger.warning(f"Voiceprint erasure failed on index {idx}: {idx_err}")
+    except Exception as e:  # noqa: BLE001 — OpenSearch optional
+        logger.warning(f"Voiceprint erasure skipped (OpenSearch error): {e}")
+
+    if deleted:
+        logger.info(
+            f"Erased {deleted} voiceprint doc(s) for "
+            f"{'org ' + str(organization_id) if organization_id else 'user ' + str(user_id)}"
+        )
+    return deleted
+
+
+def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -> None:
+    """Run the canonical per-file destroy for every file, accumulating counters."""
+    for media_file in files:
+        result = purge_media_file(db, media_file)
+        if result.get("deleted"):
+            summary["media_files_deleted"] += 1
+        else:
+            summary["errors"].append(
+                {"file_uuid": result.get("file_uuid"), "error": result.get("error")}
+            )
+
+
+def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]) -> None:
+    """Delete a single user's profile/collection rows that survive file cleanup.
+
+    ``purge_media_file`` deliberately preserves ``SpeakerProfile`` (and never
+    touches empty ``Collection`` shells), so erasure must remove them
+    explicitly. Their profile embeddings are cleared from OpenSearch first.
+    """
+    profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == user_id).all()
+    for profile in profiles:
+        with contextlib.suppress(Exception):
+            from app.services.opensearch_service import remove_profile_embedding
+
+            remove_profile_embedding(str(profile.uuid))
+        db.delete(profile)
+        summary["speaker_profiles_deleted"] += 1
+
+    for model, key in (
+        (SpeakerCollection, "speaker_collections_deleted"),
+        (Collection, "collections_deleted"),
+    ):
+        rows = db.query(model).filter(model.user_id == user_id).all()
+        for row in rows:
+            db.delete(row)
+            summary[key] += 1
+    db.commit()
+
+
+def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
+    return {
+        "subject": subject,
+        "subject_id": subject_id,
+        "media_files_deleted": 0,
+        "speaker_profiles_deleted": 0,
+        "speaker_collections_deleted": 0,
+        "collections_deleted": 0,
+        "voiceprints_deleted": 0,
+        "users_deleted": 0,
+        "errors": [],
+        "sla_days": ERASURE_SLA_DAYS,
+        "already_erased": False,
+    }
+
+
+def erase_user(db: Session, user_id: int) -> dict[str, Any]:
+    """Permanently erase all of a user's personal data (GDPR Art. 17).
+
+    Cascades object storage, OpenSearch transcript + voiceprint docs, and the
+    relational rows, then deletes the ``user`` row (FK CASCADEs sweep settings,
+    comments, MFA, refresh tokens, memberships, etc.). Idempotent: a missing
+    user returns ``already_erased=True`` with zeroed counters. Never raises —
+    errors are collected in ``summary["errors"]``.
+
+    This is the callable the cloud ``user.deleted`` webhook invokes. SLA: data
+    erased within :data:`ERASURE_SLA_DAYS` days of the request.
+    """
+    summary = _new_summary("user", user_id)
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        summary["already_erased"] = True
+        logger.info(f"erase_user: user {user_id} not present — idempotent no-op")
+        return summary
+
+    email = str(user.email)
+
+    files = db.query(MediaFile).filter(MediaFile.user_id == user_id).all()
+    _purge_files(db, files, summary)
+    _delete_owner_scoped_rows(db, user_id, summary)
+
+    summary["voiceprints_deleted"] = _erase_speaker_voiceprints(user_id=user_id)
+
+    try:
+        db.delete(user)
+        db.commit()
+        summary["users_deleted"] = 1
+    except Exception as e:  # noqa: BLE001 — record, don't raise
+        db.rollback()
+        summary["errors"].append({"user_id": user_id, "error": str(e)})
+        logger.error(f"erase_user: failed to delete user row {user_id}: {e}")
+
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_DELETE,
+        outcome=AuditOutcome.SUCCESS if not summary["errors"] else AuditOutcome.PARTIAL,
+        user_id=user_id,
+        username=email,
+        details={
+            "action": "gdpr_erasure",
+            **{
+                k: summary[k]
+                for k in (
+                    "media_files_deleted",
+                    "speaker_profiles_deleted",
+                    "voiceprints_deleted",
+                    "users_deleted",
+                )
+            },
+        },
+    )
+    logger.info(f"erase_user({user_id}) complete: {summary}")
+    return summary
+
+
+def erase_organization(db: Session, org_id: int) -> dict[str, Any]:
+    """Permanently erase an organization's data and all member-owned org data.
+
+    Erases every org-stamped media file, the org's voiceprint docs (by
+    ``organization_id``), then each member's org-scoped profiles/collections,
+    and finally deletes the ``organization`` row (membership rows CASCADE).
+
+    Member **users are NOT deleted** — a user may belong to multiple orgs and
+    retains a personal account; only the org's data and the membership links go.
+    The cloud ``organization.deleted`` webhook invokes this. Idempotent and
+    never raises. SLA: :data:`ERASURE_SLA_DAYS` days.
+    """
+    summary = _new_summary("organization", org_id)
+
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if org is None:
+        summary["already_erased"] = True
+        logger.info(f"erase_organization: org {org_id} not present — idempotent no-op")
+        return summary
+
+    org_name = str(org.name)
+
+    files = db.query(MediaFile).filter(MediaFile.organization_id == org_id).all()
+    _purge_files(db, files, summary)
+
+    # Org-scoped speaker profiles (clear their profile embedding first), then
+    # the org's collections — across ALL members of the org.
+    profiles = db.query(SpeakerProfile).filter(SpeakerProfile.organization_id == org_id).all()
+    for profile in profiles:
+        with contextlib.suppress(Exception):
+            from app.services.opensearch_service import remove_profile_embedding
+
+            remove_profile_embedding(str(profile.uuid))
+        db.delete(profile)
+        summary["speaker_profiles_deleted"] += 1
+
+    speaker_collections = (
+        db.query(SpeakerCollection).filter(SpeakerCollection.organization_id == org_id).all()
+    )
+    for sc in speaker_collections:
+        db.delete(sc)
+        summary["speaker_collections_deleted"] += 1
+
+    collections = db.query(Collection).filter(Collection.organization_id == org_id).all()
+    for coll in collections:
+        db.delete(coll)
+        summary["collections_deleted"] += 1
+    db.commit()
+
+    summary["voiceprints_deleted"] = _erase_speaker_voiceprints(organization_id=org_id)
+
+    # Drop the org row (organization_membership rows CASCADE on delete).
+    member_count = (
+        db.query(OrganizationMembership)
+        .filter(OrganizationMembership.organization_id == org_id)
+        .count()
+    )
+    try:
+        db.delete(org)
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        summary["errors"].append({"org_id": org_id, "error": str(e)})
+        logger.error(f"erase_organization: failed to delete org row {org_id}: {e}")
+
+    summary["memberships_removed"] = member_count
+
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_DELETE,
+        outcome=AuditOutcome.SUCCESS if not summary["errors"] else AuditOutcome.PARTIAL,
+        details={
+            "action": "gdpr_erasure_organization",
+            "organization_id": org_id,
+            "organization_name": org_name,
+            "memberships_removed": member_count,
+            **{
+                k: summary[k]
+                for k in ("media_files_deleted", "speaker_profiles_deleted", "voiceprints_deleted")
+            },
+        },
+    )
+    logger.info(f"erase_organization({org_id}) complete: {summary}")
+    return summary

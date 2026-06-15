@@ -18,7 +18,9 @@ from typing import Any
 from typing import Optional
 
 from fastapi import Depends
+from fastapi import HTTPException
 from fastapi import Request
+from fastapi import status
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 
@@ -110,6 +112,35 @@ def get_current_context(
     """Resolve the request's tenant context (personal when no org applies)."""
     org_id, org_role = resolve_org_context(request, db, current_user)
     return RequestContext(user=current_user, org_id=org_id, org_role=org_role)
+
+
+def require_org_admin(
+    ctx: RequestContext = Depends(get_current_context),
+) -> RequestContext:
+    """FastAPI dependency: 403 unless the caller is an admin of an active org.
+
+    The **server-side** authority for every org-admin action (team/member
+    management, org-level settings/policies, org audit-log read, org GDPR
+    erasure). The frontend ``audience == "org_admin"`` capability gate is
+    cosmetic only — it decides what UI renders, never who is authorized. Any
+    mutating org-admin endpoint MUST depend on this so the membership-mirror
+    role (``ctx.org_role == "org:admin"``, resolved in ``resolve_org_context``)
+    is enforced rather than trusted from the token or the frontend.
+
+    Community-edition invariance: with no orgs, ``ctx.is_org_admin`` is always
+    False and ``ctx.org_id`` is None, so this dependency 403s — org-admin
+    surfaces simply don't exist in the self-host/community edition (they are
+    cloud-only and never wired into a route a community user can reach).
+
+    Returns the context unchanged on success so the endpoint can reuse
+    ``ctx.org_id`` for scoping.
+    """
+    if not ctx.is_org_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization administrator access required",
+        )
+    return ctx
 
 
 def scope_to_context(query: Query, model: Any, ctx: RequestContext) -> Query:

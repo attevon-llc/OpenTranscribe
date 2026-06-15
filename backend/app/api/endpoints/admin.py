@@ -1539,77 +1539,25 @@ def get_audit_logs(
     current_user: User = Depends(get_current_super_admin_user),
 ):
     """
-    Query audit logs with filtering. Super admin only.
+    Query audit logs with filtering. Super admin only (global, all tenants).
 
-    Note: This endpoint queries OpenSearch if audit logging to OpenSearch is enabled.
-    If OpenSearch is not available, returns an error message.
+    Org-admins get a tenant-scoped view of the same data at
+    ``GET /org-admin/audit-logs`` (see ``endpoints/org_admin.py``).
+
+    Note: This endpoint queries OpenSearch if audit logging to OpenSearch is
+    enabled. If OpenSearch is not available, returns an error message.
     """
-    # Check if OpenSearch audit logging is enabled
-    if not settings.AUDIT_LOG_TO_OPENSEARCH:
-        return {
-            "error": "Audit log querying requires AUDIT_LOG_TO_OPENSEARCH=true",
-            "logs": [],
-            "total": 0,
-        }
+    from app.auth.audit import query_audit_logs
 
-    try:
-        from opensearchpy import OpenSearch
-
-        client = OpenSearch(
-            hosts=[
-                {
-                    "host": settings.OPENSEARCH_HOST,
-                    "port": int(settings.OPENSEARCH_PORT),
-                }
-            ],
-            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-            use_ssl=settings.OPENSEARCH_USE_TLS,
-            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
-            ssl_show_warn=False,
-        )
-
-        # Build OpenSearch query
-        must_clauses: list[dict] = []
-
-        if start_date:
-            must_clauses.append({"range": {"timestamp": {"gte": start_date.isoformat()}}})
-        if end_date:
-            must_clauses.append({"range": {"timestamp": {"lte": end_date.isoformat()}}})
-        if event_type:
-            must_clauses.append({"term": {"event_type": event_type}})
-        if user_id:
-            must_clauses.append({"term": {"user_id": user_id}})
-        if outcome:
-            must_clauses.append({"term": {"outcome": outcome}})
-
-        query = {
-            "query": {"bool": {"must": must_clauses}} if must_clauses else {"match_all": {}},
-            "sort": [{"timestamp": {"order": "desc"}}],
-            "from": offset,
-            "size": limit,
-        }
-
-        # Search across all audit log indices
-        index_pattern = "audit-logs-*"
-        response = client.search(index=index_pattern, body=query)
-
-        logs = [hit["_source"] for hit in response["hits"]["hits"]]
-        total = response["hits"]["total"]["value"]
-
-        return {
-            "logs": logs,
-            "total": total,
-            "offset": offset,
-            "limit": limit,
-        }
-
-    except Exception as e:
-        logger.error(f"Error querying audit logs: {e}")
-        return {
-            "error": "An internal error occurred while querying audit logs.",
-            "logs": [],
-            "total": 0,
-        }
+    return query_audit_logs(
+        start_date=start_date,
+        end_date=end_date,
+        event_type=event_type,
+        user_id=user_id,
+        outcome=outcome,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/audit-logs/export")
@@ -1711,6 +1659,32 @@ def export_audit_logs(
             status_code=500,
             detail="An internal error occurred. Please try again.",
         ) from e
+
+
+# ============== GDPR / Right-to-Erasure (super-admin / platform) ==============
+
+
+@router.post("/gdpr/erase-user/{user_uuid}")
+def admin_erase_user(
+    user_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin_user),
+):
+    """GDPR Art. 17 erasure of a user — platform/super-admin scope.
+
+    Permanently cascades object storage, OpenSearch transcript + voiceprint
+    (biometric) docs, and the relational rows, then deletes the user. This is
+    the platform-staff / self-host-operator entry point to the same
+    ``erase_user`` service the cloud ``user.deleted`` webhook calls. Idempotent;
+    SLA 30 days. The erasure is audit-logged by the service.
+    """
+    target = db.query(User).filter(User.uuid == user_uuid).first()
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    from app.services.gdpr_erasure_service import erase_user
+
+    return erase_user(db, int(target.id))
 
 
 # ---------------------------------------------------------------------------

@@ -470,3 +470,110 @@ class AuditLogger:
 
 # Global audit logger instance
 audit_logger = AuditLogger()
+
+
+def _build_audit_opensearch_client():
+    """Construct an OpenSearch client for audit-log reads (None on failure)."""
+    try:
+        from opensearchpy import OpenSearch
+
+        return OpenSearch(
+            hosts=[
+                {
+                    "host": settings.OPENSEARCH_HOST,
+                    "port": int(settings.OPENSEARCH_PORT),
+                }
+            ],
+            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
+            use_ssl=settings.OPENSEARCH_USE_TLS,
+            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
+            ssl_show_warn=False,
+        )
+    except Exception as e:  # noqa: BLE001 — OpenSearch optional
+        logging.getLogger("audit").warning(f"Failed to build audit OpenSearch client: {e}")
+        return None
+
+
+def query_audit_logs(
+    *,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    event_type: Optional[str] = None,
+    user_id: Optional[int] = None,
+    outcome: Optional[str] = None,
+    scope_user_ids: Optional[list[int]] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Query the OpenSearch audit-log indices with optional scoping.
+
+    Shared by the super-admin (global) and org-admin (member-scoped) read
+    endpoints so the query logic lives in exactly one place.
+
+    Args:
+        start_date / end_date: timestamp range filters.
+        event_type / user_id / outcome: equality filters.
+        scope_user_ids: when provided, restrict results to events whose
+            ``user_id`` is in this set — the org-admin scoping gate (the set is
+            the org's member ids). An **empty** list returns no results (a
+            removed/empty org sees nothing) rather than everything.
+        limit / offset: pagination.
+
+    Returns:
+        ``{"logs": [...], "total": int, "offset": int, "limit": int}`` or
+        ``{"error": str, "logs": [], "total": 0}`` when audit-to-OpenSearch is
+        disabled or the query fails.
+    """
+    if not settings.AUDIT_LOG_TO_OPENSEARCH:
+        return {
+            "error": "Audit log querying requires AUDIT_LOG_TO_OPENSEARCH=true",
+            "logs": [],
+            "total": 0,
+        }
+
+    if scope_user_ids is not None and len(scope_user_ids) == 0:
+        # Org has no members in scope — nothing is visible.
+        return {"logs": [], "total": 0, "offset": offset, "limit": limit}
+
+    client = _build_audit_opensearch_client()
+    if client is None:
+        return {
+            "error": "An internal error occurred while querying audit logs.",
+            "logs": [],
+            "total": 0,
+        }
+
+    try:
+        must_clauses: list[dict] = []
+        if start_date:
+            must_clauses.append({"range": {"timestamp": {"gte": start_date.isoformat()}}})
+        if end_date:
+            must_clauses.append({"range": {"timestamp": {"lte": end_date.isoformat()}}})
+        if event_type:
+            must_clauses.append({"term": {"event_type": event_type}})
+        if user_id is not None:
+            must_clauses.append({"term": {"user_id": user_id}})
+        if outcome:
+            must_clauses.append({"term": {"outcome": outcome}})
+        if scope_user_ids is not None:
+            # Org-admin scope: only events acted by the org's members.
+            must_clauses.append({"terms": {"user_id": scope_user_ids}})
+
+        query = {
+            "query": {"bool": {"must": must_clauses}} if must_clauses else {"match_all": {}},
+            "sort": [{"timestamp": {"order": "desc"}}],
+            "from": offset,
+            "size": limit,
+        }
+
+        response = client.search(index="audit-logs-*", body=query)
+        logs = [hit["_source"] for hit in response["hits"]["hits"]]
+        total = response["hits"]["total"]["value"]
+        return {"logs": logs, "total": total, "offset": offset, "limit": limit}
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("audit").error(f"Error querying audit logs: {e}")
+        return {
+            "error": "An internal error occurred while querying audit logs.",
+            "logs": [],
+            "total": 0,
+        }

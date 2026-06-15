@@ -18,6 +18,7 @@ from .endpoints import groups
 from .endpoints import llm_settings
 from .endpoints import llm_status
 from .endpoints import media_collections
+from .endpoints import org_admin
 from .endpoints import prompts
 from .endpoints import redaction_settings
 from .endpoints import search
@@ -103,6 +104,15 @@ include_router_with_consistency(
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])
+# Org-admin tenant administration (audit-log read + GDPR erasure). Gated by the
+# "organizations" capability: 404 in the community edition (no orgs), enabled by
+# the cloud capability resolver. require_org_admin further gates each route.
+include_router_with_consistency(
+    org_admin.router,
+    prefix="/org-admin",
+    tags=["org-admin"],
+    capability="organizations",
+)
 include_router_with_consistency(
     auth_config.router,
     prefix="/admin/auth-config",

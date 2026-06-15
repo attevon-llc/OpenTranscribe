@@ -2441,6 +2441,8 @@
   "searchPage.noResults": "Aucun resultat pour \"{{query}}\"",
   "search.searching": "Recherche en cours...",
   "search.jumpTo": "Aller a",
+  "search.closePreview": "Fermer",
+  "search.closePreviewAriaLabel": "Fermer le lecteur de previsualisation",
   "search.filters": "Filtres",
   "search.relevance": "Pertinence",
   "search.date": "Date",

@@ -50,14 +50,6 @@ export interface SearchResponse {
   search_mode?: string;
 }
 
-export interface ActivePreviewState {
-  fileUuid: string;
-  title: string;
-  startTime: number;
-  speaker: string;
-  contentType: string;
-}
-
 export interface SearchState {
   query: string;
   results: SearchHit[];
@@ -84,7 +76,6 @@ export interface SearchState {
   selectedStatuses: string[];
   titleFilter: string;
   lastSearchParams: string;
-  activePreview: ActivePreviewState | null;
   scrollPosition: number;
 }
 
@@ -114,7 +105,6 @@ const initialState: SearchState = {
   selectedStatuses: [],
   titleFilter: '',
   lastSearchParams: '',
-  activePreview: null,
   scrollPosition: 0,
 };
 
@@ -150,8 +140,6 @@ function createSearchStore() {
     setTitleFilter: (titleFilter: string) => update((s) => ({ ...s, titleFilter, page: 1 })),
     setFilters: (filters: Partial<SearchState>) => update((s) => ({ ...s, ...filters, page: 1 })),
     setLastSearchParams: (lastSearchParams: string) => update((s) => ({ ...s, lastSearchParams })),
-    setActivePreview: (activePreview: ActivePreviewState | null) =>
-      update((s) => ({ ...s, activePreview })),
     setScrollPosition: (scrollPosition: number) => update((s) => ({ ...s, scrollPosition })),
     setResults: (response: SearchResponse) =>
       update((s) => ({

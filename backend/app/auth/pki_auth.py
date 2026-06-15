@@ -1443,7 +1443,8 @@ def _create_pki_user(db, pki_data: PKIUserData):
         pki_fingerprint_sha256=fingerprint.replace(":", "") if fingerprint else None,
         role="admin" if pki_data["is_admin"] else "user",
         is_active=True,
-        is_superuser=pki_data["is_admin"],
+        # External IdPs grant at most 'admin'; is_superuser mirrors super_admin.
+        is_superuser=False,
     )
     db.add(user)
 
@@ -1521,10 +1522,11 @@ def _update_pki_user(db, user, pki_data: PKIUserData):
 
     # Update admin role based on PKI_ADMIN_DNS list
     if pki_data["is_admin"]:
-        if user.role != "admin":
+        # External IdPs grant at most 'admin'; never demote a local super_admin.
+        if user.role not in ("admin", "super_admin"):
             logger.info(f"Promoting PKI user {subject_dn} to admin")
-        user.role = "admin"
-        user.is_superuser = True
+            user.role = "admin"
+        user.is_superuser = user.role == "super_admin"
     elif user.role == "admin":
         # Demote if user was admin but no longer in PKI_ADMIN_DNS
         logger.info(f"Demoting PKI user {subject_dn} from admin (removed from PKI_ADMIN_DNS)")
@@ -1592,10 +1594,11 @@ def _convert_local_user_to_pki(db, user, pki_data: PKIUserData):
 
     # Update admin role based on PKI_ADMIN_DNS list
     if pki_data["is_admin"]:
-        if user.role != "admin":
+        # External IdPs grant at most 'admin'; never demote a local super_admin.
+        if user.role not in ("admin", "super_admin"):
             logger.info(f"Promoting converted PKI user {subject_dn} to admin")
-        user.role = "admin"
-        user.is_superuser = True
+            user.role = "admin"
+        user.is_superuser = user.role == "super_admin"
     elif user.role == "admin":
         # Demote if user was admin locally but not in PKI_ADMIN_DNS
         logger.info(f"Demoting converted PKI user {subject_dn} from admin (not in PKI_ADMIN_DNS)")

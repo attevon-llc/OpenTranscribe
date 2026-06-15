@@ -24,6 +24,11 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.lockout import unlock_account as lockout_unlock_account
+from app.auth.roles import ELEVATED_ROLES
+from app.auth.roles import ROLE_SUPER_ADMIN
+from app.auth.roles import ROLE_USER
+from app.auth.roles import VALID_ROLES
+from app.auth.roles import role_implies_superuser
 from app.core.config import settings
 from app.core.constants import CeleryQueues
 from app.core.security import get_password_hash
@@ -447,10 +452,11 @@ def _validate_user_deletion(user: User, current_user: User) -> None:
             detail="Cannot delete your own account",
         )
 
-    if user.is_superuser and not current_user.is_superuser:
+    # role is the source of truth: only a super_admin may delete a super_admin.
+    if user.role == ROLE_SUPER_ADMIN and current_user.role != ROLE_SUPER_ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot delete a superuser account",
+            detail="Cannot delete a super_admin account",
         )
 
 
@@ -617,6 +623,20 @@ def create_admin_user(
     Create a new user (admin only)
     """
     logger.info(f"Admin creating new user with email: {user_data.email}")
+
+    # Privilege gate: only a super_admin may mint admin/super_admin accounts.
+    # Otherwise a regular admin could escalate by creating a super_admin and
+    # logging in as it. create_user() derives is_superuser from role.
+    requested_role = user_data.role or ROLE_USER
+    if requested_role in ELEVATED_ROLES and current_user.role != ROLE_SUPER_ADMIN:
+        logger.warning(
+            f"Admin {current_user.email} (role={current_user.role}) attempted to "
+            f"create a '{requested_role}' user — denied (super_admin required)"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a super_admin can create admin or super_admin accounts",
+        )
 
     try:
         from app.api.endpoints.users import create_user as create_user_func
@@ -1352,7 +1372,7 @@ async def admin_change_user_role(
     current_user: User = Depends(get_current_super_admin_user),
 ):
     """Change user role. Only super_admin can promote to super_admin."""
-    if new_role not in ("user", "admin", "super_admin"):
+    if new_role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
 
     user = db.query(User).filter(User.uuid == user_uuid).first()
@@ -1364,6 +1384,8 @@ async def admin_change_user_role(
 
     old_role = user.role
     user.role = new_role  # type: ignore[assignment]
+    # Keep is_superuser in sync with role (derived; v369 CHECK enforces it).
+    user.is_superuser = role_implies_superuser(new_role)
     db.commit()
 
     audit_logger.log(

@@ -2441,6 +2441,8 @@
   "searchPage.noResults": "Keine Ergebnisse fuer \"{{query}}\"",
   "search.searching": "Suche...",
   "search.jumpTo": "Springen zu",
+  "search.closePreview": "Schliessen",
+  "search.closePreviewAriaLabel": "Vorschau-Player schliessen",
   "search.filters": "Filter",
   "search.relevance": "Relevanz",
   "search.date": "Datum",

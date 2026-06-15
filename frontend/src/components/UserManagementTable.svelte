@@ -115,8 +115,8 @@
         password: newPassword,
         full_name: newUsername, // Required field
         role: newRole,
-        is_active: true,
-        is_superuser: newRole === 'admin' // Set superuser based on role
+        is_active: true
+        // is_superuser is derived from role server-side (mirror of super_admin)
       });
 
       // Capture name for toast before resetting
@@ -447,7 +447,10 @@
         <label for="role">{$t('userManagement.role')}</label>
         <select id="role" bind:value={newRole}>
           <option value="user">{$t('userManagement.roleUser')}</option>
-          <option value="admin">{$t('userManagement.roleAdmin')}</option>
+          {#if isSuperAdmin}
+            <!-- Only a super_admin may mint admin accounts (backend enforces this) -->
+            <option value="admin">{$t('userManagement.roleAdmin')}</option>
+          {/if}
         </select>
       </div>
 

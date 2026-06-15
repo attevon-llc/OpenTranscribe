@@ -2443,6 +2443,8 @@
   "search.occurrence": "{{count}} 件の出現",
   "search.occurrences": "{{count}} 件の出現",
   "search.jumpTo": "ジャンプ",
+  "search.closePreview": "閉じる",
+  "search.closePreviewAriaLabel": "プレビュープレーヤーを閉じる",
   "search.filters": "フィルター",
   "search.sortBy": "並び替え",
   "search.relevance": "関連性",

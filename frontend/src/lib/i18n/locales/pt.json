@@ -2443,6 +2443,8 @@
   "search.occurrence": "{{count}} ocorrência",
   "search.occurrences": "{{count}} ocorrências",
   "search.jumpTo": "Ir para",
+  "search.closePreview": "Fechar",
+  "search.closePreviewAriaLabel": "Fechar reprodutor de pre-visualizacao",
   "search.filters": "Filtros",
   "search.sortBy": "Ordenar por",
   "search.relevance": "Relevância",

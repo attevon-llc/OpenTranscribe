@@ -171,8 +171,10 @@ class TestExternalSync:
 
     def test_platform_admin_only_when_flagged(self, db_session):
         user = sync_external_user_to_db(db_session, _identity(is_admin=True))
+        # External IdPs grant at most 'admin'; super_admin is local-only and
+        # is_superuser mirrors (role == super_admin), so it stays False.
         assert user.role == "admin"
-        assert user.is_superuser is True
+        assert user.is_superuser is False
 
     def test_unknown_provider_rejected(self, db_session):
         with pytest.raises(ValueError, match="No User column mapping"):

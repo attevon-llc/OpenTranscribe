@@ -20,8 +20,20 @@
   let playerCurrentTime = 0;
   let playerDuration = 0;
   let fallbackTimeout: ReturnType<typeof setTimeout>;
+  // The URL currently loaded into the media element. Tracked so a presigned-URL
+  // refresh (mediaUrl prop change) can hot-swap the credential WITHOUT losing
+  // playback position — see hotSwapSource.
+  let activeSrc = '';
 
   $: isVideo = contentType?.startsWith('video/');
+
+  // Seamless presigned-URL refresh: when the URL changes after the player is up,
+  // reload the new credential but resume exactly where we left off. Changing the
+  // <source> src alone does not reload the element, so we must call load() and
+  // restore currentTime/play-state.
+  $: if (player && mediaElement && mediaUrl && mediaUrl !== activeSrc) {
+    hotSwapSource(mediaUrl);
+  }
 
   function initPlayer() {
     if (!mediaElement) {
@@ -33,6 +45,7 @@
     seeking = true;
 
     mediaElement.load();
+    activeSrc = mediaUrl;
 
     const audioControls = ['play', 'current-time', 'duration', 'progress', 'mute', 'volume', 'settings'];
     const videoControls = ['play', 'current-time', 'duration', 'progress', 'mute', 'settings', 'fullscreen'];
@@ -52,20 +65,8 @@
     function seekAndPlay() {
       if (hasStartedPlayback || !player) return;
       hasStartedPlayback = true;
-
-      if (startTime > 0) {
-        player.currentTime = startTime;
-      }
-      if (autoplay) {
-        const playResult = player.play();
-        if (playResult && typeof playResult.catch === 'function') {
-          playResult.catch(() => {
-            seeking = false;
-          });
-        }
-      } else {
-        seeking = false;
-      }
+      // Seek to the requested start once metadata is ready, then autoplay.
+      applySeek(startTime, { play: autoplay });
     }
 
     const media = (player as any).media as HTMLMediaElement | undefined;
@@ -113,10 +114,96 @@
     }
   }
 
-  export function seek(time: number) {
-    if (player) {
-      player.currentTime = time;
+  // Metadata-safe seek primitive. Plyr silently drops a seek if its internal
+  // duration isn't ready yet, which makes the player start from 0. Wait for
+  // loadedmetadata/canplay, then set BOTH the Plyr and raw-media currentTime.
+  async function applySeek(time: number, { play }: { play: boolean }) {
+    if (!player || !mediaElement) return;
+    const media = mediaElement;
+
+    if (media.readyState < 1) {
+      await new Promise<void>((resolve) => {
+        const onReady = () => {
+          media.removeEventListener('loadedmetadata', onReady);
+          media.removeEventListener('canplay', onReady);
+          resolve();
+        };
+        media.addEventListener('loadedmetadata', onReady, { once: true });
+        media.addEventListener('canplay', onReady, { once: true });
+        if (media.readyState >= 1) {
+          media.removeEventListener('loadedmetadata', onReady);
+          media.removeEventListener('canplay', onReady);
+          resolve();
+          return;
+        }
+        // Timeout for very large files
+        setTimeout(() => {
+          media.removeEventListener('loadedmetadata', onReady);
+          media.removeEventListener('canplay', onReady);
+          resolve();
+        }, 15000);
+      });
+      // Brief delay so Plyr finishes its own metadata handlers (its setter bails
+      // on seek while duration is still 0).
+      await new Promise((r) => setTimeout(r, 150));
     }
+
+    if (!player) return;
+    if (time > 0) {
+      // Pause before seeking so a slow/deep seek can't briefly play the buffered
+      // start of the file while the target byte-range loads.
+      try { media.pause(); } catch {}
+      player.currentTime = time;
+      media.currentTime = time;
+      // Wait until the playhead is actually at the target (seek landed) before
+      // resuming — on slow links the seeked event can lag well behind the set.
+      await waitForSeeked(media, time);
+      if (!player) return;
+    }
+
+    if (play) {
+      const playResult = player.play();
+      if (playResult && typeof playResult.catch === 'function') {
+        playResult.catch(() => { seeking = false; });
+      }
+    } else {
+      seeking = false;
+    }
+  }
+
+  // Resolve once the media element has actually seeked to (or near) the target,
+  // or after a timeout so playback never hangs on an unreachable position.
+  function waitForSeeked(media: HTMLMediaElement, time: number): Promise<void> {
+    if (Math.abs(media.currentTime - time) < 0.5) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        media.removeEventListener('seeked', done);
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(done, 10000);
+      media.addEventListener('seeked', done, { once: true });
+    });
+  }
+
+  // Swap in a refreshed presigned URL without losing position. The init-time
+  // seekAndPlay won't re-fire (its hasStartedPlayback guard is already set), so
+  // we restore currentTime/play-state ourselves.
+  async function hotSwapSource(newUrl: string) {
+    activeSrc = newUrl;
+    if (!player || !mediaElement) return;
+    const media = mediaElement;
+    const resumeAt = media.currentTime;
+    const wasPlaying = !media.paused && !media.ended;
+    seeking = true;
+    const sourceEl = media.querySelector('source');
+    if (sourceEl) sourceEl.src = newUrl;
+    media.load();
+    await applySeek(resumeAt, { play: wasPlaying });
+  }
+
+  export function seek(time: number) {
+    applySeek(time, { play: false });
   }
 
   export function getPlayer(): Plyr | null {

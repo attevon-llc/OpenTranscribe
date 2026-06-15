@@ -1339,13 +1339,13 @@ class TestPKIEndpointIntegration:
         data = response.json()
         assert "access_token" in data
 
-        # Verify user has admin-level role (admin or super_admin)
-        # If the user already existed as super_admin (e.g., the default admin account),
-        # the PKI sync preserves the higher role.
+        # An admin DN grants the 'admin' role. super_admin is local-only and is
+        # never granted (nor demoted) by an external IdP; is_superuser mirrors
+        # (role == super_admin), so a PKI admin has is_superuser False.
         user = db_session.query(User).filter(User.pki_subject_dn == subject_dn).first()
         assert user is not None
         assert user.role in ("admin", "super_admin")
-        assert user.is_superuser is True
+        assert user.is_superuser is (user.role == "super_admin")
 
     def test_pki_authenticate_regular_user(self, client, pki_enabled_db, db_session, pki_test_cert):
         """Non-admin DN gives regular user role."""

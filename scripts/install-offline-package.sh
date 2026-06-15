@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # OpenTranscribe Offline Installation Script
 # Installs OpenTranscribe on air-gapped systems
@@ -68,11 +68,11 @@ validate_system() {
         # shellcheck source=/dev/null  # Runtime file, not available during static analysis
         . /etc/os-release
         # shellcheck disable=SC2153  # NAME and VERSION are set by /etc/os-release
-        print_info "Operating System: $NAME $VERSION"
+        print_info "Operating System: ${NAME:-unknown} ${VERSION:-}"
 
-        if [[ ! "$ID" =~ ^(ubuntu|debian)$ ]]; then
+        if [[ ! "${ID:-}" =~ ^(ubuntu|debian)$ ]]; then
             print_warning "This script is designed for Ubuntu/Debian"
-            print_warning "You are running: $NAME"
+            print_warning "You are running: ${NAME:-unknown}"
             read -p "Continue anyway? (y/N) " -n 1 -r
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -475,13 +475,18 @@ create_env_file() {
     MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
     local JWT_SECRET_KEY
     JWT_SECRET_KEY=$(openssl rand -hex 64)
-    # ENCRYPTION_KEY: Add prefix to make it invalid base64, forcing backend exception handler path
+    # ENCRYPTION_KEY: arbitrary high-entropy string used as PBKDF2 master key material; format is not parsed.
     local ENCRYPTION_KEY
     ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
     local REDIS_PASSWORD
     REDIS_PASSWORD=$(openssl rand -hex 32)
     local OPENSEARCH_PASSWORD
     OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
+    # OPENSEARCH_ADMIN_PASSWORD: only used when OPENSEARCH_SECURITY_ENABLED=true.
+    # OpenSearch enforces password complexity (upper+lower+digit+special, >=8);
+    # append "Aa1!" to the random base to guarantee all four character classes.
+    local OPENSEARCH_ADMIN_PASSWORD
+    OPENSEARCH_ADMIN_PASSWORD="$(openssl rand -base64 24)Aa1!"
     local FLOWER_PASSWORD
     FLOWER_PASSWORD=$(openssl rand -hex 16)
     # MinIO server-side encryption key - must be <name>:<base64-32-bytes> or MinIO refuses to start
@@ -496,6 +501,7 @@ create_env_file() {
     sed -i "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|g" "$INSTALL_DIR/.env"
     sed -i "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=${REDIS_PASSWORD}|g" "$INSTALL_DIR/.env"
     sed -i "s|OPENSEARCH_PASSWORD=.*|OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}|g" "$INSTALL_DIR/.env"
+    sed -i "s|^OPENSEARCH_ADMIN_PASSWORD=.*|OPENSEARCH_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}|" "$INSTALL_DIR/.env"
     sed -i "s|^FLOWER_PASSWORD=.*|FLOWER_PASSWORD=${FLOWER_PASSWORD}|g" "$INSTALL_DIR/.env"
     sed -i "s|^MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=${MINIO_KMS_KEY}|g" "$INSTALL_DIR/.env"
 
@@ -529,7 +535,9 @@ set_permissions() {
 
     chown -R root:root "$INSTALL_DIR"
     chmod -R 755 "$INSTALL_DIR"
-    chmod 644 "$INSTALL_DIR/.env"
+    # .env holds generated secrets — lock it down to owner-only AFTER the recursive
+    # 755 above so it isn't re-loosened to world-readable.
+    chmod 600 "$INSTALL_DIR/.env"
 
     print_success "Permissions set"
 }
@@ -569,7 +577,7 @@ post_install_info() {
     echo -e "${CYAN}Documentation:${NC}"
     echo -e "  $SCRIPT_DIR/README-OFFLINE.md\n"
 
-    if [ "$use_gpu" = "false" ]; then
+    if [ "${use_gpu:-false}" = "false" ]; then
         echo -e "${YELLOW}⚠️  WARNING: Running in CPU mode${NC}"
         echo -e "   Transcription will be significantly slower without GPU\n"
     fi

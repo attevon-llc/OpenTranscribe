@@ -408,6 +408,8 @@ ENGINE_SHARED_VOLUME_PATH=/tmp/transcription  # shared volume mount path
 ```
 **Best for:** Two-GPU setups where you want dedicated VRAM per model — one GPU purely for Whisper, one purely for PyAnnote.
 
+> 📖 **Deployment reference:** For a full table of every deployment type and its exact `./opentr.sh` command — plus the first-init healthcheck model, the cross-worker scratch-volume contract, all three GPU modes, the security posture (loopback infra ports, `no-new-privileges`, secret generation), and the NAS/NVMe storage overlay — see the [Deployment Configuration](docs-site/docs/operations/deployment-configuration.md) operations guide.
+
 ### **Watch Sources (Auto-Import)**
 ```bash
 # Mount a host folder to watch for new media (the only watch env var),

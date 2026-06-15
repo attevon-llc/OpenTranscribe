@@ -30,6 +30,7 @@
 #   ANTHROPIC_API_KEY, ANTHROPIC_MODEL_NAME
 #   OPENROUTER_API_KEY, OPENROUTER_MODEL_NAME
 
+set -uo pipefail
 set -e
 
 YELLOW='\033[1;33m'
@@ -88,6 +89,15 @@ COMPUTE_TYPE=""
 BATCH_SIZE=""
 DOCKER_RUNTIME=""
 USE_GPU_RUNTIME="false"
+# Cross-function globals read by the summary/HTTPS sections. Pre-initialised so
+# `set -u` cannot trip if a code path is skipped before they are assigned.
+ARCH=""
+GPU_COUNT=0
+GPU_DEVICE_ID=0
+GPU_NAME=""
+GPU_MEMORY=""
+NGINX_SERVER_NAME=""
+SSL_CONFIGURED=false
 # FORCE_CPU: when "true", skip NVIDIA/GPU detection entirely and install in
 # CPU-only mode. Set via --cpu flag or OPENTRANSCRIBE_FORCE_CPU=1 env var.
 # This is a supported manual opt-out for hosts where GPU auto-detection
@@ -997,6 +1007,7 @@ _create_initial_env() {
     sed -i.bak "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$ENCRYPTION_KEY|g" .env
     sed -i.bak "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=$REDIS_PASSWORD|g" .env
     sed -i.bak "s|OPENSEARCH_PASSWORD=.*|OPENSEARCH_PASSWORD=$OPENSEARCH_PASSWORD|g" .env
+    sed -i.bak "s|^OPENSEARCH_ADMIN_PASSWORD=.*|OPENSEARCH_ADMIN_PASSWORD=$OPENSEARCH_ADMIN_PASSWORD|" .env
     sed -i.bak "s|FLOWER_PASSWORD=.*|FLOWER_PASSWORD=$FLOWER_PASSWORD|g" .env
     sed -i.bak "s|MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=$MINIO_KMS_KEY|g" .env
     sed -i.bak "s|BATCH_SIZE=.*|BATCH_SIZE=$BATCH_SIZE|g" .env
@@ -1061,10 +1072,14 @@ configure_environment() {
             POSTGRES_PASSWORD=$(openssl rand -hex 32)
             MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
             JWT_SECRET=$(openssl rand -hex 64)
-            # ENCRYPTION_KEY: Add prefix to make it invalid base64, forcing backend exception handler path
+            # ENCRYPTION_KEY: arbitrary high-entropy string used as PBKDF2 master key material; format is not parsed.
             ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
             REDIS_PASSWORD=$(openssl rand -hex 32)
             OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
+            # OPENSEARCH_ADMIN_PASSWORD: only used when OPENSEARCH_SECURITY_ENABLED=true.
+            # OpenSearch enforces password complexity (upper+lower+digit+special, >=8);
+            # append "Aa1!" to the random base to guarantee all four character classes.
+            OPENSEARCH_ADMIN_PASSWORD="$(openssl rand -base64 24)Aa1!"
             FLOWER_PASSWORD=$(openssl rand -hex 16)
             MINIO_KMS_KEY="opentranscribe-key:$(openssl rand -base64 32)"
         elif command -v python3 &> /dev/null; then
@@ -1074,6 +1089,9 @@ configure_environment() {
             ENCRYPTION_KEY=$(python3 -c "import secrets, base64; print('opentranscribe_' + base64.b64encode(secrets.token_bytes(48)).decode())")
             REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
             OPENSEARCH_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            # OPENSEARCH_ADMIN_PASSWORD: only used when OPENSEARCH_SECURITY_ENABLED=true.
+            # Complexity-satisfying (upper+lower+digit+special) for OpenSearch's bootstrap check.
+            OPENSEARCH_ADMIN_PASSWORD=$(python3 -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(18)).decode() + 'Aa1!')")
             FLOWER_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(16))")
             MINIO_KMS_KEY=$(python3 -c "import secrets, base64; print('opentranscribe-key:' + base64.b64encode(secrets.token_bytes(32)).decode())")
         elif [[ -r /dev/urandom ]]; then
@@ -1081,10 +1099,13 @@ configure_environment() {
             POSTGRES_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
             MINIO_ROOT_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
             JWT_SECRET=$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
-            # ENCRYPTION_KEY: Add prefix to make it invalid base64, forcing backend exception handler path
+            # ENCRYPTION_KEY: arbitrary high-entropy string used as PBKDF2 master key material; format is not parsed.
             ENCRYPTION_KEY="opentranscribe_$(head -c 48 /dev/urandom | base64 | tr -d '\n')"
             REDIS_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
             OPENSEARCH_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+            # OPENSEARCH_ADMIN_PASSWORD: only used when OPENSEARCH_SECURITY_ENABLED=true.
+            # Complexity-satisfying (upper+lower+digit+special) for OpenSearch's bootstrap check.
+            OPENSEARCH_ADMIN_PASSWORD="$(head -c 18 /dev/urandom | base64 | tr -d '\n')Aa1!"
             FLOWER_PASSWORD=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
             MINIO_KMS_KEY="opentranscribe-key:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
         else
@@ -1499,32 +1520,30 @@ configure_llm_settings() {
                 LLM_PROVIDER="vllm"
                 read -p "Enter your vLLM server URL [http://localhost:8000/v1]: " vllm_url </dev/tty
                 VLLM_BASE_URL=${vllm_url:-"http://localhost:8000/v1"}
-                read -p "Enter your vLLM API key (optional): " vllm_key </dev/tty
+                read -s -p "Enter your vLLM API key (optional): " vllm_key </dev/tty; echo
                 VLLM_API_KEY=${vllm_key:-""}
                 read -p "Enter your model name [gpt-oss]: " vllm_model </dev/tty
                 VLLM_MODEL_NAME=${vllm_model:-"gpt-oss"}
                 echo "✓ vLLM configured: $VLLM_BASE_URL with model $VLLM_MODEL_NAME"
                 if [ -f .env ]; then
-                    sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
-                    sed -i.bak "s|VLLM_BASE_URL=.*|VLLM_BASE_URL=$VLLM_BASE_URL|g" .env
-                    [[ -n "$VLLM_API_KEY" ]] && sed -i.bak "s|VLLM_API_KEY=.*|VLLM_API_KEY=$VLLM_API_KEY|g" .env
-                    [[ -n "$VLLM_MODEL_NAME" ]] && sed -i.bak "s|VLLM_MODEL_NAME=.*|VLLM_MODEL_NAME=$VLLM_MODEL_NAME|g" .env
-                    rm -f .env.bak
+                    _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
+                    _upsert_env "VLLM_BASE_URL" "$VLLM_BASE_URL"
+                    [[ -n "$VLLM_API_KEY" ]] && _upsert_env "VLLM_API_KEY" "$VLLM_API_KEY"
+                    [[ -n "$VLLM_MODEL_NAME" ]] && _upsert_env "VLLM_MODEL_NAME" "$VLLM_MODEL_NAME"
                 fi
                 ;;
             2)
                 echo "✓ Configuring OpenAI"
                 LLM_PROVIDER="openai"
-                read -p "Enter your OpenAI API key: " openai_key </dev/tty
+                read -s -p "Enter your OpenAI API key: " openai_key </dev/tty; echo
                 OPENAI_API_KEY=$openai_key
                 read -p "Enter OpenAI model [gpt-4o-mini]: " openai_model </dev/tty
                 OPENAI_MODEL_NAME=${openai_model:-"gpt-4o-mini"}
                 echo "✓ OpenAI configured with model $OPENAI_MODEL_NAME"
                 if [ -f .env ]; then
-                    sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
-                    sed -i.bak "s|# OPENAI_API_KEY=.*|OPENAI_API_KEY=$OPENAI_API_KEY|g" .env
-                    [[ -n "$OPENAI_MODEL_NAME" ]] && sed -i.bak "s|# OPENAI_MODEL_NAME=.*|OPENAI_MODEL_NAME=$OPENAI_MODEL_NAME|g" .env
-                    rm -f .env.bak
+                    _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
+                    _upsert_env "OPENAI_API_KEY" "$OPENAI_API_KEY"
+                    [[ -n "$OPENAI_MODEL_NAME" ]] && _upsert_env "OPENAI_MODEL_NAME" "$OPENAI_MODEL_NAME"
                 fi
                 ;;
             3)
@@ -1536,40 +1555,37 @@ configure_llm_settings() {
                 OLLAMA_MODEL_NAME=${ollama_model:-"llama2:7b-chat"}
                 echo "✓ Ollama configured: $OLLAMA_BASE_URL with model $OLLAMA_MODEL_NAME"
                 if [ -f .env ]; then
-                    sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
-                    sed -i.bak "s|# OLLAMA_BASE_URL=.*|OLLAMA_BASE_URL=$OLLAMA_BASE_URL|g" .env
-                    [[ -n "$OLLAMA_MODEL_NAME" ]] && sed -i.bak "s|# OLLAMA_MODEL_NAME=.*|OLLAMA_MODEL_NAME=$OLLAMA_MODEL_NAME|g" .env
-                    rm -f .env.bak
+                    _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
+                    _upsert_env "OLLAMA_BASE_URL" "$OLLAMA_BASE_URL"
+                    [[ -n "$OLLAMA_MODEL_NAME" ]] && _upsert_env "OLLAMA_MODEL_NAME" "$OLLAMA_MODEL_NAME"
                 fi
                 ;;
             4)
                 echo "✓ Configuring Anthropic Claude"
                 LLM_PROVIDER="anthropic"
-                read -p "Enter your Anthropic API key: " anthropic_key </dev/tty
+                read -s -p "Enter your Anthropic API key: " anthropic_key </dev/tty; echo
                 ANTHROPIC_API_KEY=$anthropic_key
                 read -p "Enter Claude model [claude-haiku-4-5-20251001]: " anthropic_model </dev/tty
                 ANTHROPIC_MODEL_NAME=${anthropic_model:-"claude-haiku-4-5-20251001"}
                 echo "✓ Anthropic Claude configured with model $ANTHROPIC_MODEL_NAME"
                 if [ -f .env ]; then
-                    sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
-                    sed -i.bak "s|# ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY|g" .env
-                    [[ -n "$ANTHROPIC_MODEL_NAME" ]] && sed -i.bak "s|# ANTHROPIC_MODEL_NAME=.*|ANTHROPIC_MODEL_NAME=$ANTHROPIC_MODEL_NAME|g" .env
-                    rm -f .env.bak
+                    _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
+                    _upsert_env "ANTHROPIC_API_KEY" "$ANTHROPIC_API_KEY"
+                    [[ -n "$ANTHROPIC_MODEL_NAME" ]] && _upsert_env "ANTHROPIC_MODEL_NAME" "$ANTHROPIC_MODEL_NAME"
                 fi
                 ;;
             5)
                 echo "✓ Configuring OpenRouter"
                 LLM_PROVIDER="openrouter"
-                read -p "Enter your OpenRouter API key: " openrouter_key </dev/tty
+                read -s -p "Enter your OpenRouter API key: " openrouter_key </dev/tty; echo
                 OPENROUTER_API_KEY=$openrouter_key
                 read -p "Enter OpenRouter model [anthropic/claude-3-haiku]: " openrouter_model </dev/tty
                 OPENROUTER_MODEL_NAME=${openrouter_model:-"anthropic/claude-3-haiku"}
                 echo "✓ OpenRouter configured with model $OPENROUTER_MODEL_NAME"
                 if [ -f .env ]; then
-                    sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
-                    sed -i.bak "s|# OPENROUTER_API_KEY=.*|OPENROUTER_API_KEY=$OPENROUTER_API_KEY|g" .env
-                    [[ -n "$OPENROUTER_MODEL_NAME" ]] && sed -i.bak "s|# OPENROUTER_MODEL_NAME=.*|OPENROUTER_MODEL_NAME=$OPENROUTER_MODEL_NAME|g" .env
-                    rm -f .env.bak
+                    _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
+                    _upsert_env "OPENROUTER_API_KEY" "$OPENROUTER_API_KEY"
+                    [[ -n "$OPENROUTER_MODEL_NAME" ]] && _upsert_env "OPENROUTER_MODEL_NAME" "$OPENROUTER_MODEL_NAME"
                 fi
                 ;;
             6|*)

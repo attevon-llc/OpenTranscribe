@@ -1,0 +1,45 @@
+# docker-compose.gpu-split.yml
+# Optional overlay for multi-GPU pipeline SPLIT: run transcription and
+# diarization on SEPARATE GPUs for higher throughput on a 2+ GPU host.
+#
+# Usage:
+#   ./opentr.sh start dev --gpu-split
+#   OR:
+#   COMPOSE_PROFILES=gpu-split docker compose -f docker-compose.yml \
+#     -f docker-compose.override.yml -f docker-compose.gpu.yml \
+#     -f docker-compose.gpu-split.yml up -d
+#
+# opentr.sh sets COMPOSE_PROFILES=gpu-split (which activates the two
+# celery-worker-gpu-* services defined in docker-compose.yml) AND appends this
+# overlay, which grants each split worker its dedicated GPU reservation. The
+# service image/build/volumes come from the environment overlay
+# (docker-compose.override.yml for dev, docker-compose.prod.yml for prod).
+#
+# Configuration (.env):
+#   GPU_TRANSCRIBE_DEVICE_ID  - host GPU index for transcription (default: 0)
+#   GPU_DIARIZE_DEVICE_ID     - host GPU index for diarization  (default: 1)
+#   These MUST be different GPUs for the split to help; if equal, both stages
+#   share one card (no benefit).
+#
+# Each worker reserves exactly ONE host GPU via device_ids. Docker remaps the
+# reserved card to index 0 inside the container, which is why the base sets
+# CUDA_VISIBLE_DEVICES=0 for both split workers (same pattern as gpu-scale).
+
+services:
+  celery-worker-gpu-transcribe:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU_TRANSCRIBE_DEVICE_ID:-0}"]
+              capabilities: [gpu]
+
+  celery-worker-gpu-diarize:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU_DIARIZE_DEVICE_ID:-1}"]
+              capabilities: [gpu]

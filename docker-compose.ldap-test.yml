@@ -21,6 +21,8 @@ services:
   lldap:
     image: lldap/lldap:stable
     container_name: lldap-test
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "3890:3890"   # LDAP port
       - "17170:17170" # Web UI port
@@ -31,11 +33,14 @@ services:
     volumes:
       - lldap_data:/data
     networks:
-      - transcribe-app_default  # Join OpenTranscribe's network
+      - default  # Join OpenTranscribe's default network
 
 volumes:
   lldap_data:
 
+# Join the stack's default bridge network (project-name agnostic — works for any
+# clone whose compose project isn't literally "transcribe-app").
 networks:
-  transcribe-app_default:
+  default:
+    name: ${COMPOSE_PROJECT_NAME:-opentranscribe}_default
     external: true

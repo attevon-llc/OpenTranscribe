@@ -156,3 +156,35 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      - pipeline_scratch:/scratch/opentranscribe
+
+  # GPU Split Workers - Development build (only active with COMPOSE_PROFILES=gpu-split)
+  # Base provides command/env/healthcheck via the gpu-split profile; these blocks
+  # only supply the local image/build/volumes (mirrors celery-worker-gpu-scaled).
+  celery-worker-gpu-transcribe:
+    image: opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./backend:/app  # Mount source code for development
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      - pipeline_scratch:/scratch/opentranscribe
+      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
+
+  celery-worker-gpu-diarize:
+    image: opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./backend:/app  # Mount source code for development
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      - pipeline_scratch:/scratch/opentranscribe
+      - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff

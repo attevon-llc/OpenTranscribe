@@ -217,6 +217,110 @@ class TestGetCurrentUserExternalBranch:
         assert exc.value.status_code == 400
 
 
+class TestGetOptionalCurrentUserExternalBranch:
+    """get_optional_current_user mirrors the external-verifier branch but keeps
+    optional semantics: it returns the user on a valid external token, None
+    otherwise (never raises)."""
+
+    def _request_with_token(self, token: str) -> Request:
+        # get_optional_current_user reads the token from the Authorization
+        # header / cookie and touches request.state on the external path.
+        return SimpleNamespace(  # type: ignore[return-value]
+            headers={"Authorization": f"Bearer {token}"},
+            cookies={},
+            state=SimpleNamespace(),
+        )
+
+    def test_external_token_returns_jit_user_and_stashes_identity(self, db_session):
+        from app.api.endpoints.auth import get_optional_current_user
+
+        ident = _identity()
+        register_verifier(AUTH_TYPE_CLERK, FakeVerifier("ext-token", ident))
+        request = self._request_with_token("ext-token")
+
+        user = get_optional_current_user(request=request, db=db_session)
+
+        assert user is not None
+        assert user.clerk_id == ident.external_id
+        # Identity MUST be stashed so resolve_org_context()/thumbnail org
+        # resolution works for Clerk users on optional-auth routes.
+        assert request.state.external_identity is ident
+        assert request.state.org_id == ident.org_id
+
+    def test_no_token_returns_none(self, db_session):
+        from app.api.endpoints.auth import get_optional_current_user
+
+        register_verifier(AUTH_TYPE_CLERK, FakeVerifier("ext-token", _identity()))
+        request = SimpleNamespace(headers={}, cookies={}, state=SimpleNamespace())
+
+        assert get_optional_current_user(request=request, db=db_session) is None  # type: ignore[arg-type]
+
+    def test_non_matching_token_falls_through_to_none(self, db_session):
+        from app.api.endpoints.auth import get_optional_current_user
+
+        register_verifier(AUTH_TYPE_CLERK, FakeVerifier("only-this", _identity()))
+        request = self._request_with_token("not-a-valid-jwt")
+
+        # No external match and not a valid local JWT -> None (never raises).
+        assert get_optional_current_user(request=request, db=db_session) is None
+
+    def test_inactive_external_user_returns_none(self, db_session):
+        from app.api.endpoints.auth import get_optional_current_user
+
+        ident = _identity()
+        user = sync_external_user_to_db(db_session, ident)
+        user.is_active = False
+        db_session.commit()
+        register_verifier(AUTH_TYPE_CLERK, FakeVerifier("tok", ident))
+        request = self._request_with_token("tok")
+
+        # Optional semantics: inactive user returns None rather than raising.
+        assert get_optional_current_user(request=request, db=db_session) is None
+
+
+class TestWebSocketAuthExternalBranch:
+    """_try_authenticate_token authenticates a WS socket with an external token
+    via the registered verifier; the community path stays local-JWT only."""
+
+    def test_external_token_authenticates_socket(self, db_session):
+        from app.api.websockets import _try_authenticate_token
+
+        ident = _identity()
+        register_verifier(AUTH_TYPE_CLERK, FakeVerifier("ws-ext-token", ident))
+
+        user = _try_authenticate_token("ws-ext-token", db_session, websocket=None)
+
+        assert user is not None
+        assert user.clerk_id == ident.external_id
+
+    def test_non_matching_token_returns_none(self, db_session):
+        from app.api.websockets import _try_authenticate_token
+
+        register_verifier(AUTH_TYPE_CLERK, FakeVerifier("only-this", _identity()))
+
+        # Not an external match and not a valid local JWT -> None (caller closes 4003).
+        assert _try_authenticate_token("garbage-token", db_session, websocket=None) is None
+
+    def test_inactive_external_user_returns_none(self, db_session):
+        from app.api.websockets import _try_authenticate_token
+
+        ident = _identity()
+        user = sync_external_user_to_db(db_session, ident)
+        user.is_active = False
+        db_session.commit()
+        register_verifier(AUTH_TYPE_CLERK, FakeVerifier("tok", ident))
+
+        assert _try_authenticate_token("tok", db_session, websocket=None) is None
+
+    def test_community_path_no_verifier_local_only(self, db_session):
+        from app.api.websockets import _try_authenticate_token
+
+        # No verifier registered (community edition): an external-looking token
+        # that isn't a valid local JWT yields None.
+        assert not has_verifiers()
+        assert _try_authenticate_token("ws-ext-token", db_session, websocket=None) is None
+
+
 class TestAuthMethodsDiscovery:
     def test_clerk_disabled_by_default(self, client):
         body = client.get("/api/auth/methods").json()

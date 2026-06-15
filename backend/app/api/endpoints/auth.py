@@ -263,6 +263,35 @@ def get_optional_current_user(
     if not token:
         return None
 
+    # Cloud-edition seam: offer the token to registered external verifiers
+    # (e.g. Clerk) before the local-JWT path, mirroring get_current_user. The
+    # community edition registers none, so this branch is a no-op there and
+    # behavior is identical. Optional semantics are preserved: an inactive or
+    # missing external user returns None rather than raising.
+    from app.auth.provider_registry import has_verifiers
+
+    if has_verifiers():
+        from app.auth.external_sync import sync_external_user_to_db
+        from app.auth.provider_registry import verify_external_token
+
+        try:
+            external_identity = verify_external_token(token, request)
+            if external_identity is not None:
+                external_user = sync_external_user_to_db(db, external_identity)
+                if not external_user.is_active:
+                    return None
+                # Stash for resolve_org_context()/get_current_context() so org
+                # scoping (e.g. thumbnail org-resolution) works for Clerk users
+                # on optional-auth routes without re-verifying the token.
+                request.state.external_identity = external_identity
+                request.state.user_id = external_user.id
+                request.state.org_id = getattr(external_user, "clerk_org_id", None)
+                return external_user
+        except Exception as e:
+            # Never let an external-auth problem fail an optional-auth route;
+            # fall through to local JWT (and ultimately None).
+            logger.debug(f"Error in optional external auth: {e}")
+
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         user_uuid_str: str = payload.get("sub")

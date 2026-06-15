@@ -219,7 +219,8 @@ def list_media_files(
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
     # Dependencies
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ):
     """List media files for the current user with optional filters and pagination.
 
@@ -228,6 +229,7 @@ def list_media_files(
     - 'shared': Only files accessible via shared collections
     - 'all': Both owned and shared files
     """
+    current_user = ctx.user
     from sqlalchemy import func as sa_func
     from sqlalchemy.orm import defer
     from sqlalchemy.orm import joinedload
@@ -253,18 +255,33 @@ def list_media_files(
     ]
 
     user_id = current_user.id
+    org_scope = ctx.org_id  # int -> org scope, None -> personal scope (org-less rows)
 
-    # Admin users can see all files regardless of ownership param
+    # Tenant gate for the admin "see all" and the owned-file branches. In org
+    # context only same-org rows; in personal scope only org-less rows. Community
+    # edition: org_scope is None and rows are org-less, so this is a no-op.
+    if org_scope is not None:
+        org_pred = MediaFile.organization_id == org_scope
+    else:
+        org_pred = MediaFile.organization_id.is_(None)
+
+    # Admin users can see all files regardless of ownership param (still org-gated)
     if current_user.is_admin:
-        base_query = db.query(MediaFile).options(*list_options)
+        base_query = db.query(MediaFile).options(*list_options).filter(org_pred)
         effective_user_id = None
     elif ownership == "mine":
-        # Default: only owned files
-        base_query = db.query(MediaFile).options(*list_options).filter(MediaFile.user_id == user_id)
+        # Default: only owned files (within tenant scope)
+        base_query = (
+            db.query(MediaFile)
+            .options(*list_options)
+            .filter(MediaFile.user_id == user_id, org_pred)
+        )
         effective_user_id = user_id
     elif ownership == "shared":
         # Only files from shared collections (not owned by user)
-        accessible_subquery = PermissionService.get_accessible_file_ids_subquery(db, user_id)
+        accessible_subquery = PermissionService.get_accessible_file_ids_subquery(
+            db, user_id, organization_id=org_scope
+        )
         base_query = (
             db.query(MediaFile)
             .options(*list_options)
@@ -276,7 +293,9 @@ def list_media_files(
         effective_user_id = None  # Don't filter by user_id in apply_all_filters
     else:
         # All: owned + shared
-        accessible_subquery = PermissionService.get_accessible_file_ids_subquery(db, user_id)
+        accessible_subquery = PermissionService.get_accessible_file_ids_subquery(
+            db, user_id, organization_id=org_scope
+        )
         base_query = (
             db.query(MediaFile)
             .options(*list_options)
@@ -401,7 +420,8 @@ def get_media_file(
         ),
     ),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ):
     """Get a specific media file with transcript details.
 
@@ -411,7 +431,13 @@ def get_media_file(
     # segment_limit=0 means get all segments
     effective_limit = None if segment_limit == 0 else segment_limit
     return get_media_file_detail(
-        db, str(file_uuid), current_user, effective_limit, segment_offset, redact=redact
+        db,
+        str(file_uuid),
+        ctx.user,
+        effective_limit,
+        segment_offset,
+        redact=redact,
+        organization_id=ctx.org_id,
     )
 
 
@@ -419,7 +445,8 @@ def get_media_file(
 def get_media_file_info(
     file_uuid: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ):
     """Get lightweight file metadata without transcript or summary data.
 
@@ -428,8 +455,13 @@ def get_media_file_info(
     """
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
+    current_user = ctx.user
     media_file = get_file_by_uuid_with_permission(
-        db, str(file_uuid), current_user.id, is_admin=current_user.is_admin
+        db,
+        str(file_uuid),
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
     )
 
     assert media_file.filename is not None  # required by MediaFilePublicInfo.filename
@@ -453,10 +485,13 @@ def update_media_file_endpoint(
     file_uuid: UUID,
     media_file_update: MediaFileUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ):
     """Update a media file's metadata"""
-    return update_media_file(db, str(file_uuid), media_file_update, current_user)
+    return update_media_file(
+        db, str(file_uuid), media_file_update, ctx.user, organization_id=ctx.org_id
+    )
 
 
 # NOTE: DELETE /{file_uuid} is handled by cancel_upload.router (included
@@ -794,13 +829,15 @@ async def download_stream(
 @router.get("/{file_uuid}/thumbnail")
 def get_thumbnail(
     file_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """
     Get the thumbnail image for a media file.
 
-    Security: Requires authentication OR file must be public.
+    Security: Requires authentication OR file must be public. Authenticated org
+    users are gated to their active tenant scope (cross-org thumbnails 403).
 
     Note: For gallery/list views, use the presigned thumbnail_url returned in the
     file listing response. This endpoint is a fallback for direct access.
@@ -821,10 +858,28 @@ def get_thumbnail(
             )
         is_admin = current_user.is_admin
         if not is_admin and db_file.user_id != current_user.id:
+            from app.api.deps_context import resolve_org_context
             from app.services.permission_service import PermissionService
 
-            perm = PermissionService.get_file_permission(db, db_file.id, current_user.id)
+            # Resolve the caller's tenant scope (None = personal) WITHOUT editing
+            # get_optional_current_user (owned by step 1.5), then route the share
+            # resolution through the org-aware permission path (default-deny).
+            org_id, _ = resolve_org_context(request, db, current_user)
+            perm = PermissionService.get_file_permission(
+                db, db_file.id, current_user.id, organization_id=org_id
+            )
             if not perm:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to this file",
+                )
+        elif not is_admin:
+            # Direct owner: still enforce the tenant gate so a personal-scope
+            # request can't fetch an org-stamped file's thumbnail (and vice versa).
+            from app.api.deps_context import resolve_org_context
+
+            org_id, _ = resolve_org_context(request, db, current_user)
+            if getattr(db_file, "organization_id", None) != org_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied to this file",

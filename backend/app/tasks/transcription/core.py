@@ -231,6 +231,8 @@ class TranscriptionContext:
     file_path: str
     file_name: str
     content_type: str
+    # Tenant scope (cloud-edition seam; None = personal / community)
+    organization_id: int | None = None
 
 
 def _get_media_file_context(file_uuid: str, task_id: str) -> TranscriptionContext | None:
@@ -251,6 +253,7 @@ def _get_media_file_context(file_uuid: str, task_id: str) -> TranscriptionContex
             file_path=str(media_file.storage_path),
             file_name=str(media_file.filename),
             content_type=str(media_file.content_type),
+            organization_id=media_file.organization_id,
         )
         update_media_file_status(db, ctx.file_id, FileStatus.PROCESSING)
         return ctx
@@ -572,6 +575,7 @@ def _update_v4_profile_embeddings(
                     embedding=avg_embedding,
                     speaker_count=len(v4_embeddings),
                     user_id=int(profile.user_id),
+                    organization_id=profile.organization_id,
                 )
                 update_count += 1
 
@@ -649,6 +653,7 @@ def _store_native_centroids_in_v4_staging(
                     "speaker_id": int(speaker.id),
                     "speaker_uuid": speaker_uuid,
                     "user_id": ctx.user_id,
+                    "organization_id": ctx.organization_id,
                     "name": speaker.display_name or speaker.name,
                     "embedding": emb_list,
                     "profile_id": speaker.profile_id,

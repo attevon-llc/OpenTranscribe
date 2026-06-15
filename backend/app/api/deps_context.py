@@ -23,6 +23,9 @@ from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_user
+from app.core.tenancy import UNSCOPED  # noqa: F401 — re-exported for callers
+from app.core.tenancy import OrgScope  # noqa: F401 — re-exported for callers
+from app.core.tenancy import _Unscoped  # noqa: F401 — re-exported for callers
 from app.db.base import get_db
 from app.models.user import User
 
@@ -46,15 +49,19 @@ class RequestContext:
         return self.org_role == "org:admin"
 
 
-def get_current_context(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> RequestContext:
-    """Resolve the request's tenant context (personal when no org applies)."""
+def resolve_org_context(
+    request: Request, db: Session, user: User
+) -> tuple[Optional[int], Optional[str]]:
+    """Resolve ``(org_id, org_role)`` for ``user`` on this request (None = personal).
+
+    The SINGLE source of org-scope resolution, reused by ``get_current_context``
+    AND by optional-auth routes (e.g. the thumbnail) so the membership-mirror
+    authorization rule is never reimplemented divergently. Authorization follows
+    the mirror, not the token alone: a removed member resolves to personal scope.
+    """
     identity = getattr(request.state, "external_identity", None)
     if identity is None or not getattr(identity, "org_id", None):
-        return RequestContext(user=current_user)
+        return None, None
 
     from app.models.organization import Organization
     from app.models.organization import OrganizationMembership
@@ -68,13 +75,13 @@ def get_current_context(
         # Org not mirrored (webhook lag) — fall back to personal scope rather
         # than failing the request; the next webhook/login sync repairs it.
         logger.warning(f"Unknown org in token: {identity.org_id} (falling back to personal)")
-        return RequestContext(user=current_user)
+        return None, None
 
     membership = (
         db.query(OrganizationMembership)
         .filter(
             OrganizationMembership.organization_id == org.id,
-            OrganizationMembership.user_id == current_user.id,
+            OrganizationMembership.user_id == user.id,
         )
         .first()
     )
@@ -82,17 +89,27 @@ def get_current_context(
         # Token claims an org the mirror doesn't confirm (e.g. member just
         # removed). Authorization follows the mirror: personal scope only.
         logger.warning(
-            f"User {current_user.id} carries org {identity.org_id} in token "
+            f"User {user.id} carries org {identity.org_id} in token "
             "but has no membership row — personal scope applied"
         )
-        return RequestContext(user=current_user)
+        return None, None
 
     # Cloud contract: refine the access-log org_id from the provider's raw
     # string (stashed by get_current_user) to OUR local Organization.id, now
     # that org context is confirmed against the membership mirror. Access log
     # only — never a Prometheus label. Cloud inherits this on submodule bump.
     request.state.org_id = org.id
-    return RequestContext(user=current_user, org_id=org.id, org_role=membership.role)
+    return org.id, membership.role
+
+
+def get_current_context(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> RequestContext:
+    """Resolve the request's tenant context (personal when no org applies)."""
+    org_id, org_role = resolve_org_context(request, db, current_user)
+    return RequestContext(user=current_user, org_id=org_id, org_role=org_role)
 
 
 def scope_to_context(query: Query, model: Any, ctx: RequestContext) -> Query:

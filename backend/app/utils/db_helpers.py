@@ -1,4 +1,6 @@
 import logging
+from typing import TYPE_CHECKING
+from typing import Any
 from typing import TypeVar
 
 from sqlalchemy import and_
@@ -7,15 +9,57 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import Tag
 from app.models.media import TranscriptSegment
 
+if TYPE_CHECKING:
+    from app.api.deps_context import RequestContext
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+def apply_tenant_scope(
+    query: Query, model: Any, *, user_id: int, organization_id: OrgScope = UNSCOPED
+) -> Query:
+    """Default-deny tenant filter for a ``Query``, mirroring ``scope_to_context``.
+
+    This is the SQL-plane choke-point primitive used by the resource lookup
+    helpers so org awareness is added once, not per-endpoint.
+
+    * Org context (``organization_id`` is an int): rows whose ``organization_id``
+      matches.
+    * Personal scope (``organization_id is None``): the user's personal rows
+      (``user_id`` match AND ``organization_id IS NULL``).
+    * ``UNSCOPED`` sentinel (default): legacy caller, plain ``user_id`` filter —
+      preserves pre-cloud behavior.
+
+    Community-edition invariance: ``organization_id`` is always None there, so the
+    ``model.organization_id IS NULL`` clause is a behavior-preserving no-op on
+    top of plain ``user_id`` filtering.
+
+    Args:
+        query: The base SQLAlchemy query to constrain.
+        model: The mapped class being filtered (must expose ``user_id`` and
+            ``organization_id`` columns).
+        user_id: The caller's user id (personal scope).
+        organization_id: The active org id, None for personal, or UNSCOPED.
+
+    Returns:
+        The query with the tenant-scope filter applied.
+    """
+    if isinstance(organization_id, _Unscoped):
+        return query.filter(model.user_id == user_id)
+    if organization_id is not None:
+        return query.filter(model.organization_id == organization_id)
+    return query.filter(model.user_id == user_id, model.organization_id.is_(None))
 
 
 def _invalidate_tag_cache_for_file(db: Session, file_id: int) -> None:
@@ -28,18 +72,29 @@ def _invalidate_tag_cache_for_file(db: Session, file_id: int) -> None:
         logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
 
 
-def get_user_files_query(db: Session, user_id: int) -> Query:
+def get_user_files_query(
+    db: Session, user_id: int, *, organization_id: OrgScope = UNSCOPED
+) -> Query:
     """
-    Standard query for user's files.
+    Standard query for a user's (or org's) files.
 
     Args:
         db: Database session
-        user_id: User ID
+        user_id: User ID (personal scope)
+        organization_id: Active org id, None for personal, or UNSCOPED (legacy).
+            Defaults to UNSCOPED so community callers are unaffected.
 
     Returns:
-        Base query for user's media files
+        Base query for the in-scope media files
     """
-    return db.query(MediaFile).filter(MediaFile.user_id == user_id)
+    return apply_tenant_scope(
+        db.query(MediaFile), MediaFile, user_id=user_id, organization_id=organization_id
+    )
+
+
+def get_user_files_query_for_context(db: Session, ctx: "RequestContext") -> Query:
+    """``get_user_files_query`` using a :class:`RequestContext` for tenant scope."""
+    return get_user_files_query(db, ctx.user.id, organization_id=ctx.org_id)
 
 
 def get_or_create(

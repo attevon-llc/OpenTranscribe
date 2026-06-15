@@ -208,10 +208,12 @@ def _execute_knn_search(
     user_id: int,
     threshold: float,
     accessible_profile_ids: set[int] | None = None,
+    organization_id: int | None = None,
 ) -> list[dict]:
     """Execute KNN search and return matches above threshold."""
     from app.services.opensearch_service import _is_index_corruption_error
     from app.services.opensearch_service import _repair_index
+    from app.services.opensearch_service import _speaker_org_filter_clauses
 
     if accessible_profile_ids is not None:
         filters = [
@@ -223,6 +225,8 @@ def _execute_knn_search(
             {"term": {"document_type": "profile"}},
             {"term": {"user_id": user_id}},
         ]
+    # Tenant gate on profile docs (org term, else exclude org-stamped).
+    filters.extend(_speaker_org_filter_clauses(organization_id))
 
     query = {
         "size": 25,
@@ -534,6 +538,7 @@ class ProfileEmbeddingService:
         user_id: int,
         threshold: float = 0.7,
         accessible_profile_ids: set[int] | None = None,
+        organization_id: int | None = None,
     ) -> list[dict]:
         """
         Find speaker profiles using OpenSearch native kNN search for optimal performance.
@@ -548,6 +553,7 @@ class ProfileEmbeddingService:
             threshold: Minimum similarity threshold
             accessible_profile_ids: Optional set of profile IDs to search within
                 (for shared profile scope). If None, filters by user_id.
+            organization_id: Active org id (None = personal) — tenant gate.
 
         Returns:
             List of matching profiles with similarity scores
@@ -575,6 +581,7 @@ class ProfileEmbeddingService:
                 user_id,
                 threshold,
                 accessible_profile_ids=accessible_profile_ids,
+                organization_id=organization_id,
             )
 
             logger.info(

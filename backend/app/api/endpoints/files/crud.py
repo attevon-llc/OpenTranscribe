@@ -10,6 +10,8 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import selectinload
 
 from app.core import constants as C  # noqa: N812
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
 from app.models.media import Analytics
 from app.models.media import Collection
 from app.models.media import CollectionMember
@@ -34,7 +36,12 @@ logger = logging.getLogger(__name__)
 
 
 def get_media_file_by_uuid(
-    db: Session, file_uuid: str, user_id: int, is_admin: bool = False
+    db: Session,
+    file_uuid: str,
+    user_id: int,
+    is_admin: bool = False,
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> MediaFile:
     """
     Get a media file by UUID and user ID.
@@ -44,6 +51,9 @@ def get_media_file_by_uuid(
         file_uuid: File UUID
         user_id: User ID
         is_admin: Whether the current user is an admin (can access any file)
+        organization_id: Active org id, None for personal, or UNSCOPED (default,
+            legacy = no gate). Threaded from ``ctx.org_id`` by request handlers so
+            cross-tenant files 404/403 (default-deny).
 
     Returns:
         MediaFile object
@@ -57,7 +67,9 @@ def get_media_file_by_uuid(
 
         return get_file_by_uuid(db, file_uuid)
     else:
-        return get_file_by_uuid_with_permission(db, file_uuid, user_id, is_admin=is_admin)
+        return get_file_by_uuid_with_permission(
+            db, file_uuid, user_id, is_admin=is_admin, organization_id=organization_id
+        )
 
 
 def get_media_file_by_id(
@@ -584,6 +596,8 @@ def get_media_file_detail(
     segment_limit: int | None = None,
     segment_offset: int = 0,
     redact: bool = True,
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> MediaFileDetail:
     """
     Get detailed media file information including tags, analytics, and formatted fields.
@@ -600,7 +614,9 @@ def get_media_file_detail(
     """
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(
+            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+        )
         # Expire heavy JSONB columns so they're not loaded unless explicitly accessed
         # (waveform_data fetched via /waveform, summary via /summary, metadata_raw rarely needed)
         db.expire(db_file, ["waveform_data", "metadata_raw"])
@@ -648,7 +664,9 @@ def get_media_file_detail(
         else:
             from app.services.permission_service import PermissionService
 
-            my_permission = PermissionService.get_file_permission(db, file_id, current_user.id)
+            my_permission = PermissionService.get_file_permission(
+                db, file_id, current_user.id, organization_id=organization_id
+            )
 
         # Set URLs
         set_file_urls(db_file)
@@ -703,7 +721,12 @@ def get_media_file_detail(
 
 
 def update_media_file(
-    db: Session, file_uuid: str, media_file_update: MediaFileUpdate, current_user: User
+    db: Session,
+    file_uuid: str,
+    media_file_update: MediaFileUpdate,
+    current_user: User,
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> MediaFile:
     """
     Update a media file's metadata.
@@ -713,12 +736,15 @@ def update_media_file(
         file_uuid: File UUID
         media_file_update: Update data
         current_user: Current user
+        organization_id: Active org id, None for personal, or UNSCOPED (legacy).
 
     Returns:
         Updated MediaFile object
     """
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+    )
     file_id = db_file.id  # Get internal ID for OpenSearch update
 
     # Track if title was updated for OpenSearch reindexing
@@ -751,7 +777,14 @@ def update_media_file(
     return db_file
 
 
-def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bool = False) -> None:
+def delete_media_file(
+    db: Session,
+    file_uuid: str,
+    current_user: User,
+    force: bool = False,
+    *,
+    organization_id: OrgScope = UNSCOPED,
+) -> None:
     """
     Delete a media file and all associated data with safety checks.
 
@@ -760,12 +793,15 @@ def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bo
         file_uuid: File UUID
         current_user: Current user
         force: Force deletion even if processing is active (admin only)
+        organization_id: Active org id, None for personal, or UNSCOPED (legacy).
     """
     from app.utils.task_utils import cancel_active_task
     from app.utils.task_utils import is_file_safe_to_delete
 
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+    )
     file_id = db_file.id  # Get internal ID for task operations
 
     # Check if file is safe to delete
@@ -815,6 +851,8 @@ def update_single_transcript_segment(
     segment_uuid: str,
     segment_update: TranscriptSegmentUpdate,
     current_user: User,
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> TranscriptSegmentSchema:
     """
     Update a single transcript segment for a media file.
@@ -831,7 +869,9 @@ def update_single_transcript_segment(
     """
     # Verify user owns the file or is admin
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+    )
     file_id = db_file.id  # Get internal ID for segment query
 
     # Find the specific segment by UUID with speaker eagerly loaded
@@ -894,7 +934,13 @@ def update_single_transcript_segment(
     )
 
 
-def get_stream_url_info(db: Session, file_uuid: str, current_user: User) -> dict[str, Any]:
+def get_stream_url_info(
+    db: Session,
+    file_uuid: str,
+    current_user: User,
+    *,
+    organization_id: OrgScope = UNSCOPED,
+) -> dict[str, Any]:
     """
     Get streaming URL information for a media file.
 
@@ -902,12 +948,15 @@ def get_stream_url_info(db: Session, file_uuid: str, current_user: User) -> dict
         db: Database session
         file_uuid: File UUID
         current_user: Current user
+        organization_id: Active org id, None for personal, or UNSCOPED (legacy).
 
     Returns:
         Dictionary with URL and content type information
     """
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+    )
 
     # Skip S3 operations in test environment
     if os.environ.get("SKIP_S3", "False").lower() == "true":

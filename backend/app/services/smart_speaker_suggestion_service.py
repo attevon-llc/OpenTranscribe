@@ -118,12 +118,15 @@ def _execute_profile_knn_search(
     user_id: int,
     threshold: float,
     accessible_profile_ids: set[int] | None = None,
+    organization_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """
     Execute kNN search for profile matches and return filtered results.
 
     Returns list of profile match dictionaries with similarity scores.
     """
+    from app.services.opensearch_service import _speaker_org_filter_clauses
+
     if accessible_profile_ids is not None:
         must_filters = [
             {"term": {"document_type": "profile"}},
@@ -134,6 +137,8 @@ def _execute_profile_knn_search(
             {"term": {"document_type": "profile"}},
             {"term": {"user_id": user_id}},
         ]
+    # Tenant gate on profile docs (org term, else exclude org-stamped).
+    must_filters.extend(_speaker_org_filter_clauses(organization_id))
 
     query = {
         "size": 10,

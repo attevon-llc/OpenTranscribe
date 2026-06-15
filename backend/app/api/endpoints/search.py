@@ -11,6 +11,8 @@ from fastapi import HTTPException
 from fastapi import Query
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.core.config import settings
@@ -114,7 +116,8 @@ def search_transcripts(
     title_filter: str | None = Query(
         None, description="Filter by filename/title (substring match)"
     ),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ) -> dict[str, Any]:
     """
     Google-style hybrid search across all transcripts.
@@ -167,7 +170,7 @@ def search_transcripts(
     search_service = HybridSearchService()
     response = search_service.search(
         query=q,
-        user_id=current_user.id,
+        user_id=ctx.user.id,
         page=page,
         page_size=page_size,
         speakers=speakers,
@@ -185,6 +188,7 @@ def search_transcripts(
         max_file_size=max_file_size,
         language=language,
         title_filter=title_filter,
+        organization_id=ctx.org_id,
     )
 
     return _search_response_to_schema(response)
@@ -194,7 +198,8 @@ def search_transcripts(
 def search_suggestions(
     q: str = Query(..., min_length=2, description="Search prefix"),
     limit: int = Query(8, ge=1, le=20, description="Max suggestions"),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ) -> list[dict[str, Any]]:
     """
     Auto-complete suggestions as user types.
@@ -214,14 +219,16 @@ def search_suggestions(
     search_service = HybridSearchService()
     return search_service.get_suggestions(
         prefix=q,
-        user_id=current_user.id,
+        user_id=ctx.user.id,
         limit=limit,
+        organization_id=ctx.org_id,
     )
 
 
 @router.get("/filters")
 def get_available_filters(
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ) -> dict[str, Any]:
     """
     Return available filter options (speakers, tags, date range).
@@ -232,7 +239,7 @@ def get_available_filters(
     from app.services.search.hybrid_search_service import HybridSearchService
 
     search_service = HybridSearchService()
-    return search_service.get_available_filters(user_id=current_user.id)
+    return search_service.get_available_filters(user_id=ctx.user.id, organization_id=ctx.org_id)
 
 
 @router.post("/reindex")

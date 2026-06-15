@@ -19,6 +19,22 @@ from app.core.constants import get_speaker_index_v4
 # Setup logging
 logger = logging.getLogger(__name__)
 
+
+def _speaker_org_filter_clauses(organization_id: int | None) -> list[dict[str, Any]]:
+    """Tenant-scope ``bool.filter`` clauses for speaker/voiceprint kNN queries.
+
+    Delegates to the shared search-plane helper so the SQL, transcript-search,
+    and speaker-search planes all encode tenancy identically. Org context -> a
+    ``term`` on ``organization_id``; personal scope (None) -> exclude any doc
+    that carries ``organization_id`` (so org voiceprints never match a personal
+    search). Community-edition: callers pass None and docs are org-less, so the
+    personal gate is a behavior-preserving no-op.
+    """
+    from app.services.search.tenant_scope import org_filter_clauses
+
+    return org_filter_clauses(organization_id)
+
+
 # Cache for get_active_speaker_index() — avoids hundreds of OpenSearch
 # round-trips during batch re-clustering (#17).
 _active_index_cache: tuple[str, float] | None = None
@@ -896,6 +912,8 @@ def _ensure_versioned_speaker_index(index_name: str, dimension: int) -> None:
                     "profile_uuid": {"type": "keyword"},
                     "profile_name": {"type": "keyword"},
                     "user_id": {"type": "integer"},
+                    # Tenant scope (cloud-edition seam; absent on personal docs)
+                    "organization_id": {"type": "integer"},
                     "name": {"type": "keyword"},
                     "display_name": {"type": "keyword"},
                     "collection_ids": {"type": "integer"},
@@ -1086,6 +1104,8 @@ def create_speaker_index_v4(index_name: str | None = None) -> bool:
                     "profile_uuid": {"type": "keyword"},
                     "profile_name": {"type": "keyword"},
                     "user_id": {"type": "integer"},
+                    # Tenant scope (cloud-edition seam; absent on personal docs)
+                    "organization_id": {"type": "integer"},
                     "name": {"type": "keyword"},
                     "display_name": {"type": "keyword"},
                     "collection_ids": {"type": "integer"},
@@ -1148,6 +1168,7 @@ def add_speaker_embedding_v4(
     media_file_id: int | None = None,
     segment_count: int = 1,
     display_name: str | None = None,
+    organization_id: int | None = None,
 ):
     """
     Add a speaker embedding to the v4 staging index during migration.
@@ -1197,7 +1218,8 @@ def add_speaker_embedding_v4(
             f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) to v4 index with embedding length: {emb_len}"
         )
 
-        # Prepare document
+        # Prepare document (organization_id only written for org files — personal
+        # docs stay org-less to match the personal-scope search gate)
         doc = {
             "speaker_id": speaker_id,
             "speaker_uuid": str(speaker_uuid),
@@ -1213,6 +1235,8 @@ def add_speaker_embedding_v4(
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "embedding": embedding,
         }
+        if organization_id is not None:
+            doc["organization_id"] = organization_id
 
         # Index the document to the v4 staging index using UUID as document ID
         response = opensearch_client.index(
@@ -1290,23 +1314,24 @@ def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dic
             }
         )
         profile_uuid = data.get("profile_uuid")
-        bulk_body.append(
-            {
-                "speaker_id": speaker_id,
-                "speaker_uuid": str(speaker_uuid),
-                "profile_id": data.get("profile_id"),
-                "profile_uuid": str(profile_uuid) if profile_uuid else None,
-                "user_id": data["user_id"],
-                "name": data["name"],
-                "display_name": data.get("display_name"),
-                "collection_ids": data.get("collection_ids") or [],
-                "media_file_id": data.get("media_file_id"),
-                "segment_count": data.get("segment_count", 1),
-                "created_at": now_iso,
-                "updated_at": now_iso,
-                "embedding": embedding,
-            }
-        )
+        v4_doc: dict[str, Any] = {
+            "speaker_id": speaker_id,
+            "speaker_uuid": str(speaker_uuid),
+            "profile_id": data.get("profile_id"),
+            "profile_uuid": str(profile_uuid) if profile_uuid else None,
+            "user_id": data["user_id"],
+            "name": data["name"],
+            "display_name": data.get("display_name"),
+            "collection_ids": data.get("collection_ids") or [],
+            "media_file_id": data.get("media_file_id"),
+            "segment_count": data.get("segment_count", 1),
+            "created_at": now_iso,
+            "updated_at": now_iso,
+            "embedding": embedding,
+        }
+        if data.get("organization_id") is not None:
+            v4_doc["organization_id"] = data["organization_id"]
+        bulk_body.append(v4_doc)
         accepted += 1
 
     if accepted == 0:
@@ -1333,6 +1358,7 @@ def store_profile_embedding_v4(
     embedding: list[float],
     speaker_count: int,
     user_id: int,
+    organization_id: int | None = None,
 ) -> bool:
     """Store consolidated profile embedding in the v4 staging index.
 
@@ -1367,6 +1393,8 @@ def store_profile_embedding_v4(
             "speaker_count": speaker_count,
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
+        if organization_id is not None:
+            doc["organization_id"] = organization_id
 
         opensearch_client.index(
             index=v4_index,
@@ -1503,6 +1531,7 @@ def add_speaker_embedding(
     segment_count: int = 1,
     display_name: str | None = None,
     target_index: str | None = None,
+    organization_id: int | None = None,
 ):
     """
     Add a speaker embedding to OpenSearch with collection support
@@ -1554,7 +1583,7 @@ def add_speaker_embedding(
             f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) with embedding length: {emb_len}"
         )
 
-        # Prepare document
+        # Prepare document (organization_id only written for org files)
         doc = {
             "speaker_id": speaker_id,
             "speaker_uuid": str(speaker_uuid),
@@ -1570,6 +1599,8 @@ def add_speaker_embedding(
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "embedding": embedding,
         }
+        if organization_id is not None:
+            doc["organization_id"] = organization_id
 
         # Index the document using UUID as document ID
         response = opensearch_client.index(
@@ -1627,6 +1658,8 @@ def add_speaker_embedding(
                         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         "embedding": embedding,
                     }
+                    if organization_id is not None:
+                        doc["organization_id"] = organization_id
                     response = opensearch_client.index(
                         index=index_name,
                         body=doc,
@@ -1671,7 +1704,7 @@ def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
                 }
             )
 
-            # Document
+            # Document (organization_id only written for org files)
             doc_data: dict[str, Any] = {
                 "speaker_id": data["speaker_id"],
                 "speaker_uuid": str(data["speaker_uuid"]),
@@ -1686,6 +1719,8 @@ def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
                 "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "embedding": data["embedding"],
             }
+            if data.get("organization_id") is not None:
+                doc_data["organization_id"] = data["organization_id"]
             bulk_body.append(doc_data)
 
         # Execute bulk operation
@@ -1872,6 +1907,7 @@ def find_matching_speaker(
     collection_ids: list[int] | None = None,
     exclude_speaker_ids: list[int] | None = None,
     accessible_user_ids: list[int] | None = None,
+    organization_id: int | None = None,
 ) -> dict[str, Any] | None:
     """
     Find a matching speaker for a given embedding with confidence score
@@ -1884,6 +1920,9 @@ def find_matching_speaker(
         exclude_speaker_ids: Optional list of speaker IDs to exclude
         accessible_user_ids: Optional list of user IDs to search within
             (for shared profile scope). If None, filters by user_id.
+        organization_id: Active org id (None = personal). Adds the default-deny
+            tenant gate so cross-org voiceprints never match. Community-edition
+            invariance: None + org-less docs => the personal gate is a no-op.
 
     Returns:
         Dictionary with speaker info and confidence if a match is found, None otherwise
@@ -1902,6 +1941,9 @@ def find_matching_speaker(
             filters = [{"terms": {"user_id": accessible_user_ids}}]
         else:
             filters = [{"term": {"user_id": user_id}}]
+
+        # Tenant gate (org term when set, else exclude org-stamped voiceprints).
+        filters.extend(_speaker_org_filter_clauses(organization_id))
 
         # Add collection filter if specified
         if collection_ids:
@@ -1963,6 +2005,7 @@ def batch_find_matching_speakers(
     user_id: int,
     threshold: float = 0.5,
     max_candidates: int = 5,
+    organization_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """
     Find matching speakers for multiple embeddings in a single query (efficient batch operation)
@@ -1972,6 +2015,7 @@ def batch_find_matching_speakers(
         user_id: ID of the user
         threshold: Minimum similarity threshold
         max_candidates: Maximum candidates per embedding
+        organization_id: Active org id (None = personal) — tenant gate.
 
     Returns:
         List of match results for each input embedding
@@ -1986,6 +2030,7 @@ def batch_find_matching_speakers(
 
         # Use multi-search for efficient batch processing
         msearch_body: list[dict[str, Any]] = []
+        org_clauses = _speaker_org_filter_clauses(organization_id)
 
         for emb_data in embeddings:
             # Add search header
@@ -1996,7 +2041,7 @@ def batch_find_matching_speakers(
                 "size": max_candidates,
                 "query": {
                     "bool": {
-                        "filter": [{"term": {"user_id": user_id}}],
+                        "filter": [{"term": {"user_id": user_id}}, *org_clauses],
                         "must_not": [
                             {"term": {"speaker_id": emb_data["id"]}},  # Exclude self
                             {"exists": {"field": "document_type"}},  # Exclude profile documents
@@ -2547,6 +2592,7 @@ def msearch_profile_knn_batch(
     threshold: float = 0.5,
     k: int = 10,
     accessible_profile_ids: set[int] | None = None,
+    organization_id: int | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Batch kNN search for profile matches across multiple speakers.
 
@@ -2559,6 +2605,7 @@ def msearch_profile_knn_batch(
         threshold: Minimum raw cosine similarity to include.
         k: Number of nearest neighbors per query.
         accessible_profile_ids: Optional set of profile IDs to restrict search.
+        organization_id: Active org id (None = personal) — tenant gate.
 
     Returns:
         Dict mapping speaker_uuid -> list of profile match dicts.
@@ -2581,6 +2628,8 @@ def msearch_profile_knn_batch(
                 {"term": {"document_type": "profile"}},
                 {"term": {"user_id": user_id}},
             ]
+        # Tenant gate on profile documents (org term, else exclude org-stamped).
+        must_filters.extend(_speaker_org_filter_clauses(organization_id))
 
         # Build msearch body
         msearch_body: list[dict[str, Any]] = []
@@ -2672,6 +2721,7 @@ def store_profile_embedding(
     embedding: list[float],
     speaker_count: int,
     user_id: int,
+    organization_id: int | None = None,
 ) -> bool:
     """
     Store profile embedding with distinct document type for proper filtering.
@@ -2683,6 +2733,8 @@ def store_profile_embedding(
         embedding: Embedding vector
         speaker_count: Number of speakers contributing to this embedding
         user_id: ID of the user who owns the profile
+        organization_id: Active org id (None = personal). Only written for org
+            profiles so personal docs stay org-less (matches the search gate).
 
     Returns:
         True if successful, False otherwise
@@ -2704,6 +2756,8 @@ def store_profile_embedding(
             "speaker_count": speaker_count,
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
+        if organization_id is not None:
+            doc["organization_id"] = organization_id
 
         # Use UUID-based prefixed ID to avoid conflicts with speaker documents
         # Use refresh='wait_for' to ensure the update is immediately searchable
@@ -2851,6 +2905,7 @@ def find_matching_clusters(
     user_id: int,
     k: int = 5,
     threshold: float = 0.75,
+    organization_id: int | None = None,
 ) -> list[dict]:
     """Find matching cluster centroids for a speaker embedding using kNN.
 
@@ -2859,6 +2914,7 @@ def find_matching_clusters(
         user_id: Owner user ID.
         k: Number of nearest neighbors.
         threshold: Minimum cosine similarity.
+        organization_id: Active org id (None = personal) — tenant gate.
 
     Returns:
         List of dicts with cluster_uuid, similarity, label.
@@ -2881,6 +2937,7 @@ def find_matching_clusters(
                                 "filter": [
                                     {"term": {"document_type": "cluster"}},
                                     {"term": {"user_id": user_id}},
+                                    *_speaker_org_filter_clauses(organization_id),
                                 ]
                             }
                         },
@@ -2921,6 +2978,7 @@ def msearch_speaker_similarities(
     user_id: int,
     k: int = 10,
     batch_size: int = 50,
+    organization_id: int | None = None,
 ) -> list[list[dict]]:
     """Batch kNN search for building a similarity graph.
 
@@ -2929,6 +2987,7 @@ def msearch_speaker_similarities(
         user_id: Owner user ID.
         k: Number of nearest neighbors per query.
         batch_size: Number of speakers per msearch request.
+        organization_id: Active org id (None = personal) — tenant gate.
 
     Returns:
         List of result lists, one per input embedding.
@@ -2941,6 +3000,7 @@ def msearch_speaker_similarities(
 
         active_index = get_active_speaker_index()
         all_results: list[list[dict]] = []
+        org_clauses = _speaker_org_filter_clauses(organization_id)
 
         # Process in batches to avoid memory issues
         for batch_start in range(0, len(speaker_data), batch_size):
@@ -2968,6 +3028,7 @@ def msearch_speaker_similarities(
                                                     ]
                                                 }
                                             },
+                                            *org_clauses,
                                         ]
                                     }
                                 },
@@ -3401,7 +3462,11 @@ def sync_speaker_profiles_to_opensearch(db) -> dict:
 
 
 def find_matching_profiles(
-    embedding: list[float], user_id: int, threshold: float = 0.7, size: int = 5
+    embedding: list[float],
+    user_id: int,
+    threshold: float = 0.7,
+    size: int = 5,
+    organization_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """
     Find matching speaker profiles using embedding similarity in OpenSearch.
@@ -3411,6 +3476,7 @@ def find_matching_profiles(
         user_id: User ID to filter results
         threshold: Minimum similarity threshold
         size: Maximum number of results
+        organization_id: Active org id (None = personal) — tenant gate.
 
     Returns:
         List of matching profiles with similarity scores
@@ -3436,6 +3502,7 @@ def find_matching_profiles(
                                 "must": [
                                     {"term": {"user_id": user_id}},
                                     {"term": {"document_type": "profile"}},
+                                    *_speaker_org_filter_clauses(organization_id),
                                 ]
                             }
                         },

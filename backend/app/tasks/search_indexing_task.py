@@ -142,6 +142,7 @@ def index_transcript_search_task(  # noqa: C901
             if hasattr(media_file, "collections") and media_file.collections:
                 collection_ids = [c.id for c in media_file.collections]
             accessible_user_ids = PermissionService.get_users_with_file_access(db, file_id)
+            organization_id = media_file.organization_id  # tenant scope (None = personal)
             update_task_status(db, task_id, "in_progress", progress=0.4)
 
             doc_title = title  # captured before session close
@@ -174,6 +175,7 @@ def index_transcript_search_task(  # noqa: C901
             file_size=file_size,
             collection_ids=collection_ids,
             accessible_user_ids=accessible_user_ids,
+            organization_id=organization_id,
         )
 
         total_ms = round((time.time() - total_start) * 1000)

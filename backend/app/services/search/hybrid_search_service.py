@@ -513,12 +513,15 @@ class HybridSearchService:
         max_file_size: int | None = None,
         language: str | None = None,
         title_filter: str | None = None,
+        organization_id: int | None = None,
     ) -> SearchResponse:
         """Execute hybrid search and return grouped results.
 
         Args:
             query: Search query text.
             user_id: Current user ID for filtering.
+            organization_id: Active org id (None = personal). Adds the tenant gate
+                so cross-org transcript content never surfaces.
             page: Page number (1-indexed).
             page_size: Results per page.
             speakers: Optional speaker filter list.
@@ -561,6 +564,7 @@ class HybridSearchService:
             max_file_size=max_file_size,
             language=language,
             title_filter=title_filter,
+            organization_id=organization_id,
         )
         cached = _get_cached_response(cache_key)
         if cached:
@@ -594,6 +598,7 @@ class HybridSearchService:
             max_file_size=max_file_size,
             language=language,
             title_filter=title_filter,
+            organization_id=organization_id,
         )
         filters_applied = _collect_filters_applied(
             speakers=speakers,
@@ -868,6 +873,7 @@ class HybridSearchService:
         prefix: str,
         user_id: int,
         limit: int = 8,
+        organization_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """Get auto-complete suggestions.
 
@@ -875,6 +881,7 @@ class HybridSearchService:
             prefix: Search prefix text.
             user_id: Current user ID.
             limit: Maximum number of suggestions.
+            organization_id: Active org id (None = personal) — tenant gate.
 
         Returns:
             List of suggestion dicts with type, text, and optional metadata.
@@ -895,6 +902,13 @@ class HybridSearchService:
 
         suggestions = []
 
+        from app.services.search.tenant_scope import org_filter_clauses
+
+        scope_filter = [
+            {"terms": {"accessible_user_ids": [user_id]}},
+            *org_filter_clauses(organization_id),
+        ]
+
         try:
             # Multi-search for title and speaker suggestions
             msearch_body = [
@@ -905,7 +919,7 @@ class HybridSearchService:
                     "query": {
                         "bool": {
                             "must": [{"match_phrase_prefix": {"title": prefix}}],
-                            "filter": [{"terms": {"accessible_user_ids": [user_id]}}],
+                            "filter": scope_filter,
                         }
                     },
                     "_source": ["title", "file_uuid"],
@@ -918,7 +932,7 @@ class HybridSearchService:
                     "query": {
                         "bool": {
                             "must": [{"prefix": {"speaker": {"value": prefix.lower()}}}],
-                            "filter": [{"terms": {"accessible_user_ids": [user_id]}}],
+                            "filter": scope_filter,
                         }
                     },
                     "aggs": {"speakers": {"terms": {"field": "speaker", "size": 4}}},
@@ -960,11 +974,14 @@ class HybridSearchService:
 
         return suggestions[:limit]
 
-    def get_available_filters(self, user_id: int) -> dict[str, Any]:
+    def get_available_filters(
+        self, user_id: int, organization_id: int | None = None
+    ) -> dict[str, Any]:
         """Return available filter options for the current user.
 
         Args:
             user_id: Current user ID.
+            organization_id: Active org id (None = personal) — tenant gate.
 
         Returns:
             Dict with speakers, tags, and date_range.
@@ -983,12 +1000,21 @@ class HybridSearchService:
             except Exception:
                 return {"speakers": [], "tags": [], "date_range": {}}
 
+        from app.services.search.tenant_scope import org_filter_clauses
+
         try:
             response = opensearch_client.search(
                 index=index_name,
                 body={
                     "size": 0,
-                    "query": {"terms": {"accessible_user_ids": [user_id]}},
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                {"terms": {"accessible_user_ids": [user_id]}},
+                                *org_filter_clauses(organization_id),
+                            ]
+                        }
+                    },
                     "aggs": {
                         "speakers": {"terms": {"field": "speaker", "size": 100}},
                         "tags": {"terms": {"field": "tags", "size": 100}},
@@ -1035,9 +1061,19 @@ class HybridSearchService:
         max_file_size: int | None = None,
         language: str | None = None,
         title_filter: str | None = None,
+        organization_id: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Build OpenSearch filter clauses."""
+        """Build OpenSearch filter clauses.
+
+        The ``accessible_user_ids`` term scopes to the caller; ``organization_id``
+        adds the default-deny tenant gate (org term when set, else exclude any
+        org-stamped doc). Community-edition invariance: ``organization_id`` is
+        always None and docs are org-less, so the personal gate is a no-op.
+        """
+        from app.services.search.tenant_scope import org_filter_clauses
+
         filters: list[dict[str, Any]] = [{"terms": {"accessible_user_ids": [user_id]}}]
+        filters.extend(org_filter_clauses(organization_id))
 
         if speakers:
             filters.append({"terms": {"speaker": speakers}})

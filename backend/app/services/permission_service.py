@@ -17,6 +17,9 @@ from sqlalchemy import select
 from sqlalchemy import union_all
 from sqlalchemy.orm import Session
 
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
 from app.models.group import UserGroupMember
 from app.models.media import Collection
 from app.models.media import CollectionMember
@@ -36,7 +39,13 @@ class PermissionService:
     """Centralized permission checking for collections and files."""
 
     @staticmethod
-    def get_collection_permission(db: Session, collection_id: int, user_id: int) -> Optional[str]:
+    def get_collection_permission(
+        db: Session,
+        collection_id: int,
+        user_id: int,
+        *,
+        organization_id: OrgScope = UNSCOPED,
+    ) -> Optional[str]:
         """Get highest permission level for user on a collection.
 
         Checks in order:
@@ -45,10 +54,20 @@ class PermissionService:
         3. Group share (CollectionShare.target_group_id in user's groups)
 
         Returns highest of all matching permissions, or None if no access.
+
+        ``organization_id`` is a default-deny tenant gate (int = that org, None =
+        personal/org-less, ``UNSCOPED`` = no gate / legacy): a collection outside
+        the active scope resolves to None even via the sharing path.
         """
         # Check direct ownership first (fast path)
         collection = db.query(Collection).filter(Collection.id == collection_id).first()
         if not collection:
+            return None
+        # Tenant gate: out-of-scope collections are invisible to the sharing resolver.
+        if (
+            not isinstance(organization_id, _Unscoped)
+            and collection.organization_id != organization_id
+        ):
             return None
         if collection.user_id == user_id:
             return "owner"
@@ -85,7 +104,13 @@ class PermissionService:
         return None
 
     @staticmethod
-    def get_file_permission(db: Session, file_id: int, user_id: int) -> Optional[str]:
+    def get_file_permission(
+        db: Session,
+        file_id: int,
+        user_id: int,
+        *,
+        organization_id: OrgScope = UNSCOPED,
+    ) -> Optional[str]:
         """Get highest permission for user on a file.
 
         Checks:
@@ -93,10 +118,24 @@ class PermissionService:
         2. File is in a shared collection that user has access to
 
         Returns highest permission, or None if no access.
+
+        ``organization_id`` is a default-deny tenant gate: an int restricts to
+        that org, ``None`` restricts to org-less (personal) files, and the
+        ``UNSCOPED`` sentinel (default) applies no gate (legacy caller). A file
+        outside the active scope resolves to None even via the sharing path, so
+        cross-org shared files never leak. Community-edition invariance: callers
+        pass UNSCOPED, so behavior is unchanged.
         """
-        # Check direct ownership first (project only user_id, not full ORM object)
-        owner_row = db.query(MediaFile.user_id).filter(MediaFile.id == file_id).first()
+        # Check direct ownership first (project user_id + organization_id, not full ORM object)
+        owner_row = (
+            db.query(MediaFile.user_id, MediaFile.organization_id)
+            .filter(MediaFile.id == file_id)
+            .first()
+        )
         if not owner_row:
+            return None
+        # Tenant gate: out-of-scope files are invisible to the sharing resolver too.
+        if not isinstance(organization_id, _Unscoped) and owner_row[1] != organization_id:
             return None
         if owner_row[0] == user_id:
             return "owner"
@@ -197,12 +236,21 @@ class PermissionService:
         return permission
 
     @staticmethod
-    def get_accessible_file_ids_subquery(db: Session, user_id: int):
+    def get_accessible_file_ids_subquery(
+        db: Session, user_id: int, *, organization_id: OrgScope = UNSCOPED
+    ):
         """Return a subquery of file IDs the user can access.
 
         Union of:
         - Files owned by user
         - Files in collections shared with user (directly or via groups)
+
+        ``organization_id`` is a default-deny tenant gate applied to BOTH
+        branches: an int restricts to same-org files; ``None`` (personal)
+        restricts to org-less files (so an org-shared file never surfaces in a
+        personal listing); the ``UNSCOPED`` sentinel (default) applies no gate
+        (legacy caller). Community-edition invariance: callers pass UNSCOPED and
+        files are org-less, so behavior is unchanged.
         """
         user_group_ids = (
             select(UserGroupMember.group_id)
@@ -210,23 +258,39 @@ class PermissionService:
             .scalar_subquery()
         )
 
-        # Files owned by user
-        owned = select(MediaFile.id).where(MediaFile.user_id == user_id)
+        org_pred = None
+        if not isinstance(organization_id, _Unscoped):
+            if organization_id is not None:
+                org_pred = MediaFile.organization_id == organization_id
+            else:
+                org_pred = MediaFile.organization_id.is_(None)
 
-        # Files in shared collections
-        shared = (
-            select(CollectionMember.media_file_id)
-            .join(
-                CollectionShare,
-                CollectionShare.collection_id == CollectionMember.collection_id,
+        # Files owned by user (within tenant scope)
+        owned_where = [MediaFile.user_id == user_id]
+        if org_pred is not None:
+            owned_where.append(org_pred)
+        owned = select(MediaFile.id).where(*owned_where)
+
+        # Files in shared collections (still gated to the active tenant scope).
+        # The MediaFile join is only needed when an org predicate is active.
+        share_where: list[Any] = [
+            or_(
+                CollectionShare.target_user_id == user_id,
+                CollectionShare.target_group_id.in_(user_group_ids),
             )
-            .where(
-                or_(
-                    CollectionShare.target_user_id == user_id,
-                    CollectionShare.target_group_id.in_(user_group_ids),
-                )
+        ]
+        if org_pred is not None:
+            shared_stmt = select(CollectionMember.media_file_id).join(
+                MediaFile, MediaFile.id == CollectionMember.media_file_id
             )
-        )
+            share_where.append(org_pred)
+        else:
+            shared_stmt = select(CollectionMember.media_file_id)
+
+        shared = shared_stmt.join(
+            CollectionShare,
+            CollectionShare.collection_id == CollectionMember.collection_id,
+        ).where(*share_where)
 
         return union_all(owned, shared).subquery()
 

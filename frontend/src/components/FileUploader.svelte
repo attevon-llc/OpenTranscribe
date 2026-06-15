@@ -10,6 +10,10 @@
   import { toastStore } from '$stores/toast';
   import { isOnline } from '$stores/network';
   import { t } from '$stores/locale';
+  import { isCloudEdition } from '$lib/edition';
+  import { usageStore, isOverLimit } from '$stores/cloudBilling';
+  import { showQuotaExceeded } from '$stores/quotaModal';
+  import { get } from 'svelte/store';
 
   // APIs
   import { loadProtectedMediaAuthConfig } from '$lib/services/configService';
@@ -563,7 +567,25 @@
   }
 
   // ── Upload Actions ──
+
+  /**
+   * Cloud-edition pre-flight quota check. If the org is already over its plan
+   * limit, pop the QuotaExceededModal + upgrade CTA and block the upload before
+   * we queue anything. Returns true when the upload may proceed. No-op (always
+   * true) in the community edition.
+   */
+  function passesQuotaPreflight(): boolean {
+    if (!isCloudEdition) return true;
+    const usage = get(usageStore);
+    if (usage.loaded && isOverLimit(usage)) {
+      showQuotaExceeded($t('cloud.quota.preflightMessage'));
+      return false;
+    }
+    return true;
+  }
+
   function handleSubmit() {
+    if (!passesQuotaPreflight()) return;
     if (activeTab === 'file') uploadFile();
     else if (activeTab === 'url') processMediaUrl();
     else if (activeTab === 'record') uploadRecordedAudio();

@@ -31,6 +31,7 @@
   import SettingsModal from "../components/SettingsModal.svelte";
   import ClassificationBanner from "$lib/components/ClassificationBanner.svelte";
   import ConnectionStatusBanner from "$components/ui/ConnectionStatusBanner.svelte";
+  import QuotaExceededModal from "$components/QuotaExceededModal.svelte";
 
   // Classification banner state
   let bannerEnabled = false;
@@ -178,6 +179,9 @@
       <UploadManager />
       <SettingsModal />
       <ConnectionStatusBanner />
+      {#if isCloudEdition}
+        <QuotaExceededModal />
+      {/if}
     {/if}
 
     {#if $isAuthenticated && !isPublicPath}

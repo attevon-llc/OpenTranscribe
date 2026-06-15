@@ -145,6 +145,23 @@ axiosInstance.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // Quota exceeded (cloud edition): the backend returns HTTP 402 when an upload
+    // would push the org over its plan limit. Pop the shared QuotaExceededModal +
+    // upgrade CTA. Still rejects so the caller's catch runs (no double toast — the
+    // modal carries the message). Lazy-imported to avoid pulling cloud stores into
+    // the community bundle's eager graph.
+    if (isCloudEdition && error.response?.status === 402) {
+      try {
+        const detail = error.response?.data?.detail;
+        const message = typeof detail === 'string' ? detail : '';
+        const { showQuotaExceeded } = await import('../stores/quotaModal');
+        showQuotaExceeded(message);
+      } catch {
+        // Modal trigger failed — fall through to normal rejection.
+      }
+      return Promise.reject(error);
+    }
+
     const originalRequest = error.config;
 
     // Cloud edition: there is NO cookie refresh token. Clerk mints a fresh

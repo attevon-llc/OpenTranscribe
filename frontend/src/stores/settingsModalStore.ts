@@ -20,6 +20,10 @@ export type SettingsSection =
   | 'engine-settings'
   // System sections (visible to all users)
   | 'system-statistics'
+  // Cloud edition — org-admin sections (gated by audience='org_admin')
+  | 'billing'
+  | 'usage'
+  | 'team'
   // Admin sections
   | 'admin-users'
   | 'admin-task-health'
@@ -63,6 +67,9 @@ const initialState: SettingsModalState = {
     'content-redaction': false,
     'engine-settings': false,
     'system-statistics': false,
+    billing: false,
+    usage: false,
+    team: false,
     'admin-users': false,
     'admin-task-health': false,
     'admin-settings': false,

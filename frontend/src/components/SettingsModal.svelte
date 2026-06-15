@@ -4,6 +4,7 @@
   import { page } from '$app/stores';
   import { user as userStore } from '$stores/auth';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
+  import { isCloudEdition } from '$lib/edition';
   import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
   import { toastStore } from '$stores/toast';
   import axiosInstance from '$lib/axios';
@@ -38,6 +39,10 @@
   import SystemStatisticsPanel from '$components/settings/SystemStatisticsPanel.svelte';
   import AdminTaskHealthPanel, { type ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
   import UserProfileSettings from '$components/settings/UserProfileSettings.svelte';
+  // Cloud-edition org-admin panels (only rendered when edition=cloud + org_admin)
+  import BillingPanel from '$components/settings/BillingPanel.svelte';
+  import UsageDashboard from '$components/settings/UsageDashboard.svelte';
+  import TeamManagement from '$components/settings/TeamManagement.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import ProcessingDetailsModal from '$components/settings/ProcessingDetailsModal.svelte';
@@ -136,6 +141,13 @@
   const capOn = (state: typeof $capabilities, key?: string) =>
     !key || isCapabilityEnabled(state, key);
 
+  // Cloud-edition org-admin gating: the new billing/usage/team panels are only
+  // surfaced when the backend marks their capability as enabled AND audience as
+  // 'org_admin' (so regular org members don't see billing controls). The
+  // capability must be enabled too — a disabled cap hides the panel entirely.
+  const orgAdminCapOn = (state: typeof $capabilities, key: string) =>
+    isCloudEdition && isCapabilityEnabled(state, key) && state.audience[key] === 'org_admin';
+
   // Define sidebar sections (filtered by capability; empty sections drop out)
   $: sidebarSections = [
     {
@@ -144,12 +156,25 @@
         { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart', cap: 'system.hardware_stats' }
       ]
     },
+    // Cloud edition — org-admin billing/usage/team. Gated by audience='org_admin'
+    // so regular org members never see these. Community never reaches here
+    // (isCloudEdition is false), so the section is empty and drops out.
+    ...(orgAdminCapOn(capState, 'billing') || orgAdminCapOn(capState, 'usage_dashboard') || orgAdminCapOn(capState, 'organizations') ? [
+      {
+        title: $t('settings.sections.billingTeam'),
+        items: [
+          ...(orgAdminCapOn(capState, 'billing') ? [{ id: 'billing' as SettingsSection, label: $t('billing.navLabel'), icon: 'credit-card' }] : []),
+          ...(orgAdminCapOn(capState, 'usage_dashboard') ? [{ id: 'usage' as SettingsSection, label: $t('usage.navLabel'), icon: 'activity' }] : []),
+          ...(orgAdminCapOn(capState, 'organizations') ? [{ id: 'team' as SettingsSection, label: $t('team.navLabel'), icon: 'users' }] : [])
+        ]
+      }
+    ] : []),
     ...(isAdmin ? [
       {
         title: $t('settings.sections.administration'),
         items: [
           ...(isSuperAdmin ? [
-            { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list' },
+            { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' },
             { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key', cap: 'auth.config_ui' }
           ] : []),
           { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users', cap: 'users.local_admin' }
@@ -158,12 +183,12 @@
       {
         title: $t('settings.sections.systemManagement'),
         items: [
-          { id: 'data-integrity' as SettingsSection, label: $t('settings.dataIntegrity.title'), icon: 'shield' },
-          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock' },
-          { id: 'backup' as SettingsSection, label: $t('settings.backup.title'), icon: 'database' },
-          { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' },
-          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' },
-          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' }
+          { id: 'data-integrity' as SettingsSection, label: $t('settings.dataIntegrity.title'), icon: 'shield', cap: 'admin.data_integrity' },
+          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock', cap: 'admin.retention' },
+          { id: 'backup' as SettingsSection, label: $t('settings.backup.title'), icon: 'database', cap: 'admin.backup' },
+          { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search', cap: 'admin.search_indexing' },
+          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database', cap: 'admin.embedding_migration' },
+          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health', cap: 'admin.task_health' }
         ]
       }
     ] : []),
@@ -185,7 +210,7 @@
         { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list', cap: 'vocab.user' },
         { id: 'content-redaction' as SettingsSection, label: $t('settings.contentRedaction.title'), icon: 'eye-off', cap: 'redaction.user' },
         { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain', cap: 'llm.user_settings' },
-        { id: 'organization-context' as SettingsSection, label: $t('settings.orgContext.title'), icon: 'briefcase' },
+        { id: 'organization-context' as SettingsSection, label: isCloudEdition ? $t('settings.orgContext.cloudTitle') : $t('settings.orgContext.title'), icon: 'briefcase' },
         { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
         { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform', cap: 'transcription.prefs' }
       ]
@@ -848,6 +873,33 @@
           <!-- Admin Task Health Section -->
           {#if activeSection === 'admin-task-health' && isAdmin}
             <AdminTaskHealthPanel on:requestConfirm={handleTaskHealthConfirm} />
+          {/if}
+
+          <!-- Cloud edition — Billing (org admins only) -->
+          {#if activeSection === 'billing' && orgAdminCapOn(capState, 'billing')}
+            <div class="content-section">
+              <h3 class="section-title">{$t('billing.title')}</h3>
+              <p class="section-description">{$t('billing.description')}</p>
+              <BillingPanel />
+            </div>
+          {/if}
+
+          <!-- Cloud edition — Usage Dashboard (org admins only) -->
+          {#if activeSection === 'usage' && orgAdminCapOn(capState, 'usage_dashboard')}
+            <div class="content-section">
+              <h3 class="section-title">{$t('usage.title')}</h3>
+              <p class="section-description">{$t('usage.description')}</p>
+              <UsageDashboard />
+            </div>
+          {/if}
+
+          <!-- Cloud edition — Team Management (org admins only) -->
+          {#if activeSection === 'team' && orgAdminCapOn(capState, 'organizations')}
+            <div class="content-section">
+              <h3 class="section-title">{$t('team.title')}</h3>
+              <p class="section-description">{$t('team.description')}</p>
+              <TeamManagement />
+            </div>
           {/if}
 
           <!-- Admin System Settings: removed (retry config moved to task health) -->

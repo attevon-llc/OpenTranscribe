@@ -1,6 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import axiosInstance, { abortAllRequests } from '../lib/axios';
 import { clearUserState } from '$lib/session/clearUserState';
+import { isCloudEdition } from '$lib/edition';
 
 /**
  * Minimal shape of an axios error used for status- and detail-based message
@@ -38,9 +39,16 @@ export interface User {
   email: string;
   full_name: string;
   role: 'user' | 'admin' | 'super_admin';
-  auth_type: 'local' | 'ldap' | 'keycloak' | 'pki'; // Authentication type for password change UI
+  // Authentication type. 'clerk' (and other external/SSO providers) only appear
+  // in the cloud edition; the password-change UI keys off `auth_type === 'local'`.
+  auth_type: 'local' | 'ldap' | 'keycloak' | 'pki' | 'clerk' | string;
   allow_local_fallback?: boolean;
   certificate?: CertificateInfo;
+  // Cloud-edition tenancy/billing context (populated by the backend from the
+  // Clerk org claim). Absent in the community edition.
+  org_id?: string;
+  org_role?: string;
+  subscription_tier?: string;
   created_at: string;
   updated_at: string;
 }
@@ -126,6 +134,34 @@ export const isAuthenticated = derived(authStore, ($store) => $store.isAuthentic
 export const authReady = derived(authStore, ($store) => $store.ready);
 export const token = derived(authStore, ($store) => $store.token);
 
+/**
+ * Cloud-edition session init: read the Clerk session instead of the cookie
+ * `/auth/session` probe. If Clerk has an active session, the per-request axios
+ * interceptor mints a bearer token and `/auth/me` is authenticated by the
+ * backend's external verifier. Community edition never reaches this path.
+ */
+async function initAuthClerk(): Promise<void> {
+  try {
+    const { loadClerk, hasClerkSession } = await import('$lib/clerk');
+    await loadClerk();
+
+    if (await hasClerkSession()) {
+      // Bearer is attached per-request by the axios interceptor (cloud build).
+      const userData = await fetchUserInfo();
+      if (userData) {
+        authStore.setToken('clerk');
+        authStore.setReady(true);
+        return;
+      }
+    }
+
+    authStore.reset();
+  } catch (error) {
+    console.error('auth.ts: Clerk initAuth failed:', error);
+    authStore.reset();
+  }
+}
+
 // Initialize auth state by verifying the cookie session with the backend
 export async function initAuth() {
   authStore.setReady(false);
@@ -133,6 +169,12 @@ export async function initAuth() {
   // Clear any legacy localStorage tokens (migration from pre-cookie auth)
   localStorage.removeItem('token');
   localStorage.removeItem('user');
+
+  // Cloud edition delegates session detection to Clerk (no cookie session).
+  if (isCloudEdition) {
+    await initAuthClerk();
+    return;
+  }
 
   try {
     // Probe /auth/session — returns 200 whether or not a session exists, so
@@ -322,8 +364,47 @@ export async function register(email: string, fullName: string, password: string
   }
 }
 
+/**
+ * Cloud-edition login: called after Clerk's prebuilt `<SignIn/>` reports an
+ * active session. There is no local credential round-trip — Clerk owns auth and
+ * MFA. We just hydrate the local user store from `/auth/me` (bearer-authenticated
+ * by the axios interceptor) so the app shell renders.
+ */
+export async function loginWithClerk(): Promise<{ success: boolean; message?: string }> {
+  try {
+    await clearUserState();
+    const userData = await fetchUserInfo();
+    if (!userData) {
+      authStore.reset();
+      return { success: false, message: 'Failed to load account after sign-in.' };
+    }
+    authStore.setToken('clerk');
+    authStore.setReady(true);
+    return { success: true };
+  } catch (error) {
+    console.error('auth.ts: Clerk login hydration failed:', error);
+    authStore.reset();
+    return { success: false, message: 'Sign-in could not be completed.' };
+  }
+}
+
 // Logout function
 export async function logout() {
+  // Cloud edition: Clerk owns the session. Sign out of Clerk (revokes its
+  // session + clears its cookies) instead of hitting the local revoke endpoint.
+  if (isCloudEdition) {
+    try {
+      const { clerkSignOut } = await import('$lib/clerk');
+      await clerkSignOut();
+    } catch {
+      // Ignore — we're tearing the session down regardless.
+    }
+    abortAllRequests('User logged out');
+    await clearUserState();
+    authStore.reset();
+    return;
+  }
+
   // Notify backend to revoke tokens and clear cookies.
   // This request uses its own session-abort-immune path so the logout call
   // itself is never cancelled by abortAllRequests() below.

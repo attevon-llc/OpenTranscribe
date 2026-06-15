@@ -1,14 +1,22 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { login, authStore, isAuthenticated, getAuthMethods, loginWithKeycloak, handleKeycloakCallback, loginWithPKI, verifyMFA, type AuthMethods } from "$stores/auth";
+  import { login, loginWithClerk, authStore, isAuthenticated, getAuthMethods, loginWithKeycloak, handleKeycloakCallback, loginWithPKI, verifyMFA, type AuthMethods } from "$stores/auth";
   import { onMount, onDestroy } from 'svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { browser } from '$app/environment';
+  import { isCloudEdition } from '$lib/edition';
   import ClassificationBanner from '$lib/components/ClassificationBanner.svelte';
   import LoginBanner from '$components/LoginBanner.svelte';
   import Spinner from '../../components/ui/Spinner.svelte';
+
+  // Cloud edition: Clerk prebuilt <SignIn/> mounts into this node; an auth-state
+  // listener hydrates our local user store once Clerk reports a session.
+  let clerkSignInNode: HTMLElement | null = null;
+  let clerkUnmount: (() => void) | null = null;
+  let clerkUnlisten: (() => void) | null = null;
+  let clerkLoading = isCloudEdition;
 
   // Import logo asset for proper Vite processing
   import logoBanner from '../../assets/logo-banner.png';
@@ -66,6 +74,14 @@
       keycloakLoading = false;
       pkiLoading = false;
       loading = false;
+
+      // Cloud edition: Clerk owns login, registration, and MFA. Mount the
+      // prebuilt <SignIn/> and hydrate our store when Clerk reports a session.
+      // The community local-login / Keycloak-callback flow below is skipped.
+      if (isCloudEdition) {
+        await setupClerkSignIn();
+        return;
+      }
 
       // Check for Keycloak callback parameters
       const urlParams = new URLSearchParams(window.location.search);
@@ -162,6 +178,68 @@
         }
       }
     };
+  });
+
+  // Cloud edition: load Clerk, mount <SignIn/>, and hydrate the local store on
+  // session change. No-op in the community build (isCloudEdition gate above).
+  async function setupClerkSignIn() {
+    try {
+      const { loadClerk, mountSignIn, hasClerkSession, onClerkChange } = await import('$lib/clerk');
+      const clerk = await loadClerk();
+      if (!clerk) {
+        clerkLoading = false;
+        toastStore.error($t('auth.loginFailed'));
+        return;
+      }
+
+      // Already signed in (e.g. returning user) — hydrate and go.
+      if (await hasClerkSession()) {
+        await completeClerkLogin();
+        return;
+      }
+
+      // React to sign-in completion (Clerk handles the credential + MFA flow).
+      clerkUnlisten = await onClerkChange(() => {
+        void (async () => {
+          if (!loginSuccess && (await hasClerkSession())) {
+            await completeClerkLogin();
+          }
+        })();
+      });
+
+      if (clerkSignInNode) {
+        // afterSignInUrl/afterSignUpUrl keep the user in-app; the listener does
+        // the store hydration + navigation.
+        clerkUnmount = await mountSignIn(clerkSignInNode, {
+          afterSignInUrl: '/',
+          afterSignUpUrl: '/',
+          signUpUrl: '/register',
+        });
+      }
+      clerkLoading = false;
+    } catch (err) {
+      console.error('Clerk sign-in setup failed:', err);
+      clerkLoading = false;
+      toastStore.error($t('auth.loginFailed'));
+    }
+  }
+
+  // Hydrate local user store from /auth/me after Clerk reports a session.
+  async function completeClerkLogin() {
+    const result = await loginWithClerk();
+    if (result.success) {
+      loginSuccess = true;
+      import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
+      setTimeout(() => goto('/', { replaceState: true }), 600);
+    } else {
+      toastStore.error(result.message || $t('auth.loginFailed'));
+    }
+  }
+
+  // Tear down Clerk component + listener on unmount (cloud only).
+  onDestroy(() => {
+    if (clerkUnmount) clerkUnmount();
+    if (clerkUnlisten) clerkUnlisten();
   });
 
   // Validate login identifier (email or username for LDAP)
@@ -399,6 +477,18 @@
       <h1>{$t('auth.login')}</h1>
       <p>{$t('auth.signInToAccount')}</p>
     </div>
+    {#if isCloudEdition}
+      <!-- Cloud edition: Clerk owns login + registration + MFA. The prebuilt
+           <SignIn/> mounts here; org context is resolved server-side from the
+           Clerk org claim, and Clerk handles MFA factors itself. -->
+      {#if clerkLoading}
+        <div class="clerk-loading">
+          <Spinner size="small" />
+          <p>{$t('auth.signingIn') || 'Loading...'}</p>
+        </div>
+      {/if}
+      <div class="clerk-mount" bind:this={clerkSignInNode}></div>
+    {:else}
     <!-- MFA Verification Form -->
     {#if mfaRequired}
       <div class="mfa-form">
@@ -626,11 +716,28 @@
       >{$t('auth.register')}</a></span>
     </div>
     {/if}
+    {/if}
   </div>
 </div>
 {/if}
 
 <style>
+  /* Cloud edition: Clerk prebuilt <SignIn/> mount target. */
+  .clerk-mount {
+    display: flex;
+    justify-content: center;
+  }
+
+  .clerk-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.5rem 0;
+    color: var(--text-light);
+    font-size: 0.9rem;
+  }
+
   .auth-container {
     display: flex;
     justify-content: center;

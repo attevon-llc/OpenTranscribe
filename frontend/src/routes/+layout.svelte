@@ -13,6 +13,7 @@
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods } from "$stores/auth";
   import { loadCapabilities } from "$stores/capabilities";
+  import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
   import { locale } from "../stores/locale";
   import { llmStatusStore } from "../stores/llmStatus";
@@ -97,14 +98,30 @@
         await initAuth();
 
         const isAuth = get(isAuthenticated);
-        const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
         const currentPath = $page.url.pathname;
-        const isPublicPath = publicPaths.includes(currentPath);
 
-        if (!isAuth && !isPublicPath) {
-          goto("/login", { replaceState: true });
-        } else if (isAuth && isPublicPath) {
-          goto("/", { replaceState: true });
+        // Cloud edition: Clerk owns login/registration/forgot-password (the
+        // prebuilt <SignIn/> on /login handles sign-up + recovery inline), so the
+        // local /register, /forgot-password, /reset-password routes are dead —
+        // redirect any hit to /login. Only /login is a public path here.
+        if (isCloudEdition) {
+          const cloudAuthRedirects = ["/register", "/forgot-password", "/reset-password"];
+          if (cloudAuthRedirects.includes(currentPath)) {
+            goto("/login", { replaceState: true });
+          } else if (!isAuth && currentPath !== "/login") {
+            goto("/login", { replaceState: true });
+          } else if (isAuth && currentPath === "/login") {
+            goto("/", { replaceState: true });
+          }
+        } else {
+          const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
+          const isPublicPath = publicPaths.includes(currentPath);
+
+          if (!isAuth && !isPublicPath) {
+            goto("/login", { replaceState: true });
+          } else if (isAuth && isPublicPath) {
+            goto("/", { replaceState: true });
+          }
         }
 
         // Initialize LLM status store after authentication is ready
@@ -137,7 +154,12 @@
 </script>
 
 {#if $authReady}
-  {@const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password']}
+  <!-- Cloud edition: only /login is public (Clerk handles sign-up/recovery inline);
+       the local /register, /forgot-password, /reset-password routes are redirected
+       to /login by the auth guard, so they are not treated as public here. -->
+  {@const publicPaths = isCloudEdition
+    ? ['/login']
+    : ['/login', '/register', '/forgot-password', '/reset-password']}
   {@const isPublicPath = publicPaths.includes($page.url.pathname)}
 
   <!-- Classification Banner (FedRAMP AC-8) - shows on all pages when enabled -->

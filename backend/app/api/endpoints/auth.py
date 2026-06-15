@@ -26,6 +26,7 @@ from app.auth.audit import audit_logger
 from app.auth.constants import AUTH_TYPE_KEYCLOAK
 from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import AUTH_TYPE_PKI
+from app.auth.constants import VALID_AUTH_TYPES
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.direct_auth import direct_authenticate_user
 from app.auth.keycloak_auth import KeycloakConfig
@@ -1680,19 +1681,32 @@ async def acknowledge_banner(
 
 
 def _user_can_setup_mfa(user: User) -> bool:
-    """Check if user is eligible for MFA setup.
+    """Check if user is eligible for local TOTP MFA setup.
 
-    PKI and Keycloak users don't need MFA because:
-    - PKI: Smart card is already two-factor (something you have + PIN)
-    - Keycloak: MFA is handled by the identity provider
+    Local TOTP MFA only applies to users whose identity this app owns. Users
+    authenticated by an external identity provider get their MFA from that IdP:
+
+    - PKI: smart card is already two-factor (something you have + PIN).
+    - Keycloak: MFA is handled by the identity provider.
+    - Any registry-based external/SSO provider (e.g. cloud-edition Clerk): MFA
+      and auth are owned by the provider, so a redundant local TOTP is excluded.
+
+    The check is generic (no provider names beyond the core IdPs): an auth_type
+    that is not one of the core types this app enumerates is treated as an
+    external/SSO provider and excluded from local MFA setup.
 
     Args:
         user: User model object
 
     Returns:
-        bool: True if user can set up MFA
+        bool: True if user can set up local MFA
     """
-    return user.auth_type not in [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK]
+    # Explicit core IdPs whose MFA is handled externally.
+    if user.auth_type in (AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK):
+        return False
+    # Any auth_type not in the core set is an external/registry-based SSO
+    # provider (cloud edition) — local TOTP would be redundant.
+    return user.auth_type in VALID_AUTH_TYPES
 
 
 def _is_mfa_enabled(db: Session) -> bool:

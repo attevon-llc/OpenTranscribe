@@ -60,6 +60,7 @@
     "vitest": "^4.1.8"
   },
   "dependencies": {
+    "@clerk/clerk-js": "^6.16.1",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@types/dompurify": "^3.0.5",

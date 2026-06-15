@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { isCloudEdition } from '$lib/edition';
 
 // Create axios instance with consistent base URL for all environments
 // This ensures the same behavior in development and production with nginx
@@ -13,7 +14,9 @@ export const axiosInstance = axios.create({
   validateStatus: (status) => status >= 200 && status < 300,
   // Enable automatic redirect following
   maxRedirects: 5,
-  // Send cookies with every request (httpOnly auth cookies)
+  // Send cookies with every request (httpOnly auth cookies).
+  // Community: httpOnly auth cookies. Cloud: not used for auth (bearer instead),
+  // but harmless to keep enabled.
   withCredentials: true,
 });
 
@@ -67,15 +70,34 @@ export function getCsrfToken(): string | undefined {
     ?.split('=')[1];
 }
 
-// Request interceptor: CSRF token + session abort signal
+// Request interceptor: CSRF token + (cloud) Clerk bearer + session abort signal
 axiosInstance.interceptors.request.use(
-  (config) => {
-    // Add CSRF token for mutating requests (double-submit pattern)
-    const method = (config.method || '').toLowerCase();
-    if (['post', 'put', 'patch', 'delete'].includes(method)) {
-      const csrfToken = getCsrfToken();
-      if (csrfToken) {
-        config.headers['X-CSRF-Token'] = csrfToken;
+  async (config) => {
+    if (isCloudEdition) {
+      // Cloud edition: mint a FRESH Clerk session JWT per request. Clerk tokens
+      // are short-lived (~60s), so we never cache them and never use the cookie
+      // /auth/token/refresh path (which would log users out mid-session). The
+      // backend's external verifier validates this bearer.
+      try {
+        const { getClerkToken } = await import('$lib/clerk');
+        const clerkToken = await getClerkToken();
+        if (clerkToken) {
+          config.headers['Authorization'] = `Bearer ${clerkToken}`;
+        }
+      } catch {
+        // No active Clerk session — request proceeds unauthenticated; the
+        // backend will 401 as appropriate.
+      }
+    } else {
+      // Community edition: CSRF token for mutating requests (double-submit
+      // pattern), paired with httpOnly auth cookies. Cloud uses bearer auth and
+      // does not rely on the CSRF cookie.
+      const method = (config.method || '').toLowerCase();
+      if (['post', 'put', 'patch', 'delete'].includes(method)) {
+        const csrfToken = getCsrfToken();
+        if (csrfToken) {
+          config.headers['X-CSRF-Token'] = csrfToken;
+        }
       }
     }
 
@@ -124,6 +146,30 @@ axiosInstance.interceptors.response.use(
     }
 
     const originalRequest = error.config;
+
+    // Cloud edition: there is NO cookie refresh token. Clerk mints a fresh
+    // short-lived bearer on the next request, so a 401 here means the Clerk
+    // session is gone (or the token was rejected) — bounce to login rather than
+    // attempting the cookie /auth/token/refresh flow.
+    if (isCloudEdition) {
+      if (
+        error.response?.status === 401 &&
+        typeof window !== 'undefined' &&
+        !window.location.pathname.startsWith('/login')
+      ) {
+        const { authStore } = await import('../stores/auth');
+        authStore.reset();
+        window.location.href = '/login';
+      }
+      if (error.response?.status >= 500) {
+        console.error(
+          `Server error for ${error.config?.url}: ${error.response.status} - ${JSON.stringify(
+            error.response.data
+          )}`
+        );
+      }
+      return Promise.reject(error);
+    }
 
     // Auto-refresh: if we get a 401 and haven't already retried this request
     if (

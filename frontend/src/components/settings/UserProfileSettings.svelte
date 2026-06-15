@@ -6,10 +6,24 @@
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { isCloudEdition } from '$lib/edition';
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
 
-  $: isLocalUser = $userStore?.auth_type === 'local';
+  // Cloud (Clerk) users never have a local password; the password-change card
+  // and the local MFA panel are both Clerk-managed and replaced by a link to
+  // Clerk's account page. Community local users keep the inline flows.
+  $: isLocalUser = !isCloudEdition && $userStore?.auth_type === 'local';
+
+  // Open Clerk's prebuilt account/security page (cloud edition).
+  async function openClerkAccount() {
+    try {
+      const { openUserProfile } = await import('$lib/clerk');
+      await openUserProfile();
+    } catch (err) {
+      console.error('Failed to open Clerk account page:', err);
+    }
+  }
 
   // User Profile section
   let fullName = '';
@@ -178,8 +192,20 @@
       <LanguageSettings />
     </div>
 
-    <!-- Right Column: Password Change -->
-    {#if isLocalUser}
+    <!-- Right Column: Cloud account link (Clerk) OR local password change -->
+    {#if isCloudEdition}
+    <div class="profile-card">
+      <h4 class="card-title">{$t('settings.profile.accountSecurity') || 'Account & Security'}</h4>
+      <p class="form-text">
+        {$t('settings.profile.clerkManaged') || 'Your password, multi-factor authentication, and security settings are managed in your account portal.'}
+      </p>
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary" on:click={openClerkAccount}>
+          {$t('settings.profile.manageAccount') || 'Manage Account'}
+        </button>
+      </div>
+    </div>
+    {:else if isLocalUser}
     <div class="profile-card">
       <h4 class="card-title">{$t('settings.profile.changePassword')}</h4>
       <form on:submit|preventDefault={updatePassword} class="settings-form">
@@ -303,10 +329,14 @@
     {/if}
   </div>
 
-  <!-- Security / MFA Section — full width below -->
+  <!-- Security / MFA Section — full width below. Cloud (Clerk) users manage MFA
+       in the Clerk account portal (linked above), so the local MFA panel is
+       hidden. Community users keep the local UserMFA flow. -->
+  {#if !isCloudEdition}
   <div class="mfa-card">
     <SecuritySettings />
   </div>
+  {/if}
 </div>
 
 <style>

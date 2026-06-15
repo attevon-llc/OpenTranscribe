@@ -3,6 +3,7 @@ import * as authStore from './auth';
 import { downloadStore, type DownloadState } from './downloads';
 import { t } from '$stores/locale';
 import { generateId } from '$lib/utils/ids';
+import { isCloudEdition } from '$lib/edition';
 
 // Define notification types
 export type NotificationType =
@@ -245,8 +246,35 @@ function createWebSocketStore() {
 
         // WebSocket event handlers
         socket.onopen = () => {
-          // Authentication is handled via httpOnly cookies sent during the WebSocket handshake.
-          // The backend WS handler reads the access_token cookie automatically.
+          // Community edition: authentication is handled via httpOnly cookies sent
+          // during the WebSocket handshake. The backend WS handler reads the
+          // access_token cookie automatically.
+          //
+          // Cloud edition: browsers can't set Authorization headers on a WS
+          // handshake, so we authenticate with a first-message frame carrying a
+          // fresh Clerk token. The backend's WS external-verifier reads it. We
+          // only mark connected / recover progress after auth is sent.
+          if (isCloudEdition) {
+            (async () => {
+              try {
+                const { getClerkToken } = await import('$lib/clerk');
+                const clerkToken = await getClerkToken();
+                if (clerkToken) {
+                  socket.send(JSON.stringify({ type: 'authenticate', token: clerkToken }));
+                }
+              } catch (err) {
+                console.error('[ws] Failed to send Clerk authenticate frame:', err);
+              }
+              update((s: WebSocketState) => {
+                s.status = 'connected';
+                s.reconnectAttempts = 0;
+                return s;
+              });
+              recoverActiveProgress();
+            })();
+            return;
+          }
+
           update((s: WebSocketState) => {
             s.status = 'connected';
             s.reconnectAttempts = 0;

@@ -118,14 +118,23 @@ def dispatch_transcription_pipeline(
         from .hooks import DispatchContext
         from .hooks import fire_before_dispatch
 
+        # Pass est_audio_hours=None through when the duration is genuinely
+        # unknown (metadata extraction hasn't populated it yet). We must NOT
+        # coerce unknown->0 here: a 0 silently "always passes" the quota gate,
+        # which is the unknown-duration bypass the cloud enforcer needs to
+        # decide on (it blocks pessimistically when the org is at/over limit).
+        # Only a positive, known duration becomes a concrete estimate.
         duration_s = media_file.duration
+        est_audio_hours = (
+            Decimal(str(duration_s)) / Decimal(3600) if duration_s and duration_s > 0 else None
+        )
         fire_before_dispatch(
             DispatchContext(
                 file_id=file_id,
                 file_uuid=file_uuid,
                 user_id=user_id,
                 organization_id=media_file.organization_id,
-                est_audio_hours=(Decimal(str(duration_s)) / Decimal(3600) if duration_s else None),
+                est_audio_hours=est_audio_hours,
                 task_id=task_id,
             )
         )

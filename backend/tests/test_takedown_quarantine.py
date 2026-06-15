@@ -1,0 +1,172 @@
+"""Abuse / DMCA / safe-harbor takedown (quarantine) regression tests — 6.4.
+
+Covers the takedown invariants on the real DB via the savepoint ``db_session``
+fixture (no MinIO/OpenSearch needed — the storage legal-hold is best-effort and
+patched/ignored here, and the search exclusion is asserted at the predicate
+level):
+
+  * A quarantined file 404s for its OWNER on the per-resource access gate
+    (``get_file_by_uuid_with_permission``) — and on every surface that goes
+    through it (detail/stream/download/thumbnail).
+  * An ADMIN still resolves the quarantined file (for review).
+  * Releasing restores access for the owner and clears the legal-hold.
+  * ``exclude_quarantined`` drops the file from a list/gallery query for normal
+    users but leaves it for the admin "see all" branch.
+  * Community invariance: a never-quarantined file is unaffected.
+"""
+
+import uuid as uuid_pkg
+
+import pytest
+
+from app.core.enums import FileStatus
+from app.models.media import MediaFile
+from app.models.user import User
+from app.services.takedown_service import exclude_quarantined
+from app.services.takedown_service import is_hidden_for
+from app.services.takedown_service import quarantine_file
+from app.services.takedown_service import release_file
+from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+
+
+def _mk_user(db, *, admin: bool = False) -> User:
+    from app.core.security import get_password_hash
+
+    uid = str(uuid_pkg.uuid4())[:8]
+    user = User(
+        email=f"{'admin' if admin else 'user'}_{uid}@example.com",
+        full_name="Takedown test user",
+        hashed_password=get_password_hash("password123"),
+        is_active=True,
+        is_superuser=admin,
+        role="super_admin" if admin else "user",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def _mk_file(db, *, owner: User) -> MediaFile:
+    fuuid = uuid_pkg.uuid4()
+    f = MediaFile(
+        uuid=fuuid,
+        filename=f"f_{str(fuuid)[:8]}.mp4",
+        # No real object — keeps the best-effort S3 legal-hold a harmless no-op.
+        storage_path="",
+        content_type="video/mp4",
+        file_size=1000,
+        user_id=owner.id,
+        status=FileStatus.COMPLETED,
+    )
+    db.add(f)
+    db.commit()
+    db.refresh(f)
+    return f
+
+
+@pytest.fixture()
+def world(db_session):
+    db = db_session
+    owner = _mk_user(db, admin=False)
+    admin = _mk_user(db, admin=True)
+    file = _mk_file(db, owner=owner)
+    return db, owner, admin, file
+
+
+class TestQuarantineAccessGate:
+    def test_owner_can_reach_file_before_takedown(self, world):
+        db, owner, _admin, file = world
+        got = get_file_by_uuid_with_permission(db, str(file.uuid), owner.id, allow_public=True)
+        assert got.id == file.id
+
+    def test_quarantine_hides_file_from_owner(self, world):
+        """A taken-down file 404s for its owner (every read surface uses this)."""
+        db, owner, admin, file = world
+        quarantine_file(db, file, admin=admin, reason="DMCA-12345", legal_hold=True)
+
+        with pytest.raises(Exception) as exc:
+            get_file_by_uuid_with_permission(db, str(file.uuid), owner.id, allow_public=True)
+        assert getattr(exc.value, "status_code", None) == 404
+
+    def test_quarantined_file_still_visible_to_admin(self, world):
+        """Admins keep visibility (is_admin=True bypasses the gate) for review."""
+        db, owner, admin, file = world
+        quarantine_file(db, file, admin=admin, reason="abuse report 7", legal_hold=True)
+
+        got = get_file_by_uuid_with_permission(
+            db, str(file.uuid), admin.id, is_admin=True, allow_public=True
+        )
+        assert got.id == file.id
+        assert got.is_quarantined is True
+
+    def test_release_restores_owner_access(self, world):
+        """Releasing the file restores the owner's access and clears the hold."""
+        db, owner, admin, file = world
+        quarantine_file(db, file, admin=admin, reason="mistaken", legal_hold=True)
+        assert file.legal_hold is True
+
+        release_file(db, file, admin=admin)
+        assert file.is_quarantined is False
+        assert file.legal_hold is False
+        assert file.quarantined_by is None
+        assert file.status == FileStatus.COMPLETED
+
+        got = get_file_by_uuid_with_permission(db, str(file.uuid), owner.id, allow_public=True)
+        assert got.id == file.id
+
+
+class TestQuarantineState:
+    def test_quarantine_sets_metadata(self, world):
+        db, _owner, admin, file = world
+        quarantine_file(db, file, admin=admin, reason="copyright claim", legal_hold=True)
+        assert file.is_quarantined is True
+        assert file.quarantine_reason == "copyright claim"
+        assert file.quarantined_at is not None
+        assert file.quarantined_by == admin.id
+        assert file.legal_hold is True
+        assert file.status == FileStatus.QUARANTINED
+
+    def test_quarantine_without_legal_hold(self, world):
+        db, _owner, admin, file = world
+        quarantine_file(db, file, admin=admin, reason="no hold", legal_hold=False)
+        assert file.is_quarantined is True
+        assert file.legal_hold is False
+
+    def test_is_hidden_for_helper(self, world):
+        db, _owner, admin, file = world
+        # Not quarantined: visible to everyone.
+        assert is_hidden_for(file, is_admin=False) is False
+        quarantine_file(db, file, admin=admin, reason="x", legal_hold=False)
+        # Quarantined: hidden from non-admin, visible to admin.
+        assert is_hidden_for(file, is_admin=False) is True
+        assert is_hidden_for(file, is_admin=True) is False
+
+
+class TestExcludeQuarantinedPredicate:
+    def test_exclude_drops_quarantined_for_user(self, world):
+        """The gallery/list predicate removes a taken-down file for normal users."""
+        db, owner, admin, file = world
+        quarantine_file(db, file, admin=admin, reason="hidden", legal_hold=False)
+
+        base = db.query(MediaFile).filter(MediaFile.user_id == owner.id)
+        visible = exclude_quarantined(base).all()
+        ids = {f.id for f in visible}
+        assert file.id not in ids
+
+    def test_admin_branch_keeps_quarantined(self, world):
+        """include_quarantined=True (admin 'see all') leaves the file in."""
+        db, owner, admin, file = world
+        quarantine_file(db, file, admin=admin, reason="hidden", legal_hold=False)
+
+        base = db.query(MediaFile).filter(MediaFile.user_id == owner.id)
+        visible = exclude_quarantined(base, include_quarantined=True).all()
+        ids = {f.id for f in visible}
+        assert file.id in ids
+
+    def test_non_quarantined_file_unaffected(self, world):
+        """Community invariance: a normal file passes the exclusion unchanged."""
+        db, owner, _admin, file = world
+        base = db.query(MediaFile).filter(MediaFile.user_id == owner.id)
+        ids = {f.id for f in exclude_quarantined(base).all()}
+        assert file.id in ids

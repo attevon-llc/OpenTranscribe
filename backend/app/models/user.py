@@ -146,7 +146,11 @@ class User(Base):
         return self.role == "super_admin"
 
     # Relationships
-    media_files: Mapped[list["MediaFile"]] = relationship("MediaFile", back_populates="user")
+    # MediaFile has two FKs to user.id (owner user_id + takedown admin
+    # quarantined_by), so the owner relationship must name its join column.
+    media_files: Mapped[list["MediaFile"]] = relationship(
+        "MediaFile", back_populates="user", foreign_keys="MediaFile.user_id"
+    )
     comments: Mapped[list["Comment"]] = relationship("Comment", back_populates="user")
     speakers: Mapped[list["Speaker"]] = relationship("Speaker", back_populates="user")
     speaker_profiles: Mapped[list["SpeakerProfile"]] = relationship(

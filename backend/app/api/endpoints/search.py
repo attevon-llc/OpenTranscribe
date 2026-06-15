@@ -116,6 +116,7 @@ def search_transcripts(
     title_filter: str | None = Query(
         None, description="Filter by filename/title (substring match)"
     ),
+    db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ) -> dict[str, Any]:
@@ -191,7 +192,46 @@ def search_transcripts(
         organization_id=ctx.org_id,
     )
 
+    # Abuse/DMCA: the OpenSearch transcript index has no quarantine field, so
+    # drop any taken-down files from the result page against the DB (page-sized,
+    # one IN query). Admins keep visibility for review.
+    if not ctx.user.is_admin:
+        _drop_quarantined_search_hits(db, response)
+
     return _search_response_to_schema(response)
+
+
+def _drop_quarantined_search_hits(db: Session, response: Any) -> None:
+    """Remove quarantined files from a search response in place (non-admin).
+
+    The hidden files 404 on detail/stream anyway (the per-resource gate), so this
+    just keeps them out of the result list/snippets too — the search-snippet
+    redaction surface for takedowns.
+    """
+    hits = getattr(response, "results", None) or []
+    if not hits:
+        return
+    from app.models.media import MediaFile
+
+    uuids = [h.file_uuid for h in hits if getattr(h, "file_uuid", None)]
+    if not uuids:
+        return
+    quarantined = {
+        str(row[0])
+        for row in db.query(MediaFile.uuid)
+        .filter(MediaFile.uuid.in_(uuids), MediaFile.is_quarantined.is_(True))
+        .all()
+    }
+    if not quarantined:
+        return
+    kept = [h for h in hits if str(h.file_uuid) not in quarantined]
+    removed = len(hits) - len(kept)
+    response.results = kept
+    # Keep the reported totals consistent with the trimmed page.
+    if hasattr(response, "total_results"):
+        response.total_results = max(0, int(getattr(response, "total_results", 0)) - removed)
+    if hasattr(response, "total_files"):
+        response.total_files = max(0, int(getattr(response, "total_files", 0)) - removed)
 
 
 @router.get("/suggestions")

@@ -231,7 +231,16 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE conname = 'ck_user_superuser_matches_role')"
     )
 
+    # v370 guard: the abuse/DMCA takedown column on media_file.
+    has_media_file_quarantine = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'is_quarantined')"
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v370: abuse/DMCA quarantine + legal-hold columns on media_file.
+    if has_cloud_seams and not has_legacy_varchar_uuid and has_media_file_quarantine:
+        return "v370_add_media_file_quarantine"
     # v369: is_superuser mirrors (role == super_admin), enforced by CHECK.
     if has_cloud_seams and not has_legacy_varchar_uuid and has_superuser_role_invariant:
         return "v369_superuser_role_invariant"

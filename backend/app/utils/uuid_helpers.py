@@ -292,12 +292,23 @@ def get_file_by_uuid_with_permission(
         HTTPException: 404 if not found, 403 if no permission
     """
     from app.services.permission_service import PermissionService
+    from app.services.takedown_service import is_hidden_for
 
     file = get_file_by_uuid(db, uuid)
 
-    # Admin bypass — admins can access any file
+    # Admin bypass — admins can access any file (incl. quarantined, for review).
     if is_admin:
         return file
+
+    # Abuse/DMCA takedown: a quarantined file is invisible to non-admins on EVERY
+    # read surface (detail, stream, download, thumbnail). 404 (not 403) so a
+    # taken-down file is indistinguishable from a missing one — even the owner
+    # and public-share viewers are blocked.
+    if is_hidden_for(file, is_admin=is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found",
+        )
 
     # Public files are accessible regardless of tenant scope (intentional).
     if allow_public and file.is_public:

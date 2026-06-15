@@ -67,6 +67,10 @@ class AuditEventType(str, Enum):
     ADMIN_ROLE_CHANGE = "admin.role.change"
     ADMIN_SETTINGS_CHANGE = "admin.settings.change"
 
+    # Abuse / DMCA / safe-harbor takedown events
+    ADMIN_FILE_QUARANTINE = "admin.file.quarantine"
+    ADMIN_FILE_RELEASE = "admin.file.release"
+
     # Prompt sharing events
     PROMPT_SHARE = "prompt.share"
     PROMPT_UNSHARE = "prompt.unshare"

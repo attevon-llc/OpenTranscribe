@@ -41,6 +41,7 @@ async def get_system_capabilities(request: Request) -> dict[str, Any]:
     from app.core.capabilities import CAPABILITY_AUDIENCE
     from app.core.capabilities import edition
     from app.core.capabilities import get_capabilities
+    from app.core.config import settings
 
     return {
         "edition": edition(),
@@ -48,6 +49,10 @@ async def get_system_capabilities(request: Request) -> dict[str, Any]:
         # WHO each surface is for (user|team|org_admin|platform) — drives
         # which UI area renders it; roles below the audience see nothing.
         "audience": CAPABILITY_AUDIENCE,
+        # Published abuse/DMCA intake address (empty = not configured) so the UI
+        # can surface a "report content" / takedown contact link. See
+        # docs/abuse-and-takedown.md.
+        "abuse_contact_email": settings.ABUSE_CONTACT_EMAIL,
     }
 
 

@@ -245,6 +245,13 @@ class Settings(BaseSettings):
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
+    # ===== Abuse / DMCA / safe-harbor intake =====
+    # Contact address surfaced in the UI/API for abuse reports and DMCA takedown
+    # notices. Empty = not configured (self-host operators set their own). The
+    # enforcement mechanism is the admin quarantine/takedown on MediaFile; this
+    # is purely the published intake address. See docs/abuse-and-takedown.md.
+    ABUSE_CONTACT_EMAIL: str = os.getenv("ABUSE_CONTACT_EMAIL", "")
+
     # Encryption settings for sensitive data (API keys, etc.)
     ENCRYPTION_KEY: str = os.getenv(
         "ENCRYPTION_KEY", "this_should_be_changed_in_production_for_api_key_encryption"

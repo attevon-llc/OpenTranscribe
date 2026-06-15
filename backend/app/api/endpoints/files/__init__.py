@@ -265,8 +265,13 @@ def list_media_files(
     else:
         org_pred = MediaFile.organization_id.is_(None)
 
-    # Admin users can see all files regardless of ownership param (still org-gated)
-    if current_user.is_admin:
+    from app.services.takedown_service import exclude_quarantined
+
+    # Admin users can see all files regardless of ownership param (still org-gated).
+    # Admins also see quarantined (taken-down) files so they can review them; for
+    # every other caller the abuse/DMCA exclusion hides taken-down files.
+    is_admin = current_user.is_admin
+    if is_admin:
         base_query = db.query(MediaFile).options(*list_options).filter(org_pred)
         effective_user_id = None
     elif ownership == "mine":
@@ -302,6 +307,9 @@ def list_media_files(
             .filter(MediaFile.id.in_(db.query(accessible_subquery.c.id)))
         )
         effective_user_id = None
+
+    # Abuse/DMCA: hide taken-down files from the gallery for non-admins.
+    base_query = exclude_quarantined(base_query, include_quarantined=is_admin)
 
     # Prepare filters dictionary
     filters = {

@@ -12,6 +12,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi import status
 from sqlalchemy import and_
 from sqlalchemy import func
@@ -59,6 +60,11 @@ from app.schemas.admin import MediaSource
 from app.schemas.admin import MediaSourceCreate
 from app.schemas.admin import MediaSourcesList
 from app.schemas.admin import MediaSourceUpdate
+from app.schemas.admin import QuarantineActionResponse
+from app.schemas.admin import QuarantinedFile
+from app.schemas.admin import QuarantinedFilesList
+from app.schemas.admin import QuarantineRequest
+from app.schemas.admin import ReleaseRequest
 from app.schemas.admin import RetentionConfig
 from app.schemas.admin import RetentionConfigUpdate
 from app.schemas.admin import RetentionPreviewFile
@@ -1944,3 +1950,119 @@ def start_imohash_recompute(
         "task_id": task.id,
         "message": "imohash recompute dispatched.",
     }
+
+
+# ===========================================================================
+# Abuse / DMCA / safe-harbor takedown (admin quarantine)
+# ===========================================================================
+
+
+def _request_meta(request: Request) -> tuple[str, str]:
+    """Extract (source_ip, user_agent) for the takedown audit trail."""
+    ip = request.client.host if request.client else ""
+    return ip, request.headers.get("user-agent", "")
+
+
+@router.get("/files/quarantined", response_model=QuarantinedFilesList)
+def list_quarantined_files(
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """List taken-down files for admin review (abuse/DMCA queue).
+
+    Quarantined files are hidden from every normal read surface, so this is the
+    only place an admin can see and act on them. Newest takedown first.
+    """
+    base = db.query(MediaFile).filter(MediaFile.is_quarantined.is_(True))
+    total = base.with_entities(func.count(MediaFile.id)).scalar() or 0
+    rows = (
+        base.order_by(MediaFile.quarantined_at.desc().nullslast()).offset(offset).limit(limit).all()
+    )
+    files = [
+        QuarantinedFile(
+            uuid=str(f.uuid),
+            filename=f.filename,
+            user_id=int(f.user_id),
+            organization_id=f.organization_id,
+            quarantine_reason=f.quarantine_reason,
+            quarantined_at=f.quarantined_at.isoformat() if f.quarantined_at else None,
+            quarantined_by=f.quarantined_by,
+            legal_hold=bool(f.legal_hold),
+        )
+        for f in rows
+    ]
+    return QuarantinedFilesList(files=files, total=int(total))
+
+
+@router.post("/files/{file_uuid}/quarantine", response_model=QuarantineActionResponse)
+def quarantine_media_file(
+    file_uuid: str,
+    request_body: QuarantineRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Take a file down (abuse/DMCA). Hides it from all read surfaces + audits.
+
+    The original media/transcript are NOT deleted — the takedown is reversible
+    via ``/release`` and a legal-hold (default on) protects the object from
+    deletion while a dispute/notice is open.
+    """
+    from app.services.takedown_service import quarantine_file
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    file = get_file_by_uuid(db, file_uuid)
+    source_ip, user_agent = _request_meta(request)
+    file = quarantine_file(
+        db,
+        file,
+        admin=current_user,
+        reason=request_body.reason,
+        legal_hold=request_body.legal_hold,
+        source_ip=source_ip,
+        user_agent=user_agent,
+    )
+    return QuarantineActionResponse(
+        uuid=str(file.uuid),
+        is_quarantined=bool(file.is_quarantined),
+        legal_hold=bool(file.legal_hold),
+        status=str(file.status.value if hasattr(file.status, "value") else file.status),
+    )
+
+
+@router.post("/files/{file_uuid}/release", response_model=QuarantineActionResponse)
+def release_media_file(
+    file_uuid: str,
+    request: Request,
+    request_body: ReleaseRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Release a quarantined file: restore access, lift the legal-hold, audit."""
+    from app.services.takedown_service import release_file
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    file = get_file_by_uuid(db, file_uuid)
+    if not file.is_quarantined:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="File is not quarantined",
+        )
+    clear_hold = request_body.clear_legal_hold if request_body is not None else True
+    source_ip, user_agent = _request_meta(request)
+    file = release_file(
+        db,
+        file,
+        admin=current_user,
+        clear_legal_hold=clear_hold,
+        source_ip=source_ip,
+        user_agent=user_agent,
+    )
+    return QuarantineActionResponse(
+        uuid=str(file.uuid),
+        is_quarantined=bool(file.is_quarantined),
+        legal_hold=bool(file.legal_hold),
+        status=str(file.status.value if hasattr(file.status, "value") else file.status),
+    )

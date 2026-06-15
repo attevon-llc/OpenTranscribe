@@ -238,3 +238,56 @@ class CacheClearResponse(BaseModel):
     """Result of a manual derived-cache purge."""
 
     deleted: int = Field(..., description="Number of derived objects removed")
+
+
+# ===== Abuse / DMCA / safe-harbor takedown =====
+
+
+class QuarantineRequest(BaseModel):
+    """Request to quarantine (take down) a media file for abuse/DMCA."""
+
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="Takedown reason (DMCA notice reference, AUP clause, abuse report id).",
+    )
+    legal_hold: bool = Field(
+        True,
+        description="Also place a legal-hold on the row + S3 object so it can't be deleted.",
+    )
+
+
+class ReleaseRequest(BaseModel):
+    """Request to release a quarantined media file."""
+
+    clear_legal_hold: bool = Field(True, description="Also lift the legal-hold when releasing.")
+
+
+class QuarantinedFile(BaseModel):
+    """A taken-down file in the admin review list."""
+
+    uuid: str
+    filename: Optional[str] = None
+    user_id: int
+    organization_id: Optional[int] = None
+    quarantine_reason: Optional[str] = None
+    quarantined_at: Optional[str] = None
+    quarantined_by: Optional[int] = None
+    legal_hold: bool = False
+
+
+class QuarantinedFilesList(BaseModel):
+    """Paginated list of quarantined files for admin review."""
+
+    files: list[QuarantinedFile]
+    total: int
+
+
+class QuarantineActionResponse(BaseModel):
+    """Result of a quarantine/release action."""
+
+    uuid: str
+    is_quarantined: bool
+    legal_hold: bool
+    status: str

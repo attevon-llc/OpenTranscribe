@@ -49,7 +49,11 @@ def validate_file_type(file: UploadFile) -> None:
 
 
 def create_media_file_record(
-    db: Session, file: UploadFile, current_user: User, file_size: int
+    db: Session,
+    file: UploadFile,
+    current_user: User,
+    file_size: int,
+    organization_id: int | None = None,
 ) -> MediaFile:
     """
     Create a MediaFile database record.
@@ -59,6 +63,8 @@ def create_media_file_record(
         file: Uploaded file
         current_user: Current user
         file_size: Size of the file in bytes
+        organization_id: Active organization id (cloud org-scoped upload) or
+            None for personal scope. Always None in the community edition.
 
     Returns:
         Created MediaFile object
@@ -83,6 +89,7 @@ def create_media_file_record(
             filename=sanitized_filename,
             title=original_title,
             user_id=current_user.id,
+            organization_id=organization_id,
             storage_path="",  # Will be updated after upload
             file_size=file_size,
             content_type=file.content_type,
@@ -260,6 +267,7 @@ def _get_or_create_file_record(
     current_user: User,
     file_size: int,
     existing_file_uuid: str | None,
+    organization_id: int | None = None,
 ) -> MediaFile:
     """
     Get an existing file record or create a new one.
@@ -270,12 +278,13 @@ def _get_or_create_file_record(
         current_user: Current user
         file_size: Size of the file in bytes
         existing_file_uuid: Optional UUID of existing file record
+        organization_id: Active organization id (cloud) or None for personal scope
 
     Returns:
         MediaFile database record
     """
     if not existing_file_uuid:
-        db_file = create_media_file_record(db, file, current_user, file_size)
+        db_file = create_media_file_record(db, file, current_user, file_size, organization_id)
         logger.info(f"Created new file record with ID: {db_file.id}")
         return db_file
 
@@ -293,7 +302,7 @@ def _get_or_create_file_record(
         logger.warning(
             f"Existing file UUID {existing_file_uuid} not found for user {current_user.id}"
         )
-        return create_media_file_record(db, file, current_user, file_size)
+        return create_media_file_record(db, file, current_user, file_size, organization_id)
 
     logger.info(f"Using existing file record with UUID={existing_file_uuid}")
     db_file_result.status = FileStatus.PENDING  # type: ignore[assignment]
@@ -361,6 +370,7 @@ async def process_file_upload(
     num_speakers: int | None = None,
     skip_summary: bool = False,
     whisper_model: str | None = None,
+    organization_id: int | None = None,
 ) -> MediaFile:
     """
     Complete file upload processing pipeline with chunked upload support for large files.
@@ -376,6 +386,8 @@ async def process_file_upload(
         max_speakers: Optional maximum number of speakers for diarization
         num_speakers: Optional fixed number of speakers for diarization
         whisper_model: Optional Whisper model override for this transcription
+        organization_id: Active organization id (cloud org-scoped upload) or
+            None for personal scope. Threaded onto the created MediaFile.
 
     Returns:
         Created MediaFile object with storage path updated
@@ -422,7 +434,9 @@ async def process_file_upload(
         file_size = int(file.headers.get("content-length", 0))
 
     # Get or create file record
-    db_file = _get_or_create_file_record(db, file, current_user, file_size, existing_file_uuid)
+    db_file = _get_or_create_file_record(
+        db, file, current_user, file_size, existing_file_uuid, organization_id
+    )
 
     # Generate storage path with sanitized filename
     storage_path = get_safe_storage_filename(

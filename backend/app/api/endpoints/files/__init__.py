@@ -28,6 +28,8 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
 from app.db.base import get_db
@@ -135,10 +137,12 @@ router.include_router(summary_status_router, prefix="", tags=["summary"])
 async def upload_media_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
     request: Request = None,  # type: ignore[assignment]
 ):
     """Upload a media file for transcription"""
+    current_user = ctx.user
     # Get optional headers from prepare step
     existing_file_uuid = request.headers.get("X-File-ID") if request else None
     file_hash = request.headers.get("X-File-Hash") if request else None
@@ -163,6 +167,7 @@ async def upload_media_file(
         speaker_params.max_speakers,
         speaker_params.num_speakers,
         skip_summary=skip_summary,
+        organization_id=ctx.org_id,
     )  # whisper_model auto-read from db_file.requested_whisper_model inside
 
     # Invalidate caches so gallery picks up the new file

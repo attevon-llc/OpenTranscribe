@@ -181,11 +181,17 @@ def ingest_prepared_file(
             db.commit()
             return row
 
-    # 4. Create the MediaFile row (owned by the source user).
+    # 4. Create the MediaFile row (owned by the source user). No request
+    # context here (background import) — derive the owner's org from the
+    # membership mirror; NULL (personal) in the community edition.
+    from app.services.organization_service import resolve_owner_org_id
+
+    organization_id = resolve_owner_org_id(db, owner_id)
     db_file = MediaFile(
         filename=sanitize_filename(filename),
         title=Path(filename).stem,
         user_id=owner_id,
+        organization_id=organization_id,
         storage_path="",
         file_size=file_size,
         content_type=content_type,

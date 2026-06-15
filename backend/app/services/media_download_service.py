@@ -554,8 +554,15 @@ def _create_playlist_video_placeholder(
         "playlist_index": playlist_index,
     }
 
+    # No request context in playlist task — derive the owner's org from the
+    # membership mirror (NULL/personal in the community edition).
+    from app.services.organization_service import resolve_owner_org_id
+
+    organization_id = resolve_owner_org_id(db, user_id)
+
     media_file = MediaFile(
         user_id=user_id,
+        organization_id=organization_id,
         filename=video_title[:255],
         storage_path="",
         file_size=0,

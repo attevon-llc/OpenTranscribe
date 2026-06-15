@@ -131,32 +131,9 @@
       }
     }
 
-    // Restore active preview independently of cache check
-    if ($searchStore.activePreview) {
-      const savedPreview = $searchStore.activePreview;
-      previewCurrentTime = savedPreview.startTime;
-      previewCurrentSpeaker = savedPreview.speaker || '';
-      activePreview = {
-        fileUuid: savedPreview.fileUuid,
-        startTime: savedPreview.startTime,
-      };
-
-      // Fetch presigned URL before rendering
-      clearMediaUrlCache(savedPreview.fileUuid);
-      getMediaStreamUrl(savedPreview.fileUuid, 'video').then((url) => {
-        previewMediaUrl = url;
-        previewData = savedPreview;
-        const info = getCachedUrlInfo(savedPreview.fileUuid, 'video');
-        const expiresIn = info ? Math.max(60, Math.floor((info.expiresAt - Date.now()) / 1000)) : 300;
-        previewUrlRefresher = createUrlRefresher(
-          savedPreview.fileUuid,
-          (newUrl) => { previewMediaUrl = newUrl; },
-          expiresIn
-        );
-      }).catch((err) => {
-        console.error('Failed to restore preview media URL:', err);
-      });
-    }
+    // The search results are restored from the store (above), but the preview
+    // player is intentionally NOT reopened on back-navigation — reloading and
+    // autoplaying the previous clip is unwanted noise.
 
     // Collapse filters on mobile by default
     if (window.innerWidth < 768) {
@@ -427,9 +404,6 @@
     activePreview = { fileUuid: data.fileUuid, startTime: data.startTime };
     previewCurrentTime = data.startTime;
     previewCurrentSpeaker = data.speaker || '';
-
-    // Persist to store for back-button restoration
-    searchStore.setActivePreview(data);
   }
 
   function handleViewTranscript(event: CustomEvent) {
@@ -452,7 +426,6 @@
     }
     previewData = null;
     activePreview = null;
-    searchStore.setActivePreview(null);
   }
 
   // Save all transient state before navigating away
@@ -461,14 +434,6 @@
     const scrollable = document.querySelector('.scrollable-content');
     if (scrollable) {
       searchStore.setScrollPosition(scrollable.scrollTop);
-    }
-
-    // Update the preview's playback time in the store so we can resume at the right spot
-    if (previewData && previewCurrentTime > 0) {
-      searchStore.setActivePreview({
-        ...previewData,
-        startTime: previewCurrentTime,
-      });
     }
   }
 

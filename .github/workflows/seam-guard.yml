@@ -1,0 +1,74 @@
+name: Seam Guard
+
+# OSS-clean-from-closed-source build invariant (Wave 2.1b / 5.3).
+#
+# The commercial cloud edition (Clerk auth + Stripe billing) lives in a SEPARATE
+# private repo and layers onto this open-source core through generic extension
+# seams (the auth provider registry, pipeline hooks, the capability resolver).
+# No vendor noun — "clerk" or "stripe" — may ever leak into the public backend.
+#
+# This gate makes that a hard build invariant: it greps `backend/app` and FAILS
+# the build if any case-insensitive match for `clerk|stripe` appears. Keeping it
+# at zero is what lets the cloud repo's CI advertise "OSS clean from closed
+# source" honestly, and it backstops the import-linter `app -/-> cloud` contract
+# (Wave 5.1) from the opposite direction — names, not imports.
+#
+# Fast and dependency-light: ripgrep ships on GitHub's ubuntu-latest runners; a
+# grep -rIn fallback covers any image where it does not.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master, main, develop]
+  push:
+    branches: [master, main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  no-vendor-nouns:
+    name: No Clerk/Stripe in OSS backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Assert backend/app is free of cloud-vendor nouns
+        run: |
+          set -euo pipefail
+          PATTERN='clerk|stripe'
+          TARGET='backend/app'
+
+          if command -v rg >/dev/null 2>&1; then
+            SEARCH=(rg -i --no-heading --line-number "$PATTERN" "$TARGET")
+          else
+            # POSIX fallback: -r recursive, -I skip binary, -n line numbers, -E regex, -i case-insensitive.
+            SEARCH=(grep -rInE -i "$PATTERN" "$TARGET")
+          fi
+
+          echo "Scanning $TARGET for /$PATTERN/i ..."
+          if MATCHES="$("${SEARCH[@]}")"; then
+            echo "::error::Cloud-vendor noun leaked into the open-source backend."
+            echo "$MATCHES"
+            {
+              echo "## ❌ Seam Guard failed"
+              echo ""
+              echo "Found \`$PATTERN\` (case-insensitive) in \`$TARGET\`. The open-source"
+              echo "core must never reference the commercial cloud edition's vendors."
+              echo "Move the code into the private cloud repo's seam, or genericize the name."
+              echo ""
+              echo '```'
+              echo "$MATCHES"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "PASS: zero clerk|stripe matches in $TARGET"
+          {
+            echo "## ✅ Seam Guard passed"
+            echo ""
+            echo "No \`clerk\`/\`stripe\` references in \`$TARGET\` — OSS core is clean of"
+            echo "closed-source vendor nouns (Wave 2.1b / 5.3 build invariant)."
+          } >> "$GITHUB_STEP_SUMMARY"

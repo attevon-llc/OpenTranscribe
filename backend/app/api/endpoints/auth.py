@@ -1688,7 +1688,7 @@ def _user_can_setup_mfa(user: User) -> bool:
 
     - PKI: smart card is already two-factor (something you have + PIN).
     - Keycloak: MFA is handled by the identity provider.
-    - Any registry-based external/SSO provider (e.g. cloud-edition Clerk): MFA
+    - Any registry-based external/SSO provider (e.g. a cloud-edition IdP): MFA
       and auth are owned by the provider, so a redundant local TOTP is excluded.
 
     The check is generic (no provider names beyond the core IdPs): an auth_type

@@ -216,11 +216,14 @@ def test_finalize_chain_writes_usage_event():
                 .filter(UsageEvent.idempotency_key == f"{created_file_id}:{run_id}")
                 .all()
             )
-        assert len(rows) == 1, "live finalize chain did not write exactly one usage_event"
-        row = rows[0]
-        assert row.file_id == created_file_id
-        assert row.event_type == "transcription.hours"
-        assert float(row.quantity) == pytest.approx(600.0 / 3600.0, rel=1e-3)
+            # Assert while the rows are still bound to the session (reading an
+            # attribute on a detached UsageEvent would raise DetachedInstanceError).
+            assert len(rows) == 1, "live finalize chain did not write exactly one usage_event"
+            row = rows[0]
+            assert row.file_id == created_file_id
+            assert row.event_type == "transcription.hours"
+            # NUMERIC column quantizes to 3 decimals (0.16667 -> 0.167), so use abs tol.
+            assert float(row.quantity) == pytest.approx(600.0 / 3600.0, abs=1e-3)
     finally:
         # Clean up the seeded file + its usage_event (dev data is sacred).
         if created_file_id is not None:

@@ -79,6 +79,15 @@ services:
     container_name: otbench-celery-cpu-worker
     pull_policy: never
 
+  celery-redaction:
+    image: opentranscribe-backend:bench
+    container_name: otbench-celery-redaction
+    pull_policy: never
+    volumes:
+      # Redaction worker needs the HuggingFace cache for GLiNER + toxicity models
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+
   celery-cloud-asr-worker:
     image: opentranscribe-backend:bench
     container_name: otbench-celery-cloud-asr-worker

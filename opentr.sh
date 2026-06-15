@@ -4,6 +4,11 @@
 # A comprehensive script for all OpenTranscribe operations
 # Usage: ./opentr.sh [command] [options]
 
+# Fail on unset variables and on pipeline errors. NOTE: deliberately NO `set -e`
+# — the script has many `|| true` / best-effort paths that rely on continuing
+# after a non-zero exit.
+set -uo pipefail
+
 # Source common functions
 # shellcheck source=scripts/common.sh
 source ./scripts/common.sh
@@ -15,6 +20,15 @@ if [ -f ".env" ]; then
   source ./.env
   set +a
 fi
+
+# Default the optional .env-sourced variables this script reads so `set -u`
+# doesn't abort when they're absent from .env. These are all genuinely optional
+# (storage paths, nginx server name, GPU split device ids, ports).
+: "${NGINX_SERVER_NAME:=}"
+: "${MINIO_NAS_PATH:=}"
+: "${POSTGRES_DATA_PATH:=}"
+: "${OPENSEARCH_DATA_PATH:=}"
+: "${COMPOSE_PROFILES:=}"
 
 # Export APP_VERSION so docker compose can pass it through to containers
 # (used instead of ./VERSION file bind-mount to avoid OCI stub creation in dev mode)
@@ -867,7 +881,11 @@ start_app() {
   fi
   # gpu-split workers (celery-worker-gpu-transcribe / celery-worker-gpu-diarize) are defined
   # in docker-compose.yml with profiles: [gpu-split] and activated via COMPOSE_PROFILES above.
-  # No extra overlay file is needed.
+  # The gpu-split overlay grants each worker its dedicated GPU reservation.
+  if [ -n "$GPU_SPLIT_FLAG" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu-split.yml"
+    echo "🔀 Adding GPU split overlay (docker-compose.gpu-split.yml)"
+  fi
 
   # Add NAS/NVMe storage overlay if requested via --nas flag
   # or auto-detect when storage path env vars are set.
@@ -1091,9 +1109,23 @@ start_app() {
     write_live_data_markers
   fi
 
-  # Start services with appropriate compose files
+  # Start services with appropriate compose files.
+  # --wait blocks until every service is healthy (or the timeout elapses) so a
+  # "created-but-never-started" container surfaces as a non-zero exit instead of
+  # a silent failure. --wait-timeout 700 covers the backend's 600s start_period.
   # shellcheck disable=SC2086
-  docker compose $COMPOSE_FILES up -d $BUILD_CMD
+  if ! docker compose $COMPOSE_FILES up -d --wait --wait-timeout 700 $BUILD_CMD; then
+    echo ""
+    echo "❌ Startup failed — one or more services did not become healthy."
+    echo "📊 Service status:"
+    # shellcheck disable=SC2086
+    docker compose $COMPOSE_FILES ps
+    echo ""
+    echo "📋 Recent logs:"
+    # shellcheck disable=SC2086
+    docker compose $COMPOSE_FILES logs --tail=50
+    exit 1
+  fi
 
   # Fix pipeline_scratch volume permissions (created by compose above) —
   # the volume is root-owned by default, which breaks the shared-memory
@@ -1106,7 +1138,7 @@ start_app() {
   docker compose $COMPOSE_FILES ps
 
   # Print access information
-  echo "✅ Services are starting up."
+  echo "✅ Services are up and healthy."
   print_access_info
 
   # Display log commands
@@ -1166,6 +1198,7 @@ reset_and_init() {
   WITH_BACKUP_FLAG=""
   LITE_FLAG=""
   CPU_FLAG=""
+  NO_NAS_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -1188,6 +1221,20 @@ reset_and_init() {
       --nas)
         NAS_FLAG="--nas"
         shift
+        ;;
+      --no-nas)
+        NO_NAS_FLAG="--no-nas"
+        shift
+        ;;
+      --fresh|--port-offset|--seed-benchmark)
+        # reset deletes data (down -v). A fresh deployment is meant to be ISOLATED,
+        # so 'reset --fresh' would be a footgun: it would reset the REAL stack, not
+        # an isolated one. Refuse it and point at the correct workflow.
+        echo "❌ 'reset' does not support $1."
+        echo "   To recreate an isolated stack from scratch:"
+        echo "     ./opentr.sh fresh-destroy <name>      # remove its containers + volumes"
+        echo "     ./opentr.sh start dev --fresh <name>  # start it clean"
+        exit 1
         ;;
       --lite)
         LITE_FLAG="--lite"
@@ -1314,7 +1361,10 @@ reset_and_init() {
       build_prod_images
       # Add local override to prevent pulling from Docker Hub (overrides pull_policy: always)
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.yml"
-      BUILD_CMD=""
+      # Force no-pull at `up` time so the locally-built image isn't clobbered by a
+      # Hub pull (pull_policy:never is not reliably honored when a build: context
+      # is also defined). Mirrors start prod --build.
+      BUILD_CMD="--pull never"
     else
       echo "🔄 Resetting in PRODUCTION mode (pulling from Docker Hub)..."
       BUILD_CMD=""
@@ -1336,11 +1386,22 @@ reset_and_init() {
   fi
   # gpu-split workers (celery-worker-gpu-transcribe / celery-worker-gpu-diarize) are defined
   # in docker-compose.yml with profiles: [gpu-split] and activated via COMPOSE_PROFILES above.
-  # No extra overlay file is needed.
+  # The gpu-split overlay grants each worker its dedicated GPU reservation.
+  if [ -n "$GPU_SPLIT_FLAG" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu-split.yml"
+    echo "🔀 Adding GPU split overlay (docker-compose.gpu-split.yml)"
+  fi
 
   # Add NAS/NVMe storage overlay if requested via --nas flag
-  # or auto-detect when storage path env vars are set
-  if [ -z "$NAS_FLAG" ] && { [ -n "$MINIO_NAS_PATH" ] || [ -n "$POSTGRES_DATA_PATH" ] || [ -n "$OPENSEARCH_DATA_PATH" ]; }; then
+  # or auto-detect when storage path env vars are set.
+  # --no-nas suppresses both the explicit and the auto-detect path so the live
+  # bind-mounted data is never attached (and never wiped by the reset's down -v).
+  if [ -n "$NO_NAS_FLAG" ]; then
+    if [ -n "$MINIO_NAS_PATH" ] || [ -n "$POSTGRES_DATA_PATH" ] || [ -n "$OPENSEARCH_DATA_PATH" ]; then
+      echo "🚫 --no-nas: NAS overlay suppressed (using Docker named volumes; live bind data untouched)"
+    fi
+    NAS_FLAG=""
+  elif [ -z "$NAS_FLAG" ] && { [ -n "$MINIO_NAS_PATH" ] || [ -n "$POSTGRES_DATA_PATH" ] || [ -n "$OPENSEARCH_DATA_PATH" ]; }; then
     NAS_FLAG="--nas"
     echo "ℹ️  Auto-detected custom storage paths in .env, enabling NAS overlay"
   fi
@@ -1533,10 +1594,24 @@ reset_and_init() {
   # Ensure OpenSearch neural models are downloaded for offline capability
   ensure_opensearch_models
 
-  # Start all services - docker compose handles dependency ordering via depends_on
+  # Start all services - docker compose handles dependency ordering via depends_on.
+  # --wait blocks until healthy (or timeout) so a failed startup is a non-zero
+  # exit, not a silent "created but not running". --wait-timeout 700 covers the
+  # backend's 600s start_period.
   echo "🚀 Starting all services..."
   # shellcheck disable=SC2086
-  docker compose $COMPOSE_FILES up -d $BUILD_CMD
+  if ! docker compose $COMPOSE_FILES up -d --wait --wait-timeout 700 $BUILD_CMD; then
+    echo ""
+    echo "❌ Startup failed — one or more services did not become healthy."
+    echo "📊 Service status:"
+    # shellcheck disable=SC2086
+    docker compose $COMPOSE_FILES ps
+    echo ""
+    echo "📋 Recent logs:"
+    # shellcheck disable=SC2086
+    docker compose $COMPOSE_FILES logs --tail=50
+    exit 1
+  fi
 
   # Fix pipeline_scratch volume permissions (recreated after reset).
   fix_pipeline_scratch_permissions
@@ -1640,19 +1715,19 @@ restore_database() {
   echo "🔄 Restoring database from ${BACKUP_FILE}..."
 
   # Stop services that use the database
-  docker compose stop backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
+  docker compose stop backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
 
   # Restore the database
   if docker compose exec -T postgres psql -U postgres opentranscribe < "$RESTORE_SOURCE"; then
     [ -n "$TEMP_SQL" ] && rm -f "$TEMP_SQL"
     echo "✅ Database restored successfully."
     echo "🔄 Restarting services..."
-    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
+    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
   else
     [ -n "$TEMP_SQL" ] && rm -f "$TEMP_SQL"
     echo "❌ Database restore failed."
     echo "🔄 Restarting services anyway..."
-    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
+    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
     exit 1
   fi
 }
@@ -1667,6 +1742,8 @@ restart_backend() {
     celery-worker \
     celery-download-worker \
     celery-cpu-worker \
+    celery-redaction \
+    celery-cloud-asr-worker \
     celery-nlp-worker \
     celery-embedding-worker \
     celery-beat \
@@ -1726,7 +1803,7 @@ stop_all_containers() {
     -f docker-compose.nginx.yml -f docker-compose.pki.yml "$@" 2>/dev/null || true
 
   # Catch stragglers by container name pattern
-  for container in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E 'opentranscribe-|transcribe-app-'); do
+  for container in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^opentranscribe-|^transcribe-app-'); do
     docker stop "$container" 2>/dev/null && docker rm "$container" 2>/dev/null || true
   done
 }
@@ -1751,6 +1828,30 @@ purge_system() {
   docker images --filter "reference=*opentranscribe*" -q | xargs -r docker rmi -f
 
   echo "✅ Complete purge finished. Everything removed."
+}
+
+# Poll the bench backend container until it reports healthy (deterministic
+# replacement for blind `sleep`s in the bench flow). The bench stack runs under
+# the default project name with hard-coded container_name opentranscribe-backend.
+# Usage: wait_for_bench_backend_health [timeout_seconds]
+wait_for_bench_backend_health() {
+  local timeout="${1:-180}"
+  local interval=3
+  local elapsed=0
+  local status
+  while [ "$elapsed" -lt "$timeout" ]; do
+    status="$(docker inspect -f '{{.State.Health.Status}}' opentranscribe-backend 2>/dev/null || echo "")"
+    if [ "$status" = "healthy" ]; then
+      echo "✅ Bench backend is healthy! (${elapsed}s)"
+      return 0
+    fi
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+    echo "⏳ Waiting for bench backend... (${elapsed}/${timeout}s, status: ${status:-starting})"
+  done
+  echo "⚠️ Bench backend health check timed out after ${timeout}s, continuing anyway..."
+  docker logs --tail 20 opentranscribe-backend 2>/dev/null || true
+  return 1
 }
 
 # Function to check health of all services
@@ -1900,11 +2001,11 @@ case "$1" in
     ;;
 
   backup)
-    backup_database "$2"
+    backup_database "${2:-}"
     ;;
 
   restore)
-    restore_database "$2"
+    restore_database "${2:-}"
     ;;
 
   restart-backend)
@@ -2092,8 +2193,8 @@ case "$1" in
         docker compose $BENCH_COMPOSE up -d --build
 
         echo ""
-        echo "⏳ Waiting 20 s for healthchecks to settle..."
-        sleep 20
+        echo "⏳ Waiting for bench backend to become healthy..."
+        wait_for_bench_backend_health
         docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe
         echo ""
         echo "✅ Bench stack ready on $TARGET_BRANCH."
@@ -2245,8 +2346,8 @@ case "$1" in
           celery-beat flower
 
         echo ""
-        echo "⏳ Waiting 45 s for stack to be ready (DB migrations, model pre-load)..."
-        sleep 45
+        echo "⏳ Waiting for bench stack to be ready (DB migrations, model pre-load)..."
+        wait_for_bench_backend_health 240
         docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe
 
         # Verify the worker is up

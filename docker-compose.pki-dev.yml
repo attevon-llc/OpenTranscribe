@@ -1,6 +1,9 @@
 # PKI/mTLS Authentication Overlay for Development
 #
-# Uses local containers (not Docker Hub) with PKI support.
+# Uses local containers (not Docker Hub) with PKI support. This overlay only
+# overrides `frontend` + `backend`; every other service (postgres, redis,
+# minio, opensearch, workers, …) comes from the dev override, so the dev
+# override MUST be included in the chain.
 #
 # Usage:
 #   1. Generate certificates:
@@ -10,10 +13,17 @@
 #      cd scripts/pki/test-certs && openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 #        -keyout nginx/server.key -out nginx/server.crt -subj "/CN=localhost"
 #
-#   3. Start dev with PKI:
-#      docker compose -f docker-compose.yml -f docker-compose.pki-dev.yml up -d
+#   3. Start dev with PKI (override.yml is required for the other services'
+#      images and to share the default network):
+#      docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#        -f docker-compose.pki-dev.yml up -d
 #
-#   4. Access: https://localhost:8443
+#   4. Access over mTLS: https://localhost:${PKI_HTTPS_PORT:-8443}
+#
+# Note: the dev override already publishes Vite on host port 5173 (and the docs
+# site on 5183), so this overlay publishes the PKI nginx frontend's plain-HTTP
+# :8080 on a DISTINCT host port (PKI_HTTP_PORT, default 5187) to avoid a
+# host-port collision. The mTLS entrypoint is the HTTPS port above.
 #
 
 services:
@@ -30,12 +40,11 @@ services:
       - ./scripts/pki/test-certs/nginx/server.key:/etc/nginx/certs/server.key:ro
       - ./scripts/pki/test-certs/ca/ca.crt:/etc/nginx/certs/ca.crt:ro
     ports:
-      - "${FRONTEND_PORT:-5173}:8080"
+      # Distinct host port — dev override binds 5173 (Vite) and 5183 (docs). mTLS is on HTTPS below.
+      - "${PKI_HTTP_PORT:-5187}:8080"
       - "${PKI_HTTPS_PORT:-8443}:8443"
     environment:
       - NODE_ENV=production
-    networks:
-      - transcribe-network
 
   # Use local backend build
   backend:
@@ -44,9 +53,3 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - ./backend:/app
-    networks:
-      - transcribe-network
-
-networks:
-  transcribe-network:
-    driver: bridge

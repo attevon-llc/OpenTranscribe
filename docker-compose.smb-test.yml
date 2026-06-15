@@ -13,6 +13,8 @@ services:
   smb-test:
     image: dperson/samba:latest
     container_name: opentranscribe-smb-test
+    security_opt:
+      - no-new-privileges:true
     command: >-
       -u "testuser;testpass"
       -s "media;/share;yes;no;no;testuser"
@@ -22,12 +24,15 @@ services:
     volumes:
       - smb_test_data:/share
     networks:
-      - transcribe-app_default
+      - default
     restart: unless-stopped
 
 volumes:
   smb_test_data:
 
+# Join the stack's default bridge network (project-name agnostic — works for any
+# clone whose compose project isn't literally "transcribe-app").
 networks:
-  transcribe-app_default:
+  default:
+    name: ${COMPOSE_PROJECT_NAME:-opentranscribe}_default
     external: true

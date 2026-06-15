@@ -31,12 +31,18 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     ports:
-      - "${POSTGRES_PORT:-5176}:5432"
+      # Loopback-only: infra is reached over the compose network (postgres:5432);
+      # the host port is for local tooling/tests only — never expose it externally.
+      - "127.0.0.1:${POSTGRES_PORT:-5176}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      # Grace for a fresh bind-mount initdb (cluster create + WAL setup). Without
+      # this, a slow first-init crosses the retries×interval window, postgres is
+      # marked unhealthy, and compose aborts every service that depends_on it.
+      start_period: 60s
 
   minio:
     container_name: opentranscribe-minio
@@ -48,8 +54,9 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "${MINIO_PORT:-5178}:9000"
-      - "${MINIO_CONSOLE_PORT:-5179}:9001"
+      # Loopback-only (reached internally as minio:9000). Host ports for local use.
+      - "127.0.0.1:${MINIO_PORT:-5178}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-5179}:9001"
     environment:
       # Server-side encryption at rest (AES-256-GCM)
       # Auto-encrypts all new objects. Existing unencrypted objects remain readable.
@@ -62,7 +69,10 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 10s
-      retries: 5
+      retries: 10
+      # Grace for first-boot bucket/IAM reconciliation on a large bind-mounted
+      # data dir (the real media volume can be hundreds of GB).
+      start_period: 60s
 
   redis:
     container_name: opentranscribe-redis
@@ -72,7 +82,8 @@ services:
     security_opt:
       - no-new-privileges:true
     ports:
-      - "${REDIS_PORT:-5177}:6379"
+      # Loopback-only (reached internally as redis:6379).
+      - "127.0.0.1:${REDIS_PORT:-5177}:6379"
     volumes:
       - redis_data:/data
     # Use password if REDIS_PASSWORD is set in .env
@@ -90,8 +101,8 @@ services:
           redis-cli ping;
         fi"
       interval: 5s
-      timeout: 30s
-      retries: 50
+      timeout: 5s
+      retries: 10
 
   opensearch:
     container_name: opentranscribe-opensearch
@@ -137,13 +148,17 @@ services:
       # Pre-downloaded neural search models for offline deployments
       - ${MODEL_CACHE_DIR:-./models}/opensearch-ml:/ml-models:ro
     ports:
-      - "${OPENSEARCH_PORT:-5180}:9200"
-      - "${OPENSEARCH_ADMIN_PORT:-5181}:9600"
+      # Loopback-only (reached internally as opensearch:9200).
+      - "127.0.0.1:${OPENSEARCH_PORT:-5180}:9200"
+      - "127.0.0.1:${OPENSEARCH_ADMIN_PORT:-5181}:9600"
     healthcheck:
       test: ["CMD-SHELL", "curl -sS http://localhost:9200 || exit 1"]
       interval: 5s
       timeout: 10s
       retries: 20
+      # Grace for JVM boot + shard recovery so boot-time probe failures don't
+      # burn the retry budget on a large existing index.
+      start_period: 60s
 
   backend:
     container_name: opentranscribe-backend
@@ -252,7 +267,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      # Cold first-run WhisperX + PyAnnote preload (and HF download) can exceed 40s.
+      start_period: 120s
     depends_on:
       backend:
         condition: service_healthy
@@ -329,7 +345,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      # PRELOAD_CPU_WHISPER model load can exceed 40s on first run.
+      start_period: 120s
     depends_on:
       backend:
         condition: service_healthy
@@ -455,11 +472,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    # Wait for backend (migrations applied) like every other worker, so the nlp
+    # worker doesn't race the schema on first start.
     depends_on:
-      - postgres
-      - redis
-      - minio
-      - opensearch
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   celery-embedding-worker:
     container_name: opentranscribe-celery-embedding-worker
@@ -491,7 +510,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      # Embedding model load can exceed 40s on first run.
+      start_period: 120s
     depends_on:
       backend:
         condition: service_healthy
@@ -566,14 +586,18 @@ services:
       - TEMP_DIR=/app/temp
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
       - PRELOAD_GPU_MODELS=true
-      - CUDA_VISIBLE_DEVICES=${GPU_TRANSCRIBE_DEVICE_ID:-0}
+      # docker-compose.gpu-split.yml reserves the host GPU (GPU_TRANSCRIBE_DEVICE_ID)
+      # for this worker; docker maps that reserved card to index 0 in the container,
+      # so we always select index 0 here (matches the gpu-scale pattern).
+      - CUDA_VISIBLE_DEVICES=0
       - ENGINE_GPU_SPLIT=true
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcribe@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      # Cold GPU model preload can exceed 40s on first run.
+      start_period: 120s
     depends_on:
       backend:
         condition: service_healthy
@@ -610,14 +634,18 @@ services:
       - TEMP_DIR=/app/temp
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
       - PRELOAD_GPU_MODELS=true
-      - CUDA_VISIBLE_DEVICES=${GPU_DIARIZE_DEVICE_ID:-1}
+      # docker-compose.gpu-split.yml reserves the host GPU (GPU_DIARIZE_DEVICE_ID)
+      # for this worker; docker maps that reserved card to index 0 in the container,
+      # so we always select index 0 here (matches the gpu-scale pattern).
+      - CUDA_VISIBLE_DEVICES=0
       - ENGINE_GPU_SPLIT=true
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-diarize@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      # Cold GPU model preload can exceed 40s on first run.
+      start_period: 120s
     depends_on:
       backend:
         condition: service_healthy
@@ -651,6 +679,10 @@ services:
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
     volumes:
+      # Shared scratch — reads the preprocessed WAV the CPU worker staged. MUST
+      # match the other transcription workers or the scaled worker can't see the
+      # handoff and silently falls back to re-downloading from MinIO per file.
+      - pipeline_scratch:/scratch/opentranscribe
       - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
     tmpfs:
       - /app/temp:noexec,nosuid,size=20g,mode=1777
@@ -692,7 +724,9 @@ services:
       --queues=gpu,gpu-transcribe,gpu-diarize,download,cpu,nlp,embedding,utility,cloud-asr,cpu-transcribe,redaction,celery
       --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower}
     ports:
-      - "${FLOWER_PORT:-5175}:5555"
+      # Loopback-only: prod reaches Flower through nginx on the compose network;
+      # the host port is for local access. Keeps the basic-auth UI off 0.0.0.0.
+      - "127.0.0.1:${FLOWER_PORT:-5175}:5555"
     environment:
       - CELERY_BROKER_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
       - FLOWER_USER=${FLOWER_USER:-admin}

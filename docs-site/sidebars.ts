@@ -87,6 +87,7 @@ const sidebars: SidebarsConfig = {
       label: 'Operations',
       items: [
         'operations/production-deployment',
+        'operations/deployment-configuration',
         'operations/fresh-deployments',
         'operations/backup-restore',
         'operations/storage-recovery',

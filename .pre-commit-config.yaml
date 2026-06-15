@@ -120,8 +120,16 @@ repos:
     hooks:
       - id: import-linter
         name: import-linter (app must not import cloud)
-        entry: bash -c 'cd backend && venv/bin/lint-imports --config pyproject.toml'
-        language: system
+        # language: python so pre-commit provisions import-linter in its OWN
+        # isolated env — the pre-commit CI job installs only `pre-commit` (no
+        # backend venv, no project deps), so a hardcoded venv/bin path or a
+        # system `lint-imports` would not exist there. bash handles the cd into
+        # backend/ so grimp can locate the `app` namespace package; lint-imports
+        # resolves from the isolated env's PATH. grimp analyses statically (AST),
+        # so the app's runtime deps are NOT required.
+        entry: bash -c 'cd backend && lint-imports --config pyproject.toml'
+        language: python
+        additional_dependencies: ['import-linter>=2.0']
         pass_filenames: false
         files: ^backend/app/.*\.py$
 

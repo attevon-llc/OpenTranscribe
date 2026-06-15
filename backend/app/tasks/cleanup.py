@@ -354,8 +354,26 @@ def cleanup_expired_files(force: bool = False):
                             f"'{last_run_str}': {parse_err}; proceeding with run"
                         )
 
+            global_retention_days = config["retention_days"]
             # Build the age cutoff in UTC
-            cutoff = datetime.now(timezone.utc) - timedelta(days=config["retention_days"])
+            cutoff = datetime.now(timezone.utc) - timedelta(days=global_retention_days)
+
+            # Cloud-edition seam: a per-org retention OVERRIDE may keep files
+            # longer (premium tier) or shorter (free tier) than the global
+            # window. Widen the candidate query to the LARGEST override in
+            # effect so longer-retention tenants' files are still considered
+            # (then kept below, since their age is under their effective
+            # retention). Community: no resolver -> max is None -> unchanged.
+            from app.core.tenant_limits import max_retention_override_days
+            from app.core.tenant_limits import resolve_retention_days
+
+            max_override = max_retention_override_days()
+            query_days = (
+                max(global_retention_days, max_override)
+                if max_override is not None
+                else global_retention_days
+            )
+            query_cutoff = datetime.now(timezone.utc) - timedelta(days=query_days)
 
             # Determine which statuses are eligible for deletion
             eligible_statuses = [FileStatus.COMPLETED.value]
@@ -371,21 +389,39 @@ def cleanup_expired_files(force: bool = False):
                 .options(selectinload(MediaFile.speakers))
                 .filter(
                     MediaFile.status.in_(eligible_statuses),
-                    ((MediaFile.completed_at.isnot(None)) & (MediaFile.completed_at < cutoff))
-                    | ((MediaFile.completed_at.is_(None)) & (MediaFile.upload_time < cutoff)),
+                    ((MediaFile.completed_at.isnot(None)) & (MediaFile.completed_at < query_cutoff))
+                    | ((MediaFile.completed_at.is_(None)) & (MediaFile.upload_time < query_cutoff)),
                 )
                 .all()
             )
 
             logger.info(
-                f"cleanup_expired_files: found {len(eligible_files)} file(s) "
-                f"eligible for deletion (cutoff={cutoff.isoformat()})"
+                f"cleanup_expired_files: found {len(eligible_files)} candidate file(s) "
+                f"(query_cutoff={query_cutoff.isoformat()}, global_days={global_retention_days})"
             )
+
+            def _is_expired(mf: MediaFile) -> bool:
+                """Per-file expiry against the file's EFFECTIVE retention.
+
+                Uses the per-org override when present (cloud), else the global
+                cutoff. Lets longer-retention tenants keep files past the global
+                window and free-tier tenants expire them sooner — all from one
+                candidate query.
+                """
+                override = resolve_retention_days(getattr(mf, "organization_id", None))
+                if override is None:
+                    file_cutoff = cutoff
+                else:
+                    file_cutoff = datetime.now(timezone.utc) - timedelta(days=override)
+                ref = mf.completed_at or mf.upload_time
+                return ref is not None and ref < file_cutoff
 
             deleted = 0
             failed = 0
 
             for media_file in eligible_files:
+                if not _is_expired(media_file):
+                    continue
                 result = auto_delete_media_file(db, media_file)
                 if result["deleted"]:
                     deleted += 1

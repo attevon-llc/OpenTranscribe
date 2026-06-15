@@ -48,6 +48,32 @@ def validate_file_type(file: UploadFile) -> None:
         )
 
 
+def validate_file_size_for_tenant(file_size: int, organization_id: int | None) -> None:
+    """Enforce a per-tenant (per-tier) max upload size when the cloud sets one.
+
+    Cloud-edition seam: ``resolve_upload_limits`` returns a per-org ceiling (or
+    None to use the global limit). Community/self-host registers no resolver, so
+    this is a no-op and behavior is unchanged. ``file_size`` of 0 (unknown at
+    this point) is not rejected — the byte-count path enforces it once known.
+    """
+    if not file_size or file_size <= 0:
+        return
+    from app.core.tenant_limits import resolve_upload_limits
+
+    limits = resolve_upload_limits(organization_id)
+    if limits is None or limits.max_file_bytes is None:
+        return
+    if file_size > limits.max_file_bytes:
+        max_gb = limits.max_file_bytes / (1024**3)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"File exceeds your plan's maximum upload size of {max_gb:.1f} GB. "
+                "Upgrade your plan to upload larger files."
+            ),
+        )
+
+
 def create_media_file_record(
     db: Session,
     file: UploadFile,
@@ -463,6 +489,11 @@ async def process_file_upload(
         # Now read the remainder; the first chunk is kept in place.
         file_content, file_size = await _continue_read_after_first_chunk(file, first_chunk)
         benchmark_timing.mark(task_id, "http_read_complete")
+
+        # Cloud-edition seam: enforce the tenant's per-tier max upload size now
+        # that the true byte count is known (the content-length header is
+        # advisory). No-op in community. The cleanup path below 413s out.
+        validate_file_size_for_tenant(file_size, organization_id)
 
         # Update file hash
         _update_file_hash(db_file, client_file_hash, file.filename or "unknown")

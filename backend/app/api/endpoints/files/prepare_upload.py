@@ -199,6 +199,12 @@ async def prepare_upload(
                 )
                 return {"file_id": duplicate_id, "is_duplicate": 1}
 
+        # Cloud-edition seam: enforce the tenant's per-tier max upload size
+        # before minting a record / presigned URL. No-op in community.
+        from app.api.endpoints.files.upload import validate_file_size_for_tenant
+
+        validate_file_size_for_tenant(request.file_size, ctx.org_id)
+
         # Create file metadata object with information needed for the record
         file_metadata = FileMetadata(
             request.filename,
@@ -290,6 +296,10 @@ async def prepare_upload(
         logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
         return response
 
+    except HTTPException:
+        # Preserve intentional HTTP errors (e.g. 413 tenant size limit, 409
+        # duplicate) — don't bury them in a generic 500.
+        raise
     except Exception as e:
         logger.error(f"Error preparing upload: {str(e)}")
         raise HTTPException(

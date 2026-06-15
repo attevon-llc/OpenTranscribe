@@ -111,6 +111,20 @@ repos:
         args: [-c, pyproject.toml, -r, backend/]
         additional_dependencies: ["bandit[toml]"]
 
+  # Import-linter — enforce the cloud seam direction: the open-source core
+  # (`app.*`) must NEVER import the closed-source cloud edition (`cloud`/clerk/
+  # stripe). Contract lives in backend/pyproject.toml ([tool.importlinter]).
+  # Runs from the backend/ dir (cwd) so import-linter can import the `app`
+  # package; uses the project venv binary like the frontend-check hook.
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: import-linter (app must not import cloud)
+        entry: bash -c 'cd backend && venv/bin/lint-imports --config pyproject.toml'
+        language: system
+        pass_filenames: false
+        files: ^backend/app/.*\.py$
+
   # Shell script linting
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.9.0.6

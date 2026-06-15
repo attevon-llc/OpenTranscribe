@@ -68,6 +68,24 @@ exclude_dirs = ["tests"]
 # Test files have legitimate use of hardcoded credentials and other security patterns
 # These are flagged by bandit but are appropriate for test fixtures
 
+# Import-linter: enforce the cloud seam direction as a build invariant.
+# The closed-source cloud edition imports this open-source core (`app.*`),
+# NEVER the reverse. There is no `cloud` package in this repo, so the
+# contract holds trivially today — its job is to FAIL the build the moment a
+# `from cloud import ...` (or `import clerk` / `import stripe`) accidentally
+# leaks into core. Run via `lint-imports` (pre-commit hook + local gate).
+[tool.importlinter]
+root_package = "app"
+# clerk/stripe are external (non-`app`) packages, so the forbidden contract
+# must opt in to analysing external imports.
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Core (app) must not import the closed cloud edition"
+type = "forbidden"
+source_modules = ["app"]
+forbidden_modules = ["cloud", "clerk", "stripe"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-n auto --dist loadgroup --tb=short -q -m 'not integration'"

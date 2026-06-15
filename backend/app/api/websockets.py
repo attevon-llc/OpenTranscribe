@@ -168,7 +168,7 @@ def _try_authenticate_token(
 ) -> Optional[User]:
     """Validate a token (local JWT or external provider) and return the User, or None.
 
-    Cloud-edition seam: a Clerk session token authenticates the socket via the
+    Cloud-edition seam: an external session token authenticates the socket via the
     registered external verifier before the local-JWT path, mirroring
     ``get_current_user``. The community edition registers no verifier, so the
     external branch is skipped and behavior is identical (local JWT only). On any

@@ -1,18 +1,18 @@
-"""Add cloud-edition seams: organizations, usage events, Clerk identity columns.
+"""Add cloud-edition seams: organizations, usage events, external identity columns.
 
-Open-core seams for the commercial cloud edition (external auth + billing).
-Community/self-hosted deployments are unaffected: every column is nullable,
-every new table starts empty, and core only READS the billing columns — the
-private cloud layer writes them via its own webhooks. All DDL is idempotent
-(IF NOT EXISTS) so it is safe to re-run on partially-migrated DBs.
+Open-core multitenancy seams. Community/self-hosted deployments are unaffected:
+every column is nullable, every new table starts empty. Any commercial layer
+that wants per-tenant billing/quota adds its own tables on top of these generic
+ones. All DDL is idempotent (IF NOT EXISTS) so it is safe to re-run on
+partially-migrated DBs.
 
 Creates:
-  - organization            : tenant mirror (external org id) + billing/quota columns
+  - organization            : tenant mirror (external org id)
   - organization_membership : org membership mirror for fast joins
-  - usage_event             : billing + product-analytics event spine
+  - usage_event             : usage + product-analytics event spine
 
 Alters:
-  - "user"      : clerk_id (unique partial index), clerk_org_id (last-seen org)
+  - "user"      : external_id (unique partial index), external_org_id (last-seen org)
   - media_file / collection / speaker / speaker_profile / speaker_collection /
     summary_prompt / custom_vocabulary / user_setting : nullable organization_id
 
@@ -47,18 +47,9 @@ def upgrade():
         CREATE TABLE IF NOT EXISTS organization (
             id SERIAL PRIMARY KEY,
             uuid UUID NOT NULL,
-            clerk_org_id VARCHAR(255) NOT NULL,
+            external_org_id VARCHAR(255),
             name VARCHAR(255) NOT NULL,
             slug VARCHAR(255),
-            subscription_tier VARCHAR(20) NOT NULL DEFAULT 'community',
-            subscription_status VARCHAR(20) NOT NULL DEFAULT 'active',
-            stripe_customer_id VARCHAR(64),
-            stripe_subscription_id VARCHAR(64),
-            seats_limit INTEGER,
-            hours_limit_per_month NUMERIC(10,3),
-            hours_used_this_month NUMERIC(10,3) NOT NULL DEFAULT 0,
-            billing_cycle_anchor_day SMALLINT,
-            current_period_end TIMESTAMPTZ,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -66,14 +57,10 @@ def upgrade():
         """
     )
     op.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_organization_clerk_org_id "
-        "ON organization (clerk_org_id)"
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_organization_external_org_id "
+        "ON organization (external_org_id)"
     )
     op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_organization_uuid ON organization (uuid)")
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_organization_stripe_customer_id "
-        "ON organization (stripe_customer_id)"
-    )
 
     op.execute(
         """
@@ -121,19 +108,19 @@ def upgrade():
         "CREATE INDEX IF NOT EXISTS idx_usage_event_user_time ON usage_event (user_id, created_at)"
     )
 
-    # Allow the new external auth type in the user.auth_type CHECK constraint.
+    # Normalize the user.auth_type CHECK constraint to the core auth types.
     op.execute('ALTER TABLE "user" DROP CONSTRAINT IF EXISTS users_auth_type_check')
     op.execute(
         'ALTER TABLE "user" ADD CONSTRAINT users_auth_type_check '
-        "CHECK (auth_type IN ('local', 'ldap', 'keycloak', 'pki', 'clerk'))"
+        "CHECK (auth_type IN ('local', 'ldap', 'keycloak', 'pki'))"
     )
 
     # External-IdP identity columns on user (mirrors keycloak_id pattern).
-    op.execute('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS clerk_id VARCHAR(255)')
-    op.execute('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS clerk_org_id VARCHAR(255)')
+    op.execute('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS external_id VARCHAR(255)')
+    op.execute('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS external_org_id VARCHAR(255)')
     op.execute(
-        'CREATE UNIQUE INDEX IF NOT EXISTS uq_user_clerk_id ON "user" (clerk_id) '
-        "WHERE clerk_id IS NOT NULL"
+        'CREATE UNIQUE INDEX IF NOT EXISTS uq_user_external_id ON "user" (external_id) '
+        "WHERE external_id IS NOT NULL"
     )
 
     # Nullable org-scoping column on every shareable resource (NULL = personal).
@@ -150,9 +137,9 @@ def upgrade():
 def downgrade():
     for table in ORG_SCOPED_TABLES:
         op.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS organization_id")
-    op.execute("DROP INDEX IF EXISTS uq_user_clerk_id")
-    op.execute('ALTER TABLE "user" DROP COLUMN IF EXISTS clerk_org_id')
-    op.execute('ALTER TABLE "user" DROP COLUMN IF EXISTS clerk_id')
+    op.execute("DROP INDEX IF EXISTS uq_user_external_id")
+    op.execute('ALTER TABLE "user" DROP COLUMN IF EXISTS external_org_id')
+    op.execute('ALTER TABLE "user" DROP COLUMN IF EXISTS external_id')
     op.execute("DROP TABLE IF EXISTS usage_event")
     op.execute("DROP TABLE IF EXISTS organization_membership")
     op.execute("DROP TABLE IF EXISTS organization")

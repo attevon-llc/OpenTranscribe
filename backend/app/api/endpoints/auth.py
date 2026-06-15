@@ -125,8 +125,8 @@ def get_current_user(
         )
 
     # Cloud-edition seam: offer the token to registered external verifiers
-    # (e.g. Clerk) before the local-JWT path. The community edition registers
-    # none, so this branch is a no-op there.
+    # before the local-JWT path. The community edition registers none, so this
+    # branch is a no-op there.
     from app.auth.provider_registry import has_verifiers
 
     if has_verifiers():
@@ -146,7 +146,7 @@ def get_current_user(
             # deps_context.get_current_context() when org context applies. Never
             # used as a Prometheus label — access log only.
             request.state.user_id = external_user.id
-            request.state.org_id = getattr(external_user, "clerk_org_id", None)
+            request.state.org_id = getattr(external_user, "external_org_id", None)
             return external_user
 
     credentials_exception = HTTPException(
@@ -204,7 +204,7 @@ def get_current_user(
         # our local Organization.id when org context applies. Access log only —
         # never a Prometheus label.
         request.state.user_id = user.id
-        request.state.org_id = getattr(user, "clerk_org_id", None)
+        request.state.org_id = getattr(user, "external_org_id", None)
         return user  # type: ignore[no-any-return]
     except Exception as e:
         # Handle database connection errors or other issues
@@ -264,10 +264,10 @@ def get_optional_current_user(
         return None
 
     # Cloud-edition seam: offer the token to registered external verifiers
-    # (e.g. Clerk) before the local-JWT path, mirroring get_current_user. The
-    # community edition registers none, so this branch is a no-op there and
-    # behavior is identical. Optional semantics are preserved: an inactive or
-    # missing external user returns None rather than raising.
+    # before the local-JWT path, mirroring get_current_user. The community
+    # edition registers none, so this branch is a no-op there and behavior is
+    # identical. Optional semantics are preserved: an inactive or missing
+    # external user returns None rather than raising.
     from app.auth.provider_registry import has_verifiers
 
     if has_verifiers():
@@ -281,11 +281,11 @@ def get_optional_current_user(
                 if not external_user.is_active:
                     return None
                 # Stash for resolve_org_context()/get_current_context() so org
-                # scoping (e.g. thumbnail org-resolution) works for Clerk users
-                # on optional-auth routes without re-verifying the token.
+                # scoping (e.g. thumbnail org-resolution) works for external
+                # users on optional-auth routes without re-verifying the token.
                 request.state.external_identity = external_identity
                 request.state.user_id = external_user.id
-                request.state.org_id = getattr(external_user, "clerk_org_id", None)
+                request.state.org_id = getattr(external_user, "external_org_id", None)
                 return external_user
         except Exception as e:
             # Never let an external-auth problem fail an optional-auth route;
@@ -1593,8 +1593,8 @@ async def get_auth_methods(db: Session = Depends(get_db)):
     if pki_enabled:
         methods.append("pki")
 
-    # Registry-based external providers (cloud edition registers e.g. "clerk";
-    # community registers none). Presence in the registry == enabled.
+    # Registry-based external providers (the cloud edition registers managed
+    # IdPs; community registers none). Presence in the registry == enabled.
     from app.auth.provider_registry import get_registered_providers
 
     external_providers = get_registered_providers()
@@ -1605,8 +1605,10 @@ async def get_auth_methods(db: Session = Depends(get_db)):
         "keycloak_enabled": keycloak_enabled,
         "pki_enabled": pki_enabled,
         "ldap_enabled": ldap_enabled,
+        # Registered external IdP providers, reported generically. Clients gate
+        # on membership in this list (e.g. `external_providers.length > 0`),
+        # never on a hardcoded per-vendor flag.
         "external_providers": external_providers,
-        "clerk_enabled": "clerk" in external_providers,
         "mfa_enabled": mfa_enabled,
         "mfa_required": mfa_required,
         "login_banner_enabled": login_banner_enabled,

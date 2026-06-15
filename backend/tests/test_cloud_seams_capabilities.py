@@ -45,7 +45,9 @@ def _fake_request(**state: Any) -> Request:
 
 def _identity(**overrides: Any) -> ExternalIdentity:
     defaults: dict[str, Any] = {
-        "provider": "clerk",
+        # Core-permitted auth_type: core's user.auth_type CHECK only allows the
+        # built-in types; the registry/JIT seam is provider-agnostic regardless.
+        "provider": "keycloak",
         "external_id": f"user_{uuid.uuid4().hex[:12]}",
         "email": f"cap-test-{uuid.uuid4().hex[:8]}@example.com",
         "full_name": "Cap Tester",
@@ -247,7 +249,7 @@ class TestRequestContext:
     def test_org_context_requires_membership_mirror(self, db_session):
         ident = _identity()
         user = self._user(db_session, ident)
-        org = Organization(clerk_org_id=ident.org_id, name="Acme")
+        org = Organization(external_org_id=ident.org_id, name="Acme")
         db_session.add(org)
         db_session.commit()
 
@@ -269,7 +271,7 @@ class TestRequestContext:
     def test_scope_to_context_filters(self, db_session):
         ident = _identity()
         user = self._user(db_session, ident)
-        org = Organization(clerk_org_id=ident.org_id, name="Acme")
+        org = Organization(external_org_id=ident.org_id, name="Acme")
         db_session.add(org)
         db_session.commit()
 

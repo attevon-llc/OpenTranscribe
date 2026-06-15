@@ -2,8 +2,9 @@
 
 Mirrors the battle-tested ``sync_keycloak_user_to_db`` pattern (lookup by
 external id -> email -> create, with IntegrityError race recovery) but is
-provider-agnostic so new managed IdPs (Clerk today) need no core changes
-beyond a column mapping entry.
+provider-agnostic: any managed IdP registered through
+``app.auth.provider_registry`` maps onto the generic ``external_id`` /
+``external_org_id`` columns with no core changes.
 
 LDAP/Keycloak/PKI keep their existing dedicated sync paths — this module only
 serves providers registered through ``app.auth.provider_registry``.
@@ -23,11 +24,11 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
-# provider -> (User column holding the external subject id,
-#              optional User column holding the last-seen org id)
-PROVIDER_ID_COLUMNS: dict[str, tuple[str, Optional[str]]] = {
-    "clerk": ("clerk_id", "clerk_org_id"),
-}
+# Generic User columns every registry-based external provider maps onto:
+# (column holding the external subject id, column holding the last-seen org id).
+# Provider-agnostic — the same pair serves any managed IdP.
+EXTERNAL_ID_COLUMN = "external_id"
+EXTERNAL_ORG_ID_COLUMN: Optional[str] = "external_org_id"
 
 
 def _apply_identity(user: User, identity: ExternalIdentity, id_col: str, org_col: Optional[str]):
@@ -62,12 +63,7 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     """
     from sqlalchemy.exc import IntegrityError
 
-    try:
-        id_col, org_col = PROVIDER_ID_COLUMNS[identity.provider]
-    except KeyError:
-        raise ValueError(
-            f"No User column mapping for external provider '{identity.provider}'"
-        ) from None
+    id_col, org_col = EXTERNAL_ID_COLUMN, EXTERNAL_ORG_ID_COLUMN
 
     email = identity.email or f"{identity.external_id}@{identity.provider}.local"
 
@@ -96,10 +92,10 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
 
     logger.info(f"Creating new user from {identity.provider}: {identity.external_id} ({email})")
     # Product metric: external/JIT signup. The single point ALL external methods
-    # funnel through (including the cloud Clerk webhook, which calls this same
-    # core function). Bound the label to the fixed provider registry so the
-    # cardinality stays in {local,ldap,keycloak,pki,clerk}; anything else maps
-    # to "external".
+    # funnel through (including any cloud-edition webhook, which calls this same
+    # core function). Bound the label to the fixed core provider set so the
+    # cardinality stays in {local,ldap,keycloak,pki}; anything else maps to
+    # "external".
     from app.auth.constants import VALID_AUTH_TYPES
     from app.core.metrics import user_signups_total
 

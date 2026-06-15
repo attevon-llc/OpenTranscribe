@@ -239,7 +239,7 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     # lingering varchar(36) uuid identifier columns to native uuid).
     if has_cloud_seams and not has_legacy_varchar_uuid:
         return "v368_uuid_native_type_guard"
-    # v367: cloud-edition seams (organization/usage_event tables, clerk columns)
+    # v367: cloud-edition seams (organization/usage_event tables, external-id columns)
     if has_cloud_seams:
         return "v367_add_cloud_seams"
     # v366: watch-source auto-import tables

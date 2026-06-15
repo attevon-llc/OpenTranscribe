@@ -68,7 +68,7 @@ def resolve_org_context(
 
     org = (
         db.query(Organization)
-        .filter(Organization.clerk_org_id == identity.org_id, Organization.is_active.is_(True))
+        .filter(Organization.external_org_id == identity.org_id, Organization.is_active.is_(True))
         .first()
     )
     if org is None:

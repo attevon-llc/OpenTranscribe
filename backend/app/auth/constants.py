@@ -10,18 +10,15 @@ AUTH_TYPE_LOCAL = "local"
 AUTH_TYPE_LDAP = "ldap"
 AUTH_TYPE_KEYCLOAK = "keycloak"
 AUTH_TYPE_PKI = "pki"
-# External managed-IdP provider used by the commercial cloud edition. Core only
-# defines the constant + seams; the verifier implementation lives in the
-# private cloud layer and registers itself via app.auth.provider_registry.
-AUTH_TYPE_CLERK = "clerk"
 
-# All valid auth types
+# All valid core auth types. Registry-based external providers (cloud edition)
+# define their own auth-type strings in the cloud layer and register via
+# app.auth.provider_registry — they are not enumerated here.
 VALID_AUTH_TYPES = [
     AUTH_TYPE_LOCAL,
     AUTH_TYPE_LDAP,
     AUTH_TYPE_KEYCLOAK,
     AUTH_TYPE_PKI,
-    AUTH_TYPE_CLERK,
 ]
 
 # Version of the cloud-extension seam surface (verifier registry, pipeline

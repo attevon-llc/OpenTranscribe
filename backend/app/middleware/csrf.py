@@ -34,7 +34,7 @@ _EXEMPT_PREFIXES = (
     "/api/redoc",
     "/api/openapi.json",
     "/health",
-    # Server-to-server webhooks (cloud edition: Clerk/Stripe). They carry no
+    # Server-to-server webhooks (cloud edition: managed IdP / billing). They carry no
     # cookies and authenticate by cryptographic signature on the raw body —
     # CSRF does not apply and would silently 403 every delivery.
     "/api/webhooks/",

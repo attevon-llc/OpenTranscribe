@@ -60,7 +60,7 @@ def _mk_user(db, label: str) -> User:
 
 def _mk_org(db, label: str) -> Organization:
     uid = str(uuid_pkg.uuid4())[:8]
-    org = Organization(clerk_org_id=f"org_{label}_{uid}", name=f"{label} Org", is_active=True)
+    org = Organization(external_org_id=f"org_{label}_{uid}", name=f"{label} Org", is_active=True)
     db.add(org)
     db.commit()
     db.refresh(org)

@@ -62,6 +62,24 @@ def index_transcript_search_task(  # noqa: C901
     benchmark_timing.mark(pipeline_task_id, "search_index_chunks_start")
 
     try:
+        if settings.SEARCH_BACKEND.lower() == "sqlite":
+            from app.tasks.sqlite_search_indexing_task import run_sqlite_search_reindex
+
+            result = run_sqlite_search_reindex(user_id, file_uuids=[file_uuid], limit=None)
+            total_ms = round((time.time() - total_start) * 1000)
+            summary = result.get("summary", {})
+            timing = {
+                "backend": "sqlite",
+                "chunk_count": summary.get("rows_seen", 0),
+                "total_ms": total_ms,
+                "index_counts": summary,
+            }
+            with session_scope() as db:
+                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+            _send_indexing_notification(user_id, file_id, timing)
+            benchmark_timing.mark(pipeline_task_id, "search_index_chunks_end")
+            return {"status": "success", "file_id": file_id, **timing}
+
         # Single DB session: fetch segments (with speaker joinedload),
         # media_file, tags/collections, and the access-list in one sweep.
         # Previously the task opened three separate sessions and issued

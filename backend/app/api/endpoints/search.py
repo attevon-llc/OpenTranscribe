@@ -162,9 +162,14 @@ def search_transcripts(
     if search_mode not in ("hybrid", "keyword"):
         raise HTTPException(status_code=400, detail="search_mode must be: hybrid or keyword")
 
-    from app.services.search.hybrid_search_service import HybridSearchService
+    if settings.SEARCH_BACKEND.lower() == "sqlite":
+        from app.services.search.sqlite_hybrid_search_service import SQLiteHybridSearchService
 
-    search_service = HybridSearchService()
+        search_service = SQLiteHybridSearchService()
+    else:
+        from app.services.search.hybrid_search_service import HybridSearchService
+
+        search_service = HybridSearchService()
     response = search_service.search(
         query=q,
         user_id=current_user.id,
@@ -253,6 +258,30 @@ def trigger_reindex(
     Returns:
         Dict with task_id and status.
     """
+    if settings.SEARCH_BACKEND.lower() == "sqlite":
+        from app.db.session_utils import session_scope
+        from app.services.sqlite_search.api import sqlite_pending_file_uuids
+        from app.tasks.sqlite_search_indexing_task import sqlite_search_reindex_task
+
+        if pending_only and file_uuids is None:
+            with session_scope() as db:
+                file_uuids = sqlite_pending_file_uuids(db, current_user.id)
+            if not file_uuids:
+                return {
+                    "task_id": None,
+                    "status": "no_pending",
+                    "message": "All files are already indexed.",
+                    "backend": "sqlite",
+                }
+
+        task = sqlite_search_reindex_task.delay(user_id=current_user.id, file_uuids=file_uuids)
+        return {
+            "task_id": task.id,
+            "status": "started",
+            "message": "SQLite search re-indexing started.",
+            "backend": "sqlite",
+        }
+
     if pending_only and file_uuids is None:
         # Find file UUIDs that are NOT yet indexed in OpenSearch
         from sqlalchemy import exists
@@ -423,6 +452,17 @@ def reindex_status(
     Returns:
         Dict with total_files, indexed_files, pending info, current model.
     """
+    if settings.SEARCH_BACKEND.lower() == "sqlite":
+        from app.db.session_utils import session_scope
+        from app.services.sqlite_search.api import sqlite_reindex_status
+
+        with session_scope() as db:
+            return sqlite_reindex_status(
+                db,
+                current_user.id,
+                in_progress=_check_reindex_task_active(current_user.id),
+            )
+
     from sqlalchemy import exists
     from sqlalchemy import select
 

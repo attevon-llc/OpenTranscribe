@@ -2,6 +2,7 @@
 from __future__ import annotations
 import sqlite3
 import contextlib
+import math
 import struct
 from pathlib import Path
 from typing import Iterable
@@ -9,6 +10,15 @@ import sqlite_vec
 VECTOR_DIM = 512
 TRANSCRIPT_VECTOR_DIM = 384
 VECTOR_WARN_THRESHOLD = 100_000
+
+
+def _pack_unit(values: Iterable[float], dim: int) -> bytes:
+    """Validate + L2-normalize + pack: unit vectors make sqlite-vec's L2 distance rank like cosine."""
+    vector = tuple(float(item) for item in values)
+    if len(vector) != dim:
+        raise ValueError(f"expected {dim}-d vector, got {len(vector)}")
+    norm = math.sqrt(sum(component * component for component in vector)) or 1.0
+    return struct.pack(f"{dim}f", *(component / norm for component in vector))
 SCHEMA = (
     "CREATE TABLE IF NOT EXISTS search_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     "CREATE TABLE IF NOT EXISTS transcript_chunk ("
@@ -54,11 +64,8 @@ class SQLiteSearchStore:
 
     @staticmethod
     def vector_blob(values: Iterable[float]) -> bytes:
-        """Pack exactly one 512-d float vector for sqlite-vec."""
-        vector = tuple(float(item) for item in values)
-        if len(vector) != VECTOR_DIM:
-            raise ValueError(f"expected {VECTOR_DIM}-d vector, got {len(vector)}")
-        return struct.pack(f"{VECTOR_DIM}f", *vector)
+        """Pack one 512-d speaker vector as a unit vector (L2 rank == cosine rank)."""
+        return _pack_unit(values, VECTOR_DIM)
 
     @staticmethod
     def count_summary(conn: sqlite3.Connection) -> dict[str, int | bool]:
@@ -129,11 +136,8 @@ class SQLiteSearchStore:
 
     @staticmethod
     def transcript_vector_blob(values: Iterable[float]) -> bytes:
-        """Pack exactly one 384-d transcript vector."""
-        vector = tuple(float(item) for item in values)
-        if len(vector) != TRANSCRIPT_VECTOR_DIM:
-            raise ValueError(f"expected {TRANSCRIPT_VECTOR_DIM}-d vector, got {len(vector)}")
-        return struct.pack(f"{TRANSCRIPT_VECTOR_DIM}f", *vector)
+        """Pack one 384-d transcript vector as a unit vector (L2 rank == cosine rank)."""
+        return _pack_unit(values, TRANSCRIPT_VECTOR_DIM)
 
     def upsert_transcript_vector(self, conn: sqlite3.Connection, row: dict) -> None:
         """Upsert one transcript semantic vector."""

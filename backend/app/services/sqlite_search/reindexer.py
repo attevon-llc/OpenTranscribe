@@ -19,8 +19,25 @@ def _date_filter(query, media_model, date_from: datetime | None, date_to: dateti
 class SQLiteTranscriptReindexer:
     """Indexes bounded completed transcript segments into SQLite FTS."""
 
-    def __init__(self, store: SQLiteSearchStore):
+    MODEL_NAME = "all-MiniLM-L6-v2"
+
+    def __init__(self, store: SQLiteSearchStore, embedder: Any = None):
         self.store = store
+        self._embedder = embedder
+        self._embedder_ready = embedder is not None
+
+    def _encode(self, rows: list[dict[str, Any]]) -> list[list[float]]:
+        """Locally embed row contents; [] if the local model is unavailable (text stays indexed)."""
+        if not rows:
+            return []
+        try:
+            if not self._embedder_ready:
+                from app.services.sqlite_search.transcript_embedder import LocalMiniLMEmbedder
+                self._embedder = LocalMiniLMEmbedder()
+                self._embedder_ready = True
+            return self._embedder.encode([row["content"] for row in rows])
+        except Exception:
+            return []
 
     def rows_for_slice(
         self,
@@ -69,10 +86,17 @@ class SQLiteTranscriptReindexer:
         return rows
 
     def reindex_rows(self, rows: list[dict[str, Any]]) -> dict[str, int | bool]:
-        """Write rows into SQLite and return orchestrator count summary."""
+        """Write rows into SQLite (FTS text + local semantic vectors) and return counts."""
+        vectors = self._encode(rows)
         with self.store.connect() as conn:
             for row in rows:
                 self.store.upsert_transcript_chunk(conn, row)
+            for row, embedding in zip(rows, vectors):
+                self.store.upsert_transcript_vector(conn, {
+                    "rowid": int(row["id"]), "chunk_id": int(row["id"]),
+                    "file_id": row["file_id"], "file_uuid": row["file_uuid"],
+                    "model": self.MODEL_NAME, "embedding": embedding,
+                })
             conn.commit()
             summary = self.store.log_summary(conn)
-        return {**summary, "rows_seen": len(rows)}
+        return {**summary, "rows_seen": len(rows), "vectors_indexed": len(vectors)}

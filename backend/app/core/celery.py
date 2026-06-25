@@ -77,6 +77,7 @@ celery_app = Celery(
         "app.tasks.search_maintenance_task",
         "app.tasks.opensearch_integrity_task",
         "app.tasks.search_indexing_task",
+        "app.tasks.sqlite_search_indexing_task",
         "app.tasks.redaction_task",
         "app.tasks.thumbnail",
         "app.tasks.thumbnail_migration",
@@ -164,6 +165,7 @@ celery_app.conf.update(
         "generate_thumbnail": {"queue": CeleryQueues.CPU},
         "migrate_thumbnails_to_webp": {"queue": CeleryQueues.CPU},
         "reindex_transcripts": {"queue": CeleryQueues.CPU},
+        "sqlite_search_reindex": {"queue": CeleryQueues.CPU},
         "reindex_batch": {"queue": CeleryQueues.CPU},
         "search_index_maintenance": {"queue": CeleryQueues.CPU},
         "opensearch_orphan_cleanup": {"queue": CeleryQueues.CPU},
@@ -279,6 +281,18 @@ celery_app.conf.update(
         },
     },
 )
+
+
+# When SQLite is the search backend, drop the OpenSearch-only maintenance beats so
+# the OpenSearch JVM can be turned off without periodic non-fatal warnings. Manual
+# dispatch still works; only the automatic schedule is removed.
+if settings.SEARCH_BACKEND.lower() == "sqlite":
+    for _opensearch_beat in (
+        "search-index-maintenance",
+        "opensearch-orphan-cleanup",
+        "embedding-consistency-check",
+    ):
+        celery_app.conf.beat_schedule.pop(_opensearch_beat, None)
 
 
 # Apply our logging config (text/JSON per settings.LOG_FORMAT) to Celery.

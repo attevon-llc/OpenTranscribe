@@ -167,8 +167,14 @@ def _check_opensearch_health(summary: dict) -> None:
     """Check and repair OpenSearch indices with corrupted HNSW vector segments.
 
     Runs outside the DB session since it only touches OpenSearch.
-    Updates the summary dict in place with repair results.
+    Updates the summary dict in place with repair results. Skipped entirely when
+    SQLite is the search backend so the periodic health check stays quiet with the
+    OpenSearch JVM stopped.
     """
+    from app.core.config import settings
+
+    if settings.SEARCH_BACKEND.lower() == "sqlite":
+        return
     try:
         from app.services.opensearch_service import check_and_repair_indices
 

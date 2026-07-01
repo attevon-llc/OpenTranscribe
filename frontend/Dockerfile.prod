@@ -1,5 +1,5 @@
 # Build stage
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 
 WORKDIR /app
 
@@ -29,7 +29,7 @@ RUN chmod -R 755 static/fonts
 RUN npm run build
 
 # Production stage
-FROM nginx:1.31.1-alpine3.23
+FROM nginx:1.31.2-alpine3.23
 
 # OCI annotations for container metadata and compliance
 LABEL org.opencontainers.image.title="OpenTranscribe Frontend" \

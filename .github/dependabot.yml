@@ -24,6 +24,15 @@ updates:
       # peer-pins vite ^6. Hold the major until the Svelte plugin supports vite 8.
       - dependency-name: "vite"
         update-types: ["version-update:semver-major"]
+      # @eslint/js 10 peer-wants eslint ^10, but typescript-eslint still pins
+      # eslint 9 — the major broke both pre-commit (ERESOLVE) and the lint job
+      # (new v10 recommended rules against the v9 engine). See #234 / #256.
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
+      # Types major tracks the runtime: bump together with the coordinated
+      # node 22 -> 26 upgrade (#234), not ahead of it.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   # Backend — one grouped PR
   - package-ecosystem: "pip"
@@ -35,6 +44,30 @@ updates:
       backend:
         patterns:
           - "*"
+    ignore:
+      # torch/torchaudio use local-tag pins (+cpu / +cu128) that dependabot
+      # mangles into mismatched, uninstallable pairs across the requirements
+      # variants (#257). Managed by hand alongside the CUDA base image.
+      - dependency-name: "torch"
+      - dependency-name: "torchaudio"
+      # bcrypt 5 removed the __about__ attribute passlib introspects (#234).
+      - dependency-name: "bcrypt"
+        update-types: ["version-update:semver-major"]
+      # transformers 5 / huggingface-hub 1.x break whisperx + pyannote (#234);
+      # bump together once the ASR stack supports them.
+      - dependency-name: "transformers"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "huggingface-hub"
+        update-types: ["version-update:semver-major"]
+      # websockets 11 -> 16 is a five-major jump touching uvicorn/provider SDK
+      # paths; take it deliberately with its own validation, not in a batch.
+      - dependency-name: "websockets"
+        update-types: ["version-update:semver-major"]
+      # speechmatics-batch 0.x minors are potentially breaking and the 0.5.0
+      # release ships live-key-verified provider integrations — re-verify with
+      # live keys before adopting (#234).
+      - dependency-name: "speechmatics-batch"
+        versions: ["0.5.x"]
 
   # CI workflow actions — one grouped PR
   - package-ecosystem: "github-actions"

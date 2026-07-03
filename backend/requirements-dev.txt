@@ -6,12 +6,12 @@
 
 # Code Quality & Formatting
 black>=26.5.1
-ruff>=0.15.15
+ruff>=0.15.20
 mypy>=2.1.0
 mypy-extensions>=1.1.0
 
 # Testing
-pytest>=9.0.3
+pytest>=9.1.1
 pytest-asyncio>=1.4.0  # For testing async code
 pytest-cov>=7.1.0  # Code coverage reports
 pytest-xdist>=3.8.0  # Parallel execution — pyproject addopts uses "-n auto"
@@ -28,5 +28,5 @@ types-redis>=4.6.0.20241004
 types-passlib>=1.7.7.20260211
 
 # Development Utilities
-ipython>=9.14.0  # Enhanced Python shell
+ipython>=9.15.0  # Enhanced Python shell
 ipdb>=0.13.13  # IPython debugger

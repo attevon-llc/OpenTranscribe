@@ -113,8 +113,11 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                         "downstream_tasks": downstream_tasks,
                         # This rediarize completes a fresh billable pipeline run —
                         # it is the metering terminus (we deliberately don't meter
-                        # here to avoid double-counting).
+                        # here to avoid double-counting), and it meters under THIS
+                        # pipeline's id so the reservation taken at dispatch is
+                        # released and replays dedup on a stable key.
                         "pipeline_completion": True,
+                        "pipeline_task_id": task_id,
                     },
                     queue=CeleryQueues.GPU,
                 )

@@ -210,6 +210,7 @@ def rediarize_task(  # noqa: C901
     num_speakers: int | None = None,
     downstream_tasks: list[str] | None = None,
     pipeline_completion: bool = False,
+    pipeline_task_id: str | None = None,
 ):
     """Re-run speaker diarization on an existing transcript without re-transcribing.
 
@@ -230,6 +231,11 @@ def rediarize_task(  # noqa: C901
             diarization) — that's the sole case that fires the metering hook.
             User-triggered re-diarization of an already-billed transcript must
             leave this False or every rerun would meter a full transcription.
+        pipeline_task_id: The originating pipeline's task id. Metering MUST use
+            it as the run_id: the quota reservation was taken under the
+            pipeline id at dispatch, and the idempotency key must be stable
+            across pipeline replays (this task's own Celery id is not — a
+            redelivered finalize would double-meter under a fresh key).
     """
     import shutil
 
@@ -401,7 +407,10 @@ def rediarize_task(  # noqa: C901
                 _fire_completion_metering(
                     db,
                     file_id=file_id,
-                    run_id=task_id,
+                    # Reservation + idempotency were keyed on the pipeline id at
+                    # dispatch — meter under the same id (own id only as a
+                    # legacy fallback).
+                    run_id=pipeline_task_id or task_id,
                     provider=_resolve_asr_provider(db, file_id),
                     success=True,
                 )

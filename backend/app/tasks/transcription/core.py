@@ -272,6 +272,29 @@ def _handle_transcription_failure(
             media_file.error_category = categorize_error(error_msg).value
             db.commit()
 
+        # Cloud-edition seam: a FAILED run must still fire the completion hook
+        # (success=False) so the quota layer releases the reservation taken at
+        # dispatch — otherwise crashed jobs permanently consume quota headroom.
+        # No-op in community; failures contained by the hook registry.
+        try:
+            from .hooks import CompletionContext
+            from .hooks import fire_transcription_complete
+
+            fire_transcription_complete(
+                CompletionContext(
+                    file_id=ctx.file_id,
+                    file_uuid=str(ctx.file_uuid),
+                    user_id=ctx.user_id,
+                    organization_id=media_file.organization_id if media_file else None,
+                    audio_duration_s=0.0,
+                    run_id=task_id,
+                    provider="local",
+                    success=False,
+                )
+            )
+        except Exception:  # pragma: no cover — hook layer already contains
+            logger.exception("Failure-path completion hook raised (contained)")
+
     send_error_notification(ctx.user_id, ctx.file_id, error_msg)
     return {"status": "error", "message": error_msg, "error_type": error_type}
 

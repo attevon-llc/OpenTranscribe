@@ -7,11 +7,11 @@ description = "AI-powered transcription application with speaker diarization and
 authors = [
     {name = "OpenTranscribe Contributors"}
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 
 [tool.black]
 line-length = 100
-target-version = ['py311']
+target-version = ['py312']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -33,7 +33,7 @@ extend-exclude = '''
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = [

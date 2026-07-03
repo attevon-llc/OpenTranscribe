@@ -11,7 +11,7 @@ requires-python = ">=3.12"
 
 [tool.black]
 line-length = 100
-target-version = ['py312']
+target-version = ['py311']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -33,7 +33,10 @@ extend-exclude = '''
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+# Deliberately py311 for now: bumping the lint target enables the 3.12+
+# pyupgrade codemods (~1400 auto-fixes repo-wide) — that churn lands as its
+# own follow-up PR, not inside the CI/runtime alignment.
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [

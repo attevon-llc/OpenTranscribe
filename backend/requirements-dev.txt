@@ -9,6 +9,7 @@ black>=26.5.1
 ruff>=0.15.15
 mypy>=2.1.0
 mypy-extensions>=1.1.0
+import-linter>=2.0  # Enforces the app ↛ cloud seam (forbidden contract in pyproject.toml)
 
 # Testing
 pytest>=9.0.3

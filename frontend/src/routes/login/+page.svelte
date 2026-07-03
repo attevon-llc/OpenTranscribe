@@ -1,14 +1,22 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { login, authStore, isAuthenticated, getAuthMethods, loginWithKeycloak, handleKeycloakCallback, loginWithPKI, verifyMFA, type AuthMethods } from "$stores/auth";
+  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithKeycloak, handleKeycloakCallback, loginWithPKI, verifyMFA, type AuthMethods } from "$stores/auth";
   import { onMount, onDestroy } from 'svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { browser } from '$app/environment';
+  import { isCloudEdition } from '$lib/edition';
   import ClassificationBanner from '$lib/components/ClassificationBanner.svelte';
   import LoginBanner from '$components/LoginBanner.svelte';
   import Spinner from '../../components/ui/Spinner.svelte';
+
+  // Cloud edition: the hosted sign-in component mounts into this node; an
+  // auth-state listener hydrates our local user store once a session exists.
+  let externalSignInNode: HTMLElement | null = null;
+  let externalUnmount: (() => void) | null = null;
+  let externalUnlisten: (() => void) | null = null;
+  let externalAuthLoading = isCloudEdition;
 
   // Import logo asset for proper Vite processing
   import logoBanner from '../../assets/logo-banner.png';
@@ -66,6 +74,14 @@
       keycloakLoading = false;
       pkiLoading = false;
       loading = false;
+
+      // Cloud edition: the hosted IdP owns login, registration, and MFA. Mount
+      // its sign-in component and hydrate our store when it reports a session.
+      // The community local-login / Keycloak-callback flow below is skipped.
+      if (isCloudEdition) {
+        await setupExternalSignIn();
+        return;
+      }
 
       // Check for Keycloak callback parameters
       const urlParams = new URLSearchParams(window.location.search);
@@ -162,6 +178,70 @@
         }
       }
     };
+  });
+
+  // Cloud edition: load the hosted auth SDK, mount its sign-in component, and
+  // hydrate the local store on session change. No-op in the community build
+  // (isCloudEdition gate above; $lib/cloud is an inert stub there).
+  async function setupExternalSignIn() {
+    try {
+      const { loadExternalAuth, mountSignIn, hasExternalSession, onAuthChange } =
+        await import('$lib/cloud');
+      const authHandle = await loadExternalAuth();
+      if (!authHandle) {
+        externalAuthLoading = false;
+        toastStore.error($t('auth.loginFailed'));
+        return;
+      }
+
+      // Already signed in (e.g. returning user) — hydrate and go.
+      if (await hasExternalSession()) {
+        await completeExternalLogin();
+        return;
+      }
+
+      // React to sign-in completion (the IdP handles the credential + MFA flow).
+      externalUnlisten = await onAuthChange(() => {
+        void (async () => {
+          if (!loginSuccess && (await hasExternalSession())) {
+            await completeExternalLogin();
+          }
+        })();
+      });
+
+      if (externalSignInNode) {
+        // afterSignInUrl/afterSignUpUrl keep the user in-app; the listener does
+        // the store hydration + navigation.
+        externalUnmount = await mountSignIn(externalSignInNode, {
+          afterSignInUrl: '/',
+          afterSignUpUrl: '/',
+          signUpUrl: '/register',
+        });
+      }
+      externalAuthLoading = false;
+    } catch (err) {
+      console.error('External sign-in setup failed:', err);
+      externalAuthLoading = false;
+      toastStore.error($t('auth.loginFailed'));
+    }
+  }
+
+  // Hydrate local user store from /auth/me after the IdP reports a session.
+  async function completeExternalLogin() {
+    const result = await loginWithExternalAuth();
+    if (result.success) {
+      loginSuccess = true;
+      import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
+      setTimeout(() => goto('/', { replaceState: true }), 600);
+    } else {
+      toastStore.error(result.message || $t('auth.loginFailed'));
+    }
+  }
+
+  // Tear down the hosted component + listener on unmount (cloud only).
+  onDestroy(() => {
+    if (externalUnmount) externalUnmount();
+    if (externalUnlisten) externalUnlisten();
   });
 
   // Validate login identifier (email or username for LDAP)
@@ -399,6 +479,18 @@
       <h1>{$t('auth.login')}</h1>
       <p>{$t('auth.signInToAccount')}</p>
     </div>
+    {#if isCloudEdition}
+      <!-- Cloud edition: the hosted IdP owns login + registration + MFA. Its
+           sign-in component mounts here; org context is resolved server-side
+           from the IdP's org claim, and the IdP handles MFA factors itself. -->
+      {#if externalAuthLoading}
+        <div class="external-auth-loading">
+          <Spinner size="small" />
+          <p>{$t('auth.signingIn') || 'Loading...'}</p>
+        </div>
+      {/if}
+      <div class="external-auth-mount" bind:this={externalSignInNode}></div>
+    {:else}
     <!-- MFA Verification Form -->
     {#if mfaRequired}
       <div class="mfa-form">
@@ -626,11 +718,28 @@
       >{$t('auth.register')}</a></span>
     </div>
     {/if}
+    {/if}
   </div>
 </div>
 {/if}
 
 <style>
+  /* Cloud edition: hosted sign-in component mount target. */
+  .external-auth-mount {
+    display: flex;
+    justify-content: center;
+  }
+
+  .external-auth-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.5rem 0;
+    color: var(--text-light);
+    font-size: 0.9rem;
+  }
+
   .auth-container {
     display: flex;
     justify-content: center;

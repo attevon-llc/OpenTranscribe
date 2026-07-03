@@ -8,7 +8,11 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -17,6 +21,7 @@ from app.models.user import User
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.transcript import SegmentSpeakerUpdate
 from app.utils.time_format import format_timestamp_simple as format_timestamp
+from app.utils.uuid_helpers import _resource_in_tenant_scope
 from app.utils.uuid_helpers import get_by_uuid
 from app.utils.uuid_helpers import require_resource_owner
 
@@ -77,7 +82,11 @@ def _cleanup_orphaned_speaker(db: Session, speaker_id: int) -> bool:
 
 
 def _get_new_speaker_id(
-    db: Session, update: SegmentSpeakerUpdate, segment: TranscriptSegment, current_user: User
+    db: Session,
+    update: SegmentSpeakerUpdate,
+    segment: TranscriptSegment,
+    current_user: User,
+    organization_id: OrgScope = UNSCOPED,
 ) -> int | None:
     """
     Resolve and validate the new speaker ID from the update request.
@@ -87,6 +96,8 @@ def _get_new_speaker_id(
         update: SegmentSpeakerUpdate containing the new speaker UUID (or null)
         segment: The segment being updated
         current_user: Currently authenticated user
+        organization_id: Active org id, None for personal, or UNSCOPED (legacy) —
+            tenant-gates the shared-editor permission resolution.
 
     Returns:
         The speaker ID if valid, None if unassigning
@@ -113,7 +124,7 @@ def _get_new_speaker_id(
         from app.services.permission_service import PermissionService
 
         perm = PermissionService.get_file_permission(
-            db, int(speaker.media_file_id), current_user.id
+            db, int(speaker.media_file_id), current_user.id, organization_id=organization_id
         )
         if not perm or perm == "viewer":
             raise HTTPException(
@@ -207,6 +218,7 @@ def update_segment_speaker(
     update: SegmentSpeakerUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Update the speaker assignment for a transcript segment.
@@ -245,11 +257,21 @@ def update_segment_speaker(
         forbidden_detail="Not authorized to modify this transcript segment",
     )
 
+    # Tenant gate: an out-of-scope file is not modifiable even by its owner
+    # (e.g. a removed org member editing an org-stamped file from personal scope).
+    if not _resource_in_tenant_scope(media_file, ctx.org_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to modify this transcript segment",
+        )
+
     # Track original speaker_id for change detection
     original_speaker_id: int | None = int(segment.speaker_id) if segment.speaker_id else None
 
-    # Resolve and validate the new speaker
-    new_speaker_id = _get_new_speaker_id(db, update, segment, current_user)
+    # Resolve and validate the new speaker (tenant-gated via ctx.org_id)
+    new_speaker_id = _get_new_speaker_id(
+        db, update, segment, current_user, organization_id=ctx.org_id
+    )
 
     # Update the segment's speaker
     segment.speaker_id = new_speaker_id  # type: ignore[assignment]

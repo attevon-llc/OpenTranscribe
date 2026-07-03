@@ -14,6 +14,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
@@ -51,6 +53,7 @@ async def get_subtitles(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
     include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
     subtitle_format: str = Query("srt", description="Subtitle format (srt, webvtt, txt)"),
     redact: bool = Query(True, description="Apply content redaction (owner/admin may disable)"),
@@ -61,9 +64,9 @@ async def get_subtitles(
     Returns subtitles in the requested format (SRT by default).
     Supports: srt, webvtt, txt (plain text with timestamps).
     """
-    # Get media file and check permissions
+    # Get media file and check permissions (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id  # Get internal ID for subtitle generation
 
@@ -127,15 +130,16 @@ async def validate_subtitles(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Validate subtitle timing and content for a media file.
 
     Returns validation results including any timing issues or problems found.
     """
-    # Get media file and check permissions
+    # Get media file and check permissions (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id  # Get internal ID for validation
 
@@ -189,6 +193,7 @@ def prepare_bulk_export(
     request: BulkExportPrepareRequest = Body(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Queue an async bulk subtitle export and return a job id.
 
@@ -210,7 +215,11 @@ def prepare_bulk_export(
     for file_uuid in request.file_uuids:
         try:
             media_file = get_file_by_uuid_with_permission(
-                db, file_uuid, current_user.id, is_admin=current_user.is_admin
+                db,
+                file_uuid,
+                current_user.id,
+                is_admin=current_user.is_admin,
+                organization_id=ctx.org_id,
             )
         except HTTPException:
             continue  # inaccessible file — skip silently, mirrors prior per-file skip

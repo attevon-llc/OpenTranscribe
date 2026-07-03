@@ -2,8 +2,9 @@
 
 Mirrors the battle-tested ``sync_keycloak_user_to_db`` pattern (lookup by
 external id -> email -> create, with IntegrityError race recovery) but is
-provider-agnostic so new managed IdPs (Clerk today) need no core changes
-beyond a column mapping entry.
+provider-agnostic: any managed IdP registered through
+``app.auth.provider_registry`` maps onto the generic ``external_id`` /
+``external_org_id`` columns with no core changes.
 
 LDAP/Keycloak/PKI keep their existing dedicated sync paths — this module only
 serves providers registered through ``app.auth.provider_registry``.
@@ -23,11 +24,11 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
-# provider -> (User column holding the external subject id,
-#              optional User column holding the last-seen org id)
-PROVIDER_ID_COLUMNS: dict[str, tuple[str, Optional[str]]] = {
-    "clerk": ("clerk_id", "clerk_org_id"),
-}
+# Generic User columns every registry-based external provider maps onto:
+# (column holding the external subject id, column holding the last-seen org id).
+# Provider-agnostic — the same pair serves any managed IdP.
+EXTERNAL_ID_COLUMN = "external_id"
+EXTERNAL_ORG_ID_COLUMN: Optional[str] = "external_org_id"
 
 
 def _apply_identity(user: User, identity: ExternalIdentity, id_col: str, org_col: Optional[str]):
@@ -58,22 +59,43 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     are race-safe via IntegrityError recovery on the unique external-id
     column. Existing local users matched by email are converted one-way to
     the external provider (local password cleared), mirroring the Keycloak
-    conversion semantics.
+    conversion semantics — but ONLY when the IdP asserts the email is
+    verified, and NEVER for super_admin accounts (platform-owner accounts
+    must be linked deliberately, not via self-serve IdP registration).
+
+    Raises:
+        PermissionError: when an email-matched link is refused (unverified
+            email or super_admin target). Callers treat this as 401.
     """
     from sqlalchemy.exc import IntegrityError
 
-    try:
-        id_col, org_col = PROVIDER_ID_COLUMNS[identity.provider]
-    except KeyError:
-        raise ValueError(
-            f"No User column mapping for external provider '{identity.provider}'"
-        ) from None
+    id_col, org_col = EXTERNAL_ID_COLUMN, EXTERNAL_ORG_ID_COLUMN
 
     email = identity.email or f"{identity.external_id}@{identity.provider}.local"
 
     user = db.query(User).filter(getattr(User, id_col) == identity.external_id).first()
+    matched_by_email = False
     if not user and identity.email:
         user = db.query(User).filter(User.email == identity.email).first()
+        matched_by_email = user is not None
+
+    if user and matched_by_email:
+        # Email-match links an external identity to a PRE-EXISTING account —
+        # the account-takeover vector if the IdP address isn't verified.
+        if not identity.email_verified:
+            logger.warning(
+                f"SECURITY: Refusing to link {identity.provider} identity "
+                f"{identity.external_id} to existing account {user.email}: "
+                "IdP did not assert the email address as verified."
+            )
+            raise PermissionError("External identity email is not verified")
+        if user.role == "super_admin":
+            logger.warning(
+                f"SECURITY: Refusing to link {identity.provider} identity "
+                f"{identity.external_id} to super_admin account {user.email} "
+                "via email match. Platform-owner accounts are never JIT-linked."
+            )
+            raise PermissionError("Account cannot be linked via external identity")
 
     if user:
         if user.auth_type == "local":
@@ -82,7 +104,7 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
                 "Local password will be cleared."
             )
             user.hashed_password = EXTERNAL_AUTH_NO_PASSWORD
-        if identity.email and identity.email != user.email:
+        if identity.email and identity.email != user.email and identity.email_verified:
             logger.warning(
                 f"SECURITY: User email changed during {identity.provider} login. "
                 f"external_id={identity.external_id}, "
@@ -96,10 +118,10 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
 
     logger.info(f"Creating new user from {identity.provider}: {identity.external_id} ({email})")
     # Product metric: external/JIT signup. The single point ALL external methods
-    # funnel through (including the cloud Clerk webhook, which calls this same
-    # core function). Bound the label to the fixed provider registry so the
-    # cardinality stays in {local,ldap,keycloak,pki,clerk}; anything else maps
-    # to "external".
+    # funnel through (including any cloud-edition webhook, which calls this same
+    # core function). Bound the label to the fixed core provider set so the
+    # cardinality stays in {local,ldap,keycloak,pki}; anything else maps to
+    # "external".
     from app.auth.constants import VALID_AUTH_TYPES
     from app.core.metrics import user_signups_total
 

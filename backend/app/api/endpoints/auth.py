@@ -26,6 +26,7 @@ from app.auth.audit import audit_logger
 from app.auth.constants import AUTH_TYPE_KEYCLOAK
 from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import AUTH_TYPE_PKI
+from app.auth.constants import VALID_AUTH_TYPES
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.direct_auth import direct_authenticate_user
 from app.auth.keycloak_auth import KeycloakConfig
@@ -99,6 +100,57 @@ def _get_client_info(request: Request) -> tuple[str, str]:
     return client_ip, user_agent
 
 
+def _authenticate_external_token(request: Request, token: str, db: Session) -> Optional[User]:
+    """Resolve a bearer token via the external-verifier seam (cloud edition).
+
+    Returns the JIT-synced user when a registered verifier claims the token,
+    or ``None`` to fall through to the local-JWT path. Sync failures — a
+    refused link (unverified email match / protected account) or a DB error —
+    surface as clean 401s, matching the optional-auth and WebSocket branches'
+    containment.
+    """
+    from app.auth.provider_registry import has_verifiers
+
+    if not has_verifiers():
+        return None
+
+    from app.auth.external_sync import sync_external_user_to_db
+    from app.auth.provider_registry import verify_external_token
+
+    external_identity = verify_external_token(token, request)
+    if external_identity is None:
+        return None
+
+    try:
+        external_user = sync_external_user_to_db(db, external_identity)
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+    except Exception:
+        logger.exception("External JIT sync failed; rejecting credential")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not provision external identity",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+    if not external_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    # Stash for get_current_context() so org scoping doesn't re-verify.
+    request.state.external_identity = external_identity
+    # Cloud contract: the access log / observability layer reads these
+    # off request.state. user_id is always set; org_id is the provider's
+    # raw org string here and is refined to our local Organization.id in
+    # deps_context.get_current_context() when org context applies. Never
+    # used as a Prometheus label — access log only.
+    request.state.user_id = external_user.id
+    request.state.org_id = getattr(external_user, "external_org_id", None)
+    return external_user
+
+
 def get_current_user(
     request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
@@ -125,29 +177,11 @@ def get_current_user(
         )
 
     # Cloud-edition seam: offer the token to registered external verifiers
-    # (e.g. Clerk) before the local-JWT path. The community edition registers
-    # none, so this branch is a no-op there.
-    from app.auth.provider_registry import has_verifiers
-
-    if has_verifiers():
-        from app.auth.external_sync import sync_external_user_to_db
-        from app.auth.provider_registry import verify_external_token
-
-        external_identity = verify_external_token(token, request)
-        if external_identity is not None:
-            external_user = sync_external_user_to_db(db, external_identity)
-            if not external_user.is_active:
-                raise HTTPException(status_code=400, detail="Inactive user")
-            # Stash for get_current_context() so org scoping doesn't re-verify.
-            request.state.external_identity = external_identity
-            # Cloud contract: the access log / observability layer reads these
-            # off request.state. user_id is always set; org_id is the provider's
-            # raw org string here and is refined to our local Organization.id in
-            # deps_context.get_current_context() when org context applies. Never
-            # used as a Prometheus label — access log only.
-            request.state.user_id = external_user.id
-            request.state.org_id = getattr(external_user, "clerk_org_id", None)
-            return external_user
+    # before the local-JWT path. The community edition registers none, so this
+    # is a no-op there.
+    external_user = _authenticate_external_token(request, token, db)
+    if external_user is not None:
+        return external_user
 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -204,7 +238,7 @@ def get_current_user(
         # our local Organization.id when org context applies. Access log only —
         # never a Prometheus label.
         request.state.user_id = user.id
-        request.state.org_id = getattr(user, "clerk_org_id", None)
+        request.state.org_id = getattr(user, "external_org_id", None)
         return user  # type: ignore[no-any-return]
     except Exception as e:
         # Handle database connection errors or other issues
@@ -262,6 +296,35 @@ def get_optional_current_user(
 
     if not token:
         return None
+
+    # Cloud-edition seam: offer the token to registered external verifiers
+    # before the local-JWT path, mirroring get_current_user. The community
+    # edition registers none, so this branch is a no-op there and behavior is
+    # identical. Optional semantics are preserved: an inactive or missing
+    # external user returns None rather than raising.
+    from app.auth.provider_registry import has_verifiers
+
+    if has_verifiers():
+        from app.auth.external_sync import sync_external_user_to_db
+        from app.auth.provider_registry import verify_external_token
+
+        try:
+            external_identity = verify_external_token(token, request)
+            if external_identity is not None:
+                external_user = sync_external_user_to_db(db, external_identity)
+                if not external_user.is_active:
+                    return None
+                # Stash for resolve_org_context()/get_current_context() so org
+                # scoping (e.g. thumbnail org-resolution) works for external
+                # users on optional-auth routes without re-verifying the token.
+                request.state.external_identity = external_identity
+                request.state.user_id = external_user.id
+                request.state.org_id = getattr(external_user, "external_org_id", None)
+                return external_user
+        except Exception as e:
+            # Never let an external-auth problem fail an optional-auth route;
+            # fall through to local JWT (and ultimately None).
+            logger.debug(f"Error in optional external auth: {e}")
 
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
@@ -1564,8 +1627,8 @@ async def get_auth_methods(db: Session = Depends(get_db)):
     if pki_enabled:
         methods.append("pki")
 
-    # Registry-based external providers (cloud edition registers e.g. "clerk";
-    # community registers none). Presence in the registry == enabled.
+    # Registry-based external providers (the cloud edition registers managed
+    # IdPs; community registers none). Presence in the registry == enabled.
     from app.auth.provider_registry import get_registered_providers
 
     external_providers = get_registered_providers()
@@ -1576,8 +1639,10 @@ async def get_auth_methods(db: Session = Depends(get_db)):
         "keycloak_enabled": keycloak_enabled,
         "pki_enabled": pki_enabled,
         "ldap_enabled": ldap_enabled,
+        # Registered external IdP providers, reported generically. Clients gate
+        # on membership in this list (e.g. `external_providers.length > 0`),
+        # never on a hardcoded per-vendor flag.
         "external_providers": external_providers,
-        "clerk_enabled": "clerk" in external_providers,
         "mfa_enabled": mfa_enabled,
         "mfa_required": mfa_required,
         "login_banner_enabled": login_banner_enabled,
@@ -1649,19 +1714,32 @@ async def acknowledge_banner(
 
 
 def _user_can_setup_mfa(user: User) -> bool:
-    """Check if user is eligible for MFA setup.
+    """Check if user is eligible for local TOTP MFA setup.
 
-    PKI and Keycloak users don't need MFA because:
-    - PKI: Smart card is already two-factor (something you have + PIN)
-    - Keycloak: MFA is handled by the identity provider
+    Local TOTP MFA only applies to users whose identity this app owns. Users
+    authenticated by an external identity provider get their MFA from that IdP:
+
+    - PKI: smart card is already two-factor (something you have + PIN).
+    - Keycloak: MFA is handled by the identity provider.
+    - Any registry-based external/SSO provider (e.g. a cloud-edition IdP): MFA
+      and auth are owned by the provider, so a redundant local TOTP is excluded.
+
+    The check is generic (no provider names beyond the core IdPs): an auth_type
+    that is not one of the core types this app enumerates is treated as an
+    external/SSO provider and excluded from local MFA setup.
 
     Args:
         user: User model object
 
     Returns:
-        bool: True if user can set up MFA
+        bool: True if user can set up local MFA
     """
-    return user.auth_type not in [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK]
+    # Explicit core IdPs whose MFA is handled externally.
+    if user.auth_type in (AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK):
+        return False
+    # Any auth_type not in the core set is an external/registry-based SSO
+    # provider (cloud edition) — local TOTP would be redundant.
+    return user.auth_type in VALID_AUTH_TYPES
 
 
 def _is_mfa_enabled(db: Session) -> bool:

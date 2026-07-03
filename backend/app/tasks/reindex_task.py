@@ -150,6 +150,7 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
         "file_size": media_file.file_size,
         "collection_ids": collection_id_list,
         "accessible_user_ids": accessible_user_ids,
+        "organization_id": media_file.organization_id,
     }
 
 
@@ -660,6 +661,7 @@ def reindex_batch_task(
                         file_size=metadata["file_size"],
                         collection_ids=metadata["collection_ids"],
                         accessible_user_ids=metadata.get("accessible_user_ids"),
+                        organization_id=metadata.get("organization_id"),
                     )
 
                     local_stats["indexed"] += 1

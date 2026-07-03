@@ -11,7 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.api.endpoints.auth import get_current_user
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.files.upload import create_media_file_record
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.db.base import get_db
@@ -20,7 +21,6 @@ from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import Tag
 from app.models.upload_batch import UploadBatch
-from app.models.user import User
 from app.schemas.media import PrepareUploadRequest
 from app.services.auto_label_service import AutoLabelService
 from app.utils import benchmark_timing
@@ -172,7 +172,7 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> None:
 async def prepare_upload(
     request: PrepareUploadRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Prepare for a file upload by creating a MediaFile record and returning the file ID.
@@ -183,6 +183,7 @@ async def prepare_upload(
     application-level ``task_id`` and a presigned PUT URL for the browser to
     upload bytes directly to MinIO, bypassing the API container entirely.
     """
+    current_user = ctx.user
     try:
         # If file hash is provided, check for duplicates
         duplicate_id: str | None = None
@@ -198,6 +199,12 @@ async def prepare_upload(
                 )
                 return {"file_id": duplicate_id, "is_duplicate": 1}
 
+        # Cloud-edition seam: enforce the tenant's per-tier max upload size
+        # before minting a record / presigned URL. No-op in community.
+        from app.api.endpoints.files.upload import validate_file_size_for_tenant
+
+        validate_file_size_for_tenant(request.file_size, ctx.org_id)
+
         # Create file metadata object with information needed for the record
         file_metadata = FileMetadata(
             request.filename,
@@ -207,7 +214,13 @@ async def prepare_upload(
         file_metadata.file_hash = request.file_hash
 
         # Create the database record
-        db_file = create_media_file_record(db, file_metadata, current_user, request.file_size)  # type: ignore[arg-type]
+        db_file = create_media_file_record(
+            db,
+            file_metadata,  # type: ignore[arg-type]
+            current_user,
+            request.file_size,
+            ctx.org_id,
+        )
 
         # Generate and set storage_path immediately for duplicate detection
         # This allows future uploads with the same file to recognize it as a duplicate
@@ -283,6 +296,10 @@ async def prepare_upload(
         logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
         return response
 
+    except HTTPException:
+        # Preserve intentional HTTP errors (e.g. 413 tenant size limit, 409
+        # duplicate) — don't bury them in a generic 500.
+        raise
     except Exception as e:
         logger.error(f"Error preparing upload: {str(e)}")
         raise HTTPException(

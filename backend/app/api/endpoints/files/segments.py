@@ -15,6 +15,8 @@ from fastapi import Depends
 from fastapi import Query
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
@@ -38,6 +40,7 @@ def get_file_segments(
     redact: bool = Query(True, description="Apply content redaction (owner/admin may disable)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, Any]:
     """Get paginated transcript segments for a file.
 
@@ -46,7 +49,9 @@ def get_file_segments(
     speakers list, analytics, or other file metadata.
     """
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, str(file_uuid), current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(
+        db, str(file_uuid), current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+    )
     file_id = db_file.id
     redaction_cfg, reveal_categories = _resolve_redaction_for_request(
         db, db_file, current_user, is_admin=is_admin, redact=redact

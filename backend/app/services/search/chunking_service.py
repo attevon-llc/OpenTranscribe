@@ -166,6 +166,7 @@ def chunk_transcript_by_speaker_turns(
     collection_ids: list[int] | None = None,
     target_words: int | None = None,
     overlap_words: int | None = None,
+    organization_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """
     Chunk transcript segments into search-optimized documents.
@@ -238,6 +239,7 @@ def chunk_transcript_by_speaker_turns(
                     duration=duration,
                     file_size=file_size,
                     collection_ids=collection_ids,
+                    organization_id=organization_id,
                 )
             )
             chunk_index += 1
@@ -260,6 +262,7 @@ def chunk_transcript_by_speaker_turns(
                 duration=duration,
                 file_size=file_size,
                 collection_ids=collection_ids,
+                organization_id=organization_id,
             )
             chunks.extend(sub_chunks)
             chunk_index += len(sub_chunks)
@@ -371,6 +374,7 @@ def _split_long_turn(
     duration: float | None = None,
     file_size: int | None = None,
     collection_ids: list[int] | None = None,
+    organization_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """Split a long speaker turn into overlapping chunks at sentence boundaries.
 
@@ -406,6 +410,7 @@ def _split_long_turn(
             duration,
             file_size,
             collection_ids,
+            organization_id,
         )
 
     # Accumulate sentences into chunks respecting target_words
@@ -445,6 +450,7 @@ def _split_long_turn(
                     duration=duration,
                     file_size=file_size,
                     collection_ids=collection_ids,
+                    organization_id=organization_id,
                 )
             )
             chunk_index += 1
@@ -490,6 +496,7 @@ def _split_long_turn(
                 duration=duration,
                 file_size=file_size,
                 collection_ids=collection_ids,
+                organization_id=organization_id,
             )
         )
 
@@ -513,6 +520,7 @@ def _split_long_turn_by_words(
     duration: float | None = None,
     file_size: int | None = None,
     collection_ids: list[int] | None = None,
+    organization_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """Split a long speaker turn into overlapping chunks by word count.
 
@@ -551,6 +559,7 @@ def _split_long_turn_by_words(
                 duration=duration,
                 file_size=file_size,
                 collection_ids=collection_ids,
+                organization_id=organization_id,
             )
         )
         chunk_index += 1
@@ -579,9 +588,15 @@ def _make_chunk(
     duration: float | None = None,
     file_size: int | None = None,
     collection_ids: list[int] | None = None,
+    organization_id: int | None = None,
 ) -> dict[str, Any]:
-    """Create a chunk document dict."""
-    return {
+    """Create a chunk document dict.
+
+    ``organization_id`` is only written when set (org file). Community/personal
+    docs are indexed WITHOUT the field, matching the personal-scope search filter
+    (``must_not exists organization_id``) so behavior is unchanged there.
+    """
+    chunk: dict[str, Any] = {
         "file_id": file_id,
         "file_uuid": file_uuid,
         "user_id": user_id,
@@ -600,3 +615,6 @@ def _make_chunk(
         "file_size": file_size,
         "collection_ids": collection_ids or [],
     }
+    if organization_id is not None:
+        chunk["organization_id"] = organization_id
+    return chunk

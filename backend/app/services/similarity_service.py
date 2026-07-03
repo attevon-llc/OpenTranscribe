@@ -121,6 +121,7 @@ class SimilarityService:
         max_results: int = 50,
         exclude_ids: Optional[list[int]] = None,
         boost_recent: bool = True,
+        organization_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """
         High-performance OpenSearch kNN similarity search with advanced features.
@@ -136,10 +137,12 @@ class SimilarityService:
             max_results: Maximum number of results (increased default)
             exclude_ids: Optional list of IDs to exclude from results
             boost_recent: Whether to boost recent embeddings in scoring
+            organization_id: Active org id (None = personal) — tenant gate.
 
         Returns:
             List of similarity matches with scores and metadata
         """
+        from app.services.opensearch_service import _speaker_org_filter_clauses
         from app.services.opensearch_service import opensearch_client
 
         # Convert embedding to list format for OpenSearch
@@ -150,8 +153,11 @@ class SimilarityService:
         else:
             embedding_list = embedding
 
-        # Build advanced query with multiple filters
-        must_filters = [{"term": {"user_id": user_id}}]
+        # Build advanced query with multiple filters (incl. tenant gate)
+        must_filters = [
+            {"term": {"user_id": user_id}},
+            *_speaker_org_filter_clauses(organization_id),
+        ]
         must_not_filters = []
 
         if exclude_ids:

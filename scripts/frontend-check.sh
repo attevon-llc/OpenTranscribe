@@ -63,10 +63,19 @@ print_warning() { echo -e "${YELLOW}[frontend-check]${NC} $1"; }
 # Check node_modules exist
 check_node_modules() {
     if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
-        print_info "node_modules not found, running npm install..."
-        if ! (cd "$FRONTEND_DIR" && npm install --no-audit --no-fund 2>&1); then
-            print_error "npm install failed"
-            exit 1
+        print_info "node_modules not found, installing..."
+        # Prefer `npm ci`: a deterministic install from package-lock.json that
+        # NEVER rewrites the lockfile. (A newer CI npm pruning optional entries
+        # during `npm install` rewrites package-lock.json, which makes the
+        # pre-commit hook fail on a modified tracked file.) Fall back to
+        # `npm install` only if the lockfile is missing/out of sync so local
+        # dev isn't blocked.
+        if ! (cd "$FRONTEND_DIR" && npm ci --no-audit --no-fund 2>&1); then
+            print_info "npm ci unavailable (lockfile out of sync?), falling back to npm install..."
+            if ! (cd "$FRONTEND_DIR" && npm install --no-audit --no-fund 2>&1); then
+                print_error "npm install failed"
+                exit 1
+            fi
         fi
     fi
 }

@@ -43,8 +43,9 @@ def _store_profile_embedding_to_opensearch(
     embedding: list[float],
     speaker_count: int,
     user_id: int,
+    organization_id: int | None = None,
 ) -> None:
-    """Store a profile embedding to OpenSearch."""
+    """Store a profile embedding to OpenSearch (org-stamped for org profiles)."""
     try:
         from app.services.opensearch_service import store_profile_embedding
 
@@ -55,6 +56,7 @@ def _store_profile_embedding_to_opensearch(
             embedding=embedding,
             speaker_count=speaker_count,
             user_id=user_id,
+            organization_id=organization_id,
         )
     except Exception as e:
         logger.warning(f"Failed to sync profile {profile_id} embedding to OpenSearch: {e}")
@@ -117,6 +119,9 @@ def _process_profile_with_embeddings(
         embedding=averaged_embedding,
         speaker_count=len(embeddings),
         user_id=int(profile.user_id),
+        # Full-recalc must preserve the tenant stamp, or an org profile's doc
+        # would silently fall back to personal scope until the next backfill.
+        organization_id=profile.organization_id,
     )
 
     logger.info(f"Updated profile {profile_id} embedding with {len(embeddings)} speaker embeddings")
@@ -208,10 +213,12 @@ def _execute_knn_search(
     user_id: int,
     threshold: float,
     accessible_profile_ids: set[int] | None = None,
+    organization_id: int | None = None,
 ) -> list[dict]:
     """Execute KNN search and return matches above threshold."""
     from app.services.opensearch_service import _is_index_corruption_error
     from app.services.opensearch_service import _repair_index
+    from app.services.opensearch_service import _speaker_org_filter_clauses
 
     if accessible_profile_ids is not None:
         filters = [
@@ -223,6 +230,8 @@ def _execute_knn_search(
             {"term": {"document_type": "profile"}},
             {"term": {"user_id": user_id}},
         ]
+    # Tenant gate on profile docs (org term, else exclude org-stamped).
+    filters.extend(_speaker_org_filter_clauses(organization_id))
 
     query = {
         "size": 25,
@@ -534,6 +543,7 @@ class ProfileEmbeddingService:
         user_id: int,
         threshold: float = 0.7,
         accessible_profile_ids: set[int] | None = None,
+        organization_id: int | None = None,
     ) -> list[dict]:
         """
         Find speaker profiles using OpenSearch native kNN search for optimal performance.
@@ -548,6 +558,7 @@ class ProfileEmbeddingService:
             threshold: Minimum similarity threshold
             accessible_profile_ids: Optional set of profile IDs to search within
                 (for shared profile scope). If None, filters by user_id.
+            organization_id: Active org id (None = personal) — tenant gate.
 
         Returns:
             List of matching profiles with similarity scores
@@ -575,6 +586,7 @@ class ProfileEmbeddingService:
                 user_id,
                 threshold,
                 accessible_profile_ids=accessible_profile_ids,
+                organization_id=organization_id,
             )
 
             logger.info(

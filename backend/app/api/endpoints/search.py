@@ -11,6 +11,8 @@ from fastapi import HTTPException
 from fastapi import Query
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.core.config import settings
@@ -114,7 +116,9 @@ def search_transcripts(
     title_filter: str | None = Query(
         None, description="Filter by filename/title (substring match)"
     ),
-    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ) -> dict[str, Any]:
     """
     Google-style hybrid search across all transcripts.
@@ -167,7 +171,7 @@ def search_transcripts(
     search_service = HybridSearchService()
     response = search_service.search(
         query=q,
-        user_id=current_user.id,
+        user_id=ctx.user.id,
         page=page,
         page_size=page_size,
         speakers=speakers,
@@ -185,16 +189,58 @@ def search_transcripts(
         max_file_size=max_file_size,
         language=language,
         title_filter=title_filter,
+        organization_id=ctx.org_id,
     )
 
+    # Abuse/DMCA: the OpenSearch transcript index has no quarantine field, so
+    # drop any taken-down files from the result page against the DB (page-sized,
+    # one IN query). Admins keep visibility for review.
+    if not ctx.user.is_admin:
+        _drop_quarantined_search_hits(db, response)
+
     return _search_response_to_schema(response)
+
+
+def _drop_quarantined_search_hits(db: Session, response: Any) -> None:
+    """Remove quarantined files from a search response in place (non-admin).
+
+    The hidden files 404 on detail/stream anyway (the per-resource gate), so this
+    just keeps them out of the result list/snippets too — the search-snippet
+    redaction surface for takedowns.
+    """
+    hits = getattr(response, "results", None) or []
+    if not hits:
+        return
+    from app.models.media import MediaFile
+
+    uuids = [h.file_uuid for h in hits if getattr(h, "file_uuid", None)]
+    if not uuids:
+        return
+    quarantined = {
+        str(row[0])
+        for row in db.query(MediaFile.uuid)
+        .filter(MediaFile.uuid.in_(uuids), MediaFile.is_quarantined.is_(True))
+        .all()
+    }
+    if not quarantined:
+        return
+    kept = [h for h in hits if str(h.file_uuid) not in quarantined]
+    removed = len(hits) - len(kept)
+    response.results = kept
+    # Keep the reported totals consistent with the trimmed page.
+    if hasattr(response, "total_results"):
+        response.total_results = max(0, int(getattr(response, "total_results", 0)) - removed)
+    if hasattr(response, "total_files"):
+        response.total_files = max(0, int(getattr(response, "total_files", 0)) - removed)
 
 
 @router.get("/suggestions")
 def search_suggestions(
     q: str = Query(..., min_length=2, description="Search prefix"),
     limit: int = Query(8, ge=1, le=20, description="Max suggestions"),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
+    db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
     """
     Auto-complete suggestions as user types.
@@ -212,16 +258,38 @@ def search_suggestions(
     from app.services.search.hybrid_search_service import HybridSearchService
 
     search_service = HybridSearchService()
-    return search_service.get_suggestions(
+    suggestions = search_service.get_suggestions(
         prefix=q,
-        user_id=current_user.id,
+        user_id=ctx.user.id,
         limit=limit,
+        organization_id=ctx.org_id,
     )
+
+    # Abuse/DMCA: like the results page, the chunks index carries no quarantine
+    # field — drop taken-down files' titles from autocomplete against the DB
+    # (admins keep visibility for review). Speaker-name suggestions carry no
+    # file linkage and stay as-is.
+    if suggestions and not ctx.user.is_admin:
+        from app.models.media import MediaFile
+
+        uuids = [s["file_uuid"] for s in suggestions if s.get("file_uuid")]
+        if uuids:
+            quarantined = {
+                str(row[0])
+                for row in db.query(MediaFile.uuid)
+                .filter(MediaFile.uuid.in_(uuids), MediaFile.is_quarantined.is_(True))
+                .all()
+            }
+            if quarantined:
+                suggestions = [s for s in suggestions if str(s.get("file_uuid")) not in quarantined]
+
+    return suggestions
 
 
 @router.get("/filters")
 def get_available_filters(
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ) -> dict[str, Any]:
     """
     Return available filter options (speakers, tags, date range).
@@ -232,7 +300,7 @@ def get_available_filters(
     from app.services.search.hybrid_search_service import HybridSearchService
 
     search_service = HybridSearchService()
-    return search_service.get_available_filters(user_id=current_user.id)
+    return search_service.get_available_filters(user_id=ctx.user.id, organization_id=ctx.org_id)
 
 
 @router.post("/reindex")

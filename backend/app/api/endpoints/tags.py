@@ -11,6 +11,8 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.db.base import get_db
@@ -69,13 +71,20 @@ def create_tag(
 
 
 @router.get("", response_model=list[TagWithCount])
-def list_tags(db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+def list_tags(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
     """
     List all available tags for the current user with usage counts, sorted by most used.
 
     Read-through cached in Redis (``cache:tags:{user_id}``) behind
     ``READ_CACHE_ENABLED``. The endpoint takes no parameters, so a single
-    per-user key is exact. Every tag/file-tag mutation path busts this key
+    per-user key is exact FOR PERSONAL SCOPE. Org-context requests bypass the
+    cache entirely: the key is scope-blind and ``invalidate_tags`` deletes only
+    the exact per-user key, so caching org-scoped results would either leak
+    across scopes or go stale. Every tag/file-tag mutation path busts this key
     (see the redaction audit in the Phase-8 commit body), so reads are always
     fresh.
     """
@@ -84,7 +93,7 @@ def list_tags(db: Session = Depends(get_db), current_user: User = Depends(get_cu
     from app.services.redis_cache_service import redis_cache
 
     cache_key = f"cache:tags:{current_user.id}"
-    use_cache = app_settings.READ_CACHE_ENABLED
+    use_cache = app_settings.READ_CACHE_ENABLED and ctx.org_id is None
 
     if use_cache:
         cached = redis_cache.get(cache_key)
@@ -96,8 +105,11 @@ def list_tags(db: Session = Depends(get_db), current_user: User = Depends(get_cu
 
         from app.services.permission_service import PermissionService
 
-        # Get tags with usage counts for files accessible by this user (owned + shared)
-        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, current_user.id)
+        # Get tags with usage counts for files accessible by this user
+        # (owned + shared, tenant-gated via ctx.org_id)
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(
+            db, current_user.id, organization_id=ctx.org_id
+        )
         tag_counts = (
             db.query(Tag, func.count(FileTag.id).label("usage_count"))
             .outerjoin(FileTag)
@@ -199,12 +211,13 @@ async def add_tag_to_file(
     tag_data: dict = Body(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
-    # Get file by UUID and verify permission
+    # Get file by UUID and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id  # Get internal ID for database operations
 
@@ -256,15 +269,16 @@ def remove_tag_from_file(
     tag_name: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Remove a tag from a media file
     """
-    # Get file by UUID with permission check
+    # Get file by UUID with permission check (tenant-gated via ctx.org_id)
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id
 

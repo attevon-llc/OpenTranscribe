@@ -30,6 +30,28 @@ from app.utils.task_utils import update_task_status
 logger = logging.getLogger(__name__)
 
 
+def _resolve_asr_provider(db, file_id: int) -> str:
+    """Resolve the ASR provider that produced this transcript, for metering.
+
+    Reads ``FilePipelineTiming.asr_provider`` (recorded by the transcription
+    pipeline). A rediarize only runs for cloud-ASR files, so the provider is
+    normally a cloud-ASR name; falls back to "local" when not recorded.
+    """
+    try:
+        from app.models.pipeline_timing import FilePipelineTiming
+
+        row = (
+            db.query(FilePipelineTiming.asr_provider)
+            .filter(FilePipelineTiming.file_id == file_id)
+            .first()
+        )
+        if row and row.asr_provider:
+            return str(row.asr_provider)
+    except Exception as e:  # pragma: no cover - best-effort provider lookup
+        logger.debug(f"Could not resolve asr_provider for file {file_id}: {e}")
+    return "local"
+
+
 def _load_segments_as_transcript(file_id: int) -> dict:
     """Load existing transcript segments from DB in the pipeline result format.
 
@@ -187,6 +209,8 @@ def rediarize_task(  # noqa: C901
     max_speakers: int | None = None,
     num_speakers: int | None = None,
     downstream_tasks: list[str] | None = None,
+    pipeline_completion: bool = False,
+    pipeline_task_id: str | None = None,
 ):
     """Re-run speaker diarization on an existing transcript without re-transcribing.
 
@@ -202,6 +226,16 @@ def rediarize_task(  # noqa: C901
         downstream_tasks: Optional list of downstream stage names to dispatch.
             Valid values: 'analytics', 'speaker_llm', 'summarization',
             'topic_extraction', 'search_indexing'.
+        pipeline_completion: True ONLY when this rediarize is the completion
+            terminus of a fresh transcription pipeline run (cloud ASR + local
+            diarization) — that's the sole case that fires the metering hook.
+            User-triggered re-diarization of an already-billed transcript must
+            leave this False or every rerun would meter a full transcription.
+        pipeline_task_id: The originating pipeline's task id. Metering MUST use
+            it as the run_id: the quota reservation was taken under the
+            pipeline id at dispatch, and the idempotency key must be stable
+            across pipeline replays (this task's own Celery id is not — a
+            redelivered finalize would double-meter under a fresh key).
     """
     import shutil
 
@@ -359,6 +393,27 @@ def rediarize_task(  # noqa: C901
                 media_file_obj.diarization_disabled = False
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
             update_media_file_status(db, file_id, FileStatus.COMPLETED)
+
+            # Cloud-edition seam: when this rediarize is the completion terminus
+            # for a fresh cloud-ASR + local-diarization pipeline run, fire the
+            # metering hook here (the finalize_transcription branch that
+            # dispatched us does NOT meter, to avoid double-counting). run_id is
+            # this Celery task id (stable across retries — acks_late).
+            # User-triggered re-diarization (pipeline_completion=False) never
+            # meters: the transcript was already billed by its original run.
+            if pipeline_completion:
+                from app.tasks.transcription.postprocess import _fire_completion_metering
+
+                _fire_completion_metering(
+                    db,
+                    file_id=file_id,
+                    # Reservation + idempotency were keyed on the pipeline id at
+                    # dispatch — meter under the same id (own id only as a
+                    # legacy fallback).
+                    run_id=pipeline_task_id or task_id,
+                    provider=_resolve_asr_provider(db, file_id),
+                    success=True,
+                )
 
         # Send completion notification
         from app.tasks.transcription.notifications import send_completion_notification

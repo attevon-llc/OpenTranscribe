@@ -12,8 +12,12 @@ from fastapi import status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -51,15 +55,20 @@ def create_speaker(
     media_file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Create a new speaker for a specific media file
     """
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
-    # Get media file by UUID and verify permission
+    # Get media file by UUID and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, media_file_uuid, current_user.id, is_admin=current_user.is_admin
+        db,
+        media_file_uuid,
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
     )
 
     # Generate a UUID for the new speaker
@@ -124,12 +133,15 @@ def _sort_speakers(speakers: list[Speaker]) -> list[Speaker]:
     return speakers
 
 
-def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dict[str, Any]]:
+def _get_unique_speakers_for_filter(
+    db: Session, current_user: User, organization_id: OrgScope = UNSCOPED
+) -> list[dict[str, Any]]:
     """
     Get unique speakers by display name for filter use with media file counts.
 
     Includes speakers from both owned and shared files so that shared-collection
-    speakers appear in the filter sidebar.
+    speakers appear in the filter sidebar. ``organization_id`` tenant-gates the
+    accessible-file resolution (default-deny across scopes).
 
     Uses DISTINCT ON to pick a deterministic representative speaker per display
     name (the one with the lowest id), then counts media files per display name.
@@ -148,7 +160,9 @@ def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dic
         ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
     ]
     if not current_user.is_admin:
-        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, current_user.id)
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(
+            db, current_user.id, organization_id=organization_id
+        )
         base_filter.append(Speaker.media_file_id.in_(select(accessible_sq)))
 
     # Step 1: Get one representative speaker per display_name using DISTINCT ON
@@ -188,14 +202,23 @@ def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dic
     return results
 
 
-def _resolve_file_uuid_to_id(file_uuid: str | None, current_user: User, db: Session) -> int | None:
-    """Convert file UUID to internal ID if provided."""
+def _resolve_file_uuid_to_id(
+    file_uuid: str | None,
+    current_user: User,
+    db: Session,
+    organization_id: OrgScope = UNSCOPED,
+) -> int | None:
+    """Convert file UUID to internal ID if provided (tenant-gated lookup)."""
     if not file_uuid:
         return None
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=organization_id,
     )
     return media_file.id
 
@@ -586,6 +609,7 @@ def list_speakers(
     for_filter: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> JSONResponse | list[dict[str, Any]]:
     """
     List all speakers for the current user with intelligent suggestions.
@@ -613,10 +637,10 @@ def list_speakers(
         # Fast path: filter mode only needs aggregated display names
         # Skip loading all speaker objects, profiles, and media files
         if for_filter:
-            return _get_unique_speakers_for_filter(db, current_user)
+            return _get_unique_speakers_for_filter(db, current_user, organization_id=ctx.org_id)
 
-        # Convert file_uuid to file_id if provided
-        file_id = _resolve_file_uuid_to_id(file_uuid, current_user, db)
+        # Convert file_uuid to file_id if provided (tenant-gated via ctx.org_id)
+        file_id = _resolve_file_uuid_to_id(file_uuid, current_user, db, organization_id=ctx.org_id)
 
         query = db.query(Speaker).options(
             joinedload(Speaker.profile), joinedload(Speaker.media_file)

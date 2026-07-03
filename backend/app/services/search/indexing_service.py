@@ -21,7 +21,8 @@ _neural_pipeline_available = False
 
 # Index version -- bump when mappings or analysis settings change.
 # Stored in index _meta so ensure_chunks_index_exists() can detect stale indices.
-_INDEX_VERSION = 4
+# v5: added organization_id (tenant scope) for cloud-edition isolation.
+_INDEX_VERSION = 5
 
 # Transient bulk error types that are safe to retry
 _RETRYABLE_ERROR_TYPES = frozenset(
@@ -85,6 +86,8 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
             "file_id": {"type": "integer"},
             "file_uuid": {"type": "keyword"},
             "user_id": {"type": "integer"},
+            # Tenant scope (cloud-edition seam; absent on community/personal docs)
+            "organization_id": {"type": "integer"},
             "chunk_index": {"type": "integer"},
             # Content (BM25 searchable)
             "content": {
@@ -606,6 +609,7 @@ class TranscriptIndexingService:
         file_size: int | None = None,
         collection_ids: list[int] | None = None,
         accessible_user_ids: list[int] | None = None,
+        organization_id: int | None = None,
     ) -> dict[str, Any] | int:
         """Chunk and index a transcript.
 
@@ -665,6 +669,7 @@ class TranscriptIndexingService:
             duration=duration,
             file_size=file_size,
             collection_ids=collection_ids,
+            organization_id=organization_id,
         )
         chunk_ms = round((time.time() - t_chunk_start) * 1000)
 
@@ -766,6 +771,7 @@ class TranscriptIndexingService:
         file_size: int | None = None,
         collection_ids: list[int] | None = None,
         accessible_user_ids: list[int] | None = None,
+        organization_id: int | None = None,
     ) -> int:
         """Re-chunk and re-index a single transcript.
 
@@ -794,6 +800,7 @@ class TranscriptIndexingService:
             file_size=file_size,
             collection_ids=collection_ids,
             accessible_user_ids=accessible_user_ids,
+            organization_id=organization_id,
         )
         # Extract chunk count from result (dict or int)
         if isinstance(result, dict):

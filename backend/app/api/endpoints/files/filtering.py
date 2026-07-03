@@ -11,6 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -341,7 +344,13 @@ def apply_all_filters(query: Query, filters: dict) -> Query:
     return query
 
 
-def get_metadata_filters(db: Session, user_id: int, ownership: str = "all") -> dict:
+def get_metadata_filters(
+    db: Session,
+    user_id: int,
+    ownership: str = "all",
+    *,
+    organization_id: OrgScope = UNSCOPED,
+) -> dict:
     """
     Get available metadata filters for the user's accessible files.
 
@@ -352,6 +361,8 @@ def get_metadata_filters(db: Session, user_id: int, ownership: str = "all") -> d
         db: Database session
         user_id: User ID
         ownership: 'mine', 'shared', or 'all' (default: 'all')
+        organization_id: Active org id, None for personal, or UNSCOPED (legacy) —
+            tenant-gates every ownership branch (default-deny across scopes).
 
     Returns:
         Dictionary of available filter options
@@ -360,14 +371,25 @@ def get_metadata_filters(db: Session, user_id: int, ownership: str = "all") -> d
 
     from app.services.permission_service import PermissionService
 
-    # Build the file filter based on ownership
+    # Build the file filter based on ownership (tenant-gated)
     if ownership == "mine":
         file_filter = MediaFile.user_id == user_id
+        if not isinstance(organization_id, _Unscoped):
+            org_pred = (
+                MediaFile.organization_id == organization_id
+                if organization_id is not None
+                else MediaFile.organization_id.is_(None)
+            )
+            file_filter = and_(file_filter, org_pred)
     elif ownership == "shared":
-        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, user_id)
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(
+            db, user_id, organization_id=organization_id
+        )
         file_filter = and_(MediaFile.id.in_(select(accessible_sq)), MediaFile.user_id != user_id)
     else:  # "all"
-        accessible_sq = PermissionService.get_accessible_file_ids_subquery(db, user_id)
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(
+            db, user_id, organization_id=organization_id
+        )
         file_filter = MediaFile.id.in_(select(accessible_sq))
 
     format_text = cast(MediaFile.metadata_important["format"], String)

@@ -17,6 +17,8 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
 from app.db.base import get_db
@@ -48,6 +50,7 @@ async def batch_extract_topics(
     force_regenerate: bool = Body(False, embed=True),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, str | int | list[str] | None]:
     """
     Extract AI suggestions for multiple files in batch
@@ -69,7 +72,11 @@ async def batch_extract_topics(
     for file_uuid in file_uuids:
         try:
             media_file = get_file_by_uuid_with_permission(
-                db, file_uuid, current_user.id, is_admin=current_user.is_admin
+                db,
+                file_uuid,
+                current_user.id,
+                is_admin=current_user.is_admin,
+                organization_id=ctx.org_id,
             )
             if media_file.transcript_segments:
                 verified_uuids.append(file_uuid)
@@ -222,10 +229,11 @@ async def auto_label_single_file(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict:
     """Apply auto-labeling to a single file's pending suggestions."""
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
 
     from app.services.auto_label_service import AutoLabelService
@@ -274,6 +282,7 @@ async def get_topic_suggestions(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> TopicSuggestionResponse:
     """
     Get AI tag and collection suggestions for a media file
@@ -286,9 +295,9 @@ async def get_topic_suggestions(
     Returns:
         Tag and collection suggestions from AI
     """
-    # Get file and verify permission
+    # Get file and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id
 
@@ -339,6 +348,7 @@ async def extract_topics(
     request_data: ExtractTopicsRequest = Body(default=ExtractTopicsRequest(force_regenerate=False)),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, str]:
     """
     Extract AI suggestions from a transcript (or regenerate existing)
@@ -355,9 +365,9 @@ async def extract_topics(
     Returns:
         Acknowledgment that extraction has been triggered
     """
-    # Get file and verify permission
+    # Get file and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
 
     # Check if file has transcript
@@ -408,6 +418,7 @@ async def apply_topic_suggestions(
     request_data: ApplyTopicSuggestionsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, int | str]:
     """
     Apply user-approved AI suggestions
@@ -424,9 +435,9 @@ async def apply_topic_suggestions(
     Returns:
         Summary of actions taken
     """
-    # Get file and verify permission
+    # Get file and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id
 
@@ -465,6 +476,7 @@ async def dismiss_topic_suggestions(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> None:
     """
     Dismiss/reject AI suggestions
@@ -477,9 +489,9 @@ async def dismiss_topic_suggestions(
         db: Database session
         current_user: Authenticated user
     """
-    # Get file and verify permission
+    # Get file and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id
 

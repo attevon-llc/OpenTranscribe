@@ -25,11 +25,29 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from app.core.constants import get_speaker_index
+from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.profile_embedding_service import ProfileEmbeddingService
 
 logger = logging.getLogger(__name__)
+
+
+def _media_file_org_ids(db: Session, media_file_ids: set[int]) -> dict[int, int | None]:
+    """Resolve the tenant scope (organization_id) of a set of media files.
+
+    Per-file speaker operations are gated by the FILE's org (None = personal /
+    community), so suggestion queries for a speaker must carry the org of the
+    file that speaker belongs to.
+    """
+    if not media_file_ids:
+        return {}
+    rows = (
+        db.query(MediaFile.id, MediaFile.organization_id)
+        .filter(MediaFile.id.in_(media_file_ids))
+        .all()
+    )
+    return {int(fid): (int(org) if org is not None else None) for fid, org in rows}
 
 
 def _determine_confidence_level(confidence: float, embedding_count: int = 1) -> tuple[str, bool]:
@@ -118,12 +136,15 @@ def _execute_profile_knn_search(
     user_id: int,
     threshold: float,
     accessible_profile_ids: set[int] | None = None,
+    organization_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """
     Execute kNN search for profile matches and return filtered results.
 
     Returns list of profile match dictionaries with similarity scores.
     """
+    from app.services.opensearch_service import _speaker_org_filter_clauses
+
     if accessible_profile_ids is not None:
         must_filters = [
             {"term": {"document_type": "profile"}},
@@ -134,6 +155,8 @@ def _execute_profile_knn_search(
             {"term": {"document_type": "profile"}},
             {"term": {"user_id": user_id}},
         ]
+    # Tenant gate on profile docs (org term, else exclude org-stamped).
+    must_filters.extend(_speaker_org_filter_clauses(organization_id))
 
     query = {
         "size": 10,
@@ -289,6 +312,11 @@ class SmartSpeakerSuggestionService:
 
         embedding_array = np.array(speaker_embedding)
 
+        # Tenant gate: suggestions for this speaker are scoped to its file's org.
+        organization_id = _media_file_org_ids(db, {int(speaker.media_file_id)}).get(
+            int(speaker.media_file_id)
+        )
+
         # Step 2: Profile suggestions (speaker-to-profile matching)
         profile_suggestions = SmartSpeakerSuggestionService._get_profile_suggestions_optimized(
             embedding_array,
@@ -296,6 +324,7 @@ class SmartSpeakerSuggestionService:
             db,
             confidence_threshold,
             accessible_profile_ids=accessible_profile_ids,
+            organization_id=organization_id,
         )
         suggestions.extend(profile_suggestions)
 
@@ -344,6 +373,7 @@ class SmartSpeakerSuggestionService:
         db: Session,
         threshold: float,
         accessible_profile_ids: set[int] | None = None,
+        organization_id: int | None = None,
     ) -> list[ConsolidatedSuggestion]:
         """Get suggestions from speaker profiles using OpenSearch native similarity."""
         try:
@@ -369,6 +399,7 @@ class SmartSpeakerSuggestionService:
                     user_id,
                     threshold,
                     accessible_profile_ids=accessible_profile_ids,
+                    organization_id=organization_id,
                 )
             except Exception as e:
                 logger.error(
@@ -394,6 +425,7 @@ class SmartSpeakerSuggestionService:
                 db,
                 threshold,
                 accessible_profile_ids=accessible_profile_ids,
+                organization_id=organization_id,
             )
 
     @staticmethod
@@ -403,6 +435,7 @@ class SmartSpeakerSuggestionService:
         db: Session,
         threshold: float,
         accessible_profile_ids: set[int] | None = None,
+        organization_id: int | None = None,
     ) -> list[ConsolidatedSuggestion]:
         """Get suggestions from speaker profiles"""
         suggestions = []
@@ -415,6 +448,7 @@ class SmartSpeakerSuggestionService:
                 user_id,
                 threshold=threshold,
                 accessible_profile_ids=accessible_profile_ids,
+                organization_id=organization_id,
             )
 
             for match in profile_matches:
@@ -460,11 +494,16 @@ class SmartSpeakerSuggestionService:
             return result
 
         # Phase 1: Collect LLM suggestions (pure DB, no OS calls)
+        # Also resolve each speaker's tenant scope (its file's org) for the
+        # gated kNN phase below — speakers in the list may span files.
+        file_org_map = _media_file_org_ids(db, {int(s.media_file_id) for s in speakers})
         uuid_to_id: dict[str, int] = {}
+        org_by_uuid: dict[str, int | None] = {}
         for speaker in speakers:
             sid = int(speaker.id)
             suuid = str(speaker.uuid)
             uuid_to_id[suuid] = sid
+            org_by_uuid[suuid] = file_org_map.get(int(speaker.media_file_id))
 
             if (
                 speaker.suggested_name
@@ -489,14 +528,23 @@ class SmartSpeakerSuggestionService:
         if embeddings_map and opensearch_client:
             profiles_exist = _check_opensearch_profiles_exist(opensearch_client, user_id)
 
-        # Phase 4: Batch kNN profile search (1 msearch)
+        # Phase 4: Batch kNN profile search (1 msearch per tenant scope).
+        # Each speaker's profile search is gated by ITS file's org, so group
+        # the embeddings by org (normally a single group) before searching.
         profile_matches_map: dict[str, list[dict[str, Any]]] = {}
         if profiles_exist and embeddings_map:
-            profile_matches_map = msearch_profile_knn_batch(
-                speaker_embeddings=embeddings_map,
-                user_id=user_id,
-                threshold=confidence_threshold,
-            )
+            by_org: dict[int | None, dict[str, list[float]]] = {}
+            for suuid, emb in embeddings_map.items():
+                by_org.setdefault(org_by_uuid.get(suuid), {})[suuid] = emb
+            for org_id, org_embeddings in by_org.items():
+                profile_matches_map.update(
+                    msearch_profile_knn_batch(
+                        speaker_embeddings=org_embeddings,
+                        user_id=user_id,
+                        threshold=confidence_threshold,
+                        organization_id=org_id,
+                    )
+                )
 
         # Phase 5: Assemble per-speaker suggestions
         for speaker in speakers:

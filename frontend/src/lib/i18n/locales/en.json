@@ -3761,5 +3761,7 @@
   "settings.emailNotifications.experimentalNote": "Email delivery is experimental — send a test before relying on it.",
   "settings.emailNotifications.setupTitle": "Setting up email with modern providers",
   "settings.contentRedaction.showOriginalTooltip": "Reveal the original unredacted text (owners and admins only; admin-forced categories stay masked)",
-  "settings.contentRedaction.showRedactedTooltip": "Switch back to the redacted view with sensitive content masked"
+  "settings.contentRedaction.showRedactedTooltip": "Switch back to the redacted view with sensitive content masked",
+  "settings.sections.billingTeam": "Billing & Team",
+  "settings.orgContext.cloudTitle": "Transcript Context"
 }

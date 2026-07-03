@@ -8,6 +8,10 @@
   import AboutModal from "./AboutModal.svelte";
   import NavbarBrand from "$components/navbar/NavbarBrand.svelte";
   import UserDropdown from "$components/navbar/UserDropdown.svelte";
+  import UsageBadge from "$lib/cloud/components/UsageBadge.svelte";
+  import UpgradeButton from "$lib/cloud/components/UpgradeButton.svelte";
+  import { isCloudEdition } from "$lib/edition";
+  import { refreshUsage, refreshBilling } from "$lib/cloud";
 
   // Import the centralized notification store
   import { showNotificationsPanel, toggleNotificationsPanel, notifications } from '../stores/notifications';
@@ -260,6 +264,13 @@
     fetchUserInfo().catch(err => {
       console.error('Error refreshing user data in Navbar:', err);
     });
+
+    // Cloud edition: prime the usage/billing stores so the navbar badge +
+    // upgrade CTA render. Best-effort — failures leave the badge hidden.
+    if (isCloudEdition) {
+      refreshUsage().catch(() => {});
+      refreshBilling().catch(() => {});
+    }
   });
 
   onDestroy(() => {
@@ -369,6 +380,13 @@
           <span class="notification-badge">{$unreadCount}</span>
         {/if}
       </button>
+
+      <!-- Cloud edition: usage badge + upgrade CTA (each self-gates / hides
+           when not applicable). Sits between notifications and the user menu. -->
+      {#if isCloudEdition}
+        <UsageBadge />
+        <UpgradeButton />
+      {/if}
 
       <!-- Recording indicator (when active) -->
       {#if hasActiveRecording}

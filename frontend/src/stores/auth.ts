@@ -1,6 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import axiosInstance, { abortAllRequests } from '../lib/axios';
 import { clearUserState } from '$lib/session/clearUserState';
+import { isCloudEdition } from '$lib/edition';
 
 /**
  * Minimal shape of an axios error used for status- and detail-based message
@@ -38,9 +39,17 @@ export interface User {
   email: string;
   full_name: string;
   role: 'user' | 'admin' | 'super_admin';
-  auth_type: 'local' | 'ldap' | 'keycloak' | 'pki'; // Authentication type for password change UI
+  // Authentication type. External/SSO provider strings beyond the core four
+  // are registered by the managed edition's auth layer; the password-change UI
+  // keys off `auth_type === 'local'`.
+  auth_type: 'local' | 'ldap' | 'keycloak' | 'pki' | string;
   allow_local_fallback?: boolean;
   certificate?: CertificateInfo;
+  // Cloud-edition tenancy/billing context (populated by the backend from the
+  // external IdP's org claim). Absent in the community edition.
+  org_id?: string;
+  org_role?: string;
+  subscription_tier?: string;
   created_at: string;
   updated_at: string;
 }
@@ -126,6 +135,34 @@ export const isAuthenticated = derived(authStore, ($store) => $store.isAuthentic
 export const authReady = derived(authStore, ($store) => $store.ready);
 export const token = derived(authStore, ($store) => $store.token);
 
+/**
+ * Cloud-edition session init: read the hosted external-auth session instead of
+ * the cookie `/auth/session` probe. If a session is active, the per-request
+ * axios interceptor mints a bearer token and `/auth/me` is authenticated by the
+ * backend's external verifier. Community edition never reaches this path.
+ */
+async function initAuthExternal(): Promise<void> {
+  try {
+    const { loadExternalAuth, hasExternalSession } = await import('$lib/cloud');
+    await loadExternalAuth();
+
+    if (await hasExternalSession()) {
+      // Bearer is attached per-request by the axios interceptor (cloud build).
+      const userData = await fetchUserInfo();
+      if (userData) {
+        authStore.setToken('external');
+        authStore.setReady(true);
+        return;
+      }
+    }
+
+    authStore.reset();
+  } catch (error) {
+    console.error('auth.ts: external-auth initAuth failed:', error);
+    authStore.reset();
+  }
+}
+
 // Initialize auth state by verifying the cookie session with the backend
 export async function initAuth() {
   authStore.setReady(false);
@@ -133,6 +170,12 @@ export async function initAuth() {
   // Clear any legacy localStorage tokens (migration from pre-cookie auth)
   localStorage.removeItem('token');
   localStorage.removeItem('user');
+
+  // Cloud edition delegates session detection to the hosted IdP (no cookie session).
+  if (isCloudEdition) {
+    await initAuthExternal();
+    return;
+  }
 
   try {
     // Probe /auth/session — returns 200 whether or not a session exists, so
@@ -322,8 +365,47 @@ export async function register(email: string, fullName: string, password: string
   }
 }
 
+/**
+ * Cloud-edition login: called after the hosted sign-in component reports an
+ * active session. There is no local credential round-trip — the external IdP
+ * owns auth and MFA. We just hydrate the local user store from `/auth/me`
+ * (bearer-authenticated by the axios interceptor) so the app shell renders.
+ */
+export async function loginWithExternalAuth(): Promise<{ success: boolean; message?: string }> {
+  try {
+    await clearUserState();
+    const userData = await fetchUserInfo();
+    if (!userData) {
+      authStore.reset();
+      return { success: false, message: 'Failed to load account after sign-in.' };
+    }
+    authStore.setToken('external');
+    authStore.setReady(true);
+    return { success: true };
+  } catch (error) {
+    console.error('auth.ts: external-auth login hydration failed:', error);
+    authStore.reset();
+    return { success: false, message: 'Sign-in could not be completed.' };
+  }
+}
+
 // Logout function
 export async function logout() {
+  // Cloud edition: the hosted IdP owns the session. Sign out there (revokes its
+  // session + clears its cookies) instead of hitting the local revoke endpoint.
+  if (isCloudEdition) {
+    try {
+      const { externalSignOut } = await import('$lib/cloud');
+      await externalSignOut();
+    } catch {
+      // Ignore — we're tearing the session down regardless.
+    }
+    abortAllRequests('User logged out');
+    await clearUserState();
+    authStore.reset();
+    return;
+  }
+
   // Notify backend to revoke tokens and clear cookies.
   // This request uses its own session-abort-immune path so the logout call
   // itself is never cancelled by abortAllRequests() below.

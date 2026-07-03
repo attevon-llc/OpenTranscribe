@@ -16,6 +16,8 @@ from sqlalchemy.orm import defer
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import selectinload
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import set_file_urls
 from app.api.endpoints.files.filtering import apply_all_filters
@@ -296,6 +298,7 @@ async def list_collections(
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get collections for the current user with media count.
 
@@ -306,11 +309,19 @@ async def list_collections(
     """
     user_id = current_user.id
 
+    # Tenant gate (mirrors the gallery list): org context sees only same-org
+    # collections; personal scope sees only org-less collections. Community
+    # edition: ctx.org_id is None and rows are org-less, so this is a no-op.
+    if ctx.org_id is not None:
+        org_pred = Collection.organization_id == ctx.org_id
+    else:
+        org_pred = Collection.organization_id.is_(None)
+
     if ownership == "mine":
-        # Original behavior: only owned collections
+        # Original behavior: only owned collections (within tenant scope)
         counts_query = (
             db.query(Collection.id, func.count(CollectionMember.id).label("media_count"))
-            .filter(Collection.user_id == user_id)
+            .filter(Collection.user_id == user_id, org_pred)
             .outerjoin(CollectionMember)
             .group_by(Collection.id)
             .offset(skip)
@@ -343,7 +354,7 @@ async def list_collections(
                     Collection.id,
                     func.count(CollectionMember.id).label("media_count"),
                 )
-                .filter(Collection.id.in_(collection_ids))
+                .filter(Collection.id.in_(collection_ids), org_pred)
                 .outerjoin(CollectionMember)
                 .group_by(Collection.id)
                 .offset(skip)
@@ -368,7 +379,7 @@ async def list_collections(
                     Collection.id,
                     func.count(CollectionMember.id).label("media_count"),
                 )
-                .filter(Collection.id.in_(all_ids))
+                .filter(Collection.id.in_(all_ids), org_pred)
                 .outerjoin(CollectionMember)
                 .group_by(Collection.id)
                 .offset(skip)
@@ -389,13 +400,14 @@ async def list_collections(
         return []
 
     # Fetch full collection objects with user and prompt relationships
+    # (org_pred re-applied as defense-in-depth against un-gated id sources)
     collections_objs = (
         db.query(Collection)
         .options(
             joinedload(Collection.user),
             joinedload(Collection.default_summary_prompt),
         )
-        .filter(Collection.id.in_(collection_ids))
+        .filter(Collection.id.in_(collection_ids), org_pred)
         .all()
     )
 
@@ -543,8 +555,17 @@ async def get_collection(
 
     collection = reloaded_collection
 
-    # Extract media files from collection members
-    media_files = [member.media_file for member in collection.collection_members]
+    # Extract media files from collection members. Abuse/DMCA: quarantined
+    # files are hidden from every read surface for non-admins — collection
+    # detail included (matches the gallery, search, and per-file 404 gate).
+    from app.services.takedown_service import is_hidden_for
+
+    is_admin = bool(getattr(current_user, "is_admin", False))
+    media_files = [
+        member.media_file
+        for member in collection.collection_members
+        if not is_hidden_for(member.media_file, is_admin=is_admin)
+    ]
 
     # Build response with prompt info
     result = CollectionResponse.model_validate(collection)
@@ -974,6 +995,30 @@ async def create_collection_share(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot share a collection with yourself",
             )
+
+        # Tenant gate: an org-scoped collection may only be shared with active
+        # members of that organization — cross-org shares would otherwise leak
+        # org content to outsiders. Personal collections (org NULL) keep the
+        # existing behavior (shareable with any user).
+        if collection.organization_id is not None:
+            from app.models.organization import OrganizationMembership
+
+            membership = (
+                db.query(OrganizationMembership)
+                .filter(
+                    OrganizationMembership.organization_id == collection.organization_id,
+                    OrganizationMembership.user_id == target_user.id,
+                )
+                .first()
+            )
+            if membership is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Cannot share an organization collection with a user who is "
+                        "not a member of that organization"
+                    ),
+                )
 
         # Check for existing share
         existing = (

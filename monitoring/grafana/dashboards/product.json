@@ -41,7 +41,7 @@
     {
       "type": "timeseries",
       "title": "Signups over time by method",
-      "description": "rate(user_signups_total[1d]) by method. Covers local register + all external/JIT methods (the cloud Clerk webhook funnels through the same core path).",
+      "description": "rate(user_signups_total[1d]) by method. Covers local register + all external/JIT methods (the managed edition’s signup webhook funnels through the same core path).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
       "id": 1,

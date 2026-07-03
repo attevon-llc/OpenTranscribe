@@ -197,6 +197,28 @@ def extract_speaker_embeddings_task(
                 parent_task.completed = True
                 db.commit()
 
+                # Cloud-edition seam: a still-in_progress parent transcription
+                # task means finalize_transcription deferred completion to us
+                # (the cloud-ASR + provider-diarization path) — so THIS task is
+                # that run's completion terminus and must fire metering exactly
+                # once. The monolithic core.py path and the local-ASR path mark
+                # the parent completed themselves and meter inline, leaving no
+                # in_progress parent here, so this block (and its metering) is
+                # correctly skipped for them. run_id is the stable app-level
+                # pipeline task_id threaded in by finalize_transcription (NOT
+                # this task's transient celery request id), matching how
+                # finalize_transcription/rediarize pass run_id=task_id.
+                from app.tasks.rediarize_task import _resolve_asr_provider
+                from app.tasks.transcription.postprocess import _fire_completion_metering
+
+                _fire_completion_metering(
+                    db,
+                    file_id=file_id,
+                    run_id=pipeline_task_id or task_id,
+                    provider=_resolve_asr_provider(db, file_id),
+                    success=True,
+                )
+
             # Send completion notification so frontend updates with speaker labels
             try:
                 from app.tasks.transcription.notifications import send_completion_notification

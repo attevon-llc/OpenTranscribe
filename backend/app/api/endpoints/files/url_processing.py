@@ -20,6 +20,8 @@ from pydantic import field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.config import settings
 from app.core.constants import VALID_AUDIO_QUALITIES
@@ -435,6 +437,7 @@ def _create_media_file_record(
     video_id: str,
     video_title: str,
     video_info: dict[str, Any],
+    organization_id: int | None = None,
 ) -> MediaFile:
     """Create a placeholder MediaFile record for the media video.
 
@@ -445,6 +448,8 @@ def _create_media_file_record(
         video_id: Video ID from the platform.
         video_title: Video title.
         video_info: Full video info dict from yt-dlp or custom extractor.
+        organization_id: Active organization id (cloud org-scoped ingest) or
+            None for personal scope. Always None in the community edition.
 
     Returns:
         Created MediaFile instance.
@@ -467,6 +472,7 @@ def _create_media_file_record(
 
     media_file = MediaFile(
         user_id=user_id,
+        organization_id=organization_id,
         filename=video_title[:255],
         storage_path="",
         file_size=0,
@@ -593,6 +599,7 @@ async def process_media_url(
     request_data: URLProcessingRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> URLProcessingResponse:
     """
     Process a media URL by dispatching background tasks.
@@ -672,7 +679,13 @@ async def process_media_url(
 
         # Create placeholder MediaFile record
         media_file = _create_media_file_record(
-            db, current_user.id, normalized_url, video_id, video_title, video_info
+            db,
+            current_user.id,
+            normalized_url,
+            video_id,
+            video_title,
+            video_info,
+            ctx.org_id,
         )
 
         # Per-file skip summary: mark as disabled before pipeline starts

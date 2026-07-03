@@ -19,6 +19,9 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
 from app.models.media import Collection
 from app.models.media import Comment
 from app.models.media import MediaFile
@@ -242,6 +245,20 @@ def require_resource_owner(
         )
 
 
+def _resource_in_tenant_scope(resource: Any, organization_id: OrgScope) -> bool:
+    """Default-deny tenant-scope check for a resource's ``organization_id``.
+
+    Mirrors ``scope_to_context``: in org context only same-org rows pass; in
+    personal scope (``organization_id is None``) only org-less rows pass. The
+    ``UNSCOPED`` sentinel means no context was threaded (legacy caller) — no gate
+    is applied, preserving pre-cloud behavior. Community-edition invariance:
+    callers pass UNSCOPED (or None against org-less rows), so this is always True.
+    """
+    if isinstance(organization_id, _Unscoped):
+        return True
+    return getattr(resource, "organization_id", None) == organization_id
+
+
 # Permission checking helpers
 def get_file_by_uuid_with_permission(
     db: Session,
@@ -249,6 +266,8 @@ def get_file_by_uuid_with_permission(
     user_id: int,
     allow_public: bool = False,
     is_admin: bool = False,
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> MediaFile:
     """
     Get media file by UUID with permission check.
@@ -262,6 +281,9 @@ def get_file_by_uuid_with_permission(
         user_id: Current user ID
         allow_public: Whether to allow public files
         is_admin: Whether the user has admin privileges (bypasses all checks)
+        organization_id: Active org id, None for personal, or UNSCOPED (default,
+            legacy = no gate). When an org id (or explicit None) is passed,
+            cross-scope files are rejected even via the sharing path (default-deny).
 
     Returns:
         MediaFile instance
@@ -270,18 +292,41 @@ def get_file_by_uuid_with_permission(
         HTTPException: 404 if not found, 403 if no permission
     """
     from app.services.permission_service import PermissionService
+    from app.services.takedown_service import is_hidden_for
 
     file = get_file_by_uuid(db, uuid)
 
-    # Admin bypass — admins can access any file
+    # Admin bypass — admins can access any file (incl. quarantined, for review).
     if is_admin:
         return file
 
-    # Direct ownership or public access (fast path)
-    if file.user_id == user_id or (allow_public and file.is_public):
+    # Abuse/DMCA takedown: a quarantined file is invisible to non-admins on EVERY
+    # read surface (detail, stream, download, thumbnail). 404 (not 403) so a
+    # taken-down file is indistinguishable from a missing one — even the owner
+    # and public-share viewers are blocked.
+    if is_hidden_for(file, is_admin=is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found",
+        )
+
+    # Public files are accessible regardless of tenant scope (intentional).
+    if allow_public and file.is_public:
         return file
 
-    # Check shared access via PermissionService
+    # Tenant gate: a file outside the active scope is invisible (default-deny).
+    # Returning 403 keeps parity with the existing no-permission path.
+    if not _resource_in_tenant_scope(file, organization_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access this file",
+        )
+
+    # Direct ownership (fast path)
+    if file.user_id == user_id:
+        return file
+
+    # Check shared access via PermissionService (already in tenant scope above)
     permission = PermissionService.get_file_permission(db, file.id, user_id)
     if permission is not None:
         return file
@@ -293,7 +338,12 @@ def get_file_by_uuid_with_permission(
 
 
 def get_collection_by_uuid_with_permission(
-    db: Session, uuid: UUID | str, user_id: int, is_admin: bool = False
+    db: Session,
+    uuid: UUID | str,
+    user_id: int,
+    is_admin: bool = False,
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> Collection:
     """
     Get collection by UUID with permission check.
@@ -306,6 +356,8 @@ def get_collection_by_uuid_with_permission(
         uuid: Collection UUID
         user_id: Current user ID
         is_admin: Whether the user has admin privileges (bypasses all checks)
+        organization_id: Active org id, None for personal, or UNSCOPED (default,
+            legacy = no gate) so community callers are unaffected.
 
     Returns:
         Collection instance
@@ -320,6 +372,13 @@ def get_collection_by_uuid_with_permission(
     # Admin bypass — admins can access any collection
     if is_admin:
         return collection
+
+    # Tenant gate: a collection outside the active scope is invisible (default-deny).
+    if not _resource_in_tenant_scope(collection, organization_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access this collection",
+        )
 
     # Direct ownership (fast path)
     if collection.user_id == user_id:
@@ -343,6 +402,8 @@ def get_file_by_uuid_with_sharing(
     user_id: int,
     is_admin: bool = False,
     min_permission: str = "viewer",
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> tuple[MediaFile, str]:
     """
     Get file by UUID with permission-aware access checking.
@@ -356,6 +417,8 @@ def get_file_by_uuid_with_sharing(
         user_id: Current user ID
         is_admin: Whether the user has admin privileges
         min_permission: Minimum required permission level
+        organization_id: Active org id, None for personal, or UNSCOPED (default,
+            legacy = no gate) so community callers are unaffected.
 
     Returns:
         Tuple of (MediaFile, effective_permission_string)
@@ -371,6 +434,13 @@ def get_file_by_uuid_with_sharing(
     # Admin bypass
     if is_admin:
         return file, "owner"
+
+    # Tenant gate: out-of-scope files are not authorized (default-deny).
+    if not _resource_in_tenant_scope(file, organization_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this file",
+        )
 
     # Check permission via PermissionService
     permission = PermissionService.get_file_permission(db, file.id, user_id)
@@ -395,6 +465,8 @@ def get_collection_by_uuid_with_sharing(
     user_id: int,
     is_admin: bool = False,
     min_permission: str = "viewer",
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> tuple[Collection, str]:
     """
     Get collection by UUID with permission-aware access checking.
@@ -408,6 +480,8 @@ def get_collection_by_uuid_with_sharing(
         user_id: Current user ID
         is_admin: Whether the user has admin privileges
         min_permission: Minimum required permission level
+        organization_id: Active org id, None for personal, or UNSCOPED (default,
+            legacy = no gate) so community callers are unaffected.
 
     Returns:
         Tuple of (Collection, effective_permission_string)
@@ -423,6 +497,13 @@ def get_collection_by_uuid_with_sharing(
     # Admin bypass
     if is_admin:
         return collection, "owner"
+
+    # Tenant gate: out-of-scope collections are not authorized (default-deny).
+    if not _resource_in_tenant_scope(collection, organization_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this collection",
+        )
 
     # Check permission via PermissionService
     permission = PermissionService.get_collection_permission(db, collection.id, user_id)

@@ -111,6 +111,28 @@ repos:
         args: [-c, pyproject.toml, -r, backend/]
         additional_dependencies: ["bandit[toml]"]
 
+  # Import-linter — enforce the cloud seam direction: the open-source core
+  # (`app.*`) must NEVER import the closed-source cloud edition (`cloud`/clerk/
+  # stripe). Contract lives in backend/pyproject.toml ([tool.importlinter]).
+  # Runs from the backend/ dir (cwd) so import-linter can import the `app`
+  # package; uses the project venv binary like the frontend-check hook.
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: import-linter (app must not import cloud)
+        # language: python so pre-commit provisions import-linter in its OWN
+        # isolated env — the pre-commit CI job installs only `pre-commit` (no
+        # backend venv, no project deps), so a hardcoded venv/bin path or a
+        # system `lint-imports` would not exist there. bash handles the cd into
+        # backend/ so grimp can locate the `app` namespace package; lint-imports
+        # resolves from the isolated env's PATH. grimp analyses statically (AST),
+        # so the app's runtime deps are NOT required.
+        entry: bash -c 'cd backend && lint-imports --config pyproject.toml'
+        language: python
+        additional_dependencies: ['import-linter>=2.0']
+        pass_filenames: false
+        files: ^backend/app/.*\.py$
+
   # Shell script linting
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.9.0.6

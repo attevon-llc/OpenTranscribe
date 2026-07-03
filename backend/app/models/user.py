@@ -71,12 +71,12 @@ class User(Base):
     keycloak_id: Mapped[str | None] = mapped_column(
         String(255), unique=True, nullable=True, index=True
     )  # Keycloak subject ID
-    clerk_id: Mapped[str | None] = mapped_column(
+    external_id: Mapped[str | None] = mapped_column(
         String(255), unique=True, nullable=True, index=True
-    )  # Clerk subject (sub)
-    clerk_org_id: Mapped[str | None] = mapped_column(
+    )  # External IdP subject id
+    external_org_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
-    )  # Last-seen Clerk org — convenience only, never authorization authority
+    )  # Last-seen external org — convenience only, never authorization authority
     keycloak_refresh_token: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )  # Encrypted KC refresh token for federated logout
@@ -146,7 +146,11 @@ class User(Base):
         return self.role == "super_admin"
 
     # Relationships
-    media_files: Mapped[list["MediaFile"]] = relationship("MediaFile", back_populates="user")
+    # MediaFile has two FKs to user.id (owner user_id + takedown admin
+    # quarantined_by), so the owner relationship must name its join column.
+    media_files: Mapped[list["MediaFile"]] = relationship(
+        "MediaFile", back_populates="user", foreign_keys="MediaFile.user_id"
+    )
     comments: Mapped[list["Comment"]] = relationship("Comment", back_populates="user")
     speakers: Mapped[list["Speaker"]] = relationship("Speaker", back_populates="user")
     speaker_profiles: Mapped[list["SpeakerProfile"]] = relationship(

@@ -239,8 +239,39 @@ class MediaFile(Base):
         Integer, ForeignKey("upload_batch.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
+    # Abuse / DMCA / safe-harbor takedown (issue: abuse intake). Independent of
+    # the processing ``status`` so a COMPLETED file can be taken down and later
+    # restored to exactly its prior state. While quarantined the file is excluded
+    # from every read surface (gallery list, detail, search, streaming, download,
+    # thumbnail) for non-admins; admins still see it for review. The original
+    # transcript/media are NEVER deleted by a takedown — masking/hiding is a
+    # read-time transform, the row stays for the audit + appeal trail.
+    is_quarantined: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false", index=True
+    )
+    quarantine_reason: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # Free-text takedown reason (DMCA notice ref, AUP clause, etc.)
+    quarantined_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # When the takedown was applied
+    quarantined_by: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id"), nullable=True
+    )  # Admin who applied the takedown
+    pre_quarantine_status: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # Processing status at takedown time, restored verbatim on release (v371)
+    # Source-of-truth legal hold. When set, the storage object is protected from
+    # deletion (best-effort S3/MinIO object legal-hold mirrors this flag) so the
+    # evidence can't be destroyed while a dispute/notice is open.
+    legal_hold: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="media_files")
+    user: Mapped["User"] = relationship(
+        "User", back_populates="media_files", foreign_keys=[user_id]
+    )
     upload_batch: Mapped["UploadBatch | None"] = relationship(
         "UploadBatch", back_populates="media_files"
     )

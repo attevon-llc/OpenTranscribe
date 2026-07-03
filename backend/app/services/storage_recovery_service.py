@@ -206,8 +206,14 @@ def register_object(
     caller owns the transaction boundary.
     """
     basename = object_name.rsplit("/", 1)[-1]
+    # Re-ingestion runs as a background/CLI task — no request context. Derive
+    # the owner's org from the membership mirror (NULL/personal in community).
+    from app.services.organization_service import resolve_owner_org_id
+
+    organization_id = resolve_owner_org_id(db, int(user.id))
     media_file = MediaFile(
         user_id=user.id,
+        organization_id=organization_id,
         filename=basename,
         title=basename,
         storage_path=object_name,  # <- existing key; no copy/move

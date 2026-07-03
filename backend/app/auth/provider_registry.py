@@ -2,7 +2,7 @@
 
 The community edition registers nothing here: the registry stays empty and
 ``get_current_user`` takes its normal local-JWT path with zero overhead. The
-commercial cloud edition registers a verifier (e.g. Clerk) at startup;
+commercial cloud edition registers a managed-IdP verifier at startup;
 ``get_current_user`` then offers each bearer token to the registered verifiers
 before falling back to local JWT validation.
 
@@ -32,10 +32,18 @@ logger = logging.getLogger(__name__)
 class ExternalIdentity:
     """Verified identity extracted from an external provider's token.
 
-    ``org_id``/``org_role`` carry tenant context (e.g. Clerk's nested ``o``
-    claim). ``is_admin`` means PLATFORM admin and should stay False for
+    ``org_id``/``org_role`` carry tenant context (e.g. a managed IdP's nested
+    org claim). ``is_admin`` means PLATFORM admin and should stay False for
     customer org roles — org-admin is a per-tenant capability, not a platform
     role (privilege separation).
+
+    ``email_verified`` MUST be True only when the IdP asserts the address is
+    verified. It defaults to False (fail-closed): JIT provisioning refuses to
+    link an external identity to an EXISTING local account by email match
+    unless the email is verified — otherwise anyone who can register the
+    victim's address at the IdP could take over the local account
+    (self-serve IdPs do not gate registration the way an admin-run
+    Keycloak/LDAP does).
     """
 
     provider: str
@@ -45,6 +53,7 @@ class ExternalIdentity:
     org_id: Optional[str] = None
     org_role: Optional[str] = None
     is_admin: bool = False
+    email_verified: bool = False
     raw_claims: dict[str, Any] = field(default_factory=dict)
 
 

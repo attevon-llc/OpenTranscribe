@@ -4,6 +4,8 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -343,6 +345,8 @@ def process_file_reprocess(
     num_speakers: int | None = None,
     stages: list[str] | None = None,
     whisper_model: str | None = None,
+    *,
+    organization_id: OrgScope = UNSCOPED,
 ) -> MediaFile:
     """
     Process file reprocessing request with enhanced error handling.
@@ -356,6 +360,7 @@ def process_file_reprocess(
         num_speakers: Optional fixed number of speakers for diarization
         stages: Optional list of pipeline stages to re-run. Empty/None = full reprocess.
         whisper_model: Optional Whisper model override for this transcription.
+        organization_id: Active org id, None for personal, or UNSCOPED (legacy).
 
     Returns:
         Updated MediaFile object
@@ -375,7 +380,11 @@ def process_file_reprocess(
             media_file = get_file_by_uuid(db, file_uuid)
         else:
             media_file = get_file_by_uuid_with_permission(
-                db, file_uuid, current_user.id, is_admin=current_user.is_admin
+                db,
+                file_uuid,
+                current_user.id,
+                is_admin=current_user.is_admin,
+                organization_id=organization_id,
             )
 
         file_id = media_file.id  # Get internal ID for task operations

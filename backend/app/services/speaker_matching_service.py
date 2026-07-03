@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.constants import SPEAKER_CONFIDENCE_HIGH
 from app.core.constants import SPEAKER_CONFIDENCE_LOW
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
+from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerCollectionMember
 from app.models.media import SpeakerMatch
@@ -29,11 +30,46 @@ class ConfidenceLevel:
 
 
 class SpeakerMatchingService:
-    """Service for matching speakers across media files with confidence levels."""
+    """Service for matching speakers across media files with confidence levels.
+
+    Tenant scope (cloud edition): every kNN query and OpenSearch write this
+    service performs is gated on ``organization_id``:
+
+    * **Per-file speaker docs** (voiceprints of a speaker instance in one media
+      file) follow the FILE's ``organization_id`` — resolved from the DB via
+      ``_media_file_org_id`` and passed to both the store calls and the match
+      queries, matching what the transcription pipeline stamps in the v4
+      staging path (``ctx.organization_id``).
+    * **Profile docs** (cross-video profile centroids) mirror the
+      ``SpeakerProfile.organization_id`` row value at write time and are
+      queried with the current file's org, so cross-video matching works
+      within an org without leaking into personal scope or other orgs.
+
+    Community edition: files and profiles carry ``organization_id`` NULL, so
+    every resolved scope is None, docs stay org-less, and the personal gate
+    (``must_not exists organization_id``) is a behavior-preserving no-op.
+    """
 
     def __init__(self, db: Session, embedding_service: SpeakerEmbeddingService | None):
         self.db = db
         self.embedding_service = embedding_service
+
+    def _media_file_org_id(self, media_file_id: int | None) -> int | None:
+        """Resolve the tenant scope of a per-file speaker operation.
+
+        The org of a speaker instance is defined by the media file it belongs
+        to (``media_file.organization_id``), never by caller-supplied state.
+
+        Args:
+            media_file_id: Media file ID (None-safe).
+
+        Returns:
+            The file's organization_id, or None for personal/community files.
+        """
+        if media_file_id is None:
+            return None
+        row = self.db.query(MediaFile.organization_id).filter(MediaFile.id == media_file_id).first()
+        return int(row[0]) if row and row[0] is not None else None
 
     def get_confidence_level(self, confidence: float) -> str:
         """
@@ -57,6 +93,7 @@ class SpeakerMatchingService:
         embedding: np.ndarray,
         user_id: int,
         accessible_profile_ids: set[int] | None = None,
+        organization_id: int | None = None,
     ) -> dict[str, Any] | None:
         """
         Match a speaker embedding to known speakers, prioritizing profile embeddings
@@ -67,13 +104,19 @@ class SpeakerMatchingService:
             user_id: User ID
             accessible_profile_ids: Optional set of profile IDs to search within
                 (for shared profile scope). If None, filters by user_id.
+            organization_id: Tenant scope of the file being matched (None =
+                personal). Gates both the profile kNN and the individual
+                speaker kNN so cross-org voiceprints never match.
 
         Returns:
             Dictionary with speaker info and confidence, or None
         """
         # First, try to match against profile embeddings for better accuracy
         profile_match = self.match_speaker_to_profiles(
-            embedding, user_id, accessible_profile_ids=accessible_profile_ids
+            embedding,
+            user_id,
+            accessible_profile_ids=accessible_profile_ids,
+            organization_id=organization_id,
         )
 
         if profile_match and profile_match["confidence"] >= ConfidenceLevel.MEDIUM:
@@ -84,6 +127,7 @@ class SpeakerMatchingService:
             embedding.tolist(),
             user_id,
             threshold=ConfidenceLevel.MEDIUM,  # Minimum threshold
+            organization_id=organization_id,
         )
 
         if not match:
@@ -120,6 +164,7 @@ class SpeakerMatchingService:
         embedding: np.ndarray,
         user_id: int,
         accessible_profile_ids: set[int] | None = None,
+        organization_id: int | None = None,
     ) -> dict[str, Any] | None:
         """
         Match a speaker embedding against consolidated profile embeddings.
@@ -130,6 +175,9 @@ class SpeakerMatchingService:
             user_id: User ID
             accessible_profile_ids: Optional set of profile IDs to search within
                 (for shared profile scope). If None, filters by user_id.
+            organization_id: Tenant scope of the file being matched (None =
+                personal). Profile docs mirror ``SpeakerProfile.organization_id``
+                so only same-org (or, for None, personal) profiles can match.
 
         Returns:
             Dictionary with profile match info and confidence, or None
@@ -144,6 +192,7 @@ class SpeakerMatchingService:
                 user_id,
                 threshold=ConfidenceLevel.LOW,
                 accessible_profile_ids=accessible_profile_ids,
+                organization_id=organization_id,
             )
 
             if not profile_matches:
@@ -228,7 +277,14 @@ class SpeakerMatchingService:
 
         try:
             from app.core.constants import get_speaker_index
+            from app.services.opensearch_service import _speaker_org_filter_clauses
             from app.services.opensearch_service import opensearch_client
+
+            # Tenant gate follows the reference speaker's file org.
+            source_speaker = self.db.query(Speaker).filter(Speaker.id == exclude_speaker_id).first()
+            organization_id = self._media_file_org_id(
+                int(source_speaker.media_file_id) if source_speaker else None
+            )
 
             query = {
                 "size": 10,  # Get more potential matches for unlabeled speakers
@@ -241,6 +297,7 @@ class SpeakerMatchingService:
                                 "bool": {
                                     "filter": [
                                         {"term": {"user_id": user_id}},
+                                        *_speaker_org_filter_clauses(organization_id),
                                         {
                                             "bool": {
                                                 "must_not": [
@@ -323,7 +380,7 @@ class SpeakerMatchingService:
         return matches
 
     def match_speaker_to_profile(
-        self, embedding: np.ndarray, user_id: int
+        self, embedding: np.ndarray, user_id: int, organization_id: int | None = None
     ) -> dict[str, Any] | None:
         """
         Match a speaker embedding to an existing profile.
@@ -331,6 +388,8 @@ class SpeakerMatchingService:
         Args:
             embedding: Speaker embedding vector
             user_id: User ID
+            organization_id: Tenant scope of the file being matched (None =
+                personal) — gates the speaker kNN.
 
         Returns:
             Dictionary with profile info and confidence, or None
@@ -340,6 +399,7 @@ class SpeakerMatchingService:
             embedding.tolist(),
             user_id,
             threshold=ConfidenceLevel.MEDIUM,  # Minimum threshold
+            organization_id=organization_id,
         )
 
         if not match:
@@ -379,6 +439,7 @@ class SpeakerMatchingService:
         user_id: int,
         description: str | None = None,
         initial_embedding: np.ndarray | None = None,
+        organization_id: int | None = None,
     ) -> SpeakerProfile:
         """
         Create a new speaker profile.
@@ -388,12 +449,19 @@ class SpeakerMatchingService:
             user_id: User ID
             description: Optional description
             initial_embedding: Optional initial embedding
+            organization_id: Tenant scope the profile is created in (None =
+                personal). Stamped on the DB row AND mirrored onto the
+                OpenSearch profile doc so org queries can match it.
 
         Returns:
             Created SpeakerProfile
         """
         profile = SpeakerProfile(
-            user_id=user_id, name=name, description=description, uuid=str(uuid.uuid4())
+            user_id=user_id,
+            name=name,
+            description=description,
+            uuid=str(uuid.uuid4()),
+            organization_id=organization_id,
         )
 
         self.db.add(profile)
@@ -410,6 +478,7 @@ class SpeakerMatchingService:
                 embedding=initial_embedding.tolist(),
                 speaker_count=1,
                 user_id=user_id,
+                organization_id=organization_id,
             )
 
         return profile
@@ -470,6 +539,9 @@ class SpeakerMatchingService:
             audio_path, segments, speaker_mapping
         )
 
+        # Tenant scope for all stores/queries follows the file's org.
+        organization_id = self._media_file_org_id(media_file_id)
+
         results = []
 
         for speaker_id, embeddings in speaker_embeddings.items():
@@ -479,6 +551,7 @@ class SpeakerMatchingService:
                 user_id,
                 media_file_id,
                 accessible_profile_ids=accessible_profile_ids,
+                organization_id=organization_id,
             )
             if result:
                 results.append(result)
@@ -507,6 +580,9 @@ class SpeakerMatchingService:
         Returns:
             List of speaker match results.
         """
+        # Tenant scope for all stores/queries follows the file's org.
+        organization_id = self._media_file_org_id(media_file_id)
+
         results = []
         for speaker_id, embedding in native_embeddings.items():
             result = self._process_single_speaker(
@@ -515,6 +591,7 @@ class SpeakerMatchingService:
                 user_id,
                 media_file_id,
                 accessible_profile_ids=accessible_profile_ids,
+                organization_id=organization_id,
             )
             if result:
                 results.append(result)
@@ -529,6 +606,7 @@ class SpeakerMatchingService:
         user_id: int,
         media_file_id: int,
         accessible_profile_ids: set[int] | None = None,
+        organization_id: int | None = None,
     ) -> dict[str, Any] | None:
         """
         Process a single speaker's embeddings and find matches.
@@ -538,6 +616,7 @@ class SpeakerMatchingService:
             embeddings: List of embeddings for this speaker
             user_id: User ID
             media_file_id: Media file ID
+            organization_id: Tenant scope (the file's org; None = personal)
 
         Returns:
             Speaker processing result or None if failed
@@ -573,16 +652,28 @@ class SpeakerMatchingService:
 
         # Try to match to known speakers with display names
         match = self.match_speaker_to_known_speakers(
-            aggregated_embedding, user_id, accessible_profile_ids=accessible_profile_ids
+            aggregated_embedding,
+            user_id,
+            accessible_profile_ids=accessible_profile_ids,
+            organization_id=organization_id,
         )
 
         if match:
             return self._handle_speaker_match(
-                speaker, match, aggregated_embedding, user_id, media_file_id
+                speaker,
+                match,
+                aggregated_embedding,
+                user_id,
+                media_file_id,
+                organization_id=organization_id,
             )
         else:
             return self._handle_no_speaker_match(
-                speaker, aggregated_embedding, user_id, media_file_id
+                speaker,
+                aggregated_embedding,
+                user_id,
+                media_file_id,
+                organization_id=organization_id,
             )
 
     def _handle_speaker_match(
@@ -592,6 +683,7 @@ class SpeakerMatchingService:
         aggregated_embedding: np.ndarray,
         user_id: int,
         media_file_id: int,
+        organization_id: int | None = None,
     ) -> dict[str, Any]:
         """
         Handle case where speaker match is found.
@@ -602,6 +694,9 @@ class SpeakerMatchingService:
             aggregated_embedding: Aggregated embedding
             user_id: User ID
             media_file_id: Media file ID
+            organization_id: Tenant scope (the file's org; None = personal).
+                Stamped on the per-file speaker doc and used to gate the
+                follow-up match queries.
 
         Returns:
             Speaker processing result
@@ -641,11 +736,16 @@ class SpeakerMatchingService:
                 if speaker.display_name
                 else match["suggested_name"],
                 media_file_id=media_file_id,
+                organization_id=organization_id,
             )
 
             # Find and store matches with other speakers
             self.find_and_store_speaker_matches(
-                int(speaker.id), aggregated_embedding, user_id, threshold=0.5
+                int(speaker.id),
+                aggregated_embedding,
+                user_id,
+                threshold=0.5,
+                organization_id=organization_id,
             )
 
         # Incrementally update profile embedding using the embedding we already have
@@ -685,6 +785,8 @@ class SpeakerMatchingService:
                             embedding=new_emb,
                             speaker_count=count,
                             user_id=int(profile.user_id),
+                            # Profile docs mirror the profile ROW's tenant scope
+                            organization_id=profile.organization_id,
                         )
                         profile.embedding_count = count  # type: ignore[assignment]
                         from datetime import datetime
@@ -736,6 +838,7 @@ class SpeakerMatchingService:
         aggregated_embedding: np.ndarray,
         user_id: int,
         media_file_id: int,
+        organization_id: int | None = None,
     ) -> dict[str, Any]:
         """
         Handle case where no speaker match is found.
@@ -745,6 +848,9 @@ class SpeakerMatchingService:
             aggregated_embedding: Aggregated embedding
             user_id: User ID
             media_file_id: Media file ID
+            organization_id: Tenant scope (the file's org; None = personal).
+                Stamped on the per-file speaker doc and used to gate the
+                follow-up match queries.
 
         Returns:
             Speaker processing result
@@ -765,11 +871,16 @@ class SpeakerMatchingService:
                 profile_uuid=str(speaker.profile.uuid) if speaker.profile else None,
                 display_name=str(speaker.display_name) if speaker.display_name else None,
                 media_file_id=media_file_id,
+                organization_id=organization_id,
             )
 
             # Find and store matches with other speakers
             found_matches = self.find_and_store_speaker_matches(
-                int(speaker.id), aggregated_embedding, user_id, threshold=0.5
+                int(speaker.id),
+                aggregated_embedding,
+                user_id,
+                threshold=0.5,
+                organization_id=organization_id,
             )
 
             if found_matches:
@@ -929,6 +1040,18 @@ class SpeakerMatchingService:
 
             from app.services.similarity_service import SimilarityService
 
+            # Propagation stays within the profile's tenant: an org profile is
+            # only propagated to that org's speaker docs, a personal profile
+            # only to personal (org-less) docs.
+            profile_row = (
+                self.db.query(SpeakerProfile.organization_id)
+                .filter(SpeakerProfile.id == profile_id)
+                .first()
+            )
+            profile_org_id = (
+                int(profile_row[0]) if profile_row and profile_row[0] is not None else None
+            )
+
             similar_matches = SimilarityService.opensearch_similarity_search(
                 embedding=embedding,
                 user_id=user_id,
@@ -936,6 +1059,7 @@ class SpeakerMatchingService:
                 threshold=0.75,  # High confidence for automatic assignment (matches SPEAKER_CONFIDENCE_HIGH)
                 max_results=20,
                 exclude_ids=[matched_speaker_id],
+                organization_id=profile_org_id,
             )
 
             # Batch-fetch all candidate speakers (avoids N+1 per-match queries)
@@ -1015,6 +1139,8 @@ class SpeakerMatchingService:
                 embedding=embedding.tolist(),
                 speaker_count=1,
                 user_id=int(profile.user_id),
+                # Profile docs mirror the profile ROW's tenant scope
+                organization_id=profile.organization_id,
             )
 
             return True
@@ -1063,7 +1189,11 @@ class SpeakerMatchingService:
             return False
 
     def _build_speaker_match_query(
-        self, embedding: np.ndarray, user_id: int, exclude_speaker_id: int
+        self,
+        embedding: np.ndarray,
+        user_id: int,
+        exclude_speaker_id: int,
+        organization_id: int | None = None,
     ) -> dict[str, Any]:
         """
         Build OpenSearch query for finding speaker matches.
@@ -1072,12 +1202,17 @@ class SpeakerMatchingService:
             embedding: Speaker embedding vector
             user_id: User ID
             exclude_speaker_id: Speaker ID to exclude from results
+            organization_id: Tenant scope (None = personal) — org term when
+                set, else the personal ``must_not exists`` gate.
 
         Returns:
             OpenSearch query dictionary
         """
+        from app.services.opensearch_service import _speaker_org_filter_clauses
+
         filters = [
             {"term": {"user_id": user_id}},
+            *_speaker_org_filter_clauses(organization_id),
             {
                 "bool": {
                     "must_not": [
@@ -1214,7 +1349,11 @@ class SpeakerMatchingService:
         return None
 
     def _perform_opensearch_query(
-        self, embedding: np.ndarray, user_id: int, new_speaker_id: int
+        self,
+        embedding: np.ndarray,
+        user_id: int,
+        new_speaker_id: int,
+        organization_id: int | None = None,
     ) -> dict[str, Any] | None:
         """
         Perform OpenSearch query for speaker matches.
@@ -1223,6 +1362,7 @@ class SpeakerMatchingService:
             embedding: Speaker embedding vector
             user_id: User ID
             new_speaker_id: ID of the new speaker
+            organization_id: Tenant scope (None = personal)
 
         Returns:
             OpenSearch response or None if client unavailable
@@ -1230,7 +1370,9 @@ class SpeakerMatchingService:
         from app.core.constants import get_speaker_index
         from app.services.opensearch_service import opensearch_client
 
-        query = self._build_speaker_match_query(embedding, user_id, new_speaker_id)
+        query = self._build_speaker_match_query(
+            embedding, user_id, new_speaker_id, organization_id=organization_id
+        )
         if opensearch_client is None:
             logger.error("OpenSearch client is not available")
             return None
@@ -1242,6 +1384,7 @@ class SpeakerMatchingService:
         embedding: np.ndarray,
         user_id: int,
         threshold: float = 0.5,
+        organization_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """
         Find all similar speakers and store matches in the database.
@@ -1251,6 +1394,9 @@ class SpeakerMatchingService:
             embedding: Speaker embedding vector
             user_id: User ID
             threshold: Minimum similarity threshold
+            organization_id: Tenant scope of the new speaker's file (None =
+                personal). Gates both kNN queries so speaker-match records
+                never pair voiceprints across tenants.
 
         Returns:
             List of found matches
@@ -1263,12 +1409,15 @@ class SpeakerMatchingService:
                 user_id,
                 threshold=threshold,
                 exclude_speaker_ids=[new_speaker_id],
+                organization_id=organization_id,
             )
 
             if not search_results:
                 return matches
 
-            response = self._perform_opensearch_query(embedding, user_id, new_speaker_id)
+            response = self._perform_opensearch_query(
+                embedding, user_id, new_speaker_id, organization_id=organization_id
+            )
             if response is None:
                 return matches
 

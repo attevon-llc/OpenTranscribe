@@ -111,6 +111,13 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                         "max_speakers": None,
                         "num_speakers": None,
                         "downstream_tasks": downstream_tasks,
+                        # This rediarize completes a fresh billable pipeline run —
+                        # it is the metering terminus (we deliberately don't meter
+                        # here to avoid double-counting), and it meters under THIS
+                        # pipeline's id so the reservation taken at dispatch is
+                        # released and replays dedup on a stable key.
+                        "pipeline_completion": True,
+                        "pipeline_task_id": task_id,
                     },
                     queue=CeleryQueues.GPU,
                 )
@@ -178,10 +185,16 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                 update_task_status(db, task_id, "in_progress", progress=0.90)
             # Completion notification will be sent by extract_speaker_embeddings_task
         else:
-            # Local ASR or diarization disabled: embeddings already done — mark completed
+            # Local ASR or diarization disabled: embeddings already done — mark completed.
+            # This is the single-task terminus for the local pipeline, so fire the
+            # metering hook here (the cloud-ASR + local-diarization path meters from
+            # rediarize_task instead, to avoid double-counting the same run).
             send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
             with session_scope() as db:
                 update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+                _fire_completion_metering(
+                    db, file_id=file_id, run_id=task_id, provider=asr_provider, success=True
+                )
             send_completion_notification(user_id, file_id)
 
         completion_elapsed = time.perf_counter() - post_start
@@ -256,6 +269,51 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         "file_id": file_id,
         "segment_count": gpu_result.get("segment_count", 0),
     }
+
+
+def _fire_completion_metering(
+    db, file_id: int, run_id: str, provider: str, success: bool = True
+) -> None:
+    """Fire the transcription-complete hook (cloud-edition metering seam).
+
+    Builds a ``CompletionContext`` from the finalized ``MediaFile`` and runs the
+    registered completion hooks. In the community edition no hook is registered,
+    so this is a no-op; the cloud layer registers a usage-event/metering hook.
+
+    Best-effort: wrapped in try/except so a metering failure can never fail a
+    successfully finished transcription (``fire_transcription_complete`` already
+    contains per-hook failures, but the surrounding DB read is guarded too).
+
+    Args:
+        db: Active SQLAlchemy session (the same one that marked the task complete).
+        file_id: Internal media file id of the finalized file.
+        run_id: Stable pipeline run id (the dispatch ``task_id``) — idempotency scope.
+        provider: ASR provider used ("local" or a cloud-ASR provider name).
+        success: Whether the run completed successfully.
+    """
+    try:
+        from app.models.media import MediaFile as _MediaFile
+
+        from .hooks import CompletionContext
+        from .hooks import fire_transcription_complete
+
+        media_file = db.query(_MediaFile).filter(_MediaFile.id == file_id).first()
+        fire_transcription_complete(
+            CompletionContext(
+                file_id=file_id,
+                file_uuid=str(media_file.uuid) if media_file else "",
+                user_id=int(media_file.user_id) if media_file else 0,
+                organization_id=media_file.organization_id if media_file else None,
+                audio_duration_s=(
+                    float(media_file.duration) if media_file and media_file.duration else 0.0
+                ),
+                run_id=run_id,
+                provider=provider or "local",
+                success=success,
+            )
+        )
+    except Exception as e:  # pragma: no cover - metering must never break the pipeline
+        logger.warning(f"Completion metering hook failed for file {file_id} (contained): {e}")
 
 
 def _persist_timing_row(task_id: str, file_id: int, user_id: int) -> None:

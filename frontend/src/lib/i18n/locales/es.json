@@ -3761,5 +3761,7 @@
   "settings.emailNotifications.experimentalNote": "El envío de correo es experimental — envía una prueba antes de confiar en él.",
   "settings.emailNotifications.setupTitle": "Configurar correo con proveedores modernos",
   "settings.contentRedaction.showOriginalTooltip": "Mostrar el texto original sin censura (solo propietarios y administradores; las categorías forzadas por el administrador permanecen ocultas)",
-  "settings.contentRedaction.showRedactedTooltip": "Volver a la vista censurada con el contenido sensible oculto"
+  "settings.contentRedaction.showRedactedTooltip": "Volver a la vista censurada con el contenido sensible oculto",
+  "settings.sections.billingTeam": "Facturación y equipo",
+  "settings.orgContext.cloudTitle": "Contexto de la transcripción"
 }

@@ -3761,5 +3761,7 @@
   "settings.emailNotifications.experimentalNote": "L'envoi d'e-mail est expérimental — testez avant de vous y fier.",
   "settings.emailNotifications.setupTitle": "Configurer l'e-mail avec les fournisseurs modernes",
   "settings.contentRedaction.showOriginalTooltip": "Afficher le texte original non expurgé (propriétaires et administrateurs uniquement ; les catégories imposées par l'administrateur restent masquées)",
-  "settings.contentRedaction.showRedactedTooltip": "Revenir à la vue expurgée avec le contenu sensible masqué"
+  "settings.contentRedaction.showRedactedTooltip": "Revenir à la vue expurgée avec le contenu sensible masqué",
+  "settings.sections.billingTeam": "Facturation et équipe",
+  "settings.orgContext.cloudTitle": "Contexte de transcription"
 }

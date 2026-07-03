@@ -12,6 +12,8 @@ from fastapi import Query
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.db.base import get_db
@@ -634,19 +636,24 @@ async def retry_file_processing(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),  # Any user can retry their own files
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Retry processing for a file that failed or got stuck
     """
     try:
-        # Find the media file
+        # Find the media file (tenant-gated via ctx.org_id for non-admins)
         if current_user.is_admin:
             from app.utils.uuid_helpers import get_file_by_uuid
 
             media_file = get_file_by_uuid(db, file_uuid)
         else:
             media_file = get_file_by_uuid_with_permission(
-                db, file_uuid, current_user.id, is_admin=current_user.is_admin
+                db,
+                file_uuid,
+                current_user.id,
+                is_admin=current_user.is_admin,
+                organization_id=ctx.org_id,
             )
 
         file_id = media_file.id

@@ -197,6 +197,42 @@ def delete_file(object_name: str):
         raise Exception(f"Error deleting file: {e}") from e
 
 
+def set_object_legal_hold(object_name: str, hold: bool) -> bool:
+    """Set (or clear) an S3/MinIO object legal-hold — best-effort.
+
+    A legal-hold prevents the object from being deleted/overwritten while the
+    hold is active, regardless of retention period. It is the storage-plane
+    mirror of ``MediaFile.legal_hold`` (the DB flag is the source of truth; this
+    call is best-effort: object-lock must be enabled on the bucket at creation
+    time, which the dev MinIO does not do, so this degrades gracefully).
+
+    Args:
+        object_name: Object key in the media bucket.
+        hold: True to enable the legal-hold, False to disable it.
+
+    Returns:
+        True if the storage backend accepted the change, False if it was a
+        no-op (object lock unavailable, object missing, or any S3 error). Never
+        raises — the caller treats storage legal-hold as advisory.
+    """
+    try:
+        if hold:
+            minio_client.enable_object_legal_hold(
+                bucket_name=settings.MEDIA_BUCKET_NAME, object_name=object_name
+            )
+        else:
+            minio_client.disable_object_legal_hold(
+                bucket_name=settings.MEDIA_BUCKET_NAME, object_name=object_name
+            )
+        return True
+    except Exception as e:  # noqa: BLE001 — legal-hold is advisory; never break takedown
+        logger.warning(
+            f"Object legal-hold {'enable' if hold else 'disable'} unavailable for "
+            f"{object_name} (bucket object-lock may be disabled): {e}"
+        )
+        return False
+
+
 TEMP_PREPROCESS_PREFIX = "temp/preprocess"
 
 

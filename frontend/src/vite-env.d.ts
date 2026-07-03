@@ -24,6 +24,10 @@ interface ImportMetaEnv {
   readonly VITE_SENTRY_DSN?: string;
   readonly VITE_SENTRY_ENVIRONMENT?: string;
   readonly VITE_SENTRY_TRACES_SAMPLE_RATE?: string;
+  // Build edition switch: 'cloud' enables the managed edition's hosted auth +
+  // billing UI (via the $lib/cloud seam); anything else = community/self-host.
+  // The managed overlay augments ImportMetaEnv with its own vars (env.d.ts).
+  readonly VITE_DEPLOYMENT_EDITION?: string;
   // Add other environment variables as needed
 }
 

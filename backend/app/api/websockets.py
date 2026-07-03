@@ -163,8 +163,39 @@ async def publish_notification(user_id: int, notification_type: str, data: dict)
         logger.error(f"Failed to publish notification to Redis: {e}")
 
 
-def _try_authenticate_token(token: str, db: Session) -> Optional[User]:
-    """Validate a JWT token and return the corresponding User, or None."""
+def _try_authenticate_token(
+    token: str, db: Session, websocket: Optional[WebSocket] = None
+) -> Optional[User]:
+    """Validate a token (local JWT or external provider) and return the User, or None.
+
+    Cloud-edition seam: an external session token authenticates the socket via the
+    registered external verifier before the local-JWT path, mirroring
+    ``get_current_user``. The community edition registers no verifier, so the
+    external branch is skipped and behavior is identical (local JWT only). On any
+    failure (no match, invalid token, inactive user) the caller closes with 4003.
+    """
+    # Cloud-edition seam: offer the token to registered external verifiers first.
+    try:
+        from app.auth.provider_registry import has_verifiers
+
+        if has_verifiers():
+            from app.auth.external_sync import sync_external_user_to_db
+            from app.auth.provider_registry import verify_external_token
+
+            # The TokenVerifier protocol only needs the token to verify; the WS
+            # object exposes the same headers/cookies a verifier might read, so
+            # it is a safe stand-in for the HTTP Request on this path.
+            external_identity = verify_external_token(token, websocket)  # type: ignore[arg-type]
+            if external_identity is not None:
+                external_user = sync_external_user_to_db(db, external_identity)
+                if not external_user.is_active:
+                    return None
+                return external_user
+    except Exception as e:
+        # Never let an external-auth problem break local WS authentication;
+        # fall through to the local-JWT path.
+        logger.debug(f"WebSocket external token authentication error: {e}")
+
     try:
         payload = verify_token(token)
         user_identifier = payload.get("sub")  # UUID string
@@ -199,7 +230,7 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
     # 1. Try cookie-based auth
     token = websocket.cookies.get("access_token")
     if token:
-        user = _try_authenticate_token(token, db)
+        user = _try_authenticate_token(token, db, websocket)
 
     # 2. If no cookie auth, wait for first-message authentication
     if not user:
@@ -209,7 +240,7 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
             if data.get("type") != "authenticate" or not data.get("token"):
                 await websocket.close(code=4001, reason="Authentication required")
                 return
-            user = _try_authenticate_token(data["token"], db)
+            user = _try_authenticate_token(data["token"], db, websocket)
             if not user:
                 await websocket.close(code=4003, reason="Invalid token")
                 return

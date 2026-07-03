@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import subqueryload
 
+from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerCluster
 from app.models.media import SpeakerClusterMember
@@ -52,10 +53,28 @@ SIM_CHUNK = 500
 
 
 class SpeakerClusteringService:
-    """Service for clustering speakers across media files."""
+    """Service for clustering speakers across media files.
+
+    Tenant scope (cloud edition): cluster-centroid kNN queries are gated by
+    the org of the speaker's media file (``_media_file_org_id``). Cluster
+    centroid docs themselves are currently written WITHOUT an
+    ``organization_id`` (``store_cluster_embedding`` has no tenant field), so
+    under org scope the term filter matches nothing — org-file speakers form
+    their own singleton clusters instead of joining a personal/cross-tenant
+    cluster. Personal/community files (org None) hit the personal gate
+    (``must_not exists organization_id``), which is a no-op on the org-less
+    centroid docs — behavior unchanged.
+    """
 
     def __init__(self, db: Session):
         self.db = db
+
+    def _media_file_org_id(self, media_file_id: int | None) -> int | None:
+        """Resolve the tenant scope of a speaker via its media file's org."""
+        if media_file_id is None:
+            return None
+        row = self.db.query(MediaFile.organization_id).filter(MediaFile.id == media_file_id).first()
+        return int(row[0]) if row and row[0] is not None else None
 
     # ------------------------------------------------------------------
     # Real-time cluster assignment (called after transcription)
@@ -98,10 +117,13 @@ class SpeakerClusteringService:
                 )
                 return cluster  # type: ignore[no-any-return]
 
-            # Search for matching cluster centroids
+            # Search for matching cluster centroids (gated by the file's org)
             from app.services.opensearch_service import find_matching_clusters
 
-            matches = find_matching_clusters(embedding, user_id, k=5, threshold=threshold)
+            organization_id = self._media_file_org_id(int(speaker.media_file_id))
+            matches = find_matching_clusters(
+                embedding, user_id, k=5, threshold=threshold, organization_id=organization_id
+            )
 
             if matches:
                 # Iterate through matches to find first non-blocked cluster
@@ -834,16 +856,28 @@ class SpeakerClusteringService:
                     singleton_speakers = (
                         self.db.query(Speaker).filter(Speaker.id.in_(singleton_ids)).all()
                     )
+                    # Tenant gate: each singleton's cluster search is scoped by
+                    # ITS file's org (batch-resolved to avoid N queries).
+                    org_by_file: dict[int, int | None] = {
+                        int(fid): (int(org) if org is not None else None)
+                        for fid, org in self.db.query(MediaFile.id, MediaFile.organization_id)
+                        .filter(
+                            MediaFile.id.in_({int(s.media_file_id) for s in singleton_speakers})
+                        )
+                        .all()
+                    }
                     matched_singletons = 0
                     for spk in singleton_speakers:
                         emb = emb_cache.get(int(spk.id))
                         if emb is None:
                             continue
+                        spk_org = org_by_file.get(int(spk.media_file_id))
                         matches = find_matching_clusters(
                             emb,
                             user_id,
                             k=5,
                             threshold=threshold,
+                            organization_id=int(spk_org) if spk_org is not None else None,
                         )
                         for match in matches:
                             matched_cluster = profile_cluster_map.get(match["cluster_uuid"])
@@ -1203,12 +1237,43 @@ class SpeakerClusteringService:
                     )
                     return existing  # type: ignore[no-any-return]
 
+            # Fetch members first so the new profile can inherit their tenant
+            # scope (batch-fetch speakers to avoid per-member queries).
+            members = (
+                self.db.query(SpeakerClusterMember)
+                .filter(SpeakerClusterMember.cluster_id == cluster.id)
+                .all()
+            )
+            speaker_ids = [int(m.speaker_id) for m in members]
+            speakers_by_id = {
+                int(s.id): s
+                for s in self.db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
+            }
+
+            # Tenant scope: a promoted profile inherits the members' file org
+            # only when ALL members belong to the same org; any mix (or any
+            # personal member) falls back to personal scope (None).
+            member_file_ids = {int(s.media_file_id) for s in speakers_by_id.values()}
+            member_orgs: set[int | None] = (
+                {
+                    int(r[0]) if r[0] is not None else None
+                    for r in self.db.query(MediaFile.organization_id)
+                    .filter(MediaFile.id.in_(member_file_ids))
+                    .distinct()
+                    .all()
+                }
+                if member_file_ids
+                else set()
+            )
+            profile_org_id = member_orgs.pop() if len(member_orgs) == 1 else None
+
             # Create profile
             profile = SpeakerProfile(
                 uuid=uuid4(),
                 user_id=user_id,
                 name=name,
                 description=description,
+                organization_id=profile_org_id,
             )
             self.db.add(profile)
             self.db.flush()
@@ -1217,20 +1282,6 @@ class SpeakerClusteringService:
             cluster.promoted_to_profile_id = profile.id  # type: ignore[assignment]
             if not cluster.label:
                 cluster.label = name  # type: ignore[assignment]
-
-            # Assign all member speakers to the profile
-            members = (
-                self.db.query(SpeakerClusterMember)
-                .filter(SpeakerClusterMember.cluster_id == cluster.id)
-                .all()
-            )
-
-            # Batch-fetch all speakers to avoid per-member queries
-            speaker_ids = [int(m.speaker_id) for m in members]
-            speakers_by_id = {
-                int(s.id): s
-                for s in self.db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
-            }
 
             for member in members:
                 speaker = speakers_by_id.get(int(member.speaker_id))

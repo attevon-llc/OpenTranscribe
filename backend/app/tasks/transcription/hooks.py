@@ -7,7 +7,17 @@ no-ops with zero overhead. The commercial cloud layer registers:
   - a transcription-complete hook for usage metering + analytics events
     (idempotent on ``file_id:run_id`` against retries/replays).
 
-Contract covered by ``CLOUD_SEAM_VERSION`` (app.auth.constants).
+Hook-author contract (covered by ``CLOUD_SEAM_VERSION``, app.auth.constants):
+  - THROWING is contained: any exception except ``QuotaExceededError`` is
+    logged and swallowed -- a broken hook can never fail a transcription.
+  - HANGING is NOT contained: hooks run synchronously inside the completion
+    path (an open session_scope holding the task's final status). A hook that
+    blocks on network I/O delays the completion commit + user notification
+    for as long as it blocks. Every outbound call inside a hook MUST carry a
+    tight socket/request timeout (a few seconds); durable/slow work belongs
+    on a queue the hook merely enqueues to.
+  - Hooks receive dataclass contexts, never the task's DB session -- open
+    your own ``session_scope()`` for any DB work.
 """
 
 import logging

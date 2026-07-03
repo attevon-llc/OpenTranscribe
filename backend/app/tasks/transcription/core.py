@@ -231,6 +231,8 @@ class TranscriptionContext:
     file_path: str
     file_name: str
     content_type: str
+    # Tenant scope (cloud-edition seam; None = personal / community)
+    organization_id: int | None = None
 
 
 def _get_media_file_context(file_uuid: str, task_id: str) -> TranscriptionContext | None:
@@ -251,6 +253,7 @@ def _get_media_file_context(file_uuid: str, task_id: str) -> TranscriptionContex
             file_path=str(media_file.storage_path),
             file_name=str(media_file.filename),
             content_type=str(media_file.content_type),
+            organization_id=media_file.organization_id,
         )
         update_media_file_status(db, ctx.file_id, FileStatus.PROCESSING)
         return ctx
@@ -268,6 +271,29 @@ def _handle_transcription_failure(
             media_file.last_error_message = error_msg
             media_file.error_category = categorize_error(error_msg).value
             db.commit()
+
+        # Cloud-edition seam: a FAILED run must still fire the completion hook
+        # (success=False) so the quota layer releases the reservation taken at
+        # dispatch — otherwise crashed jobs permanently consume quota headroom.
+        # No-op in community; failures contained by the hook registry.
+        try:
+            from .hooks import CompletionContext
+            from .hooks import fire_transcription_complete
+
+            fire_transcription_complete(
+                CompletionContext(
+                    file_id=ctx.file_id,
+                    file_uuid=str(ctx.file_uuid),
+                    user_id=ctx.user_id,
+                    organization_id=media_file.organization_id if media_file else None,
+                    audio_duration_s=0.0,
+                    run_id=task_id,
+                    provider="local",
+                    success=False,
+                )
+            )
+        except Exception:  # pragma: no cover — hook layer already contains
+            logger.exception("Failure-path completion hook raised (contained)")
 
     send_error_notification(ctx.user_id, ctx.file_id, error_msg)
     return {"status": "error", "message": error_msg, "error_type": error_type}
@@ -572,6 +598,7 @@ def _update_v4_profile_embeddings(
                     embedding=avg_embedding,
                     speaker_count=len(v4_embeddings),
                     user_id=int(profile.user_id),
+                    organization_id=profile.organization_id,
                 )
                 update_count += 1
 
@@ -649,6 +676,7 @@ def _store_native_centroids_in_v4_staging(
                     "speaker_id": int(speaker.id),
                     "speaker_uuid": speaker_uuid,
                     "user_id": ctx.user_id,
+                    "organization_id": ctx.organization_id,
                     "name": speaker.display_name or speaker.name,
                     "embedding": emb_list,
                     "profile_id": speaker.profile_id,
@@ -1254,30 +1282,14 @@ def _run_post_gpu_background(
             # Note: media_file.status is already set to COMPLETED by
             # update_media_file_transcription_status in the critical path
 
-            # Cloud-edition seam: metering/analytics hook (no-op in community,
-            # failures contained — metering can never fail a transcription).
-            from app.models.media import MediaFile as _MediaFile
-            from app.models.pipeline_timing import FilePipelineTiming as _Timing
-
-            from .hooks import CompletionContext
-            from .hooks import fire_transcription_complete
-
-            _mf = db.query(_MediaFile).filter(_MediaFile.id == ctx.file_id).first()
-            _timing = db.query(_Timing.asr_provider).filter(_Timing.file_id == ctx.file_id).first()
-            fire_transcription_complete(
-                CompletionContext(
-                    file_id=ctx.file_id,
-                    file_uuid=str(ctx.file_uuid),
-                    user_id=ctx.user_id,
-                    organization_id=_mf.organization_id if _mf else None,
-                    audio_duration_s=float(_mf.duration) if _mf and _mf.duration else 0.0,
-                    run_id=ctx.task_id,
-                    provider=(
-                        _timing.asr_provider if _timing and _timing.asr_provider else "local"
-                    ),
-                    success=True,
-                )
-            )
+            # Deliberately NO metering hook here: this legacy monolithic path is
+            # never dispatched (the split pipeline is the only producer), and its
+            # cloud-ASR branch dispatches speaker embeddings without a pipeline
+            # task id — firing here could double-meter under different run_ids.
+            # The LIVE metering termini are postprocess.finalize_transcription
+            # (local / disabled diarization), rediarize_task with
+            # pipeline_completion=True (cloud ASR + local diarization), and
+            # speaker_embedding_task (cloud ASR + provider diarization).
 
         send_completion_notification(ctx.user_id, ctx.file_id)
 

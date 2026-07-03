@@ -111,6 +111,10 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                         "max_speakers": None,
                         "num_speakers": None,
                         "downstream_tasks": downstream_tasks,
+                        # This rediarize completes a fresh billable pipeline run —
+                        # it is the metering terminus (we deliberately don't meter
+                        # here to avoid double-counting).
+                        "pipeline_completion": True,
                     },
                     queue=CeleryQueues.GPU,
                 )

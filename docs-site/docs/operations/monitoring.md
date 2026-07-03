@@ -32,7 +32,7 @@ Key metric names (stable; dashboards are built against these):
 | `db_queries_per_request` | Histogram | `method`, `route` |
 | `cache_operations_total` | Counter | `cache` (`redis`/`settings`), `result` (`hit`/`miss`) |
 | `celery_queue_depth` | Gauge | `queue` |
-| `user_signups_total` | Counter | `method` (`local`/`ldap`/`keycloak`/`pki`/`clerk`) |
+| `user_signups_total` | Counter | `method` (`local`/`ldap`/`keycloak`/`pki`/`external`) |
 | `files_uploaded_total` | Counter | `source` (`upload`/`url`/`watch`) |
 
 :::note Route labels use the route **template** (e.g. `/api/files/{file_id}`), never the raw path or query string — this bounds cardinality and keeps tokens/PII out of metrics. `user_id`/`org_id` are written to the JSON **access log** only, never as Prometheus labels.

@@ -7,7 +7,11 @@ from fastapi import status
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
 from app.db.base import get_db
 from app.models.media import Comment
 from app.models.media import MediaFile
@@ -24,13 +28,23 @@ from app.utils.uuid_helpers import require_resource_owner
 router = APIRouter()
 
 
-def _check_file_access(db: Session, file_uuid: str, current_user: User) -> MediaFile:
+def _check_file_access(
+    db: Session,
+    file_uuid: str,
+    current_user: User,
+    organization_id: OrgScope = UNSCOPED,
+) -> MediaFile:
     """Get a media file after verifying the user has at least viewer permission.
 
     Uses PermissionService to check ownership, direct shares, and group shares.
+    ``organization_id`` tenant-gates the lookup (default-deny across scopes).
     """
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=organization_id,
     )
     return media_file
 
@@ -40,12 +54,13 @@ def get_comments_for_file_nested(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get all comments for a specific media file (nested route).
 
     Requires viewer+ permission on the file (via ownership or sharing).
     """
-    media_file = _check_file_access(db, file_uuid, current_user)
+    media_file = _check_file_access(db, file_uuid, current_user, organization_id=ctx.org_id)
     file_id = media_file.id
 
     # Get comments for this file with user relationship loaded
@@ -64,12 +79,13 @@ def create_comment_for_file_nested(
     comment: CommentCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Create a comment for a specific media file (nested route).
 
     Requires viewer+ permission on the file (commenting is collaborative).
     """
-    media_file = _check_file_access(db, file_uuid, current_user)
+    media_file = _check_file_access(db, file_uuid, current_user, organization_id=ctx.org_id)
     file_id = media_file.id
 
     # Create comment with file_id from URL
@@ -100,6 +116,7 @@ def get_comments_for_file(
     media_file_uuid: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """List all comments for a media file using query parameter.
 
@@ -113,7 +130,7 @@ def get_comments_for_file(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Query parameter 'media_file_id' is required",
         )
-    media_file = _check_file_access(db, file_ref, current_user)
+    media_file = _check_file_access(db, file_ref, current_user, organization_id=ctx.org_id)
     media_file_pk = media_file.id
 
     # Get comments for this file (eager-load relationships to avoid N+1)
@@ -133,6 +150,7 @@ def create_comment_standalone(
     comment: CommentCreateStandalone,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Add a comment to a media file referenced by UUID in the request body.
 
@@ -140,7 +158,9 @@ def create_comment_standalone(
     ``POST /files/{file_uuid}/comments`` route is unavailable. Requires
     viewer+ permission on the file.
     """
-    media_file = _check_file_access(db, str(comment.media_file_id), current_user)
+    media_file = _check_file_access(
+        db, str(comment.media_file_id), current_user, organization_id=ctx.org_id
+    )
     file_id = media_file.id
 
     # Create new comment
@@ -171,6 +191,7 @@ def get_comment(
     comment_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get a single comment by UUID.
 
@@ -179,9 +200,10 @@ def get_comment(
     comment = get_comment_by_uuid(db, comment_uuid)
 
     # Verify the user has access to the comment's file via PermissionService
+    # (tenant-gated via ctx.org_id).
     if not current_user.is_admin:
         permission = PermissionService.get_file_permission(
-            db, int(comment.media_file_id), current_user.id
+            db, int(comment.media_file_id), current_user.id, organization_id=ctx.org_id
         )
         if permission is None:
             raise HTTPException(

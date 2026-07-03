@@ -240,6 +240,7 @@ def search_suggestions(
     limit: int = Query(8, ge=1, le=20, description="Max suggestions"),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
+    db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
     """
     Auto-complete suggestions as user types.
@@ -257,12 +258,32 @@ def search_suggestions(
     from app.services.search.hybrid_search_service import HybridSearchService
 
     search_service = HybridSearchService()
-    return search_service.get_suggestions(
+    suggestions = search_service.get_suggestions(
         prefix=q,
         user_id=ctx.user.id,
         limit=limit,
         organization_id=ctx.org_id,
     )
+
+    # Abuse/DMCA: like the results page, the chunks index carries no quarantine
+    # field — drop taken-down files' titles from autocomplete against the DB
+    # (admins keep visibility for review). Speaker-name suggestions carry no
+    # file linkage and stay as-is.
+    if suggestions and not ctx.user.is_admin:
+        from app.models.media import MediaFile
+
+        uuids = [s["file_uuid"] for s in suggestions if s.get("file_uuid")]
+        if uuids:
+            quarantined = {
+                str(row[0])
+                for row in db.query(MediaFile.uuid)
+                .filter(MediaFile.uuid.in_(uuids), MediaFile.is_quarantined.is_(True))
+                .all()
+            }
+            if quarantined:
+                suggestions = [s for s in suggestions if str(s.get("file_uuid")) not in quarantined]
+
+    return suggestions
 
 
 @router.get("/filters")

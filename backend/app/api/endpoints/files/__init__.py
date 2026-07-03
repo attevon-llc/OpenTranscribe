@@ -389,10 +389,11 @@ def list_media_files(
 def get_metadata_filters_endpoint(
     ownership: str = Query("all", pattern="^(mine|shared|all)$"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ):
     """Get available metadata filters like formats, codecs, etc."""
-    return get_metadata_filters(db, current_user.id, ownership=ownership)
+    return get_metadata_filters(db, ctx.user.id, ownership=ownership, organization_id=ctx.org_id)
 
 
 # =============================================================================
@@ -514,6 +515,7 @@ def get_media_file_stream_url(
     media_type: str = Query("video", description="Type of media: video, thumbnail, or audio"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Generate a short-lived presigned URL for secure media streaming.
@@ -543,9 +545,11 @@ def get_media_file_stream_url(
             detail=f"Invalid media_type: {media_type}. Must be 'video', 'thumbnail', or 'audio'",
         )
 
-    # Verify user has permission (ownership check)
+    # Verify user has permission (ownership check, tenant-gated via ctx.org_id)
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+    )
 
     # Determine storage path and expiration based on media type
     if media_type == "thumbnail":
@@ -700,6 +704,7 @@ def prepare_download(
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Prepare a media download.
 
@@ -713,7 +718,9 @@ def prepare_download(
     if mode not in _DOWNLOAD_MODES:
         raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
 
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=current_user.is_admin)
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+    )
 
     ready = _resolve_ready_download(db_file, mode)
     if ready:
@@ -731,6 +738,7 @@ async def download_stream(
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Server-Sent Events stream that pushes download progress + the final URL.
 
@@ -751,7 +759,9 @@ async def download_stream(
     if mode not in _DOWNLOAD_MODES:
         raise HTTPException(status_code=400, detail=f"Invalid download mode: {mode}")
 
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=current_user.is_admin)
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+    )
     user_id = current_user.id
 
     def sse(event: str, payload: dict) -> str:
@@ -903,13 +913,14 @@ def update_transcript_segment(
     segment_update: TranscriptSegmentUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Update a specific transcript segment"""
     from .crud import update_single_transcript_segment
 
-    # Update the transcript segment
+    # Update the transcript segment (tenant-gated via ctx.org_id)
     result = update_single_transcript_segment(
-        db, file_uuid, segment_uuid, segment_update, current_user
+        db, file_uuid, segment_uuid, segment_update, current_user, organization_id=ctx.org_id
     )
 
     # Transcript has been updated - subtitles will be regenerated on-demand
@@ -923,6 +934,7 @@ def reprocess_media_file(
     reprocess_request: Optional[ReprocessRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Reprocess a media file for transcription with optional speaker diarization settings"""
     # Extract speaker parameters from request if provided
@@ -941,6 +953,7 @@ def reprocess_media_file(
         num_speakers,  # type: ignore[arg-type]
         stages=stages,
         whisper_model=whisper_model,
+        organization_id=ctx.org_id,
     )
 
 
@@ -949,12 +962,15 @@ def clear_video_cache(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Clear cached processed videos for a file (e.g., after speaker name updates)"""
     try:
-        # Verify user owns the file or is admin
+        # Verify user owns the file or is admin (tenant-gated via ctx.org_id)
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(
+            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        )
         file_id = db_file.id  # Get internal ID for cache operations
 
         # Clear the cache using video processing service
@@ -984,12 +1000,15 @@ def get_file_analytics(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, Any]:
     """Get analytics for a media file (lightweight, no transcript/speaker data)."""
     from app.schemas.media import Analytics as AnalyticsSchema
 
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+    )
     analytics = _get_or_compute_analytics(db, db_file.id, str(db_file.status))
     return {
         "analytics": AnalyticsSchema.model_validate(analytics) if analytics else None,
@@ -1001,12 +1020,15 @@ def refresh_analytics(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Refresh analytics for a media file by recomputing them"""
     try:
-        # Verify user owns the file or is admin
+        # Verify user owns the file or is admin (tenant-gated via ctx.org_id)
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(
+            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        )
         file_id = db_file.id  # Get internal ID for analytics refresh
 
         # Refresh analytics using the analytics service

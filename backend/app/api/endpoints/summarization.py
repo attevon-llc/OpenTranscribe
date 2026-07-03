@@ -15,6 +15,8 @@ from fastapi import HTTPException
 from fastapi import Path
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
@@ -38,6 +40,7 @@ async def trigger_summarization(
     file_uuid: str = Path(..., description="UUID of the media file to summarize"),
     request: SummaryTaskRequest = SummaryTaskRequest(),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
     db: Session = Depends(get_db),
 ):
     """
@@ -64,9 +67,9 @@ async def trigger_summarization(
     - **Key Decisions**: Concrete decisions made
     - **Follow-up Items**: Future discussion points
     """
-    # Verify file exists and belongs to user
+    # Verify file exists and belongs to user (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id
 
@@ -165,6 +168,7 @@ async def trigger_summarization(
 async def get_file_summary(
     file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
     db: Session = Depends(get_db),
 ):
     """
@@ -182,9 +186,9 @@ async def get_file_summary(
     - Processing metadata (provider, model, timing)
     - Search-optimized content for highlighting
     """
-    # Verify file exists and belongs to user
+    # Verify file exists and belongs to user (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id
 
@@ -310,6 +314,7 @@ async def search_summaries(
 async def identify_speakers(
     file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
     db: Session = Depends(get_db),
 ):
     """
@@ -338,9 +343,9 @@ async def identify_speakers(
     - Suggest matches with existing speaker profiles
     - Provide context clues for manual identification
     """
-    # Verify file exists and belongs to user
+    # Verify file exists and belongs to user (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id
 
@@ -383,6 +388,7 @@ async def identify_speakers(
 async def delete_summary(
     file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
     db: Session = Depends(get_db),
 ):
     """
@@ -399,9 +405,9 @@ async def delete_summary(
     - Document ID references
     - Search index entries
     """
-    # Verify file exists and belongs to user
+    # Verify file exists and belongs to user (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id
 

@@ -360,17 +360,19 @@ def cleanup_expired_files(force: bool = False):
 
             # Cloud-edition seam: a per-org retention OVERRIDE may keep files
             # longer (premium tier) or shorter (free tier) than the global
-            # window. Widen the candidate query to the LARGEST override in
-            # effect so longer-retention tenants' files are still considered
-            # (then kept below, since their age is under their effective
-            # retention). Community: no resolver -> max is None -> unchanged.
-            from app.core.tenant_limits import max_retention_override_days
+            # window. The candidate query must include every file that ANY
+            # effective retention could expire, i.e. everything older than the
+            # SHORTEST retention in effect; the per-file check below then
+            # applies each file's own effective retention (longer-retention
+            # tenants' files are simply kept). Community: no resolver -> min is
+            # None -> unchanged global window.
+            from app.core.tenant_limits import min_retention_override_days
             from app.core.tenant_limits import resolve_retention_days
 
-            max_override = max_retention_override_days()
+            min_override = min_retention_override_days()
             query_days = (
-                max(global_retention_days, max_override)
-                if max_override is not None
+                min(global_retention_days, min_override)
+                if min_override is not None
                 else global_retention_days
             )
             query_cutoff = datetime.now(timezone.utc) - timedelta(days=query_days)

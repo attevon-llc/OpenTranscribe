@@ -17,6 +17,8 @@ from fastapi import Query
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.media import MediaFile
@@ -244,6 +246,7 @@ def get_audio_waveform(
     refresh_cache: bool = Query(False, description="Force refresh of cached waveform data"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Generate waveform visualization data for an audio or video file.
@@ -257,9 +260,11 @@ def get_audio_waveform(
     Returns:
         JSON response with waveform data and metadata
     """
-    # Get the media file and verify user access
+    # Get the media file and verify user access (tenant-gated via ctx.org_id)
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=bool(is_admin))
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=bool(is_admin), organization_id=ctx.org_id
+    )
     file_id = db_file.id
 
     # Validate the file is suitable for waveform generation
@@ -283,6 +288,7 @@ def get_audio_waveform_peaks(
     height: int = Query(100, description="Target height in pixels", ge=50, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Generate waveform peaks data optimized for a specific display size.
@@ -296,9 +302,11 @@ def get_audio_waveform_peaks(
     Returns:
         JSON response with peaks data optimized for display
     """
-    # Get the media file and verify user access
+    # Get the media file and verify user access (tenant-gated via ctx.org_id)
     is_admin = current_user.is_admin
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=bool(is_admin))
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=bool(is_admin), organization_id=ctx.org_id
+    )
     file_id = db_file.id
 
     # Validate the file is suitable for waveform generation
@@ -337,15 +345,18 @@ def generate_waveform_for_file(
     force_regenerate: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Generate waveform data for a specific file.
     Can be used to create missing waveform data or force regeneration.
     """
     try:
-        # Verify user access to the file
+        # Verify user access to the file (tenant-gated via ctx.org_id)
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=bool(is_admin))
+        db_file = get_media_file_by_uuid(
+            db, file_uuid, current_user.id, is_admin=bool(is_admin), organization_id=ctx.org_id
+        )
         file_id = db_file.id  # Get internal ID for task trigger
 
         # Check if file is audio/video

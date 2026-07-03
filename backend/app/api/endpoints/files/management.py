@@ -14,9 +14,13 @@ from pydantic import BaseModel
 from pydantic import Field
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_user
 from app.api.endpoints.files.crud import delete_media_file
 from app.api.endpoints.files.crud import get_media_file_by_uuid
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.user import User
@@ -83,11 +87,14 @@ def get_file_status_detail(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get detailed status information for a file."""
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(
+            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        )
         file_id = db_file.id  # Get internal ID for task operations
 
         # Check if file is safe to delete
@@ -172,11 +179,14 @@ def cancel_file_processing(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Cancel active processing for a file."""
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(
+            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        )
         file_id = db_file.id  # Get internal ID for task operations
 
         if db_file.status != FileStatus.PROCESSING:
@@ -216,11 +226,14 @@ def retry_file_processing(
     reset_retry_count: bool = Query(False, description="Reset retry count to 0"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Retry processing for a failed file."""
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(
+            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        )
         file_id = db_file.id  # Get internal ID for task operations
 
         # Check if file can be retried
@@ -293,11 +306,14 @@ def recover_file(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Attempt to recover a stuck file."""
     try:
         is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(
+            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        )
         file_id = db_file.id  # Get internal ID for task operations
 
         success = recover_stuck_file(db, file_id)
@@ -332,6 +348,7 @@ def force_delete_file(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Force delete a file (admin only)."""
     if not current_user.is_admin:
@@ -341,7 +358,7 @@ def force_delete_file(
         )
 
     try:
-        delete_media_file(db, file_uuid, current_user, force=True)
+        delete_media_file(db, file_uuid, current_user, force=True, organization_id=ctx.org_id)
         return {"message": "File force deleted successfully", "file_uuid": file_uuid}
 
     except HTTPException:
@@ -408,10 +425,14 @@ def get_stuck_files(
 
 
 def _handle_delete_action(
-    db: Session, file_uuid: str, current_user: User, force: bool
+    db: Session,
+    file_uuid: str,
+    current_user: User,
+    force: bool,
+    organization_id: OrgScope = UNSCOPED,
 ) -> BulkActionResult:
     """Handle delete action for bulk operations."""
-    delete_media_file(db, file_uuid, current_user, force=force)
+    delete_media_file(db, file_uuid, current_user, force=force, organization_id=organization_id)
     return BulkActionResult(
         file_uuid=file_uuid,
         success=True,
@@ -648,13 +669,18 @@ def _process_single_file_action(
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
+    organization_id: OrgScope = UNSCOPED,
 ) -> BulkActionResult:
     """Process a single file action, returning the result."""
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+    )
     file_id = db_file.id
 
     action_handlers = {
-        "delete": lambda: _handle_delete_action(db, file_uuid, current_user, force),
+        "delete": lambda: _handle_delete_action(
+            db, file_uuid, current_user, force, organization_id
+        ),
         "retry": lambda: _handle_retry_action(db, file_uuid, file_id, reset_retry_count),
         "cancel": lambda: _handle_cancel_action(db, file_uuid, file_id),
         "recover": lambda: _handle_recover_action(db, file_uuid, file_id),
@@ -682,6 +708,7 @@ def bulk_file_action(
     request: BulkActionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Perform bulk actions on multiple files."""
     try:
@@ -702,6 +729,7 @@ def bulk_file_action(
                     min_speakers=request.min_speakers,
                     max_speakers=request.max_speakers,
                     num_speakers=request.num_speakers,
+                    organization_id=ctx.org_id,
                 )
                 results.append(result)
             except HTTPException as e:

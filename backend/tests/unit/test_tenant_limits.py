@@ -18,7 +18,7 @@ def _reset_resolvers():
 
 
 def test_community_default_is_noop():
-    from app.core.tenant_limits import max_retention_override_days
+    from app.core.tenant_limits import min_retention_override_days
     from app.core.tenant_limits import resolve_retention_days
     from app.core.tenant_limits import resolve_upload_limits
 
@@ -26,21 +26,25 @@ def test_community_default_is_noop():
     assert resolve_retention_days(None) is None
     assert resolve_retention_days(123) is None
     assert resolve_upload_limits(123) is None
-    assert max_retention_override_days() is None
+    assert min_retention_override_days() is None
 
 
 def test_registered_retention_resolver_overrides():
-    from app.core.tenant_limits import max_retention_override_days
+    from app.core.tenant_limits import min_retention_override_days
     from app.core.tenant_limits import resolve_retention_days
     from app.core.tenant_limits import set_retention_resolver
 
+    # A free tier with 7-day retention alongside a 365-day premium tier: the
+    # cleanup candidate window must key on the SHORTEST override so free-tier
+    # files become candidates early (per-file expiry keeps everyone else).
     set_retention_resolver(
-        lambda org_id: 365 if org_id == 7 else None,
-        lambda: 365,
+        lambda org_id: {7: 365, 9: 7}.get(org_id) if org_id is not None else None,
+        lambda: 7,
     )
     assert resolve_retention_days(7) == 365
+    assert resolve_retention_days(9) == 7
     assert resolve_retention_days(8) is None  # no override for this org
-    assert max_retention_override_days() == 365
+    assert min_retention_override_days() == 7
 
 
 def test_registered_upload_limits_resolver_overrides():

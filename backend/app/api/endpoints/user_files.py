@@ -20,6 +20,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import defer
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.media import FileStatus
@@ -194,14 +196,19 @@ def get_file_detailed_status(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Get detailed status for a specific file including task information.
     """
     try:
-        # Get the file (ensure user owns it)
+        # Get the file (ensure user owns it, tenant-gated via ctx.org_id)
         media_file = get_file_by_uuid_with_permission(
-            db, file_uuid, current_user.id, is_admin=current_user.is_admin
+            db,
+            file_uuid,
+            current_user.id,
+            is_admin=current_user.is_admin,
+            organization_id=ctx.org_id,
         )
         file_id = media_file.id
 
@@ -305,15 +312,20 @@ async def retry_file_processing(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Retry processing for a file that failed or is stuck.
     Available to all users for their own files.
     """
     try:
-        # Get the file (ensure user owns it)
+        # Get the file (ensure user owns it, tenant-gated via ctx.org_id)
         media_file = get_file_by_uuid_with_permission(
-            db, file_uuid, current_user.id, is_admin=current_user.is_admin
+            db,
+            file_uuid,
+            current_user.id,
+            is_admin=current_user.is_admin,
+            organization_id=ctx.org_id,
         )
         file_id = media_file.id
 

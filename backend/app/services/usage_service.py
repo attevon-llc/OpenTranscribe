@@ -35,6 +35,11 @@ def record_event(
     Duplicate ``idempotency_key`` -> skipped (already recorded by a previous
     attempt). Any other failure is logged and swallowed — usage accounting
     must never break the feature that emitted the event.
+
+    Session-safety: failure paths call ``db.rollback()``, which discards ANY
+    uncommitted work on the session. Call this with a dedicated session (a
+    fresh ``session_scope()``), never a caller's live session holding pending
+    writes — a duplicate-key skip would silently roll those writes back.
     """
     from sqlalchemy.exc import IntegrityError
 

@@ -209,6 +209,7 @@ def rediarize_task(  # noqa: C901
     max_speakers: int | None = None,
     num_speakers: int | None = None,
     downstream_tasks: list[str] | None = None,
+    pipeline_completion: bool = False,
 ):
     """Re-run speaker diarization on an existing transcript without re-transcribing.
 
@@ -224,6 +225,11 @@ def rediarize_task(  # noqa: C901
         downstream_tasks: Optional list of downstream stage names to dispatch.
             Valid values: 'analytics', 'speaker_llm', 'summarization',
             'topic_extraction', 'search_indexing'.
+        pipeline_completion: True ONLY when this rediarize is the completion
+            terminus of a fresh transcription pipeline run (cloud ASR + local
+            diarization) — that's the sole case that fires the metering hook.
+            User-triggered re-diarization of an already-billed transcript must
+            leave this False or every rerun would meter a full transcription.
     """
     import shutil
 
@@ -382,20 +388,23 @@ def rediarize_task(  # noqa: C901
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
             update_media_file_status(db, file_id, FileStatus.COMPLETED)
 
-            # Cloud-edition seam: this rediarize is the completion terminus for the
-            # cloud-ASR + local-diarization path. Fire the metering hook here (the
-            # finalize_transcription branch that dispatched us does NOT meter, to
-            # avoid double-counting). run_id is this Celery task id (stable across
-            # retries — acks_late). Provider is the original cloud-ASR provider.
-            from app.tasks.transcription.postprocess import _fire_completion_metering
+            # Cloud-edition seam: when this rediarize is the completion terminus
+            # for a fresh cloud-ASR + local-diarization pipeline run, fire the
+            # metering hook here (the finalize_transcription branch that
+            # dispatched us does NOT meter, to avoid double-counting). run_id is
+            # this Celery task id (stable across retries — acks_late).
+            # User-triggered re-diarization (pipeline_completion=False) never
+            # meters: the transcript was already billed by its original run.
+            if pipeline_completion:
+                from app.tasks.transcription.postprocess import _fire_completion_metering
 
-            _fire_completion_metering(
-                db,
-                file_id=file_id,
-                run_id=task_id,
-                provider=_resolve_asr_provider(db, file_id),
-                success=True,
-            )
+                _fire_completion_metering(
+                    db,
+                    file_id=file_id,
+                    run_id=task_id,
+                    provider=_resolve_asr_provider(db, file_id),
+                    success=True,
+                )
 
         # Send completion notification
         from app.tasks.transcription.notifications import send_completion_notification

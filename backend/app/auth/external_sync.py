@@ -59,7 +59,13 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     are race-safe via IntegrityError recovery on the unique external-id
     column. Existing local users matched by email are converted one-way to
     the external provider (local password cleared), mirroring the Keycloak
-    conversion semantics.
+    conversion semantics — but ONLY when the IdP asserts the email is
+    verified, and NEVER for super_admin accounts (platform-owner accounts
+    must be linked deliberately, not via self-serve IdP registration).
+
+    Raises:
+        PermissionError: when an email-matched link is refused (unverified
+            email or super_admin target). Callers treat this as 401.
     """
     from sqlalchemy.exc import IntegrityError
 
@@ -68,8 +74,28 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     email = identity.email or f"{identity.external_id}@{identity.provider}.local"
 
     user = db.query(User).filter(getattr(User, id_col) == identity.external_id).first()
+    matched_by_email = False
     if not user and identity.email:
         user = db.query(User).filter(User.email == identity.email).first()
+        matched_by_email = user is not None
+
+    if user and matched_by_email:
+        # Email-match links an external identity to a PRE-EXISTING account —
+        # the account-takeover vector if the IdP address isn't verified.
+        if not identity.email_verified:
+            logger.warning(
+                f"SECURITY: Refusing to link {identity.provider} identity "
+                f"{identity.external_id} to existing account {user.email}: "
+                "IdP did not assert the email address as verified."
+            )
+            raise PermissionError("External identity email is not verified")
+        if user.role == "super_admin":
+            logger.warning(
+                f"SECURITY: Refusing to link {identity.provider} identity "
+                f"{identity.external_id} to super_admin account {user.email} "
+                "via email match. Platform-owner accounts are never JIT-linked."
+            )
+            raise PermissionError("Account cannot be linked via external identity")
 
     if user:
         if user.auth_type == "local":
@@ -78,7 +104,7 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
                 "Local password will be cleared."
             )
             user.hashed_password = EXTERNAL_AUTH_NO_PASSWORD
-        if identity.email and identity.email != user.email:
+        if identity.email and identity.email != user.email and identity.email_verified:
             logger.warning(
                 f"SECURITY: User email changed during {identity.provider} login. "
                 f"external_id={identity.external_id}, "

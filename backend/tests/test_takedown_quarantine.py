@@ -170,3 +170,45 @@ class TestExcludeQuarantinedPredicate:
         base = db.query(MediaFile).filter(MediaFile.user_id == owner.id)
         ids = {f.id for f in exclude_quarantined(base).all()}
         assert file.id in ids
+
+
+class TestPriorStatusRestore:
+    def test_release_restores_pre_quarantine_status(self, world):
+        """A file quarantined while ERROR must release back to ERROR, not
+        COMPLETED (v371 pre_quarantine_status)."""
+        db, _owner, admin, file = world
+        file.status = FileStatus.ERROR
+        db.commit()
+
+        quarantine_file(db, file, admin=admin, reason="test")
+        assert file.status == FileStatus.QUARANTINED
+        assert file.pre_quarantine_status == FileStatus.ERROR.value
+
+        release_file(db, file, admin=admin)
+        assert file.status == FileStatus.ERROR
+        assert file.pre_quarantine_status is None
+
+    def test_requarantine_keeps_original_prior_status(self, world):
+        """Re-quarantining an already-quarantined file must not overwrite the
+        recorded prior status with QUARANTINED."""
+        db, _owner, admin, file = world
+        file.status = FileStatus.COMPLETED
+        db.commit()
+
+        quarantine_file(db, file, admin=admin, reason="first")
+        quarantine_file(db, file, admin=admin, reason="second (refresh)")
+        assert file.pre_quarantine_status == FileStatus.COMPLETED.value
+
+        release_file(db, file, admin=admin)
+        assert file.status == FileStatus.COMPLETED
+
+    def test_release_falls_back_to_completed_without_recorded_status(self, world):
+        """Rows quarantined before v371 have no recorded prior status — release
+        falls back to COMPLETED."""
+        db, _owner, admin, file = world
+        quarantine_file(db, file, admin=admin, reason="test")
+        file.pre_quarantine_status = None
+        db.commit()
+
+        release_file(db, file, admin=admin)
+        assert file.status == FileStatus.COMPLETED

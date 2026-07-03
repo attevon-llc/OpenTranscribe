@@ -36,6 +36,14 @@ class ExternalIdentity:
     org claim). ``is_admin`` means PLATFORM admin and should stay False for
     customer org roles — org-admin is a per-tenant capability, not a platform
     role (privilege separation).
+
+    ``email_verified`` MUST be True only when the IdP asserts the address is
+    verified. It defaults to False (fail-closed): JIT provisioning refuses to
+    link an external identity to an EXISTING local account by email match
+    unless the email is verified — otherwise anyone who can register the
+    victim's address at the IdP could take over the local account
+    (self-serve IdPs do not gate registration the way an admin-run
+    Keycloak/LDAP does).
     """
 
     provider: str
@@ -45,6 +53,7 @@ class ExternalIdentity:
     org_id: Optional[str] = None
     org_role: Optional[str] = None
     is_admin: bool = False
+    email_verified: bool = False
     raw_claims: dict[str, Any] = field(default_factory=dict)
 
 

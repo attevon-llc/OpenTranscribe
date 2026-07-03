@@ -110,6 +110,12 @@ def quarantine_file(
     file.quarantine_reason = reason
     file.quarantined_at = datetime.now(timezone.utc)
     file.quarantined_by = admin.id
+    # Preserve the true prior status ONCE (re-quarantine must not overwrite it
+    # with QUARANTINED) so release can restore the file's actual state.
+    if file.status != FileStatus.QUARANTINED:
+        file.pre_quarantine_status = (
+            file.status.value if hasattr(file.status, "value") else str(file.status)
+        )
     file.status = FileStatus.QUARANTINED
     if legal_hold:
         file.legal_hold = True
@@ -143,22 +149,24 @@ def release_file(
     file: MediaFile,
     *,
     admin: User,
-    restore_status: FileStatus = FileStatus.COMPLETED,
+    restore_status: FileStatus | None = None,
     clear_legal_hold: bool = True,
     source_ip: str = "",
     user_agent: str = "",
 ) -> MediaFile:
     """Release a quarantined file: clear the flag, optionally lift the hold, audit.
 
-    Restores access for normal users. ``restore_status`` (default
-    ``COMPLETED``) replaces the temporary ``QUARANTINED`` display status — the
-    caller passes the file's true prior status when known.
+    Restores access for normal users. The display status goes back to the
+    file's recorded ``pre_quarantine_status`` (captured at takedown time);
+    ``restore_status`` overrides it when the caller knows better, and
+    ``COMPLETED`` is the last-resort fallback for rows quarantined before the
+    prior status was recorded (pre-v371).
 
     Args:
         db: Database session.
         file: The quarantined media file.
         admin: The admin performing the release (for the audit trail).
-        restore_status: Processing status to restore (default COMPLETED).
+        restore_status: Explicit status override (default: the recorded prior status).
         clear_legal_hold: Also lift the DB + S3 legal-hold (default True).
         source_ip / user_agent: Request metadata for the audit event.
 
@@ -170,7 +178,14 @@ def release_file(
     file.quarantined_at = None
     file.quarantined_by = None
     if file.status == FileStatus.QUARANTINED:
-        file.status = restore_status
+        if restore_status is not None:
+            file.status = restore_status
+        else:
+            try:
+                file.status = FileStatus(file.pre_quarantine_status)
+            except ValueError:
+                file.status = FileStatus.COMPLETED
+    file.pre_quarantine_status = None
     if clear_legal_hold:
         file.legal_hold = False
 

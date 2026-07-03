@@ -100,6 +100,57 @@ def _get_client_info(request: Request) -> tuple[str, str]:
     return client_ip, user_agent
 
 
+def _authenticate_external_token(request: Request, token: str, db: Session) -> Optional[User]:
+    """Resolve a bearer token via the external-verifier seam (cloud edition).
+
+    Returns the JIT-synced user when a registered verifier claims the token,
+    or ``None`` to fall through to the local-JWT path. Sync failures — a
+    refused link (unverified email match / protected account) or a DB error —
+    surface as clean 401s, matching the optional-auth and WebSocket branches'
+    containment.
+    """
+    from app.auth.provider_registry import has_verifiers
+
+    if not has_verifiers():
+        return None
+
+    from app.auth.external_sync import sync_external_user_to_db
+    from app.auth.provider_registry import verify_external_token
+
+    external_identity = verify_external_token(token, request)
+    if external_identity is None:
+        return None
+
+    try:
+        external_user = sync_external_user_to_db(db, external_identity)
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+    except Exception:
+        logger.exception("External JIT sync failed; rejecting credential")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not provision external identity",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+    if not external_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    # Stash for get_current_context() so org scoping doesn't re-verify.
+    request.state.external_identity = external_identity
+    # Cloud contract: the access log / observability layer reads these
+    # off request.state. user_id is always set; org_id is the provider's
+    # raw org string here and is refined to our local Organization.id in
+    # deps_context.get_current_context() when org context applies. Never
+    # used as a Prometheus label — access log only.
+    request.state.user_id = external_user.id
+    request.state.org_id = getattr(external_user, "external_org_id", None)
+    return external_user
+
+
 def get_current_user(
     request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
@@ -127,28 +178,10 @@ def get_current_user(
 
     # Cloud-edition seam: offer the token to registered external verifiers
     # before the local-JWT path. The community edition registers none, so this
-    # branch is a no-op there.
-    from app.auth.provider_registry import has_verifiers
-
-    if has_verifiers():
-        from app.auth.external_sync import sync_external_user_to_db
-        from app.auth.provider_registry import verify_external_token
-
-        external_identity = verify_external_token(token, request)
-        if external_identity is not None:
-            external_user = sync_external_user_to_db(db, external_identity)
-            if not external_user.is_active:
-                raise HTTPException(status_code=400, detail="Inactive user")
-            # Stash for get_current_context() so org scoping doesn't re-verify.
-            request.state.external_identity = external_identity
-            # Cloud contract: the access log / observability layer reads these
-            # off request.state. user_id is always set; org_id is the provider's
-            # raw org string here and is refined to our local Organization.id in
-            # deps_context.get_current_context() when org context applies. Never
-            # used as a Prometheus label — access log only.
-            request.state.user_id = external_user.id
-            request.state.org_id = getattr(external_user, "external_org_id", None)
-            return external_user
+    # is a no-op there.
+    external_user = _authenticate_external_token(request, token, db)
+    if external_user is not None:
+        return external_user
 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

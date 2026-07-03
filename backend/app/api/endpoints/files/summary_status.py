@@ -10,6 +10,8 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
@@ -26,6 +28,7 @@ async def get_summary_status(
     file_uuid: str,  # Changed from int to str for UUID
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Get the summary status for a file and LLM availability
@@ -36,11 +39,11 @@ async def get_summary_status(
         - can_retry: whether a failed summary can be retried
         - summary_exists: whether a summary already exists
     """
-    # Get file by UUID
+    # Get file by UUID (tenant-gated via ctx.org_id)
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id
 
@@ -91,15 +94,16 @@ async def retry_summary(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Retry failed summary generation for a file
     """
-    # Get file by UUID with permission check
+    # Get file by UUID with permission check (tenant-gated via ctx.org_id)
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     file_id = media_file.id
 

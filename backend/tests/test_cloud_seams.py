@@ -160,7 +160,7 @@ class TestExternalSync:
         # Still not a platform admin even as org:admin
         assert user.role == "user"
 
-    def test_converts_local_user_by_email(self, db_session):
+    def test_converts_local_user_by_verified_email(self, db_session):
         email = f"seam-local-{uuid.uuid4().hex[:8]}@example.com"
         local = User(
             email=email,
@@ -172,13 +172,78 @@ class TestExternalSync:
         db_session.add(local)
         db_session.commit()
 
-        ident = _identity(email=email)
+        # Email-match conversion requires the IdP to assert the address verified.
+        ident = _identity(email=email, email_verified=True)
         user = sync_external_user_to_db(db_session, ident)
 
         assert user.id == local.id
         assert user.external_id == ident.external_id
         assert user.auth_type == EXTERNAL_PROVIDER
         assert user.hashed_password == EXTERNAL_AUTH_NO_PASSWORD  # one-way conversion
+
+    def test_unverified_email_match_is_refused(self, db_session):
+        """Anyone can register a victim's address at a self-serve IdP; without a
+        verified-email assertion the email match must NOT link/convert the
+        existing local account (account-takeover vector)."""
+        email = f"seam-victim-{uuid.uuid4().hex[:8]}@example.com"
+        local = User(
+            email=email,
+            full_name="Victim",
+            hashed_password="$2b$12$fakehashfakehashfakehash",
+            auth_type="local",
+            is_active=True,
+        )
+        db_session.add(local)
+        db_session.commit()
+
+        ident = _identity(email=email)  # email_verified defaults to False
+        with pytest.raises(PermissionError):
+            sync_external_user_to_db(db_session, ident)
+
+        db_session.refresh(local)
+        assert local.auth_type == "local"
+        assert local.hashed_password != EXTERNAL_AUTH_NO_PASSWORD
+        assert local.external_id is None
+
+    def test_super_admin_never_linked_by_email(self, db_session):
+        """Platform-owner accounts are never JIT-linked by email match, even
+        with a verified address — linking them is a deliberate local action."""
+        email = f"seam-owner-{uuid.uuid4().hex[:8]}@example.com"
+        owner = User(
+            email=email,
+            full_name="Owner",
+            hashed_password="$2b$12$fakehashfakehashfakehash",
+            auth_type="local",
+            role="super_admin",
+            is_superuser=True,
+            is_active=True,
+        )
+        db_session.add(owner)
+        db_session.commit()
+
+        ident = _identity(email=email, email_verified=True)
+        with pytest.raises(PermissionError):
+            sync_external_user_to_db(db_session, ident)
+
+        db_session.refresh(owner)
+        assert owner.auth_type == "local"
+        assert owner.role == "super_admin"
+
+    def test_external_id_match_needs_no_email_verification(self, db_session):
+        """An already-linked identity (external_id match) re-syncs regardless of
+        the email_verified flag — the link was established previously."""
+        ident = _identity(email_verified=True)
+        created = sync_external_user_to_db(db_session, ident)
+
+        resync = _identity(
+            external_id=ident.external_id,
+            email=ident.email,
+            full_name="Renamed",
+            email_verified=False,
+        )
+        user = sync_external_user_to_db(db_session, resync)
+        assert user.id == created.id
+        assert user.full_name == "Renamed"
 
     def test_platform_admin_only_when_flagged(self, db_session):
         user = sync_external_user_to_db(db_session, _identity(is_admin=True))

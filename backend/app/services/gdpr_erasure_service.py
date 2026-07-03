@@ -73,10 +73,12 @@ def _erase_speaker_voiceprints(
 ) -> int:
     """Delete speaker/profile embedding docs (biometric data) from OpenSearch.
 
-    Scopes by ``user_id`` OR ``organization_id`` and runs a ``delete_by_query``
-    across the v3 + v4 + alias speaker indices. Best-effort: a down/absent
-    OpenSearch never blocks the relational + storage erasure (those are the
-    legally-binding deletions; this catches orphaned biometric docs).
+    Scopes by ``user_id`` and/or ``organization_id`` (both given = the
+    intersection, i.e. one member's docs within one org) and runs a
+    ``delete_by_query`` across the v3 + v4 + alias speaker indices.
+    Best-effort: a down/absent OpenSearch never blocks the relational +
+    storage erasure (those are the legally-binding deletions; this catches
+    orphaned biometric docs).
 
     Returns the number of voiceprint documents deleted (0 if OpenSearch is
     unavailable).
@@ -95,9 +97,12 @@ def _erase_speaker_voiceprints(
             logger.warning("OpenSearch unavailable — skipping voiceprint erasure (orphan docs)")
             return 0
 
-        field = "organization_id" if organization_id is not None else "user_id"
-        value = organization_id if organization_id is not None else user_id
-        body = {"query": {"term": {field: value}}}
+        terms = []
+        if user_id is not None:
+            terms.append({"term": {"user_id": user_id}})
+        if organization_id is not None:
+            terms.append({"term": {"organization_id": organization_id}})
+        body = {"query": {"bool": {"filter": terms}}}
 
         indices = {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}
         for idx in indices:
@@ -125,8 +130,25 @@ def _erase_speaker_voiceprints(
 
 
 def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -> None:
-    """Run the canonical per-file destroy for every file, accumulating counters."""
+    """Run the canonical per-file destroy for every file, accumulating counters.
+
+    Files under an active legal hold are SKIPPED, not destroyed: GDPR
+    Art. 17(3)(e) exempts data retained for legal claims, and the takedown
+    flow's evidence-preservation guarantee rests on the DB flag (S3
+    object-lock is best-effort only). Skips are reported in the summary so
+    the erasure is auditable as partial, and a later hold release re-runs the
+    idempotent erasure to finish the job.
+    """
     for media_file in files:
+        if bool(media_file.legal_hold):
+            summary["legal_holds_skipped"] += 1
+            summary["errors"].append(
+                {
+                    "file_uuid": str(media_file.uuid),
+                    "error": "skipped: active legal hold (GDPR Art. 17(3)(e))",
+                }
+            )
+            continue
         result = purge_media_file(db, media_file)
         if result.get("deleted"):
             summary["media_files_deleted"] += 1
@@ -173,22 +195,36 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "collections_deleted": 0,
         "voiceprints_deleted": 0,
         "users_deleted": 0,
+        "legal_holds_skipped": 0,
         "errors": [],
         "sla_days": ERASURE_SLA_DAYS,
         "already_erased": False,
     }
 
 
-def erase_user(db: Session, user_id: int) -> dict[str, Any]:
-    """Permanently erase all of a user's personal data (GDPR Art. 17).
+def erase_user(
+    db: Session,
+    user_id: int,
+    *,
+    actor_user_id: Optional[int] = None,
+    actor_email: Optional[str] = None,
+) -> dict[str, Any]:
+    """Permanently erase ALL of a user's personal data (GDPR Art. 17).
 
-    Cascades object storage, OpenSearch transcript + voiceprint docs, and the
-    relational rows, then deletes the ``user`` row (FK CASCADEs sweep settings,
-    comments, MFA, refresh tokens, memberships, etc.). Idempotent: a missing
-    user returns ``already_erased=True`` with zeroed counters. Never raises —
-    errors are collected in ``summary["errors"]``.
+    Account-wide: cascades object storage, OpenSearch transcript + voiceprint
+    docs, and the relational rows across EVERY scope the user owns (personal
+    and all orgs), then deletes the ``user`` row (FK CASCADEs sweep settings,
+    comments, MFA, refresh tokens, memberships, etc.). Because the blast
+    radius crosses tenant boundaries, this callable is reserved for the data
+    subject's own deletion flow (the cloud ``user.deleted`` webhook — the user
+    deleted their IdP account) and platform super-admins. Org admins get the
+    org-scoped :func:`erase_org_member_data` instead.
 
-    This is the callable the cloud ``user.deleted`` webhook invokes. SLA: data
+    ``actor_*`` identifies WHO invoked the erasure for the audit trail
+    (``None`` = the data subject via the deletion webhook). Idempotent: a
+    missing user returns ``already_erased=True`` with zeroed counters. Never
+    raises — errors are collected in ``summary["errors"]``. Files under an
+    active legal hold are skipped (Art. 17(3)(e)) and reported. SLA: data
     erased within :data:`ERASURE_SLA_DAYS` days of the request.
     """
     summary = _new_summary("user", user_id)
@@ -207,14 +243,20 @@ def erase_user(db: Session, user_id: int) -> dict[str, Any]:
 
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(user_id=user_id)
 
-    try:
-        db.delete(user)
-        db.commit()
-        summary["users_deleted"] = 1
-    except Exception as e:  # noqa: BLE001 — record, don't raise
-        db.rollback()
-        summary["errors"].append({"user_id": user_id, "error": str(e)})
-        logger.error(f"erase_user: failed to delete user row {user_id}: {e}")
+    if summary["legal_holds_skipped"]:
+        logger.warning(
+            f"erase_user({user_id}): {summary['legal_holds_skipped']} file(s) under "
+            "legal hold were preserved; user row retained until holds release."
+        )
+    else:
+        try:
+            db.delete(user)
+            db.commit()
+            summary["users_deleted"] = 1
+        except Exception as e:  # noqa: BLE001 — record, don't raise
+            db.rollback()
+            summary["errors"].append({"user_id": user_id, "error": str(e)})
+            logger.error(f"erase_user: failed to delete user row {user_id}: {e}")
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
@@ -223,6 +265,8 @@ def erase_user(db: Session, user_id: int) -> dict[str, Any]:
         username=email,
         details={
             "action": "gdpr_erasure",
+            "actor_user_id": actor_user_id,
+            "actor_email": actor_email or "data-subject-webhook",
             **{
                 k: summary[k]
                 for k in (
@@ -230,6 +274,7 @@ def erase_user(db: Session, user_id: int) -> dict[str, Any]:
                     "speaker_profiles_deleted",
                     "voiceprints_deleted",
                     "users_deleted",
+                    "legal_holds_skipped",
                 )
             },
         },
@@ -238,7 +283,102 @@ def erase_user(db: Session, user_id: int) -> dict[str, Any]:
     return summary
 
 
-def erase_organization(db: Session, org_id: int) -> dict[str, Any]:
+def erase_org_member_data(
+    db: Session,
+    user_id: int,
+    org_id: int,
+    *,
+    actor_user_id: Optional[int] = None,
+    actor_email: Optional[str] = None,
+) -> dict[str, Any]:
+    """Erase ONE member's data WITHIN ONE organization (org-admin scope).
+
+    The org-admin variant of erasure: destroys only the target's rows stamped
+    with ``org_id`` — org media files, org-scoped speaker profiles/collections,
+    and the (user, org) voiceprint docs. The target's personal-scope data,
+    other orgs' data, and the ``user`` row itself are untouched: an org admin
+    has authority over their tenant's data, never over the person's account.
+    Full account erasure remains :func:`erase_user` (data subject / platform
+    super-admin only).
+
+    Idempotent and never raises; legal-hold files are skipped and reported.
+    """
+    summary = _new_summary("org_member", user_id)
+    summary["organization_id"] = org_id
+
+    user = db.query(User).filter(User.id == user_id).first()
+    email = str(user.email) if user else None
+
+    files = (
+        db.query(MediaFile)
+        .filter(MediaFile.user_id == user_id, MediaFile.organization_id == org_id)
+        .all()
+    )
+    _purge_files(db, files, summary)
+
+    profiles = (
+        db.query(SpeakerProfile)
+        .filter(SpeakerProfile.user_id == user_id, SpeakerProfile.organization_id == org_id)
+        .all()
+    )
+    for profile in profiles:
+        with contextlib.suppress(Exception):
+            from app.services.opensearch_service import remove_profile_embedding
+
+            remove_profile_embedding(str(profile.uuid))
+        db.delete(profile)
+        summary["speaker_profiles_deleted"] += 1
+
+    for model, key in (
+        (SpeakerCollection, "speaker_collections_deleted"),
+        (Collection, "collections_deleted"),
+    ):
+        rows = (
+            db.query(model).filter(model.user_id == user_id, model.organization_id == org_id).all()
+        )
+        for row in rows:
+            db.delete(row)
+            summary[key] += 1
+    db.commit()
+
+    summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
+        user_id=user_id, organization_id=org_id
+    )
+
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_DELETE,
+        # Audit as the ACTING org admin (a member — visible in the org's audit
+        # read); the erased member is carried in details.
+        user_id=actor_user_id,
+        username=actor_email,
+        outcome=AuditOutcome.SUCCESS if not summary["errors"] else AuditOutcome.PARTIAL,
+        details={
+            "action": "gdpr_erasure_org_member",
+            "organization_id": org_id,
+            "target_user_id": user_id,
+            "target_email": email,
+            **{
+                k: summary[k]
+                for k in (
+                    "media_files_deleted",
+                    "speaker_profiles_deleted",
+                    "voiceprints_deleted",
+                    "legal_holds_skipped",
+                )
+            },
+        },
+    )
+    logger.info(f"erase_org_member_data(user={user_id}, org={org_id}) complete: {summary}")
+    return summary
+
+
+def erase_organization(
+    db: Session,
+    org_id: int,
+    *,
+    actor_user_id: Optional[int] = None,
+    actor_email: Optional[str] = None,
+) -> dict[str, Any]:
     """Permanently erase an organization's data and all member-owned org data.
 
     Erases every org-stamped media file, the org's voiceprint docs (by
@@ -247,8 +387,10 @@ def erase_organization(db: Session, org_id: int) -> dict[str, Any]:
 
     Member **users are NOT deleted** — a user may belong to multiple orgs and
     retains a personal account; only the org's data and the membership links go.
-    The cloud ``organization.deleted`` webhook invokes this. Idempotent and
-    never raises. SLA: :data:`ERASURE_SLA_DAYS` days.
+    The cloud ``organization.deleted`` webhook invokes this (``actor_*`` =
+    ``None``); the org-admin endpoint passes the acting admin for the audit
+    trail. Idempotent and never raises; legal-hold files are skipped and
+    reported. SLA: :data:`ERASURE_SLA_DAYS` days.
     """
     summary = _new_summary("organization", org_id)
 
@@ -307,15 +449,26 @@ def erase_organization(db: Session, org_id: int) -> dict[str, Any]:
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
+        # Audit as the ACTING admin when invoked from the org-admin endpoint
+        # (a member user-id — visible in the org-scoped audit read); None for
+        # the data-controller webhook path.
+        user_id=actor_user_id,
+        username=actor_email,
         outcome=AuditOutcome.SUCCESS if not summary["errors"] else AuditOutcome.PARTIAL,
         details={
             "action": "gdpr_erasure_organization",
             "organization_id": org_id,
             "organization_name": org_name,
             "memberships_removed": member_count,
+            "actor_user_id": actor_user_id,
             **{
                 k: summary[k]
-                for k in ("media_files_deleted", "speaker_profiles_deleted", "voiceprints_deleted")
+                for k in (
+                    "media_files_deleted",
+                    "speaker_profiles_deleted",
+                    "voiceprints_deleted",
+                    "legal_holds_skipped",
+                )
             },
         },
     )

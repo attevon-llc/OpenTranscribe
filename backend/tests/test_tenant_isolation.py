@@ -309,3 +309,155 @@ class TestSpeakerFilterOrgGate:
         # org-A search (org_id=A) yields a term that org-B docs (org_id=B) fail.
         clause = _speaker_org_filter_clauses(1)[0]
         assert clause == {"term": {"organization_id": 1}}
+
+
+# --------------------------------------------------------------------------- #
+# (f) API read surfaces — org-stamped file under personal scope                #
+# --------------------------------------------------------------------------- #
+def _login(client, user, password: str = "password123") -> dict:
+    """Local-auth login: the token carries no org claim, so resolve_org_context
+    yields PERSONAL scope — exactly the removed-org-member situation."""
+    resp = client.post(
+        "/api/auth/token",
+        data={"username": user.email, "password": password},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code == 200, f"Login failed for {user.email}: {resp.text}"
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
+class TestApiReadSurfacesPersonalScope:
+    """Scenario (a): the owner of an org-stamped file whose org membership is
+    gone (personal scope) must lose access on the secondary read surfaces too —
+    the ownership fast-path must not bypass the tenant gate on /subtitles,
+    /stream-url, or /segments."""
+
+    def test_org_stamped_file_blocked_on_read_surfaces(self, client, two_orgs):
+        w = two_orgs
+        headers = _login(client, w.user_a)
+        fid = str(w.file_a.uuid)  # org-A-stamped, owned by user_a
+
+        assert client.get(f"/api/files/{fid}/subtitles", headers=headers).status_code == 403
+        assert client.get(f"/api/files/{fid}/stream-url", headers=headers).status_code == 403
+        assert client.get(f"/api/files/{fid}/segments", headers=headers).status_code == 403
+
+    def test_personal_file_read_surfaces_unaffected(self, client, two_orgs):
+        """Community invariance: an org-less file is NOT blocked by the gate
+        (the request may fail later for content reasons, but never with the
+        tenant-gate 403)."""
+        w = two_orgs
+        personal = _mk_file(w.db, user=w.user_a, org_id=None)
+        headers = _login(client, w.user_a)
+        pid = str(personal.uuid)
+
+        assert client.get(f"/api/files/{pid}/subtitles", headers=headers).status_code != 403
+        assert client.get(f"/api/files/{pid}/stream-url", headers=headers).status_code != 403
+        assert client.get(f"/api/files/{pid}/segments", headers=headers).status_code != 403
+
+
+# --------------------------------------------------------------------------- #
+# (g) cross-org collection shares                                              #
+# --------------------------------------------------------------------------- #
+def _mk_collection(db, *, user: User, org_id: int | None) -> Collection:
+    coll = Collection(
+        uuid=uuid_pkg.uuid4(),
+        name=f"coll_{uuid_pkg.uuid4().hex[:8]}",
+        user_id=user.id,
+        organization_id=org_id,
+    )
+    db.add(coll)
+    db.commit()
+    db.refresh(coll)
+    return coll
+
+
+class TestCrossOrgCollectionShareApi:
+    """Scenario (b): an org-scoped collection may only be shared with active
+    members of that organization; personal collections keep existing behavior."""
+
+    def _share(self, client, headers, coll, target_user, permission="viewer"):
+        return client.post(
+            f"/api/collections/{coll.uuid}/shares",
+            headers=headers,
+            json={
+                "target_type": "user",
+                "target_uuid": str(target_user.uuid),
+                "permission": permission,
+            },
+        )
+
+    def test_org_collection_share_to_non_member_rejected(self, client, two_orgs):
+        w = two_orgs
+        coll = _mk_collection(w.db, user=w.user_b, org_id=w.org_b.id)
+        headers = _login(client, w.user_b)
+
+        resp = self._share(client, headers, coll, w.user_a)  # user_a is org-A only
+        assert resp.status_code == 403
+        assert "not a member" in resp.json()["detail"]
+
+    def test_org_collection_share_to_member_allowed(self, client, two_orgs):
+        w = two_orgs
+        member = _mk_user(w.db, "carol")
+        w.db.add(
+            OrganizationMembership(organization_id=w.org_b.id, user_id=member.id, role="org:member")
+        )
+        w.db.commit()
+        coll = _mk_collection(w.db, user=w.user_b, org_id=w.org_b.id)
+        headers = _login(client, w.user_b)
+
+        resp = self._share(client, headers, coll, member)
+        assert resp.status_code == 201, resp.text
+
+    def test_personal_collection_share_unaffected(self, client, two_orgs):
+        """org NULL keeps existing behavior: shareable with any user."""
+        w = two_orgs
+        coll = _mk_collection(w.db, user=w.user_b, org_id=None)
+        headers = _login(client, w.user_b)
+
+        resp = self._share(client, headers, coll, w.user_a)
+        assert resp.status_code == 201, resp.text
+
+
+# --------------------------------------------------------------------------- #
+# (h) list_collections tenant scoping                                          #
+# --------------------------------------------------------------------------- #
+class TestListCollectionsTenantScope:
+    """Scenario (c): the same-user collections listing is org-gated — personal
+    scope hides org-stamped collections and org scope hides personal ones."""
+
+    def test_personal_listing_excludes_org_collections(self, client, two_orgs):
+        w = two_orgs
+        org_coll = _mk_collection(w.db, user=w.user_a, org_id=w.org_a.id)
+        personal_coll = _mk_collection(w.db, user=w.user_a, org_id=None)
+        headers = _login(client, w.user_a)  # local token -> personal scope
+
+        resp = client.get("/api/collections?ownership=mine", headers=headers)
+        assert resp.status_code == 200
+        names = {c["name"] for c in resp.json()}
+        assert personal_coll.name in names
+        assert org_coll.name not in names
+
+    def test_org_listing_excludes_personal_collections(self, client, two_orgs):
+        from app.api.deps_context import RequestContext
+        from app.api.deps_context import get_current_context
+        from app.main import app
+
+        w = two_orgs
+        org_coll = _mk_collection(w.db, user=w.user_a, org_id=w.org_a.id)
+        personal_coll = _mk_collection(w.db, user=w.user_a, org_id=None)
+        headers = _login(client, w.user_a)
+
+        # Simulate an org-context request (external-IdP token) by overriding the
+        # tenant-context dependency — auth itself still runs via the real token.
+        app.dependency_overrides[get_current_context] = lambda: RequestContext(
+            user=w.user_a, org_id=w.org_a.id, org_role="org:member"
+        )
+        try:
+            resp = client.get("/api/collections?ownership=mine", headers=headers)
+        finally:
+            app.dependency_overrides.pop(get_current_context, None)
+
+        assert resp.status_code == 200
+        names = {c["name"] for c in resp.json()}
+        assert org_coll.name in names
+        assert personal_coll.name not in names

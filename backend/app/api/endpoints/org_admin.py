@@ -101,13 +101,16 @@ def erase_org_member(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
 ):
-    """GDPR Art. 17 erasure of a member of the caller's organization.
+    """GDPR Art. 17 erasure of a member's data WITHIN the caller's organization.
 
-    The target must be a member of the caller's org (403 otherwise) so an org
-    admin can only erase within their own tenant. Cascades object storage,
-    OpenSearch transcript + voiceprint (biometric) docs, and the relational
-    rows. Idempotent; SLA 30 days. The erasure itself is audit-logged by the
-    service.
+    The target must be a member of the caller's org (403 otherwise), and the
+    erasure is strictly org-scoped: only the target's rows stamped with THIS
+    org (media, org-scoped profiles/collections, the (user, org) voiceprint
+    docs) are destroyed. The target's personal-scope data, other orgs' data,
+    and their account survive — an org admin has authority over the tenant's
+    data, never over the person's account (full account erasure is the data
+    subject's own deletion flow or a platform super-admin action). Idempotent;
+    SLA 30 days; audit-logged with the acting admin by the service.
     """
     target = db.query(User).filter(User.uuid == user_uuid).first()
     if target is None:
@@ -120,9 +123,15 @@ def erase_org_member(
             detail="User is not a member of your organization",
         )
 
-    from app.services.gdpr_erasure_service import erase_user
+    from app.services.gdpr_erasure_service import erase_org_member_data
 
-    summary = erase_user(db, int(target.id))
+    summary = erase_org_member_data(
+        db,
+        int(target.id),
+        int(ctx.org_id),  # type: ignore[arg-type]
+        actor_user_id=int(ctx.user.id),
+        actor_email=str(ctx.user.email),
+    )
     return summary
 
 
@@ -146,5 +155,10 @@ def erase_own_organization(
 
     from app.services.gdpr_erasure_service import erase_organization
 
-    summary = erase_organization(db, int(ctx.org_id))  # type: ignore[arg-type]
+    summary = erase_organization(
+        db,
+        int(ctx.org_id),  # type: ignore[arg-type]
+        actor_user_id=int(ctx.user.id),
+        actor_email=str(ctx.user.email),
+    )
     return summary

@@ -24,7 +24,17 @@ VALID_AUTH_TYPES = [
 # Version of the cloud-extension seam surface (verifier registry, pipeline
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
-CLOUD_SEAM_VERSION = 1
+#
+# v2 (0.5.0): vendor columns genericized (user.external_id/external_org_id,
+# organization.external_org_id; billing columns removed from core
+# Organization); ExternalIdentity gained email_verified (fail-closed -- JIT
+# refuses email-match linking unless the IdP asserts the address verified,
+# and never links super_admin accounts by email); JIT sync raises
+# PermissionError -> 401 instead of surfacing 500s. The retention seam's
+# candidate-window hook flipped from max to MIN override
+# (set_retention_resolver(resolver, min_resolver=...)), and
+# TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
+CLOUD_SEAM_VERSION = 2
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK]

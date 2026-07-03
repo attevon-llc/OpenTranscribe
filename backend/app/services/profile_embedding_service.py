@@ -43,8 +43,9 @@ def _store_profile_embedding_to_opensearch(
     embedding: list[float],
     speaker_count: int,
     user_id: int,
+    organization_id: int | None = None,
 ) -> None:
-    """Store a profile embedding to OpenSearch."""
+    """Store a profile embedding to OpenSearch (org-stamped for org profiles)."""
     try:
         from app.services.opensearch_service import store_profile_embedding
 
@@ -55,6 +56,7 @@ def _store_profile_embedding_to_opensearch(
             embedding=embedding,
             speaker_count=speaker_count,
             user_id=user_id,
+            organization_id=organization_id,
         )
     except Exception as e:
         logger.warning(f"Failed to sync profile {profile_id} embedding to OpenSearch: {e}")
@@ -117,6 +119,9 @@ def _process_profile_with_embeddings(
         embedding=averaged_embedding,
         speaker_count=len(embeddings),
         user_id=int(profile.user_id),
+        # Full-recalc must preserve the tenant stamp, or an org profile's doc
+        # would silently fall back to personal scope until the next backfill.
+        organization_id=profile.organization_id,
     )
 
     logger.info(f"Updated profile {profile_id} embedding with {len(embeddings)} speaker embeddings")

@@ -49,20 +49,24 @@ class TenantUploadLimits:
 # returns None and the global value applies.
 RetentionResolver = Callable[[int | None], int | None]
 UploadLimitsResolver = Callable[[int | None], TenantUploadLimits | None]
-# Reports the LARGEST per-org retention override currently in effect (days), or
-# None if no override can exceed the global value. The cleanup task uses it to
-# widen its candidate query so a tenant whose override is LONGER than the global
-# setting is still considered (and then correctly kept, since its file age is
-# below its effective retention). Community: None.
-MaxRetentionResolver = Callable[[], int | None]
+# Reports the SMALLEST per-org retention override currently in effect (days),
+# or None when no override is shorter than the global value. The cleanup task
+# uses it to WIDEN its candidate query window: a candidate must merely be older
+# than the shortest retention anyone has — the per-file expiry check then
+# applies each file's own effective retention, so longer-retention tenants'
+# files are kept without any help from this hook. (Keying the window on the
+# LARGEST override — the pre-0.5.0 shape — was doubly wrong: short-override
+# files were never candidates until the global age, and global files were
+# never candidates until the longest override's age.) Community: None.
+MinRetentionResolver = Callable[[], int | None]
 
 
 def _community_retention_resolver(_org_id: int | None) -> int | None:
     return None  # no override -> global files.retention_days applies
 
 
-def _community_max_retention_resolver() -> int | None:
-    return None  # no override can exceed the global value
+def _community_min_retention_resolver() -> int | None:
+    return None  # no override is shorter than the global value
 
 
 def _community_upload_limits_resolver(_org_id: int | None) -> TenantUploadLimits | None:
@@ -70,24 +74,25 @@ def _community_upload_limits_resolver(_org_id: int | None) -> TenantUploadLimits
 
 
 _retention_resolver: RetentionResolver = _community_retention_resolver
-_max_retention_resolver: MaxRetentionResolver = _community_max_retention_resolver
+_min_retention_resolver: MinRetentionResolver = _community_min_retention_resolver
 _upload_limits_resolver: UploadLimitsResolver = _community_upload_limits_resolver
 
 
 def set_retention_resolver(
     resolver: RetentionResolver,
-    max_resolver: MaxRetentionResolver | None = None,
+    min_resolver: MinRetentionResolver | None = None,
 ) -> None:
     """Replace the retention resolver (registered by the cloud layer).
 
-    ``max_resolver`` (optional) reports the largest override in effect so the
-    cleanup candidate query can be widened; defaults to the community no-op.
+    ``min_resolver`` (optional) reports the smallest override in effect so the
+    cleanup candidate window can include early-expiring tenants' files;
+    defaults to the community no-op.
     """
-    global _retention_resolver, _max_retention_resolver
+    global _retention_resolver, _min_retention_resolver
     logger.info("Retention resolver overridden (cloud edition)")
     _retention_resolver = resolver
-    if max_resolver is not None:
-        _max_retention_resolver = max_resolver
+    if min_resolver is not None:
+        _min_retention_resolver = min_resolver
 
 
 def set_upload_limits_resolver(resolver: UploadLimitsResolver) -> None:
@@ -99,21 +104,21 @@ def set_upload_limits_resolver(resolver: UploadLimitsResolver) -> None:
 
 def reset_resolvers() -> None:
     """Restore the community resolvers (primarily for tests)."""
-    global _retention_resolver, _max_retention_resolver, _upload_limits_resolver
+    global _retention_resolver, _min_retention_resolver, _upload_limits_resolver
     _retention_resolver = _community_retention_resolver
-    _max_retention_resolver = _community_max_retention_resolver
+    _min_retention_resolver = _community_min_retention_resolver
     _upload_limits_resolver = _community_upload_limits_resolver
 
 
-def max_retention_override_days() -> int | None:
-    """Largest per-org retention override in effect (days), or None.
+def min_retention_override_days() -> int | None:
+    """Smallest per-org retention override in effect (days), or None.
 
-    Best-effort: any error returns None (no widening).
+    Best-effort: any error returns None (candidate window stays global).
     """
     try:
-        return _max_retention_resolver()
+        return _min_retention_resolver()
     except Exception:
-        logger.exception("max-retention resolver failed; not widening cleanup window")
+        logger.exception("min-retention resolver failed; not widening cleanup window")
         return None
 
 

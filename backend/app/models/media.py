@@ -258,6 +258,9 @@ class MediaFile(Base):
     quarantined_by: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("user.id"), nullable=True
     )  # Admin who applied the takedown
+    pre_quarantine_status: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # Processing status at takedown time, restored verbatim on release (v371)
     # Source-of-truth legal hold. When set, the storage object is protected from
     # deletion (best-effort S3/MinIO object legal-hold mirrors this flag) so the
     # evidence can't be destroyed while a dispute/notice is open.

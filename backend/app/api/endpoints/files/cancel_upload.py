@@ -6,6 +6,8 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_user
 from app.db.base import get_db
 from app.models.media import FileStatus
@@ -23,6 +25,7 @@ def cancel_upload(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """
     Cancel an in-progress upload, or delete a completed file.
@@ -48,13 +51,20 @@ def cancel_upload(
             status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
         ) from None
 
-    # Get the media file by UUID
+    # Get the media file by UUID (tenant-gated: org scope only sees same-org
+    # rows; personal scope only org-less rows — mirrors scope_to_context).
+    org_pred = (
+        MediaFile.organization_id == ctx.org_id
+        if ctx.org_id is not None
+        else MediaFile.organization_id.is_(None)
+    )
     db_file = (
         db.query(MediaFile)
         .filter(
             MediaFile.uuid == file_uuid,
             MediaFile.user_id == current_user.id,
             MediaFile.status == FileStatus.PENDING,
+            org_pred,
         )
         .first()
     )
@@ -63,7 +73,7 @@ def cancel_upload(
         # Not a pending upload owned by the caller — full delete path.
         from app.api.endpoints.files.crud import delete_media_file
 
-        delete_media_file(db, file_uuid, current_user)
+        delete_media_file(db, file_uuid, current_user, organization_id=ctx.org_id)
         return None
 
     file_id = db_file.id

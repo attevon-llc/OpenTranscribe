@@ -353,3 +353,56 @@ class TestEraseOrganization:
 
         summary = erase_organization(two_orgs.db, 999_999_999)
         assert summary["already_erased"] is True
+
+
+# --------------------------------------------------------------------------- #
+# Org-scoped member erasure + legal-hold guard (0.5.0 review fixes)            #
+# --------------------------------------------------------------------------- #
+class TestOrgScopedErasure:
+    def test_erase_org_member_data_is_org_scoped(self, two_orgs):
+        """The org-admin erasure destroys ONLY the target's rows in that org —
+        personal-scope files, other-org files, and the account survive."""
+        w = two_orgs
+        db = w.db
+        personal_file = _mk_file(db, user=w.member_a, org_id=None)
+        other_org_file = _mk_file(db, user=w.member_a, org_id=w.org_b.id)
+
+        from app.services.gdpr_erasure_service import erase_org_member_data
+
+        summary = erase_org_member_data(
+            db,
+            int(w.member_a.id),
+            int(w.org_a.id),
+            actor_user_id=int(w.admin_a.id),
+            actor_email=str(w.admin_a.email),
+        )
+
+        assert summary["media_files_deleted"] == 1  # only file_a (org A)
+        assert db.query(MediaFile).filter(MediaFile.id == personal_file.id).first() is not None
+        assert db.query(MediaFile).filter(MediaFile.id == other_org_file.id).first() is not None
+        assert db.query(MediaFile).filter(MediaFile.id == w.file_a.id).first() is None
+        # Org-scoped profile/collection gone; the ACCOUNT survives.
+        assert db.query(SpeakerProfile).filter(SpeakerProfile.id == w.profile_a.id).first() is None
+        assert db.query(Collection).filter(Collection.id == w.coll_a.id).first() is None
+        assert db.query(User).filter(User.id == w.member_a.id).first() is not None
+
+    def test_erase_user_skips_legal_hold_files(self, two_orgs):
+        """GDPR Art. 17(3)(e): files under an active legal hold are preserved and
+        reported; the user row is retained until the hold releases."""
+        w = two_orgs
+        db = w.db
+        held = _mk_file(db, user=w.member_a, org_id=None)
+        held.legal_hold = True
+        held.is_quarantined = True
+        db.commit()
+
+        from app.services.gdpr_erasure_service import erase_user
+
+        summary = erase_user(db, int(w.member_a.id))
+
+        assert summary["legal_holds_skipped"] == 1
+        assert db.query(MediaFile).filter(MediaFile.id == held.id).first() is not None
+        # Non-held file was erased; account retained because a hold remains.
+        assert db.query(MediaFile).filter(MediaFile.id == w.file_a.id).first() is None
+        assert summary["users_deleted"] == 0
+        assert db.query(User).filter(User.id == w.member_a.id).first() is not None

@@ -237,9 +237,35 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'media_file' AND column_name = 'is_quarantined')"
     )
 
+    # v371 guards: takedown prior-status column present AND no legacy vendor
+    # column remaining (a DB with user.clerk_id predates the v371 seam repair
+    # and must be stamped lower so the repair runs on upgrade).
+    has_pre_quarantine_status = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'pre_quarantine_status')"
+    )
+    has_legacy_seam_columns = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'clerk_id')"
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v371: repaired seam shape (external_* columns) + takedown prior-status.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and not has_legacy_seam_columns
+    ):
+        return "v371_repair_cloud_seams_columns"
     # v370: abuse/DMCA quarantine + legal-hold columns on media_file.
-    if has_cloud_seams and not has_legacy_varchar_uuid and has_media_file_quarantine:
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_superuser_role_invariant
+        and has_media_file_quarantine
+    ):
         return "v370_add_media_file_quarantine"
     # v369: is_superuser mirrors (role == super_admin), enforced by CHECK.
     if has_cloud_seams and not has_legacy_varchar_uuid and has_superuser_role_invariant:

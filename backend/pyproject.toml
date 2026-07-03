@@ -5,7 +5,9 @@ requires = ["setuptools", "wheel"]
 # Same as Black.
 line-length = 100
 
-# Assume Python 3.9+
+# Deliberately stays py39-era: bumping enables 3.12+ pyupgrade codemods
+# (~1400 auto-fixes) — that churn is a dedicated follow-up PR, not part of
+# the CI/runtime alignment.
 target-version = "py39"
 
 [tool.ruff.lint]

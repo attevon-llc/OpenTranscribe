@@ -11,8 +11,7 @@
   import { isOnline } from '$stores/network';
   import { t } from '$stores/locale';
   import { isCloudEdition } from '$lib/edition';
-  import { usageStore, isOverLimit } from '$stores/cloudBilling';
-  import { showQuotaExceeded } from '$stores/quotaModal';
+  import { usageStore, isOverLimit, showQuotaExceeded } from '$lib/cloud';
   import { get } from 'svelte/store';
 
   // APIs

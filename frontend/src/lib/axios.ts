@@ -70,22 +70,22 @@ export function getCsrfToken(): string | undefined {
     ?.split('=')[1];
 }
 
-// Request interceptor: CSRF token + (cloud) Clerk bearer + session abort signal
+// Request interceptor: CSRF token + (cloud) external bearer + session abort signal
 axiosInstance.interceptors.request.use(
   async (config) => {
     if (isCloudEdition) {
-      // Cloud edition: mint a FRESH Clerk session JWT per request. Clerk tokens
-      // are short-lived (~60s), so we never cache them and never use the cookie
-      // /auth/token/refresh path (which would log users out mid-session). The
-      // backend's external verifier validates this bearer.
+      // Cloud edition: mint a FRESH hosted-IdP session JWT per request. These
+      // tokens are short-lived (~60s), so we never cache them and never use the
+      // cookie /auth/token/refresh path (which would log users out mid-session).
+      // The backend's external verifier validates this bearer.
       try {
-        const { getClerkToken } = await import('$lib/clerk');
-        const clerkToken = await getClerkToken();
-        if (clerkToken) {
-          config.headers['Authorization'] = `Bearer ${clerkToken}`;
+        const { getSessionToken } = await import('$lib/cloud');
+        const sessionToken = await getSessionToken();
+        if (sessionToken) {
+          config.headers['Authorization'] = `Bearer ${sessionToken}`;
         }
       } catch {
-        // No active Clerk session — request proceeds unauthenticated; the
+        // No active external session — request proceeds unauthenticated; the
         // backend will 401 as appropriate.
       }
     } else {
@@ -154,7 +154,7 @@ axiosInstance.interceptors.response.use(
       try {
         const detail = error.response?.data?.detail;
         const message = typeof detail === 'string' ? detail : '';
-        const { showQuotaExceeded } = await import('../stores/quotaModal');
+        const { showQuotaExceeded } = await import('$lib/cloud');
         showQuotaExceeded(message);
       } catch {
         // Modal trigger failed — fall through to normal rejection.
@@ -164,10 +164,10 @@ axiosInstance.interceptors.response.use(
 
     const originalRequest = error.config;
 
-    // Cloud edition: there is NO cookie refresh token. Clerk mints a fresh
-    // short-lived bearer on the next request, so a 401 here means the Clerk
-    // session is gone (or the token was rejected) — bounce to login rather than
-    // attempting the cookie /auth/token/refresh flow.
+    // Cloud edition: there is NO cookie refresh token. The hosted IdP mints a
+    // fresh short-lived bearer on the next request, so a 401 here means the
+    // external session is gone (or the token was rejected) — bounce to login
+    // rather than attempting the cookie /auth/token/refresh flow.
     if (isCloudEdition) {
       if (
         error.response?.status === 401 &&

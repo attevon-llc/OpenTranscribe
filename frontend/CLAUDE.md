@@ -43,5 +43,10 @@ already-downloaded data (TXT/SRT/VTT/CSV export).
 - `src/components/ui` — shared primitives (see its CLAUDE.md). `src/lib/utils` — pure helpers
   (time formatting lives ONLY in `formatting.ts`). `src/lib/api` — typed API clients.
   `src/stores` — Svelte stores. `src/routes` — pages.
+- `src/lib/cloud` — **managed-edition seam stub** (see its README). The commercial repo replaces
+  this directory at image-build time. Core code imports only `$lib/cloud` (+ its `components/`),
+  gates every call site with `isCloudEdition` from `$lib/edition`, and must never name the
+  edition's vendors — CI's seam-guard greps `frontend/src` (and `backend/app`) for `clerk|stripe`
+  and fails the build on a match.
 
 ## Verify UI changes in a browser (light + dark) — type-check ≠ feature-check.

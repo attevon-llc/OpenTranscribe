@@ -39,10 +39,11 @@
   import SystemStatisticsPanel from '$components/settings/SystemStatisticsPanel.svelte';
   import AdminTaskHealthPanel, { type ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
   import UserProfileSettings from '$components/settings/UserProfileSettings.svelte';
-  // Cloud-edition org-admin panels (only rendered when edition=cloud + org_admin)
-  import BillingPanel from '$components/settings/BillingPanel.svelte';
-  import UsageDashboard from '$components/settings/UsageDashboard.svelte';
-  import TeamManagement from '$components/settings/TeamManagement.svelte';
+  // Managed-edition org-admin panels (only rendered when edition=cloud + org_admin;
+  // community builds get inert stubs from the $lib/cloud seam)
+  import BillingPanel from '$lib/cloud/components/BillingPanel.svelte';
+  import UsageDashboard from '$lib/cloud/components/UsageDashboard.svelte';
+  import TeamManagement from '$lib/cloud/components/TeamManagement.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import ProcessingDetailsModal from '$components/settings/ProcessingDetailsModal.svelte';

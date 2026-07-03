@@ -39,13 +39,14 @@ export interface User {
   email: string;
   full_name: string;
   role: 'user' | 'admin' | 'super_admin';
-  // Authentication type. 'clerk' (and other external/SSO providers) only appear
-  // in the cloud edition; the password-change UI keys off `auth_type === 'local'`.
-  auth_type: 'local' | 'ldap' | 'keycloak' | 'pki' | 'clerk' | string;
+  // Authentication type. External/SSO provider strings beyond the core four
+  // are registered by the managed edition's auth layer; the password-change UI
+  // keys off `auth_type === 'local'`.
+  auth_type: 'local' | 'ldap' | 'keycloak' | 'pki' | string;
   allow_local_fallback?: boolean;
   certificate?: CertificateInfo;
   // Cloud-edition tenancy/billing context (populated by the backend from the
-  // Clerk org claim). Absent in the community edition.
+  // external IdP's org claim). Absent in the community edition.
   org_id?: string;
   org_role?: string;
   subscription_tier?: string;
@@ -135,21 +136,21 @@ export const authReady = derived(authStore, ($store) => $store.ready);
 export const token = derived(authStore, ($store) => $store.token);
 
 /**
- * Cloud-edition session init: read the Clerk session instead of the cookie
- * `/auth/session` probe. If Clerk has an active session, the per-request axios
- * interceptor mints a bearer token and `/auth/me` is authenticated by the
+ * Cloud-edition session init: read the hosted external-auth session instead of
+ * the cookie `/auth/session` probe. If a session is active, the per-request
+ * axios interceptor mints a bearer token and `/auth/me` is authenticated by the
  * backend's external verifier. Community edition never reaches this path.
  */
-async function initAuthClerk(): Promise<void> {
+async function initAuthExternal(): Promise<void> {
   try {
-    const { loadClerk, hasClerkSession } = await import('$lib/clerk');
-    await loadClerk();
+    const { loadExternalAuth, hasExternalSession } = await import('$lib/cloud');
+    await loadExternalAuth();
 
-    if (await hasClerkSession()) {
+    if (await hasExternalSession()) {
       // Bearer is attached per-request by the axios interceptor (cloud build).
       const userData = await fetchUserInfo();
       if (userData) {
-        authStore.setToken('clerk');
+        authStore.setToken('external');
         authStore.setReady(true);
         return;
       }
@@ -157,7 +158,7 @@ async function initAuthClerk(): Promise<void> {
 
     authStore.reset();
   } catch (error) {
-    console.error('auth.ts: Clerk initAuth failed:', error);
+    console.error('auth.ts: external-auth initAuth failed:', error);
     authStore.reset();
   }
 }
@@ -170,9 +171,9 @@ export async function initAuth() {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
 
-  // Cloud edition delegates session detection to Clerk (no cookie session).
+  // Cloud edition delegates session detection to the hosted IdP (no cookie session).
   if (isCloudEdition) {
-    await initAuthClerk();
+    await initAuthExternal();
     return;
   }
 
@@ -365,12 +366,12 @@ export async function register(email: string, fullName: string, password: string
 }
 
 /**
- * Cloud-edition login: called after Clerk's prebuilt `<SignIn/>` reports an
- * active session. There is no local credential round-trip — Clerk owns auth and
- * MFA. We just hydrate the local user store from `/auth/me` (bearer-authenticated
- * by the axios interceptor) so the app shell renders.
+ * Cloud-edition login: called after the hosted sign-in component reports an
+ * active session. There is no local credential round-trip — the external IdP
+ * owns auth and MFA. We just hydrate the local user store from `/auth/me`
+ * (bearer-authenticated by the axios interceptor) so the app shell renders.
  */
-export async function loginWithClerk(): Promise<{ success: boolean; message?: string }> {
+export async function loginWithExternalAuth(): Promise<{ success: boolean; message?: string }> {
   try {
     await clearUserState();
     const userData = await fetchUserInfo();
@@ -378,11 +379,11 @@ export async function loginWithClerk(): Promise<{ success: boolean; message?: st
       authStore.reset();
       return { success: false, message: 'Failed to load account after sign-in.' };
     }
-    authStore.setToken('clerk');
+    authStore.setToken('external');
     authStore.setReady(true);
     return { success: true };
   } catch (error) {
-    console.error('auth.ts: Clerk login hydration failed:', error);
+    console.error('auth.ts: external-auth login hydration failed:', error);
     authStore.reset();
     return { success: false, message: 'Sign-in could not be completed.' };
   }
@@ -390,12 +391,12 @@ export async function loginWithClerk(): Promise<{ success: boolean; message?: st
 
 // Logout function
 export async function logout() {
-  // Cloud edition: Clerk owns the session. Sign out of Clerk (revokes its
+  // Cloud edition: the hosted IdP owns the session. Sign out there (revokes its
   // session + clears its cookies) instead of hitting the local revoke endpoint.
   if (isCloudEdition) {
     try {
-      const { clerkSignOut } = await import('$lib/clerk');
-      await clerkSignOut();
+      const { externalSignOut } = await import('$lib/cloud');
+      await externalSignOut();
     } catch {
       // Ignore — we're tearing the session down regardless.
     }

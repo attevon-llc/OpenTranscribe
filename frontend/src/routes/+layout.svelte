@@ -31,7 +31,7 @@
   import SettingsModal from "../components/SettingsModal.svelte";
   import ClassificationBanner from "$lib/components/ClassificationBanner.svelte";
   import ConnectionStatusBanner from "$components/ui/ConnectionStatusBanner.svelte";
-  import QuotaExceededModal from "$components/QuotaExceededModal.svelte";
+  import QuotaExceededModal from "$lib/cloud/components/QuotaExceededModal.svelte";
 
   // Classification banner state
   let bannerEnabled = false;
@@ -101,9 +101,9 @@
         const isAuth = get(isAuthenticated);
         const currentPath = $page.url.pathname;
 
-        // Cloud edition: Clerk owns login/registration/forgot-password (the
-        // prebuilt <SignIn/> on /login handles sign-up + recovery inline), so the
-        // local /register, /forgot-password, /reset-password routes are dead —
+        // Cloud edition: the hosted IdP owns login/registration/forgot-password
+        // (its sign-in component on /login handles sign-up + recovery inline), so
+        // the local /register, /forgot-password, /reset-password routes are dead —
         // redirect any hit to /login. Only /login is a public path here.
         if (isCloudEdition) {
           const cloudAuthRedirects = ["/register", "/forgot-password", "/reset-password"];
@@ -155,9 +155,10 @@
 </script>
 
 {#if $authReady}
-  <!-- Cloud edition: only /login is public (Clerk handles sign-up/recovery inline);
-       the local /register, /forgot-password, /reset-password routes are redirected
-       to /login by the auth guard, so they are not treated as public here. -->
+  <!-- Cloud edition: only /login is public (the hosted IdP handles sign-up and
+       recovery inline); the local /register, /forgot-password, /reset-password
+       routes are redirected to /login by the auth guard, so they are not
+       treated as public here. -->
   {@const publicPaths = isCloudEdition
     ? ['/login']
     : ['/login', '/register', '/forgot-password', '/reset-password']}

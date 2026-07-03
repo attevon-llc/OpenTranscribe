@@ -11,7 +11,7 @@ import zh from './locales/zh.json';
 import ja from './locales/ja.json';
 import ru from './locales/ru.json';
 
-const resources = {
+const resources: Record<string, { translation: Record<string, string> }> = {
   en: { translation: en },
   es: { translation: es },
   fr: { translation: fr },
@@ -21,6 +21,21 @@ const resources = {
   ja: { translation: ja },
   ru: { translation: ru },
 };
+
+// Managed-edition string packs: the commercial overlay drops per-locale flat
+// JSON files into $lib/cloud/locales/ at image-build time; the community build
+// has none, so this glob is empty and the merge is a no-op. Locale files are
+// flat dot-notation key maps, so a shallow spread is a correct merge.
+const editionPacks = import.meta.glob('../cloud/locales/*.json', {
+  eager: true,
+  import: 'default',
+}) as Record<string, Record<string, string>>;
+for (const [path, pack] of Object.entries(editionPacks)) {
+  const lng = path.replace(/^.*\/([a-z]{2})\.json$/, '$1');
+  if (resources[lng]) {
+    resources[lng].translation = { ...resources[lng].translation, ...pack };
+  }
+}
 
 export async function initI18n(savedLanguage?: string): Promise<typeof i18next> {
   await i18next.use(LanguageDetector).init({

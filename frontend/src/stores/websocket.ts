@@ -252,18 +252,18 @@ function createWebSocketStore() {
           //
           // Cloud edition: browsers can't set Authorization headers on a WS
           // handshake, so we authenticate with a first-message frame carrying a
-          // fresh Clerk token. The backend's WS external-verifier reads it. We
-          // only mark connected / recover progress after auth is sent.
+          // fresh hosted-IdP token. The backend's WS external-verifier reads it.
+          // We only mark connected / recover progress after auth is sent.
           if (isCloudEdition) {
             (async () => {
               try {
-                const { getClerkToken } = await import('$lib/clerk');
-                const clerkToken = await getClerkToken();
-                if (clerkToken) {
-                  socket.send(JSON.stringify({ type: 'authenticate', token: clerkToken }));
+                const { getSessionToken } = await import('$lib/cloud');
+                const sessionToken = await getSessionToken();
+                if (sessionToken) {
+                  socket.send(JSON.stringify({ type: 'authenticate', token: sessionToken }));
                 }
               } catch (err) {
-                console.error('[ws] Failed to send Clerk authenticate frame:', err);
+                console.error('[ws] Failed to send external authenticate frame:', err);
               }
               update((s: WebSocketState) => {
                 s.status = 'connected';

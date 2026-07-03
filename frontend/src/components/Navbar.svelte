@@ -8,10 +8,10 @@
   import AboutModal from "./AboutModal.svelte";
   import NavbarBrand from "$components/navbar/NavbarBrand.svelte";
   import UserDropdown from "$components/navbar/UserDropdown.svelte";
-  import UsageBadge from "$components/navbar/UsageBadge.svelte";
-  import UpgradeButton from "$components/navbar/UpgradeButton.svelte";
+  import UsageBadge from "$lib/cloud/components/UsageBadge.svelte";
+  import UpgradeButton from "$lib/cloud/components/UpgradeButton.svelte";
   import { isCloudEdition } from "$lib/edition";
-  import { refreshUsage, refreshBilling } from "$stores/cloudBilling";
+  import { refreshUsage, refreshBilling } from "$lib/cloud";
 
   // Import the centralized notification store
   import { showNotificationsPanel, toggleNotificationsPanel, notifications } from '../stores/notifications';

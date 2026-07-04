@@ -457,6 +457,9 @@ def _resolve_redaction_for_request(
                 outcome=AuditOutcome.SUCCESS,
                 user_id=current_user.id,
                 username=str(current_user.email),
+                # Org attribution (issue #262a): the reveal concerns this file's
+                # tenant, so its org admins see it in the org audit read.
+                organization_id=int(db_file.organization_id) if db_file.organization_id else None,
                 details={
                     "file_id": db_file.id,
                     "file_uuid": str(db_file.uuid),

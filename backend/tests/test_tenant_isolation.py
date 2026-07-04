@@ -373,25 +373,45 @@ def _mk_collection(db, *, user: User, org_id: int | None) -> Collection:
 
 class TestCrossOrgCollectionShareApi:
     """Scenario (b): an org-scoped collection may only be shared with active
-    members of that organization; personal collections keep existing behavior."""
+    members of that organization; personal collections keep existing behavior.
 
-    def _share(self, client, headers, coll, target_user, permission="viewer"):
-        return client.post(
-            f"/api/collections/{coll.uuid}/shares",
-            headers=headers,
-            json={
-                "target_type": "user",
-                "target_uuid": str(target_user.uuid),
-                "permission": permission,
-            },
-        )
+    Since #262d the share endpoints are ALSO tenant-gated, so an org-stamped
+    collection must be exercised in matching org context (dependency override
+    below) — a personal-scope request 403s before the membership gate.
+    """
+
+    def _share(self, client, headers, coll, target_user, permission="viewer", org_ctx=None):
+        from app.api.deps_context import RequestContext
+        from app.api.deps_context import get_current_context
+        from app.main import app
+
+        if org_ctx is not None:
+            user, org_id = org_ctx
+            app.dependency_overrides[get_current_context] = lambda: RequestContext(
+                user=user, org_id=org_id, org_role="org:member"
+            )
+        try:
+            return client.post(
+                f"/api/collections/{coll.uuid}/shares",
+                headers=headers,
+                json={
+                    "target_type": "user",
+                    "target_uuid": str(target_user.uuid),
+                    "permission": permission,
+                },
+            )
+        finally:
+            if org_ctx is not None:
+                app.dependency_overrides.pop(get_current_context, None)
 
     def test_org_collection_share_to_non_member_rejected(self, client, two_orgs):
         w = two_orgs
         coll = _mk_collection(w.db, user=w.user_b, org_id=w.org_b.id)
         headers = _login(client, w.user_b)
 
-        resp = self._share(client, headers, coll, w.user_a)  # user_a is org-A only
+        resp = self._share(
+            client, headers, coll, w.user_a, org_ctx=(w.user_b, w.org_b.id)
+        )  # user_a is org-A only
         assert resp.status_code == 403
         assert "not a member" in resp.json()["detail"]
 
@@ -405,7 +425,7 @@ class TestCrossOrgCollectionShareApi:
         coll = _mk_collection(w.db, user=w.user_b, org_id=w.org_b.id)
         headers = _login(client, w.user_b)
 
-        resp = self._share(client, headers, coll, member)
+        resp = self._share(client, headers, coll, member, org_ctx=(w.user_b, w.org_b.id))
         assert resp.status_code == 201, resp.text
 
     def test_personal_collection_share_unaffected(self, client, two_orgs):
@@ -416,6 +436,282 @@ class TestCrossOrgCollectionShareApi:
 
         resp = self._share(client, headers, coll, w.user_a)
         assert resp.status_code == 201, resp.text
+
+
+# --------------------------------------------------------------------------- #
+# (#262d) remaining collection sub-surfaces are tenant-gated                    #
+# --------------------------------------------------------------------------- #
+class TestCollectionSubSurfacesTenantGate:
+    """Issue #262d: collection GET/update/delete, share list/create, and
+    collection-media now thread ``ctx.org_id`` — an org-stamped collection is
+    unreachable from PERSONAL scope even for its owner, and community
+    (org-less) collections are unaffected."""
+
+    def test_org_collection_sub_surfaces_blocked_in_personal_scope(self, client, two_orgs):
+        w = two_orgs
+        coll = _mk_collection(w.db, user=w.user_a, org_id=w.org_a.id)
+        headers = _login(client, w.user_a)  # local token -> personal scope
+        base = f"/api/collections/{coll.uuid}"
+
+        assert client.get(base, headers=headers).status_code == 403
+        assert client.put(base, headers=headers, json={"name": "renamed"}).status_code == 403
+        assert client.get(f"{base}/media", headers=headers).status_code == 403
+        assert client.get(f"{base}/shares", headers=headers).status_code == 403
+        assert (
+            client.post(
+                f"{base}/shares",
+                headers=headers,
+                json={
+                    "target_type": "user",
+                    "target_uuid": str(w.user_b.uuid),
+                    "permission": "viewer",
+                },
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(
+                f"{base}/media",
+                headers=headers,
+                json={"media_file_ids": [str(w.file_a.uuid)]},
+            ).status_code
+            == 403
+        )
+        assert (
+            client.request(
+                "DELETE",
+                f"{base}/media",
+                headers=headers,
+                json={"media_file_ids": [str(w.file_a.uuid)]},
+            ).status_code
+            == 403
+        )
+        assert client.delete(base, headers=headers).status_code == 403
+        # Share update/delete resolve the collection first — same gate.
+        share_uuid = uuid_pkg.uuid4()
+        assert (
+            client.put(
+                f"{base}/shares/{share_uuid}",
+                headers=headers,
+                json={"permission": "viewer"},
+            ).status_code
+            == 403
+        )
+        assert client.delete(f"{base}/shares/{share_uuid}", headers=headers).status_code == 403
+
+    def test_org_collection_reachable_in_matching_org_context(self, client, two_orgs):
+        from app.api.deps_context import RequestContext
+        from app.api.deps_context import get_current_context
+        from app.main import app
+
+        w = two_orgs
+        coll = _mk_collection(w.db, user=w.user_a, org_id=w.org_a.id)
+        headers = _login(client, w.user_a)
+
+        app.dependency_overrides[get_current_context] = lambda: RequestContext(
+            user=w.user_a, org_id=w.org_a.id, org_role="org:member"
+        )
+        try:
+            resp = client.get(f"/api/collections/{coll.uuid}", headers=headers)
+        finally:
+            app.dependency_overrides.pop(get_current_context, None)
+        assert resp.status_code == 200
+
+    def test_personal_collection_sub_surfaces_unaffected(self, client, two_orgs):
+        """Community invariance: org-less collections behave exactly as before."""
+        w = two_orgs
+        coll = _mk_collection(w.db, user=w.user_a, org_id=None)
+        headers = _login(client, w.user_a)
+
+        assert client.get(f"/api/collections/{coll.uuid}", headers=headers).status_code == 200
+        assert (
+            client.put(
+                f"/api/collections/{coll.uuid}", headers=headers, json={"description": "d"}
+            ).status_code
+            == 200
+        )
+        assert (
+            client.get(f"/api/collections/{coll.uuid}/shares", headers=headers).status_code == 200
+        )
+
+    def test_add_media_rejects_cross_scope_file(self, client, two_orgs):
+        """Under org context, a PERSONAL file can't be pulled into an org
+        collection (it would leak via the collection detail)."""
+        from app.api.deps_context import RequestContext
+        from app.api.deps_context import get_current_context
+        from app.main import app
+
+        w = two_orgs
+        coll = _mk_collection(w.db, user=w.user_a, org_id=w.org_a.id)
+        personal_file = _mk_file(w.db, user=w.user_a, org_id=None)
+        headers = _login(client, w.user_a)
+
+        app.dependency_overrides[get_current_context] = lambda: RequestContext(
+            user=w.user_a, org_id=w.org_a.id, org_role="org:member"
+        )
+        try:
+            denied = client.post(
+                f"/api/collections/{coll.uuid}/media",
+                headers=headers,
+                json={"media_file_ids": [str(personal_file.uuid)]},
+            )
+            allowed = client.post(
+                f"/api/collections/{coll.uuid}/media",
+                headers=headers,
+                json={"media_file_ids": [str(w.file_a.uuid)]},  # org-A file
+            )
+        finally:
+            app.dependency_overrides.pop(get_current_context, None)
+
+        assert denied.status_code == 404  # not found in the active tenant scope
+        assert allowed.status_code == 200
+        assert allowed.json()["added"] == 1
+
+
+class TestGroupShareOrgMembership:
+    """Issue #262d: groups can span orgs — a group-targeted share of an
+    org-stamped collection requires EVERY group member to be in that org."""
+
+    def _mk_group(self, db, owner, members):
+        from app.models.group import UserGroup
+        from app.models.group import UserGroupMember
+
+        group = UserGroup(name=f"grp_{uuid_pkg.uuid4().hex[:8]}", owner_id=owner.id)
+        db.add(group)
+        db.commit()
+        db.refresh(group)
+        for member in members:
+            db.add(UserGroupMember(group_id=group.id, user_id=member.id, role="member"))
+        db.commit()
+        return group
+
+    def _share_group(self, client, headers, coll, group):
+        return client.post(
+            f"/api/collections/{coll.uuid}/shares",
+            headers=headers,
+            json={
+                "target_type": "group",
+                "target_uuid": str(group.uuid),
+                "permission": "viewer",
+            },
+        )
+
+    def test_group_with_outside_member_rejected(self, client, two_orgs):
+        w = two_orgs
+        coll = _mk_collection(w.db, user=w.user_b, org_id=w.org_b.id)
+        # Group spans orgs: user_b (org B) + user_a (org A only).
+        group = self._mk_group(w.db, w.user_b, [w.user_b, w.user_a])
+        headers = _login(client, w.user_b)
+
+        # Simulate an org-B request so the tenant gate resolves the collection.
+        from app.api.deps_context import RequestContext
+        from app.api.deps_context import get_current_context
+        from app.main import app
+
+        app.dependency_overrides[get_current_context] = lambda: RequestContext(
+            user=w.user_b, org_id=w.org_b.id, org_role="org:member"
+        )
+        try:
+            resp = self._share_group(client, headers, coll, group)
+        finally:
+            app.dependency_overrides.pop(get_current_context, None)
+
+        assert resp.status_code == 403
+        assert "not members of that organization" in resp.json()["detail"]
+
+    def test_group_fully_inside_org_allowed(self, client, two_orgs):
+        w = two_orgs
+        carol = _mk_user(w.db, "carol")
+        w.db.add(
+            OrganizationMembership(organization_id=w.org_b.id, user_id=carol.id, role="org:member")
+        )
+        w.db.commit()
+        coll = _mk_collection(w.db, user=w.user_b, org_id=w.org_b.id)
+        group = self._mk_group(w.db, w.user_b, [w.user_b, carol])
+        headers = _login(client, w.user_b)
+
+        from app.api.deps_context import RequestContext
+        from app.api.deps_context import get_current_context
+        from app.main import app
+
+        app.dependency_overrides[get_current_context] = lambda: RequestContext(
+            user=w.user_b, org_id=w.org_b.id, org_role="org:member"
+        )
+        try:
+            resp = self._share_group(client, headers, coll, group)
+        finally:
+            app.dependency_overrides.pop(get_current_context, None)
+
+        assert resp.status_code == 201, resp.text
+
+    def test_personal_collection_group_share_unaffected(self, client, two_orgs):
+        """Community invariance: org-less collections keep pre-existing group
+        sharing behavior (any group the sharer belongs to)."""
+        w = two_orgs
+        coll = _mk_collection(w.db, user=w.user_b, org_id=None)
+        group = self._mk_group(w.db, w.user_b, [w.user_b, w.user_a])
+        headers = _login(client, w.user_b)
+
+        resp = self._share_group(client, headers, coll, group)
+        assert resp.status_code == 201, resp.text
+
+
+# --------------------------------------------------------------------------- #
+# (#262e) profile rows are org-stamped at API creation                          #
+# --------------------------------------------------------------------------- #
+class TestProfileOrgStamping:
+    def test_create_profile_api_stamps_request_org(self, client, two_orgs):
+        from app.api.deps_context import RequestContext
+        from app.api.deps_context import get_current_context
+        from app.main import app
+        from app.models.media import SpeakerProfile
+
+        w = two_orgs
+        headers = _login(client, w.user_a)
+        name = f"profile_{uuid_pkg.uuid4().hex[:8]}"
+
+        app.dependency_overrides[get_current_context] = lambda: RequestContext(
+            user=w.user_a, org_id=w.org_a.id, org_role="org:member"
+        )
+        try:
+            resp = client.post(
+                "/api/speaker-profiles/profiles", headers=headers, params={"name": name}
+            )
+        finally:
+            app.dependency_overrides.pop(get_current_context, None)
+
+        assert resp.status_code == 200, resp.text
+        row = w.db.query(SpeakerProfile).filter(SpeakerProfile.uuid == resp.json()["uuid"]).first()
+        assert row is not None
+        assert row.organization_id == w.org_a.id
+
+    def test_create_profile_api_personal_scope_unstamped(self, client, two_orgs):
+        from app.models.media import SpeakerProfile
+
+        w = two_orgs
+        headers = _login(client, w.user_a)  # personal scope
+        name = f"profile_{uuid_pkg.uuid4().hex[:8]}"
+
+        resp = client.post("/api/speaker-profiles/profiles", headers=headers, params={"name": name})
+        assert resp.status_code == 200, resp.text
+        row = w.db.query(SpeakerProfile).filter(SpeakerProfile.uuid == resp.json()["uuid"]).first()
+        assert row is not None
+        assert row.organization_id is None
+
+    def test_speakers_helper_creates_profile_with_speaker_org(self, two_orgs):
+        """speakers.py create-new-profile paths inherit the SPEAKER's tenant."""
+        from app.api.endpoints.speakers import _handle_create_new_profile_action
+        from app.models.media import SpeakerProfile
+
+        w = two_orgs
+        _handle_create_new_profile_action(w.speaker_a, "Org Speaker", w.user_a, w.db)
+        w.db.commit()
+
+        profile = (
+            w.db.query(SpeakerProfile).filter(SpeakerProfile.id == w.speaker_a.profile_id).first()
+        )
+        assert profile is not None
+        assert profile.organization_id == w.org_a.id
 
 
 # --------------------------------------------------------------------------- #

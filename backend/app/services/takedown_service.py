@@ -315,6 +315,9 @@ def _audit(
             source_ip=source_ip or None,
             user_agent=user_agent or None,
             details=details,
+            # Org attribution (issue #262a): a takedown of an org-stamped file
+            # is that tenant's event — its org admins see it in the audit read.
+            organization_id=int(file.organization_id) if file.organization_id else None,
         )
     except Exception as e:  # noqa: BLE001 — audit must never break the action
         logger.warning(f"Audit log for {event_type} failed: {e}")

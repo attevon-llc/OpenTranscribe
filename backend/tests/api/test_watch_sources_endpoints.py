@@ -129,6 +129,66 @@ def test_create_s3_source_happy(client, user_token_headers):
     assert "creation-secret" not in response.text
 
 
+def test_create_source_stamps_request_org(client, user_token_headers, normal_user, db_session):
+    """Issue #262c: the source captures the CREATING request's tenant so every
+    background import is stamped with it (never a first-membership guess)."""
+    import uuid as uuid_pkg
+
+    from app.api.deps_context import RequestContext
+    from app.api.deps_context import get_current_context
+    from app.main import app
+    from app.models.organization import Organization
+
+    org = Organization(
+        external_org_id=f"org_{uuid_pkg.uuid4().hex[:8]}", name="Watch Org", is_active=True
+    )
+    db_session.add(org)
+    db_session.commit()
+    db_session.refresh(org)
+
+    app.dependency_overrides[get_current_context] = lambda: RequestContext(
+        user=normal_user, org_id=org.id, org_role="org:member"
+    )
+    try:
+        response = client.post(
+            "/api/watch-sources",
+            headers=user_token_headers,
+            json={
+                "name": f"s3org-{uuid.uuid4().hex[:6]}",
+                "source_type": "s3",
+                "s3_bucket_name": "mybucket",
+                "s3_access_key_id": "AKIATEST",
+                "s3_secret_key": "org-test-secret",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_context, None)
+
+    assert response.status_code == status.HTTP_200_OK
+    row = db_session.query(WatchSource).filter(WatchSource.uuid == response.json()["uuid"]).first()
+    assert row is not None
+    assert row.organization_id == org.id
+
+
+def test_create_source_personal_scope_unstamped(client, user_token_headers, db_session):
+    """Community invariance: no org context -> organization_id stays NULL."""
+    response = client.post(
+        "/api/watch-sources",
+        headers=user_token_headers,
+        json={
+            "name": f"s3pers-{uuid.uuid4().hex[:6]}",
+            "source_type": "s3",
+            "s3_bucket_name": "mybucket",
+            "s3_access_key_id": "AKIATEST",
+            "s3_secret_key": "personal-test-secret",
+        },
+    )
+    assert response.status_code == status.HTTP_200_OK
+    row = db_session.query(WatchSource).filter(WatchSource.uuid == response.json()["uuid"]).first()
+    assert row is not None
+    assert row.organization_id is None
+
+
 def test_create_source_with_secret_never_echoed(client, user_token_headers):
     """The plaintext S3 secret is accepted but never returned; has_* flips true."""
     response = client.post(

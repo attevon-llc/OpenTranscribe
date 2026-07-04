@@ -217,6 +217,7 @@ class AuditLogger:
                                 "event_type": {"type": "keyword"},
                                 "outcome": {"type": "keyword"},
                                 "user_id": {"type": "integer"},
+                                "organization_id": {"type": "integer"},
                                 "username": {"type": "keyword"},
                                 "source_ip": {"type": "ip"},
                                 "user_agent": {"type": "text"},
@@ -250,6 +251,7 @@ class AuditLogger:
         user_agent: Optional[str] = None,
         error_code: Optional[str] = None,
         details: Optional[dict[str, Any]] = None,
+        organization_id: Optional[int] = None,
     ) -> None:
         """
         Log an audit event.
@@ -263,6 +265,13 @@ class AuditLogger:
             user_agent: The client's User-Agent header
             error_code: Error code if applicable
             details: Additional event-specific details
+            organization_id: Tenant the event occurred in (issue #262a). Call
+                sites pass it when they have context — the request's resolved
+                org (``ctx.org_id`` / ``request.state.org_id``) or the affected
+                resource's org stamp. ``None`` (community, personal scope, or
+                no-context writers like local login) omits the field; those
+                events are attributed to an org at READ time via the member-id
+                legacy fallback in :func:`query_audit_logs`.
         """
         if not settings.AUDIT_LOG_ENABLED:
             return
@@ -275,6 +284,7 @@ class AuditLogger:
             else event_type,
             "outcome": outcome.value if isinstance(outcome, AuditOutcome) else outcome,
             "user_id": user_id,
+            "organization_id": organization_id,
             "username": username,
             "source_ip": source_ip,
             "user_agent": user_agent,
@@ -476,6 +486,20 @@ class AuditLogger:
 audit_logger = AuditLogger()
 
 
+def request_org_id(request: Any) -> Optional[int]:
+    """Return the request's resolved LOCAL org id for audit stamping, or None.
+
+    ``request.state.org_id`` transiently holds the provider's RAW external org
+    string (stashed by ``get_current_user`` for access logging) until
+    ``resolve_org_context`` refines it to our integer ``Organization.id``. Only
+    the refined integer is a valid audit stamp — a raw string means org context
+    was never confirmed against the membership mirror, so it is treated as
+    no-context (None) rather than trusted.
+    """
+    value = getattr(getattr(request, "state", None), "org_id", None)
+    return value if isinstance(value, int) else None
+
+
 def _build_audit_opensearch_client():
     """Construct an OpenSearch client for audit-log reads (None on failure)."""
     try:
@@ -498,6 +522,43 @@ def _build_audit_opensearch_client():
         return None
 
 
+def build_org_scope_clause(
+    scope_org_id: int, scope_user_ids: Optional[list[int]]
+) -> dict[str, Any]:
+    """Build the org-admin visibility clause for the audit-log query.
+
+    Visible to an admin of ``scope_org_id``:
+      * events STAMPED with the org (``organization_id == scope_org_id``) —
+        including events with ``user_id`` NULL (e.g. failed logins against an
+        org surface), which the member-id filter alone could never show; and
+      * **legacy-window** events: events written before org stamping existed
+        (or by writers with no tenant context, e.g. local login) carry no
+        ``organization_id`` field. Those are attributed via the org's member
+        user-ids instead. This preserves pre-v372 visibility, with a known
+        limitation that shrinks as stamping coverage grows: a SHARED member's
+        un-stamped activity from another context is visible to every org that
+        member belongs to (exactly the pre-v372 behavior). An event stamped
+        with a DIFFERENT org is never visible here — the must_not/exists split
+        is exhaustive.
+
+    Extracted so tests can pin the exact filter body without a cluster.
+    """
+    legacy_branch: dict[str, Any] = {
+        "bool": {"must_not": [{"exists": {"field": "organization_id"}}]}
+    }
+    if scope_user_ids is not None:
+        legacy_branch["bool"]["filter"] = [{"terms": {"user_id": scope_user_ids}}]
+    return {
+        "bool": {
+            "should": [
+                {"term": {"organization_id": scope_org_id}},
+                legacy_branch,
+            ],
+            "minimum_should_match": 1,
+        }
+    }
+
+
 def query_audit_logs(
     *,
     start_date: Optional[datetime] = None,
@@ -506,6 +567,7 @@ def query_audit_logs(
     user_id: Optional[int] = None,
     outcome: Optional[str] = None,
     scope_user_ids: Optional[list[int]] = None,
+    scope_org_id: Optional[int] = None,
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:
@@ -517,10 +579,17 @@ def query_audit_logs(
     Args:
         start_date / end_date: timestamp range filters.
         event_type / user_id / outcome: equality filters.
-        scope_user_ids: when provided, restrict results to events whose
-            ``user_id`` is in this set — the org-admin scoping gate (the set is
-            the org's member ids). An **empty** list returns no results (a
-            removed/empty org sees nothing) rather than everything.
+        scope_user_ids: when provided (without ``scope_org_id``), restrict
+            results to events whose ``user_id`` is in this set. An **empty**
+            list returns no results (a removed/empty org sees nothing) rather
+            than everything.
+        scope_org_id: org-admin tenant scope (issue #262a). When provided, the
+            visibility rule becomes: events stamped ``organization_id ==
+            scope_org_id`` (including user_id-NULL events such as failed
+            logins) OR legacy events with NO org stamp whose ``user_id`` is in
+            ``scope_user_ids`` — see :func:`build_org_scope_clause` for the
+            legacy-window semantics. Events stamped with another org are never
+            returned.
         limit / offset: pagination.
 
     Returns:
@@ -535,8 +604,9 @@ def query_audit_logs(
             "total": 0,
         }
 
-    if scope_user_ids is not None and len(scope_user_ids) == 0:
-        # Org has no members in scope — nothing is visible.
+    if scope_org_id is None and scope_user_ids is not None and len(scope_user_ids) == 0:
+        # Member-only scope with no members — nothing is visible. (With an org
+        # scope, org-stamped events remain visible even for an empty member set.)
         return {"logs": [], "total": 0, "offset": offset, "limit": limit}
 
     client = _build_audit_opensearch_client()
@@ -559,8 +629,11 @@ def query_audit_logs(
             must_clauses.append({"term": {"user_id": user_id}})
         if outcome:
             must_clauses.append({"term": {"outcome": outcome}})
-        if scope_user_ids is not None:
-            # Org-admin scope: only events acted by the org's members.
+        if scope_org_id is not None:
+            # Org-admin scope: org-stamped events OR legacy member-attributed.
+            must_clauses.append(build_org_scope_clause(scope_org_id, scope_user_ids))
+        elif scope_user_ids is not None:
+            # Member-only scope (pre-org callers): events acted by the members.
             must_clauses.append({"terms": {"user_id": scope_user_ids}})
 
         query = {

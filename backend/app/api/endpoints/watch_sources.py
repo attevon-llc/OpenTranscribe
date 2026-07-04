@@ -18,6 +18,8 @@ from fastapi import HTTPException
 from fastapi import Query
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.core.config import settings
@@ -439,6 +441,7 @@ def create_watch_source(
     data: WatchSourceCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ) -> WatchSourceResponse:
     # local sources require the mount to be configured server-side.
     if data.source_type.value == "local" and not settings.WATCH_FOLDER_PATH:
@@ -457,6 +460,10 @@ def create_watch_source(
         source_type=data.source_type.value,
         user_id=owner_id,
         created_by=current_user.id,
+        # Tenant captured ONCE at creation from the creating request's context
+        # (issue #262c) — background scans stamp every import with this org
+        # instead of guessing from the owner's memberships. None = personal.
+        organization_id=ctx.org_id,
     )
     _apply_fields(source, data.model_dump(exclude_unset=True))
     db.add(source)

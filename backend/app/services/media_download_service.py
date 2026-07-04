@@ -444,6 +444,7 @@ def _process_playlist_videos(
     playlist_url: str,
     video_count: int,
     progress_callback: Callable[[int, str, dict], None] | None = None,
+    organization_id: int | None = None,
 ) -> tuple[list[MediaFile], list[dict[str, Any]]]:
     """
     Process playlist videos and create placeholders.
@@ -456,6 +457,8 @@ def _process_playlist_videos(
         playlist_url: Original playlist URL
         video_count: Total video count for progress
         progress_callback: Optional progress callback
+        organization_id: Originating request's tenant (threaded through the
+            task kwargs — issue #262c); stamped on every placeholder
 
     Returns:
         Tuple of (created_media_files, skipped_videos)
@@ -498,7 +501,12 @@ def _process_playlist_videos(
         try:
             video_entry["playlist_index"] = video_entry.get("playlist_index", idx + 1)
             media_file = _create_playlist_video_placeholder(
-                db, user_id, video_entry, playlist_info, playlist_url
+                db,
+                user_id,
+                video_entry,
+                playlist_info,
+                playlist_url,
+                organization_id=organization_id,
             )
             created_media_files.append(media_file)
             logger.info(
@@ -523,6 +531,7 @@ def _create_playlist_video_placeholder(
     video_entry: dict[str, Any],
     playlist_info: dict[str, Any],
     playlist_url: str,
+    organization_id: int | None = None,
 ) -> MediaFile:
     """
     Create a placeholder MediaFile for a playlist video.
@@ -533,6 +542,8 @@ def _create_playlist_video_placeholder(
         video_entry: Video entry from playlist
         playlist_info: Playlist metadata
         playlist_url: Original playlist URL
+        organization_id: Tenant of the ORIGINATING request (issue #262c) —
+            never resolved from the owner's memberships here. None = personal.
 
     Returns:
         Created MediaFile
@@ -553,12 +564,6 @@ def _create_playlist_video_placeholder(
         "playlist_url": playlist_url,
         "playlist_index": playlist_index,
     }
-
-    # No request context in playlist task — derive the owner's org from the
-    # membership mirror (NULL/personal in the community edition).
-    from app.services.organization_service import resolve_owner_org_id
-
-    organization_id = resolve_owner_org_id(db, user_id)
 
     media_file = MediaFile(
         user_id=user_id,
@@ -1633,6 +1638,7 @@ class MediaDownloadService:
         db: Session,
         user: User,
         progress_callback: Callable[[int, str, dict], None] | None = None,
+        organization_id: int | None = None,
     ) -> dict[str, Any]:
         """
         Process a YouTube playlist by extracting video list and creating placeholder MediaFile records.
@@ -1697,7 +1703,14 @@ class MediaDownloadService:
         # Create placeholder MediaFile records for each video
         videos = playlist_info.get("videos", [])
         created_media_files, skipped_videos = _process_playlist_videos(
-            db, int(user.id), videos, playlist_info, url, video_count, progress_callback
+            db,
+            int(user.id),
+            videos,
+            playlist_info,
+            url,
+            video_count,
+            progress_callback,
+            organization_id=organization_id,
         )
 
         # Commit and refresh all placeholder records

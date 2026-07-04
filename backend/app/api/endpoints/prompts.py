@@ -26,6 +26,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.audit import request_org_id
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
 from app.utils.pagination import paginate
@@ -646,6 +647,9 @@ def share_prompt(
         username=str(current_user.email),
         source_ip=ctx["source_ip"],
         user_agent=ctx["user_agent"],
+        # Org attribution (issue #262a): resolved by resolve_org_context when
+        # the request carried org context; None (personal/community) otherwise.
+        organization_id=request_org_id(request),
         details={
             "prompt_uuid": str(prompt.uuid),
             "prompt_name": str(prompt.name),
@@ -786,6 +790,7 @@ def clone_prompt(
         username=str(current_user.email),
         source_ip=ctx["source_ip"],
         user_agent=ctx["user_agent"],
+        organization_id=request_org_id(request),
         details={
             "prompt_uuid": str(clone.uuid),
             "prompt_name": str(clone.name),

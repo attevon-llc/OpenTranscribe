@@ -181,12 +181,12 @@ def ingest_prepared_file(
             db.commit()
             return row
 
-    # 4. Create the MediaFile row (owned by the source user). No request
-    # context here (background import) — derive the owner's org from the
-    # membership mirror; NULL (personal) in the community edition.
-    from app.services.organization_service import resolve_owner_org_id
-
-    organization_id = resolve_owner_org_id(db, owner_id)
+    # 4. Create the MediaFile row (owned by the source user). Tenant scope was
+    # captured on the source at CREATION time from the creating request's
+    # context (v372 backfilled pre-existing rows) — imports never guess the
+    # org from the owner's memberships (issue #262c). NULL = personal, always
+    # NULL in the community edition.
+    organization_id = int(source.organization_id) if source.organization_id else None
     db_file = MediaFile(
         filename=sanitize_filename(filename),
         title=Path(filename).stem,

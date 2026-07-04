@@ -176,6 +176,134 @@ class TestExcludeQuarantinedPredicate:
         assert file.id in ids
 
 
+class TestQuarantineAuditOrgStamp:
+    """Issue #262a: takedown/release audit events carry the file's tenant."""
+
+    def test_quarantine_audit_stamped_with_file_org(self, world):
+        import uuid as _uuid
+        from unittest.mock import patch
+
+        from app.models.organization import Organization
+
+        db, _owner, admin, file = world
+        org = Organization(
+            external_org_id=f"org_{_uuid.uuid4().hex[:8]}", name="Q Org", is_active=True
+        )
+        db.add(org)
+        db.commit()
+        db.refresh(org)
+        file.organization_id = org.id
+        db.commit()
+
+        calls = []
+        with patch("app.services.takedown_service.audit_logger") as fake_audit:
+            fake_audit.log.side_effect = lambda **kw: calls.append(kw)
+            quarantine_file(db, file, admin=admin, reason="dmca", legal_hold=False)
+            release_file(db, file, admin=admin, clear_legal_hold=False)
+
+        assert len(calls) == 2
+        assert all(c["organization_id"] == org.id for c in calls)
+
+    def test_personal_file_audit_has_no_org(self, world):
+        from unittest.mock import patch
+
+        db, _owner, admin, file = world
+        calls = []
+        with patch("app.services.takedown_service.audit_logger") as fake_audit:
+            fake_audit.log.side_effect = lambda **kw: calls.append(kw)
+            quarantine_file(db, file, admin=admin, reason="x", legal_hold=False)
+
+        assert calls[0]["organization_id"] is None
+
+
+class TestCollectionCountsExcludeQuarantined:
+    """Issue #262g: collection member counts (and the paginated member list)
+    must not include quarantined files for non-admins — a count/list mismatch
+    would leak the takedown."""
+
+    def _mk_collection_with_files(self, db, owner, *, quarantine_one: bool):
+        from app.models.media import Collection
+        from app.models.media import CollectionMember
+
+        coll = Collection(
+            uuid=uuid_pkg.uuid4(),
+            name=f"coll_{uuid_pkg.uuid4().hex[:8]}",
+            user_id=owner.id,
+        )
+        db.add(coll)
+        db.commit()
+        db.refresh(coll)
+
+        visible = _mk_file(db, owner=owner)
+        hidden = _mk_file(db, owner=owner)
+        if quarantine_one:
+            hidden.is_quarantined = True
+            db.commit()
+        db.add_all(
+            [
+                CollectionMember(collection_id=coll.id, media_file_id=visible.id),
+                CollectionMember(collection_id=coll.id, media_file_id=hidden.id),
+            ]
+        )
+        db.commit()
+        return coll, visible, hidden
+
+    def test_visible_media_counts_helper(self, world):
+        from app.api.endpoints.media_collections import _visible_media_counts
+
+        db, owner, _admin, _file = world
+        coll, _visible, _hidden = self._mk_collection_with_files(db, owner, quarantine_one=True)
+
+        user_counts = _visible_media_counts(db, [coll.id], include_quarantined=False)
+        admin_counts = _visible_media_counts(db, [coll.id], include_quarantined=True)
+        assert user_counts.get(coll.id, 0) == 1
+        assert admin_counts.get(coll.id, 0) == 2
+
+    def test_visible_media_counts_empty_collection(self, world):
+        """A collection with zero members simply has no row (callers .get 0)."""
+        from app.api.endpoints.media_collections import _visible_media_counts
+
+        db = world[0]
+        assert _visible_media_counts(db, [], include_quarantined=False) == {}
+
+    def test_list_collections_count_hides_quarantined(self, client, world):
+        db, owner, _admin, _file = world
+        coll, _visible, _hidden = self._mk_collection_with_files(db, owner, quarantine_one=True)
+
+        resp = client.post(
+            "/api/auth/token",
+            data={"username": owner.email, "password": "password123"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert resp.status_code == 200
+        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+        listing = client.get("/api/collections?ownership=mine", headers=headers)
+        assert listing.status_code == 200
+        counts = {c["name"]: c["media_count"] for c in listing.json()}
+        assert counts[coll.name] == 1  # quarantined member hidden from the count
+
+    def test_collection_media_listing_hides_quarantined(self, client, world):
+        db, owner, _admin, _file = world
+        coll, visible, hidden = self._mk_collection_with_files(db, owner, quarantine_one=True)
+
+        resp = client.post(
+            "/api/auth/token",
+            data={"username": owner.email, "password": "password123"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert resp.status_code == 200
+        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+        media = client.get(f"/api/collections/{coll.uuid}/media", headers=headers)
+        assert media.status_code == 200
+        body = media.json()
+        uuids = {item["uuid"] for item in body["items"]}
+        assert str(visible.uuid) in uuids
+        assert str(hidden.uuid) not in uuids
+        assert body["total"] == 1
+
+
 class TestPriorStatusRestore:
     def test_release_restores_pre_quarantine_status(self, world):
         """A file quarantined while ERROR must release back to ERROR, not

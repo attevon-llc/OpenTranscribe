@@ -240,6 +240,236 @@ class TestOrgAuditScope:
 
 
 # --------------------------------------------------------------------------- #
+# Org attribution on audit events (issue #262a)                                #
+# --------------------------------------------------------------------------- #
+class _FakeAuditOS:
+    """Captures the OpenSearch query body the audit read builds."""
+
+    def __init__(self):
+        self.captured_body = None
+
+    def search(self, index, body):
+        self.captured_body = body
+        return {"hits": {"hits": [], "total": {"value": 0}}}
+
+
+class TestAuditOrgAttribution:
+    def test_log_event_carries_organization_id(self):
+        """audit_logger.log(..., organization_id=N) stamps the event payload."""
+        import json
+        from unittest.mock import MagicMock
+
+        from app.auth.audit import AuditEventType
+        from app.auth.audit import AuditOutcome
+        from app.auth.audit import audit_logger
+
+        fake_logger = MagicMock()
+        with (
+            patch("app.auth.audit.settings") as s,
+            patch.object(audit_logger, "_logger", fake_logger),
+        ):
+            s.AUDIT_LOG_ENABLED = True
+            s.AUDIT_LOG_TO_OPENSEARCH = False
+            s.AUDIT_LOG_FORMAT = "json"
+            audit_logger.log(
+                event_type=AuditEventType.ADMIN_FILE_QUARANTINE,
+                outcome=AuditOutcome.SUCCESS,
+                user_id=7,
+                username="a@example.com",
+                organization_id=42,
+            )
+
+        event = json.loads(fake_logger.info.call_args[0][0])
+        assert event["organization_id"] == 42
+        assert event["user_id"] == 7
+
+    def test_log_event_defaults_to_no_org(self):
+        """No-context writers (e.g. local login) emit organization_id=None —
+        the legacy/member-attributed class of events."""
+        import json
+        from unittest.mock import MagicMock
+
+        from app.auth.audit import AuditEventType
+        from app.auth.audit import AuditOutcome
+        from app.auth.audit import audit_logger
+
+        fake_logger = MagicMock()
+        with (
+            patch("app.auth.audit.settings") as s,
+            patch.object(audit_logger, "_logger", fake_logger),
+        ):
+            s.AUDIT_LOG_ENABLED = True
+            s.AUDIT_LOG_TO_OPENSEARCH = False
+            s.AUDIT_LOG_FORMAT = "json"
+            audit_logger.log(
+                event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
+                outcome=AuditOutcome.SUCCESS,
+                user_id=7,
+            )
+
+        event = json.loads(fake_logger.info.call_args[0][0])
+        assert event["organization_id"] is None
+
+    def test_org_scope_clause_shape(self):
+        """The org-admin visibility clause: org-stamped events (incl. user_id
+        NULL) OR legacy un-stamped events attributed via member ids. An event
+        stamped with a DIFFERENT org matches neither branch."""
+        from app.auth.audit import build_org_scope_clause
+
+        clause = build_org_scope_clause(42, [1, 2])
+        assert clause == {
+            "bool": {
+                "should": [
+                    {"term": {"organization_id": 42}},
+                    {
+                        "bool": {
+                            "must_not": [{"exists": {"field": "organization_id"}}],
+                            "filter": [{"terms": {"user_id": [1, 2]}}],
+                        }
+                    },
+                ],
+                "minimum_should_match": 1,
+            }
+        }
+
+    def test_get_org_audit_logs_passes_org_scope(self, two_orgs):
+        """The org-admin endpoint threads BOTH the member set (legacy events)
+        and its own org id (stamped events, incl. failed logins with user_id
+        NULL) into the shared query."""
+        from app.api.endpoints.org_admin import get_org_audit_logs
+
+        ctx = RequestContext(user=two_orgs.admin_a, org_id=two_orgs.org_a.id, org_role="org:admin")
+        captured = {}
+
+        def _fake_query(**kwargs):
+            captured.update(kwargs)
+            return {"logs": [], "total": 0, "offset": 0, "limit": 100}
+
+        with patch("app.api.endpoints.org_admin.query_audit_logs", _fake_query):
+            get_org_audit_logs(
+                start_date=None,
+                end_date=None,
+                event_type=None,
+                user_id=None,
+                outcome=None,
+                limit=100,
+                offset=0,
+                db=two_orgs.db,
+                ctx=ctx,
+            )
+
+        assert captured["scope_org_id"] == two_orgs.org_a.id
+        assert set(captured["scope_user_ids"]) == {two_orgs.admin_a.id, two_orgs.member_a.id}
+
+    def test_query_audit_logs_builds_org_scope_body(self):
+        """query_audit_logs(scope_org_id=...) embeds the org-scope clause in
+        the OpenSearch bool query."""
+        from app.auth.audit import build_org_scope_clause
+        from app.auth.audit import query_audit_logs
+
+        fake = _FakeAuditOS()
+        with (
+            patch("app.auth.audit.settings") as s,
+            patch("app.auth.audit._build_audit_opensearch_client", return_value=fake),
+        ):
+            s.AUDIT_LOG_TO_OPENSEARCH = True
+            result = query_audit_logs(scope_user_ids=[1, 2], scope_org_id=42)
+
+        assert result["total"] == 0
+        assert fake.captured_body is not None
+        must = fake.captured_body["query"]["bool"]["must"]
+        assert build_org_scope_clause(42, [1, 2]) in must
+        # The bare member-terms filter must NOT also be applied — it would
+        # exclude org-stamped events with user_id NULL (failed logins).
+        assert {"terms": {"user_id": [1, 2]}} not in must
+
+    def test_org_scope_with_empty_member_set_still_queries(self):
+        """With an org id, an empty member set must NOT short-circuit — the
+        org's STAMPED events (e.g. failed logins, user_id NULL) stay visible."""
+        from app.auth.audit import query_audit_logs
+
+        fake = _FakeAuditOS()
+        with (
+            patch("app.auth.audit.settings") as s,
+            patch("app.auth.audit._build_audit_opensearch_client", return_value=fake),
+        ):
+            s.AUDIT_LOG_TO_OPENSEARCH = True
+            query_audit_logs(scope_user_ids=[], scope_org_id=42)
+
+        assert fake.captured_body is not None  # query executed, not short-circuited
+        must = fake.captured_body["query"]["bool"]["must"]
+        assert {"term": {"organization_id": 42}} in must[0]["bool"]["should"]
+
+    def test_member_only_scope_unchanged(self):
+        """Without an org id the pre-existing member-terms scoping is intact
+        (super-admin/global callers are unaffected)."""
+        from app.auth.audit import query_audit_logs
+
+        fake = _FakeAuditOS()
+        with (
+            patch("app.auth.audit.settings") as s,
+            patch("app.auth.audit._build_audit_opensearch_client", return_value=fake),
+        ):
+            s.AUDIT_LOG_TO_OPENSEARCH = True
+            query_audit_logs(scope_user_ids=[1, 2])
+
+        assert fake.captured_body is not None
+        assert {"terms": {"user_id": [1, 2]}} in fake.captured_body["query"]["bool"]["must"]
+
+    def test_request_org_id_only_trusts_resolved_int(self):
+        """request.state.org_id may transiently hold the provider's RAW string
+        (pre-membership-mirror); only the refined int is a valid audit stamp."""
+        from types import SimpleNamespace
+
+        from app.auth.audit import request_org_id
+
+        assert request_org_id(SimpleNamespace(state=SimpleNamespace(org_id=5))) == 5
+        assert request_org_id(SimpleNamespace(state=SimpleNamespace(org_id="org_raw123"))) is None
+        assert request_org_id(SimpleNamespace(state=SimpleNamespace())) is None
+
+    def test_gdpr_org_erasure_events_are_org_stamped(self, two_orgs):
+        """The org-admin GDPR erasure audit events carry the tenant id."""
+        w = two_orgs
+        calls = []
+
+        def _capture(**kwargs):
+            calls.append(kwargs)
+
+        with (
+            patch(
+                "app.services.file_cleanup_service.delete_file_storage_artifacts",
+                return_value=True,
+            ),
+            patch(
+                "app.services.file_cleanup_service._cleanup_opensearch_for_file",
+                return_value=None,
+            ),
+            patch(
+                "app.services.gdpr_erasure_service._erase_speaker_voiceprints",
+                return_value=0,
+            ),
+            patch(
+                "app.services.opensearch_service.remove_profile_embedding",
+                return_value=True,
+            ),
+            patch("app.services.gdpr_erasure_service.audit_logger") as fake_audit,
+        ):
+            fake_audit.log.side_effect = _capture
+            from app.services.gdpr_erasure_service import erase_org_member_data
+
+            erase_org_member_data(
+                w.db,
+                int(w.member_a.id),
+                int(w.org_a.id),
+                actor_user_id=int(w.admin_a.id),
+                actor_email=str(w.admin_a.email),
+            )
+
+        assert calls, "erasure must audit"
+        assert calls[-1]["organization_id"] == w.org_a.id
+
+
+# --------------------------------------------------------------------------- #
 # GDPR erasure                                                                 #
 # --------------------------------------------------------------------------- #
 class TestEraseUser:

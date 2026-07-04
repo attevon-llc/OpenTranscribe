@@ -1,7 +1,9 @@
 """Unit tests for backup admin alerting (issue #244) + the one-time keys notice (#243).
 
-The WebSocket boundary (``send_task_notification``) is mocked; recipient selection and
-message content are asserted against the real admin users in the test database.
+The WebSocket boundary (``send_task_notification``) is mocked. Recipient tests take the
+``admin_user`` fixture so at least one admin exists even on a fresh CI database — they
+must never assume the dev stack's seeded admin. Counts are always recomputed from
+``_admin_user_ids`` on the same savepoint session, so extra ambient admins are fine.
 """
 
 from __future__ import annotations
@@ -51,9 +53,9 @@ def test_collect_warnings_flags_prune_snapshot_and_recovery():
 # =============================================================================
 # notify_backup_result — failure / warning / silence
 # =============================================================================
-def test_failure_sends_admin_notification(db_session):
+def test_failure_sends_admin_notification(db_session, admin_user):
     admin_ids = backup_alerts._admin_user_ids(db_session)
-    assert admin_ids, "test DB must contain at least one admin user"
+    assert admin_user.id in admin_ids
 
     with mock.patch("app.services.notification_service.send_task_notification") as sender:
         backup_alerts.notify_backup_result(
@@ -77,7 +79,7 @@ def test_clean_success_sends_nothing(db_session):
     sender.assert_not_called()
 
 
-def test_success_with_warnings_notifies(db_session):
+def test_success_with_warnings_notifies(db_session, admin_user):
     _clear_backup_keys(db_session)
     result = {
         "ok": True,
@@ -92,8 +94,9 @@ def test_success_with_warnings_notifies(db_session):
     assert "disk gone" in sender.call_args.kwargs["message"]
 
 
-def test_failure_alerting_never_raises(db_session):
-    # Even if the notification layer explodes, the backup run must not.
+def test_failure_alerting_never_raises(db_session, admin_user):
+    # Even if the notification layer explodes, the backup run must not. Needs a
+    # real recipient or the raising mock is never called (vacuous on a fresh DB).
     with mock.patch(
         "app.services.notification_service.send_task_notification",
         side_effect=RuntimeError("redis down"),
@@ -104,7 +107,7 @@ def test_failure_alerting_never_raises(db_session):
 # =============================================================================
 # One-time "backups exclude your encryption keys" notice (#243)
 # =============================================================================
-def test_keys_notice_sent_once(db_session):
+def test_keys_notice_sent_once(db_session, admin_user):
     _clear_backup_keys(db_session)
     result = {"ok": True, "status": "success", "recovery": {"status": "readme_written"}}
 

@@ -192,10 +192,91 @@ to register an `s3` snapshot repository is a possible future enhancement.
 :::
 
 :::info MinIO media mirroring
-Mirroring the uploaded **media files** (MinIO objects) into the scheduled backup
-run is a **separate planned follow-up** (pending a bucket-versioning decision) and
-is not part of the in-app scheduler today. Back media up manually with `mc mirror`
-as described in [MinIO / Storage Backup](#minio--storage-backup) below.
+The uploaded **media files** (MinIO objects) are covered by the in-app
+[Media Mirror](#media-mirror-in-app-incremental) — a separate scheduled,
+incremental, never-deleting copy of the media bucket with its own destination.
+:::
+
+#### Media Mirror (in-app, incremental) {#media-mirror-in-app-incremental}
+
+The database dump protects your *metadata*; the **Media Mirror** protects the
+**irreplaceable media originals** — the audio/video files in MinIO that cannot be
+rebuilt from anything else. It incrementally copies the media bucket to a second
+location on its own schedule, using the same celery-beat infrastructure as the
+database backup. **Default OFF** — enable it in the admin UI under
+**Settings → System Management → Backups → Media Mirror**.
+
+What it copies:
+
+- **Included**: uploaded originals (`user_*/file_*/…`), thumbnails, and speaker
+  avatars — everything irreplaceable in the media bucket.
+- **Excluded**: regenerable data — preprocessed temp audio (`temp/…`) and,
+  defensively, the `derived/` / `bulk/` cache prefixes. (Subtitle-embedded videos
+  and export zips live in the separate `processed-videos` cache bucket, which is
+  never mirrored — it rebuilds on demand.)
+
+How it works:
+
+- **Incremental**: objects are compared by **size plus ETag** (ETags participate
+  only when both sides carry a comparable single-part checksum); up-to-date objects
+  are skipped, so the steady-state nightly delta for write-once media is tiny. The
+  first run copies everything and can take hours for a large library — a Redis lock
+  guarantees runs never overlap, and per-object failures never abort a run (failed
+  objects are retried on the next pass).
+- **The mirror NEVER deletes.** Files removed from the source bucket — by a
+  fat-fingered bulk delete, a bad migration, or ransomware — **remain in the
+  mirror** until you remove them yourself. This is an explicit, tested invariant:
+  the destination interface has no delete operation at all. The trade-off is that
+  the mirror grows monotonically; prune it manually if you need the space back.
+- **Separate destination** from the database dumps (a media mirror is large and
+  often lives on different storage):
+  - **Local folder** — start the stack with the backup overlay
+    (`./opentr.sh start dev --with-backup`), which mounts
+    `BACKUP_MIRROR_HOST_PATH` (default `./media-mirror`) to `/media-mirror` in the
+    backend + download-worker containers. Point it at a NAS mount, external drive,
+    or any second disk.
+  - **S3-compatible bucket** — any AWS S3 / MinIO / Backblaze-style endpoint on
+    **another machine or provider** for a true off-host copy. The secret key is
+    encrypted at rest (AES-256-GCM, write-only, never returned by the API) with a
+    Test Connection button — the same pattern as the dump destination.
+- **Schedule** is a DB-stored cron (default `30 3 * * *` — 03:30 daily, offset from
+  the 03:00 database dump); a configurable **throttle** (ms of sleep per object)
+  caps I/O pressure on shared disks. The run executes on the **download** worker
+  (bulk network I/O), never the GPU worker.
+- **Observability** (same pattern as the [failure alerting](#failure-alerting-metrics--notifications)
+  below): a failed run sends a `media_mirror_status` WebSocket notification to every
+  admin (clean successes are silent); Prometheus exposes
+  `media_mirror_last_success_timestamp_seconds`, `media_mirror_last_status`,
+  `media_mirror_runs_total{result}`, and per-outcome object counts
+  (`media_mirror_last_run_objects{outcome="copied"|"skipped"|"failed"|"excluded"}`).
+  The panel shows the last result (objects copied/skipped/failed, bytes, errors)
+  and a **Run Now** button.
+
+**Restoring from the mirror.** The mirror preserves the bucket's key layout
+(`user_<id>/file_<id>/…`), so restoring is a straight copy back:
+
+```bash
+# Folder mirror → restore into a (new) MinIO with mc
+mc alias set restored http://localhost:5178 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
+mc cp --recursive /path/to/media-mirror/ restored/opentranscribe/
+
+# S3 mirror → bucket-to-bucket copy
+mc alias set mirror https://mirror-endpoint MIRROR_KEY MIRROR_SECRET
+mc cp --recursive mirror/my-mirror-bucket/opentranscribe-media/ restored/opentranscribe/
+```
+
+Restore the database dump from the same point in time first, then the media; the
+`MediaFile` rows reference objects by these same keys. If the database is *not*
+recoverable, `python -m app.scripts.reingest_minio` can re-register restored
+objects from storage alone (see the storage-recovery runbook).
+
+:::note Bucket versioning (optional, deployment-level)
+The never-delete mirror already protects against source-side deletion. S3/MinIO
+**bucket versioning** on the source or mirror bucket is an optional *extra* —
+it turns overwrites/deletes into recoverable versions at near-zero steady-state
+cost for write-once media — but it is a deployment-level choice (enable it with
+`mc version enable <alias>/<bucket>`), **not required** by the mirror and not
+managed by OpenTranscribe.
 :::
 
 #### Recovery keys travel with the backup
@@ -306,6 +387,13 @@ sudo systemctl list-timers opentranscribe-backup.timer
 ```
 
 ## MinIO / Storage Backup
+
+:::tip Prefer the in-app Media Mirror
+The scheduled, incremental, never-deleting
+[Media Mirror](#media-mirror-in-app-incremental) covers this automatically —
+the manual `mc` approaches below remain useful for one-off copies and
+non-standard destinations.
+:::
 
 MinIO stores all uploaded media files. Back up using the MinIO Client (`mc`):
 

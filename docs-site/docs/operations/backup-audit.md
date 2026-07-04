@@ -27,7 +27,7 @@ below.
 | Store | What's protected today | Gap | Severity | Recommendation |
 |---|---|---|---|---|
 | **PostgreSQL** (users, transcripts, segments, speakers, settings) | In-app scheduled `pg_dump -Fc` (GFS retention, optional gpg) to a local mount **or** S3-compatible bucket; manual `./opentr.sh backup [--encrypt]`; `restore` documented | Restore is documented but not automatically *verified* (no scheduled restore drill / checksum) | **Low** | Run the quarterly restore drill in [Backup & Restore](./backup-restore.md#testing-backups). Good as shipped. |
-| **MinIO media** (~484 GB, irreplaceable originals) | **Not** in the in-app backup system. Protected only by host RAID/NAS, which is *not* a backup (no offsite copy, no point-in-time recovery, no protection from deletion/ransomware/bit-rot) | No automated, off-host, point-in-time copy of the irreplaceable media | **High** (co-critical with Postgres) | Add an off-host media copy: `mc mirror` to another box/drive on a schedule, and/or S3 bucket **versioning** + an offsite replica. See [MinIO media](#2-minio-media--the-484-gb-gap). |
+| **MinIO media** (~484 GB, irreplaceable originals) | **Addressed (#242):** in-app scheduled **Media Mirror** — incremental, never-deleting copy of the media bucket to a mounted folder or S3-compatible bucket, with metrics + failure alerting | Default-OFF (must be enabled + given a destination); mirror is single-copy (pair with offsite for 3-2-1) | **Low** (was High) | Enable the mirror and point it off-host; optionally add bucket versioning as a deployment-level extra. See [MinIO media](#2-minio-media--the-484-gb-gap). |
 | **OpenSearch** (search + vector indices) | Optional in-app `fs` snapshot alongside each dump (`backup.include_opensearch`); fully **rebuildable** from Postgres via reindex | None that matters — derived data | **Low** | Leave snapshots off unless you want to skip reindex time on restore. Confirmed adequate. |
 | **Configuration & Secrets** (`.env`: `ENCRYPTION_KEY`, `JWT_SECRET_KEY`, DB/MinIO creds; gpg passphrase) | **Addressed (#243):** encrypted runs write `opentranscribe-recovery.env.gpg` (the essential keys, same passphrase) beside the dumps; unencrypted runs write a no-secrets `RECOVERY-README.txt` + a one-time admin warning | With encryption off, keys must still be preserved separately (by design — no plaintext keys beside a plaintext dump) | **Low** (was Critical) | Keep the gpg passphrase in a password manager and verify keys in every restore drill. See [§4](#secrets-gap). |
 | **Redis** (Celery broker/cache) | Nothing — by design | None | **None** | Ephemeral. Tasks re-queue (acks-late). No backup needed. Confirmed. |
@@ -80,6 +80,24 @@ migration, ransomware, bit-rot, or loss of the whole machine.
 and turn on **versioning** for deletion protection. Until that ships, mirror manually with
 `mc mirror` per [Backup & Restore → MinIO](./backup-restore.md#minio--storage-backup).
 **Severity: High.**
+
+**Status: CLOSED by issue #242.** The in-app **Media Mirror** now covers this gap:
+a scheduled (celery-beat, DB-configured, default-OFF) **incremental** copy of the
+media bucket to a **separate destination** — a mounted folder
+(`BACKUP_MIRROR_HOST_PATH` → `/media-mirror`) or an **S3-compatible bucket**
+(encrypted write-only secret, Test Connection) for a true off-host copy. Objects
+are compared by size + ETag so nightly steady-state deltas are tiny; regenerable
+prefixes (temp audio; the `processed-videos` derived/bulk caches) are excluded;
+per-object failures never abort a run; a Redis lock prevents overlapping runs.
+**The mirror never deletes at the destination** (tested invariant) — a source-side
+mass delete or ransomware event cannot propagate into the mirror. Failure alerting
+and Prometheus staleness metrics follow the #244 pattern
+(`media_mirror_last_success_timestamp_seconds`, `media_mirror_runs_total{result}`,
+per-outcome object counts). Bucket **versioning** remains an optional
+deployment-level extra, not a requirement. Setup + restore-from-mirror:
+[Backup & Restore → Media Mirror](./backup-restore.md#media-mirror-in-app-incremental).
+Residual note: the mirror is one additional copy — for full 3-2-1, point it (or a
+second replica) offsite.
 
 ## 3. OpenSearch — adequate (derived data)
 
@@ -187,5 +205,7 @@ strategy, in a separate secure location. A perfect 3-2-1 of an undecryptable dat
 still total data loss.
 
 **Where OpenTranscribe stands today:** the in-app S3 backup destination gets you most of
-the way to **1 offsite** for the database. The remaining gaps to a real 3-2-1 are (a) an
-off-host **media** copy (§2), and (b) a deliberate, separate backup of the **keys** (§4).
+the way to **1 offsite** for the database, and the in-app **Media Mirror** (§2, issue
+#242) does the same for the media — point both at off-host destinations and the product
+covers 3-2-1's mechanics for data. The remaining deliberate act is a separate backup of
+the **keys** (§4) — and, as always, running the restore drill.

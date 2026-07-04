@@ -258,7 +258,24 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'watch_source' AND column_name = 'organization_id')"
     )
 
+    # v373 guard: tenant scope on speaker clusters.
+    has_speaker_cluster_org = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'speaker_cluster' AND column_name = 'organization_id')"
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v373: tenant scope on speaker clusters (speaker_cluster.organization_id).
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+    ):
+        return "v373_add_cluster_organization_id"
     # v372: org attribution for background imports (watch_source.organization_id).
     if (
         has_cloud_seams

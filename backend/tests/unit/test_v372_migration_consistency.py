@@ -49,13 +49,18 @@ def test_v372_migration_is_vendor_neutral():
         assert vendor_noun not in source.lower()
 
 
-def test_detection_arm_returns_v372_on_current_schema(db_session):
-    """An untracked DB with the current (post-v372) schema stamps at v372."""
+def test_detection_arm_returns_v372_or_later_on_current_schema(db_session):
+    """An untracked DB with the current schema stamps at v372 or a later
+    revision that revises it (v373 pins its own exact value in
+    ``test_v373_migration_consistency.py``)."""
     from app.db.migrations import _detect_schema_version
 
     conn = db_session.connection()
     tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) == "v372_add_audit_organization_id"
+    assert _detect_schema_version(conn, tables) in {
+        "v372_add_audit_organization_id",
+        "v373_add_cluster_organization_id",
+    }
 
 
 def test_watch_source_org_column_exists(db_session):

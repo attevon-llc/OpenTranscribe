@@ -783,6 +783,11 @@ class SpeakerCluster(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False
     )
+    # Cloud-edition seam: tenant scope (NULL = personal). Stamped from the
+    # member speakers' file org at cluster creation (see v373).
+    organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organization.id"), nullable=True, index=True
+    )
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     member_count: Mapped[int | None] = mapped_column(Integer, default=0)

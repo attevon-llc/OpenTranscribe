@@ -13,8 +13,12 @@ level):
   * ``exclude_quarantined`` drops the file from a list/gallery query for normal
     users but leaves it for the admin "see all" branch.
   * Community invariance: a never-quarantined file is unaffected.
+  * DMCA §512(g) owner notices (issue #262 item f): the OWNER is notified on
+    quarantine (reason + counter-notice contact, no admin identity) and on
+    release, and a notification failure never breaks either action.
 """
 
+import json
 import uuid as uuid_pkg
 
 import pytest
@@ -212,3 +216,111 @@ class TestPriorStatusRestore:
 
         release_file(db, file, admin=admin)
         assert file.status == FileStatus.COMPLETED
+
+
+class TestOwnerNotification:
+    """DMCA §512(g) owner notices — the quarantined file 404s for its owner,
+    so the persistent notification is the owner's only takedown/counter-notice
+    surface (issue #262 item f)."""
+
+    @pytest.fixture()
+    def sent(self, monkeypatch):
+        """Capture ``send_task_notification`` calls (patched at its home module,
+        which the service imports lazily at call time)."""
+        calls: list[dict] = []
+
+        def fake_send(user_id, event_type, **kwargs):
+            calls.append({"user_id": user_id, "event_type": event_type, **kwargs})
+            return True
+
+        monkeypatch.setattr("app.services.notification_service.send_task_notification", fake_send)
+        return calls
+
+    def test_owner_notified_on_quarantine(self, world, sent, monkeypatch):
+        """Quarantine sends the OWNER one `file_takedown` notice carrying the
+        file name, the reason, and the abuse-contact address — and nothing
+        identifying the acting admin."""
+        from app.core.config import settings
+
+        db, owner, admin, file = world
+        monkeypatch.setattr(settings, "ABUSE_CONTACT_EMAIL", "abuse@deploy.example")
+
+        quarantine_file(db, file, admin=admin, reason="DMCA notice #777")
+
+        assert len(sent) == 1
+        note = sent[0]
+        assert note["user_id"] == owner.id
+        assert note["event_type"] == "file_takedown"
+        assert note["status"] == "warning"
+        extra = note["extra"]
+        assert extra["file_uuid"] == str(file.uuid)
+        assert extra["filename"] == file.filename
+        assert extra["reason"] == "DMCA notice #777"
+        assert extra["abuse_contact_email"] == "abuse@deploy.example"
+        # No dead link: the file 404s for the owner, so no `file_id` (the panel
+        # only renders a file link when `file_id` is present).
+        assert "file_id" not in extra
+        # No leakage of the acting admin's identity anywhere in the payload.
+        blob = json.dumps(note, default=str)
+        assert admin.email not in blob
+        assert "quarantined_by" not in blob
+        # The message itself carries the counter-notice contact + file UUID.
+        assert "abuse@deploy.example" in note["message"]
+        assert str(file.uuid) in note["message"]
+
+    def test_takedown_notice_without_abuse_contact(self, world, sent, monkeypatch):
+        """With ABUSE_CONTACT_EMAIL unset the notice still goes out, directing
+        the owner to the service operator."""
+        from app.core.config import settings
+
+        db, owner, admin, file = world
+        monkeypatch.setattr(settings, "ABUSE_CONTACT_EMAIL", "")
+
+        quarantine_file(db, file, admin=admin, reason="AUP violation")
+
+        assert len(sent) == 1
+        assert sent[0]["extra"]["abuse_contact_email"] == ""
+        assert "service operator" in sent[0]["message"]
+
+    def test_owner_notified_on_release(self, world, sent):
+        """Release sends the OWNER a `file_takedown_released` notice with a
+        working file link (access is restored, so `file_id` is included)."""
+        db, owner, admin, file = world
+        quarantine_file(db, file, admin=admin, reason="disputed")
+        release_file(db, file, admin=admin)
+
+        assert len(sent) == 2
+        note = sent[1]
+        assert note["user_id"] == owner.id
+        assert note["event_type"] == "file_takedown_released"
+        assert note["status"] == "completed"
+        assert note["extra"]["file_id"] == str(file.uuid)
+        assert note["extra"]["filename"] == file.filename
+        blob = json.dumps(note, default=str)
+        assert admin.email not in blob
+
+    def test_notice_prefers_title_over_filename(self, world, sent):
+        """The human-facing name is the media title when one was extracted."""
+        db, _owner, admin, file = world
+        file.title = "Quarterly All-Hands"
+        db.commit()
+
+        quarantine_file(db, file, admin=admin, reason="report 9")
+        assert sent[0]["extra"]["filename"] == "Quarterly All-Hands"
+
+    def test_notification_failure_never_breaks_takedown(self, world, monkeypatch):
+        """Failure containment: a raising notifier must not break the takedown
+        or the release — the DB action and audit still complete."""
+
+        def boom(*_args, **_kwargs):
+            raise RuntimeError("redis down")
+
+        monkeypatch.setattr("app.services.notification_service.send_task_notification", boom)
+        db, owner, admin, file = world
+
+        quarantine_file(db, file, admin=admin, reason="DMCA-1", legal_hold=True)
+        assert file.is_quarantined is True
+        assert file.legal_hold is True
+
+        release_file(db, file, admin=admin)
+        assert file.is_quarantined is False

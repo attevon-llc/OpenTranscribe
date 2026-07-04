@@ -9,7 +9,7 @@ trail). It is deliberately INDEPENDENT of the processing ``status`` so a fully
 state. Note: toxicity/PII redaction masks *text* — it is NOT a takedown; this
 service is the takedown.
 
-Three things live here so they can never drift apart:
+Four things live here so they can never drift apart:
   * :func:`exclude_quarantined` — the SQL predicate that drops quarantined rows
     from list/gallery/search queries (skipped for admin "see all").
   * :func:`is_hidden_for` — the per-request access gate used by the resource
@@ -17,6 +17,10 @@ Three things live here so they can never drift apart:
     file 404s for non-admins, stays visible to admins for review.
   * :func:`quarantine_file` / :func:`release_file` — the admin actions, each of
     which writes the DB state, sets the S3 legal-hold (best-effort), and audits.
+  * The DMCA §512(g) owner notices (:func:`_notify_owner_takedown` /
+    :func:`_notify_owner_release`) — since the file stays hidden (404) from its
+    owner while quarantined, a persistent in-app notification is the owner's
+    only surface for learning about the takedown and how to counter-notice it.
 
 Community-edition invariance: nothing quarantines automatically, the columns
 default to the not-quarantined state, and ``exclude_quarantined``/``is_hidden_for``
@@ -38,6 +42,10 @@ from app.models.media import MediaFile
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+# WebSocket event types consumed by the frontend notification store (owner notices).
+OWNER_TAKEDOWN_EVENT = "file_takedown"
+OWNER_RELEASE_EVENT = "file_takedown_released"
 
 
 def exclude_quarantined(query: Query, *, include_quarantined: bool = False) -> Query:
@@ -94,6 +102,7 @@ def quarantine_file(
     and timestamp. The processing ``status`` is overwritten with
     ``QUARANTINED`` for display, but the authoritative ``is_quarantined`` flag is
     what gates access; ``release_file`` restores the file to a servable state.
+    The owner gets a best-effort §512(g) notice (:func:`_notify_owner_takedown`).
 
     Args:
         db: Database session.
@@ -141,6 +150,7 @@ def quarantine_file(
         extra={"reason": reason, "legal_hold": bool(legal_hold)},
     )
     logger.info(f"File {file.id} ({file.uuid}) quarantined by admin {admin.id}: {reason}")
+    _notify_owner_takedown(file, reason=reason)
     return file
 
 
@@ -160,7 +170,8 @@ def release_file(
     file's recorded ``pre_quarantine_status`` (captured at takedown time);
     ``restore_status`` overrides it when the caller knows better, and
     ``COMPLETED`` is the last-resort fallback for rows quarantined before the
-    prior status was recorded (pre-v371).
+    prior status was recorded (pre-v371). The owner gets a best-effort
+    access-restored notice (:func:`_notify_owner_release`).
 
     Args:
         db: Database session.
@@ -209,7 +220,79 @@ def release_file(
         extra={"cleared_legal_hold": bool(clear_legal_hold)},
     )
     logger.info(f"File {file.id} ({file.uuid}) released from quarantine by admin {admin.id}")
+    _notify_owner_release(file)
     return file
+
+
+def _notify_owner_takedown(file: MediaFile, *, reason: str) -> None:
+    """Send the file OWNER the DMCA §512(g) takedown notice. Never raises.
+
+    The quarantined file 404s for the owner on every read surface (by design),
+    so this persistent in-app notification is the owner's only in-product way
+    to learn a takedown happened and how to dispute it. It carries the
+    admin-recorded reason and the deployment's abuse-contact address for a
+    counter-notice — and deliberately NOT the acting admin's identity.
+    """
+    try:
+        from app.core.config import settings
+        from app.services.notification_service import send_task_notification
+
+        display_name = file.title or file.filename
+        contact = settings.ABUSE_CONTACT_EMAIL or ""
+        if contact:
+            dispute = (
+                f"To dispute it, email a counter-notice to {contact} "
+                f"referencing file ID {file.uuid}."
+            )
+        else:
+            dispute = (
+                "To dispute it, contact your service operator with a "
+                f"counter-notice referencing file ID {file.uuid}."
+            )
+        send_task_notification(
+            int(file.user_id),
+            OWNER_TAKEDOWN_EVENT,
+            status="warning",
+            message=(
+                f'Your file "{display_name}" has been taken down by the service '
+                f"operator following an abuse/copyright report. Reason: {reason}. {dispute}"
+            ),
+            extra={
+                "file_uuid": str(file.uuid),
+                "filename": display_name,
+                "reason": reason,
+                "abuse_contact_email": contact,
+            },
+        )
+    except Exception as e:  # noqa: BLE001 — the notice must never break the takedown
+        logger.warning(f"Owner takedown notification failed for file {file.id}: {e}")
+
+
+def _notify_owner_release(file: MediaFile) -> None:
+    """Notify the file OWNER that a taken-down file was restored. Never raises.
+
+    Counterpart of :func:`_notify_owner_takedown` — sent after a successful
+    counter-notice / withdrawn complaint, when an admin releases the file.
+    ``file_id`` (unlike the takedown notice) is included so the notification
+    panel can link to the now-accessible file.
+    """
+    try:
+        from app.services.notification_service import send_task_notification
+
+        display_name = file.title or file.filename
+        send_task_notification(
+            int(file.user_id),
+            OWNER_RELEASE_EVENT,
+            status="completed",
+            message=f'Your file "{display_name}" has been restored and is accessible again.',
+            extra={
+                "file_id": str(file.uuid),
+                "file_uuid": str(file.uuid),
+                "filename": display_name,
+            },
+        )
+    except Exception as e:  # noqa: BLE001 — the notice must never break the release
+        logger.warning(f"Owner release notification failed for file {file.id}: {e}")
 
 
 def _audit(

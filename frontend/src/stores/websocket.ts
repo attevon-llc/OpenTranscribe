@@ -950,6 +950,8 @@ function createWebSocketStore() {
         return translate('notifications.playlistProcessing');
       case 'analytics_status':
         return translate('notifications.analyticsUpdate');
+      case 'backup_status':
+        return translate('notifications.backupUpdate');
       case 'download_progress':
         return translate('notifications.downloadProgress');
       case 'audio_extraction_status':

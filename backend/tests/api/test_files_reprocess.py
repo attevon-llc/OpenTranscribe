@@ -109,3 +109,92 @@ def test_reprocess_malformed_uuid_400(client, user_token_headers):
     """``reprocess`` declares ``file_uuid: str`` → bad UUID = 400 from get_by_uuid."""
     response = client.post("/api/files/not-a-uuid/reprocess", headers=user_token_headers)
     assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+# ---------------------------------------------------------------------------
+# Issue #262i — access gate on user-triggered GPU rework (rediarize)
+# ---------------------------------------------------------------------------
+
+
+def test_rediarize_blocked_by_access_hook(client, user_token_headers, normal_user, db_session):
+    """A registered before-dispatch hook (cloud access enforcer) blocks a
+    user-triggered rediarize with 402 BEFORE any data is cleared."""
+    from decimal import Decimal
+
+    from app.models.media import Speaker
+    from app.tasks.transcription.hooks import QuotaExceededError
+    from app.tasks.transcription.hooks import clear_hooks
+    from app.tasks.transcription.hooks import register_before_dispatch
+
+    media_file = _make_file(db_session, normal_user)
+    speaker = Speaker(
+        uuid=str(uuid.uuid4()),
+        user_id=normal_user.id,
+        media_file_id=media_file.id,
+        name="SPEAKER_00",
+    )
+    db_session.add(speaker)
+    db_session.commit()
+    speaker_id = speaker.id
+
+    captured = []
+
+    def blocking_hook(ctx):
+        captured.append(ctx)
+        raise QuotaExceededError(detail="Organization suspended")
+
+    register_before_dispatch(blocking_hook)
+    try:
+        response = client.post(
+            f"/api/files/{media_file.uuid}/reprocess",
+            headers=user_token_headers,
+            json={"stages": ["rediarize"]},
+        )
+    finally:
+        clear_hooks()
+
+    assert response.status_code == 402
+    assert response.json()["detail"] == "Organization suspended"
+    # Zero-hours reservation: nothing to meter, access-state check only.
+    assert captured[0].est_audio_hours == Decimal(0)
+    assert captured[0].file_id == media_file.id
+    assert captured[0].user_id == normal_user.id
+    assert captured[0].organization_id is None  # personal file
+    # Fired BEFORE clear_selective_data: the existing diarization survives.
+    assert db_session.query(Speaker).filter(Speaker.id == speaker_id).first() is not None
+
+
+def test_rediarize_allowed_without_hooks(client, user_token_headers, normal_user, db_session):
+    """Community edition: no hooks registered — the gate is a no-op."""
+    media_file = _make_file(db_session, normal_user)
+    response = client.post(
+        f"/api/files/{media_file.uuid}/reprocess",
+        headers=user_token_headers,
+        json={"stages": ["rediarize"]},
+    )
+    assert response.status_code == status.HTTP_200_OK
+
+
+def test_non_gpu_stage_not_gated(client, user_token_headers, normal_user, db_session):
+    """The gate covers GPU rework only — CPU/LLM stages dispatch even when a
+    blocking hook is registered (they were already billed/are not GPU work)."""
+    from app.tasks.transcription.hooks import QuotaExceededError
+    from app.tasks.transcription.hooks import clear_hooks
+    from app.tasks.transcription.hooks import register_before_dispatch
+
+    media_file = _make_file(db_session, normal_user)
+
+    def blocking_hook(ctx):
+        raise QuotaExceededError(detail="Organization suspended")
+
+    register_before_dispatch(blocking_hook)
+    try:
+        response = client.post(
+            f"/api/files/{media_file.uuid}/reprocess",
+            headers=user_token_headers,
+            json={"stages": ["summarization"]},
+        )
+    finally:
+        clear_hooks()
+
+    assert response.status_code == status.HTTP_200_OK

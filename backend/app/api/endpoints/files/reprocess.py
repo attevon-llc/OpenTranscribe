@@ -1,4 +1,6 @@
 import logging
+import uuid as uuid_pkg
+from decimal import Decimal
 
 from fastapi import HTTPException
 from fastapi import status
@@ -12,6 +14,39 @@ from app.models.user import User
 from app.services import system_settings_service
 
 logger = logging.getLogger(__name__)
+
+
+def _fire_gpu_rework_access_gate(media_file: MediaFile) -> None:
+    """Cloud-edition access gate for user-triggered GPU rework (issue #262i).
+
+    Stages that re-run GPU work WITHOUT going through
+    ``dispatch_transcription_pipeline`` (currently only ``rediarize`` — the
+    other selective stages are CPU/LLM work) would otherwise burn GPU for a
+    suspended/canceled org. Fire the existing before-dispatch quota seam with a
+    ZERO-hours estimate: the transcript was already billed so there is nothing
+    to meter (a 0-hour reservation is harmless — nothing to release), but the
+    cloud enforcer's access-state check (suspension/cancel/dispute) can still
+    block with 402. Community edition: no hooks registered — a no-op. No seam
+    signature change (CLOUD_SEAM_VERSION stays 2).
+
+    Raises:
+        QuotaExceededError: (HTTP 402) when a registered hook blocks the org.
+    """
+    from app.tasks.transcription.hooks import DispatchContext
+    from app.tasks.transcription.hooks import fire_before_dispatch
+
+    fire_before_dispatch(
+        DispatchContext(
+            file_id=int(media_file.id),
+            file_uuid=str(media_file.uuid),
+            user_id=int(media_file.user_id),
+            organization_id=int(media_file.organization_id) if media_file.organization_id else None,
+            est_audio_hours=Decimal(0),
+            # The rediarize Celery id doesn't exist yet — a fresh id scopes the
+            # (empty) reservation without colliding with a pipeline run.
+            task_id=str(uuid_pkg.uuid4()),
+        )
+    )
 
 
 def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> None:
@@ -426,6 +461,14 @@ def process_file_reprocess(
         if stages:
             # Selective pipeline reprocessing
             logger.info(f"Selective reprocessing stages: {stages}")
+
+            # Access gate for GPU rework dispatched OUTSIDE the pipeline
+            # (issue #262i). Fired BEFORE clear_selective_data so a blocked
+            # org's existing diarization is never destroyed. The transcription
+            # stage is gated inside dispatch_transcription_pipeline instead
+            # (with a real hours estimate).
+            if "rediarize" in stages and "transcription" not in stages:
+                _fire_gpu_rework_access_gate(media_file)
 
             # Only reset file status for transcription stage (full reprocess behavior)
             if "transcription" in stages:

@@ -68,12 +68,15 @@ def get_org_audit_logs(
 ):
     """Read audit events for the caller's OWN organization (org-admin only).
 
-    Scoped to events acted by the org's members — an org admin can never read
-    another org's (or a platform-level) audit trail. Audit events don't carry
-    ``organization_id`` directly, so scope is the set of the org's member
-    user-ids (resolved from the membership mirror). The ``user_id`` filter, if
-    given, is itself constrained to a member of the org (403 otherwise) so it
-    can't be used to probe outside the tenant.
+    Visibility (issue #262a): events STAMPED with this org's id — including
+    events with ``user_id`` NULL, e.g. failed logins, which become visible to
+    the org once stamped — plus **legacy** un-stamped events attributed via the
+    org's member user-ids (the pre-v372 rule, kept so history written before
+    org stamping stays readable; see ``build_org_scope_clause`` for the
+    legacy-window caveat about shared members). Events stamped with another
+    org are never visible. The ``user_id`` filter, if given, is constrained to
+    a member of the org (403 otherwise) so it can't be used to probe outside
+    the tenant.
     """
     member_ids = _org_member_user_ids(db, ctx.org_id)  # type: ignore[arg-type]
 
@@ -90,6 +93,7 @@ def get_org_audit_logs(
         user_id=user_id,
         outcome=outcome,
         scope_user_ids=member_ids,
+        scope_org_id=int(ctx.org_id),  # type: ignore[arg-type]
         limit=limit,
         offset=offset,
     )

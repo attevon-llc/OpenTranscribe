@@ -348,9 +348,10 @@ def erase_org_member_data(
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
         # Audit as the ACTING org admin (a member — visible in the org's audit
-        # read); the erased member is carried in details.
+        # read); the erased member is carried in details. Org-stamped (#262a).
         user_id=actor_user_id,
         username=actor_email,
+        organization_id=org_id,
         outcome=AuditOutcome.SUCCESS if not summary["errors"] else AuditOutcome.PARTIAL,
         details={
             "action": "gdpr_erasure_org_member",
@@ -451,9 +452,11 @@ def erase_organization(
         event_type=AuditEventType.ADMIN_USER_DELETE,
         # Audit as the ACTING admin when invoked from the org-admin endpoint
         # (a member user-id — visible in the org-scoped audit read); None for
-        # the data-controller webhook path.
+        # the data-controller webhook path. Org-stamped (#262a) — the org row
+        # is gone but the event stays attributed to the erased tenant's id.
         user_id=actor_user_id,
         username=actor_email,
+        organization_id=org_id,
         outcome=AuditOutcome.SUCCESS if not summary["errors"] else AuditOutcome.PARTIAL,
         details={
             "action": "gdpr_erasure_organization",

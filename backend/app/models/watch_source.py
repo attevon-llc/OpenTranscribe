@@ -89,6 +89,13 @@ class WatchSource(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
     )  # owner of imported files
+    # Cloud-edition seam: tenant scope captured ONCE at source-creation time from
+    # the creating request's context (NULL = personal, always NULL in community).
+    # Every import this source produces is stamped with this org — background
+    # scans never guess the tenant from the owner's memberships (issue #262c).
+    organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organization.id", ondelete="SET NULL"), nullable=True
+    )
     polling_interval_minutes: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
     use_fs_events: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False

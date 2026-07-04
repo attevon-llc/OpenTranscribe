@@ -2,11 +2,13 @@
 
 Exercises the exact DO-block convert SQL shipped in
 ``alembic/versions/v368_uuid_native_type_guard.py`` against a real PostgreSQL
-instance (the dev stack on localhost:5176). The test works inside a transaction
-that is always rolled back, so it never mutates the dev schema — it creates a
-throwaway table with a legacy ``varchar(36)`` ``uuid`` column, runs the guard,
-and asserts the column becomes native ``uuid`` with the value preserved and that
-a second run is a no-op.
+instance — the same one the rest of the suite talks to (``settings.POSTGRES_*``,
+which conftest pins from the environment / ``.env`` before test modules import;
+CI's service container provides its own values). The test works inside a
+transaction that is always rolled back, so it never mutates the schema — it
+creates a throwaway table with a legacy ``varchar(36)`` ``uuid`` column, runs
+the guard, and asserts the column becomes native ``uuid`` with the value
+preserved and that a second run is a no-op.
 
 Skips cleanly when no PostgreSQL is reachable (mirrors conftest's TCP probe).
 
@@ -23,6 +25,8 @@ from __future__ import annotations
 import socket
 
 import pytest
+
+from app.core.config import settings
 
 # The exact convert block from v368's upgrade().
 _GUARD_SQL = """
@@ -46,8 +50,15 @@ END
 $$;
 """
 
-_HOST = "localhost"
-_PORT = 5176
+# Connect exactly where the rest of the suite connects: settings.POSTGRES_* is
+# the canonical config (conftest pins the env from .env / CI before any test
+# module imports, and builds its engine from the same settings). No credentials
+# are hardcoded here — dev stack and CI service container both flow through env.
+_HOST = settings.POSTGRES_HOST
+_PORT = int(settings.POSTGRES_PORT)
+_USER = settings.POSTGRES_USER
+_PASSWORD = settings.POSTGRES_PASSWORD
+_DBNAME = settings.POSTGRES_DB
 
 
 def _pg_reachable() -> bool:
@@ -58,16 +69,16 @@ def _pg_reachable() -> bool:
         return False
 
 
-@pytest.mark.skipif(not _pg_reachable(), reason="dev PostgreSQL not reachable on localhost:5176")
+@pytest.mark.skipif(not _pg_reachable(), reason=f"PostgreSQL not reachable on {_HOST}:{_PORT}")
 def test_v368_guard_converts_legacy_varchar_uuid_and_is_idempotent():
     psycopg2 = pytest.importorskip("psycopg2")
 
     conn = psycopg2.connect(
         host=_HOST,
         port=_PORT,
-        user="postgres",
-        password="CHANGE_ME_auto_generated_on_install",
-        dbname="opentranscribe",
+        user=_USER,
+        password=_PASSWORD,
+        dbname=_DBNAME,
     )
     try:
         cur = conn.cursor()

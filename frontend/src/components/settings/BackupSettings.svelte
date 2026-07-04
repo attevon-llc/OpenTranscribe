@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
+  import MediaMirrorSettings from './MediaMirrorSettings.svelte';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import { settingsModalStore } from '../../stores/settingsModalStore';
@@ -81,6 +82,9 @@
   let statusLoading = false;
   let backups: BackupFile[] = [];
   let backupsLoading = false;
+
+  // Media Mirror subsection dirty state (bubbled up — it owns its own save).
+  let mirrorDirty = false;
 
   // ---- Lifecycle -----------------------------------------------------------
 
@@ -308,7 +312,7 @@
       s3Prefix !== origS3Prefix ||
       s3AccessKeyId !== origS3AccessKeyId ||
       s3SecretKey !== '';
-    settingsModalStore.setDirty('backup', hasChanges);
+    settingsModalStore.setDirty('backup', hasChanges || mirrorDirty);
   }
 
   $: isS3 = destinationType === 's3';
@@ -631,6 +635,9 @@
         {saving ? $t('settings.backup.savingButton') : $t('settings.backup.saveButton')}
       </button>
     </div>
+
+    <!-- Media Mirror (issue #242) — separate destination + schedule, own save -->
+    <MediaMirrorSettings on:dirty={(e) => (mirrorDirty = e.detail)} />
   {/if}
 </div>
 

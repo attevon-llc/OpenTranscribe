@@ -25,8 +25,9 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-# WebSocket event type consumed by the frontend notification store.
+# WebSocket event types consumed by the frontend notification store.
 EVENT_TYPE = "backup_status"
+MIRROR_EVENT_TYPE = "media_mirror_status"
 
 
 def _admin_user_ids(db: Session) -> list[int]:
@@ -37,12 +38,12 @@ def _admin_user_ids(db: Session) -> list[int]:
     return [row[0] for row in rows]
 
 
-def _notify_admins(db: Session, *, status: str, message: str) -> None:
+def _notify_admins(db: Session, *, status: str, message: str, event_type: str = EVENT_TYPE) -> None:
     """Fan a task notification out to every admin (best-effort)."""
     from app.services.notification_service import send_task_notification
 
     for user_id in _admin_user_ids(db):
-        send_task_notification(user_id, EVENT_TYPE, status=status, message=message)
+        send_task_notification(user_id, event_type, status=status, message=message)
 
 
 def collect_warnings(result: dict[str, Any]) -> list[str]:
@@ -85,6 +86,37 @@ def _maybe_send_keys_notice(db: Session, result: dict[str, Any]) -> None:
         True,
         "One-time 'backups exclude encryption keys' admin notice was sent",
     )
+
+
+def notify_mirror_result(db: Session, result: dict[str, Any]) -> None:
+    """Send admin notifications for one recorded media-mirror run (#242). Never raises.
+
+    Failures (unusable destination, listing error) notify every admin; a completed
+    run with per-object failures sends a warning. Clean successes are **silent** —
+    the mirror runs nightly and its health is visible in the panel + Prometheus.
+    """
+    try:
+        if not result.get("ok"):
+            _notify_admins(
+                db,
+                status="failed",
+                message=f"Media mirror failed: {result.get('error', 'unknown error')}",
+                event_type=MIRROR_EVENT_TYPE,
+            )
+            return
+        failed = int(result.get("objects_failed") or 0)
+        if failed:
+            _notify_admins(
+                db,
+                status="warning",
+                message=(
+                    f"Media mirror completed with {failed} failed object(s); "
+                    "they will be retried on the next run."
+                ),
+                event_type=MIRROR_EVENT_TYPE,
+            )
+    except Exception as exc:  # noqa: BLE001 - alerting must never break the mirror run
+        logger.error("Media mirror alerting failed: %s", exc)
 
 
 def notify_backup_result(db: Session, result: dict[str, Any]) -> None:

@@ -7,16 +7,24 @@
 #   docker compose -f docker-compose.yml -f docker-compose.override.yml \
 #                  -f docker-compose.backup.yml up -d
 #
-#   BACKUP_HOST_PATH  host directory that receives the .dump files (default ./backups)
-#                     → /backups in the containers below
+#   BACKUP_HOST_PATH         host directory that receives the .dump files
+#                            (default ./backups) → /backups in the containers below
+#   BACKUP_MIRROR_HOST_PATH  host directory that receives the incremental media
+#                            mirror (issue #242; default ./media-mirror)
+#                            → /media-mirror in the containers below. Only needed
+#                            for the mirror's "local folder" destination — the S3
+#                            destination needs no mount at all.
 #
-# All other backup settings (enabled, cron schedule, GFS retention, encryption,
-# passphrase-file path, destination override) are DB-backed and managed from the admin
-# UI (Settings → Database Backups) — NO env vars except this physical mount.
+# All other backup + mirror settings (enabled, cron schedule, GFS retention,
+# encryption, passphrase-file path, destination override, mirror throttle) are
+# DB-backed and managed from the admin UI (Settings → Backups) — NO env vars except
+# these physical mounts.
 #
-# Services that touch the destination:
-#   - backend           : list backups + report mount status to the admin UI (read)
-#   - celery-cpu-worker : consumes the `utility` queue → runs `backup.run` (read/write)
+# Services that touch the destinations:
+#   - backend                : list backups + report mount status to the admin UI (read)
+#   - celery-cpu-worker      : consumes the `utility` queue → runs `backup.run` (read/write)
+#   - celery-download-worker : consumes the `download` queue → runs `backup.mirror_run`
+#                              (reads MinIO, writes /media-mirror; NEVER deletes there)
 #
 # Without this overlay the feature degrades gracefully: /backups is unmounted, the
 # admin UI flags "destination not mounted", and the scheduled task no-ops with a
@@ -40,10 +48,15 @@ services:
   backend:
     volumes:
       - ${BACKUP_HOST_PATH:-./backups}:/backups
+      - ${BACKUP_MIRROR_HOST_PATH:-./media-mirror}:/media-mirror
 
   celery-cpu-worker:
     volumes:
       - ${BACKUP_HOST_PATH:-./backups}:/backups
+
+  celery-download-worker:
+    volumes:
+      - ${BACKUP_MIRROR_HOST_PATH:-./media-mirror}:/media-mirror
 
   opensearch:
     environment:

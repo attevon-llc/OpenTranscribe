@@ -644,6 +644,7 @@ def process_youtube_playlist_task(
     video_quality: str | None = None,
     audio_only: bool | None = None,
     audio_quality: str | None = None,
+    organization_id: int | None = None,
 ) -> YouTubePlaylistProcessingResult:
     """Background task to process YouTube playlist by extracting videos and dispatching individual tasks.
 
@@ -662,6 +663,10 @@ def process_youtube_playlist_task(
         video_quality: Optional video quality override for playlist downloads.
         audio_only: Optional override to download only audio.
         audio_quality: Optional audio bitrate override for playlist downloads.
+        organization_id: The ORIGINATING request's tenant (``ctx.org_id``),
+            threaded through the task kwargs (issue #262c). Placeholders are
+            stamped with this — never a first-membership guess. None =
+            personal scope (always the case in the community edition).
 
     Returns:
         Dict: Processing result containing status, message, and video counts.
@@ -676,7 +681,14 @@ def process_youtube_playlist_task(
 
     try:
         return _process_playlist_with_db(
-            url, user_id, collection_ids, tag_names, video_quality, audio_only, audio_quality
+            url,
+            user_id,
+            collection_ids,
+            tag_names,
+            video_quality,
+            audio_only,
+            audio_quality,
+            organization_id=organization_id,
         )
     except Exception as e:
         logger.error(f"Unexpected error in YouTube playlist processing task: {e}")
@@ -692,6 +704,7 @@ def _process_playlist_with_db(
     video_quality: str | None = None,
     audio_only: bool | None = None,
     audio_quality: str | None = None,
+    organization_id: int | None = None,
 ) -> YouTubePlaylistProcessingResult:
     """Process playlist within a database session.
 
@@ -703,6 +716,7 @@ def _process_playlist_with_db(
         video_quality: Optional video quality override for playlist downloads.
         audio_only: Optional override to download only audio.
         audio_quality: Optional audio bitrate override for playlist downloads.
+        organization_id: Originating request's tenant for placeholder stamping.
 
     Returns:
         YouTubePlaylistProcessingResult with processing outcome.
@@ -719,7 +733,11 @@ def _process_playlist_with_db(
 
         try:
             result = MediaDownloadService().process_youtube_playlist_sync(
-                url=url, db=db, user=user, progress_callback=progress_callback
+                url=url,
+                db=db,
+                user=user,
+                progress_callback=progress_callback,
+                organization_id=organization_id,
             )
             return _handle_playlist_result(
                 result,

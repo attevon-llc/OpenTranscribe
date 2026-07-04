@@ -241,6 +241,7 @@ def _handle_playlist_processing(
     video_quality: str | None = None,
     audio_only: bool | None = None,
     audio_quality: str | None = None,
+    organization_id: int | None = None,
 ) -> PlaylistProcessingResponse:
     """Handle playlist URL processing by dispatching a background task.
 
@@ -252,6 +253,9 @@ def _handle_playlist_processing(
         video_quality: Optional video quality override for playlist downloads.
         audio_only: Optional override to download only audio.
         audio_quality: Optional audio bitrate override for playlist downloads.
+        organization_id: The originating request's tenant (``ctx.org_id``) —
+            threaded through the task kwargs so placeholders are stamped with
+            the org the user was acting in, never a membership guess (#262c).
 
     Returns:
         PlaylistProcessingResponse with processing status.
@@ -270,6 +274,7 @@ def _handle_playlist_processing(
             video_quality=video_quality,
             audio_only=audio_only,
             audio_quality=audio_quality,
+            organization_id=organization_id,
         )
         logger.info(
             f"Dispatched YouTube playlist processing task {task_result.id} for user {user_id}"
@@ -663,6 +668,7 @@ async def process_media_url(
                 video_quality=request_data.video_quality,
                 audio_only=request_data.audio_only,
                 audio_quality=request_data.audio_quality,
+                organization_id=ctx.org_id,
             )
 
         # Extract video info

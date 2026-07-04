@@ -1,9 +1,17 @@
 """Organization (tenant) resolution helpers — cloud-edition seam.
 
-Background/ingest paths (watch-source imports, URL downloads, storage
-recovery) have no request context, so they can't read the active org from
-``RequestContext``. They derive it from the owner's membership mirror instead:
-the owner's first active organization, else personal scope (``None``).
+**Last-resort fallback only (issue #262c).** Guessing a tenant from the
+owner's memberships mis-stamps imports for multi-org users, so every ingest
+path that CAN capture the org at request time now does:
+
+  * watch-source imports use ``watch_source.organization_id`` (captured at
+    source-creation time, backfilled by v372);
+  * playlist/URL placeholders receive the originating request's ``ctx.org_id``
+    through the task kwargs.
+
+The only remaining legitimate caller is storage recovery / reingestion
+(``storage_recovery_service``), which reconstructs rows with genuinely NO
+originating context. Do not add new callers — thread the request org instead.
 
 In the community/self-hosted edition the membership table is empty, so this
 always returns ``None`` and every file stays personal — behavior-identical to
@@ -20,8 +28,9 @@ logger = logging.getLogger(__name__)
 def resolve_owner_org_id(db: Session, user_id: int) -> int | None:
     """Return the owner's active organization id, or ``None`` for personal scope.
 
-    Picks the user's first active organization membership (the membership
-    mirror is the authorization source of truth — never a token). Returns
+    LAST-RESORT fallback (see module docstring): picks the user's FIRST active
+    organization membership, which is a guess for multi-org users. Only for
+    paths with no originating request context (storage recovery). Returns
     ``None`` when the user has no org membership, which is always the case in
     the community edition.
 

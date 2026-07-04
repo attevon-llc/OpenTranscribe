@@ -81,12 +81,41 @@ def _mk_speaker(db, *, user: User, media_file: MediaFile) -> Speaker:
         user_id=user.id,
         organization_id=media_file.organization_id,
         media_file_id=media_file.id,
-        name="SPEAKER_00",
+        # (user_id, media_file_id, name) is unique — suffix per speaker.
+        name=f"SPEAKER_{uuid_pkg.uuid4().hex[:8]}",
     )
     db.add(s)
     db.commit()
     db.refresh(s)
     return s
+
+
+def _mk_cluster(db, *, user: User, speakers: list[Speaker], org_id: int | None = None):
+    """Create a cluster with the given member speakers (legacy-style rows)."""
+    from app.models.media import SpeakerCluster
+    from app.models.media import SpeakerClusterMember
+
+    cluster = SpeakerCluster(
+        uuid=uuid_pkg.uuid4(),
+        user_id=user.id,
+        organization_id=org_id,
+        member_count=len(speakers),
+    )
+    db.add(cluster)
+    db.flush()
+    for s in speakers:
+        db.add(
+            SpeakerClusterMember(
+                uuid=uuid_pkg.uuid4(),
+                cluster_id=cluster.id,
+                speaker_id=s.id,
+                confidence=0.9,
+            )
+        )
+        s.cluster_id = cluster.id
+    db.commit()
+    db.refresh(cluster)
+    return cluster
 
 
 @pytest.fixture()
@@ -339,17 +368,22 @@ class TestSuggestionOrgGate:
 
 
 # --------------------------------------------------------------------------- #
-# F4 — clustering: cluster kNN gated by the speaker's file org                 #
+# F4/#262 — clustering: cluster kNN gated + cluster rows/docs tenant-stamped   #
 # --------------------------------------------------------------------------- #
 class TestClusteringOrgGate:
     def test_find_or_create_cluster_passes_file_org(self, world, monkeypatch):
         from app.services.speaker_clustering_service import SpeakerClusteringService
 
         seen_orgs: list[Any] = []
+        stored_orgs: list[Any] = []
 
         def fake_find_matching_clusters(embedding, user_id, **kwargs):
             seen_orgs.append(kwargs.get("organization_id"))
             return []
+
+        def fake_store_cluster_embedding(**kwargs):
+            stored_orgs.append(kwargs.get("organization_id"))
+            return True
 
         monkeypatch.setattr(
             "app.services.opensearch_service.find_matching_clusters",
@@ -357,7 +391,7 @@ class TestClusteringOrgGate:
         )
         monkeypatch.setattr(
             "app.services.opensearch_service.store_cluster_embedding",
-            lambda **kwargs: True,
+            fake_store_cluster_embedding,
         )
 
         svc = SpeakerClusteringService(world.db)
@@ -368,8 +402,153 @@ class TestClusteringOrgGate:
         )
 
         assert seen_orgs == [world.org.id, None]
-        # No centroid matched (gate) -> both became singleton clusters.
+        # No centroid matched (gate) -> both became singleton clusters, each
+        # stamped with ITS file's tenant scope (row + centroid doc).
         assert cluster_org is not None and cluster_personal is not None
+        assert cluster_org.organization_id == world.org.id
+        assert cluster_personal.organization_id is None
+        assert stored_orgs == [world.org.id, None]
+
+    def test_find_matching_clusters_query_carries_tenant_gate(self, monkeypatch):
+        """The cluster kNN body encodes the tenant gate: a term filter for org
+        scope, the must_not-exists clause for personal scope."""
+        from app.services.opensearch_service import find_matching_clusters
+
+        captured: list[dict] = []
+
+        class FakeClient:
+            def search(self, index=None, body=None):
+                captured.append(body)
+                return {"hits": {"hits": []}}
+
+        monkeypatch.setattr("app.services.opensearch_service.opensearch_client", FakeClient())
+        monkeypatch.setattr(
+            "app.services.opensearch_service.get_active_speaker_index", lambda: "speakers"
+        )
+
+        find_matching_clusters([0.1] * 256, user_id=7, organization_id=42)
+        org_filters = captured[-1]["query"]["knn"]["embedding"]["filter"]["bool"]["filter"]
+        assert {"term": {"organization_id": 42}} in org_filters
+        assert {"term": {"document_type": "cluster"}} in org_filters
+
+        find_matching_clusters([0.1] * 256, user_id=7, organization_id=None)
+        personal_filters = captured[-1]["query"]["knn"]["embedding"]["filter"]["bool"]["filter"]
+        assert {"bool": {"must_not": {"exists": {"field": "organization_id"}}}} in personal_filters
+        assert not any(
+            "organization_id" in f.get("term", {}) for f in personal_filters if "term" in f
+        )
+
+    def test_store_cluster_embedding_stamps_org_only_when_present(self, monkeypatch):
+        """Org clusters carry organization_id on the centroid doc; personal /
+        community docs have NO org field (byte-identical to pre-tenant docs)."""
+        import app.services.opensearch_service as oss
+
+        captured: list[dict] = []
+
+        class FakeClient:
+            def index(self, index=None, body=None, **kwargs):
+                captured.append(body)
+                return {"result": "created"}
+
+        monkeypatch.setattr(oss, "opensearch_client", FakeClient())
+        monkeypatch.setattr(oss, "get_active_speaker_index", lambda: "speakers")
+        monkeypatch.setattr(oss, "_indices_verified", True)
+
+        assert oss.store_cluster_embedding("uuid-org", 7, [0.1] * 256, organization_id=42)
+        assert captured[-1]["organization_id"] == 42
+        assert captured[-1]["document_type"] == "cluster"
+
+        assert oss.store_cluster_embedding("uuid-personal", 7, [0.1] * 256)
+        assert "organization_id" not in captured[-1]
+
+    def _patch_batch_recluster(self, monkeypatch, embeddings_by_uuid: dict[str, list[float]]):
+        """Stub every OpenSearch touchpoint of batch_recluster."""
+        stored_orgs: list[Any] = []
+
+        def fake_iter_speaker_embeddings(user_id, speaker_uuids=None, batch_size=200):
+            batch = [
+                {"speaker_uuid": u, "embedding": embeddings_by_uuid[u]}
+                for u in (speaker_uuids or [])
+                if u in embeddings_by_uuid
+            ]
+            if batch:
+                yield batch
+
+        def fake_store_cluster_embedding(**kwargs):
+            stored_orgs.append(kwargs.get("organization_id"))
+            return True
+
+        monkeypatch.setattr(
+            "app.services.opensearch_service.iter_speaker_embeddings",
+            fake_iter_speaker_embeddings,
+        )
+        monkeypatch.setattr(
+            "app.services.opensearch_service.store_cluster_embedding",
+            fake_store_cluster_embedding,
+        )
+        monkeypatch.setattr(
+            "app.services.opensearch_service.delete_cluster_embedding", lambda u: True
+        )
+        monkeypatch.setattr("app.services.opensearch_service.opensearch_client", None)
+        return stored_orgs
+
+    def test_batch_recluster_partitions_similarity_graph_per_tenant(self, world, monkeypatch):
+        """Identical voices on an org file and a personal file must NOT merge:
+        the Phase-2 AHC graph is partitioned per tenant scope, and each
+        resulting cluster is stamped with its partition's org."""
+        from app.models.media import SpeakerCluster
+        from app.services.speaker_clustering_service import SpeakerClusteringService
+
+        db = world.db
+        org_speaker2 = _mk_speaker(db, user=world.user, media_file=world.org_file)
+        personal_speaker2 = _mk_speaker(db, user=world.user, media_file=world.personal_file)
+        speakers = [world.org_speaker, org_speaker2, world.personal_speaker, personal_speaker2]
+
+        # All four speakers share ONE voice — unpartitioned AHC would group
+        # them into a single cross-tenant cluster.
+        emb = [float(x) for x in _unit_embedding()]
+        stored_orgs = self._patch_batch_recluster(monkeypatch, {str(s.uuid): emb for s in speakers})
+
+        svc = SpeakerClusteringService(db)
+        result = svc.batch_recluster(int(world.user.id))
+
+        assert result["similarity_clusters"] == 2
+        clusters = db.query(SpeakerCluster).filter(SpeakerCluster.user_id == world.user.id).all()
+        by_org = {c.organization_id: c for c in clusters}
+        assert set(by_org) == {world.org.id, None}
+
+        org_members = {s.id for s in speakers if s.cluster_id == by_org[world.org.id].id}
+        personal_members = {s.id for s in speakers if s.cluster_id == by_org[None].id}
+        assert org_members == {world.org_speaker.id, org_speaker2.id}
+        assert personal_members == {world.personal_speaker.id, personal_speaker2.id}
+
+        # Each centroid doc carries its partition's scope.
+        assert sorted(stored_orgs, key=str) == sorted([world.org.id, None], key=str)
+
+    def test_batch_recluster_all_personal_unchanged(self, world, monkeypatch):
+        """Community invariance: with org NULL everywhere there is exactly one
+        partition and the grouping matches the pre-tenant behavior (one
+        cluster, no org stamp anywhere)."""
+        from app.models.media import SpeakerCluster
+        from app.services.speaker_clustering_service import SpeakerClusteringService
+
+        db = world.db
+        user = _mk_user(db, "community")
+        personal_file = _mk_file(db, user=user, org_id=None)
+        speakers = [_mk_speaker(db, user=user, media_file=personal_file) for _ in range(3)]
+
+        emb = [float(x) for x in _unit_embedding()]
+        stored_orgs = self._patch_batch_recluster(monkeypatch, {str(s.uuid): emb for s in speakers})
+
+        svc = SpeakerClusteringService(db)
+        result = svc.batch_recluster(int(user.id))
+
+        assert result["similarity_clusters"] == 1
+        assert result["similarity_speakers_assigned"] == 3
+        clusters = db.query(SpeakerCluster).filter(SpeakerCluster.user_id == user.id).all()
+        assert len(clusters) == 1
+        assert clusters[0].organization_id is None
+        assert stored_orgs == [None]
 
 
 # --------------------------------------------------------------------------- #
@@ -431,6 +610,8 @@ class TestSpeakerBackfill:
             member_user_ids=[31],
             personal_file_ids=[102],
             personal_profile_ids=[202],
+            org_to_cluster_uuids={7: ["cluster-org"]},
+            personal_cluster_uuids=["cluster-personal"],
         )
         updated = _backfill_speaker_docs(client, scope)
         assert updated > 0
@@ -439,7 +620,8 @@ class TestSpeakerBackfill:
         removes = _remove_calls(client)
         assert stamps and removes
 
-        # Every stamp is keyed on media_file_id or profile_id — never user_id.
+        # Every stamp is keyed on media_file_id / profile_id / cluster_uuid —
+        # never user_id.
         for call in stamps:
             filters = call["body"]["query"]["bool"]["filter"]
             keyed = [f for f in filters if "terms" in f]
@@ -468,20 +650,33 @@ class TestSpeakerBackfill:
         assert 201 in stamped_profile_ids
         assert 202 not in stamped_profile_ids
 
-        # Repair passes only touch docs that still carry an org field.
+        # Org cluster stamped by cluster_uuid; personal cluster never stamped.
+        stamped_cluster_uuids = {
+            cu
+            for call in stamps
+            for f in call["body"]["query"]["bool"]["filter"]
+            for cu in f.get("terms", {}).get("cluster_uuid", [])
+        }
+        assert "cluster-org" in stamped_cluster_uuids
+        assert "cluster-personal" not in stamped_cluster_uuids
+
+        # Repair passes only touch docs that still carry an org field, and
+        # cluster repair is keyed on cluster_uuid — the old user_id-wide
+        # cluster strip is gone (it would erase the org stamps just written).
         removed_file_ids: set[int] = set()
         removed_profile_ids: set[int] = set()
-        removed_user_ids: set[int] = set()
+        removed_cluster_uuids: set[str] = set()
         for call in removes:
             filters = call["body"]["query"]["bool"]["filter"]
             assert {"exists": {"field": "organization_id"}} in filters
             for f in filters:
                 removed_file_ids.update(f.get("terms", {}).get("media_file_id", []))
                 removed_profile_ids.update(f.get("terms", {}).get("profile_id", []))
-                removed_user_ids.update(f.get("terms", {}).get("user_id", []))
+                removed_cluster_uuids.update(f.get("terms", {}).get("cluster_uuid", []))
+                assert "user_id" not in f.get("terms", {})
         assert 102 in removed_file_ids
         assert 202 in removed_profile_ids
-        assert 31 in removed_user_ids  # cluster-doc repair
+        assert removed_cluster_uuids == {"cluster-personal"}
 
     def test_backfill_stamp_queries_are_idempotent(self):
         """Stamp queries skip docs already carrying the correct org."""
@@ -489,6 +684,120 @@ class TestSpeakerBackfill:
         from app.tasks.tenant_backfill_task import _backfill_speaker_docs
 
         client = FakeOSClient()
-        _backfill_speaker_docs(client, SpeakerScopeMaps(org_to_file_ids={9: [11]}))
-        for call in _stamp_calls(client):
+        _backfill_speaker_docs(
+            client,
+            SpeakerScopeMaps(org_to_file_ids={9: [11]}, org_to_cluster_uuids={9: ["cu"]}),
+        )
+        stamps = _stamp_calls(client)
+        assert stamps
+        for call in stamps:
             assert {"term": {"organization_id": 9}} in call["body"]["query"]["bool"]["must_not"]
+
+
+# --------------------------------------------------------------------------- #
+# #262 — cluster backfill: rows + docs stamped from MEMBER speakers' file orgs #
+# --------------------------------------------------------------------------- #
+@pytest.fixture()
+def cluster_world(world):
+    """Three legacy clusters for one member: all-org, mixed, all-personal."""
+    db = world.db
+    org_speaker2 = _mk_speaker(db, user=world.user, media_file=world.org_file)
+    personal_speaker2 = _mk_speaker(db, user=world.user, media_file=world.personal_file)
+
+    # Legacy rows: NULL org everywhere; the mixed one even carries a stray
+    # stamp (simulating pre-repair damage) that must be reset to NULL.
+    org_cluster = _mk_cluster(db, user=world.user, speakers=[world.org_speaker, org_speaker2])
+    mixed_cluster = _mk_cluster(
+        db,
+        user=world.user,
+        speakers=[personal_speaker2, _mk_speaker(db, user=world.user, media_file=world.org_file)],
+        org_id=world.org.id,
+    )
+    personal_cluster = _mk_cluster(db, user=world.user, speakers=[world.personal_speaker])
+    empty_cluster = _mk_cluster(db, user=world.user, speakers=[])
+
+    return World(
+        **world.__dict__,
+        org_cluster=org_cluster,
+        mixed_cluster=mixed_cluster,
+        personal_cluster=personal_cluster,
+        empty_cluster=empty_cluster,
+    )
+
+
+class TestClusterBackfill:
+    def test_scope_maps_resolve_cluster_scopes(self, cluster_world):
+        """All-same-org members -> org list; mixed/personal/empty -> personal
+        list; mixed clusters are counted (left NULL by design)."""
+        from app.tasks.tenant_backfill_task import _build_speaker_scope_maps
+
+        w = cluster_world
+        scope = _build_speaker_scope_maps(w.db)
+
+        assert w.org_cluster.id in scope.org_to_cluster_ids.get(w.org.id, [])
+        assert str(w.org_cluster.uuid) in scope.org_to_cluster_uuids.get(w.org.id, [])
+
+        for cluster in (w.mixed_cluster, w.personal_cluster, w.empty_cluster):
+            assert cluster.id in scope.personal_cluster_ids
+            assert str(cluster.uuid) in scope.personal_cluster_uuids
+            assert cluster.id not in scope.org_to_cluster_ids.get(w.org.id, [])
+
+        assert scope.mixed_cluster_count == 1
+
+    def test_stamp_cluster_rows_syncs_db(self, cluster_world):
+        """Row stamping: all-org cluster gains the org; the mixed cluster's
+        stray stamp is reset to NULL; personal/empty rows stay NULL."""
+        from app.tasks.tenant_backfill_task import _build_speaker_scope_maps
+        from app.tasks.tenant_backfill_task import _stamp_cluster_rows
+
+        w = cluster_world
+        scope = _build_speaker_scope_maps(w.db)
+        changed = _stamp_cluster_rows(w.db, scope)
+        assert changed == 2  # org stamp + mixed reset
+
+        for cluster in (w.org_cluster, w.mixed_cluster, w.personal_cluster, w.empty_cluster):
+            w.db.refresh(cluster)
+        assert w.org_cluster.organization_id == w.org.id
+        assert w.mixed_cluster.organization_id is None
+        assert w.personal_cluster.organization_id is None
+        assert w.empty_cluster.organization_id is None
+
+        # Idempotent: a second run changes nothing.
+        assert _stamp_cluster_rows(w.db, _build_speaker_scope_maps(w.db)) == 0
+
+    def test_backfill_docs_stamp_org_clusters_and_strip_the_rest(self, cluster_world):
+        """Doc backfill mirrors the row resolution: the all-org cluster doc is
+        stamped; mixed/personal/empty cluster docs get the org field removed."""
+        from app.tasks.tenant_backfill_task import _backfill_speaker_docs
+        from app.tasks.tenant_backfill_task import _build_speaker_scope_maps
+
+        w = cluster_world
+        scope = _build_speaker_scope_maps(w.db)
+        client = FakeOSClient()
+        _backfill_speaker_docs(client, scope)
+
+        cluster_calls = [
+            c
+            for c in client.calls
+            if {"term": {"document_type": "cluster"}} in c["body"]["query"]["bool"]["filter"]
+        ]
+        stamped = {
+            cu
+            for c in cluster_calls
+            if "params" in c["body"]["script"]
+            for f in c["body"]["query"]["bool"]["filter"]
+            for cu in f.get("terms", {}).get("cluster_uuid", [])
+        }
+        stripped = {
+            cu
+            for c in cluster_calls
+            if "remove" in c["body"]["script"]["source"]
+            for f in c["body"]["query"]["bool"]["filter"]
+            for cu in f.get("terms", {}).get("cluster_uuid", [])
+        }
+        assert stamped == {str(w.org_cluster.uuid)}
+        assert stripped == {
+            str(w.mixed_cluster.uuid),
+            str(w.personal_cluster.uuid),
+            str(w.empty_cluster.uuid),
+        }

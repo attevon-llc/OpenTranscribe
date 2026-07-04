@@ -33,6 +33,12 @@ RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements-
 # -----------------------------------------------------------------------------
 FROM python:3.13-slim-trixie
 
+# Bake the release version into the image so /health and /system/stats report
+# it without a repo checkout or env plumbing (version.py: file -> env -> unknown).
+# Passed by scripts/docker-build-push.sh from the repo-root VERSION file.
+ARG APP_VERSION=unknown
+ENV APP_VERSION=${APP_VERSION}
+
 # OCI annotations for container metadata and compliance
 LABEL org.opencontainers.image.title="OpenTranscribe Backend Lite" \
       org.opencontainers.image.description="Cloud-only ASR backend (no GPU required) with multi-provider support" \

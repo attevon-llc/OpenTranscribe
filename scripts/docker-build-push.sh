@@ -166,6 +166,7 @@ build_backend_blackwell() {
     docker buildx build \
         --platform "linux/arm64" \
         --file Dockerfile.blackwell \
+        --build-arg APP_VERSION="${VERSION_FULL}" \
         --tag "${REPO_BACKEND}:blackwell" \
         --tag "${REPO_BACKEND}:blackwell-${VERSION_FULL}" \
         ${CACHE_FLAG} \
@@ -193,6 +194,7 @@ build_backend() {
     docker buildx build \
         --platform "${PLATFORMS}" \
         --file Dockerfile.prod \
+        --build-arg APP_VERSION="${VERSION_FULL}" \
         --tag "${REPO_BACKEND}:latest" \
         --tag "${REPO_BACKEND}:${VERSION_FULL}" \
         ${CACHE_FLAG} \
@@ -220,6 +222,7 @@ build_frontend() {
     docker buildx build \
         --platform "${PLATFORMS}" \
         --file Dockerfile.prod \
+        --build-arg APP_VERSION="${VERSION_FULL}" \
         --tag "${REPO_FRONTEND}:latest" \
         --tag "${REPO_FRONTEND}:${VERSION_FULL}" \
         ${CACHE_FLAG} \

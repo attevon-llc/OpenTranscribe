@@ -198,6 +198,59 @@ is not part of the in-app scheduler today. Back media up manually with `mc mirro
 as described in [MinIO / Storage Backup](#minio--storage-backup) below.
 :::
 
+#### Recovery keys travel with the backup
+
+A `pg_dump` contains AES-256-GCM **ciphertext** — user API keys, watch-source
+credentials, email passwords, MFA secrets — whose master key (`ENCRYPTION_KEY`)
+lives only in `.env`. Restore a dump onto a host with a different key and every
+encrypted column is **permanently undecryptable** (see the
+[backup-completeness audit](./backup-audit.md)). Each successful scheduled run
+therefore writes a **recovery companion** into the destination, beside the dumps:
+
+- **Backup encryption ON** — `opentranscribe-recovery.env.gpg`: the essential env
+  keys (`ENCRYPTION_KEY`, `JWT_SECRET_KEY`, and `MINIO_KMS_SECRET_KEY` when set),
+  gpg-symmetric-encrypted with the **same passphrase** as the dumps. Your gpg
+  passphrase (kept in a password manager, never on the backup media) then unlocks
+  both the dump and its keys — the destination alone is sufficient for a full
+  restore. To recover the keys: `gpg -d opentranscribe-recovery.env.gpg`.
+- **Backup encryption OFF** — plaintext keys are deliberately **not** written next
+  to a plaintext dump. Instead a `RECOVERY-README.txt` names the keys you must
+  preserve separately, with SHA-256 fingerprints (no values) so a restore drill can
+  verify the keys you saved match the ones that wrote the data. A **one-time admin
+  notification** also warns that the dumps alone are not restorable.
+
+There is exactly **one companion per destination**, refreshed on every successful
+run — the keys must match the *current* database ciphertext, so an always-current
+copy is the correct semantic. The last-run panel in the admin UI shows a
+"Recovery keys" status (`included` / `not included` / `error`); a companion failure
+never fails the backup itself.
+
+#### Failure alerting (metrics + notifications)
+
+A silently failing backup is worse than none. Every recorded run is surfaced
+proactively:
+
+- **Admin notifications** — a failed run (pg_dump error, unmounted destination,
+  unreachable bucket) sends a `backup_status` WebSocket notification to every
+  admin with the persisted error message. A run that succeeds **with warnings**
+  (retention pruning failed, OpenSearch snapshot failed, recovery companion
+  failed) sends a warning notification — the dump itself is still recorded as
+  successful.
+- **Prometheus metrics** (scraped from the backend's `/metrics`; see
+  [Monitoring](./monitoring.md)):
+  - `backup_last_success_timestamp_seconds` — Unix time of the last successful
+    run (0 = never). Alert on staleness:
+    `time() - backup_last_success_timestamp_seconds > 2 * 86400`.
+  - `backup_last_status` — 1 = last run succeeded, 0 = failed.
+  - `backup_runs_total{result="success"|"failure"}` — cumulative run counter.
+
+  The backup executes in a Celery worker, so these are persisted to the database
+  by the run task and projected onto the API's collectors at scrape time — they
+  survive backend restarts.
+- **Admin UI** — the Backups panel shows the full last result, including the
+  error message, prune warnings, OpenSearch snapshot status, and the recovery
+  companion status.
+
 ### Automated Backup with Cron (alternative)
 
 If you prefer OS-level scheduling instead of the in-app scheduler, set up

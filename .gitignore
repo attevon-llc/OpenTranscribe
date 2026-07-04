@@ -226,8 +226,8 @@ nginx/ssl/*.key
 *.dmg
 *.AppImage
 
-# Archived releases
-releases/
+# Archived releases (root-level only; docs/releases/ is tracked)
+/releases/
 *.tar.gz
 *.zip
 *.rar

@@ -205,6 +205,8 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Installer re-runs are idempotent**: `setup-opentranscribe.sh` now creates `.env` immediately and writes each value as it is entered (an interrupted setup no longer loses progress), skips prompts already answered on re-run, and its HuggingFace gate instructions point at the correct `speaker-diarization-community-1` model agreement (was the outdated 3.1 URL).
 - **`./opentr.sh rebuild-backend` preserves NAS/NVMe storage mounts**: it previously recreated the datastore containers without the NAS overlay, re-pointing them at empty default Docker volumes — the bind-mounted data was never at risk, but the stack behaved as if wiped until restarted correctly. The NAS overlay is now applied by every code path that recreates containers.
 - **Out-of-range LLM temperature reported the wrong error**: the range check sat inside the float-conversion `try`, so its message was swallowed and re-raised as "must be a valid number".
+- **Production images report their real version**: `/health` and the admin About panel showed `"unknown"` for Docker Hub images because the `VERSION` file was never inside the image build contexts. `Dockerfile.prod`/`Dockerfile.lite`/`Dockerfile.blackwell` now accept an `APP_VERSION` build arg (baked as env), and `scripts/docker-build-push.sh` passes the release version to every backend build.
+- **Frontend prod-image healthcheck probes `127.0.0.1`**: under `read_only` container deployments nginx can't enable its IPv6 listener, so the healthcheck's `localhost → ::1` resolution was refused and the container reported permanently unhealthy while serving fine on IPv4.
 
 ### Performance
 

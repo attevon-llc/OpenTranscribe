@@ -132,6 +132,10 @@ jobs:
       - name: Run unit/API test suite (with coverage, report-only)
         working-directory: backend
         run: |
+          # pipefail is REQUIRED: GitHub's default shell is `bash -e {0}` WITHOUT
+          # pipefail, so `pytest | tee` exits with tee's status (0) and pytest
+          # failures silently pass the job. This masked real failures for months.
+          set -o pipefail
           pytest tests/ --cov=app --cov-report=term | tee pytest-output.txt
           {
             echo "## Backend Test Coverage (report-only)"

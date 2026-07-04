@@ -69,6 +69,12 @@ RUN pip uninstall -y --root-user-action=ignore triton || true
 # -----------------------------------------------------------------------------
 FROM python:3.13-slim-trixie
 
+# Bake the release version into the image so /health and /system/stats report
+# it without a repo checkout or env plumbing (version.py: file -> env -> unknown).
+# Passed by scripts/docker-build-push.sh from the repo-root VERSION file.
+ARG APP_VERSION=unknown
+ENV APP_VERSION=${APP_VERSION}
+
 # OCI annotations for container metadata and compliance
 LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
       org.opencontainers.image.description="AI-powered transcription backend with WhisperX and PyAnnote" \

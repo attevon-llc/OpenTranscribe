@@ -16,9 +16,9 @@ compliance plan. They are currently skipped until the features are fully impleme
 
 import os
 import uuid
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from unittest.mock import patch
 
 import pytest
@@ -373,7 +373,7 @@ class TestSessionTermination:
                 user_id=target_user.id,
                 token_hash=f"testhash{i}{target_user.id}",
                 jti=str(uuid.uuid4()),
-                expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+                expires_at=datetime.now(UTC) + timedelta(days=7),
             )
             db_session.add(token)
         db_session.commit()

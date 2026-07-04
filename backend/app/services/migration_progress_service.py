@@ -7,8 +7,8 @@ long-running migrations like the v3 to v4 speaker embedding migration.
 
 import json
 import logging
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import NotRequired
 from typing import TypedDict
 from typing import cast
@@ -133,10 +133,10 @@ class MigrationProgressService:
                 "total_files": total_files,
                 "processed_files": 0,
                 "failed_files": [],
-                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_at": datetime.now(UTC).isoformat(),
                 "completed_at": None,
                 "orchestrator_task_id": task_id,
-                "last_updated": datetime.now(timezone.utc).isoformat(),
+                "last_updated": datetime.now(UTC).isoformat(),
             }
 
             status_key = self._get_key("status")
@@ -207,7 +207,7 @@ class MigrationProgressService:
                 status_key,
                 file_uuid or "",
                 "1" if not success else "0",
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(UTC).isoformat(),
             )
             return True
 
@@ -240,8 +240,8 @@ class MigrationProgressService:
 
             status = self.get_status()
             status["running"] = False
-            status["completed_at"] = datetime.now(timezone.utc).isoformat()
-            status["last_updated"] = datetime.now(timezone.utc).isoformat()
+            status["completed_at"] = datetime.now(UTC).isoformat()
+            status["last_updated"] = datetime.now(UTC).isoformat()
 
             status_key = self._get_key("status")
             # Keep completed status for 1 hour (UI can show "complete" message)
@@ -296,8 +296,8 @@ class MigrationProgressService:
                 return False
 
             status["running"] = False
-            status["completed_at"] = datetime.now(timezone.utc).isoformat()
-            status["last_updated"] = datetime.now(timezone.utc).isoformat()
+            status["completed_at"] = datetime.now(UTC).isoformat()
+            status["last_updated"] = datetime.now(UTC).isoformat()
 
             status_key = self._get_key("status")
             self.redis_client.set(status_key, json.dumps(status), ex=3600)

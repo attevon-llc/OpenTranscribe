@@ -17,6 +17,7 @@ Four tasks:
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 
 from celery import shared_task
 
@@ -39,7 +40,6 @@ def check_backup_schedule() -> dict:
     5-minute tick won't re-fire the same window (the run task records the final result).
     """
     from datetime import datetime
-    from datetime import timezone
 
     with session_scope() as db:
         cfg = backup_service.get_settings(db)
@@ -48,7 +48,7 @@ def check_backup_schedule() -> dict:
         if not backup_service.is_due(cfg["schedule"], cfg["last_run_at"]):
             return {"status": "not_due", "schedule": cfg["schedule"]}
         # Claim this window before dispatching so overlapping ticks don't double-fire.
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_iso = datetime.now(UTC).isoformat()
         backup_service.update_settings_last_run(db, now_iso)
 
     run_backup.apply_async(queue="utility", priority=UtilityPriority.ROUTINE)
@@ -73,7 +73,6 @@ def check_mirror_schedule() -> dict:
     re-fire the same window (the run task records the final result).
     """
     from datetime import datetime
-    from datetime import timezone
 
     with session_scope() as db:
         cfg = media_mirror_service.get_settings(db)
@@ -81,7 +80,7 @@ def check_mirror_schedule() -> dict:
             return {"status": "disabled"}
         if not backup_service.is_due(cfg["schedule"], cfg["last_run_at"]):
             return {"status": "not_due", "schedule": cfg["schedule"]}
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_iso = datetime.now(UTC).isoformat()
         media_mirror_service.update_settings_last_run(db, now_iso)
 
     run_media_mirror.apply_async(queue=CeleryQueues.DOWNLOAD, priority=DownloadPriority.PLAYLIST)

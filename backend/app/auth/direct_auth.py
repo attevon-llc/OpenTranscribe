@@ -5,9 +5,9 @@ This bypasses the SQLAlchemy ORM relationships to ensure login works.
 
 import logging
 import os
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 
 import psycopg2
 from jose import jwt
@@ -50,7 +50,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     import uuid
 
     to_encode = data.copy()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if expires_delta:
         expire = now + expires_delta
@@ -164,7 +164,7 @@ def _verify_and_upgrade_password(
     try:
         cursor.execute(
             'UPDATE "user" SET hashed_password = %s, updated_at = %s WHERE id = %s',
-            (new_hash, datetime.now(timezone.utc), user_id),
+            (new_hash, datetime.now(UTC), user_id),
         )
         conn.commit()
         logger.info(f"Password hash upgraded for user {masked_email}")

@@ -1,8 +1,6 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional
-from typing import Union
 
 from pydantic import field_validator
 from pydantic import model_validator
@@ -394,7 +392,7 @@ class Settings(BaseSettings):
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def assemble_cors_origins(cls, v: Union[str, list[str]]) -> Union[list[str], str]:
+    def assemble_cors_origins(cls, v: str | list[str]) -> list[str] | str:
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, (list, str)):
@@ -450,14 +448,14 @@ class Settings(BaseSettings):
     # Note: large-v3-turbo cannot translate - use large-v3 if translation is needed
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "large-v3-turbo")
     PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "pyannote/speaker-diarization")
-    HUGGINGFACE_TOKEN: Optional[str] = os.getenv("HUGGINGFACE_TOKEN", None)
+    HUGGINGFACE_TOKEN: str | None = os.getenv("HUGGINGFACE_TOKEN", None)
 
     # Speaker diarization settings
     MIN_SPEAKERS: int = _int_env("MIN_SPEAKERS", 1)
     MAX_SPEAKERS: int = _int_env("MAX_SPEAKERS", 20)
     # NUM_SPEAKERS forces exact speaker count (overrides min/max if set)
-    _NUM_SPEAKERS_STR: Optional[str] = os.getenv("NUM_SPEAKERS")
-    NUM_SPEAKERS: Optional[int] = int(_NUM_SPEAKERS_STR) if _NUM_SPEAKERS_STR else None
+    _NUM_SPEAKERS_STR: str | None = os.getenv("NUM_SPEAKERS")
+    NUM_SPEAKERS: int | None = int(_NUM_SPEAKERS_STR) if _NUM_SPEAKERS_STR else None
 
     # Diarization embedding batch size is pinned at 16 in
     # backend/app/transcription/diarizer.py. See
@@ -645,10 +643,10 @@ class Settings(BaseSettings):
 
     # ===== YouTube Anti-Bot Detection Configuration =====
     # Cookie-Based Authentication (allows yt-dlp to use browser cookies)
-    YOUTUBE_COOKIE_BROWSER: Optional[str] = os.getenv(
+    YOUTUBE_COOKIE_BROWSER: str | None = os.getenv(
         "YOUTUBE_COOKIE_BROWSER", None
     )  # firefox, chrome, chromium, edge, safari, opera
-    YOUTUBE_COOKIE_FILE: Optional[str] = os.getenv(
+    YOUTUBE_COOKIE_FILE: str | None = os.getenv(
         "YOUTUBE_COOKIE_FILE", None
     )  # Path to cookies.txt file
 

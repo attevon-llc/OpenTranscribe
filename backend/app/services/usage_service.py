@@ -10,8 +10,6 @@ content (PII hygiene).
 import logging
 from decimal import Decimal
 from typing import Any
-from typing import Optional
-from typing import Union
 
 from sqlalchemy.orm import Session
 
@@ -22,13 +20,13 @@ def record_event(
     db: Session,
     *,
     event_type: str,
-    quantity: Union[Decimal, float, int] = 1,
-    unit: Optional[str] = None,
-    user_id: Optional[int] = None,
-    organization_id: Optional[int] = None,
-    file_id: Optional[int] = None,
-    idempotency_key: Optional[str] = None,
-    metadata: Optional[dict[str, Any]] = None,
+    quantity: Decimal | float | int = 1,
+    unit: str | None = None,
+    user_id: int | None = None,
+    organization_id: int | None = None,
+    file_id: int | None = None,
+    idempotency_key: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> bool:
     """Insert a usage event row. Returns True if recorded, False if skipped.
 

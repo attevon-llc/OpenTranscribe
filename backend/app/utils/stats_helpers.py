@@ -8,9 +8,9 @@ and model info helpers for the system stats page.
 """
 
 import logging
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from typing import Any
 
 from sqlalchemy import extract
@@ -40,7 +40,7 @@ def get_user_stats(db: Session, *, include_breakdown: bool = False) -> dict[str,
     Returns:
         Dictionary with user statistics
     """
-    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    seven_days_ago = datetime.now(UTC) - timedelta(days=7)
 
     if include_breakdown:
         row = db.query(
@@ -83,7 +83,7 @@ def get_file_stats(db: Session, *, include_status_breakdown: bool = False) -> di
     Returns:
         Dictionary with file statistics
     """
-    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    seven_days_ago = datetime.now(UTC) - timedelta(days=7)
 
     columns = [
         func.count().label("total"),
@@ -207,7 +207,7 @@ def get_recent_tasks(db: Session, limit: int = 10) -> list[dict[str, Any]]:
         .all()
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     result = []
     for task in recent_tasks:
         if task.completed_at and task.created_at:
@@ -215,7 +215,7 @@ def get_recent_tasks(db: Session, limit: int = 10) -> list[dict[str, Any]]:
         elif task.created_at:
             created_at = task.created_at
             if created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=timezone.utc)
+                created_at = created_at.replace(tzinfo=UTC)
             elapsed = (now - created_at).total_seconds()
         else:
             elapsed = 0
@@ -244,7 +244,7 @@ def get_throughput_stats(db: Session) -> dict[str, Any]:
     Returns:
         Dictionary with completion counts and files/hour rates
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     one_hour_ago = now - timedelta(hours=1)
     three_hours_ago = now - timedelta(hours=3)
 
@@ -290,7 +290,7 @@ def get_processing_eta(db: Session) -> dict[str, Any]:
     Returns:
         Dictionary with remaining count, files/hour, hours remaining, est completion
     """
-    three_hours_ago = datetime.now(timezone.utc) - timedelta(hours=3)
+    three_hours_ago = datetime.now(UTC) - timedelta(hours=3)
 
     completed_3h = (
         db.query(func.count())
@@ -315,7 +315,7 @@ def get_processing_eta(db: Session) -> dict[str, Any]:
     hours_remaining = round(remaining / files_per_hour, 1) if files_per_hour > 0 else None
     est_completion = None
     if hours_remaining is not None:
-        est_completion = (datetime.now(timezone.utc) + timedelta(hours=hours_remaining)).isoformat()
+        est_completion = (datetime.now(UTC) + timedelta(hours=hours_remaining)).isoformat()
 
     return {
         "remaining": remaining,

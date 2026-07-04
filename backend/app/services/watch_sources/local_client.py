@@ -12,8 +12,8 @@ import logging
 import os
 import shutil
 import time
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -87,7 +87,7 @@ class LocalWatchClient(BaseWatchSourceClient):
                 # Stability: skip files still being written.
                 if stat.st_mtime > stability_cutoff:
                     continue
-                mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+                mtime = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
                 if min_modified and mtime < min_modified:
                     continue
                 results.append(

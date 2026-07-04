@@ -1,8 +1,7 @@
 """Pydantic schemas for Watch Sources (auto-import from local / S3 / SMB)."""
 
 from datetime import datetime
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -12,7 +11,7 @@ from pydantic import model_validator
 from app.models.watch_source import DEFAULT_MULTIPART_REGEX
 
 
-class SourceType(str, Enum):
+class SourceType(StrEnum):
     """Type discriminator for a watch source."""
 
     LOCAL = "local"
@@ -20,7 +19,7 @@ class SourceType(str, Enum):
     SMB = "smb"
 
 
-class WatchFileStatus(str, Enum):
+class WatchFileStatus(StrEnum):
     """Lifecycle status of a tracked watch-source file."""
 
     PENDING = "pending"
@@ -36,7 +35,7 @@ class WatchFileStatus(str, Enum):
     WAITING_FOR_PARTS = "waiting_for_parts"
 
 
-class SkipReason(str, Enum):
+class SkipReason(StrEnum):
     """Why a tracked file was skipped."""
 
     DUPLICATE_SAME_SOURCE = "duplicate_same_source"
@@ -47,7 +46,7 @@ class SkipReason(str, Enum):
     VALIDATION_FAILED = "validation_failed"
 
 
-class ScanStatus(str, Enum):
+class ScanStatus(StrEnum):
     """Outcome of the last scan of a source."""
 
     SUCCESS = "success"
@@ -63,14 +62,14 @@ class WatchSourceProcessingBase(BaseModel):
 
     polling_interval_minutes: int = Field(default=15, ge=1, le=1440)
     use_fs_events: bool = False
-    file_extensions: Optional[str] = None  # CSV, e.g. ".mp4,.mp3"
-    skip_files_older_than_days: Optional[int] = Field(default=30, ge=0)
+    file_extensions: str | None = None  # CSV, e.g. ".mp4,.mp3"
+    skip_files_older_than_days: int | None = Field(default=30, ge=0)
     recursive: bool = True
     auto_transcribe: bool = True
-    min_speakers: Optional[int] = Field(default=1, ge=1)
-    max_speakers: Optional[int] = Field(default=20, ge=1)
-    collection_ids: Optional[list[str]] = None
-    tag_names: Optional[list[str]] = None
+    min_speakers: int | None = Field(default=1, ge=1)
+    max_speakers: int | None = Field(default=20, ge=1)
+    collection_ids: list[str] | None = None
+    tag_names: list[str] | None = None
     # multipart
     multipart_enabled: bool = False
     multipart_regex: str = DEFAULT_MULTIPART_REGEX
@@ -87,33 +86,33 @@ class WatchSourceCreate(WatchSourceProcessingBase):
     is_enabled: bool = True
 
     # local
-    local_path: Optional[str] = None
+    local_path: str | None = None
     delete_after_import: bool = False
 
     # s3
-    s3_endpoint_url: Optional[str] = None
-    s3_bucket_name: Optional[str] = None
-    s3_prefix: Optional[str] = None
-    s3_region: Optional[str] = None
-    s3_access_key_id: Optional[str] = None
-    s3_secret_key: Optional[str] = None  # plaintext on write; never returned
+    s3_endpoint_url: str | None = None
+    s3_bucket_name: str | None = None
+    s3_prefix: str | None = None
+    s3_region: str | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_key: str | None = None  # plaintext on write; never returned
     s3_use_ssl: bool = True
 
     # smb
-    smb_server: Optional[str] = None
-    smb_share: Optional[str] = None
-    smb_path: Optional[str] = "/"
-    smb_username: Optional[str] = None
-    smb_password: Optional[str] = None  # plaintext on write; never returned
-    smb_domain: Optional[str] = None
+    smb_server: str | None = None
+    smb_share: str | None = None
+    smb_path: str | None = "/"
+    smb_username: str | None = None
+    smb_password: str | None = None  # plaintext on write; never returned
+    smb_domain: str | None = None
     smb_port: int = Field(default=445, ge=1, le=65535)
 
     # admin-only: assign imported files to a specific user (by uuid)
-    assign_to_user_uuid: Optional[str] = None
+    assign_to_user_uuid: str | None = None
 
     @field_validator("local_path")
     @classmethod
-    def _no_traversal(cls, v: Optional[str]) -> Optional[str]:
+    def _no_traversal(cls, v: str | None) -> str | None:
         if v and ".." in v.split("/"):
             raise ValueError("local_path must not contain '..' traversal segments")
         if v and v.startswith("/"):
@@ -143,43 +142,43 @@ class WatchSourceCreate(WatchSourceProcessingBase):
 class WatchSourceUpdate(BaseModel):
     """Update a watch source. All fields optional; source_type is immutable."""
 
-    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    is_enabled: Optional[bool] = None
-    local_path: Optional[str] = None
-    delete_after_import: Optional[bool] = None
-    s3_endpoint_url: Optional[str] = None
-    s3_bucket_name: Optional[str] = None
-    s3_prefix: Optional[str] = None
-    s3_region: Optional[str] = None
-    s3_access_key_id: Optional[str] = None
-    s3_secret_key: Optional[str] = None
-    s3_use_ssl: Optional[bool] = None
-    smb_server: Optional[str] = None
-    smb_share: Optional[str] = None
-    smb_path: Optional[str] = None
-    smb_username: Optional[str] = None
-    smb_password: Optional[str] = None
-    smb_domain: Optional[str] = None
-    smb_port: Optional[int] = Field(default=None, ge=1, le=65535)
-    polling_interval_minutes: Optional[int] = Field(default=None, ge=1, le=1440)
-    use_fs_events: Optional[bool] = None
-    file_extensions: Optional[str] = None
-    skip_files_older_than_days: Optional[int] = Field(default=None, ge=0)
-    recursive: Optional[bool] = None
-    auto_transcribe: Optional[bool] = None
-    min_speakers: Optional[int] = Field(default=None, ge=1)
-    max_speakers: Optional[int] = Field(default=None, ge=1)
-    collection_ids: Optional[list[str]] = None
-    tag_names: Optional[list[str]] = None
-    multipart_enabled: Optional[bool] = None
-    multipart_regex: Optional[str] = None
-    multipart_time_window_hours: Optional[int] = Field(default=None, ge=1)
-    multipart_wait_scans: Optional[int] = Field(default=None, ge=1)
-    upload_stitched_to_source: Optional[bool] = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_enabled: bool | None = None
+    local_path: str | None = None
+    delete_after_import: bool | None = None
+    s3_endpoint_url: str | None = None
+    s3_bucket_name: str | None = None
+    s3_prefix: str | None = None
+    s3_region: str | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_key: str | None = None
+    s3_use_ssl: bool | None = None
+    smb_server: str | None = None
+    smb_share: str | None = None
+    smb_path: str | None = None
+    smb_username: str | None = None
+    smb_password: str | None = None
+    smb_domain: str | None = None
+    smb_port: int | None = Field(default=None, ge=1, le=65535)
+    polling_interval_minutes: int | None = Field(default=None, ge=1, le=1440)
+    use_fs_events: bool | None = None
+    file_extensions: str | None = None
+    skip_files_older_than_days: int | None = Field(default=None, ge=0)
+    recursive: bool | None = None
+    auto_transcribe: bool | None = None
+    min_speakers: int | None = Field(default=None, ge=1)
+    max_speakers: int | None = Field(default=None, ge=1)
+    collection_ids: list[str] | None = None
+    tag_names: list[str] | None = None
+    multipart_enabled: bool | None = None
+    multipart_regex: str | None = None
+    multipart_time_window_hours: int | None = Field(default=None, ge=1)
+    multipart_wait_scans: int | None = Field(default=None, ge=1)
+    upload_stitched_to_source: bool | None = None
 
     @field_validator("local_path")
     @classmethod
-    def _no_traversal(cls, v: Optional[str]) -> Optional[str]:
+    def _no_traversal(cls, v: str | None) -> str | None:
         if v and ".." in v.split("/"):
             raise ValueError("local_path must not contain '..' traversal segments")
         if v and v.startswith("/"):
@@ -194,51 +193,51 @@ class WatchSourceResponse(BaseModel):
     name: str
     source_type: str
     is_enabled: bool
-    local_path: Optional[str] = None
+    local_path: str | None = None
     delete_after_import: bool = False
-    s3_endpoint_url: Optional[str] = None
-    s3_bucket_name: Optional[str] = None
-    s3_prefix: Optional[str] = None
-    s3_region: Optional[str] = None
-    s3_access_key_id: Optional[str] = None
+    s3_endpoint_url: str | None = None
+    s3_bucket_name: str | None = None
+    s3_prefix: str | None = None
+    s3_region: str | None = None
+    s3_access_key_id: str | None = None
     s3_use_ssl: bool = True
     has_s3_secret_key: bool = False
-    smb_server: Optional[str] = None
-    smb_share: Optional[str] = None
-    smb_path: Optional[str] = None
-    smb_username: Optional[str] = None
-    smb_domain: Optional[str] = None
+    smb_server: str | None = None
+    smb_share: str | None = None
+    smb_path: str | None = None
+    smb_username: str | None = None
+    smb_domain: str | None = None
     smb_port: int = 445
     has_smb_password: bool = False
     polling_interval_minutes: int = 15
     use_fs_events: bool = False
-    file_extensions: Optional[str] = None
-    skip_files_older_than_days: Optional[int] = None
+    file_extensions: str | None = None
+    skip_files_older_than_days: int | None = None
     recursive: bool = True
     auto_transcribe: bool = True
-    min_speakers: Optional[int] = None
-    max_speakers: Optional[int] = None
-    collection_ids: Optional[list[str]] = None
-    tag_names: Optional[list[str]] = None
+    min_speakers: int | None = None
+    max_speakers: int | None = None
+    collection_ids: list[str] | None = None
+    tag_names: list[str] | None = None
     multipart_enabled: bool = False
     multipart_regex: str = DEFAULT_MULTIPART_REGEX
     multipart_time_window_hours: int = 24
     multipart_wait_scans: int = 3
     upload_stitched_to_source: bool = False
-    last_scan_at: Optional[datetime] = None
-    last_scan_status: Optional[str] = None
-    last_scan_message: Optional[str] = None
+    last_scan_at: datetime | None = None
+    last_scan_status: str | None = None
+    last_scan_message: str | None = None
     last_scan_files_found: int = 0
     last_scan_files_imported: int = 0
     last_scan_files_skipped: int = 0
-    last_scan_duration_seconds: Optional[float] = None
+    last_scan_duration_seconds: float | None = None
     total_files_imported: int = 0
     # ownership context
-    owner_name: Optional[str] = None
-    owner_uuid: Optional[str] = None
+    owner_name: str | None = None
+    owner_uuid: str | None = None
     is_own: bool = True
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -249,18 +248,18 @@ class WatchSourceFileResponse(BaseModel):
     uuid: str
     remote_path: str
     filename: str
-    file_size: Optional[int] = None
-    file_modified_at: Optional[datetime] = None
-    imohash: Optional[str] = None
-    media_file_uuid: Optional[str] = None
+    file_size: int | None = None
+    file_modified_at: datetime | None = None
+    imohash: str | None = None
+    media_file_uuid: str | None = None
     status: str
-    skip_reason: Optional[str] = None
-    part_group: Optional[str] = None
-    part_number: Optional[int] = None
-    error_message: Optional[str] = None
+    skip_reason: str | None = None
+    part_group: str | None = None
+    part_number: int | None = None
+    error_message: str | None = None
     retry_count: int = 0
-    processed_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
+    processed_at: datetime | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -296,7 +295,7 @@ class ConnectionTestResponse(BaseModel):
 
     success: bool
     message: str
-    latency_ms: Optional[float] = None
+    latency_ms: float | None = None
 
 
 class ScanResponse(BaseModel):
@@ -304,7 +303,7 @@ class ScanResponse(BaseModel):
 
     status: str
     message: str
-    task_id: Optional[str] = None
+    task_id: str | None = None
 
 
 class DirectoryEntry(BaseModel):
@@ -318,7 +317,7 @@ class DirectoryListResponse(BaseModel):
     """Folder-browser listing under WATCH_FOLDER_PATH."""
 
     current_path: str = ""
-    parent_path: Optional[str] = None
+    parent_path: str | None = None
     directories: list[DirectoryEntry] = []
 
 
@@ -341,17 +340,17 @@ class MultipartRegexTestResponse(BaseModel):
     """Parsed multipart components, or matched=False."""
 
     matched: bool
-    base_name: Optional[str] = None
-    part_number: Optional[int] = None
-    extension: Optional[str] = None
-    error: Optional[str] = None
+    base_name: str | None = None
+    part_number: int | None = None
+    extension: str | None = None
+    error: str | None = None
 
 
 class EmailLinkCreate(BaseModel):
     """Link an email config to a watch source."""
 
     email_config_uuid: str
-    additional_recipients: Optional[str] = None
+    additional_recipients: str | None = None
     notify_on_success: bool = True
     notify_on_error: bool = True
 
@@ -361,7 +360,7 @@ class EmailLinkResponse(BaseModel):
 
     email_config_uuid: str
     email_config_name: str
-    additional_recipients: Optional[str] = None
+    additional_recipients: str | None = None
     notify_on_success: bool = True
     notify_on_error: bool = True
 

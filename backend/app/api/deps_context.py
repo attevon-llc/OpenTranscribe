@@ -15,7 +15,6 @@ endpoint uses: org context -> filter by organization_id, else by user_id.
 import logging
 from dataclasses import dataclass
 from typing import Any
-from typing import Optional
 
 from fastapi import Depends
 from fastapi import HTTPException
@@ -39,8 +38,8 @@ class RequestContext:
     """Authenticated user + active tenant scope for this request."""
 
     user: User
-    org_id: Optional[int] = None  # our organization.id (NOT the provider's string id)
-    org_role: Optional[str] = None  # "org:admin" | "org:member" | None
+    org_id: int | None = None  # our organization.id (NOT the provider's string id)
+    org_role: str | None = None  # "org:admin" | "org:member" | None
 
     @property
     def is_org_context(self) -> bool:
@@ -51,9 +50,7 @@ class RequestContext:
         return self.org_role == "org:admin"
 
 
-def resolve_org_context(
-    request: Request, db: Session, user: User
-) -> tuple[Optional[int], Optional[str]]:
+def resolve_org_context(request: Request, db: Session, user: User) -> tuple[int | None, str | None]:
     """Resolve ``(org_id, org_role)`` for ``user`` on this request (None = personal).
 
     The SINGLE source of org-scope resolution, reused by ``get_current_context``

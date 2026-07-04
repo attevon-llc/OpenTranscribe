@@ -16,7 +16,6 @@ and reduce frontend complexity.
 """
 
 import logging
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -45,7 +44,7 @@ class SpeakerStatusService:
     }
 
     @staticmethod
-    def compute_speaker_status(speaker: Speaker) -> dict[str, Optional[str]]:
+    def compute_speaker_status(speaker: Speaker) -> dict[str, str | None]:
         """
         Compute comprehensive status information for a speaker.
 
@@ -84,7 +83,7 @@ class SpeakerStatusService:
         }
 
     @staticmethod
-    def _resolve_profile_info(speaker: Speaker) -> tuple[Optional[str], Optional[str]]:
+    def _resolve_profile_info(speaker: Speaker) -> tuple[str | None, str | None]:
         """Resolve the linked SpeakerProfile's name and a coarse link status.
 
         Args:
@@ -238,7 +237,7 @@ class SpeakerStatusService:
             return False
 
     @staticmethod
-    def refresh_all_speaker_statuses(db: Session, media_file_id: Optional[int] = None) -> int:
+    def refresh_all_speaker_statuses(db: Session, media_file_id: int | None = None) -> int:
         """
         Refresh computed status for all speakers or speakers in a specific file.
 

@@ -11,7 +11,6 @@ serves providers registered through ``app.auth.provider_registry``.
 """
 
 import logging
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -28,10 +27,10 @@ logger = logging.getLogger(__name__)
 # (column holding the external subject id, column holding the last-seen org id).
 # Provider-agnostic — the same pair serves any managed IdP.
 EXTERNAL_ID_COLUMN = "external_id"
-EXTERNAL_ORG_ID_COLUMN: Optional[str] = "external_org_id"
+EXTERNAL_ORG_ID_COLUMN: str | None = "external_org_id"
 
 
-def _apply_identity(user: User, identity: ExternalIdentity, id_col: str, org_col: Optional[str]):
+def _apply_identity(user: User, identity: ExternalIdentity, id_col: str, org_col: str | None):
     """Stamp provider identity + profile fields onto a user row."""
     setattr(user, id_col, identity.external_id)
     if org_col is not None and identity.org_id is not None:

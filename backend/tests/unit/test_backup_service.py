@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from pathlib import Path
 from unittest import mock
 
@@ -107,7 +107,7 @@ def test_invalid_cron(expr):
 # Due-check (frozen times)
 # =============================================================================
 def _utc(y, mo, d, h, mi):
-    return datetime(y, mo, d, h, mi, tzinfo=timezone.utc)
+    return datetime(y, mo, d, h, mi, tzinfo=UTC)
 
 
 def test_first_run_only_fires_on_matching_minute():

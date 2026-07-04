@@ -20,7 +20,6 @@ import logging
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
-from typing import Optional
 from typing import Protocol
 
 from fastapi import Request
@@ -49,9 +48,9 @@ class ExternalIdentity:
     provider: str
     external_id: str
     email: str
-    full_name: Optional[str] = None
-    org_id: Optional[str] = None
-    org_role: Optional[str] = None
+    full_name: str | None = None
+    org_id: str | None = None
+    org_role: str | None = None
     is_admin: bool = False
     email_verified: bool = False
     raw_claims: dict[str, Any] = field(default_factory=dict)
@@ -60,7 +59,7 @@ class ExternalIdentity:
 class TokenVerifier(Protocol):
     """Protocol for external token verifiers (implemented by the cloud layer)."""
 
-    def verify(self, token: str, request: Request) -> Optional[ExternalIdentity]:
+    def verify(self, token: str, request: Request) -> ExternalIdentity | None:
         """Return the verified identity, or None if this token isn't ours/valid."""
         ...
 
@@ -91,7 +90,7 @@ def get_registered_providers() -> list[str]:
     return sorted(_verifiers)
 
 
-def verify_external_token(token: str, request: Request) -> Optional[ExternalIdentity]:
+def verify_external_token(token: str, request: Request) -> ExternalIdentity | None:
     """Offer a bearer token to every registered verifier, first match wins.
 
     Exceptions are contained per-verifier so external-auth problems can never

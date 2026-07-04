@@ -9,8 +9,8 @@ are delta-based (other tests in the same worker may have advanced them).
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 
 from prometheus_client import REGISTRY
 
@@ -24,7 +24,7 @@ def _sample(name: str, labels: dict | None = None) -> float:
 
 
 def test_last_success_timestamp_gauge(db_session):
-    ts = datetime(2026, 7, 1, 3, 0, tzinfo=timezone.utc)
+    ts = datetime(2026, 7, 1, 3, 0, tzinfo=UTC)
     sss.set_setting(db_session, bs.KEY_LAST_SUCCESS_AT, ts.isoformat(), "test")
 
     update_backup_metrics(db_session)
@@ -86,6 +86,13 @@ def test_perform_backup_failure_lands_in_metrics(db_session):
     base_failure = _sample("backup_runs_total", {"result": "failure"})
 
     bs.update_settings(db_session, destination="/nonexistent/backups/zzz")
+    # The registry is process-global and _sync_run_counters only ever RAISES the
+    # counter up to the DB cumulative count. Earlier tests in this worker (e.g.
+    # test_run_counters_sync_up_to_db_values) advance the live counter while their
+    # DB writes roll back with the savepoint — so a fresh DB count of 1 could
+    # never surface. Seed the persisted count at the live counter so this run's
+    # +1 is observable regardless of what ran before in the process.
+    sss.set_setting(db_session, bs.KEY_RUNS_FAILURE, int(base_failure), "test")
     result = bs.perform_backup(db_session)  # no_destination → ok=False
     assert result["ok"] is False
 

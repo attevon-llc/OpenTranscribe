@@ -2,7 +2,6 @@
 
 import re
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -96,13 +95,13 @@ class UserMediaSourceCreate(BaseModel):
 class UserMediaSourceUpdate(BaseModel):
     """Schema for updating a media source."""
 
-    hostname: Optional[str] = None
-    provider_type: Optional[str] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    verify_ssl: Optional[bool] = None
-    label: Optional[str] = None
-    is_shared: Optional[bool] = None
+    hostname: str | None = None
+    provider_type: str | None = None
+    username: str | None = None
+    password: str | None = None
+    verify_ssl: bool | None = None
+    label: str | None = None
+    is_shared: bool | None = None
 
     @field_validator("hostname")
     @classmethod
@@ -131,12 +130,12 @@ class UserMediaSourceResponse(BaseModel):
     label: str = ""
     is_active: bool = True
     is_shared: bool = False
-    shared_at: Optional[datetime] = None
-    owner_name: Optional[str] = None
-    owner_role: Optional[str] = None
+    shared_at: datetime | None = None
+    owner_name: str | None = None
+    owner_role: str | None = None
     is_own: bool = True
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

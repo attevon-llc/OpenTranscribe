@@ -3,9 +3,9 @@
 import hashlib
 import logging
 import secrets
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 
 from sqlalchemy.orm import Session
 
@@ -48,7 +48,7 @@ def request_password_reset(db: Session, email: str, ip_address: str) -> None:
         return
 
     # Rate limit: max tokens per hour per user
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    cutoff = datetime.now(UTC) - timedelta(hours=1)
     recent_count = (
         db.query(PasswordResetToken)
         .filter(
@@ -69,7 +69,7 @@ def request_password_reset(db: Session, email: str, ip_address: str) -> None:
     reset_token = PasswordResetToken(
         user_id=user.id,
         token_hash=token_hash,
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRY_HOURS),
+        expires_at=datetime.now(UTC) + timedelta(hours=TOKEN_EXPIRY_HOURS),
         ip_address=ip_address,
     )
     db.add(reset_token)
@@ -101,7 +101,7 @@ def confirm_password_reset(
         .filter(
             PasswordResetToken.token_hash == token_hash,
             PasswordResetToken.used_at.is_(None),
-            PasswordResetToken.expires_at > datetime.now(timezone.utc),
+            PasswordResetToken.expires_at > datetime.now(UTC),
         )
         .first()
     )
@@ -126,19 +126,19 @@ def confirm_password_reset(
     # Update password
     password_hash = get_password_hash(new_password)
     user.hashed_password = password_hash
-    user.password_changed_at = datetime.now(timezone.utc)
+    user.password_changed_at = datetime.now(UTC)
     user.must_change_password = False
 
     # Record in password history
     add_password_to_history(db, int(user.id), password_hash)
 
     # Mark token as used and invalidate other tokens for this user
-    record.used_at = datetime.now(timezone.utc)
+    record.used_at = datetime.now(UTC)
     db.query(PasswordResetToken).filter(
         PasswordResetToken.user_id == user.id,
         PasswordResetToken.id != record.id,
         PasswordResetToken.used_at.is_(None),
-    ).update({"used_at": datetime.now(timezone.utc)})
+    ).update({"used_at": datetime.now(UTC)})
 
     # Invalidate all existing sessions (FedRAMP AC-12)
     token_service.revoke_all_user_tokens(db, int(user.id))

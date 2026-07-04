@@ -15,8 +15,8 @@ import asyncio
 import logging
 import os
 import time
+from collections.abc import Callable
 from typing import Any
-from typing import Callable
 
 from .base import ASRProvider
 from .types import ASRConfig

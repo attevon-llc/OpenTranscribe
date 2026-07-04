@@ -147,7 +147,7 @@ def score_texts(
         return results
     try:
         raw_all = pipe(inputs, batch_size=batch_size)
-        for slot, raw in zip(idx_map, raw_all):
+        for slot, raw in zip(idx_map, raw_all, strict=True):
             # Per-input result is a list[{label,score}] when top_k=None.
             results[slot] = _normalize_scores([raw] if isinstance(raw, list) else raw, model_name)
     except Exception as exc:  # noqa: BLE001

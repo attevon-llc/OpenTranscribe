@@ -166,7 +166,7 @@ def wser(ref_words: list[dict[str, Any]], hyp_words: list[dict[str, Any]]) -> di
     counts = np.zeros((len(ref_labels), len(hyp_labels)), dtype=np.float64)
     durs = np.zeros_like(counts)
     t_total = 0.0
-    for rw, hw in zip(ref_words, hyp_words):
+    for rw, hw in zip(ref_words, hyp_words, strict=True):
         if rw["speaker"] in EXCLUDE:
             continue
         dur = _word_dur(rw)
@@ -180,7 +180,7 @@ def wser(ref_words: list[dict[str, Any]], hyp_words: list[dict[str, Any]]) -> di
     rows, cols = linear_sum_assignment(-counts)  # maximize matched diagonal
     correct = float(counts[rows, cols].sum())
     t_correct = float(durs[rows, cols].sum())
-    perm = {hyp_labels[c]: ref_labels[r] for r, c in zip(rows, cols)}
+    perm = {hyp_labels[c]: ref_labels[r] for r, c in zip(rows, cols, strict=True)}
 
     return {
         "wser": 1.0 - correct / n_scored,

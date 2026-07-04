@@ -6,7 +6,6 @@ import os
 import subprocess
 import sys
 from typing import Any
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +42,7 @@ _DATE_PATTERNS = [
 ]
 
 
-def _parse_integer_date(date_int: int) -> Optional[datetime.datetime]:
+def _parse_integer_date(date_int: int) -> datetime.datetime | None:
     """Parse integer YYYYMMDD format (common in YouTube/platform videos)."""
     try:
         date_str = str(date_int)
@@ -52,25 +51,25 @@ def _parse_integer_date(date_int: int) -> Optional[datetime.datetime]:
         year = int(date_str[0:4])
         month = int(date_str[4:6])
         day = int(date_str[6:8])
-        return datetime.datetime(year, month, day, tzinfo=datetime.timezone.utc)
+        return datetime.datetime(year, month, day, tzinfo=datetime.UTC)
     except (ValueError, TypeError):
         return None
 
 
-def _parse_with_patterns(date_str: str) -> Optional[datetime.datetime]:
+def _parse_with_patterns(date_str: str) -> datetime.datetime | None:
     """Try parsing date string against common media metadata patterns."""
     for pattern in _DATE_PATTERNS:
         try:
             parsed_date = datetime.datetime.strptime(date_str.strip(), pattern)
             if parsed_date.tzinfo is None:
-                parsed_date = parsed_date.replace(tzinfo=datetime.timezone.utc)
+                parsed_date = parsed_date.replace(tzinfo=datetime.UTC)
             return parsed_date
         except ValueError:
             continue
     return None
 
 
-def _parse_quicktime_format(date_str: str) -> Optional[datetime.datetime]:
+def _parse_quicktime_format(date_str: str) -> datetime.datetime | None:
     """Fallback parser for QuickTime format dates."""
     try:
         if ":" not in date_str or len(date_str) < 10:
@@ -83,7 +82,7 @@ def _parse_quicktime_format(date_str: str) -> Optional[datetime.datetime]:
         return None
 
 
-def _parse_media_date(date_str: str) -> Optional[datetime.datetime]:
+def _parse_media_date(date_str: str) -> datetime.datetime | None:
     """
     Parse various date formats commonly found in media file metadata.
 
@@ -226,7 +225,7 @@ def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     return important_fields
 
 
-def _parse_frame_rate(value: Any) -> Optional[float]:
+def _parse_frame_rate(value: Any) -> float | None:
     """Parse an ffprobe frame rate ("30000/1001", "24/1", "25", …) into a float."""
     if value is None:
         return None
@@ -245,7 +244,7 @@ def _parse_frame_rate(value: Any) -> Optional[float]:
         return None
 
 
-def _run_ffprobe_json(url: str, timeout: int) -> Optional[dict[str, Any]]:
+def _run_ffprobe_json(url: str, timeout: int) -> dict[str, Any] | None:
     """Invoke ffprobe against a URL and return parsed JSON (or None)."""
     import shutil
 
@@ -332,7 +331,7 @@ def _map_ffprobe_audio_stream(stream: dict[str, Any], out: dict[str, Any]) -> No
         out["AudioFormat"] = stream.get("codec_name")
 
 
-def extract_media_metadata_from_url(url: str, timeout: int = 15) -> Optional[dict[str, Any]]:
+def extract_media_metadata_from_url(url: str, timeout: int = 15) -> dict[str, Any] | None:
     """Extract media metadata via ffprobe against a presigned URL.
 
     ffprobe reads only container headers (≈ first 1 MB for MP4) so this is
@@ -368,7 +367,7 @@ def extract_media_metadata_from_url(url: str, timeout: int = 15) -> Optional[dic
     return out if out else None
 
 
-def extract_media_metadata(file_path: str) -> Optional[dict[str, Any]]:
+def extract_media_metadata(file_path: str) -> dict[str, Any] | None:
     """
     Extract metadata from a media file using ExifTool.
 
@@ -484,9 +483,7 @@ def _apply_creation_date_fallbacks(media_file, file_path: str) -> None:
     try:
         if os.path.exists(file_path):
             file_mtime = os.path.getmtime(file_path)
-            media_file.creation_date = datetime.datetime.fromtimestamp(
-                file_mtime, tz=datetime.timezone.utc
-            )
+            media_file.creation_date = datetime.datetime.fromtimestamp(file_mtime, tz=datetime.UTC)
             logger.info(
                 f"Using file system modification time as creation_date: {media_file.creation_date}"
             )

@@ -15,9 +15,9 @@ conftest, so retry/recovery exercise the API path only.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 
 from fastapi import status
 
@@ -41,7 +41,7 @@ def _make_file(
         content_type="audio/wav",
         file_size=4096,
         status=file_status,
-        upload_time=datetime.now(timezone.utc) - timedelta(hours=upload_age_hours),
+        upload_time=datetime.now(UTC) - timedelta(hours=upload_age_hours),
     )
     db_session.add(mf)
     db_session.commit()

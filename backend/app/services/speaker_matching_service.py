@@ -1,5 +1,6 @@
 import logging
 import uuid
+from datetime import UTC
 from typing import Any
 
 import numpy as np
@@ -790,9 +791,8 @@ class SpeakerMatchingService:
                         )
                         profile.embedding_count = count  # type: ignore[assignment]
                         from datetime import datetime
-                        from datetime import timezone
 
-                        profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
+                        profile.last_embedding_update = datetime.now(UTC)  # type: ignore[assignment]
                         self.db.commit()
                 except Exception as e:
                     logger.warning(f"Incremental profile update failed (non-fatal): {e}")

@@ -5,6 +5,7 @@ Stores refresh token metadata for token revocation and session tracking.
 Part of FedRAMP AC-12 compliance for token management.
 """
 
+from datetime import UTC
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -76,9 +77,8 @@ class RefreshToken(Base):
     def is_expired(self) -> bool:
         """Check if the token has expired."""
         from datetime import datetime
-        from datetime import timezone
 
-        return bool(datetime.now(timezone.utc) > self.expires_at)
+        return bool(datetime.now(UTC) > self.expires_at)
 
     @property
     def is_valid(self) -> bool:

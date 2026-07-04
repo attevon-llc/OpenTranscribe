@@ -1,8 +1,8 @@
 import logging
 import os
 import secrets
+from datetime import UTC
 from datetime import timedelta
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -100,7 +100,7 @@ def _get_client_info(request: Request) -> tuple[str, str]:
     return client_ip, user_agent
 
 
-def _authenticate_external_token(request: Request, token: str, db: Session) -> Optional[User]:
+def _authenticate_external_token(request: Request, token: str, db: Session) -> User | None:
     """Resolve a bearer token via the external-verifier seam (cloud edition).
 
     Returns the JIT-synced user when a registered verifier claims the token,
@@ -153,7 +153,7 @@ def _authenticate_external_token(request: Request, token: str, db: Session) -> O
 
 def get_current_user(
     request: Request,
-    token: Optional[str] = Depends(oauth2_scheme),
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """Get the current user from JWT token (Bearer header or httpOnly cookie).
@@ -273,7 +273,7 @@ def get_current_active_user(
 def get_optional_current_user(
     request: Request,
     db: Session = Depends(get_db),
-) -> Optional[User]:
+) -> User | None:
     """Get the current user if a valid token is provided, otherwise return None.
 
     Checks Bearer header first, then falls back to httpOnly cookie.
@@ -976,7 +976,6 @@ def login_for_access_token(
         # FedRAMP AC-10: Enforce concurrent session limit
         if settings.MAX_CONCURRENT_SESSIONS > 0:
             from datetime import datetime
-            from datetime import timezone
 
             from app.models.refresh_token import RefreshToken
 
@@ -988,7 +987,7 @@ def login_for_access_token(
                 .where(
                     RefreshToken.user_id == user_db.id,
                     RefreshToken.revoked_at.is_(None),
-                    RefreshToken.expires_at > datetime.now(timezone.utc),
+                    RefreshToken.expires_at > datetime.now(UTC),
                 )
                 .with_for_update()
             )
@@ -1007,7 +1006,7 @@ def login_for_access_token(
                     # Terminate oldest session - rows are already locked from the query above
                     # Sort by created_at to find the oldest
                     oldest_token = min(active_session_rows, key=lambda t: t.created_at)
-                    oldest_token.revoked_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                    oldest_token.revoked_at = datetime.now(UTC)  # type: ignore[assignment]
                     db.commit()
 
                     audit_logger.log(
@@ -1075,7 +1074,6 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
 
     # Hash the password
     from datetime import datetime
-    from datetime import timezone as tz
 
     password_hash = get_password_hash(user_in.password)
 
@@ -1088,7 +1086,7 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
         auth_type=AUTH_TYPE_LOCAL,
         is_active=True,
         is_superuser=False,
-        password_changed_at=datetime.now(tz.utc),  # Track initial password time
+        password_changed_at=datetime.now(UTC),  # Track initial password time
     )
 
     db.add(db_user)
@@ -1194,7 +1192,7 @@ def read_users_me(current_user: User = Depends(get_current_user)):
 @router.get("/session", summary="Cookie-session status probe (never 401s)")
 def session_status(
     request: Request,
-    token: Optional[str] = Depends(oauth2_scheme),
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> dict:
     """Report whether the caller has a valid session — with 200 either way.
@@ -1691,9 +1689,8 @@ async def acknowledge_banner(
     FedRAMP AC-8 compliance.
     """
     from datetime import datetime
-    from datetime import timezone
 
-    current_user.banner_acknowledged_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+    current_user.banner_acknowledged_at = datetime.now(UTC)  # type: ignore[assignment]
     db.commit()
 
     # Audit log
@@ -1850,10 +1847,9 @@ def _create_mfa_token(user_uuid_str: str, user_role: str) -> str:
     """
     import uuid as uuid_mod
     from datetime import datetime
-    from datetime import timezone
 
     mfa_token_expires = timedelta(minutes=settings.MFA_TOKEN_EXPIRE_MINUTES)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + mfa_token_expires
 
     mfa_token_data = {
@@ -2040,10 +2036,9 @@ def _complete_mfa_verification(
         JSONResponse with access_token, refresh_token, and token metadata
     """
     from datetime import datetime as dt
-    from datetime import timezone as tz
 
     # Update last verified timestamp
-    user_mfa.last_verified_at = dt.now(tz.utc)  # type: ignore[assignment]
+    user_mfa.last_verified_at = dt.now(UTC)  # type: ignore[assignment]
     db.commit()
 
     # Blacklist the MFA token JTI to prevent replay attacks
@@ -2602,7 +2597,7 @@ def refresh_access_token(
 @router.post("/logout")
 async def logout(
     request: Request,
-    token: Optional[str] = Depends(oauth2_scheme),
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
     """
@@ -2648,12 +2643,9 @@ async def logout(
             if jti:
                 # Calculate expiration datetime from timestamp
                 from datetime import datetime
-                from datetime import timezone
 
                 expires_at = (
-                    datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
-                    if exp_timestamp
-                    else None
+                    datetime.fromtimestamp(exp_timestamp, tz=UTC) if exp_timestamp else None
                 )
 
                 # Revoke access token

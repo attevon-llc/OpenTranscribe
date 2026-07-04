@@ -9,9 +9,9 @@ reuse, the ``include_opensearch`` off path (no OS calls), and graceful degradati
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from types import SimpleNamespace
 from unittest import mock
 
@@ -68,7 +68,7 @@ def test_ensure_repository_recreates_on_location_mismatch():
 def test_prune_snapshots_reuses_gfs_selector():
     # 5 daily snapshots; keep 2 daily → expect the 3 oldest deleted, by the SAME
     # selector backup_service uses for .dump files.
-    base = datetime(2026, 6, 1, 3, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 6, 1, 3, 0, tzinfo=UTC)
     names = [
         f"opentranscribe-{(base - timedelta(days=i)).strftime('%Y%m%d-%H%M%S')}" for i in range(5)
     ]

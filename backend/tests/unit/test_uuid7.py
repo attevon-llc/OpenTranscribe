@@ -46,7 +46,7 @@ def test_monotonic_ordering_of_a_burst():
     """A burst minted back-to-back must sort in creation order."""
     burst = [uuid7() for _ in range(10_000)]
     # Strictly increasing — same-ms values are ordered by the rand_a counter.
-    for prev, cur in zip(burst, burst[1:]):
+    for prev, cur in zip(burst, burst[1:], strict=False):
         assert prev < cur, f"ordering violated: {prev} !< {cur}"
     assert burst == sorted(burst)
 

@@ -1,7 +1,6 @@
 """Service for persisting search settings to the database."""
 
 import logging
-from typing import Optional
 
 from app.core.constants import OPENSEARCH_DEFAULT_MODEL
 from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
@@ -105,7 +104,7 @@ def get_search_embedding_settings() -> tuple[str, int]:
     return model_id, dimension
 
 
-def _get_setting(key: str) -> Optional[str]:
+def _get_setting(key: str) -> str | None:
     """Read a single setting from the database."""
     try:
         from app.db.session_utils import session_scope

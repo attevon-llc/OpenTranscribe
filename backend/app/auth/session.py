@@ -19,10 +19,9 @@ import json
 import logging
 import secrets
 import threading
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
-from typing import Optional
 
 from app.core.config import settings
 
@@ -125,24 +124,24 @@ class InMemoryStore:
     """
 
     def __init__(self):
-        self._data: dict[str, tuple[str, Optional[float]]] = {}  # key -> (value, expire_at)
+        self._data: dict[str, tuple[str, float | None]] = {}  # key -> (value, expire_at)
         self._lock = threading.Lock()
 
-    def set(self, key: str, value: str, ex: Optional[int] = None) -> None:  # noqa: A003 - intentionally mirrors Redis API
+    def set(self, key: str, value: str, ex: int | None = None) -> None:  # noqa: A003 - intentionally mirrors Redis API
         """Set a value with optional expiration in seconds."""
         with self._lock:
             expire_at = None
             if ex:
-                expire_at = datetime.now(timezone.utc).timestamp() + ex
+                expire_at = datetime.now(UTC).timestamp() + ex
             self._data[key] = (value, expire_at)
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         """Get a value, returning None if expired or not found."""
         with self._lock:
             if key not in self._data:
                 return None
             value, expire_at = self._data[key]
-            if expire_at and datetime.now(timezone.utc).timestamp() > expire_at:
+            if expire_at and datetime.now(UTC).timestamp() > expire_at:
                 del self._data[key]
                 return None
             return value
@@ -160,7 +159,7 @@ class InMemoryStore:
         # Convert Redis pattern to simple prefix (only supports prefix*)
         prefix = pattern.rstrip("*")
         with self._lock:
-            now = datetime.now(timezone.utc).timestamp()
+            now = datetime.now(UTC).timestamp()
             return [
                 k
                 for k, (_, expire_at) in self._data.items()
@@ -202,7 +201,7 @@ class InMemoryStore:
 
 
 # Singleton in-memory store for fallback
-_in_memory_store: Optional[InMemoryStore] = None
+_in_memory_store: InMemoryStore | None = None
 
 
 def _get_store():
@@ -336,7 +335,7 @@ class OIDCStateStore:
         logger.debug(f"Stored OIDC state: {state[:8]}... (expires in {expires_seconds}s)")
         return True
 
-    def get_state(self, state: str) -> Optional[dict]:
+    def get_state(self, state: str) -> dict | None:
         """
         Retrieve and delete OIDC state data (single-use).
 
@@ -398,8 +397,8 @@ class SessionManager:
 
     def __init__(
         self,
-        idle_timeout_minutes: Optional[int] = None,
-        absolute_timeout_minutes: Optional[int] = None,
+        idle_timeout_minutes: int | None = None,
+        absolute_timeout_minutes: int | None = None,
     ):
         """
         Initialize the session manager.
@@ -439,7 +438,7 @@ class SessionManager:
         """Get the Redis key for a user's session set."""
         return f"{USER_SESSIONS_PREFIX}{user_id}"
 
-    def create_session(self, user_id: str, token: str, metadata: Optional[dict] = None) -> str:
+    def create_session(self, user_id: str, token: str, metadata: dict | None = None) -> str:
         """
         Create a new session for a user.
 
@@ -452,7 +451,7 @@ class SessionManager:
             session_id: Unique session identifier
         """
         session_id = self._generate_session_id()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         session_data = {
             "session_id": session_id,
@@ -475,7 +474,7 @@ class SessionManager:
         logger.info(f"Created session {session_id[:8]}... for user {user_id}")
         return session_id
 
-    def validate_session(self, session_id: str) -> Optional[dict]:
+    def validate_session(self, session_id: str) -> dict | None:
         """
         Validate a session and update last activity time.
 
@@ -508,7 +507,7 @@ class SessionManager:
             return None
 
         session_data = json.loads(data)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Check idle timeout
         last_activity = datetime.fromisoformat(session_data["last_activity"])
@@ -586,7 +585,7 @@ class SessionManager:
                 session_data = json.loads(data)
                 # Check idle timeout
                 last_activity = datetime.fromisoformat(session_data["last_activity"])
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 if now - last_activity <= self.idle_timeout:
                     # Don't include token in listing for security
                     safe_data = {k: v for k, v in session_data.items() if k != "token"}

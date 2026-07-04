@@ -1,7 +1,7 @@
 import logging
 import math
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import Any
 
 from fastapi import APIRouter
@@ -41,11 +41,11 @@ def calculate_age_seconds(timestamp):
         return None
 
     # Get current time with timezone
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Make timestamp timezone-aware if it's not
     if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
+        timestamp = timestamp.replace(tzinfo=UTC)
 
     # Calculate the difference
     return (now - timestamp).total_seconds()
@@ -318,7 +318,7 @@ async def task_system_health(
                 "count": len(inconsistent_files),
                 "items": inconsistent_file_data,
             },
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
         }
     except Exception as e:
         logger.error("Error in task_system_health: %s", e, exc_info=True)
@@ -683,7 +683,7 @@ async def retry_file_processing(
         for task in old_tasks:
             task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
             task.error_message = "Task marked as failed for retry"  # type: ignore[assignment]
-            task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+            task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
 
         db.commit()
 

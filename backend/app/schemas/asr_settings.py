@@ -2,7 +2,7 @@
 
 import re
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -10,7 +10,7 @@ from pydantic import field_validator
 from pydantic import model_validator
 
 
-class ASRProvider(str, Enum):
+class ASRProvider(StrEnum):
     LOCAL = "local"
     DEEPGRAM = "deepgram"
     ASSEMBLYAI = "assemblyai"

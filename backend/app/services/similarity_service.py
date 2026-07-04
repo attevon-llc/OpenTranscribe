@@ -12,8 +12,6 @@ No fallbacks - requires modern dependencies for optimal performance.
 import logging
 import os
 from typing import Any
-from typing import Optional
-from typing import Union
 
 import numpy as np
 import torch
@@ -31,7 +29,7 @@ class SimilarityService:
 
     @staticmethod
     def cosine_similarity(
-        embedding1: Union[np.ndarray, torch.Tensor], embedding2: Union[np.ndarray, torch.Tensor]
+        embedding1: np.ndarray | torch.Tensor, embedding2: np.ndarray | torch.Tensor
     ) -> float:
         """
         Compute cosine similarity using PyTorch's optimized implementation.
@@ -64,8 +62,8 @@ class SimilarityService:
 
     @staticmethod
     def batch_cosine_similarity(
-        query_embedding: Union[np.ndarray, torch.Tensor],
-        target_embeddings: list[Union[np.ndarray, torch.Tensor]],
+        query_embedding: np.ndarray | torch.Tensor,
+        target_embeddings: list[np.ndarray | torch.Tensor],
     ) -> list[float]:
         """
         GPU-accelerated batch cosine similarity using PyTorch.
@@ -114,12 +112,12 @@ class SimilarityService:
 
     @staticmethod
     def opensearch_similarity_search(
-        embedding: Union[list[float], np.ndarray, torch.Tensor],
+        embedding: list[float] | np.ndarray | torch.Tensor,
         user_id: int,
         index_name: str = "speakers",
         threshold: float = 0.7,
         max_results: int = 50,
-        exclude_ids: Optional[list[int]] = None,
+        exclude_ids: list[int] | None = None,
         boost_recent: bool = True,
         organization_id: int | None = None,
     ) -> list[dict[str, Any]]:
@@ -211,7 +209,7 @@ class SimilarityService:
 
     @staticmethod
     def pairwise_similarity_matrix(
-        embeddings: Union[np.ndarray, torch.Tensor, list[np.ndarray]],
+        embeddings: np.ndarray | torch.Tensor | list[np.ndarray],
     ) -> torch.Tensor:
         """
         Compute pairwise cosine similarity matrix for all embeddings.
@@ -249,8 +247,8 @@ class SimilarityService:
 
     @staticmethod
     def top_k_similar(
-        query_embedding: Union[np.ndarray, torch.Tensor],
-        candidate_embeddings: Union[np.ndarray, torch.Tensor, list[np.ndarray]],
+        query_embedding: np.ndarray | torch.Tensor,
+        candidate_embeddings: np.ndarray | torch.Tensor | list[np.ndarray],
         k: int = 10,
         threshold: float = 0.7,
     ) -> list[tuple[int, float]]:
@@ -306,7 +304,7 @@ class SimilarityService:
 
         # Convert back to original indices
         results = []
-        for i, sim_val in zip(top_k_indices_in_valid, top_k_values):
+        for i, sim_val in zip(top_k_indices_in_valid, top_k_values, strict=True):
             original_idx = int(valid_indices[i].item())
             similarity = float(sim_val.item())
             results.append((original_idx, similarity))

@@ -1,7 +1,7 @@
 """Password reset token model for self-service password recovery."""
 
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
@@ -26,6 +26,6 @@ class PasswordResetToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)

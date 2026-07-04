@@ -1,10 +1,8 @@
 import uuid
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from typing import Any
-from typing import Optional
-from typing import Union
 
 from fastapi import Cookie
 from fastapi import HTTPException
@@ -98,9 +96,9 @@ def _get_jwt_algorithm() -> str:
 
 
 def create_access_token(
-    subject: Union[str, Any],
-    expires_delta: Optional[timedelta] = None,
-    additional_claims: Optional[dict] = None,
+    subject: str | Any,
+    expires_delta: timedelta | None = None,
+    additional_claims: dict | None = None,
 ) -> str:
     """
     Create a JWT access token with optional additional claims.
@@ -116,7 +114,7 @@ def create_access_token(
     Returns:
         Encoded JWT token string
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if expires_delta:
         expire = now + expires_delta
     else:
@@ -155,7 +153,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def verify_and_update_password(
     plain_password: str, hashed_password: str
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """
     Verify a password and optionally return an upgraded hash.
 
@@ -232,7 +230,7 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)  # type: ignore[no-any-return]
 
 
-def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
+def authenticate_user(db: Session, email: str, password: str) -> User | None:
     """
     Authenticate a user by email and password.
 
@@ -257,7 +255,7 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     return user  # type: ignore[no-any-return]
 
 
-def get_token_from_cookie(access_token: Optional[str] = Cookie(None)) -> str:
+def get_token_from_cookie(access_token: str | None = Cookie(None)) -> str:
     """
     Extract the JWT token from the cookie
     """

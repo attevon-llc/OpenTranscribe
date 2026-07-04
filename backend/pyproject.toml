@@ -5,10 +5,8 @@ requires = ["setuptools", "wheel"]
 # Same as Black.
 line-length = 100
 
-# Deliberately stays py39-era: bumping enables 3.12+ pyupgrade codemods
-# (~1400 auto-fixes) — that churn is a dedicated follow-up PR, not part of
-# the CI/runtime alignment.
-target-version = "py39"
+# py312 matches the runtime; the 3.12+ pyupgrade codemod landed with this bump.
+target-version = "py312"
 
 [tool.ruff.lint]
 # Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.

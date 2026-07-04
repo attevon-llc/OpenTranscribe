@@ -2,7 +2,6 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
-from typing import Optional
 from typing import cast
 
 import numpy as np
@@ -23,7 +22,7 @@ class SpeakerEmbeddingService:
     def __init__(
         self,
         model_name: str | None = None,
-        models_dir: Optional[str] = None,
+        models_dir: str | None = None,
         mode: EmbeddingMode | None = None,
     ):
         """
@@ -168,8 +167,8 @@ class SpeakerEmbeddingService:
         return torch.from_numpy(audio), sr
 
     def extract_embedding_from_file(
-        self, audio_path: str, segment: Optional[dict[str, float]] = None
-    ) -> Optional[np.ndarray]:
+        self, audio_path: str, segment: dict[str, float] | None = None
+    ) -> np.ndarray | None:
         """
         Extract speaker embedding from an audio file or segment.
 
@@ -216,7 +215,7 @@ class SpeakerEmbeddingService:
         start: float,
         duration: float,
         target_sr: int = 16000,
-    ) -> Optional[torch.Tensor]:
+    ) -> torch.Tensor | None:
         """Load only a specific segment of audio using ffmpeg seeking.
 
         Delegates to audio_segment_utils.extract_audio_segment_np() and
@@ -242,7 +241,7 @@ class SpeakerEmbeddingService:
         self,
         audio_source: str,
         segment: dict[str, float],
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """Extract embedding for a single segment using fast ffmpeg seeking.
 
         Unlike extract_embedding_from_file which decodes the entire file,
@@ -284,8 +283,8 @@ class SpeakerEmbeddingService:
         self,
         waveform: torch.Tensor,
         sample_rate: int,
-        segment: Optional[dict[str, float]] = None,
-    ) -> Optional[np.ndarray]:
+        segment: dict[str, float] | None = None,
+    ) -> np.ndarray | None:
         """Extract speaker embedding from a pre-loaded waveform.
 
         Use this when processing multiple segments from the same audio file
@@ -402,7 +401,7 @@ class SpeakerEmbeddingService:
 
         return aggregated  # type: ignore[no-any-return]
 
-    def extract_reference_embedding(self, audio_paths: list[str]) -> Optional[np.ndarray]:
+    def extract_reference_embedding(self, audio_paths: list[str]) -> np.ndarray | None:
         """
         Extract a reference embedding from multiple audio samples of the same speaker.
 
@@ -460,7 +459,7 @@ class SpeakerEmbeddingService:
 # Warm Model Cache - keeps embedding model loaded between transcriptions
 # ============================================================================
 
-_cached_embedding_service: Optional[SpeakerEmbeddingService] = None
+_cached_embedding_service: SpeakerEmbeddingService | None = None
 _cache_lock = None  # Lazy-initialized threading lock (reentrant)
 
 

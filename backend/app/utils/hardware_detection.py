@@ -14,7 +14,6 @@ import logging
 import os
 import platform
 from typing import Any
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +23,8 @@ class HardwareConfig:
 
     def __init__(
         self,
-        force_device: Optional[str] = None,
-        force_compute_type: Optional[str] = None,
+        force_device: str | None = None,
+        force_compute_type: str | None = None,
     ):
         """
         Initialize hardware configuration.

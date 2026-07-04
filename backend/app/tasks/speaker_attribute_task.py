@@ -83,7 +83,7 @@ def _store_gender_results(
 
     Returns the number of speakers updated with gender predictions.
     """
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     updated_count = 0
     speaker_by_id = {int(s.id): s for s in speakers}
 

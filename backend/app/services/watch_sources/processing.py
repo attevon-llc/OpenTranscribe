@@ -16,8 +16,8 @@ import logging
 import mimetypes
 import os
 import uuid as uuid_pkg
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -118,7 +118,7 @@ def _mark_skipped(db: Session, row: WatchSourceFile, reason: str, media_file_id:
     row.skip_reason = reason
     if media_file_id:
         row.media_file_id = media_file_id
-    row.processed_at = datetime.now(timezone.utc)
+    row.processed_at = datetime.now(UTC)
     db.flush()
 
 
@@ -228,7 +228,7 @@ def ingest_prepared_file(
     # 7. Finalize tracking row.
     row.status = "imported"
     row.media_file_id = int(db_file.id)
-    row.processed_at = datetime.now(timezone.utc)
+    row.processed_at = datetime.now(UTC)
     source.total_files_imported = (source.total_files_imported or 0) + 1
 
     db.commit()
@@ -369,6 +369,6 @@ def _record_error(source_id: int, remote_path: str, message: str) -> None:
                 row.status = "error"
                 row.error_message = message[:2000]
                 row.retry_count = (row.retry_count or 0) + 1
-                row.processed_at = datetime.now(timezone.utc)
+                row.processed_at = datetime.now(UTC)
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to record watch import error for %s: %s", remote_path, e)

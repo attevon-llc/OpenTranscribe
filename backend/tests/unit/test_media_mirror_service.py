@@ -9,8 +9,8 @@ process-global Prometheus registry with delta-based assertions.
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 
 import pytest
 from prometheus_client import REGISTRY
@@ -139,7 +139,7 @@ def test_test_s3_connection_without_bucket(db_session):
 # =============================================================================
 def test_record_result_success_bookkeeping(db_session):
     _clear_mirror_keys(db_session)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     result = {
         "ok": True,
         "status": "success",
@@ -162,7 +162,7 @@ def test_record_result_success_bookkeeping(db_session):
 
 def test_record_result_failure_bookkeeping(db_session):
     _clear_mirror_keys(db_session)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     mm.record_result(db_session, now_iso, {"ok": False, "status": "error", "error": "boom"})
 
     assert sss.get_setting_int(db_session, mm.KEY_RUNS_FAILURE, 0) == 1
@@ -190,7 +190,7 @@ def test_perform_mirror_noop_when_destination_missing(db_session):
 # Scrape-time metrics projection
 # =============================================================================
 def test_mirror_metrics_project_persisted_state(db_session):
-    ts = datetime(2026, 7, 1, 4, 0, tzinfo=timezone.utc)
+    ts = datetime(2026, 7, 1, 4, 0, tzinfo=UTC)
     base_success = _sample("media_mirror_runs_total", {"result": "success"})
     base_failure = _sample("media_mirror_runs_total", {"result": "failure"})
 

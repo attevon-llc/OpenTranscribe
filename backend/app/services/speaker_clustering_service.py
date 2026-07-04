@@ -459,7 +459,7 @@ class SpeakerClusteringService:
                     org_by_speaker[int(sid)] = int(org) if org is not None else None
 
             partitions: dict[int | None, tuple[list[int], list[list[float]]]] = {}
-            for sid, emb_row in zip(ordered_ids, emb_rows):
+            for sid, emb_row in zip(ordered_ids, emb_rows, strict=True):
                 p_ids, p_rows = partitions.setdefault(org_by_speaker.get(sid), ([], []))
                 p_ids.append(sid)
                 p_rows.append(emb_row)

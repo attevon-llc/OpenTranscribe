@@ -13,13 +13,12 @@ for non-FedRAMP environments by setting PASSWORD_POLICY_ENABLED=false.
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
-from typing import Callable
-from typing import Optional
 
 from app.core.config import settings
 
@@ -141,8 +140,8 @@ class PasswordPolicy:
     def _check_personal_info(
         self,
         password: str,
-        email: Optional[str],
-        full_name: Optional[str],
+        email: str | None,
+        full_name: str | None,
     ) -> list[str]:
         """
         Check that password doesn't contain personal information.
@@ -204,8 +203,8 @@ class PasswordPolicy:
     def validate_password(
         self,
         password: str,
-        email: Optional[str] = None,
-        full_name: Optional[str] = None,
+        email: str | None = None,
+        full_name: str | None = None,
     ) -> PasswordValidationResult:
         """
         Validate a password against the configured policy.
@@ -285,8 +284,8 @@ class PasswordPolicy:
 
     def is_password_expired(
         self,
-        password_changed_at: Optional[datetime],
-        current_time: Optional[datetime] = None,
+        password_changed_at: datetime | None,
+        current_time: datetime | None = None,
     ) -> bool:
         """
         Check if a password has expired based on max age policy.
@@ -306,22 +305,22 @@ class PasswordPolicy:
             return True
 
         if current_time is None:
-            current_time = datetime.now(timezone.utc)
+            current_time = datetime.now(UTC)
 
         # Ensure timezone-aware comparison
         if password_changed_at.tzinfo is None:
-            password_changed_at = password_changed_at.replace(tzinfo=timezone.utc)
+            password_changed_at = password_changed_at.replace(tzinfo=UTC)
         if current_time.tzinfo is None:
-            current_time = current_time.replace(tzinfo=timezone.utc)
+            current_time = current_time.replace(tzinfo=UTC)
 
         expiration_date = password_changed_at + timedelta(days=self.max_age_days)
         return current_time >= expiration_date
 
     def get_days_until_expiration(
         self,
-        password_changed_at: Optional[datetime],
-        current_time: Optional[datetime] = None,
-    ) -> Optional[int]:
+        password_changed_at: datetime | None,
+        current_time: datetime | None = None,
+    ) -> int | None:
         """
         Get the number of days until password expires.
 
@@ -339,13 +338,13 @@ class PasswordPolicy:
             return -1  # Already expired (no recorded change)
 
         if current_time is None:
-            current_time = datetime.now(timezone.utc)
+            current_time = datetime.now(UTC)
 
         # Ensure timezone-aware comparison
         if password_changed_at.tzinfo is None:
-            password_changed_at = password_changed_at.replace(tzinfo=timezone.utc)
+            password_changed_at = password_changed_at.replace(tzinfo=UTC)
         if current_time.tzinfo is None:
-            current_time = current_time.replace(tzinfo=timezone.utc)
+            current_time = current_time.replace(tzinfo=UTC)
 
         expiration_date = password_changed_at + timedelta(days=self.max_age_days)
         delta = expiration_date - current_time
@@ -377,8 +376,8 @@ password_policy = PasswordPolicy()
 
 def validate_password(
     password: str,
-    email: Optional[str] = None,
-    full_name: Optional[str] = None,
+    email: str | None = None,
+    full_name: str | None = None,
 ) -> PasswordValidationResult:
     """
     Validate a password against the configured policy.
@@ -423,8 +422,8 @@ def check_password_history(
 
 
 def is_password_expired(
-    password_changed_at: Optional[datetime],
-    current_time: Optional[datetime] = None,
+    password_changed_at: datetime | None,
+    current_time: datetime | None = None,
 ) -> bool:
     """
     Check if a password has expired based on max age policy.

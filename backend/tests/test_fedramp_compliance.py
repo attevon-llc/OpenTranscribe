@@ -186,7 +186,7 @@ class TestMFAService:
 
         # Hashes should differ from plaintext; scheme follows FIPS mode
         # (PBKDF2-SHA256 in FIPS mode, bcrypt otherwise)
-        for code, hashed in zip(codes, hashed_codes):
+        for code, hashed in zip(codes, hashed_codes, strict=True):
             assert code != hashed
             if settings.FIPS_MODE:
                 assert hashed.startswith("$pbkdf2-sha256$")

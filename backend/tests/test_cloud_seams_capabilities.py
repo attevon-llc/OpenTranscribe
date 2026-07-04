@@ -8,7 +8,6 @@ surfaces, hooks are no-ops, and a broken cloud layer can never break core.
 import uuid
 from types import SimpleNamespace
 from typing import Any
-from typing import Optional
 
 import pytest
 from fastapi import HTTPException
@@ -237,7 +236,7 @@ class TestRecordEvent:
 
 
 class TestRequestContext:
-    def _user(self, db_session, ident: Optional[ExternalIdentity] = None):
+    def _user(self, db_session, ident: ExternalIdentity | None = None):
         return sync_external_user_to_db(db_session, ident or _identity())
 
     def test_personal_context_without_identity(self, db_session):

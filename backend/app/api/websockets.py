@@ -2,7 +2,6 @@ import asyncio
 import contextlib
 import json
 import logging
-from typing import Optional
 
 import redis.asyncio as redis
 from fastapi import APIRouter
@@ -126,7 +125,7 @@ async def redis_subscriber():
             while True:
                 try:
                     message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
-                except (RedisTimeoutError, asyncio.TimeoutError):
+                except (TimeoutError, RedisTimeoutError):
                     # Idle read timeout — benign keepalive, NOT a connection loss.
                     continue
                 if message is None:
@@ -164,8 +163,8 @@ async def publish_notification(user_id: int, notification_type: str, data: dict)
 
 
 def _try_authenticate_token(
-    token: str, db: Session, websocket: Optional[WebSocket] = None
-) -> Optional[User]:
+    token: str, db: Session, websocket: WebSocket | None = None
+) -> User | None:
     """Validate a token (local JWT or external provider) and return the User, or None.
 
     Cloud-edition seam: an external session token authenticates the socket via the
@@ -225,7 +224,7 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
     # Accept the connection first, then authenticate
     await websocket.accept()
 
-    user: Optional[User] = None
+    user: User | None = None
 
     # 1. Try cookie-based auth
     token = websocket.cookies.get("access_token")
@@ -244,7 +243,7 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
             if not user:
                 await websocket.close(code=4003, reason="Invalid token")
                 return
-        except asyncio.TimeoutError:
+        except TimeoutError:
             await websocket.close(code=4001, reason="Authentication timeout")
             return
         except (json.JSONDecodeError, WebSocketDisconnect):

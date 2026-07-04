@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from typing import Any
-from typing import Optional
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -12,11 +11,11 @@ class AuthConfigBase(BaseModel):
     """Base schema for authentication configuration."""
 
     config_key: str = Field(..., max_length=100)
-    config_value: Optional[str] = None
+    config_value: str | None = None
     is_sensitive: bool = False
     category: str = Field(..., max_length=50)
     data_type: str = Field(default="string", max_length=20)
-    description: Optional[str] = None
+    description: str | None = None
     requires_restart: bool = False
 
 
@@ -27,8 +26,8 @@ class AuthConfigCreate(AuthConfigBase):
 class AuthConfigUpdate(BaseModel):
     """Schema for updating an authentication configuration."""
 
-    config_value: Optional[str] = None
-    description: Optional[str] = None
+    config_value: str | None = None
+    description: str | None = None
 
 
 class AuthConfigResponse(AuthConfigBase):
@@ -51,10 +50,10 @@ class AuthConfigAuditResponse(BaseModel):
     id: int
     uuid: str
     config_key: str
-    old_value: Optional[str] = None  # Will be masked for sensitive
-    new_value: Optional[str] = None  # Will be masked for sensitive
+    old_value: str | None = None  # Will be masked for sensitive
+    new_value: str | None = None  # Will be masked for sensitive
     change_type: str
-    ip_address: Optional[str] = None
+    ip_address: str | None = None
     created_at: datetime
 
     class Config:
@@ -75,7 +74,7 @@ class LDAPConfig(BaseModel):
     ldap_use_ssl: bool = True
     ldap_use_tls: bool = False
     ldap_bind_dn: str = ""
-    ldap_bind_password: Optional[str] = None  # Sensitive
+    ldap_bind_password: str | None = None  # Sensitive
     ldap_search_base: str = ""
     ldap_username_attr: str = "sAMAccountName"
     ldap_email_attr: str = "mail"
@@ -96,7 +95,7 @@ class KeycloakConfig(BaseModel):
     keycloak_internal_url: str = ""
     keycloak_realm: str = "opentranscribe"
     keycloak_client_id: str = ""
-    keycloak_client_secret: Optional[str] = None  # Sensitive
+    keycloak_client_secret: str | None = None  # Sensitive
     keycloak_callback_url: str = ""
     keycloak_admin_role: str = "admin"
     keycloak_timeout: int = 30
@@ -179,7 +178,7 @@ class AuthMethodTestResponse(BaseModel):
 
     success: bool
     message: str
-    details: Optional[dict[str, Any]] = None
+    details: dict[str, Any] | None = None
 
 
 class BulkConfigUpdate(BaseModel):

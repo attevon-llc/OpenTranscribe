@@ -23,7 +23,6 @@ self-host/community edition — these are cloud-only surfaces.
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -56,11 +55,11 @@ def _org_member_user_ids(db: Session, org_id: int) -> list[int]:
 
 @router.get("/audit-logs")
 def get_org_audit_logs(
-    start_date: Optional[datetime] = Query(None, description="Start date for log query"),
-    end_date: Optional[datetime] = Query(None, description="End date for log query"),
-    event_type: Optional[str] = Query(None, description="Filter by event type"),
-    user_id: Optional[int] = Query(None, description="Filter by user ID (must be an org member)"),
-    outcome: Optional[str] = Query(None, description="Filter by outcome"),
+    start_date: datetime | None = Query(None, description="Start date for log query"),
+    end_date: datetime | None = Query(None, description="End date for log query"),
+    event_type: str | None = Query(None, description="Filter by event type"),
+    user_id: int | None = Query(None, description="Filter by user ID (must be an org member)"),
+    outcome: str | None = Query(None, description="Filter by outcome"),
     limit: int = Query(default=100, le=1000, description="Maximum results"),
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),

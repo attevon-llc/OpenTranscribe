@@ -292,7 +292,7 @@ async def bulk_export_stream(
             while True:
                 try:
                     msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
-                except (RedisTimeoutError, asyncio.TimeoutError):
+                except (TimeoutError, RedisTimeoutError):
                     yield ": keepalive\n\n"
                     continue
                 except RedisError as e:

@@ -78,12 +78,12 @@ logger = logging.getLogger(__name__)
 class SpeakerParams(NamedTuple):
     """Speaker diarization parameters parsed from request headers."""
 
-    min_speakers: Optional[int]
-    max_speakers: Optional[int]
-    num_speakers: Optional[int]
+    min_speakers: int | None
+    max_speakers: int | None
+    num_speakers: int | None
 
 
-def _parse_speaker_params_from_headers(request: Optional[Request]) -> SpeakerParams:
+def _parse_speaker_params_from_headers(request: Request | None) -> SpeakerParams:
     """
     Parse speaker diarization parameters from request headers.
 
@@ -93,7 +93,7 @@ def _parse_speaker_params_from_headers(request: Optional[Request]) -> SpeakerPar
     if not request:
         return SpeakerParams(None, None, None)
 
-    def parse_int_header(header_name: str) -> Optional[int]:
+    def parse_int_header(header_name: str) -> int | None:
         """Parse an integer from a request header, returning None on failure."""
         value = request.headers.get(header_name)
         if not value:
@@ -197,20 +197,20 @@ def list_media_files(
         description="Filter: 'mine' (owned), 'shared' (via shared collections), 'all' (both)",
     ),
     # Existing filters
-    search: Optional[str] = None,
-    tag: Optional[list[str]] = Query(None),
-    speaker: Optional[list[str]] = Query(None),
-    from_date: Optional[datetime] = None,
-    to_date: Optional[datetime] = None,
-    min_duration: Optional[float] = None,
-    max_duration: Optional[float] = None,
-    min_file_size: Optional[int] = None,  # In MB
-    max_file_size: Optional[int] = None,  # In MB
-    file_type: Optional[list[str]] = Query(None),  # ['audio', 'video']
-    status: Optional[list[str]] = Query(
+    search: str | None = None,
+    tag: list[str] | None = Query(None),
+    speaker: list[str] | None = Query(None),
+    from_date: datetime | None = None,
+    to_date: datetime | None = None,
+    min_duration: float | None = None,
+    max_duration: float | None = None,
+    min_file_size: int | None = None,  # In MB
+    max_file_size: int | None = None,  # In MB
+    file_type: list[str] | None = Query(None),  # ['audio', 'video']
+    status: list[str] | None = Query(
         None
     ),  # ['pending', 'processing', 'completed', 'error', 'cancelling', 'cancelled', 'orphaned']
-    transcript_search: Optional[str] = None,  # Search in transcript content
+    transcript_search: str | None = None,  # Search in transcript content
     # Sort parameters (after filters to avoid parameter shifting)
     sort_by: str = Query(
         "upload_time",
@@ -411,7 +411,7 @@ def get_metadata_filters_endpoint(
 @router.get("/{file_uuid}", response_model=MediaFileDetail)
 def get_media_file(
     file_uuid: UUID,
-    segment_limit: Optional[int] = Query(
+    segment_limit: int | None = Query(
         500,
         description="Maximum number of transcript segments to return. Use 0 for all segments.",
         ge=0,
@@ -794,7 +794,7 @@ async def download_stream(
             while True:
                 try:
                     msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
-                except (RedisTimeoutError, asyncio.TimeoutError):
+                except (TimeoutError, RedisTimeoutError):
                     yield ": keepalive\n\n"  # benign idle read — keep the SSE open
                     continue
                 except RedisError as e:
@@ -849,7 +849,7 @@ def get_thumbnail(
     file_uuid: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
     """
     Get the thumbnail image for a media file.
@@ -931,7 +931,7 @@ def update_transcript_segment(
 @router.post("/{file_uuid}/reprocess", response_model=MediaFileSchema)
 def reprocess_media_file(
     file_uuid: str,
-    reprocess_request: Optional[ReprocessRequest] = None,
+    reprocess_request: ReprocessRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),

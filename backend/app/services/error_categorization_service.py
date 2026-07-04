@@ -34,14 +34,13 @@ Classes:
 """
 
 import logging
-from enum import Enum
+from enum import StrEnum
 from typing import Any
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
-class ErrorCategory(str, Enum):
+class ErrorCategory(StrEnum):
     """Error categories for user-friendly classification."""
 
     FILE_QUALITY = "file_quality"
@@ -105,7 +104,7 @@ class ErrorCategorizationService:
     ]
 
     @staticmethod
-    def categorize_error(error_message: Optional[str]) -> tuple[ErrorCategory, str, list[str]]:
+    def categorize_error(error_message: str | None) -> tuple[ErrorCategory, str, list[str]]:
         """Categorize an error and provide user-friendly information.
 
         This method analyzes error messages using pattern matching to classify
@@ -263,7 +262,7 @@ class ErrorCategorizationService:
         )
 
     @staticmethod
-    def get_error_info(error_message: Optional[str]) -> dict[str, Any]:
+    def get_error_info(error_message: str | None) -> dict[str, Any]:
         """Get comprehensive error information for API responses.
 
         This method provides a complete error information package suitable
@@ -304,7 +303,7 @@ class ErrorCategorizationService:
         }
 
     @staticmethod
-    def should_show_enhanced_notification(error_message: Optional[str]) -> bool:
+    def should_show_enhanced_notification(error_message: str | None) -> bool:
         """Determine if an enhanced error notification should be shown.
 
         This method identifies errors that warrant special attention from users,

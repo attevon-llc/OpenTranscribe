@@ -17,9 +17,9 @@ Set RUN_FEDRAMP_TESTS=true to run these tests.
 import json
 import os
 import tempfile
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -64,7 +64,7 @@ class TestConcurrentSessionEnforcementAC10:
             pytest.skip("Concurrent session limit disabled")
 
         # Create mock active sessions up to the limit
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for i in range(settings.MAX_CONCURRENT_SESSIONS):
             token = RefreshToken(
                 user_id=admin_user.id,
@@ -102,7 +102,7 @@ class TestConcurrentSessionEnforcementAC10:
             pytest.skip("Concurrent session limit disabled")
 
         # Create sessions up to the limit
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         oldest_jti = f"oldest_jti_{now.timestamp()}"
 
         # Create the oldest session first
@@ -468,7 +468,7 @@ class TestAuditFallbackOnOpenSearchFailureAU9:
 
             # Call the private method directly to test directory creation
             event = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "event_type": "test.event",
                 "outcome": "success",
             }

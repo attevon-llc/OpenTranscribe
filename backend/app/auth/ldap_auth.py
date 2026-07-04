@@ -8,7 +8,6 @@ Configuration is loaded from database first, falling back to environment variabl
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional
 from typing import TypedDict
 
 from ldap3 import ALL
@@ -181,7 +180,7 @@ def _get_ldap_server(cfg: LdapConfig) -> Server:
     )
 
 
-def _close_connection(conn: Optional[Connection], name: str) -> None:
+def _close_connection(conn: Connection | None, name: str) -> None:
     """Safely close an LDAP connection."""
     if conn is None:
         return
@@ -192,7 +191,7 @@ def _close_connection(conn: Optional[Connection], name: str) -> None:
         logger.debug(f"Error closing {name} connection (ignored)")
 
 
-def _bind_service_account(cfg: LdapConfig, server: Server) -> Optional[Connection]:
+def _bind_service_account(cfg: LdapConfig, server: Server) -> Connection | None:
     """Bind to LDAP server using service account."""
     try:
         conn = Connection(
@@ -395,7 +394,7 @@ def _check_group_access(
     return False
 
 
-def _extract_user_attributes(cfg: LdapConfig, user_entry, ldap_username: str) -> Optional[dict]:
+def _extract_user_attributes(cfg: LdapConfig, user_entry, ldap_username: str) -> dict | None:
     """Extract and validate user attributes from LDAP entry."""
     # Extract username
     attr_value = (
@@ -433,7 +432,7 @@ def _extract_user_attributes(cfg: LdapConfig, user_entry, ldap_username: str) ->
 
 def _verify_user_credentials(
     cfg: LdapConfig, server: Server, user_dn: str, password: str
-) -> Optional[Connection]:
+) -> Connection | None:
     """Verify user credentials by binding as the user."""
     try:
         conn = Connection(
@@ -451,8 +450,8 @@ def _is_ldap_admin(
     cfg: LdapConfig,
     username: str,
     user_groups: list[str],
-    bind_conn: Optional[Connection] = None,
-    user_dn: Optional[str] = None,
+    bind_conn: Connection | None = None,
+    user_dn: str | None = None,
 ) -> bool:
     """Check if user is an admin via admin_users or admin_groups config."""
     # Check admin_users list
@@ -482,7 +481,7 @@ def _is_ldap_admin(
     return False
 
 
-def ldap_authenticate(username: str, password: str, db=None) -> Optional[LdapUserData]:
+def ldap_authenticate(username: str, password: str, db=None) -> LdapUserData | None:
     """Authenticate a user against LDAP/Active Directory.
 
     Loads configuration from database when db is provided, otherwise uses
@@ -519,8 +518,8 @@ def ldap_authenticate(username: str, password: str, db=None) -> Optional[LdapUse
     logger.debug(f"LDAP authenticate called for: {username}")
     ldap_username = username.split("@")[0] if "@" in username else username
 
-    bind_conn: Optional[Connection] = None
-    user_conn: Optional[Connection] = None
+    bind_conn: Connection | None = None
+    user_conn: Connection | None = None
 
     try:
         server = _get_ldap_server(cfg)

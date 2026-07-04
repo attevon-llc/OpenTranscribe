@@ -28,8 +28,8 @@ from __future__ import annotations
 import logging
 import re
 import time
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ def ensure_repository(client: Any) -> None:
 
 def _snapshot_name(ts: str | None = None) -> str:
     """Build a timestamp-stemmed snapshot name (shared stem with the pg dump)."""
-    stamp = ts or datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = ts or datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     return f"{_SNAP_PREFIX}{stamp}"
 
 

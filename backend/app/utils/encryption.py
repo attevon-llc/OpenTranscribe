@@ -15,8 +15,7 @@ Backward compatibility:
 import base64
 import logging
 import os
-from typing import Optional
-from typing import Union
+from typing import Literal
 from typing import overload
 
 from cryptography.fernet import Fernet
@@ -25,7 +24,6 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from typing_extensions import Literal
 
 from app.core.config import settings
 
@@ -194,7 +192,7 @@ def _get_fernet_key() -> bytes:
         raise ValueError("Invalid encryption key configuration") from e
 
 
-def _decrypt_fernet_legacy(encrypted_data: str) -> Optional[str]:
+def _decrypt_fernet_legacy(encrypted_data: str) -> str | None:
     """
     Decrypt legacy Fernet-encrypted data.
 
@@ -223,7 +221,7 @@ def _decrypt_fernet_legacy(encrypted_data: str) -> Optional[str]:
         return None
 
 
-def encrypt_api_key(api_key: str) -> Optional[str]:
+def encrypt_api_key(api_key: str) -> str | None:
     """
     Encrypt an API key using AES-256-GCM (FIPS 140-3 compliant).
 
@@ -244,20 +242,18 @@ def encrypt_api_key(api_key: str) -> Optional[str]:
 
 
 @overload
-def decrypt_api_key(
-    encrypted_api_key: str, auto_upgrade: Literal[False] = False
-) -> Optional[str]: ...
+def decrypt_api_key(encrypted_api_key: str, auto_upgrade: Literal[False] = False) -> str | None: ...
 
 
 @overload
 def decrypt_api_key(
     encrypted_api_key: str, auto_upgrade: Literal[True]
-) -> tuple[Optional[str], Optional[str]]: ...
+) -> tuple[str | None, str | None]: ...
 
 
 def decrypt_api_key(
     encrypted_api_key: str, auto_upgrade: bool = False
-) -> Union[Optional[str], tuple[Optional[str], Optional[str]]]:
+) -> str | None | tuple[str | None, str | None]:
     """
     Decrypt an API key from storage.
 
@@ -404,7 +400,7 @@ def test_legacy_compatibility() -> bool:
 
 
 # Utility functions for common patterns
-def encrypt_if_not_empty(value: Optional[str]) -> Optional[str]:
+def encrypt_if_not_empty(value: str | None) -> str | None:
     """
     Encrypt a value only if it's not empty.
 
@@ -419,7 +415,7 @@ def encrypt_if_not_empty(value: Optional[str]) -> Optional[str]:
     return encrypt_api_key(value)
 
 
-def decrypt_if_not_empty(value: Optional[str]) -> Optional[str]:
+def decrypt_if_not_empty(value: str | None) -> str | None:
     """
     Decrypt a value only if it's not empty.
 
@@ -435,7 +431,7 @@ def decrypt_if_not_empty(value: Optional[str]) -> Optional[str]:
 
 
 # Generic aliases for encrypting any sensitive value (MFA secrets, etc.)
-def encrypt_value(value: str, aad: Optional[bytes] = None) -> Optional[str]:
+def encrypt_value(value: str, aad: bytes | None = None) -> str | None:
     """
     Encrypt any sensitive value for secure storage.
 
@@ -458,7 +454,7 @@ def encrypt_value(value: str, aad: Optional[bytes] = None) -> Optional[str]:
         return None
 
 
-def decrypt_value(encrypted_value: str, aad: Optional[bytes] = None) -> Optional[str]:
+def decrypt_value(encrypted_value: str, aad: bytes | None = None) -> str | None:
     """
     Decrypt a stored sensitive value.
 

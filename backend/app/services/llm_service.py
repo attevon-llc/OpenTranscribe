@@ -10,7 +10,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from typing import Optional
 
@@ -34,7 +34,7 @@ OPENAI_REASONING_MODEL_PREFIXES = (
 )
 
 
-class LLMProvider(str, Enum):
+class LLMProvider(StrEnum):
     OPENAI = "openai"
     VLLM = "vllm"
     OLLAMA = "ollama"
@@ -50,10 +50,10 @@ class LLMResponse:
     """Standardized response from LLM"""
 
     content: str
-    usage_tokens: Optional[int] = None
-    finish_reason: Optional[str] = None
-    model: Optional[str] = None
-    provider: Optional[str] = None
+    usage_tokens: int | None = None
+    finish_reason: str | None = None
+    model: str | None = None
+    provider: str | None = None
 
 
 @dataclass
@@ -62,8 +62,8 @@ class LLMConfig:
 
     provider: LLMProvider
     model: str
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
+    api_key: str | None = None
+    base_url: str | None = None
     max_tokens: int = 8192  # User-configured context window
     temperature: float = 0.3
     response_tokens: int = 4000  # Max tokens for response
@@ -302,7 +302,7 @@ class LLMService:
 
         return self._prepare_openai_payload(messages, **kwargs)
 
-    def _extract_claude_response(self, data: dict) -> tuple[str, Optional[int], Optional[str]]:
+    def _extract_claude_response(self, data: dict) -> tuple[str, int | None, str | None]:
         """Extract content, usage tokens, and finish reason from Claude/Anthropic response."""
         if "content" not in data or not data["content"]:
             raise Exception("No content in Claude response")
@@ -322,7 +322,7 @@ class LLMService:
         finish_reason = data.get("stop_reason")
         return content, usage_tokens, finish_reason
 
-    def _extract_ollama_response(self, data: dict) -> tuple[str, Optional[int], Optional[str]]:
+    def _extract_ollama_response(self, data: dict) -> tuple[str, int | None, str | None]:
         """Extract content, usage tokens, and finish reason from Ollama response."""
         if "message" not in data:
             logger.error(
@@ -346,7 +346,7 @@ class LLMService:
 
         return content, usage_tokens, finish_reason
 
-    def _extract_openai_response(self, data: dict) -> tuple[str, Optional[int], Optional[str]]:
+    def _extract_openai_response(self, data: dict) -> tuple[str, int | None, str | None]:
         """Extract content, usage tokens, and finish reason from OpenAI-compatible response."""
         if "choices" not in data or not data["choices"]:
             raise Exception("No choices in LLM response")
@@ -361,7 +361,7 @@ class LLMService:
 
         return content, usage_tokens, finish_reason
 
-    def _extract_response_content(self, data: dict) -> tuple[str, Optional[int], Optional[str]]:
+    def _extract_response_content(self, data: dict) -> tuple[str, int | None, str | None]:
         """Extract content from response based on provider type."""
         if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
             return self._extract_claude_response(data)
@@ -587,11 +587,11 @@ class LLMService:
     def generate_summary(
         self,
         transcript: str,
-        speaker_data: Optional[dict[str, Any]] = None,
-        user_id: Optional[int] = None,
+        speaker_data: dict[str, Any] | None = None,
+        user_id: int | None = None,
         output_language: str = "en",
         organization_context: str = "",
-        prompt_uuid: Optional[str] = None,
+        prompt_uuid: str | None = None,
     ) -> dict[str, Any]:
         """
         Generate structured summary from transcript.
@@ -1487,7 +1487,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             return False
 
     @staticmethod
-    def create_from_settings(user_id: Optional[int] = None) -> Optional["LLMService"]:
+    def create_from_settings(user_id: int | None = None) -> Optional["LLMService"]:
         """
         Create LLMService from user-specific settings only
 
@@ -1598,7 +1598,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
     @staticmethod
     def _get_provider_config(
         provider: LLMProvider,
-    ) -> Optional[tuple[str, Optional[str], Optional[str]]]:
+    ) -> tuple[str, str | None, str | None] | None:
         """
         Get provider-specific configuration (model, api_key, base_url) with validation.
 
@@ -1728,7 +1728,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
 class LLMServiceContext:
     """Context manager for LLM service with proper cleanup"""
 
-    def __init__(self, service: Optional[LLMService] = None, user_id: Optional[int] = None):
+    def __init__(self, service: LLMService | None = None, user_id: int | None = None):
         self.service = service
         self.user_id = user_id
         self._created_service = service is None
@@ -1751,7 +1751,7 @@ class LLMServiceContext:
 
 
 # Utility function for quick LLM availability check
-async def is_llm_available(user_id: Optional[int] = None) -> bool:
+async def is_llm_available(user_id: int | None = None) -> bool:
     """Quick check to see if any LLM provider is available.
 
     Runs the blocking health check in a thread to avoid blocking the

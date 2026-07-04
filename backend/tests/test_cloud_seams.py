@@ -9,7 +9,6 @@ verifiers, so every test restores the empty-registry state on exit.
 import uuid
 from types import SimpleNamespace
 from typing import Any
-from typing import Optional
 
 import pytest
 from fastapi import HTTPException
@@ -42,12 +41,12 @@ EXTERNAL_PROVIDER = "keycloak"
 class FakeVerifier:
     """Test double matching the TokenVerifier protocol."""
 
-    def __init__(self, accept_token: str, identity: Optional[ExternalIdentity]):
+    def __init__(self, accept_token: str, identity: ExternalIdentity | None):
         self.accept_token = accept_token
         self.identity = identity
         self.calls = 0
 
-    def verify(self, token: str, request: Request) -> Optional[ExternalIdentity]:
+    def verify(self, token: str, request: Request) -> ExternalIdentity | None:
         self.calls += 1
         return self.identity if token == self.accept_token else None
 

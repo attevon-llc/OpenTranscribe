@@ -3,7 +3,6 @@ Pydantic schemas for AI summarization prompt management
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -17,11 +16,11 @@ class SummaryPromptBase(BaseModel):
     """Base schema for summary prompts"""
 
     name: str = Field(..., max_length=255, description="User-friendly name for the prompt")
-    description: Optional[str] = Field(
+    description: str | None = Field(
         None, description="Optional description of what this prompt is for"
     )
     prompt_text: str = Field(..., description="The actual prompt content")
-    content_type: Optional[str] = Field(
+    content_type: str | None = Field(
         None,
         description="Content type: meeting, interview, podcast, documentary, general",
     )
@@ -68,12 +67,12 @@ class SummaryPromptCreate(SummaryPromptBase):
 class SummaryPromptUpdate(BaseModel):
     """Schema for updating an existing summary prompt"""
 
-    name: Optional[str] = Field(None, max_length=255)
-    description: Optional[str] = None
-    prompt_text: Optional[str] = None
-    content_type: Optional[str] = None
-    is_active: Optional[bool] = None
-    tags: Optional[list[str]] = None
+    name: str | None = Field(None, max_length=255)
+    description: str | None = None
+    prompt_text: str | None = None
+    content_type: str | None = None
+    is_active: bool | None = None
+    tags: list[str] | None = None
 
     @field_validator("content_type")
     @classmethod
@@ -112,18 +111,18 @@ class SummaryPromptUpdate(BaseModel):
 class SummaryPrompt(SummaryPromptBase, UUIDBaseSchema):
     """Schema for summary prompt responses with UUID as public identifier"""
 
-    user_id: Optional[UUID] = Field(
+    user_id: UUID | None = Field(
         None, description="User ID for custom prompts, null for system prompts"
     )
     is_system_default: bool = Field(False, description="Whether this is a system-provided prompt")
     is_shared: bool = False
-    shared_at: Optional[datetime] = None
-    shared_by: Optional[UUID] = None
-    shared_by_name: Optional[str] = None
+    shared_at: datetime | None = None
+    shared_by: UUID | None = None
+    shared_by_name: str | None = None
     tags: list[str] = []
     usage_count: int = 0
-    author_name: Optional[str] = None
-    author_role: Optional[str] = None
+    author_name: str | None = None
+    author_role: str | None = None
     is_owner: bool = False
     created_at: datetime
     updated_at: datetime
@@ -158,7 +157,7 @@ class UserSettingBase(BaseModel):
     """Base schema for user settings"""
 
     setting_key: str = Field(..., max_length=100, description="Setting key")
-    setting_value: Optional[str] = Field(None, description="Setting value (JSON or simple value)")
+    setting_value: str | None = Field(None, description="Setting value (JSON or simple value)")
 
 
 class UserSettingCreate(UserSettingBase):
@@ -168,7 +167,7 @@ class UserSettingCreate(UserSettingBase):
 class UserSettingUpdate(BaseModel):
     """Schema for updating an existing user setting"""
 
-    setting_value: Optional[str] = None
+    setting_value: str | None = None
 
 
 class UserSetting(UserSettingBase, UUIDBaseSchema):
@@ -195,10 +194,8 @@ class ActivePromptSelection(BaseModel):
 class ActivePromptResponse(BaseModel):
     """Schema for active prompt response"""
 
-    active_prompt_id: Optional[UUID] = Field(None, description="Currently active prompt UUID")
-    active_prompt: Optional[SummaryPrompt] = Field(
-        None, description="Currently active prompt details"
-    )
+    active_prompt_id: UUID | None = Field(None, description="Currently active prompt UUID")
+    active_prompt: SummaryPrompt | None = Field(None, description="Currently active prompt details")
 
 
 class SummaryPromptShare(BaseModel):
@@ -227,4 +224,4 @@ class ContentTypePromptsResponse(BaseModel):
     system_prompts: list[SummaryPrompt]
     user_prompts: list[SummaryPrompt]
     shared_prompts: list[SummaryPrompt] = []
-    active_prompt_id: Optional[UUID] = None
+    active_prompt_id: UUID | None = None

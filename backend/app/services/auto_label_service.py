@@ -9,10 +9,9 @@ application to existing files.
 import difflib
 import logging
 import re
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import Any
-from typing import Optional
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -37,7 +36,7 @@ class AutoLabelService:
 
     def __init__(self, db: Session):
         self.db = db
-        self._tag_cache: Optional[list[Tag]] = None
+        self._tag_cache: list[Tag] | None = None
         self._collection_cache: dict[int, list[Collection]] = {}
 
     # =========================================================================
@@ -92,7 +91,7 @@ class AutoLabelService:
         """Invalidate the collection cache for a user after creating a new collection."""
         self._collection_cache.pop(user_id, None)
 
-    def find_existing_similar_tag(self, suggested_name: str) -> Optional[Tag]:
+    def find_existing_similar_tag(self, suggested_name: str) -> Tag | None:
         """Find an existing tag that matches the suggested name.
 
         1. Exact normalized_name match (uses index)
@@ -114,7 +113,7 @@ class AutoLabelService:
 
     def find_existing_similar_collection(
         self, user_id: int, suggested_name: str
-    ) -> Optional[Collection]:
+    ) -> Collection | None:
         """Find an existing collection matching the suggested name, scoped to user."""
         user_collections = self._get_user_collections_cached(user_id)
         for coll in user_collections:
@@ -195,7 +194,7 @@ class AutoLabelService:
         # Update suggestion record
         suggestion.auto_applied_tags = result["auto_applied_tags"]
         suggestion.auto_applied_collections = result["auto_applied_collections"]
-        suggestion.auto_apply_completed_at = datetime.now(timezone.utc)
+        suggestion.auto_apply_completed_at = datetime.now(UTC)
 
         try:
             self.db.commit()
@@ -227,7 +226,7 @@ class AutoLabelService:
         except IntegrityError:
             nested.rollback()
             self._invalidate_tag_cache()
-            existing_tag: Optional[Tag] = self.db.query(Tag).filter(Tag.name == name).first()
+            existing_tag: Tag | None = self.db.query(Tag).filter(Tag.name == name).first()
             if existing_tag:
                 return existing_tag
             raise
@@ -250,7 +249,7 @@ class AutoLabelService:
         except IntegrityError:
             nested.rollback()
             self._invalidate_collection_cache(user_id)
-            existing_collection: Optional[Collection] = (
+            existing_collection: Collection | None = (
                 self.db.query(Collection)
                 .filter(Collection.user_id == user_id, Collection.name == name)
                 .first()
@@ -416,7 +415,7 @@ class AutoLabelService:
         self,
         user_id: int,
         confidence_threshold: float = DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD,
-        file_ids: Optional[list[int]] = None,
+        file_ids: list[int] | None = None,
         progress_callback=None,
     ) -> dict:
         """Apply auto-labeling to existing files with pending suggestions.

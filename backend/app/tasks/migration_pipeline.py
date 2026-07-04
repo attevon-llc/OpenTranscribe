@@ -34,12 +34,12 @@ Why sequential works well:
 import datetime
 import logging
 import time
+from collections.abc import Callable
 from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
-from typing import Callable
 
 from app.core.config import settings
 from app.core.constants import SPEAKER_SEGMENT_MIN_DURATION

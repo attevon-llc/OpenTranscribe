@@ -265,6 +265,7 @@ Patch release fixing LDAP group filtering for Active Directory Distinguished Nam
 
 ### Fixed
 
+- **CI backend-test gate was pipe-masked** — the workflow step piped pytest through `tee` without `pipefail`, so test failures could never fail the job; seven real failures had been merging under green checkmarks. The gate is now strict, and the hidden failures were root-caused and fixed — including two genuine endpoint bugs: the embedding-migration status endpoint 500ed instead of degrading when OpenSearch was unavailable (now returns a documented degraded envelope), and the speaker-occurrences endpoint eagerly imported and loaded a pyannote model per request for a pure DB read.
 - **Always-False `FileStatus` comparisons (issue #272)**: `str(FileStatus.X)` renders `"FileStatus.X"`, so two guards comparing against bare value strings never fired — the redaction don't-run-mid-reprocess guard, and the completed-only gate for on-demand analytics at three sites (**on-demand analytics never computed anywhere**; completed files missing analytics silently returned none). Both now compare enum members, with regression tests pinning the behavior.
 - **Python lint targets aligned to the 3.12+ runtime**: ruff/black/mypy targets moved from py311/py39 to py312 with the resulting ~1,500-site pyupgrade codemod applied mechanically (`Optional[X]` → `X | None`, `timezone.utc` → `UTC`, PEP 695 generics, StrEnum adoptions audited case-by-case) — behavior-preserving, hand-audited, full suite green.
 

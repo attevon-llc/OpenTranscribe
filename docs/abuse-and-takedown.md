@@ -34,7 +34,12 @@ A valid **DMCA takedown notice** should include:
 
 **Counter-notices** (from the uploader, disputing a takedown) should reference
 the same file UUID and include the uploader's contact information and a
-good-faith statement.
+good-faith statement. Uploaders learn of a takedown through an **in-app
+notification** (see [Owner notice](#owner-notice-dmca-512g) below) that carries
+the takedown reason, the file UUID to reference, and the abuse-contact address
+to send the counter-notice to. Counter-notices are handled out-of-band by the
+operator; once resolved, an admin restores the file via the release endpoint
+and the uploader is notified that access is restored.
 
 ## Acceptable Use Policy (AUP) summary
 
@@ -103,6 +108,29 @@ transcript are **never deleted** by a takedown — hiding is a read-time transfo
 so the row survives for the audit and appeal trail. Admins retain visibility to
 review and release.
 
+### Owner notice (DMCA §512(g))
+
+Because the quarantined file 404s for its owner on every surface, the owner is
+told about the takedown through a **persistent in-app notification** (WebSocket
+event `file_takedown`, kept in the notification panel) sent when the file is
+quarantined. The notice contains:
+
+- **which file** was taken down (media title, falling back to the filename) and
+  its **file UUID** (to reference in a counter-notice);
+- the **admin-recorded takedown reason** (`quarantine_reason` — the DMCA notice
+  ref / AUP clause the admin entered);
+- **counter-notice instructions** pointing at the deployment's
+  `ABUSE_CONTACT_EMAIL`; when that variable is unset, the notice directs the
+  owner to contact the service operator.
+
+The identity of the acting admin is **never disclosed** to the owner, and the
+file itself **stays hidden** (the 404 gate above is unchanged) — the
+notification is the owner's §512(g) surface. When an admin releases the file
+(e.g. after a successful counter-notice), the owner receives a second
+notification (`file_takedown_released`) that access is restored, with a link to
+the file. Notification delivery is best-effort: a delivery failure is logged
+and **never blocks the takedown or the release**.
+
 **Admin endpoints** (admin / super-admin; every action is audit-logged):
 
 | Method & path | Purpose |
@@ -118,7 +146,7 @@ AU-2/AU-3 audit log).
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `ABUSE_CONTACT_EMAIL` | `""` (unset) | Published intake address surfaced in the UI/API. |
+| `ABUSE_CONTACT_EMAIL` | `""` (unset) | Published intake address surfaced in the UI/API and included in owner takedown notices as the counter-notice contact. |
 
 The legal-hold S3 object-lock is best-effort and requires the storage bucket to
 be created with object-lock enabled; the DB `legal_hold` flag is always the

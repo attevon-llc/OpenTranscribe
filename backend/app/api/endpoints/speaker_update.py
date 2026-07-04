@@ -113,12 +113,14 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                 logger.warning(f"Failed to sync speaker {speaker.uuid} profile to OpenSearch: {e}")
 
         else:
-            # Create new profile for this speaker name
+            # Create new profile for this speaker name (org-stamped from the
+            # speaker's tenant — issue #262e; None = personal/community).
             new_profile = SpeakerProfile(
                 user_id=speaker.user_id,
                 name=display_name.strip(),
                 description=f"Auto-created profile for {display_name.strip()}",
                 uuid=str(uuid.uuid4()),
+                organization_id=int(speaker.organization_id) if speaker.organization_id else None,
             )
             db.add(new_profile)
             db.flush()  # Get the ID without committing

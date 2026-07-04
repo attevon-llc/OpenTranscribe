@@ -1391,6 +1391,10 @@ def _handle_create_new_profile_action(
         name=new_name,
         description=f"Profile for {new_name}",
         uuid=str(uuid.uuid4()),
+        # Tenant stamp (issue #262e): the profile groups THIS speaker's voice,
+        # so it inherits the speaker's org (stamped by the pipeline from the
+        # file); None = personal, always None in the community edition.
+        organization_id=int(speaker.organization_id) if speaker.organization_id else None,
     )
     db.add(new_profile)
     db.flush()  # Get the ID
@@ -1757,8 +1761,13 @@ def _create_new_speaker_profile(
     if existing_profile:
         raise HTTPException(status_code=400, detail="Profile with this name already exists")
 
-    # Create new profile
-    new_profile = SpeakerProfile(user_id=current_user.id, name=profile_name, uuid=str(uuid.uuid4()))
+    # Create new profile (org-stamped from the speaker's tenant — issue #262e)
+    new_profile = SpeakerProfile(
+        user_id=current_user.id,
+        name=profile_name,
+        uuid=str(uuid.uuid4()),
+        organization_id=int(speaker.organization_id) if speaker.organization_id else None,
+    )
 
     db.add(new_profile)
     db.flush()

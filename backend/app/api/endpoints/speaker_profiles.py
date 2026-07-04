@@ -12,6 +12,8 @@ from fastapi import status
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.media import MediaFile
@@ -191,8 +193,9 @@ def create_speaker_profile(
     description: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Create a new speaker profile."""
+    """Create a new speaker profile (org-stamped from the request context, #262e)."""
     try:
         # Check if profile with same name exists
         existing = (
@@ -211,6 +214,9 @@ def create_speaker_profile(
             name=name,
             description=description,
             uuid=str(uuid.uuid4()),
+            # Tenant stamp — matches the pipeline-side create_speaker_profile
+            # (None = personal scope; always None in the community edition).
+            organization_id=ctx.org_id,
         )
 
         db.add(profile)

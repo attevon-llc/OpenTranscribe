@@ -11,6 +11,7 @@ from fastapi import Query
 from fastapi import status
 from sqlalchemy import func
 from sqlalchemy import or_
+from sqlalchemy.orm import Query as OrmQuery  # fastapi.Query is already imported
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import defer
 from sqlalchemy.orm import joinedload
@@ -49,6 +50,7 @@ from app.schemas.sharing import ShareUpdate
 from app.schemas.user import UserBrief
 from app.services.formatting_service import FormattingService
 from app.services.permission_service import PermissionService
+from app.services.takedown_service import exclude_quarantined
 from app.tasks.search_indexing_task import update_file_access_index
 from app.utils.uuid_helpers import get_by_uuid
 from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
@@ -60,6 +62,28 @@ from app.utils.websocket_notify import send_ws_event
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _visible_media_counts(
+    db: Session, collection_ids: list[int], *, include_quarantined: bool
+) -> dict[int, int]:
+    """Per-collection member counts, hiding quarantined files from non-admins.
+
+    Abuse/DMCA (issue #262g): a taken-down file is invisible on every read
+    surface for normal users — the member COUNT must agree with the member
+    LIST or the mismatch leaks the takedown. Admins keep the true count.
+    Collections absent from the result have zero visible members (callers use
+    ``.get(cid, 0)``).
+    """
+    if not collection_ids:
+        return {}
+    query: OrmQuery = (
+        db.query(CollectionMember.collection_id, func.count(CollectionMember.id))
+        .join(MediaFile, MediaFile.id == CollectionMember.media_file_id)
+        .filter(CollectionMember.collection_id.in_(collection_ids))
+    )
+    query = exclude_quarantined(query, include_quarantined=include_quarantined)
+    return {cid: cnt for cid, cnt in query.group_by(CollectionMember.collection_id).all()}
 
 
 def _get_share_target_user_ids(db: Session, share: CollectionShare) -> list[int]:
@@ -222,14 +246,10 @@ async def list_shared_collections(
         return []
     filtered_ids = [c.id for c in collections]
 
-    # Batch: media counts per collection
-    media_counts_rows = (
-        db.query(CollectionMember.collection_id, func.count(CollectionMember.id))
-        .filter(CollectionMember.collection_id.in_(filtered_ids))
-        .group_by(CollectionMember.collection_id)
-        .all()
+    # Batch: media counts per collection (quarantined files hidden for non-admins)
+    media_counts = _visible_media_counts(
+        db, filtered_ids, include_quarantined=bool(current_user.is_admin)
     )
-    media_counts = {cid: cnt for cid, cnt in media_counts_rows}
 
     # Batch: share records for shared_by info
     user_group_ids = (
@@ -317,19 +337,22 @@ async def list_collections(
     else:
         org_pred = Collection.organization_id.is_(None)
 
+    # Member counts hide quarantined files for non-admins (issue #262g).
+    include_quarantined = bool(current_user.is_admin)
+
     if ownership == "mine":
         # Original behavior: only owned collections (within tenant scope)
-        counts_query = (
-            db.query(Collection.id, func.count(CollectionMember.id).label("media_count"))
+        collection_ids = [
+            row[0]
+            for row in db.query(Collection.id)
             .filter(Collection.user_id == user_id, org_pred)
-            .outerjoin(CollectionMember)
-            .group_by(Collection.id)
             .offset(skip)
             .limit(limit)
-        ).all()
-
-        collection_ids = [c[0] for c in counts_query]
-        counts_dict = {c[0]: c[1] or 0 for c in counts_query}
+            .all()
+        ]
+        counts_dict = _visible_media_counts(
+            db, collection_ids, include_quarantined=include_quarantined
+        )
         perm_dict: dict[int, str] = {cid: "owner" for cid in collection_ids}
         shared_by_dict: dict[int, UserBrief | None] = {}
 
@@ -349,19 +372,17 @@ async def list_collections(
         shared_by_dict = {}
 
         if collection_ids:
-            counts_query = (
-                db.query(
-                    Collection.id,
-                    func.count(CollectionMember.id).label("media_count"),
-                )
+            collection_ids = [
+                row[0]
+                for row in db.query(Collection.id)
                 .filter(Collection.id.in_(collection_ids), org_pred)
-                .outerjoin(CollectionMember)
-                .group_by(Collection.id)
                 .offset(skip)
                 .limit(limit)
-            ).all()
-            collection_ids = [c[0] for c in counts_query]
-            counts_dict = {c[0]: c[1] or 0 for c in counts_query}
+                .all()
+            ]
+            counts_dict = _visible_media_counts(
+                db, collection_ids, include_quarantined=include_quarantined
+            )
 
             # Get shared_by info for each shared collection
             _populate_shared_by(db, collection_ids, user_id, shared_by_dict)
@@ -374,19 +395,17 @@ async def list_collections(
         shared_by_dict = {}
 
         if all_ids:
-            counts_query = (
-                db.query(
-                    Collection.id,
-                    func.count(CollectionMember.id).label("media_count"),
-                )
+            collection_ids = [
+                row[0]
+                for row in db.query(Collection.id)
                 .filter(Collection.id.in_(all_ids), org_pred)
-                .outerjoin(CollectionMember)
-                .group_by(Collection.id)
                 .offset(skip)
                 .limit(limit)
-            ).all()
-            collection_ids = [c[0] for c in counts_query]
-            counts_dict = {c[0]: c[1] or 0 for c in counts_query}
+                .all()
+            ]
+            counts_dict = _visible_media_counts(
+                db, collection_ids, include_quarantined=include_quarantined
+            )
 
             # Get shared_by info for non-owned collections
             non_owned = [cid for cid in collection_ids if perm_dict.get(cid) != "owner"]
@@ -532,12 +551,16 @@ async def get_collection(
     collection_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get a specific collection with its media files.
 
     Uses PermissionService: any user with viewer+ permission can access.
+    Tenant-gated via ctx.org_id (issue #262d) — out-of-scope collections 403.
     """
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    collection = get_collection_by_uuid_with_permission(
+        db, collection_uuid, current_user.id, organization_id=ctx.org_id
+    )
 
     # Reload with joined data
     reloaded_collection = (
@@ -584,10 +607,11 @@ async def update_collection(
     collection_update: CollectionUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Update a collection. Requires editor+ permission."""
+    """Update a collection. Requires editor+ permission. Tenant-gated (#262d)."""
     collection, permission = get_collection_by_uuid_with_sharing(
-        db, collection_uuid, current_user.id, min_permission="editor"
+        db, collection_uuid, current_user.id, min_permission="editor", organization_id=ctx.org_id
     )
     collection_id = collection.id
 
@@ -644,10 +668,11 @@ async def delete_collection(
     collection_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Delete a collection. Only the original owner can delete."""
+    """Delete a collection. Only the original owner can delete. Tenant-gated (#262d)."""
     collection, permission = get_collection_by_uuid_with_sharing(
-        db, collection_uuid, current_user.id, min_permission="owner"
+        db, collection_uuid, current_user.id, min_permission="owner", organization_id=ctx.org_id
     )
 
     # Only original owner can delete (note: a stranger is already rejected by the
@@ -679,21 +704,32 @@ async def add_media_to_collection(
     media_data: CollectionMemberAdd,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Add media files to a collection. Requires editor+ permission."""
+    """Add media files to a collection. Requires editor+ permission. Tenant-gated (#262d)."""
     collection, permission = get_collection_by_uuid_with_sharing(
-        db, collection_uuid, current_user.id, min_permission="editor"
+        db, collection_uuid, current_user.id, min_permission="editor", organization_id=ctx.org_id
     )
     collection_id = collection.id
 
     # Bulk resolve UUIDs to IDs in a single query (avoids N+1)
     media_file_uuids = validate_uuids([str(uuid) for uuid in media_data.media_file_ids])
 
+    # Files must be the caller's own AND in the active tenant scope — without
+    # the org predicate a member could pull another scope's file into this
+    # collection, exposing it via the collection detail (cross-scope leak).
+    # Community invariance: ctx.org_id is None and rows are org-less, no-op.
+    if ctx.org_id is not None:
+        file_org_pred = MediaFile.organization_id == ctx.org_id
+    else:
+        file_org_pred = MediaFile.organization_id.is_(None)
+
     media_files = (
         db.query(MediaFile)
         .filter(
             MediaFile.uuid.in_(media_file_uuids),
             MediaFile.user_id == current_user.id,
+            file_org_pred,
         )
         .all()
     )
@@ -754,10 +790,11 @@ async def remove_media_from_collection(
     media_data: CollectionMemberRemove,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Remove media files from a collection. Requires editor+ permission."""
+    """Remove media files from a collection. Requires editor+ permission. Tenant-gated (#262d)."""
     collection, permission = get_collection_by_uuid_with_sharing(
-        db, collection_uuid, current_user.id, min_permission="editor"
+        db, collection_uuid, current_user.id, min_permission="editor", organization_id=ctx.org_id
     )
     collection_id = collection.id
 
@@ -825,10 +862,13 @@ async def get_collection_media(
     # Dependencies
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get media files in a collection with filtering, sorting, and pagination."""
-    # Verify collection exists and user has access
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    # Verify collection exists and user has access (tenant-gated, #262d)
+    collection = get_collection_by_uuid_with_permission(
+        db, collection_uuid, current_user.id, organization_id=ctx.org_id
+    )
     collection_id = collection.id
 
     # Eager-loading strategy matching the main list endpoint
@@ -856,6 +896,11 @@ async def get_collection_media(
     is_shared = collection.user_id != current_user.id
     if current_user.role != "admin" and not is_shared:
         base_query = base_query.filter(MediaFile.user_id == current_user.id)
+
+    # Abuse/DMCA: quarantined files are hidden from every read surface for
+    # non-admins — the paginated collection-media list included (matches the
+    # collection detail's is_hidden_for gate and the visible member counts).
+    base_query = exclude_quarantined(base_query, include_quarantined=bool(current_user.is_admin))
 
     # Prepare filters dictionary
     filters = {
@@ -946,9 +991,12 @@ async def list_collection_shares(
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """List all shares on a collection. Requires direct collection ownership."""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    """List all shares on a collection. Requires direct collection ownership. Tenant-gated (#262d)."""
+    collection = get_collection_by_uuid_with_permission(
+        db, collection_uuid, current_user.id, organization_id=ctx.org_id
+    )
     _require_collection_owner(collection, current_user.id)
 
     shares = (
@@ -978,9 +1026,12 @@ async def create_collection_share(
     share_in: ShareCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Share a collection with a user or group. Requires direct collection ownership."""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    """Share a collection with a user or group. Requires direct collection ownership. Tenant-gated (#262d)."""
+    collection = get_collection_by_uuid_with_permission(
+        db, collection_uuid, current_user.id, organization_id=ctx.org_id
+    )
     _require_collection_owner(collection, current_user.id)
 
     target_user_id = None
@@ -1055,6 +1106,36 @@ async def create_collection_share(
                 detail="You must be a member of the group to share with it",
             )
 
+        # Tenant gate (issue #262d): groups can span organizations, so a
+        # group-targeted share of an org-stamped collection requires EVERY
+        # group member to hold membership in that org — otherwise the share
+        # grants the non-member(s) a view onto the tenant's content.
+        if collection.organization_id is not None:
+            from app.models.organization import OrganizationMembership
+
+            group_member_ids = {
+                int(row[0])
+                for row in db.query(UserGroupMember.user_id)
+                .filter(UserGroupMember.group_id == target_group.id)
+                .all()
+            }
+            org_member_ids = {
+                int(row[0])
+                for row in db.query(OrganizationMembership.user_id)
+                .filter(OrganizationMembership.organization_id == collection.organization_id)
+                .all()
+            }
+            outside = group_member_ids - org_member_ids
+            if outside:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Cannot share an organization collection with this group: "
+                        f"{len(outside)} group member(s) are not members of that "
+                        "organization"
+                    ),
+                )
+
         # Check for existing share
         existing = (
             db.query(CollectionShare)
@@ -1121,9 +1202,12 @@ async def update_collection_share(
     share_update: ShareUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Update a share's permission level. Requires direct collection ownership."""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    """Update a share's permission level. Requires direct collection ownership. Tenant-gated (#262d)."""
+    collection = get_collection_by_uuid_with_permission(
+        db, collection_uuid, current_user.id, organization_id=ctx.org_id
+    )
     _require_collection_owner(collection, current_user.id)
 
     share = get_by_uuid(db, CollectionShare, share_uuid, "Share not found")
@@ -1178,9 +1262,12 @@ async def delete_collection_share(
     share_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Revoke a share on a collection. Requires direct collection ownership."""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    """Revoke a share on a collection. Requires direct collection ownership. Tenant-gated (#262d)."""
+    collection = get_collection_by_uuid_with_permission(
+        db, collection_uuid, current_user.id, organization_id=ctx.org_id
+    )
     _require_collection_owner(collection, current_user.id)
 
     share = get_by_uuid(db, CollectionShare, share_uuid, "Share not found")

@@ -391,9 +391,9 @@ git pull origin master
 
 #### 4.2 Squash Merge Release Branch
 ```bash
-git merge --squash feat/feature-name
-# or: git merge --squash fix/bug-name
-# or: git merge --squash sec/security-name
+git merge --no-ff feat/feature-name
+# or: git merge --no-ff fix/bug-name
+# or: git merge --no-ff sec/security-name
 ```
 
 #### 4.3 Commit with Detailed Release Message
@@ -451,7 +451,7 @@ git push origin vX.Y.Z
 
 #### 4.6 Delete Feature Branch
 ```bash
-# Delete local branch (use -D if squash merged)
+# Delete local branch (use -D if merge (--no-ff)d)
 git branch -D feat/feature-name
 
 # Delete remote branch if it was pushed
@@ -586,7 +586,7 @@ Copy and use this checklist for every release:
 #### Git Operations
 - [ ] Checkout master
 - [ ] Pull latest from origin
-- [ ] Squash merge feature branch
+- [ ] Merge (--no-ff) feature branch
 - [ ] Commit with detailed message
 - [ ] Create annotated tag
 - [ ] Push master to origin
@@ -642,9 +642,9 @@ gh release create vX.Y.Z --title "title" --notes "notes"
 
 ### Branch Won't Delete (Not Fully Merged)
 
-After squash merge, the branch appears "not fully merged":
+After merge (--no-ff), the branch appears "not fully merged":
 ```bash
-# Force delete is safe after squash merge
+# Force delete is safe after merge (--no-ff)
 git branch -D branch-name
 ```
 

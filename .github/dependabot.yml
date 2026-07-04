@@ -88,6 +88,12 @@ updates:
       backend-docker:
         patterns:
           - "*"
+    ignore:
+      # nvidia/pytorch 26.x is not a drop-in for Dockerfile.blackwell: the NGC
+      # image dropped torchaudio and the pin capture/restore breaks (#274).
+      # Upgrade deliberately with a torchaudio strategy + Blackwell hardware
+      # validation, then remove this ignore.
+      - dependency-name: "nvidia/pytorch"
 
   - package-ecosystem: "docker"
     directory: "/frontend"

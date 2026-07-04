@@ -49,7 +49,9 @@ export type NotificationType =
   | 'group_member_removed'
   | 'enrichment_started'
   | 'enrichment_task_complete'
-  | 'search_indexing_complete';
+  | 'search_indexing_complete'
+  | 'file_takedown'
+  | 'file_takedown_released';
 
 /**
  * Payload attached to a {@link Notification}. Carries the `data` object from the
@@ -59,6 +61,10 @@ export type NotificationType =
  */
 export interface NotificationData {
   file_id?: string;
+  file_uuid?: string;
+  filename?: string;
+  reason?: string;
+  abuse_contact_email?: string;
   status?: string;
   message?: string;
   progress?: number;
@@ -543,6 +549,15 @@ function createWebSocketStore() {
                 })
                 .catch(() => {});
               // Fall through to create a visible notification
+            } else if (data.type === 'file_takedown' || data.type === 'file_takedown_released') {
+              // DMCA takedown / release owner notice — the file's visibility just
+              // changed, so drop cached file lists before notifying
+              import('$lib/apiCache')
+                .then(({ apiCache }) => {
+                  apiCache.invalidateByScope('files');
+                })
+                .catch(() => {});
+              // Fall through to create a visible (persistent) notification
             }
 
             // Dispatch auto-label status events for AutoLabelSettings component
@@ -780,7 +795,10 @@ function createWebSocketStore() {
                 id: generateId('ws'),
                 type: data.type as NotificationType,
                 title: getNotificationTitle(data.type),
-                message: data.data.message || 'No message provided',
+                message:
+                  composeClientMessage(data.type, data.data) ||
+                  data.data.message ||
+                  'No message provided',
                 timestamp: new Date(),
                 read: false,
                 data: data.data,
@@ -964,6 +982,10 @@ function createWebSocketStore() {
         return translate('notifications.fileUpdated');
       case 'file_deleted':
         return translate('notifications.fileDeleted');
+      case 'file_takedown':
+        return translate('notifications.fileTakedown');
+      case 'file_takedown_released':
+        return translate('notifications.fileTakedownReleased');
       case 'collection_shared':
         return translate('notifications.collectionShared');
       case 'collection_share_revoked':
@@ -997,6 +1019,32 @@ function createWebSocketStore() {
       default:
         return translate('notifications.notification');
     }
+  };
+
+  // Compose a localized message for types rendered client-side from payload
+  // fields (instead of the backend's English fallback message). Currently the
+  // DMCA takedown / release owner notices (§512(g)): the quarantined file 404s
+  // for its owner, so this notification is their only takedown surface and must
+  // carry the reason + counter-notice contact in the user's language.
+  const composeClientMessage = (type: string, data: NotificationData): string | undefined => {
+    if (type !== 'file_takedown' && type !== 'file_takedown_released') return undefined;
+    const translate = get(t);
+    const filename = data.filename || '';
+    if (type === 'file_takedown_released') {
+      return translate('notifications.fileTakedownReleasedMessage', { filename });
+    }
+    const fileId = data.file_uuid || '';
+    const taken = translate('notifications.fileTakedownMessage', {
+      filename,
+      reason: data.reason || '',
+    });
+    const dispute = data.abuse_contact_email
+      ? translate('notifications.fileTakedownCounterNotice', {
+          email: data.abuse_contact_email,
+          fileId,
+        })
+      : translate('notifications.fileTakedownCounterNoticeNoEmail', { fileId });
+    return `${taken} ${dispute}`;
   };
 
   // Add a notification manually (for client-side events like audio extraction)

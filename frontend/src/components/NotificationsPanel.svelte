@@ -203,6 +203,7 @@
         case 'in_progress':
           return 'info';
         case 'not_configured':
+        case 'warning':
           return 'warning';
         default:
           return 'default';

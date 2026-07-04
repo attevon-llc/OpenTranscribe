@@ -16,6 +16,7 @@ Key features:
 - Safe finalize with count validation, backup, and finally-block cleanup
 """
 
+import contextlib
 import datetime
 import json
 import logging
@@ -54,7 +55,15 @@ _BATCH_SIZE = 25
 
 
 def get_migration_status() -> dict:
-    """Get the current migration status."""
+    """Get the current migration status.
+
+    Degrades gracefully when OpenSearch is unreachable: constructing the client
+    never touches the network, so an outage only surfaces on the first real call
+    — return the same "not available" envelope as the no-client branch instead
+    of letting a connection error bubble up as a 500 from the status endpoint.
+    """
+    from opensearchpy.exceptions import OpenSearchException
+
     from app.services.opensearch_service import get_opensearch_client
 
     client = get_opensearch_client()
@@ -65,7 +74,12 @@ def get_migration_status() -> dict:
     v3_index = get_speaker_index_v3()
     v4_index = get_speaker_index_v4()
     backup_index = get_speaker_index_v3_backup()
-    v4_exists = client.indices.exists(index=v4_index)
+    try:
+        v4_exists = client.indices.exists(index=v4_index)
+        backup_exists = client.indices.exists(index=backup_index)
+    except OpenSearchException as e:
+        logger.warning("OpenSearch unreachable while reading migration status: %s", e)
+        return {"status": "error", "message": "OpenSearch not available"}
 
     # Count only speaker documents (exclude profile_ and cluster_ documents
     # which share the same index but have a document_type field)
@@ -88,15 +102,10 @@ def get_migration_status() -> dict:
     except Exception:
         v4_document_count = 0
 
-    # If v3 concrete index is empty, check the legacy backup
-    if v3_document_count == 0:
-        try:
-            if client.indices.exists(index=backup_index):
-                v3_document_count = client.count(index=backup_index, body=speaker_only_query)[
-                    "count"
-                ]
-        except Exception:  # noqa: S110  # nosec B110 — backup index check is non-critical
-            pass
+    # If v3 concrete index is empty, check the legacy backup (non-critical)
+    if v3_document_count == 0 and backup_exists:
+        with contextlib.suppress(Exception):
+            v3_document_count = client.count(index=backup_index, body=speaker_only_query)["count"]
 
     return {
         "current_mode": current_mode,
@@ -104,8 +113,7 @@ def get_migration_status() -> dict:
         "v3_document_count": v3_document_count,
         "v4_document_count": v4_document_count,
         "migration_needed": current_mode == "v3",
-        "migration_complete": current_mode == "v4"
-        and not client.indices.exists(index=get_speaker_index_v3_backup()),
+        "migration_complete": current_mode == "v4" and not backup_exists,
         "transcription_paused": False,
     }
 

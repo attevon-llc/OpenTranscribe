@@ -83,6 +83,11 @@ async def get_migration_status(
     - Document counts in each index
     - Progress tracking (if migration is running)
     - Stalled migration detection (when Redis data expired)
+
+    Degrades gracefully when OpenSearch is unavailable: still 200, with
+    ``{"status": "error", "message": "OpenSearch not available"}`` in place of
+    the index fields; ``mode_info``/``progress``/``stalled`` are always present
+    (mode defaults to v4, progress to the not-running envelope).
     """
     from app.tasks.embedding_migration_v4 import get_migration_status
 

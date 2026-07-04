@@ -300,16 +300,22 @@ def test_download_stream_unauthorized(client, normal_user, db_session):
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-def test_download_stream_content_type(client, user_token_headers, normal_user, db_session):
+def test_download_stream_content_type(
+    client, user_token_headers, normal_user, db_session, monkeypatch
+):
     """For an audio_original passthrough the SSE response advertises event-stream.
 
     We assert only the response contract (status + content type + SSE headers)
-    without consuming the (potentially long-lived) stream. The audio_original
-    mode hits the ready/passthrough path, which under SKIP_S3 resolves a presigned
-    URL synchronously, so the first ``ready`` event is produced immediately and the
-    generator returns — but TestClient buffers the body, so we keep the assertion to
-    the headers to avoid coupling to MinIO availability.
+    without consuming the (potentially long-lived) stream. The audio_original mode
+    hits the ready/passthrough path, which presigns via minio-py — and presigning
+    is NOT purely local: the SDK issues a bucket-region lookup over the network,
+    and ``_resolve_ready_download`` has no SKIP_S3 branch. Stub the presign so the
+    test is hermetic (no MinIO needed); the URL itself is never asserted here.
     """
+    monkeypatch.setattr(
+        "app.services.minio_service.get_presigned_download_url",
+        lambda *args, **kwargs: "https://storage.test/presigned/clip.wav",
+    )
     media_file = _make_file(db_session, normal_user, filename="clip.wav")
     with client.stream(
         "GET",

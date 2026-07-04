@@ -35,6 +35,7 @@ def redaction_detect_task(
     pipeline_task_id: str | None = None,
 ) -> dict[str, Any]:
     """Detect + cache redaction spans for every segment of a file."""
+    from app.core.enums import FileStatus
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile
     from app.services.redaction.service import RedactionService
@@ -50,8 +51,13 @@ def redaction_detect_task(
             if media is None:
                 return {"status": "skipped", "reason": "file_not_found"}
             owner_id = int(media.user_id)
-            # Guard: don't run while the file is being reprocessed.
-            if str(media.status) in ("processing", "cancelling") and not media.transcript_segments:
+            # Guard: don't run while the file is being reprocessed. Enum
+            # comparison — str(FileStatus.X) is "FileStatus.X", so the old
+            # string form never matched (issue #272).
+            if (
+                media.status in (FileStatus.PROCESSING, FileStatus.CANCELLING)
+                and not media.transcript_segments
+            ):
                 return {"status": "skipped", "reason": "no_segments"}
 
             result = RedactionService.detect_and_store(db, file_id)

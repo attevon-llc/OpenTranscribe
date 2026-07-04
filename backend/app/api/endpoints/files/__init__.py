@@ -1009,7 +1009,9 @@ def get_file_analytics(
     db_file = get_media_file_by_uuid(
         db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
     )
-    analytics = _get_or_compute_analytics(db, db_file.id, str(db_file.status))
+    # Enum comparison (issue #272) — str(status) never matched "completed",
+    # so this endpoint could also never compute analytics on demand.
+    analytics = _get_or_compute_analytics(db, db_file.id, db_file.status)
     return {
         "analytics": AnalyticsSchema.model_validate(analytics) if analytics else None,
     }

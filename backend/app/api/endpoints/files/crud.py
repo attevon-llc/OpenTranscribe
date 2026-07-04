@@ -187,7 +187,9 @@ def set_file_urls(db_file: MediaFile) -> None:
                 db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"  # type: ignore[attr-defined]
 
 
-def _get_or_compute_analytics(db: Session, file_id: int, file_status: str) -> Analytics | None:
+def _get_or_compute_analytics(
+    db: Session, file_id: int, file_status: FileStatus
+) -> Analytics | None:
     """
     Get analytics for a file, computing them on-demand if needed.
 
@@ -201,7 +203,10 @@ def _get_or_compute_analytics(db: Session, file_id: int, file_status: str) -> An
     """
     analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
 
-    if analytics or file_status != "completed":
+    # Enum comparison — the old str-based form compared "FileStatus.COMPLETED"
+    # against "completed" and was always True, so the on-demand computation
+    # below never ran (issue #272).
+    if analytics or file_status != FileStatus.COMPLETED:
         return analytics  # type: ignore[no-any-return]
 
     # Compute analytics on-demand for completed files
@@ -642,7 +647,7 @@ def get_media_file_detail(
             SpeakerStatusService.add_computed_status(speaker)
 
         # Get analytics (compute on-demand if needed)
-        analytics = _get_or_compute_analytics(db, file_id, str(db_file.status))
+        analytics = _get_or_compute_analytics(db, file_id, db_file.status)
 
         # Get transcript segments with pagination
         transcript_segments, total_segments = _get_transcript_segments(

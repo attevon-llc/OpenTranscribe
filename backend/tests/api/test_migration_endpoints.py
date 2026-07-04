@@ -26,8 +26,14 @@ internal exception, which the happy/auth paths below do not trigger).
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from fastapi import status
+
+# Mirrors conftest's stack detection: False on the dev host (OpenSearch reachable
+# on localhost:5180), True on bare CI runners — both response shapes are pinned.
+_OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
 FAKE_TASK_ID = "test-task-id"  # from conftest _skip_celery_dispatch
 
@@ -108,13 +114,25 @@ def test_delete_routes_non_superuser_forbidden(client, user_token_headers, path)
 
 
 def test_embedding_status_admin_ok(client, super_admin_token_headers):
-    """Status returns 200 with mode/progress fields (OpenSearch degrades to v4)."""
+    """Status returns 200 with mode/progress fields in BOTH availability states.
+
+    With OpenSearch up, the body carries the index-derived fields. With
+    OpenSearch absent the endpoint must degrade — the documented contract is a
+    200 carrying ``status: error`` / ``OpenSearch not available`` plus the
+    always-present mode/progress/stalled fields, never a 500.
+    """
     response = client.get(f"{EMBEDDING}/status", headers=super_admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
     body = response.json()
     assert "progress" in body
     assert "mode_info" in body
     assert "stalled" in body
+    if _OPENSEARCH_ABSENT:
+        assert body["status"] == "error"
+        assert body["message"] == "OpenSearch not available"
+    else:
+        assert "current_mode" in body
+        assert "v4_document_count" in body
 
 
 def test_embedding_progress_admin_ok(client, super_admin_token_headers):

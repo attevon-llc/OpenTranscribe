@@ -28,8 +28,8 @@ import time
 from collections.abc import Iterable
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from pathlib import Path
 from typing import Any
 from typing import Protocol
@@ -277,7 +277,7 @@ def perform_mirror(db: Session | None = None, max_objects: int | None = None) ->
 
     cfg = mm.get_settings(db)
     started = time.monotonic()
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
 
     try:
         destination = _build_destination(cfg, db)

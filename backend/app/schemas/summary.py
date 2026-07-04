@@ -8,8 +8,6 @@ No hard-coded field requirements - accepts any valid JSON structure.
 from datetime import datetime
 from typing import Any
 from typing import Literal
-from typing import Optional
-from typing import Union
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -23,7 +21,7 @@ class SpeakerInfo(BaseModel):
     """Speaker information (optional, used by default BLUF prompt)"""
 
     name: str = Field(..., description="Speaker name or label")
-    talk_time_seconds: Union[int, float] = Field(..., description="Total talk time in seconds")
+    talk_time_seconds: int | float = Field(..., description="Total talk time in seconds")
     percentage: float = Field(..., description="Percentage of total talk time")
     key_points: list[str] = Field(..., description="Key points from this speaker")
 
@@ -47,11 +45,11 @@ class ActionItem(BaseModel):
     """Action item (optional, used by default BLUF prompt)"""
 
     text: str = Field(..., description="Action item description")
-    assigned_to: Optional[str] = Field(None, description="Person assigned")
-    due_date: Optional[str] = Field(None, description="Due date in YYYY-MM-DD format")
+    assigned_to: str | None = Field(None, description="Person assigned")
+    due_date: str | None = Field(None, description="Due date in YYYY-MM-DD format")
     priority: Literal["high", "medium", "low"] = Field(..., description="Priority level")
     context: str = Field(..., description="Context about why this action is needed")
-    status: Optional[Literal["pending", "completed", "cancelled"]] = Field("pending")
+    status: Literal["pending", "completed", "cancelled"] | None = Field("pending")
 
 
 class SummaryMetadata(BaseModel):
@@ -59,12 +57,12 @@ class SummaryMetadata(BaseModel):
 
     provider: str = Field(..., description="LLM provider used")
     model: str = Field(..., description="Model name")
-    usage_tokens: Optional[int] = None
+    usage_tokens: int | None = None
     transcript_length: int
-    processing_time_ms: Optional[int] = None
-    confidence_score: Optional[float] = None
-    language: Optional[str] = None
-    error: Optional[str] = None
+    processing_time_ms: int | None = None
+    confidence_score: float | None = None
+    language: str | None = None
+    error: str | None = None
 
 
 class MajorTopic(BaseModel):
@@ -93,33 +91,33 @@ class SummaryData(BaseModel):
     model_config = ConfigDict(extra="allow")  # Allow additional fields
 
     # Optional fields for backward compatibility with default BLUF prompt
-    bluf: Optional[str] = None
-    brief_summary: Optional[str] = None
-    major_topics: Optional[list[Any]] = None
-    action_items: Optional[list[Any]] = None
-    key_decisions: Optional[list[Any]] = None
-    follow_up_items: Optional[list[Any]] = None
-    metadata: Optional[dict[str, Any]] = None
+    bluf: str | None = None
+    brief_summary: str | None = None
+    major_topics: list[Any] | None = None
+    action_items: list[Any] | None = None
+    key_decisions: list[Any] | None = None
+    follow_up_items: list[Any] | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class SummaryResponse(BaseModel):
     """Response containing flexible summary data"""
 
     file_id: UUID
-    filename: Optional[str] = None
+    filename: str | None = None
     summary_data: dict[str, Any]  # Flexible structure - accepts any JSON
     source: Literal["opensearch", "postgresql"]
-    document_id: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    document_id: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class SummarySearchRequest(BaseModel):
-    query: Optional[str] = None
-    speakers: Optional[list[str]] = None
-    date_from: Optional[datetime] = None
-    date_to: Optional[datetime] = None
-    has_pending_actions: Optional[bool] = None
+    query: str | None = None
+    speakers: list[str] | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    has_pending_actions: bool | None = None
     size: int = 20
     offset: int = 0
 
@@ -133,14 +131,14 @@ class SummarySearchHit(BaseModel):
     created_at: str
     provider: str
     model: str
-    highlights: Optional[dict[str, list[str]]] = None
+    highlights: dict[str, list[str]] | None = None
 
 
 class SummarySearchResponse(BaseModel):
     hits: list[SummarySearchHit]
     total: int
-    max_score: Optional[float] = None
-    query: Optional[str] = None
+    max_score: float | None = None
+    query: str | None = None
     filters: dict[str, Any]
 
 
@@ -162,14 +160,14 @@ class SpeakerIdentificationResponse(BaseModel):
 
 class SummaryTaskRequest(BaseModel):
     force_regenerate: bool = False
-    prompt_uuid: Optional[str] = None
+    prompt_uuid: str | None = None
 
 
 class SummaryTaskStatus(BaseModel):
     task_id: str
     status: Literal["pending", "in_progress", "completed", "failed"]
-    progress: Optional[float] = None
-    error_message: Optional[str] = None
-    result: Optional[dict[str, Any]] = None
+    progress: float | None = None
+    error_message: str | None = None
+    result: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime

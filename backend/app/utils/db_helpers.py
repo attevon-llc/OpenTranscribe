@@ -1,7 +1,6 @@
 import logging
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import TypeVar
 
 from sqlalchemy import and_
 from sqlalchemy import func
@@ -22,8 +21,6 @@ if TYPE_CHECKING:
     from app.api.deps_context import RequestContext
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 
 def apply_tenant_scope(
@@ -97,7 +94,7 @@ def get_user_files_query_for_context(db: Session, ctx: "RequestContext") -> Quer
     return get_user_files_query(db, ctx.user.id, organization_id=ctx.org_id)
 
 
-def get_or_create(
+def get_or_create[T](
     db: Session, model: type[T], defaults: dict | None = None, **kwargs
 ) -> tuple[T, bool]:
     """
@@ -131,7 +128,7 @@ def get_or_create(
         raise
 
 
-def safe_get_by_id(
+def safe_get_by_id[T](
     db: Session, model: type[T], obj_id: int, user_id: int | None = None
 ) -> T | None:
     """
@@ -159,7 +156,7 @@ def safe_get_by_id(
         return None
 
 
-def bulk_update(db: Session, model: type[T], updates: list[dict], id_field: str = "id") -> bool:
+def bulk_update[T](db: Session, model: type[T], updates: list[dict], id_field: str = "id") -> bool:
     """
     Perform bulk updates efficiently.
 

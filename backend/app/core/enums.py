@@ -7,7 +7,11 @@ imports and to provide a single source of truth.
 import enum
 
 
-class FileStatus(str, enum.Enum):
+# NOT StrEnum (UP042): str(FileStatus.X) == "FileStatus.X" is load-bearing — the
+# status-detail API pins it as a characterization (test_files_management.py) and
+# the redaction-guard / on-demand-analytics `str(status)` comparisons would
+# silently change behavior. Convert deliberately in its own change, not a codemod.
+class FileStatus(str, enum.Enum):  # noqa: UP042
     """Processing status for media files."""
 
     PENDING = "pending"

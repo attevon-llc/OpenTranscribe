@@ -21,9 +21,9 @@ import logging
 import os
 import time
 import uuid as uuid_pkg
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 
 from app.core.celery import celery_app
 from app.core.config import settings
@@ -80,14 +80,14 @@ def scan_all(self) -> dict:
             if not watch_settings_service.is_enabled(db):
                 return {"skipped": True, "reason": "watch sources disabled"}
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             sources = db.query(WatchSource).filter(WatchSource.is_enabled.is_(True)).all()
             due_ids: list[int] = []
             for src in sources:
                 interval = timedelta(minutes=max(1, src.polling_interval_minutes or 15))
                 last = src.last_scan_at
                 if last is not None and last.tzinfo is None:
-                    last = last.replace(tzinfo=timezone.utc)
+                    last = last.replace(tzinfo=UTC)
                 if last is None or (now - last) >= interval:
                     due_ids.append(int(src.id))
                 else:
@@ -112,7 +112,7 @@ def scan_single(self, source_id: int) -> dict:
         if not acquired:
             return {"skipped": True, "reason": "scan already running for this source"}
 
-        scan_started = datetime.now(timezone.utc)
+        scan_started = datetime.now(UTC)
         start_perf = time.perf_counter()
         with session_scope() as db:
             source = db.query(WatchSource).filter(WatchSource.id == source_id).first()
@@ -236,7 +236,7 @@ def _record_age_skip(db, source: WatchSource, fi: RemoteFileInfo) -> None:
             file_modified_at=fi.modified_time,
             status="skipped_old",
             skip_reason="too_old",
-            processed_at=datetime.now(timezone.utc),
+            processed_at=datetime.now(UTC),
         )
     )
     db.flush()
@@ -381,7 +381,7 @@ def stitch_and_import(
                         db.add(part_row)
                     part_row.status = "stitched_part"
                     part_row.media_file_id = stitched_media_id
-                    part_row.processed_at = datetime.now(timezone.utc)
+                    part_row.processed_at = datetime.now(UTC)
                 db.commit()
 
                 # Optionally write the stitched file back to the source.

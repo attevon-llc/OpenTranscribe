@@ -231,7 +231,7 @@ class ConsolidatedSuggestion:
     name: str
     confidence: float
     suggestion_type: str  # 'profile' or 'llm_analysis'
-    profile_id: Optional[int] = None
+    profile_id: int | None = None
     embedding_count: int = 0
     reason: str = ""
     auto_accept: bool = False

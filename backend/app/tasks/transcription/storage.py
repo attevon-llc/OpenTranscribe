@@ -150,7 +150,7 @@ def update_media_file_transcription_status(
     media_file.duration = duration
     media_file.language = language
     media_file.status = FileStatus.COMPLETED
-    media_file.completed_at = datetime.datetime.now(datetime.timezone.utc)
+    media_file.completed_at = datetime.datetime.now(datetime.UTC)
 
     # Store processing model info
     if whisper_model:

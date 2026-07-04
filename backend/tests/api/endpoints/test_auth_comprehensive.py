@@ -9,9 +9,9 @@ This test module covers:
 6. Other auth methods (LDAP, Keycloak, PKI) with mocking
 """
 
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from unittest.mock import MagicMock
 from unittest.mock import patch
 from uuid import uuid4
@@ -604,7 +604,7 @@ class TestTokenExpiration:
 
         expired_payload = {
             "sub": str(uuid4()),
-            "exp": datetime.now(timezone.utc) - timedelta(hours=1),
+            "exp": datetime.now(UTC) - timedelta(hours=1),
             "type": "access",
         }
         expired_token = jwt.encode(

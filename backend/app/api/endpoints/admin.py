@@ -1,11 +1,10 @@
 import asyncio
 import logging
 import platform
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from typing import Any
-from typing import Optional
 
 import psutil
 from fastapi import APIRouter
@@ -89,8 +88,8 @@ def get_system_uptime():
     """Get system uptime in a readable format"""
     try:
         # Get boot time and calculate uptime
-        boot_time = datetime.fromtimestamp(psutil.boot_time(), tz=timezone.utc)
-        uptime = datetime.now(timezone.utc) - boot_time
+        boot_time = datetime.fromtimestamp(psutil.boot_time(), tz=UTC)
+        uptime = datetime.now(UTC) - boot_time
 
         # Format as days, hours, minutes, seconds
         days, remainder = divmod(uptime.total_seconds(), 86400)
@@ -809,7 +808,7 @@ async def update_garbage_cleanup_configuration(
 
 def _get_retention_eligible_files(db: Session, retention_days: int, delete_error_files: bool):
     """Query files eligible for deletion under the given retention parameters."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     eligible_statuses = [FileStatus.COMPLETED]
     if delete_error_files:
         eligible_statuses.append(FileStatus.ERROR)
@@ -960,7 +959,7 @@ async def preview_retention_deletion(
     users = db.query(User).filter(User.id.in_(user_ids)).all()
     user_map = {u.id: u.email for u in users}
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     total_size = sum(f.file_size or 0 for f in files)
 
     # Build preview list (cap at 100 rows for response size)
@@ -968,15 +967,13 @@ async def preview_retention_deletion(
     for f in files[:100]:
         if f.completed_at:
             ref_dt = (
-                f.completed_at.replace(tzinfo=timezone.utc)
+                f.completed_at.replace(tzinfo=UTC)
                 if f.completed_at.tzinfo is None
                 else f.completed_at
             )
         else:
             ref_dt = (
-                f.upload_time.replace(tzinfo=timezone.utc)
-                if f.upload_time.tzinfo is None
-                else f.upload_time
+                f.upload_time.replace(tzinfo=UTC) if f.upload_time.tzinfo is None else f.upload_time
             )
         age_days = (now_utc - ref_dt).days
         preview_files.append(
@@ -1214,7 +1211,7 @@ async def admin_reset_user_password(
 
     user.hashed_password = get_password_hash(request_body.new_password)  # type: ignore[assignment]
     user.must_change_password = request_body.force_change  # type: ignore[assignment]
-    user.password_changed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+    user.password_changed_at = datetime.now(UTC)  # type: ignore[assignment]
     db.commit()
 
     audit_logger.log(
@@ -1303,7 +1300,7 @@ async def admin_terminate_user_sessions(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Revoke all refresh tokens
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     tokens = (
         db.query(RefreshToken)
         .filter(
@@ -1351,7 +1348,7 @@ async def admin_get_user_sessions(
         .filter(
             RefreshToken.user_id == user.id,
             RefreshToken.revoked_at.is_(None),
-            RefreshToken.expires_at > datetime.now(timezone.utc),
+            RefreshToken.expires_at > datetime.now(UTC),
         )
         .all()
     )
@@ -1449,10 +1446,10 @@ async def admin_reset_user_mfa(
 
 @router.get("/users/search")
 async def admin_search_users(
-    query: Optional[str] = Query(None, description="Search query for email or name"),
-    role: Optional[str] = Query(None, description="Filter by role"),
-    auth_type: Optional[str] = Query(None, description="Filter by auth type"),
-    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    query: str | None = Query(None, description="Search query for email or name"),
+    role: str | None = Query(None, description="Filter by role"),
+    auth_type: str | None = Query(None, description="Filter by auth type"),
+    is_active: bool | None = Query(None, description="Filter by active status"),
     limit: int = Query(default=50, le=200, description="Maximum results to return"),
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),
@@ -1507,7 +1504,7 @@ async def get_account_status_report(
 ):
     """Account status summary for compliance reporting."""
     # Consolidate 3 User COUNT queries into 1 using FILTER clauses
-    expiry_threshold = datetime.now(timezone.utc) - timedelta(days=settings.PASSWORD_MAX_AGE_DAYS)
+    expiry_threshold = datetime.now(UTC) - timedelta(days=settings.PASSWORD_MAX_AGE_DAYS)
     user_row = db.query(
         func.count().label("total"),
         func.count().filter(User.is_active.is_(True)).label("active"),
@@ -1534,11 +1531,11 @@ async def get_account_status_report(
 
 @router.get("/audit-logs")
 def get_audit_logs(
-    start_date: Optional[datetime] = Query(None, description="Start date for log query"),
-    end_date: Optional[datetime] = Query(None, description="End date for log query"),
-    event_type: Optional[str] = Query(None, description="Filter by event type"),
-    user_id: Optional[int] = Query(None, description="Filter by user ID"),
-    outcome: Optional[str] = Query(None, description="Filter by outcome"),
+    start_date: datetime | None = Query(None, description="Start date for log query"),
+    end_date: datetime | None = Query(None, description="End date for log query"),
+    event_type: str | None = Query(None, description="Filter by event type"),
+    user_id: int | None = Query(None, description="Filter by user ID"),
+    outcome: str | None = Query(None, description="Filter by outcome"),
     limit: int = Query(default=100, le=1000, description="Maximum results"),
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),
@@ -1569,8 +1566,8 @@ def get_audit_logs(
 @router.get("/audit-logs/export")
 def export_audit_logs(
     export_format: str = Query("csv", description="Export format (csv or json)"),
-    start_date: Optional[datetime] = Query(None, description="Start date for export"),
-    end_date: Optional[datetime] = Query(None, description="End date for export"),
+    start_date: datetime | None = Query(None, description="Start date for export"),
+    end_date: datetime | None = Query(None, description="End date for export"),
     current_user: User = Depends(get_current_super_admin_user),
 ):
     """Export audit logs for compliance reporting. Super admin only."""
@@ -1651,7 +1648,7 @@ def export_audit_logs(
             content = output.getvalue()
             media_type = "text/csv"
 
-        filename = f"audit-logs-{datetime.now(timezone.utc).strftime('%Y%m%d')}.{export_format}"
+        filename = f"audit-logs-{datetime.now(UTC).strftime('%Y%m%d')}.{export_format}"
 
         return StreamingResponse(
             iter([content]),

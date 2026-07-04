@@ -3,7 +3,6 @@ Enhanced file management endpoints for error handling and recovery.
 """
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -48,10 +47,10 @@ class FileStatusDetail(BaseModel):
     is_stuck: bool
     retry_count: int
     max_retries: int
-    active_task_id: Optional[str] = None
-    task_started_at: Optional[str] = None
-    task_last_update: Optional[str] = None
-    last_error_message: Optional[str] = None
+    active_task_id: str | None = None
+    task_started_at: str | None = None
+    task_last_update: str | None = None
+    last_error_message: str | None = None
     recovery_attempts: int = 0
     force_delete_eligible: bool = False
     actions_available: list[str] = []
@@ -67,10 +66,10 @@ class BulkActionRequest(BaseModel):
     reset_retry_count: bool = False
     # Selective reprocessing (optional, used when action='reprocess')
     stages: list[str] = Field(default_factory=list)
-    min_speakers: Optional[int] = None
-    max_speakers: Optional[int] = None
-    num_speakers: Optional[int] = None
-    disable_diarization: Optional[bool] = None
+    min_speakers: int | None = None
+    max_speakers: int | None = None
+    num_speakers: int | None = None
+    disable_diarization: bool | None = None
 
 
 class BulkActionResult(BaseModel):
@@ -79,7 +78,7 @@ class BulkActionResult(BaseModel):
     file_uuid: str
     success: bool
     message: str
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @router.get("/{file_uuid}/status-detail", response_model=FileStatusDetail)

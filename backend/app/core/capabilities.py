@@ -18,8 +18,7 @@ code.
 """
 
 import logging
-from typing import Callable
-from typing import Optional
+from collections.abc import Callable
 
 from fastapi import HTTPException
 from fastapi import Request
@@ -114,10 +113,10 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
 # Resolver signature: (request | None) -> capability dict. The request is
 # offered so a cloud resolver can derive tenant/tier from the verified
 # identity stashed by get_current_user (request.state.external_identity).
-CapabilityResolver = Callable[[Optional[Request]], dict[str, bool]]
+CapabilityResolver = Callable[[Request | None], dict[str, bool]]
 
 
-def _community_resolver(_request: Optional[Request]) -> dict[str, bool]:
+def _community_resolver(_request: Request | None) -> dict[str, bool]:
     return dict(COMMUNITY_CAPABILITIES)
 
 
@@ -137,7 +136,7 @@ def reset_capability_resolver() -> None:
     _resolver = _community_resolver
 
 
-def get_capabilities(request: Optional[Request] = None) -> dict[str, bool]:
+def get_capabilities(request: Request | None = None) -> dict[str, bool]:
     """Effective capability map for this deployment/request.
 
     Unknown keys from a custom resolver are passed through; missing known
@@ -150,7 +149,7 @@ def get_capabilities(request: Optional[Request] = None) -> dict[str, bool]:
     return caps
 
 
-def capability_enabled(key: str, request: Optional[Request] = None) -> bool:
+def capability_enabled(key: str, request: Request | None = None) -> bool:
     """Check a single capability (False for unknown keys)."""
     return bool(get_capabilities(request).get(key, False))
 

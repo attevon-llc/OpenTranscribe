@@ -18,10 +18,9 @@ import logging
 import threading
 from dataclasses import asdict
 from dataclasses import dataclass
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
-from typing import Optional
 from typing import TypedDict
 
 from app.core.config import settings
@@ -34,10 +33,10 @@ class LockoutInfo(TypedDict):
     is_locked: bool
     failed_attempts: int
     lockout_count: int
-    locked_until: Optional[str]  # ISO format datetime string
-    first_failed_attempt: Optional[str]  # ISO format datetime string
-    last_failed_attempt: Optional[str]  # ISO format datetime string
-    admin_unlocked_at: Optional[str]  # ISO format datetime string
+    locked_until: str | None  # ISO format datetime string
+    first_failed_attempt: str | None  # ISO format datetime string
+    last_failed_attempt: str | None  # ISO format datetime string
+    admin_unlocked_at: str | None  # ISO format datetime string
     lockout_enabled: bool
 
 
@@ -60,11 +59,11 @@ class LockoutRecord:
     identifier: str
     failed_attempts: int = 0
     lockout_count: int = 0  # Number of times account has been locked out
-    locked_until: Optional[str] = None  # ISO format datetime string
-    first_failed_attempt: Optional[str] = None  # ISO format datetime string
-    last_failed_attempt: Optional[str] = None  # ISO format datetime string
+    locked_until: str | None = None  # ISO format datetime string
+    first_failed_attempt: str | None = None  # ISO format datetime string
+    last_failed_attempt: str | None = None  # ISO format datetime string
     # Track when admin manually unlocked (for audit purposes)
-    admin_unlocked_at: Optional[str] = None  # ISO format datetime string
+    admin_unlocked_at: str | None = None  # ISO format datetime string
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -75,13 +74,13 @@ class LockoutRecord:
         """Create from dictionary (JSON deserialization)."""
         return cls(**data)
 
-    def get_locked_until_datetime(self) -> Optional[datetime]:
+    def get_locked_until_datetime(self) -> datetime | None:
         """Get locked_until as datetime object."""
         if self.locked_until:
             return datetime.fromisoformat(self.locked_until)
         return None
 
-    def set_locked_until(self, dt: Optional[datetime]) -> None:
+    def set_locked_until(self, dt: datetime | None) -> None:
         """Set locked_until from datetime object."""
         self.locked_until = dt.isoformat() if dt else None
 
@@ -126,12 +125,12 @@ class InMemoryLockoutStore:
         self._data: dict[str, str] = {}  # key -> JSON string
         self._lock = threading.Lock()
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         """Get a value."""
         with self._lock:
             return self._data.get(key)
 
-    def set(self, key: str, value: str, ex: Optional[int] = None) -> None:
+    def set(self, key: str, value: str, ex: int | None = None) -> None:
         """Set a value (ex parameter ignored for in-memory)."""
         with self._lock:
             self._data[key] = value
@@ -153,7 +152,7 @@ class InMemoryLockoutStore:
 
 # Singleton stores
 _redis_client = None
-_in_memory_store: Optional[InMemoryLockoutStore] = None
+_in_memory_store: InMemoryLockoutStore | None = None
 _store_initialized = False
 _store_lock = threading.Lock()
 
@@ -235,7 +234,7 @@ def _get_lockout_duration_minutes(lockout_count: int) -> int:
     return min(duration, max_duration)
 
 
-def _get_record(identifier: str) -> Optional[LockoutRecord]:
+def _get_record(identifier: str) -> LockoutRecord | None:
     """Get lockout record from storage.
 
     Args:
@@ -275,7 +274,7 @@ def _record_attempt_audit_only(identifier: str) -> None:
         identifier: Email or username of the account
     """
     identifier = _normalize_identifier(identifier)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     record = _get_record(identifier)
     if not record:
@@ -297,7 +296,7 @@ def _record_attempt_audit_only(identifier: str) -> None:
 
 def check_and_record_attempt(
     identifier: str, success: bool, exempt_from_lockout: bool = False
-) -> tuple[bool, Optional[datetime]]:
+) -> tuple[bool, datetime | None]:
     """
     Atomically check lockout status and record login attempt result.
 
@@ -324,7 +323,7 @@ def check_and_record_attempt(
         return False, None
 
     identifier = _normalize_identifier(identifier)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     store = _get_store()
     key = _lockout_key(identifier)
 
@@ -350,7 +349,7 @@ def _handle_expired_lockout(record: LockoutRecord, now: datetime) -> None:
 
 
 def _handle_successful_login(
-    store, key: str, record: LockoutRecord, locked_until_dt: Optional[datetime]
+    store, key: str, record: LockoutRecord, locked_until_dt: datetime | None
 ) -> tuple[bool, None]:
     """Clear failed attempts after successful login.
 
@@ -387,7 +386,7 @@ def _handle_successful_login(
 
 def _check_lockout_threshold(
     record: LockoutRecord, now: datetime, identifier: str
-) -> tuple[bool, Optional[datetime]]:
+) -> tuple[bool, datetime | None]:
     """Check if lockout threshold is reached and apply lockout if needed.
 
     Args:
@@ -417,7 +416,7 @@ def _check_lockout_threshold(
 
 def _handle_failed_login(
     store, key: str, record: LockoutRecord, identifier: str, now: datetime
-) -> tuple[bool, Optional[datetime]]:
+) -> tuple[bool, datetime | None]:
     """Increment failed attempts and check lockout threshold.
 
     Args:
@@ -457,7 +456,7 @@ def _handle_failed_login(
 
 def _check_and_record_attempt_redis(
     store, key: str, identifier: str, success: bool, now: datetime
-) -> tuple[bool, Optional[datetime]]:
+) -> tuple[bool, datetime | None]:
     """
     Atomic check-and-record using Redis transactions.
 
@@ -511,7 +510,7 @@ def _check_and_record_attempt_redis(
 
 def _check_and_record_attempt_memory(
     store, key: str, identifier: str, success: bool, now: datetime
-) -> tuple[bool, Optional[datetime]]:
+) -> tuple[bool, datetime | None]:
     """
     Check-and-record for in-memory store using thread locking.
 
@@ -622,7 +621,7 @@ def record_successful_login(identifier: str) -> None:
     check_and_record_attempt(identifier, success=True)
 
 
-def is_account_locked(identifier: str) -> tuple[bool, Optional[datetime]]:
+def is_account_locked(identifier: str) -> tuple[bool, datetime | None]:
     """Check if an account is currently locked out.
 
     Note: For atomic check-and-record, use check_and_record_attempt() instead.
@@ -639,7 +638,7 @@ def is_account_locked(identifier: str) -> tuple[bool, Optional[datetime]]:
         return False, None
 
     identifier = _normalize_identifier(identifier)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     record = _get_record(identifier)
     if not record:
@@ -677,7 +676,7 @@ def get_lockout_info(identifier: str) -> LockoutInfo:
         - lockout_enabled: Whether lockout is enabled in settings
     """
     identifier = _normalize_identifier(identifier)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     record = _get_record(identifier)
     if not record:
@@ -723,7 +722,7 @@ def unlock_account(identifier: str) -> bool:
         True if account was unlocked, False if account was not locked
     """
     identifier = _normalize_identifier(identifier)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     record = _get_record(identifier)
     if not record:
@@ -774,7 +773,7 @@ def cleanup_expired_lockouts() -> int:
         return 0
 
     # For in-memory store, manually clean up
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cleanup_threshold = now - timedelta(hours=24)
     cleaned = 0
 
@@ -831,7 +830,7 @@ def get_all_locked_accounts() -> list[LockoutInfo]:
         return []
 
     store = _get_store()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     locked_accounts = []
 
     # Get all lockout keys

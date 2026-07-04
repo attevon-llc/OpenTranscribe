@@ -16,7 +16,7 @@ Key Features:
 import json
 import logging
 import re
-from typing import Callable
+from collections.abc import Callable
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -193,8 +193,8 @@ IMPORTANT GUIDELINES:
         self,
         media_file_id: int,
         force_regenerate: bool = False,
-        progress_callback: Optional[Callable[[str], None]] = None,
-    ) -> Optional[TopicSuggestion]:
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> TopicSuggestion | None:
         """
         Extract tag and collection suggestions from a transcript using LLM
 
@@ -333,7 +333,7 @@ IMPORTANT GUIDELINES:
             self.db.rollback()
             return False
 
-    def _get_transcript_text(self, media_file: MediaFile) -> Optional[str]:
+    def _get_transcript_text(self, media_file: MediaFile) -> str | None:
         """Extract transcript text from media file"""
         from app.models.media import TranscriptSegment
 
@@ -362,7 +362,7 @@ IMPORTANT GUIDELINES:
         file_id: int,
         duration: float,
         output_language: str = "en",
-    ) -> Optional[LLMSuggestionResponse]:
+    ) -> LLMSuggestionResponse | None:
         """
         Call LLM to extract suggestions from transcript with provider-specific optimizations
 
@@ -456,7 +456,7 @@ IMPORTANT GUIDELINES:
 
     def _parse_llm_response(
         self, response_text: str, provider: LLMProvider
-    ) -> Optional[LLMSuggestionResponse]:
+    ) -> LLMSuggestionResponse | None:
         """
         Parse LLM response and extract JSON with provider-specific handling
 
@@ -506,7 +506,7 @@ IMPORTANT GUIDELINES:
         self,
         media_file: MediaFile,
         llm_response: LLMSuggestionResponse,
-    ) -> Optional[TopicSuggestion]:
+    ) -> TopicSuggestion | None:
         """
         Store suggestion in PostgreSQL
 

@@ -241,7 +241,7 @@ class TestPreprocessResult:
 
         assert restored.vad_regions is not None
         assert len(restored.vad_regions) == 3
-        for orig_region, rest_region in zip(regions, restored.vad_regions):
+        for orig_region, rest_region in zip(regions, restored.vad_regions, strict=True):
             assert rest_region[0] == pytest.approx(orig_region[0])
             assert rest_region[1] == pytest.approx(orig_region[1])
 

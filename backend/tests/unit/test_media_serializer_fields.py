@@ -9,8 +9,8 @@ Covers the thin-frontend serializer additions:
 These are pure-Pydantic / pure-Python tests; no DB or live stack required.
 """
 
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -64,7 +64,7 @@ def _make_speaker(
         suggested_name=None,
         verified=False,
         confidence=None,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         profile=profile,
         profile_id=(getattr(profile, "id", None) if profile else None),
         computed_status=None,
@@ -230,7 +230,7 @@ def test_grouped_segments_matches_frontend_logic():
     reference = _reference_grouping(segments)
 
     assert len(groups) == len(reference)
-    for got, ref in zip(groups, reference):
+    for got, ref in zip(groups, reference, strict=True):
         assert got.is_overlap_group == ref["is_overlap_group"]
         assert got.overlap_group_id == ref["overlap_group_id"]
         assert got.start_time == ref["start_time"]

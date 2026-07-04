@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 
 from app.models.watch_source import DEFAULT_MULTIPART_REGEX
 from app.services.watch_sources import multipart
@@ -16,7 +16,7 @@ def _fi(name: str, hours_offset: int = 0) -> RemoteFileInfo:
         path=f"/x/{name}",
         name=name,
         size=1000,
-        modified_time=datetime(2026, 6, 1, tzinfo=timezone.utc) + timedelta(hours=hours_offset),
+        modified_time=datetime(2026, 6, 1, tzinfo=UTC) + timedelta(hours=hours_offset),
     )
 
 

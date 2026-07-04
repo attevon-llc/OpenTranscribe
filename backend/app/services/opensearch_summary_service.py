@@ -9,7 +9,6 @@ import datetime
 import logging
 import uuid
 from typing import Any
-from typing import Optional
 
 from opensearchpy.exceptions import NotFoundError
 
@@ -134,8 +133,8 @@ class OpenSearchSummaryService:
             doc["summary_version"] = summary_version
             doc["provider"] = provider
             doc["model"] = model
-            doc["created_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            doc["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            doc["created_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+            doc["updated_at"] = datetime.datetime.now(datetime.UTC).isoformat()
 
             # Index the document
             self.client.index(
@@ -155,7 +154,7 @@ class OpenSearchSummaryService:
             )
             return None
 
-    async def get_summary(self, document_id: str) -> Optional[dict[str, Any]]:
+    async def get_summary(self, document_id: str) -> dict[str, Any] | None:
         """
         Retrieve a summary document by ID with flexible structure.
 
@@ -188,7 +187,7 @@ class OpenSearchSummaryService:
             logger.error(f"Error retrieving summary: {e}")
             return None
 
-    async def get_summary_by_file_id(self, file_id: int, user_id: int) -> Optional[dict[str, Any]]:
+    async def get_summary_by_file_id(self, file_id: int, user_id: int) -> dict[str, Any] | None:
         """
         Get the latest summary for a specific file with flexible structure support.
 
@@ -478,7 +477,7 @@ class OpenSearchSummaryService:
 
         try:
             # Add updated timestamp
-            updates["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            updates["updated_at"] = datetime.datetime.now(datetime.UTC).isoformat()
 
             self.client.update(
                 index=self.index_name,

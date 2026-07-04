@@ -1,6 +1,6 @@
 import logging
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -157,7 +157,7 @@ def update_current_user(
 
         new_hash = get_password_hash(new_password)
         update_data["hashed_password"] = new_hash
-        update_data["password_changed_at"] = datetime.now(timezone.utc)
+        update_data["password_changed_at"] = datetime.now(UTC)
 
         # Store password in history after successful change
         add_password_to_history(db, current_user.id, new_hash)
@@ -289,7 +289,7 @@ def update_user(
 
         new_hash = get_password_hash(new_password)
         update_data["hashed_password"] = new_hash
-        update_data["password_changed_at"] = datetime.now(timezone.utc)
+        update_data["password_changed_at"] = datetime.now(UTC)
 
         # Store password in history after successful change
         add_password_to_history(db, user.id, new_hash)

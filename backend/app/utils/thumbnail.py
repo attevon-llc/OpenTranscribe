@@ -10,8 +10,6 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Literal
-from typing import Optional
-from typing import Union
 
 import ffmpeg
 
@@ -25,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def generate_thumbnail(
-    video_path: Union[str, Path],
-    output_path: Union[str, Path, None] = None,
+    video_path: str | Path,
+    output_path: str | Path | None = None,
     timestamp: float = 1.0,
     max_dimension: int = THUMBNAIL_MAX_DIMENSION,
     output_format: Literal["webp", "jpeg"] = THUMBNAIL_FORMAT,  # type: ignore[assignment]
@@ -178,10 +176,10 @@ def generate_thumbnail_from_url(
 async def generate_and_upload_thumbnail(
     user_id: int,
     media_file_id: int,
-    video_path: Union[str, Path],
+    video_path: str | Path,
     timestamp: float = 1.0,
     output_format: Literal["webp", "jpeg"] = THUMBNAIL_FORMAT,  # type: ignore[assignment]
-) -> Optional[str]:
+) -> str | None:
     """
     Generate a thumbnail from a video file and upload it to storage.
 
@@ -238,10 +236,10 @@ async def generate_and_upload_thumbnail(
 def generate_and_upload_thumbnail_sync(
     user_id: int,
     media_file_id: int,
-    video_path: Union[str, Path],
+    video_path: str | Path,
     timestamp: float = 1.0,
     output_format: Literal["webp", "jpeg"] = THUMBNAIL_FORMAT,  # type: ignore[assignment]
-) -> Optional[str]:
+) -> str | None:
     """
     Generate a thumbnail from a video file and upload it to storage (synchronous version).
 

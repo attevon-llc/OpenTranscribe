@@ -14,7 +14,7 @@ Set RUN_MFA_TESTS=true to run these tests.
 """
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -175,7 +175,7 @@ class TestMFATokenReplayPrevention:
     @pytest.fixture
     def mfa_token_data(self):
         """Create a valid MFA token payload."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return {
             "sub": str(uuid4()),
             "role": "user",
@@ -218,7 +218,7 @@ class TestMFATokenReplayPrevention:
         """Tokens without type='mfa' should be rejected."""
         from app.api.endpoints.auth import _verify_mfa_token
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         access_token_data = {
             "sub": str(uuid4()),
             "role": "user",
@@ -243,7 +243,7 @@ class TestMFATokenReplayPrevention:
         from app.api.endpoints.auth import _verify_mfa_token
 
         # Create an expired token
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         mfa_token_data["iat"] = now - timedelta(minutes=10)
         mfa_token_data["exp"] = now - timedelta(minutes=5)
 
@@ -425,7 +425,7 @@ class TestTOTPWindowConfiguration:
         totp = pyotp.TOTP(secret, interval=30, digits=6)
 
         # Code at current time should work
-        current_code = totp.at(datetime.now(timezone.utc))
+        current_code = totp.at(datetime.now(UTC))
         assert MFAService.verify_totp(secret, current_code)
 
     def test_totp_verification_with_custom_window(self):
@@ -594,7 +594,7 @@ class TestMFATokenCreation:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
 
         # Check expiration is within expected range
-        now = datetime.now(timezone.utc).timestamp()
+        now = datetime.now(UTC).timestamp()
         expected_exp = now + (settings.MFA_TOKEN_EXPIRE_MINUTES * 60)
 
         # Allow 5 second tolerance

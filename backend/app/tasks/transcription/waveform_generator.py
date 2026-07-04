@@ -9,7 +9,6 @@ import json
 import logging
 import subprocess
 from typing import Any
-from typing import Optional
 
 import numpy as np
 
@@ -49,7 +48,7 @@ class WaveformGenerator:
                 "FFmpeg is required for waveform generation but not available"
             ) from e
 
-    def generate_waveform_data(self, file_path: str) -> Optional[dict[str, Any]]:
+    def generate_waveform_data(self, file_path: str) -> dict[str, Any] | None:
         """
         Generate waveform data for multiple resolutions optimized for different devices and screen sizes.
 
@@ -82,7 +81,7 @@ class WaveformGenerator:
             logger.error(f"Error generating waveform data: {e}")
             return None
 
-    def _probe_audio_file(self, file_path: str) -> Optional[dict[str, Any]]:
+    def _probe_audio_file(self, file_path: str) -> dict[str, Any] | None:
         """
         Probe audio file to get stream information and duration.
 
@@ -130,7 +129,7 @@ class WaveformGenerator:
 
         return {"duration": duration, "sample_rate": sample_rate}
 
-    def _extract_raw_audio(self, file_path: str, duration: float) -> Optional[np.ndarray]:
+    def _extract_raw_audio(self, file_path: str, duration: float) -> np.ndarray | None:
         """
         Extract raw audio data from file using FFmpeg.
 
@@ -244,7 +243,7 @@ class WaveformGenerator:
 
         return [0] * target_samples
 
-    def generate_from_16khz_wav(self, wav_path: str) -> Optional[dict[str, Any]]:
+    def generate_from_16khz_wav(self, wav_path: str) -> dict[str, Any] | None:
         """Generate waveform data from a pre-decoded 16kHz WAV (numpy resample, no FFmpeg).
 
         Used by Phase 1b shared-volume path to avoid re-running FFmpeg on an already-decoded WAV.
@@ -295,7 +294,7 @@ class WaveformGenerator:
 
     def _extract_single_waveform(
         self, file_path: str, target_samples: int
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Extract waveform data for a single resolution.
 

@@ -721,8 +721,8 @@ def rebuild_speaker_index(db: "Any") -> dict[str, Any]:
                     "collection_ids": source.get("collection_ids", []),
                     "media_file_id": source.get("media_file_id"),
                     "segment_count": source.get("segment_count", 1),
-                    "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
+                    "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
                     "embedding": source["embedding"],
                 }
                 bulk_body.append(doc)
@@ -1231,8 +1231,8 @@ def add_speaker_embedding_v4(
             "collection_ids": collection_ids or [],
             "media_file_id": media_file_id,
             "segment_count": segment_count,
-            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
             "embedding": embedding,
         }
         if organization_id is not None:
@@ -1286,7 +1286,7 @@ def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dic
 
     v4_index = get_speaker_index_v4()
     bulk_body: list[dict[str, Any]] = []
-    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    now_iso = datetime.datetime.now(datetime.UTC).isoformat()
     accepted = 0
 
     for data in embeddings_data:
@@ -1391,7 +1391,7 @@ def store_profile_embedding_v4(
             "user_id": user_id,
             "embedding": embedding,
             "speaker_count": speaker_count,
-            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         }
         if organization_id is not None:
             doc["organization_id"] = organization_id
@@ -1460,9 +1460,7 @@ def index_transcript(
             "speakers": speakers,
             "title": title,
             "tags": tags or [],
-            "upload_time": datetime.datetime.now(
-                datetime.timezone.utc
-            ).isoformat(),  # ISO-8601 format
+            "upload_time": datetime.datetime.now(datetime.UTC).isoformat(),  # ISO-8601 format
         }
 
         # Only include embedding if provided
@@ -1595,8 +1593,8 @@ def add_speaker_embedding(
             "collection_ids": collection_ids or [],
             "media_file_id": media_file_id,
             "segment_count": segment_count,
-            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
             "embedding": embedding,
         }
         if organization_id is not None:
@@ -1654,8 +1652,8 @@ def add_speaker_embedding(
                         "collection_ids": collection_ids or [],
                         "media_file_id": media_file_id,
                         "segment_count": segment_count,
-                        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
+                        "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
                         "embedding": embedding,
                     }
                     if organization_id is not None:
@@ -1715,8 +1713,8 @@ def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
                 "collection_ids": data.get("collection_ids", []),
                 "media_file_id": data.get("media_file_id"),
                 "segment_count": data.get("segment_count", 1),
-                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
+                "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
                 "embedding": data["embedding"],
             }
             if data.get("organization_id") is not None:
@@ -2187,7 +2185,7 @@ def update_speaker_collections(
                 "profile_id": profile_id,
                 "profile_uuid": str(profile_uuid) if profile_uuid else None,
                 "collection_ids": collection_ids,
-                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
             }
         }
 
@@ -2230,7 +2228,7 @@ def move_speaker_to_profile_collection(
                 "profile_id": target_profile_id,
                 "profile_uuid": str(target_profile_uuid) if target_profile_uuid else None,
                 "collection_ids": target_collection_ids,
-                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
             }
         }
 
@@ -2280,7 +2278,7 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]):
                     if update.get("profile_uuid")
                     else None,
                     "collection_ids": update.get("collection_ids", []),
-                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
                 }
             }
             bulk_body.append(doc_update)
@@ -2405,7 +2403,7 @@ def merge_speaker_embeddings(
         update_body = {
             "doc": {
                 "collection_ids": new_collection_ids,
-                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
             }
         }
 
@@ -2754,7 +2752,7 @@ def store_profile_embedding(
             "user_id": user_id,
             "embedding": embedding,
             "speaker_count": speaker_count,
-            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         }
         if organization_id is not None:
             doc["organization_id"] = organization_id
@@ -2857,7 +2855,7 @@ def store_cluster_embedding(
             "cluster_uuid": str(cluster_uuid),
             "user_id": user_id,
             "embedding": embedding,
-            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         }
         if label:
             doc["label"] = label
@@ -3315,7 +3313,7 @@ def update_speaker_segment_count(speaker_uuid: str, segment_count: int) -> bool:
         update_body = {
             "doc": {
                 "segment_count": segment_count,
-                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
             }
         }
 
@@ -3350,7 +3348,7 @@ def update_speaker_display_name(speaker_uuid: str, display_name: str | None):
         update_body = {
             "doc": {
                 "display_name": display_name,
-                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
             }
         }
 
@@ -3395,7 +3393,7 @@ def update_speaker_profile(
             "profile_id": profile_id,
             "profile_uuid": str(profile_uuid) if profile_uuid else None,
             "verified": verified,
-            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         }
         if display_name is not None:
             doc["display_name"] = display_name
@@ -3585,7 +3583,7 @@ def update_cluster_embedding(
             "user_id": user_id,
             "embedding": embedding,
             "label": label if label is not None else existing_label,
-            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         }
 
         opensearch_client.index(

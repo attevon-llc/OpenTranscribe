@@ -6,9 +6,9 @@ check status, and request retries without requiring admin privileges.
 """
 
 import logging
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from typing import Any
 
 from fastapi import APIRouter
@@ -48,7 +48,7 @@ def get_user_file_status(
     Returns counts of files by status and identifies files that may need attention.
     """
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         user_id = current_user.id
 
         # --- Status counts via SQL GROUP BY (single aggregation query) ---
@@ -244,7 +244,7 @@ def get_file_detailed_status(
 
         # Calculate file age and determine if retry is available
         assert media_file.upload_time is not None  # server_default=now() on persisted row
-        file_age = datetime.now(timezone.utc) - media_file.upload_time
+        file_age = datetime.now(UTC) - media_file.upload_time
         can_retry = media_file.status in [FileStatus.ERROR, FileStatus.PROCESSING]
 
         # Check if file might be stuck
@@ -341,7 +341,7 @@ async def retry_file_processing(
             db.query(TaskModel)
             .filter(
                 TaskModel.media_file_id == file_id,
-                TaskModel.created_at > datetime.now(timezone.utc) - timedelta(minutes=5),
+                TaskModel.created_at > datetime.now(UTC) - timedelta(minutes=5),
             )
             .count()
         )
@@ -374,7 +374,7 @@ async def retry_file_processing(
             for task in old_tasks:
                 task.status = "failed"  # type: ignore[assignment]
                 task.error_message = "Task marked as failed for user retry"  # type: ignore[assignment]
-                task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
 
             db.commit()
 

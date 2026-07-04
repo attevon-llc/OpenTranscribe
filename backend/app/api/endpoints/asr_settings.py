@@ -9,8 +9,8 @@ import logging
 import os
 import re
 import time
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import Any
 from uuid import UUID
 
@@ -556,7 +556,7 @@ def create_asr_config(
         region=settings_in.region,
         is_active=settings_in.is_active,
         is_shared=is_shared,
-        shared_at=datetime.now(timezone.utc) if is_shared else None,
+        shared_at=datetime.now(UTC) if is_shared else None,
     )
     db.add(config)
     db.commit()
@@ -670,7 +670,7 @@ def update_asr_config(  # noqa: C901
         new_shared = settings_in.is_shared
         if new_shared and not config.is_shared:
             config.is_shared = True  # type: ignore[assignment]
-            config.shared_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+            config.shared_at = datetime.now(UTC)  # type: ignore[assignment]
         elif not new_shared and config.is_shared:
             config.is_shared = False  # type: ignore[assignment]
             config.shared_at = None  # type: ignore[assignment]
@@ -861,7 +861,7 @@ def test_saved_asr_config(
     if config.user_id == current_user.id:
         config.test_status = "success" if success else "failed"  # type: ignore[assignment]
         config.test_message = _sanitize_message(message, api_key)  # type: ignore[assignment]
-        config.last_tested = datetime.now(timezone.utc)  # type: ignore[assignment]
+        config.last_tested = datetime.now(UTC)  # type: ignore[assignment]
         db.add(config)
         db.commit()
 

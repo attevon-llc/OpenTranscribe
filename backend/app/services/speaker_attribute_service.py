@@ -10,7 +10,6 @@ Model card: https://huggingface.co/prithivMLmods/Common-Voice-Gender-Detection
 
 import logging
 from typing import Any
-from typing import Optional
 
 import numpy as np
 
@@ -26,8 +25,8 @@ class SpeakerAttributeService:
     """Predicts speaker gender from audio using wav2vec2 sequence classification."""
 
     def __init__(self, force_cpu: bool = False) -> None:
-        self._model: Optional[Any] = None
-        self._feature_extractor: Optional[Any] = None
+        self._model: Any | None = None
+        self._feature_extractor: Any | None = None
         self._model_loaded = False
         self._device: str = "cpu"
         self._force_cpu = force_cpu
@@ -134,7 +133,7 @@ class SpeakerAttributeService:
 
 
 # Module-level cached instance
-_cached_service: Optional[SpeakerAttributeService] = None
+_cached_service: SpeakerAttributeService | None = None
 
 
 def get_cached_attribute_service(force_cpu: bool = False) -> SpeakerAttributeService:

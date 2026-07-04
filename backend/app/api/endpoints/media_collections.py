@@ -2,7 +2,6 @@
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -841,18 +840,18 @@ async def get_collection_media(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     # Filters
-    search: Optional[str] = None,
-    tag: Optional[list[str]] = Query(None),
-    speaker: Optional[list[str]] = Query(None),
-    from_date: Optional[datetime] = None,
-    to_date: Optional[datetime] = None,
-    min_duration: Optional[float] = None,
-    max_duration: Optional[float] = None,
-    min_file_size: Optional[int] = None,
-    max_file_size: Optional[int] = None,
-    file_type: Optional[list[str]] = Query(None),
-    status: Optional[list[str]] = Query(None),
-    transcript_search: Optional[str] = None,
+    search: str | None = None,
+    tag: list[str] | None = Query(None),
+    speaker: list[str] | None = Query(None),
+    from_date: datetime | None = None,
+    to_date: datetime | None = None,
+    min_duration: float | None = None,
+    max_duration: float | None = None,
+    min_file_size: int | None = None,
+    max_file_size: int | None = None,
+    file_type: list[str] | None = Query(None),
+    status: list[str] | None = Query(None),
+    transcript_search: str | None = None,
     # Sort parameters
     sort_by: str = Query(
         "upload_time",

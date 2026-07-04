@@ -15,6 +15,7 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
+from datetime import UTC
 from typing import TypedDict
 from urllib.parse import unquote
 
@@ -1322,9 +1323,8 @@ def pki_authenticate(request, admin_dns_config: str | None = None) -> PKIUserDat
 
             # Validate certificate validity period
             from datetime import datetime
-            from datetime import timezone
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Check not_before (certificate not yet valid)
             if cert_metadata.get("not_before"):

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from abc import ABC
 from abc import abstractmethod
-from typing import Callable
+from collections.abc import Callable
 
 from .types import DiarizeConfig
 from .types import DiarizeResult

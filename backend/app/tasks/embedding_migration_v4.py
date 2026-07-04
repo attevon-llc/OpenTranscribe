@@ -328,7 +328,7 @@ def _embedding_result_writer(
 
     # Aggregate and build docs
     docs: list[dict] = []
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    now = datetime.datetime.now(datetime.UTC).isoformat()
     speaker_profiles = prepared.extra.get("speaker_profiles", {})
 
     # Build speaker lookup for metadata

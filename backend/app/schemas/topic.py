@@ -5,7 +5,6 @@ Simplified schemas for LLM-powered tag and collection suggestions (Issue #79).
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -30,7 +29,7 @@ class SuggestedTag(BaseModel):
 
     name: str = Field(..., description="Tag name")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0.0-1.0)")
-    rationale: Optional[str] = Field(None, description="Reasoning for suggestion")
+    rationale: str | None = Field(None, description="Reasoning for suggestion")
 
 
 class SuggestedCollection(BaseModel):
@@ -45,7 +44,7 @@ class SuggestedCollection(BaseModel):
 
     name: str = Field(..., description="Suggested collection name")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0.0-1.0)")
-    rationale: Optional[str] = Field(None, description="Reasoning for suggestion")
+    rationale: str | None = Field(None, description="Reasoning for suggestion")
 
 
 # ============================================================================
@@ -98,9 +97,7 @@ class TopicSuggestionResponse(UUIDBaseSchema):
     auto_applied_collections: list[str] = Field(
         default_factory=list, description="Auto-applied collection names"
     )
-    auto_apply_completed_at: Optional[datetime] = Field(
-        None, description="When auto-apply completed"
-    )
+    auto_apply_completed_at: datetime | None = Field(None, description="When auto-apply completed")
 
     # Timestamps
     created_at: datetime = Field(..., description="Creation timestamp")
@@ -175,6 +172,6 @@ class AutoLabelSettingsSchema(BaseModel):
 class RetroactiveAutoLabelRequest(BaseModel):
     """Request to retroactively apply auto-labeling."""
 
-    file_uuids: Optional[list[str]] = Field(
+    file_uuids: list[str] | None = Field(
         None, max_length=500, description="Specific file UUIDs to process (all if omitted)"
     )

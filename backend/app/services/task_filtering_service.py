@@ -15,10 +15,9 @@ consistent behavior across the application.
 """
 
 import logging
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import Any
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +28,11 @@ class TaskFilteringService:
     @staticmethod
     def filter_tasks_by_criteria(
         tasks: list[dict[str, Any]],
-        status: Optional[str] = None,
-        task_type: Optional[str] = None,
-        age_filter: Optional[str] = None,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
+        status: str | None = None,
+        task_type: str | None = None,
+        age_filter: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Filter tasks based on multiple criteria.
@@ -99,9 +98,9 @@ class TaskFilteringService:
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
+            created_at = created_at.replace(tzinfo=UTC)
 
         diff_hours = (now - created_at).total_seconds() / 3600
 
@@ -120,7 +119,7 @@ class TaskFilteringService:
 
     @staticmethod
     def _matches_date_range(
-        task: dict[str, Any], date_from: Optional[str], date_to: Optional[str]
+        task: dict[str, Any], date_from: str | None, date_to: str | None
     ) -> bool:
         """
         Check if task matches date range criteria.
@@ -143,7 +142,7 @@ class TaskFilteringService:
 
         if date_from:
             try:
-                from_date = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                from_date = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=UTC)
                 if created_at < from_date:
                     return False
             except ValueError:
@@ -151,7 +150,7 @@ class TaskFilteringService:
 
         if date_to:
             try:
-                to_date = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                to_date = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=UTC)
                 # Include the entire end date
                 to_date = to_date.replace(hour=23, minute=59, second=59, microsecond=999999)
                 if created_at > to_date:
@@ -212,9 +211,9 @@ class TaskFilteringService:
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
+            created_at = created_at.replace(tzinfo=UTC)
 
         diff_hours = (now - created_at).total_seconds() / 3600
 
@@ -228,7 +227,7 @@ class TaskFilteringService:
             return "older"
 
     @staticmethod
-    def _format_task_duration(task: dict[str, Any]) -> Optional[str]:
+    def _format_task_duration(task: dict[str, Any]) -> str | None:
         """
         Format task duration for display.
 
@@ -254,9 +253,9 @@ class TaskFilteringService:
             duration_seconds = (completed_at - created_at).total_seconds()
         else:
             # Task still running, calculate duration from now
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=timezone.utc)
+                created_at = created_at.replace(tzinfo=UTC)
             duration_seconds = (now - created_at).total_seconds()
 
         # Format duration
@@ -299,14 +298,14 @@ class TaskFilteringService:
         created_at = task.get("created_at")
         if not created_at:
             return False
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if isinstance(created_at, str):
             try:
                 created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
             except (ValueError, TypeError):
                 return False
         if not created_at.tzinfo:
-            created_at = created_at.replace(tzinfo=timezone.utc)
+            created_at = created_at.replace(tzinfo=UTC)
         age_hours = (now - created_at).total_seconds() / 3600
         if task_status == "in_progress" and age_hours > 1:
             return True

@@ -3,9 +3,9 @@ Celery tasks for file cleanup and system maintenance.
 """
 
 import logging
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -206,7 +206,7 @@ def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
     from app.models.media import MediaFile
     from app.services.minio_service import delete_file
 
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=max(1, int(max_age_minutes)))
+    cutoff = datetime.now(UTC) - timedelta(minutes=max(1, int(max_age_minutes)))
     deleted_rows = 0
     deleted_objects = 0
     errors = 0
@@ -356,7 +356,7 @@ def cleanup_expired_files(force: bool = False):
 
             global_retention_days = config["retention_days"]
             # Build the age cutoff in UTC
-            cutoff = datetime.now(timezone.utc) - timedelta(days=global_retention_days)
+            cutoff = datetime.now(UTC) - timedelta(days=global_retention_days)
 
             # Cloud-edition seam: a per-org retention OVERRIDE may keep files
             # longer (premium tier) or shorter (free tier) than the global
@@ -375,7 +375,7 @@ def cleanup_expired_files(force: bool = False):
                 if min_override is not None
                 else global_retention_days
             )
-            query_cutoff = datetime.now(timezone.utc) - timedelta(days=query_days)
+            query_cutoff = datetime.now(UTC) - timedelta(days=query_days)
 
             # Determine which statuses are eligible for deletion
             eligible_statuses = [FileStatus.COMPLETED.value]
@@ -414,7 +414,7 @@ def cleanup_expired_files(force: bool = False):
                 if override is None:
                     file_cutoff = cutoff
                 else:
-                    file_cutoff = datetime.now(timezone.utc) - timedelta(days=override)
+                    file_cutoff = datetime.now(UTC) - timedelta(days=override)
                 ref = mf.completed_at or mf.upload_time
                 return ref is not None and ref < file_cutoff
 
@@ -440,7 +440,7 @@ def cleanup_expired_files(force: bool = False):
 
             # Persist run metadata to system settings — store with explicit UTC offset
             # so the already_ran_today guard parses correctly on any server timezone
-            run_timestamp = datetime.now(timezone.utc).isoformat()
+            run_timestamp = datetime.now(UTC).isoformat()
             set_setting(
                 db,
                 "files.retention_last_run",

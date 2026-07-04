@@ -18,9 +18,9 @@ Integration tests using the TestClient run without the marker.
 """
 
 import os
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -171,7 +171,7 @@ def _generate_test_certificate(
     subject = x509.Name(subject_attrs)
 
     # Calculate validity period
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     not_valid_before = now - timedelta(days=days_before)
     not_valid_after = now + timedelta(days=days_valid)
 

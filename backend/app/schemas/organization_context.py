@@ -5,8 +5,6 @@ These schemas define the request/response models for user-level organization
 context that is injected into LLM system prompts during summarization.
 """
 
-from typing import Optional
-
 from pydantic import BaseModel
 from pydantic import Field
 
@@ -40,7 +38,7 @@ class OrganizationContextSettings(BaseModel):
         default=False,
         description="Whether this org context is shared with all users",
     )
-    using_shared_from: Optional[str] = Field(
+    using_shared_from: str | None = Field(
         default=None,
         description="User ID whose shared context this user is using (null = own)",
     )
@@ -67,20 +65,20 @@ class OrganizationContextUpdate(BaseModel):
     All fields are optional - only provided fields will be updated.
     """
 
-    context_text: Optional[str] = Field(
+    context_text: str | None = Field(
         default=None,
         max_length=ORG_CONTEXT_MAX_LENGTH,
         description="Organization/project background context for LLM summaries",
     )
-    include_in_default_prompts: Optional[bool] = Field(
+    include_in_default_prompts: bool | None = Field(
         default=None,
         description="Include context when using system default summary prompts",
     )
-    include_in_custom_prompts: Optional[bool] = Field(
+    include_in_custom_prompts: bool | None = Field(
         default=None,
         description="Include context when using user-created custom prompts",
     )
-    is_shared: Optional[bool] = Field(
+    is_shared: bool | None = Field(
         default=None,
         description="Whether to share this org context with all users",
     )

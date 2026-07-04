@@ -13,7 +13,7 @@ import logging
 import os
 import time
 import uuid
-from typing import Callable
+from collections.abc import Callable
 
 import httpx
 

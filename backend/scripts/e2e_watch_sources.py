@@ -21,6 +21,7 @@ import sys
 import tempfile
 import time
 import uuid as uuid_pkg
+from datetime import UTC
 from pathlib import Path
 
 from app.core.config import settings
@@ -129,7 +130,6 @@ def record(name: str, ok: bool, detail: str = "") -> None:
 def test_beat_due_logic() -> None:
     from datetime import datetime
     from datetime import timedelta
-    from datetime import timezone
 
     sub = f"e2e_beat_{uuid_pkg.uuid4().hex[:8]}"
     (WATCH_ROOT / sub).mkdir(parents=True, exist_ok=True)
@@ -137,7 +137,7 @@ def test_beat_due_logic() -> None:
     try:
         with session_scope() as db:
             uid = _admin_id(db)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             due = WatchSource(
                 uuid=uuid_pkg.uuid4(),
                 name="e2e beat due",

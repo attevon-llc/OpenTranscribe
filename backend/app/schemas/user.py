@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -16,7 +15,7 @@ class UserBrief(BaseModel):
     """Minimal user info for sharing/group contexts."""
 
     uuid: UUID
-    full_name: Optional[str] = None
+    full_name: str | None = None
     email: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -26,7 +25,7 @@ class UserSearchResult(BaseModel):
     """Minimal user info returned by user search endpoint."""
 
     uuid: UUID
-    full_name: Optional[str] = None
+    full_name: str | None = None
     email: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -34,7 +33,7 @@ class UserSearchResult(BaseModel):
 
 class UserBase(BaseModel):
     email: EmailStr
-    full_name: Optional[str] = None
+    full_name: str | None = None
 
 
 class UserCreate(UserBase):
@@ -48,9 +47,9 @@ class UserCreate(UserBase):
     """
 
     password: str = Field(..., min_length=8)  # Base minimum for backward compatibility
-    role: Optional[str] = "user"
-    is_active: Optional[bool] = True
-    is_superuser: Optional[bool] = False
+    role: str | None = "user"
+    is_active: bool | None = True
+    is_superuser: bool | None = False
 
     @model_validator(mode="after")
     def validate_password_policy(self) -> "UserCreate":
@@ -79,14 +78,14 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
-    full_name: Optional[str] = None
-    password: Optional[str] = None
-    current_password: Optional[str] = None  # For password change verification
-    is_active: Optional[bool] = None
-    is_superuser: Optional[bool] = None
-    role: Optional[str] = None
-    allow_local_fallback: Optional[bool] = None
+    email: EmailStr | None = None
+    full_name: str | None = None
+    password: str | None = None
+    current_password: str | None = None  # For password change verification
+    is_active: bool | None = None
+    is_superuser: bool | None = None
+    role: str | None = None
+    allow_local_fallback: bool | None = None
 
 
 class UserInDB(UserBase, UUIDBaseSchema):
@@ -99,15 +98,15 @@ class UserInDB(UserBase, UUIDBaseSchema):
     is_superuser: bool
     auth_type: str  # "local", "ldap", "keycloak", "pki"
     allow_local_fallback: bool = False
-    ldap_uid: Optional[str] = None
-    keycloak_id: Optional[str] = None
-    pki_subject_dn: Optional[str] = None
+    ldap_uid: str | None = None
+    keycloak_id: str | None = None
+    pki_subject_dn: str | None = None
 
     # FedRAMP compliance fields
-    password_changed_at: Optional[datetime] = None
+    password_changed_at: datetime | None = None
     must_change_password: bool = False
-    last_login_at: Optional[datetime] = None
-    account_expires_at: Optional[datetime] = None
+    last_login_at: datetime | None = None
+    account_expires_at: datetime | None = None
 
 
 class User(UserInDB):
@@ -117,22 +116,22 @@ class User(UserInDB):
 class Token(BaseModel):
     access_token: str
     token_type: str
-    refresh_token: Optional[str] = None
-    expires_in: Optional[int] = None  # Access token expiration in seconds
+    refresh_token: str | None = None
+    expires_in: int | None = None  # Access token expiration in seconds
 
 
 class TokenRefreshRequest(BaseModel):
     """Request body for token refresh endpoint."""
 
-    refresh_token: Optional[str] = None
+    refresh_token: str | None = None
 
 
 class TokenPayload(BaseModel):
-    sub: Optional[str] = None
-    exp: Optional[int] = None
-    jti: Optional[str] = None
-    role: Optional[str] = None
-    type: Optional[str] = None  # 'access' or 'refresh'
+    sub: str | None = None
+    exp: int | None = None
+    jti: str | None = None
+    role: str | None = None
+    type: str | None = None  # 'access' or 'refresh'
 
 
 # ===== MFA Schemas (FedRAMP IA-2) =====
@@ -182,8 +181,8 @@ class MFAVerifyResponse(BaseModel):
 
     access_token: str
     token_type: str = "bearer"  # noqa: S105 - OAuth2 spec constant, not a password
-    refresh_token: Optional[str] = None
-    expires_in: Optional[int] = None
+    refresh_token: str | None = None
+    expires_in: int | None = None
 
 
 class MFADisableRequest(BaseModel):

@@ -7,7 +7,6 @@ and resolves access via direct ownership, direct user shares, and group shares.
 
 import logging
 from typing import Any
-from typing import Optional
 
 from sqlalchemy import case
 from sqlalchemy import func
@@ -45,7 +44,7 @@ class PermissionService:
         user_id: int,
         *,
         organization_id: OrgScope = UNSCOPED,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Get highest permission level for user on a collection.
 
         Checks in order:
@@ -110,7 +109,7 @@ class PermissionService:
         user_id: int,
         *,
         organization_id: OrgScope = UNSCOPED,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Get highest permission for user on a file.
 
         Checks:

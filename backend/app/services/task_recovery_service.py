@@ -8,9 +8,9 @@ by separating recovery actions from detection.
 
 import logging
 from contextlib import contextmanager
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 
 from sqlalchemy.orm import Session
 
@@ -155,8 +155,8 @@ class TaskRecoveryService:
 
                 task.status = "failed"  # type: ignore[assignment]
                 task.error_message = "Task interrupted by system restart"  # type: ignore[assignment]
-                task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
-                task.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+                task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
 
                 recovered_count += 1
 
@@ -316,7 +316,7 @@ class TaskRecoveryService:
                 # Enforce retry delay based on error category
                 if media_file.completed_at:
                     time_since_failure = (
-                        datetime.now(timezone.utc) - media_file.completed_at
+                        datetime.now(UTC) - media_file.completed_at
                     ).total_seconds()
                     required_delay = get_retry_delay(
                         error_category, int(media_file.retry_count or 0)
@@ -468,7 +468,7 @@ class TaskRecoveryService:
                 )
 
                 assert media_file.upload_time is not None  # server_default=now()
-                file_age = datetime.now(timezone.utc) - media_file.upload_time
+                file_age = datetime.now(UTC) - media_file.upload_time
 
                 if active_tasks == 0 and media_file.status == FileStatus.PROCESSING:
                     # Check if transcription actually completed
@@ -588,7 +588,7 @@ class TaskRecoveryService:
                 # Update recovery tracking fields
                 media_file.retry_count += 1  # type: ignore[assignment,operator]
                 media_file.recovery_attempts += 1  # type: ignore[assignment,operator]
-                media_file.last_recovery_attempt = datetime.now(timezone.utc)  # type: ignore[assignment]
+                media_file.last_recovery_attempt = datetime.now(UTC)  # type: ignore[assignment]
                 db.commit()
 
                 # Reset status to PENDING for retry
@@ -659,14 +659,14 @@ class TaskRecoveryService:
                 # Increment retry count and reset status
                 media_file.retry_count += 1  # type: ignore[assignment,operator]
                 media_file.recovery_attempts += 1  # type: ignore[assignment,operator]
-                media_file.last_recovery_attempt = datetime.now(timezone.utc)  # type: ignore[assignment]
+                media_file.last_recovery_attempt = datetime.now(UTC)  # type: ignore[assignment]
 
                 # Clear old task records and reset to PENDING
                 stale_tasks = db.query(Task).filter(Task.media_file_id == media_file.id).all()
                 for task in stale_tasks:
                     task.status = "failed"  # type: ignore[assignment]
                     task.error_message = "Reset for automatic retry"  # type: ignore[assignment]
-                    task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                    task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
 
                 media_file.active_task_id = None  # type: ignore[assignment]
                 media_file.task_started_at = None  # type: ignore[assignment]
@@ -993,13 +993,13 @@ class TaskRecoveryService:
                 assert task.created_at is not None  # server_default=now()
                 logger.warning(
                     f"Marking stuck LLM task {task.id} ({task.task_type}) as failed - "
-                    f"stuck in progress for {datetime.now(timezone.utc) - task.created_at}"
+                    f"stuck in progress for {datetime.now(UTC) - task.created_at}"
                 )
 
                 task.status = "failed"  # type: ignore[assignment]
                 task.error_message = "Task timeout - stuck in progress for > 6 hours"  # type: ignore[assignment]
-                task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
-                task.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+                task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
                 stats["tasks_marked_failed"] += 1
 
             except Exception as e:
@@ -1064,7 +1064,7 @@ class TaskRecoveryService:
                 task.status = "pending"  # type: ignore[assignment]
                 task.error_message = f"recovery_attempt_{current_attempts + 1}_reset"  # type: ignore[assignment]
                 task.completed_at = None  # type: ignore[assignment]
-                task.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
                 stats["tasks_reset"] += 1
 
             except Exception as e:

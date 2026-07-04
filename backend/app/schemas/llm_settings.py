@@ -3,8 +3,7 @@ Pydantic schemas for user LLM settings
 """
 
 from datetime import datetime
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -13,7 +12,7 @@ from pydantic import field_validator
 from app.schemas.base import UUIDBaseSchema
 
 
-class LLMProvider(str, Enum):
+class LLMProvider(StrEnum):
     """Supported LLM providers"""
 
     OPENAI = "openai"
@@ -26,7 +25,7 @@ class LLMProvider(str, Enum):
     CLAUDE = "claude"  # Deprecated: use ANTHROPIC instead
 
 
-class ConnectionStatus(str, Enum):
+class ConnectionStatus(StrEnum):
     """Connection test status"""
 
     SUCCESS = "success"
@@ -41,7 +40,7 @@ class UserLLMSettingsBase(BaseModel):
     name: str
     provider: LLMProvider
     model_name: str
-    base_url: Optional[str] = None
+    base_url: str | None = None
     max_tokens: int = 8192
     temperature: str = "0.3"
     is_active: bool = True
@@ -69,21 +68,21 @@ class UserLLMSettingsBase(BaseModel):
 class UserLLMSettingsCreate(UserLLMSettingsBase):
     """Schema for creating user LLM settings"""
 
-    api_key: Optional[str] = None
+    api_key: str | None = None
 
 
 class UserLLMSettingsUpdate(BaseModel):
     """Schema for updating user LLM settings"""
 
-    name: Optional[str] = None
-    provider: Optional[LLMProvider] = None
-    model_name: Optional[str] = None
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    max_tokens: Optional[int] = None
-    temperature: Optional[str] = None
-    is_active: Optional[bool] = None
-    is_shared: Optional[bool] = None
+    name: str | None = None
+    provider: LLMProvider | None = None
+    model_name: str | None = None
+    api_key: str | None = None
+    base_url: str | None = None
+    max_tokens: int | None = None
+    temperature: str | None = None
+    is_active: bool | None = None
+    is_shared: bool | None = None
 
     @field_validator("max_tokens")
     @classmethod
@@ -109,9 +108,9 @@ class UserLLMSettings(UserLLMSettingsBase, UUIDBaseSchema):
     """Schema for returning user LLM settings with UUID"""
 
     user_id: UUID
-    last_tested: Optional[datetime] = None
-    test_status: Optional[ConnectionStatus] = None
-    test_message: Optional[str] = None
+    last_tested: datetime | None = None
+    test_status: ConnectionStatus | None = None
+    test_message: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -123,18 +122,18 @@ class UserLLMSettingsPublic(UUIDBaseSchema):
     name: str
     provider: LLMProvider
     model_name: str
-    base_url: Optional[str] = None
+    base_url: str | None = None
     max_tokens: int
     temperature: str
     is_active: bool
-    last_tested: Optional[datetime] = None
-    test_status: Optional[ConnectionStatus] = None
-    test_message: Optional[str] = None
+    last_tested: datetime | None = None
+    test_status: ConnectionStatus | None = None
+    test_message: str | None = None
     has_api_key: bool = False
     is_shared: bool = False
-    shared_at: Optional[datetime] = None
-    owner_name: Optional[str] = None
-    owner_role: Optional[str] = None
+    shared_at: datetime | None = None
+    owner_name: str | None = None
+    owner_role: str | None = None
     is_own: bool = True
     created_at: datetime
     updated_at: datetime
@@ -145,9 +144,9 @@ class ConnectionTestRequest(BaseModel):
 
     provider: LLMProvider
     model_name: str
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    config_id: Optional[UUID] = None  # For edit mode - uses stored API key
+    api_key: str | None = None
+    base_url: str | None = None
+    config_id: UUID | None = None  # For edit mode - uses stored API key
 
 
 class ConnectionTestResponse(BaseModel):
@@ -156,8 +155,8 @@ class ConnectionTestResponse(BaseModel):
     success: bool
     status: ConnectionStatus
     message: str
-    response_time_ms: Optional[int] = None
-    model_info: Optional[dict] = None
+    response_time_ms: int | None = None
+    model_info: dict | None = None
 
 
 class ProviderDefaults(BaseModel):
@@ -165,10 +164,10 @@ class ProviderDefaults(BaseModel):
 
     provider: LLMProvider
     default_model: str
-    default_base_url: Optional[str] = None
+    default_base_url: str | None = None
     requires_api_key: bool = True
     supports_custom_url: bool = True
-    max_context_length: Optional[int] = None
+    max_context_length: int | None = None
     description: str
 
 
@@ -183,7 +182,7 @@ class UserLLMConfigurationsList(BaseModel):
 
     configurations: list[UserLLMSettingsPublic]
     shared_configurations: list[UserLLMSettingsPublic] = []
-    active_configuration_id: Optional[UUID] = None
+    active_configuration_id: UUID | None = None
     total: int
 
 
@@ -197,6 +196,6 @@ class LLMSettingsStatus(BaseModel):
     """Status information about user's LLM settings"""
 
     has_settings: bool = False
-    active_configuration: Optional[UserLLMSettingsPublic] = None
+    active_configuration: UserLLMSettingsPublic | None = None
     total_configurations: int = 0
     using_system_default: bool = True

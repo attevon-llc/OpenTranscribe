@@ -1,9 +1,8 @@
 import logging
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from typing import Any
-from typing import Optional
 
 from celery.result import AsyncResult
 from sqlalchemy import or_
@@ -56,8 +55,8 @@ def create_task_record(
     media_file = get_refreshed_object(db, MediaFile, media_file_id)
     if media_file:
         media_file.active_task_id = celery_task_id
-        media_file.task_started_at = datetime.now(timezone.utc)
-        media_file.task_last_update = datetime.now(timezone.utc)
+        media_file.task_started_at = datetime.now(UTC)
+        media_file.task_last_update = datetime.now(UTC)
         media_file.cancellation_requested = False
         if media_file.status == FileStatus.PENDING:
             media_file.status = FileStatus.PROCESSING
@@ -73,7 +72,7 @@ def update_task_status(
     progress: float | None = None,
     error_message: str | None = None,
     completed: bool = False,
-) -> Optional[Task]:
+) -> Task | None:
     """Update task status in the database."""
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -90,17 +89,17 @@ def update_task_status(
     if error_message:
         task.error_message = error_message  # type: ignore[assignment]
     if completed:
-        task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+        task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
 
     # Always update the timestamp for task state changes
-    task.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+    task.updated_at = datetime.now(UTC)  # type: ignore[assignment]
 
     # Update media file task tracking
     media_file_id = task.media_file_id
     if media_file_id:
         media_file = get_refreshed_object(db, MediaFile, int(media_file_id))
         if media_file:
-            media_file.task_last_update = datetime.now(timezone.utc)
+            media_file.task_last_update = datetime.now(UTC)
             if error_message:
                 media_file.last_error_message = error_message
 
@@ -120,7 +119,7 @@ def update_task_status(
     return task  # type: ignore[no-any-return]
 
 
-def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> Optional[MediaFile]:
+def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> MediaFile | None:
     """Update media file status."""
     media_file = get_refreshed_object(db, MediaFile, file_id)
     if not media_file:
@@ -135,14 +134,14 @@ def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> O
 
     # Set completed_at timestamp if status is COMPLETED or ERROR
     if status in [FileStatus.COMPLETED, FileStatus.ERROR] and not media_file.completed_at:
-        media_file.completed_at = datetime.now(timezone.utc)
+        media_file.completed_at = datetime.now(UTC)
 
     db.commit()
     db.refresh(media_file)
     return media_file  # type: ignore[no-any-return]
 
 
-def update_media_file_from_task_status(db: Session, file_id: int) -> Optional[MediaFile]:
+def update_media_file_from_task_status(db: Session, file_id: int) -> MediaFile | None:
     """Check task statuses and update media file status accordingly.
 
     Uses a single SQL query with conditional COUNT to determine the correct
@@ -269,7 +268,7 @@ def cancel_active_task(db: Session, file_id: int) -> bool:
         if task:
             task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
             task.error_message = "Task cancelled by user"  # type: ignore[assignment]
-            task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+            task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
 
         # Update media file status
         media_file.status = FileStatus.CANCELLED
@@ -301,7 +300,7 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
     """
     from sqlalchemy.orm import load_only
 
-    threshold_time = datetime.now(timezone.utc) - timedelta(hours=stuck_threshold_hours)
+    threshold_time = datetime.now(UTC) - timedelta(hours=stuck_threshold_hours)
 
     # Single query: all candidate stuck files (processing, pending, error, orphaned)
     candidates = (
@@ -446,7 +445,7 @@ def _update_recovery_tracking(db: Session, media_file: MediaFile) -> None:
         media_file: The media file to update
     """
     media_file.recovery_attempts += 1  # type: ignore[assignment,operator]
-    media_file.last_recovery_attempt = datetime.now(timezone.utc)  # type: ignore[assignment]
+    media_file.last_recovery_attempt = datetime.now(UTC)  # type: ignore[assignment]
     media_file.active_task_id = None  # type: ignore[assignment]
     media_file.task_started_at = None  # type: ignore[assignment]
     db.commit()
@@ -486,7 +485,7 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
         # Handle files with transcript data
         if media_file.transcript_segments:
             media_file.status = FileStatus.COMPLETED
-            media_file.completed_at = datetime.now(timezone.utc)
+            media_file.completed_at = datetime.now(UTC)
         else:
             # No transcript data, mark as orphaned for potential retry
             media_file.status = FileStatus.ORPHANED

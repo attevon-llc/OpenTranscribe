@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from typing import TYPE_CHECKING
-from typing import Callable
 
 if TYPE_CHECKING:
     from app.transcription.engine.job import JobResult

@@ -1,7 +1,6 @@
 """Pydantic schemas for speaker clustering."""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -13,8 +12,8 @@ from pydantic import Field
 class SpeakerClusterBase(BaseModel):
     """Base schema for speaker clusters."""
 
-    label: Optional[str] = None
-    description: Optional[str] = None
+    label: str | None = None
+    description: str | None = None
 
 
 class SpeakerClusterCreate(SpeakerClusterBase):
@@ -24,8 +23,8 @@ class SpeakerClusterCreate(SpeakerClusterBase):
 class SpeakerClusterUpdate(BaseModel):
     """Schema for updating a speaker cluster."""
 
-    label: Optional[str] = None
-    description: Optional[str] = None
+    label: str | None = None
+    description: str | None = None
 
 
 class SpeakerClusterMemberResponse(BaseModel):
@@ -34,18 +33,18 @@ class SpeakerClusterMemberResponse(BaseModel):
     uuid: UUID
     speaker_uuid: UUID
     speaker_name: str
-    display_name: Optional[str] = None
-    suggested_name: Optional[str] = None
-    media_file_uuid: Optional[UUID] = None
-    media_file_title: Optional[str] = None
+    display_name: str | None = None
+    suggested_name: str | None = None
+    media_file_uuid: UUID | None = None
+    media_file_title: str | None = None
     confidence: float = 0.0
     verified: bool = False
-    predicted_gender: Optional[str] = None
-    predicted_age_range: Optional[str] = None
-    gender_confidence: Optional[float] = None
+    predicted_gender: str | None = None
+    predicted_age_range: str | None = None
+    gender_confidence: float | None = None
     gender_confirmed_by_user: bool = False
     has_audio_clip: bool = False
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -57,9 +56,9 @@ class GenderComposition(BaseModel):
     female_count: int = 0
     unknown_count: int = 0
     total_with_gender: int = 0
-    dominant_gender: Optional[str] = None
-    gender_coherence: Optional[float] = None
-    gender_label: Optional[str] = None
+    dominant_gender: str | None = None
+    gender_coherence: float | None = None
+    gender_label: str | None = None
     has_gender_conflict: bool = False
 
 
@@ -69,12 +68,12 @@ class SpeakerClusterResponse(SpeakerClusterBase):
     uuid: UUID
     user_id: int
     member_count: int = 0
-    promoted_to_profile_id: Optional[int] = None
-    promoted_to_profile_uuid: Optional[UUID] = None
-    promoted_to_profile_name: Optional[str] = None
-    suggested_name: Optional[str] = None
-    quality_score: Optional[float] = None
-    gender_composition: Optional[GenderComposition] = None
+    promoted_to_profile_id: int | None = None
+    promoted_to_profile_uuid: UUID | None = None
+    promoted_to_profile_name: str | None = None
+    suggested_name: str | None = None
+    quality_score: float | None = None
+    gender_composition: GenderComposition | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -95,20 +94,20 @@ class SpeakerInboxItem(BaseModel):
 
     speaker_uuid: UUID
     speaker_name: str
-    display_name: Optional[str] = None
-    suggested_name: Optional[str] = None
-    suggestion_source: Optional[str] = None
-    confidence: Optional[float] = None
-    media_file_uuid: Optional[UUID] = None
-    media_file_title: Optional[str] = None
-    media_file_duration: Optional[float] = None
-    cluster_uuid: Optional[UUID] = None
-    cluster_label: Optional[str] = None
+    display_name: str | None = None
+    suggested_name: str | None = None
+    suggestion_source: str | None = None
+    confidence: float | None = None
+    media_file_uuid: UUID | None = None
+    media_file_title: str | None = None
+    media_file_duration: float | None = None
+    cluster_uuid: UUID | None = None
+    cluster_label: str | None = None
     cluster_member_count: int = 0
     verified: bool = False
-    predicted_gender: Optional[str] = None
-    predicted_age_range: Optional[str] = None
-    created_at: Optional[datetime] = None
+    predicted_gender: str | None = None
+    predicted_age_range: str | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -124,7 +123,7 @@ class MinorityAnalysisItem(BaseModel):
     predicted_gender: str
     sim_to_centroid: float
     avg_sim_to_majority: float
-    avg_sim_to_minority_peers: Optional[float] = None
+    avg_sim_to_minority_peers: float | None = None
     outlier_score: float
     recommendation: str  # likely_outlier, borderline, likely_valid
 
@@ -158,8 +157,8 @@ class BatchVerifyRequest(BaseModel):
     """Request schema for batch speaker verification."""
 
     speaker_uuids: list[UUID] = Field(..., min_length=1)
-    profile_uuid: Optional[UUID] = None
-    display_name: Optional[str] = None
+    profile_uuid: UUID | None = None
+    display_name: str | None = None
     action: str = Field(
         default="accept",
         description="Action: 'accept' (apply suggestion), 'assign' (assign to profile), 'name' (set display_name), 'skip' (mark as reviewed/skipped)",
@@ -180,7 +179,7 @@ class ReclusterRequest(BaseModel):
     force: bool = Field(
         default=False, description="Reserved for future use. Currently has no effect."
     )
-    threshold: Optional[float] = Field(
+    threshold: float | None = Field(
         None, ge=0.0, le=1.0, description="Clustering threshold (default 0.75)"
     )
 
@@ -189,7 +188,7 @@ class ReclusterResponse(BaseModel):
     """Response schema for re-clustering operation."""
 
     status: str
-    task_id: Optional[str] = None
+    task_id: str | None = None
     message: str
 
 
@@ -207,7 +206,7 @@ class ClusterPromoteRequest(BaseModel):
     name: str = Field(
         ..., min_length=1, max_length=255, description="Name for the new speaker profile"
     )
-    description: Optional[str] = None
+    description: str | None = None
 
 
 # --- Paginated Responses ---
@@ -221,7 +220,7 @@ class PaginatedClusterResponse(BaseModel):
     page: int = 1
     per_page: int = 20
     pages: int = 0
-    last_clustered_at: Optional[datetime] = None
+    last_clustered_at: datetime | None = None
 
 
 class PaginatedInboxResponse(BaseModel):

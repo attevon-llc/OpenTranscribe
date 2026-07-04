@@ -46,7 +46,6 @@ org path never triggers. ``erase_user`` works in both editions (the speaker
 import contextlib
 import logging
 from typing import Any
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -69,7 +68,7 @@ ERASURE_SLA_DAYS = 30
 
 
 def _erase_speaker_voiceprints(
-    *, user_id: Optional[int] = None, organization_id: Optional[int] = None
+    *, user_id: int | None = None, organization_id: int | None = None
 ) -> int:
     """Delete speaker/profile embedding docs (biometric data) from OpenSearch.
 
@@ -206,8 +205,8 @@ def erase_user(
     db: Session,
     user_id: int,
     *,
-    actor_user_id: Optional[int] = None,
-    actor_email: Optional[str] = None,
+    actor_user_id: int | None = None,
+    actor_email: str | None = None,
 ) -> dict[str, Any]:
     """Permanently erase ALL of a user's personal data (GDPR Art. 17).
 
@@ -288,8 +287,8 @@ def erase_org_member_data(
     user_id: int,
     org_id: int,
     *,
-    actor_user_id: Optional[int] = None,
-    actor_email: Optional[str] = None,
+    actor_user_id: int | None = None,
+    actor_email: str | None = None,
 ) -> dict[str, Any]:
     """Erase ONE member's data WITHIN ONE organization (org-admin scope).
 
@@ -377,8 +376,8 @@ def erase_organization(
     db: Session,
     org_id: int,
     *,
-    actor_user_id: Optional[int] = None,
-    actor_email: Optional[str] = None,
+    actor_user_id: int | None = None,
+    actor_email: str | None = None,
 ) -> dict[str, Any]:
     """Permanently erase an organization's data and all member-owned org data.
 

@@ -651,7 +651,7 @@ class TranscriptIndexingService:
         ensure_search_pipeline_exists()
 
         if upload_time is None:
-            upload_time = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            upload_time = datetime.datetime.now(datetime.UTC).isoformat()
 
         # 1. Chunk segments
         t_chunk_start = time.time()
@@ -678,7 +678,7 @@ class TranscriptIndexingService:
             return 0
 
         # 2. Add indexed_at timestamp and accessible_user_ids
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        now = datetime.datetime.now(datetime.UTC).isoformat()
         effective_user_ids = accessible_user_ids if accessible_user_ids else [user_id]
         for chunk in chunks:
             chunk["indexed_at"] = now

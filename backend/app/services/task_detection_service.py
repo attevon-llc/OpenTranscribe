@@ -8,9 +8,9 @@ by separating detection from recovery.
 
 import logging
 from dataclasses import dataclass
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 
 from sqlalchemy.orm import Session
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Capture module load time as a reliable proxy for when this Python process started.
 # This is used instead of /proc/1/stat to avoid unreliable filesystem-based detection.
-_MODULE_LOAD_TIME = datetime.now(timezone.utc)
+_MODULE_LOAD_TIME = datetime.now(UTC)
 
 
 @dataclass
@@ -69,7 +69,7 @@ class TaskDetectionService:
         Returns:
             List of stuck tasks
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stale_time = now - timedelta(seconds=self.config.STALENESS_THRESHOLD)
 
         # Find potentially stuck tasks
@@ -106,7 +106,7 @@ class TaskDetectionService:
         Returns:
             List of stuck files that need recovery
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stuck_threshold = now - timedelta(minutes=5)  # Files stuck for 5+ minutes
 
         # Get PROCESSING files with stale task_last_update — filter in SQL
@@ -255,9 +255,7 @@ class TaskDetectionService:
         Returns:
             List of orphaned tasks
         """
-        cutoff_time = datetime.now(timezone.utc) - timedelta(
-            hours=self.config.ORPHANED_TASK_THRESHOLD
-        )
+        cutoff_time = datetime.now(UTC) - timedelta(hours=self.config.ORPHANED_TASK_THRESHOLD)
 
         orphaned_tasks = (
             db.query(Task)
@@ -304,7 +302,7 @@ class TaskDetectionService:
         # decide the task pre-dates the worker. The 5-minute threshold gives
         # in-flight transcription pipelines breathing room before recovery
         # logic considers them abandoned.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stuck_threshold = now - timedelta(minutes=5)
         abandoned_files = (
             db.query(MediaFile)
@@ -396,7 +394,7 @@ class TaskDetectionService:
         """
         from datetime import timedelta
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stuck_threshold = now - timedelta(minutes=5)
 
         # Find files in DOWNLOADING status that were updated > 5 minutes ago
@@ -463,7 +461,7 @@ class TaskDetectionService:
         Returns:
             List of files eligible for OOM retry
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Query ERROR files with OOM error messages
         oom_files = (
@@ -521,7 +519,7 @@ class TaskDetectionService:
         from app.utils.error_classification import get_retry_delay
         from app.utils.error_classification import should_retry
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Retriable error categories (exclude OOM - handled separately)
         retriable_categories = [
@@ -592,7 +590,7 @@ class TaskDetectionService:
         from app.utils.error_classification import get_retry_delay
         from app.utils.error_classification import should_retry
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         retriable_categories = [
             ErrorCategory.AUTH_OR_RATE_LIMIT.value,
@@ -680,7 +678,7 @@ class TaskDetectionService:
 
         for media_file in problem_files:
             assert media_file.upload_time is not None  # server_default=now()
-            file_age = datetime.now(timezone.utc) - media_file.upload_time
+            file_age = datetime.now(UTC) - media_file.upload_time
             if file_age > age_threshold:
                 aged_files.append(media_file)
 
@@ -708,7 +706,7 @@ class TaskDetectionService:
         from app.models.media import Speaker
         from app.models.topic import TopicSuggestion
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         maturity_cutoff = now - timedelta(minutes=30)
 
         # Query candidates: COMPLETED files that finished >30 min ago
@@ -934,7 +932,7 @@ class TaskDetectionService:
         from sqlalchemy import or_
 
         boot_time = _get_container_boot_time()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stuck_threshold = now - timedelta(minutes=5)
 
         processing_files = (
@@ -986,7 +984,7 @@ class TaskDetectionService:
 
     def _find_stale_pending_files(self, db: Session) -> list[MediaFile]:
         """Find files that have been in PENDING state for too long."""
-        stale_time = datetime.now(timezone.utc) - timedelta(hours=1)
+        stale_time = datetime.now(UTC) - timedelta(hours=1)
 
         return (  # type: ignore[no-any-return]
             db.query(MediaFile)
@@ -1014,7 +1012,7 @@ class TaskDetectionService:
         from sqlalchemy import or_
 
         # Files stuck in PENDING for > 1 hour with download error messages
-        stale_time = datetime.now(timezone.utc) - timedelta(hours=1)
+        stale_time = datetime.now(UTC) - timedelta(hours=1)
 
         stuck_pending = (
             db.query(MediaFile)
@@ -1065,7 +1063,7 @@ class TaskDetectionService:
         Returns:
             List of stuck LLM tasks
         """
-        stuck_threshold = datetime.now(timezone.utc) - timedelta(hours=6)
+        stuck_threshold = datetime.now(UTC) - timedelta(hours=6)
 
         stuck_tasks: list[Task] = (
             db.query(Task)
@@ -1096,7 +1094,7 @@ class TaskDetectionService:
         Returns:
             List of falsely failed tasks eligible for retry
         """
-        recent_cutoff = datetime.now(timezone.utc) - timedelta(days=3)
+        recent_cutoff = datetime.now(UTC) - timedelta(days=3)
 
         false_positive_tasks: list[Task] = (
             db.query(Task)

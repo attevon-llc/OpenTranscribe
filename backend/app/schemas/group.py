@@ -1,7 +1,6 @@
 """Pydantic schemas for user groups."""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -14,7 +13,7 @@ from app.schemas.user import UserBrief
 
 class GroupBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = Field(None, max_length=2000)
+    description: str | None = Field(None, max_length=2000)
 
 
 class GroupCreate(GroupBase):
@@ -22,8 +21,8 @@ class GroupCreate(GroupBase):
 
 
 class GroupUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = Field(None, max_length=2000)
+    name: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = Field(None, max_length=2000)
 
 
 class GroupMemberAdd(BaseModel):
@@ -41,7 +40,7 @@ class GroupMember(BaseModel):
     uuid: UUID  # member record UUID
     user_uuid: UUID
     email: str
-    full_name: Optional[str] = None
+    full_name: str | None = None
     role: str
     joined_at: datetime
 
@@ -52,7 +51,7 @@ class Group(UUIDBaseSchema):
     """Group summary for list views."""
 
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     member_count: int = 0
     my_role: str = "member"
     owner: UserBrief

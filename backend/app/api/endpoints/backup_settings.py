@@ -13,8 +13,8 @@ Mirrors the redaction-policy / retention precedent: DB-backed ``SystemSettings``
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -244,9 +244,7 @@ def get_backup_status(
     next_due = False
     if cfg["enabled"]:
         try:
-            next_due = backup_service.is_due(
-                cfg["schedule"], cfg["last_run_at"], datetime.now(timezone.utc)
-            )
+            next_due = backup_service.is_due(cfg["schedule"], cfg["last_run_at"], datetime.now(UTC))
         except ValueError:
             next_due = False
     os_snapshot_status = None

@@ -26,8 +26,8 @@ import subprocess  # noqa: S404 - pg_dump/gpg invoked with a fixed argv list, no
 import tempfile
 import time
 from collections.abc import Iterator
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -355,9 +355,9 @@ def is_due(schedule: str, last_run_at: str | None, now: datetime | None = None) 
     the next matching minute. ``now`` defaults to the current UTC time (truncated to minute).
     """
     cron = parse_cron(schedule)
-    now = (now or datetime.now(timezone.utc)).replace(second=0, microsecond=0)
+    now = (now or datetime.now(UTC)).replace(second=0, microsecond=0)
     if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
+        now = now.replace(tzinfo=UTC)
 
     if not last_run_at:
         return _matches(now, cron)
@@ -367,7 +367,7 @@ def is_due(schedule: str, last_run_at: str | None, now: datetime | None = None) 
     except (ValueError, TypeError):
         return _matches(now, cron)
     if last.tzinfo is None:
-        last = last.replace(tzinfo=timezone.utc)
+        last = last.replace(tzinfo=UTC)
     last = last.replace(second=0, microsecond=0)
 
     if last >= now:
@@ -403,9 +403,7 @@ def _backup_timestamp(name: str) -> datetime | None:
     if not m:
         return None
     try:
-        return datetime.strptime(f"{m.group(1)}{m.group(2)}", "%Y%m%d%H%M%S").replace(
-            tzinfo=timezone.utc
-        )
+        return datetime.strptime(f"{m.group(1)}{m.group(2)}", "%Y%m%d%H%M%S").replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -821,7 +819,7 @@ def _perform_backup_local(cfg: dict[str, Any], db: Session | None) -> dict[str, 
     """Local-dir backend: pg_dump straight to the mounted destination, prune in-place."""
     destination = cfg["destination"]
     started = time.monotonic()
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
 
     status = destination_status(destination)
     if not status["writable"]:
@@ -834,7 +832,7 @@ def _perform_backup_local(cfg: dict[str, Any], db: Session | None) -> dict[str, 
         _record_result(db, now_iso, result)
         return result
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     dest_path = Path(destination) / f"{_DUMP_PREFIX}{ts}{_DUMP_SUFFIX}"
 
     try:
@@ -917,7 +915,7 @@ def _perform_backup_s3(cfg: dict[str, Any], db: Session | None) -> dict[str, Any
     unreachability / upload failure is recorded as an error result — never raises.
     """
     started = time.monotonic()
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
 
     bucket = (cfg.get("s3_bucket") or "").strip()
     if not bucket:
@@ -927,7 +925,7 @@ def _perform_backup_s3(cfg: dict[str, Any], db: Session | None) -> dict[str, Any
         _record_result(db, now_iso, result)
         return result
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     scratch = _scratch_dir(cfg)
     using_temp_scratch = scratch != Path(cfg.get("destination") or "")
     tmp_dump = scratch / f"{_DUMP_PREFIX}{ts}{_DUMP_SUFFIX}"

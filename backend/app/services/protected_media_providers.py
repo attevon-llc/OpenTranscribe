@@ -14,8 +14,8 @@ from __future__ import annotations
 import importlib
 import logging
 import pkgutil
+from collections.abc import Callable
 from typing import Any
-from typing import Callable
 from typing import Protocol
 
 logger = logging.getLogger(__name__)

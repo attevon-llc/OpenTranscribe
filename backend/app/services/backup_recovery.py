@@ -31,8 +31,8 @@ import hashlib
 import logging
 import os
 import subprocess  # noqa: S404 - gpg invoked with a fixed argv list, no shell
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from pathlib import Path
 from typing import Any
 
@@ -77,7 +77,7 @@ def build_recovery_text() -> str:
     material = collect_key_material()
     lines = [
         "# OpenTranscribe recovery keys — KEEP SECRET",
-        f"# Generated: {datetime.now(timezone.utc).isoformat()}",
+        f"# Generated: {datetime.now(UTC).isoformat()}",
         "#",
         "# Restore: put these values into .env on the target host BEFORE starting the",
         "# stack, then restore the matching opentranscribe-*.dump. Without ENCRYPTION_KEY",
@@ -97,7 +97,7 @@ def build_readme_text() -> str:
     )
     return (
         "OpenTranscribe backup recovery notes\n"
-        f"Generated: {datetime.now(timezone.utc).isoformat()}\n"
+        f"Generated: {datetime.now(UTC).isoformat()}\n"
         "\n"
         "THE DUMPS IN THIS FOLDER ARE NOT ENOUGH TO RESTORE OPENTRANSCRIBE.\n"
         "\n"

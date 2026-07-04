@@ -7,7 +7,6 @@ abstracting away the complexity of direct database and storage interactions.
 
 import logging
 from typing import Any
-from typing import Optional
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
@@ -52,9 +51,7 @@ class FileService:
             logger.error(f"Error uploading file: {e}")
             raise ErrorHandler.file_processing_error("upload", e) from e
 
-    def get_user_files(
-        self, user: User, filters: Optional[dict[str, Any]] = None
-    ) -> list[MediaFile]:
+    def get_user_files(self, user: User, filters: dict[str, Any] | None = None) -> list[MediaFile]:
         """
         Get files for a user with optional filtering.
 

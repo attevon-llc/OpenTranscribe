@@ -10,7 +10,6 @@ requiring application restarts or .env file modifications.
 
 import logging
 from typing import Any
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -34,7 +33,7 @@ class DynamicAuthSettings:
         _cache_enabled: Whether caching is enabled
     """
 
-    def __init__(self, db: Optional[Session] = None, enable_cache: bool = True):
+    def __init__(self, db: Session | None = None, enable_cache: bool = True):
         """Initialize the dynamic settings loader.
 
         Args:
@@ -140,7 +139,7 @@ class DynamicAuthSettings:
         """
         self._cache.clear()
 
-    def refresh(self, key: Optional[str] = None) -> None:
+    def refresh(self, key: str | None = None) -> None:
         """Refresh cached value(s) from database.
 
         Args:
@@ -342,7 +341,7 @@ def get_auth_settings(db: Session) -> DynamicAuthSettings:
 
 # Global instance for cases where database is not available
 # Uses only environment variables
-_static_auth_settings: Optional[DynamicAuthSettings] = None
+_static_auth_settings: DynamicAuthSettings | None = None
 
 
 def get_static_auth_settings() -> DynamicAuthSettings:

@@ -38,10 +38,9 @@ Classes:
 """
 
 import logging
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import Any
-from typing import Optional
 
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -57,7 +56,7 @@ class FormattingService:
     """Service for formatting data for frontend display."""
 
     @staticmethod
-    def format_duration(seconds: Optional[float]) -> Optional[str]:
+    def format_duration(seconds: float | None) -> str | None:
         """
         Format duration in seconds to MM:SS format.
 
@@ -75,7 +74,7 @@ class FormattingService:
         return f"{minutes}:{remaining_seconds:02d}"
 
     @staticmethod
-    def format_duration_with_millis(seconds: Optional[float]) -> Optional[str]:
+    def format_duration_with_millis(seconds: float | None) -> str | None:
         """
         Format duration with milliseconds for timestamps.
 
@@ -93,7 +92,7 @@ class FormattingService:
         return f"{minutes}:{remaining_seconds:04.1f}"
 
     @staticmethod
-    def format_upload_date(upload_time: Optional[datetime]) -> Optional[str]:
+    def format_upload_date(upload_time: datetime | None) -> str | None:
         """
         Format upload date for display.
 
@@ -157,7 +156,7 @@ class FormattingService:
 
     @staticmethod
     def format_media_file(
-        media_file: MediaFile, speakers: Optional[list[Speaker]] = None
+        media_file: MediaFile, speakers: list[Speaker] | None = None
     ) -> MediaFileSchema:
         """
         Add formatted fields to a MediaFile object.
@@ -213,9 +212,9 @@ class FormattingService:
     @staticmethod
     def format_transcript_segment(
         segment: Any,
-        speaker_mapping: Optional[dict[str, str]] = None,
+        speaker_mapping: dict[str, str] | None = None,
         redaction_cfg: Any = None,
-        reveal_categories: Optional[set] = None,
+        reveal_categories: set | None = None,
     ) -> TranscriptSegment:
         """
         Add formatted fields to a TranscriptSegment.
@@ -286,7 +285,7 @@ class FormattingService:
         segment_dict: dict,
         segment: Any,
         redaction_cfg: Any,
-        reveal_categories: Optional[set],
+        reveal_categories: set | None,
     ) -> None:
         """Mutate segment_dict in place: mask text + set applied redaction spans.
 
@@ -321,7 +320,7 @@ class FormattingService:
             segment_dict["toxicity"] = None
 
     @staticmethod
-    def format_file_size(file_size: Optional[int]) -> Optional[str]:
+    def format_file_size(file_size: int | None) -> str | None:
         """
         Format file size in bytes to human-readable format.
 
@@ -376,7 +375,7 @@ class FormattingService:
         return 999  # Unknown speakers go to end
 
     @staticmethod
-    def format_file_age(upload_time: Optional[datetime]) -> Optional[str]:
+    def format_file_age(upload_time: datetime | None) -> str | None:
         """
         Format file age for display (e.g., "2 hours ago", "3 days ago").
 
@@ -390,11 +389,11 @@ class FormattingService:
             return None
 
         # Security: Validate datetime is not in the future or too far in the past
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Ensure upload_time has timezone info
         if upload_time.tzinfo is None:
-            upload_time = upload_time.replace(tzinfo=timezone.utc)
+            upload_time = upload_time.replace(tzinfo=UTC)
 
         # Security: Check for reasonable date range (not more than 100 years ago or in future)
         min_date = now.replace(year=now.year - 100)
@@ -421,7 +420,7 @@ class FormattingService:
             return f"{days} day{'s' if days != 1 else ''} ago"
 
     @staticmethod
-    def format_detailed_duration(seconds: Optional[float]) -> Optional[str]:
+    def format_detailed_duration(seconds: float | None) -> str | None:
         """
         Format duration with hours, minutes, and seconds for detailed display.
 
@@ -449,7 +448,7 @@ class FormattingService:
         return result.strip()
 
     @staticmethod
-    def format_bytes_detailed(file_size: Optional[int]) -> Optional[str]:
+    def format_bytes_detailed(file_size: int | None) -> str | None:
         """
         Enhanced file size formatting with more precision for larger files.
 
@@ -517,8 +516,8 @@ class FormattingService:
 
     @staticmethod
     def format_processing_time(
-        created_at: Optional[datetime], completed_at: Optional[datetime]
-    ) -> Optional[str]:
+        created_at: datetime | None, completed_at: datetime | None
+    ) -> str | None:
         """
         Format the time taken to process a task.
 
@@ -532,13 +531,13 @@ class FormattingService:
         if not created_at:
             return None
 
-        end_time = completed_at or datetime.now(timezone.utc)
+        end_time = completed_at or datetime.now(UTC)
 
         # Ensure timezone info
         if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
+            created_at = created_at.replace(tzinfo=UTC)
         if end_time.tzinfo is None:
-            end_time = end_time.replace(tzinfo=timezone.utc)
+            end_time = end_time.replace(tzinfo=UTC)
 
         # Security: Validate reasonable time range
         duration_seconds = (end_time - created_at).total_seconds()

@@ -1,8 +1,8 @@
 """Authentication configuration database models for super admin UI."""
 
 import uuid as uuid_pkg
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean
@@ -51,12 +51,12 @@ class AuthConfig(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     requires_restart: Mapped[bool | None] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
     created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("user.id"), nullable=True)
     updated_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("user.id"), nullable=True)
@@ -92,7 +92,7 @@ class AuthConfigAudit(Base):
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
 
     # Relationships

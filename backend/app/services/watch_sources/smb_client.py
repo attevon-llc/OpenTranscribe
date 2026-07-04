@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 
 from app.services.watch_sources.base import BaseWatchSourceClient
 from app.services.watch_sources.base import RemoteFileInfo
@@ -100,7 +100,7 @@ class SMBWatchClient(BaseWatchSourceClient):
                 except Exception as e:  # noqa: BLE001
                     logger.debug("smb stat failed for %s: %s", full, e)
                     continue
-                modified = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)
+                modified = datetime.fromtimestamp(st.st_mtime, tz=UTC)
                 if min_modified and modified < min_modified:
                     continue
                 results.append(

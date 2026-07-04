@@ -17,10 +17,9 @@ Security Features:
 import hashlib
 import logging
 import uuid
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
-from typing import Optional
 
 from jose import JWTError
 from jose import jwt
@@ -126,7 +125,7 @@ class TokenService:
     def create_token(
         self,
         data: dict,
-        expires_delta: Optional[timedelta] = None,
+        expires_delta: timedelta | None = None,
         token_type: str = "access",  # noqa: S107 - JWT type identifier, not a password  # nosec B107
     ) -> str:
         """
@@ -146,14 +145,14 @@ class TokenService:
         to_encode = data.copy()
 
         if expires_delta:
-            expire = datetime.now(timezone.utc) + expires_delta
+            expire = datetime.now(UTC) + expires_delta
         else:
-            expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+            expire = datetime.now(UTC) + timedelta(minutes=15)
 
         to_encode.update(
             {
                 "exp": expire,
-                "iat": datetime.now(timezone.utc),
+                "iat": datetime.now(UTC),
                 "jti": str(uuid.uuid4()),
                 "type": token_type,
             }
@@ -204,8 +203,8 @@ class TokenService:
         user_id: int,
         user_uuid: str,
         role: str,
-        user_agent: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
     ) -> tuple[str, RefreshToken]:
         """
         Create a new refresh token for a user.
@@ -233,7 +232,7 @@ class TokenService:
         jti = str(uuid.uuid4())
 
         # Calculate expiration
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires_delta = timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
         expires_at = now + expires_delta
 
@@ -281,7 +280,7 @@ class TokenService:
 
     def verify_refresh_token(
         self, db: Session, token: str
-    ) -> tuple[Optional[dict], Optional[RefreshToken]]:
+    ) -> tuple[dict | None, RefreshToken | None]:
         """
         Verify a refresh token and return its payload.
 
@@ -357,7 +356,7 @@ class TokenService:
             logger.error(f"Token verification error: {e}")
             return None, None
 
-    def revoke_token(self, db: Session, jti: str, expires_at: Optional[datetime] = None) -> bool:
+    def revoke_token(self, db: Session, jti: str, expires_at: datetime | None = None) -> bool:
         """
         Revoke a token by adding its JTI to the Redis blacklist.
 
@@ -372,7 +371,7 @@ class TokenService:
         try:
             # Calculate TTL (remaining token lifetime)
             if expires_at:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 ttl_seconds = max(1, int((expires_at - now).total_seconds()))
             else:
                 # Default to refresh token expiry if no expiration provided
@@ -385,7 +384,7 @@ class TokenService:
             # Update database record if exists
             refresh_token = db.query(RefreshToken).filter(RefreshToken.jti == jti).first()
             if refresh_token:
-                refresh_token.revoked_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                refresh_token.revoked_at = datetime.now(UTC)  # type: ignore[assignment]
                 db.commit()
 
             logger.info(f"Revoked token (jti={jti[:8]}..., ttl={ttl_seconds}s)")
@@ -422,7 +421,7 @@ class TokenService:
                 .all()
             )
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             count = 0
 
             for token in tokens:
@@ -475,7 +474,7 @@ class TokenService:
             Number of tokens deleted
         """
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             result = (
                 db.query(RefreshToken)
                 .filter(RefreshToken.expires_at < now)
@@ -502,7 +501,7 @@ class TokenService:
         Returns:
             List of session info dicts with created_at, user_agent, ip_address
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         tokens = (
             db.query(RefreshToken)
             .filter(
@@ -533,8 +532,8 @@ class TokenService:
         user_id: int,
         user_uuid: str,
         role: str,
-        user_agent: Optional[str] = None,
-        ip_address: Optional[str] = None,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
     ) -> tuple[str, RefreshToken]:
         """
         Rotate a refresh token by revoking the old one and creating a new one.

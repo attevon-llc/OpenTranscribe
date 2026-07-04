@@ -13,7 +13,7 @@ Configuration is managed via settings:
 
 import ipaddress
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from fastapi import Request
 from fastapi import Response

@@ -6,8 +6,8 @@ separated from other utility tasks for better organization.
 """
 
 import logging
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 
 from app.core.celery import celery_app
 from app.core.constants import UtilityPriority
@@ -63,7 +63,7 @@ def startup_recovery_task(self):
                 if task:
                     task.status = "failed"  # type: ignore[assignment]
                     task.error_message = "Celery task lost after system restart"  # type: ignore[assignment]
-                    task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                    task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
             if stale_task_ids:
                 db.flush()
 

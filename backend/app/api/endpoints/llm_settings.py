@@ -6,8 +6,8 @@ import contextlib
 import logging
 import time
 import uuid
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import Any
 from uuid import UUID
 
@@ -363,7 +363,7 @@ def create_user_llm_configuration(
 
     # Set shared_at timestamp if shared on creation
     if settings_data.get("is_shared"):
-        settings_data["shared_at"] = datetime.now(timezone.utc)
+        settings_data["shared_at"] = datetime.now(UTC)
 
     user_config = models.UserLLMSettings(**settings_data)
     db.add(user_config)
@@ -442,7 +442,7 @@ def update_user_llm_configuration(
     # Handle is_shared toggle with shared_at timestamp
     if settings_in.is_shared is not None:
         if settings_in.is_shared and not user_config.is_shared:
-            update_data["shared_at"] = datetime.now(timezone.utc)
+            update_data["shared_at"] = datetime.now(UTC)
         elif not settings_in.is_shared and user_config.is_shared:
             update_data["shared_at"] = None
             _clear_shared_active_references(
@@ -753,7 +753,7 @@ async def test_active_configuration(
     if user_config.user_id == current_user.id:
         user_config.test_status = result.status.value  # type: ignore[assignment]
         user_config.test_message = result.message  # type: ignore[assignment]
-        user_config.last_tested = datetime.now(timezone.utc)  # type: ignore[assignment]
+        user_config.last_tested = datetime.now(UTC)  # type: ignore[assignment]
 
         db.add(user_config)
         db.commit()
@@ -800,7 +800,7 @@ async def test_specific_configuration(
     if user_config.user_id == current_user.id:
         user_config.test_status = result.status.value  # type: ignore[assignment]
         user_config.test_message = result.message  # type: ignore[assignment]
-        user_config.last_tested = datetime.now(timezone.utc)  # type: ignore[assignment]
+        user_config.last_tested = datetime.now(UTC)  # type: ignore[assignment]
 
         db.add(user_config)
         db.commit()

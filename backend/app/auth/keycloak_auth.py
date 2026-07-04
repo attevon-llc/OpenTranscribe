@@ -11,7 +11,6 @@ import hashlib
 import logging
 import secrets
 from dataclasses import dataclass
-from typing import Optional
 from typing import TypedDict
 from urllib.parse import urlencode
 
@@ -239,9 +238,7 @@ def _get_keycloak_urls(cfg: KeycloakConfig, internal: bool = False) -> dict:
     }
 
 
-def get_authorization_url(
-    state: str, cfg: Optional[KeycloakConfig] = None
-) -> tuple[str, Optional[str]]:
+def get_authorization_url(state: str, cfg: KeycloakConfig | None = None) -> tuple[str, str | None]:
     """Generate the Keycloak authorization URL for OIDC login.
 
     Supports PKCE (RFC 7636) for OAuth 2.1 compliance.
@@ -277,9 +274,9 @@ def get_authorization_url(
 
 async def exchange_code_for_tokens(
     code: str,
-    code_verifier: Optional[str] = None,
-    cfg: Optional[KeycloakConfig] = None,
-) -> Optional[KeycloakTokens]:
+    code_verifier: str | None = None,
+    cfg: KeycloakConfig | None = None,
+) -> KeycloakTokens | None:
     """Exchange authorization code for tokens.
 
     Supports PKCE (RFC 7636) for OAuth 2.1 compliance.
@@ -327,7 +324,7 @@ async def exchange_code_for_tokens(
             return None
 
 
-async def get_keycloak_jwks(cfg: Optional[KeycloakConfig] = None) -> Optional[dict]:
+async def get_keycloak_jwks(cfg: KeycloakConfig | None = None) -> dict | None:
     """Fetch Keycloak public keys (JWKS)."""
     if cfg is None:
         cfg = KeycloakConfig.from_env()
@@ -347,7 +344,7 @@ async def get_keycloak_jwks(cfg: Optional[KeycloakConfig] = None) -> Optional[di
 
 async def call_keycloak_logout(
     keycloak_refresh_token: str,
-    cfg: Optional[KeycloakConfig] = None,
+    cfg: KeycloakConfig | None = None,
 ) -> bool:
     """Call Keycloak's logout endpoint to terminate the federated session.
 
@@ -417,8 +414,8 @@ def _extract_certificate_claims(token_claims: dict) -> dict:
 
 
 async def validate_token(
-    access_token: str, cfg: Optional[KeycloakConfig] = None
-) -> Optional[KeycloakUserData]:
+    access_token: str, cfg: KeycloakConfig | None = None
+) -> KeycloakUserData | None:
     """Validate Keycloak access token and extract user data.
 
     Args:

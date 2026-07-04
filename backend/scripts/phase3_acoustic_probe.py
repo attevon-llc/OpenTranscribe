@@ -73,7 +73,7 @@ def main() -> None:
         return None, None
 
     regions: dict[str, list[tuple[float, float]]] = collections.defaultdict(list)
-    for st, en, sp in zip(diarize_df.start, diarize_df.end, diarize_df.speaker):
+    for st, en, sp in zip(diarize_df.start, diarize_df.end, diarize_df.speaker, strict=True):
         if en - st >= 2.0:
             regions[str(sp)].append((float(st), float(en)))
 

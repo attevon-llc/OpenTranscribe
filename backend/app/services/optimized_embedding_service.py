@@ -14,7 +14,6 @@ import logging
 import os
 from collections.abc import Iterator
 from typing import Any
-from typing import Union
 
 import numpy as np
 import torch
@@ -136,7 +135,7 @@ class OptimizedEmbeddingService:
 
     @staticmethod
     def compute_embedding_statistics(
-        embeddings: list[Union[np.ndarray, torch.Tensor, list[float]]],
+        embeddings: list[np.ndarray | torch.Tensor | list[float]],
     ) -> dict[str, Any]:
         """
         Compute statistical analysis of embeddings using GPU-accelerated operations.
@@ -203,7 +202,7 @@ class OptimizedEmbeddingService:
 
     @staticmethod
     def optimize_embeddings_for_search(
-        embeddings: list[Union[np.ndarray, torch.Tensor]], target_dimension: int | None = None
+        embeddings: list[np.ndarray | torch.Tensor], target_dimension: int | None = None
     ) -> list[torch.Tensor]:
         """
         Optimize embeddings for search performance using GPU acceleration.

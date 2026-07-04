@@ -21,10 +21,9 @@ Hook-author contract (covered by ``CLOUD_SEAM_VERSION``, app.auth.constants):
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Callable
-from typing import Optional
 
 from fastapi import HTTPException
 
@@ -51,8 +50,8 @@ class DispatchContext:
     file_id: int
     file_uuid: str
     user_id: int
-    organization_id: Optional[int]
-    est_audio_hours: Optional[Decimal]  # None when duration not yet known
+    organization_id: int | None
+    est_audio_hours: Decimal | None  # None when duration not yet known
     task_id: str
 
 
@@ -63,7 +62,7 @@ class CompletionContext:
     file_id: int
     file_uuid: str
     user_id: int
-    organization_id: Optional[int]
+    organization_id: int | None
     audio_duration_s: float
     run_id: str  # task_id of this pipeline run — idempotency scope
     provider: str  # "local" | cloud-ASR provider name

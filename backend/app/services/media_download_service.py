@@ -13,9 +13,9 @@ import re
 import shutil
 import tempfile
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from typing import Callable
 
 import requests
 import yt_dlp

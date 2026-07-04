@@ -3,7 +3,6 @@ Pydantic schemas for admin settings
 """
 
 import re
-from typing import Optional
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -20,8 +19,8 @@ class RetryConfig(BaseModel):
 class RetryConfigUpdate(BaseModel):
     """Schema for updating retry configuration"""
 
-    max_retries: Optional[int] = None
-    retry_limit_enabled: Optional[bool] = None
+    max_retries: int | None = None
+    retry_limit_enabled: bool | None = None
 
     @field_validator("max_retries")
     @classmethod
@@ -35,9 +34,9 @@ class SystemSettingResponse(BaseModel):
     """Response schema for a single system setting"""
 
     key: str
-    value: Optional[str]
-    description: Optional[str]
-    updated_at: Optional[str]
+    value: str | None
+    description: str | None
+    updated_at: str | None
 
 
 class AllSettingsResponse(BaseModel):
@@ -56,8 +55,8 @@ class GarbageCleanupConfig(BaseModel):
 class GarbageCleanupConfigUpdate(BaseModel):
     """Schema for updating garbage cleanup configuration"""
 
-    garbage_cleanup_enabled: Optional[bool] = None
-    max_word_length: Optional[int] = None
+    garbage_cleanup_enabled: bool | None = None
+    max_word_length: int | None = None
 
     @field_validator("max_word_length")
     @classmethod
@@ -75,18 +74,18 @@ class RetentionConfig(BaseModel):
     delete_error_files: bool
     run_time: str
     timezone: str
-    last_run: Optional[str] = None
+    last_run: str | None = None
     last_run_deleted: int = 0
 
 
 class RetentionConfigUpdate(BaseModel):
     """Schema for updating file retention configuration"""
 
-    retention_enabled: Optional[bool] = None
-    retention_days: Optional[int] = Field(None, ge=1, le=3650)
-    delete_error_files: Optional[bool] = None
-    run_time: Optional[str] = None
-    timezone: Optional[str] = None
+    retention_enabled: bool | None = None
+    retention_days: int | None = Field(None, ge=1, le=3650)
+    delete_error_files: bool | None = None
+    run_time: str | None = None
+    timezone: str | None = None
 
     @field_validator("run_time")
     @classmethod
@@ -118,7 +117,7 @@ class RetentionPreviewFile(BaseModel):
     uuid: str
     title: str
     owner_email: str
-    completed_at: Optional[str]
+    completed_at: str | None
     age_days: int
     size_bytes: int
     status: str
@@ -189,12 +188,12 @@ class MediaSourceCreate(BaseModel):
 class MediaSourceUpdate(BaseModel):
     """Schema for updating a media source."""
 
-    hostname: Optional[str] = None
-    provider_type: Optional[str] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    verify_ssl: Optional[bool] = None
-    label: Optional[str] = None
+    hostname: str | None = None
+    provider_type: str | None = None
+    username: str | None = None
+    password: str | None = None
+    verify_ssl: bool | None = None
+    label: str | None = None
 
     @field_validator("hostname")
     @classmethod
@@ -268,12 +267,12 @@ class QuarantinedFile(BaseModel):
     """A taken-down file in the admin review list."""
 
     uuid: str
-    filename: Optional[str] = None
+    filename: str | None = None
     user_id: int
-    organization_id: Optional[int] = None
-    quarantine_reason: Optional[str] = None
-    quarantined_at: Optional[str] = None
-    quarantined_by: Optional[int] = None
+    organization_id: int | None = None
+    quarantine_reason: str | None = None
+    quarantined_at: str | None = None
+    quarantined_by: int | None = None
     legal_hold: bool = False
 
 

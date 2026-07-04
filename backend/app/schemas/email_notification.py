@@ -1,15 +1,14 @@
 """Pydantic schemas for watch-source email notification configs."""
 
 from datetime import datetime
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import model_validator
 
 
-class EmailProvider(str, Enum):
+class EmailProvider(StrEnum):
     """Supported email notification providers."""
 
     SMTP = "smtp"
@@ -23,26 +22,26 @@ class EmailConfigCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     provider: EmailProvider
     is_enabled: bool = True
-    from_address: Optional[str] = None
-    default_recipients: Optional[str] = None  # CSV
+    from_address: str | None = None
+    default_recipients: str | None = None  # CSV
 
     # SMTP
-    smtp_host: Optional[str] = None
-    smtp_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    smtp_host: str | None = None
+    smtp_port: int | None = Field(default=None, ge=1, le=65535)
     smtp_use_tls: bool = True
-    smtp_username: Optional[str] = None
-    smtp_password: Optional[str] = None
+    smtp_username: str | None = None
+    smtp_password: str | None = None
 
     # M365
-    m365_tenant_id: Optional[str] = None
-    m365_client_id: Optional[str] = None
-    m365_client_secret: Optional[str] = None
+    m365_tenant_id: str | None = None
+    m365_client_id: str | None = None
+    m365_client_secret: str | None = None
 
     # Exchange
-    exchange_server: Optional[str] = None
-    exchange_domain: Optional[str] = None
-    exchange_username: Optional[str] = None
-    exchange_password: Optional[str] = None
+    exchange_server: str | None = None
+    exchange_domain: str | None = None
+    exchange_username: str | None = None
+    exchange_password: str | None = None
 
     @model_validator(mode="after")
     def _validate_per_provider(self) -> "EmailConfigCreate":
@@ -63,22 +62,22 @@ class EmailConfigCreate(BaseModel):
 class EmailConfigUpdate(BaseModel):
     """Update an email config. All fields optional; provider is immutable."""
 
-    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    is_enabled: Optional[bool] = None
-    from_address: Optional[str] = None
-    default_recipients: Optional[str] = None
-    smtp_host: Optional[str] = None
-    smtp_port: Optional[int] = Field(default=None, ge=1, le=65535)
-    smtp_use_tls: Optional[bool] = None
-    smtp_username: Optional[str] = None
-    smtp_password: Optional[str] = None
-    m365_tenant_id: Optional[str] = None
-    m365_client_id: Optional[str] = None
-    m365_client_secret: Optional[str] = None
-    exchange_server: Optional[str] = None
-    exchange_domain: Optional[str] = None
-    exchange_username: Optional[str] = None
-    exchange_password: Optional[str] = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_enabled: bool | None = None
+    from_address: str | None = None
+    default_recipients: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = Field(default=None, ge=1, le=65535)
+    smtp_use_tls: bool | None = None
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    m365_tenant_id: str | None = None
+    m365_client_id: str | None = None
+    m365_client_secret: str | None = None
+    exchange_server: str | None = None
+    exchange_domain: str | None = None
+    exchange_username: str | None = None
+    exchange_password: str | None = None
 
 
 class EmailConfigResponse(BaseModel):
@@ -88,25 +87,25 @@ class EmailConfigResponse(BaseModel):
     name: str
     provider: str
     is_enabled: bool = True
-    from_address: Optional[str] = None
-    default_recipients: Optional[str] = None
-    smtp_host: Optional[str] = None
-    smtp_port: Optional[int] = None
+    from_address: str | None = None
+    default_recipients: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
     smtp_use_tls: bool = True
-    smtp_username: Optional[str] = None
+    smtp_username: str | None = None
     has_smtp_password: bool = False
-    m365_tenant_id: Optional[str] = None
-    m365_client_id: Optional[str] = None
+    m365_tenant_id: str | None = None
+    m365_client_id: str | None = None
     has_m365_secret: bool = False
-    exchange_server: Optional[str] = None
-    exchange_domain: Optional[str] = None
-    exchange_username: Optional[str] = None
+    exchange_server: str | None = None
+    exchange_domain: str | None = None
+    exchange_username: str | None = None
     has_exchange_password: bool = False
-    last_tested_at: Optional[datetime] = None
-    test_status: Optional[str] = None
-    test_message: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    last_tested_at: datetime | None = None
+    test_status: str | None = None
+    test_message: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

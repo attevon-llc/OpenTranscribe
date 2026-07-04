@@ -4,9 +4,9 @@ File cleanup service for recovering stuck files and maintaining system health.
 
 import contextlib
 import logging
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -36,7 +36,7 @@ class FileCleanupService:
             Dictionary with cleanup results and statistics
         """
         results: dict[str, Any] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "stuck_files_checked": 0,
             "files_recovered": 0,
             "files_marked_orphaned": 0,
@@ -124,7 +124,7 @@ class FileCleanupService:
         Returns:
             Number of old orphaned files found
         """
-        threshold_time = datetime.now(timezone.utc) - timedelta(hours=self.orphan_threshold_hours)
+        threshold_time = datetime.now(UTC) - timedelta(hours=self.orphan_threshold_hours)
 
         old_orphaned_files = (
             db.query(MediaFile)
@@ -275,7 +275,7 @@ class FileCleanupService:
             Dictionary with statistics
         """
         stats: dict[str, Any] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "file_counts_by_status": {},
             "stuck_files_detected": 0,
             "files_eligible_for_cleanup": 0,

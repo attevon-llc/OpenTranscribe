@@ -1,7 +1,5 @@
 """Pydantic schemas for speaker attribute detection settings."""
 
-from typing import Optional
-
 from pydantic import BaseModel
 
 
@@ -17,10 +15,10 @@ class SpeakerAttributeSettings(BaseModel):
 class SpeakerAttributeSettingsUpdate(BaseModel):
     """Partial update for speaker attribute settings."""
 
-    detection_enabled: Optional[bool] = None
-    gender_detection_enabled: Optional[bool] = None
-    age_detection_enabled: Optional[bool] = None
-    show_attributes_on_cards: Optional[bool] = None
+    detection_enabled: bool | None = None
+    gender_detection_enabled: bool | None = None
+    age_detection_enabled: bool | None = None
+    show_attributes_on_cards: bool | None = None
 
 
 class SpeakerAttributeSystemDefaults(BaseModel):

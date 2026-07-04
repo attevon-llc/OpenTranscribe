@@ -11,10 +11,9 @@ configuration settings stored in the database, with support for:
 
 import json
 import logging
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import Any
-from typing import Optional
 
 from fastapi import Request
 from sqlalchemy.orm import Session
@@ -304,7 +303,7 @@ class AuthConfigService:
     }
 
     @staticmethod
-    def get_config(db: Session, key: str, decrypt: bool = True) -> Optional[str]:
+    def get_config(db: Session, key: str, decrypt: bool = True) -> str | None:
         """Get a single configuration value.
 
         Args:
@@ -332,7 +331,7 @@ class AuthConfigService:
         return value
 
     @staticmethod
-    def _convert_value(value: Optional[str], data_type: str) -> Any:
+    def _convert_value(value: str | None, data_type: str) -> Any:
         """Convert string value to appropriate type.
 
         Args:
@@ -399,9 +398,9 @@ class AuthConfigService:
         is_sensitive: bool,
         category: str,
         user_id: int,
-        request: Optional[Request] = None,
-        data_type: Optional[str] = None,
-        description: Optional[str] = None,
+        request: Request | None = None,
+        data_type: str | None = None,
+        description: str | None = None,
     ) -> AuthConfig:
         """Set a configuration value with audit logging.
 
@@ -447,7 +446,7 @@ class AuthConfigService:
             config.config_value = encrypted_value  # type: ignore[assignment]
             config.data_type = data_type  # type: ignore[assignment]
             config.updated_by = user_id  # type: ignore[assignment]
-            config.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+            config.updated_at = datetime.now(UTC)  # type: ignore[assignment]
             if description is not None:
                 config.description = description  # type: ignore[assignment]
             change_type = "update"
@@ -495,7 +494,7 @@ class AuthConfigService:
         db: Session,
         key: str,
         user_id: int,
-        request: Optional[Request] = None,
+        request: Request | None = None,
     ) -> bool:
         """Delete a configuration value with audit logging.
 
@@ -541,7 +540,7 @@ class AuthConfigService:
         category: str,
         config_dict: dict[str, Any],
         user_id: int,
-        request: Optional[Request] = None,
+        request: Request | None = None,
     ) -> dict[str, AuthConfig]:
         """Update multiple configuration values for a category.
 
@@ -602,8 +601,8 @@ class AuthConfigService:
     @staticmethod
     def get_audit_log(
         db: Session,
-        category: Optional[str] = None,
-        config_key: Optional[str] = None,
+        category: str | None = None,
+        config_key: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[AuthConfigAudit]:

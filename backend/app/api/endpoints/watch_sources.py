@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import logging
 import uuid as uuid_pkg
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -409,7 +409,7 @@ def test_email_config(
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
     ok, message = watch_email_service.test_connection(cfg)
-    cfg.last_tested_at = datetime.now(timezone.utc)
+    cfg.last_tested_at = datetime.now(UTC)
     cfg.test_status = "success" if ok else "failed"
     cfg.test_message = message
     db.commit()

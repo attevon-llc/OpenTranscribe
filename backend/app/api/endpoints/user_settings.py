@@ -10,6 +10,7 @@ that need to persist across sessions and devices. Supports:
 - Download settings (video/audio quality for URL downloads)
 """
 
+from datetime import UTC
 from typing import Any
 from typing import Literal
 from typing import cast
@@ -1630,7 +1631,6 @@ def update_media_source(
 ) -> dict:
     """Update an existing user media source. Owner only."""
     from datetime import datetime
-    from datetime import timezone
 
     from sqlalchemy.exc import IntegrityError
 
@@ -1673,7 +1673,7 @@ def update_media_source(
     if data.is_shared is not None:
         if data.is_shared and not source.is_shared:
             source.is_shared = True
-            source.shared_at = datetime.now(timezone.utc)
+            source.shared_at = datetime.now(UTC)
         elif not data.is_shared and source.is_shared:
             source.is_shared = False
             source.shared_at = None

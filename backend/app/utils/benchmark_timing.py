@@ -167,7 +167,7 @@ def capture_queue_depth(
         except Exception as e:
             logger.debug(f"queue depth LLEN failed: {e}")
             results = [0] * len(queue_names)
-        for name, depth in zip(queue_names, results):
+        for name, depth in zip(queue_names, results, strict=True):
             depths[name] = int(depth or 0)
 
         mark_many(task_id, {"queue_depth_at_dispatch": json.dumps(depths)})

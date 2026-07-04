@@ -1,7 +1,6 @@
 """Pydantic schemas for collection sharing."""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -28,8 +27,8 @@ class Share(UUIDBaseSchema):
     target_type: str
     target_uuid: UUID
     target_name: str
-    target_email: Optional[str] = None  # only for user targets
-    member_count: Optional[int] = None  # only for group targets
+    target_email: str | None = None  # only for user targets
+    member_count: int | None = None  # only for group targets
     permission: str
     shared_by: UserBrief
     created_at: datetime
@@ -40,7 +39,7 @@ class SharedCollectionInfo(BaseModel):
 
     uuid: UUID
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     media_count: int = 0
     my_permission: str
     shared_by: UserBrief

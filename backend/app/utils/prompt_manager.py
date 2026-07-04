@@ -3,7 +3,6 @@ Prompt management utilities for AI summarization
 """
 
 import logging
-from typing import Optional
 
 from sqlalchemy import and_
 from sqlalchemy import or_
@@ -19,9 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 def get_user_active_prompt(
-    user_id: Optional[int] = None,
-    db: Optional[Session] = None,
-    prompt_uuid: Optional[str] = None,
+    user_id: int | None = None,
+    db: Session | None = None,
+    prompt_uuid: str | None = None,
 ) -> str:
     """
     Get the active summary prompt for a user, falling back to system default
@@ -37,9 +36,9 @@ def get_user_active_prompt(
 
 
 def get_user_active_prompt_info(
-    user_id: Optional[int] = None,
-    db: Optional[Session] = None,
-    prompt_uuid: Optional[str] = None,
+    user_id: int | None = None,
+    db: Session | None = None,
+    prompt_uuid: str | None = None,
 ) -> tuple[str, bool]:
     """
     Get the active summary prompt and whether it is a system default.
@@ -71,10 +70,10 @@ def get_user_active_prompt_info(
 
 
 def _resolve_active_prompt_record(
-    user_id: Optional[int],
+    user_id: int | None,
     db: Session,
-    prompt_uuid: Optional[str] = None,
-) -> Optional[SummaryPrompt]:
+    prompt_uuid: str | None = None,
+) -> SummaryPrompt | None:
     """Resolve the SummaryPrompt row that would be used for summarization.
 
     Mirrors the resolution order used by ``get_user_active_prompt_info`` but
@@ -91,7 +90,7 @@ def _resolve_active_prompt_record(
     """
     # If a specific prompt UUID was provided, use it when valid.
     if prompt_uuid:
-        prompt_by_uuid: Optional[SummaryPrompt] = (
+        prompt_by_uuid: SummaryPrompt | None = (
             db.query(SummaryPrompt)
             .filter(and_(SummaryPrompt.uuid == prompt_uuid, SummaryPrompt.is_active))
             .first()
@@ -117,7 +116,7 @@ def _resolve_active_prompt_record(
         .first()
     )
 
-    active_prompt: Optional[SummaryPrompt] = None
+    active_prompt: SummaryPrompt | None = None
     if active_setting and active_setting.setting_value:
         try:
             prompt_id = int(active_setting.setting_value)
@@ -145,10 +144,10 @@ def _resolve_active_prompt_record(
 
 
 def resolve_active_prompt_record(
-    user_id: Optional[int] = None,
-    db: Optional[Session] = None,
-    prompt_uuid: Optional[str] = None,
-) -> Optional[SummaryPrompt]:
+    user_id: int | None = None,
+    db: Session | None = None,
+    prompt_uuid: str | None = None,
+) -> SummaryPrompt | None:
     """Public wrapper around :func:`_resolve_active_prompt_record` with db lifecycle."""
     should_close_db = db is None
     if db is None:
@@ -188,7 +187,7 @@ def increment_prompt_usage(db: Session, prompt_id_or_uuid) -> None:
         db.rollback()
 
 
-def get_system_default_prompt_record(db: Session) -> Optional[SummaryPrompt]:
+def get_system_default_prompt_record(db: Session) -> SummaryPrompt | None:
     """
     Get the system default prompt row from database with intelligent fallback.
 
@@ -202,7 +201,7 @@ def get_system_default_prompt_record(db: Session) -> Optional[SummaryPrompt]:
     try:
         # First try to find a universal/general prompt
         logger.info("Querying for universal/general system prompt")
-        default_prompt: Optional[SummaryPrompt] = (
+        default_prompt: SummaryPrompt | None = (
             db.query(SummaryPrompt)
             .filter(
                 and_(
@@ -242,7 +241,7 @@ def get_system_default_prompt_record(db: Session) -> Optional[SummaryPrompt]:
 
         # Final fallback: any active system prompt
         logger.warning("No general system prompt found, using any available system prompt")
-        any_system_prompt: Optional[SummaryPrompt] = (
+        any_system_prompt: SummaryPrompt | None = (
             db.query(SummaryPrompt)
             .filter(and_(SummaryPrompt.is_system_default, SummaryPrompt.is_active))
             .first()
@@ -282,7 +281,7 @@ def get_system_default_prompt(db: Session) -> str:
 
 
 def get_prompt_for_content_type(
-    content_type: str, user_id: Optional[int] = None, db: Optional[Session] = None
+    content_type: str, user_id: int | None = None, db: Session | None = None
 ) -> str:
     """
     Get the best prompt for a specific content type
@@ -339,10 +338,10 @@ def create_user_prompt(
     user_id: int,
     name: str,
     prompt_text: str,
-    description: Optional[str] = None,
-    content_type: Optional[str] = None,
-    db: Optional[Session] = None,
-) -> Optional[SummaryPrompt]:
+    description: str | None = None,
+    content_type: str | None = None,
+    db: Session | None = None,
+) -> SummaryPrompt | None:
     """
     Create a new custom prompt for a user
 
@@ -400,7 +399,7 @@ def create_user_prompt(
             db.close()
 
 
-def set_user_active_prompt(user_id: int, prompt_id: int, db: Optional[Session] = None) -> bool:
+def set_user_active_prompt(user_id: int, prompt_id: int, db: Session | None = None) -> bool:
     """
     Set a user's active summary prompt
 

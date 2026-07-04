@@ -4,8 +4,8 @@ API endpoints for AI summarization prompt management
 
 import contextlib
 import logging
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import Any
 from typing import cast
 
@@ -344,7 +344,7 @@ def create_prompt(
 
     # Set shared_at timestamp if shared on creation
     if prompt_data.get("is_shared"):
-        prompt_data["shared_at"] = datetime.now(timezone.utc)
+        prompt_data["shared_at"] = datetime.now(UTC)
 
     prompt = models.SummaryPrompt(**prompt_data)
     db.add(prompt)
@@ -621,7 +621,7 @@ def share_prompt(
     prompt.is_shared = share_data.is_shared  # type: ignore[assignment]
     if share_data.is_shared:
         if not prompt.shared_at:
-            prompt.shared_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+            prompt.shared_at = datetime.now(UTC)  # type: ignore[assignment]
         # Record who flipped sharing on (may differ from the creator)
         prompt.shared_by = current_user.id  # type: ignore[assignment]
     else:

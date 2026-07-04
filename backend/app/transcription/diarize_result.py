@@ -26,5 +26,5 @@ class DiarizeResult:
         """Serialize to list of dicts for JSON persistence."""
         return [
             {"start": float(s), "end": float(e), "speaker": str(sp)}
-            for s, e, sp in zip(self.start, self.end, self.speaker)
+            for s, e, sp in zip(self.start, self.end, self.speaker, strict=True)
         ]

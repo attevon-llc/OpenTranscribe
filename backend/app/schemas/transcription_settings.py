@@ -6,7 +6,6 @@ preferences including speaker detection, prompt behavior, and garbage cleanup se
 """
 
 from typing import Literal
-from typing import Optional
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -152,66 +151,66 @@ class TranscriptionSettingsUpdate(BaseModel):
     All fields are optional - only provided fields will be updated.
     """
 
-    min_speakers: Optional[int] = Field(
+    min_speakers: int | None = Field(
         default=None,
         ge=1,
         le=100,
         description="Minimum number of speakers to detect during diarization",
     )
-    max_speakers: Optional[int] = Field(
+    max_speakers: int | None = Field(
         default=None,
         ge=1,
         le=100,
         description="Maximum number of speakers to detect during diarization",
     )
-    speaker_prompt_behavior: Optional[SpeakerPromptBehavior] = Field(
+    speaker_prompt_behavior: SpeakerPromptBehavior | None = Field(
         default=None,
         description="How to handle speaker count prompts: always_prompt, use_defaults, or use_custom",
     )
-    garbage_cleanup_enabled: Optional[bool] = Field(
+    garbage_cleanup_enabled: bool | None = Field(
         default=None,
         description="Whether automatic garbage segment cleanup is enabled",
     )
-    garbage_cleanup_threshold: Optional[int] = Field(
+    garbage_cleanup_threshold: int | None = Field(
         default=None,
         ge=0,
         le=100,
         description="Confidence threshold (0-100) below which segments are flagged as garbage",
     )
-    source_language: Optional[str] = Field(
+    source_language: str | None = Field(
         default=None,
         description="Source language hint for transcription (ISO 639-1 code or 'auto')",
     )
-    translate_to_english: Optional[bool] = Field(
+    translate_to_english: bool | None = Field(
         default=None,
         description="Whether to translate non-English audio to English",
     )
-    llm_output_language: Optional[str] = Field(
+    llm_output_language: str | None = Field(
         default=None,
         description="Language for LLM-generated summaries and analysis (ISO 639-1 code)",
     )
     # VAD settings
-    vad_threshold: Optional[float] = Field(
+    vad_threshold: float | None = Field(
         default=None, ge=0.1, le=0.95, description="Speech detection sensitivity"
     )
-    vad_min_silence_ms: Optional[int] = Field(
+    vad_min_silence_ms: int | None = Field(
         default=None, ge=100, le=5000, description="Min silence (ms) to split segments"
     )
-    vad_min_speech_ms: Optional[int] = Field(
+    vad_min_speech_ms: int | None = Field(
         default=None, ge=50, le=5000, description="Min speech (ms) to keep a segment"
     )
-    vad_speech_pad_ms: Optional[int] = Field(
+    vad_speech_pad_ms: int | None = Field(
         default=None, ge=0, le=2000, description="Padding (ms) around speech"
     )
     # Accuracy settings
-    hallucination_silence_threshold: Optional[float] = Field(
+    hallucination_silence_threshold: float | None = Field(
         default=None, ge=0.5, le=10.0, description="Skip hallucinated text during silence >= Ns"
     )
-    repetition_penalty: Optional[float] = Field(
+    repetition_penalty: float | None = Field(
         default=None, ge=1.0, le=2.0, description="Penalize repetitive output"
     )
     # Diarization control
-    diarization_source: Optional[str] = Field(
+    diarization_source: str | None = Field(
         default=None,
         description="Diarization source: 'provider', 'local', 'pyannote', or 'off'",
     )

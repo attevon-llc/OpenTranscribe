@@ -12,7 +12,6 @@ Performance Notes:
 """
 
 from typing import Any
-from typing import TypeVar
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -31,10 +30,8 @@ from app.models.prompt import SummaryPrompt
 from app.models.user import User
 from app.models.user_llm_settings import UserLLMSettings
 
-T = TypeVar("T")
 
-
-def get_by_uuid(
+def get_by_uuid[T](
     db: Session,
     model: type[T],
     uuid: UUID | str,
@@ -79,7 +76,7 @@ def get_by_uuid(
     return instance  # type: ignore[no-any-return]
 
 
-def get_by_uuid_optional(
+def get_by_uuid_optional[T](
     db: Session,
     model: type[T],
     uuid: UUID | str | None,
@@ -108,7 +105,7 @@ def get_by_uuid_optional(
     return db.query(model).filter(model.uuid == uuid).first()  # type: ignore[attr-defined, no-any-return]
 
 
-def uuid_to_id(db: Session, model: type[T], uuid: UUID | str) -> int:
+def uuid_to_id[T](db: Session, model: type[T], uuid: UUID | str) -> int:
     """
     Convert UUID to internal integer ID.
 

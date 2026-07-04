@@ -82,7 +82,7 @@ def _bulk_update_embeddings(
 ) -> None:
     """Bulk update embeddings in OpenSearch."""
     bulk_body: list[dict[str, Any]] = []
-    for doc_id, normalized in zip(doc_ids, normalized_embeddings):
+    for doc_id, normalized in zip(doc_ids, normalized_embeddings, strict=True):
         bulk_body.append({"update": {"_index": index_name, "_id": doc_id}})
         bulk_body.append({"doc": {"embedding": normalized}})
 

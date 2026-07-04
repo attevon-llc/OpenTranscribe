@@ -8,7 +8,6 @@ The primary hash calculation happens client-side (frontend) for efficiency.
 """
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +15,8 @@ logger = logging.getLogger(__name__)
 
 
 async def check_duplicate_by_hash(
-    db_session, file_hash: str, user_id: Optional[int] = None
-) -> Optional[str]:
+    db_session, file_hash: str, user_id: int | None = None
+) -> str | None:
     """
     Check if a file with the same hash exists in the database.
     Only considers files that are not in failed states and have actually been uploaded.
@@ -73,7 +72,7 @@ async def check_duplicate_by_hash(
     return None
 
 
-def check_duplicate_by_imohash(db_session, imohash: str, exclude_file_id: Optional[int] = None):
+def check_duplicate_by_imohash(db_session, imohash: str, exclude_file_id: int | None = None):
     """Check whether a file with the same imohash fingerprint already exists.
 
     This is the server-side, cross-pipeline dedup layer (manual upload, URL

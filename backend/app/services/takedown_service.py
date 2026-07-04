@@ -28,8 +28,8 @@ are behavior-preserving no-ops for files that were never taken down.
 """
 
 import logging
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
@@ -117,7 +117,7 @@ def quarantine_file(
     """
     file.is_quarantined = True
     file.quarantine_reason = reason
-    file.quarantined_at = datetime.now(timezone.utc)
+    file.quarantined_at = datetime.now(UTC)
     file.quarantined_by = admin.id
     # Preserve the true prior status ONCE (re-quarantine must not overwrite it
     # with QUARANTINED) so release can restore the file's actual state.

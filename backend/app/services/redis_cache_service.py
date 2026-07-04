@@ -18,7 +18,6 @@ Cache key conventions:
 import json
 import logging
 from typing import Any
-from typing import Optional
 
 from app.core.config import settings
 
@@ -81,7 +80,7 @@ class RedisCacheService:
     # Core cache operations
     # ------------------------------------------------------------------
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Retrieve a cached value. Returns None on miss or error."""
         client = self.redis
         if client is None:

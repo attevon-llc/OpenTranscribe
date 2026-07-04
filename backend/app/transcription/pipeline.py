@@ -7,8 +7,8 @@ This file exists so existing imports of TranscriptionPipeline continue to work.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
-from typing import Callable
 
 from app.transcription.config import TranscriptionConfig
 

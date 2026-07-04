@@ -27,8 +27,8 @@ Classes:
 """
 
 import logging
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 
 from sqlalchemy.orm import Session
 
@@ -247,14 +247,14 @@ class AnalyticsService:
             if existing_analytics:
                 # Update existing analytics
                 existing_analytics.overall_analytics = analytics_data  # type: ignore[assignment]
-                existing_analytics.computed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                existing_analytics.computed_at = datetime.now(UTC)  # type: ignore[assignment]
                 existing_analytics.version = "1.0"  # type: ignore[assignment]
             else:
                 # Create new analytics record
                 new_analytics = Analytics(
                     media_file_id=media_file_id,
                     overall_analytics=analytics_data,
-                    computed_at=datetime.now(timezone.utc),
+                    computed_at=datetime.now(UTC),
                     version="1.0",
                 )
                 db.add(new_analytics)

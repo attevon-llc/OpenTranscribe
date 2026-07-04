@@ -10,6 +10,7 @@ and speaker_analysis_models.GenderModelAdapter for model abstraction.
 
 import json
 import logging
+from datetime import UTC
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_ATTRIBUTE_MIGRATION_COMPLETE
@@ -117,7 +118,6 @@ def _gender_result_writer(
     those with no valid segments, so they don't perpetually show as pending.
     """
     from datetime import datetime
-    from datetime import timezone
 
     from app.models.media import Speaker
 
@@ -136,7 +136,7 @@ def _gender_result_writer(
         speaker_clip_counts[sr.speaker_id] += 1
 
     # Write to DB — mark ALL speakers as attempted
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     predicted_count = 0
 
     with session_scope() as db:

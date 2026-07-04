@@ -12,8 +12,8 @@ The service provides intelligent embedding aggregation that:
 """
 
 import logging
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
 from typing import Any
 
 import numpy as np
@@ -96,7 +96,7 @@ def _process_profile_with_no_speakers(
 ) -> bool:
     """Handle case when profile has no speakers assigned."""
     profile.embedding_count = 0  # type: ignore[assignment]
-    profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
+    profile.last_embedding_update = datetime.now(UTC)  # type: ignore[assignment]
     _clear_profile_embedding_from_opensearch(profile_id)
     return True
 
@@ -110,7 +110,7 @@ def _process_profile_with_embeddings(
     averaged_embedding = _calculate_average_embedding(embeddings)
 
     profile.embedding_count = len(embeddings)  # type: ignore[assignment]
-    profile.last_embedding_update = datetime.now(timezone.utc)  # type: ignore[assignment]
+    profile.last_embedding_update = datetime.now(UTC)  # type: ignore[assignment]
 
     _store_profile_embedding_to_opensearch(
         profile_id=profile_id,

@@ -10,11 +10,10 @@ import logging
 import os
 import uuid
 from contextvars import ContextVar
+from datetime import UTC
 from datetime import datetime
-from datetime import timezone
-from enum import Enum
+from enum import StrEnum
 from typing import Any
-from typing import Optional
 
 from app.core.config import settings
 
@@ -22,7 +21,7 @@ from app.core.config import settings
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 
 
-class AuditEventType(str, Enum):
+class AuditEventType(StrEnum):
     """Audit event types for FedRAMP compliance."""
 
     # Authentication events
@@ -80,7 +79,7 @@ class AuditEventType(str, Enum):
     AUTH_BANNER_ACKNOWLEDGED = "auth.banner.acknowledged"
 
 
-class AuditOutcome(str, Enum):
+class AuditOutcome(StrEnum):
     """Audit event outcomes."""
 
     SUCCESS = "success"
@@ -204,7 +203,7 @@ class AuditLogger:
             return
 
         try:
-            index_name = f"audit-logs-{datetime.now(timezone.utc).strftime('%Y.%m')}"
+            index_name = f"audit-logs-{datetime.now(UTC).strftime('%Y.%m')}"
 
             # Ensure index exists with proper mappings
             if not client.indices.exists(index=index_name):
@@ -245,13 +244,13 @@ class AuditLogger:
         self,
         event_type: AuditEventType,
         outcome: AuditOutcome,
-        user_id: Optional[int] = None,
-        username: Optional[str] = None,
-        source_ip: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        error_code: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
-        organization_id: Optional[int] = None,
+        user_id: int | None = None,
+        username: str | None = None,
+        source_ip: str | None = None,
+        user_agent: str | None = None,
+        error_code: str | None = None,
+        details: dict[str, Any] | None = None,
+        organization_id: int | None = None,
     ) -> None:
         """
         Log an audit event.
@@ -277,7 +276,7 @@ class AuditLogger:
             return
 
         event = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "request_id": request_id_var.get() or str(uuid.uuid4()),
             "event_type": event_type.value
             if isinstance(event_type, AuditEventType)
@@ -369,7 +368,7 @@ class AuditLogger:
         username: str,
         source_ip: str,
         user_agent: str,
-        error_code: Optional[str] = None,
+        error_code: str | None = None,
     ) -> None:
         """Log an MFA-related event."""
         self.log(
@@ -446,8 +445,8 @@ class AuditLogger:
         admin_username: str,
         source_ip: str,
         user_agent: str,
-        target_user_id: Optional[int] = None,
-        details: Optional[dict] = None,
+        target_user_id: int | None = None,
+        details: dict | None = None,
     ) -> None:
         """Log an administrative action."""
         event_details = details or {}
@@ -486,7 +485,7 @@ class AuditLogger:
 audit_logger = AuditLogger()
 
 
-def request_org_id(request: Any) -> Optional[int]:
+def request_org_id(request: Any) -> int | None:
     """Return the request's resolved LOCAL org id for audit stamping, or None.
 
     ``request.state.org_id`` transiently holds the provider's RAW external org
@@ -522,9 +521,7 @@ def _build_audit_opensearch_client():
         return None
 
 
-def build_org_scope_clause(
-    scope_org_id: int, scope_user_ids: Optional[list[int]]
-) -> dict[str, Any]:
+def build_org_scope_clause(scope_org_id: int, scope_user_ids: list[int] | None) -> dict[str, Any]:
     """Build the org-admin visibility clause for the audit-log query.
 
     Visible to an admin of ``scope_org_id``:
@@ -561,13 +558,13 @@ def build_org_scope_clause(
 
 def query_audit_logs(
     *,
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
-    event_type: Optional[str] = None,
-    user_id: Optional[int] = None,
-    outcome: Optional[str] = None,
-    scope_user_ids: Optional[list[int]] = None,
-    scope_org_id: Optional[int] = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+    event_type: str | None = None,
+    user_id: int | None = None,
+    outcome: str | None = None,
+    scope_user_ids: list[int] | None = None,
+    scope_org_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:

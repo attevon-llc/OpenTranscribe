@@ -8,7 +8,6 @@ Twitter/X, TikTok, and 1800+ other platforms supported by yt-dlp.
 import logging
 import re
 from typing import Any
-from typing import Union
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -137,7 +136,7 @@ class PlaylistProcessingResponse(BaseModel):
 
 
 # Union type for endpoint response - can be either a MediaFile or PlaylistProcessingResponse
-URLProcessingResponse = Union[MediaFileSchema, PlaylistProcessingResponse]
+URLProcessingResponse = MediaFileSchema | PlaylistProcessingResponse
 
 
 # Generic URL pattern for any HTTP/HTTPS URL

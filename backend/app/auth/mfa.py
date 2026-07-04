@@ -28,7 +28,6 @@ import hashlib
 import io
 import logging
 import secrets
-from typing import Optional
 
 import pyotp
 import qrcode
@@ -208,7 +207,7 @@ class MFAService:
         return decrypted
 
     @staticmethod
-    def get_provisioning_uri(secret: str, email: str, issuer_name: Optional[str] = None) -> str:
+    def get_provisioning_uri(secret: str, email: str, issuer_name: str | None = None) -> str:
         """
         Generate a provisioning URI for authenticator apps.
 
@@ -320,7 +319,7 @@ class MFAService:
             return False
 
     @staticmethod
-    def generate_backup_codes(count: Optional[int] = None) -> list[str]:
+    def generate_backup_codes(count: int | None = None) -> list[str]:
         """
         Generate cryptographically secure one-time use backup codes.
 
@@ -371,7 +370,7 @@ class MFAService:
         return backup_code_context.hash(normalized)  # type: ignore[no-any-return]
 
     @staticmethod
-    def verify_backup_code(code: str, hashed_codes: list[str]) -> tuple[bool, Optional[str]]:
+    def verify_backup_code(code: str, hashed_codes: list[str]) -> tuple[bool, str | None]:
         """
         Verify a backup code against a list of hashed codes.
 

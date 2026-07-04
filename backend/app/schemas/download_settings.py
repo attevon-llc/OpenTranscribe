@@ -5,8 +5,6 @@ These schemas define the request/response models for user-level download
 preferences including video quality, audio-only mode, and audio bitrate.
 """
 
-from typing import Optional
-
 from pydantic import BaseModel
 from pydantic import Field
 
@@ -46,15 +44,15 @@ class DownloadSettings(BaseModel):
 class DownloadSettingsUpdate(BaseModel):
     """Request schema for updating user download settings. All fields optional."""
 
-    video_quality: Optional[str] = Field(
+    video_quality: str | None = Field(
         default=None,
         description="Video quality preference for URL downloads",
     )
-    audio_only: Optional[bool] = Field(
+    audio_only: bool | None = Field(
         default=None,
         description="Download only audio (no video)",
     )
-    audio_quality: Optional[str] = Field(
+    audio_quality: str | None = Field(
         default=None,
         description="Audio bitrate preference for audio-only downloads",
     )

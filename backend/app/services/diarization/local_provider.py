@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from .base import DiarizationProvider
 from .types import DiarizeConfig
@@ -83,7 +83,7 @@ class LocalDiarizationProvider(DiarizationProvider):
         import numpy as np
 
         segments: list[DiarizeSegment] = []
-        for s, e, sp in zip(diarize_df.start, diarize_df.end, diarize_df.speaker):
+        for s, e, sp in zip(diarize_df.start, diarize_df.end, diarize_df.speaker, strict=True):
             segments.append(
                 DiarizeSegment(
                     start=float(s),

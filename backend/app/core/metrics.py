@@ -92,6 +92,10 @@ files_uploaded_total: Counter
 backup_runs_total: Counter
 backup_last_success_timestamp_seconds: Gauge
 backup_last_status: Gauge
+media_mirror_runs_total: Counter
+media_mirror_last_success_timestamp_seconds: Gauge
+media_mirror_last_status: Gauge
+media_mirror_last_run_objects: Gauge
 
 
 def _register() -> None:
@@ -109,6 +113,10 @@ def _register() -> None:
     global backup_runs_total
     global backup_last_success_timestamp_seconds
     global backup_last_status
+    global media_mirror_runs_total
+    global media_mirror_last_success_timestamp_seconds
+    global media_mirror_last_status
+    global media_mirror_last_run_objects
 
     if _COLLECTORS_REGISTERED:
         return
@@ -178,6 +186,30 @@ def _register() -> None:
         "backup_last_status",
         "1 when the most recent backup run succeeded, 0 when it failed "
         "(0 also before any run — gate alerts on backup_runs_total > 0).",
+    )
+    # Media mirror (issue #242) — same sample-at-scrape pattern as the backup
+    # collectors above (state persisted to SystemSettings by the download-queue
+    # worker, projected here by app.core.backup_metrics.update_media_mirror_metrics).
+    media_mirror_runs_total = Counter(
+        "media_mirror_runs_total",
+        "Scheduled/manual media mirror runs by result (synced from the DB at scrape).",
+        ["result"],
+    )
+    media_mirror_last_success_timestamp_seconds = Gauge(
+        "media_mirror_last_success_timestamp_seconds",
+        "Unix timestamp of the last successful media mirror run "
+        "(0 = never; alert on time() - this > N).",
+    )
+    media_mirror_last_status = Gauge(
+        "media_mirror_last_status",
+        "1 when the most recent media mirror run succeeded, 0 when it failed "
+        "(0 also before any run — gate alerts on media_mirror_runs_total > 0).",
+    )
+    media_mirror_last_run_objects = Gauge(
+        "media_mirror_last_run_objects",
+        "Object counts from the most recent media mirror run by outcome "
+        "(copied/skipped/failed/excluded).",
+        ["outcome"],
     )
 
     _COLLECTORS_REGISTERED = True

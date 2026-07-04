@@ -474,6 +474,23 @@ DEFAULT_BACKUP_S3_BUCKET = ""  # target bucket (must already exist)
 DEFAULT_BACKUP_S3_PREFIX = "opentranscribe/"  # key prefix within the bucket
 DEFAULT_BACKUP_S3_ACCESS_KEY_ID = ""
 
+# Incremental MinIO media mirror (issue #242) — copies the irreplaceable originals
+# (media bucket, minus regenerable prefixes) to a second location on a schedule.
+# Same conventions as the DB backup above: DB-backed SystemSettings (backup.mirror_*),
+# coded defaults here, NO .env vars beyond the physical mount BACKUP_MIRROR_HOST_PATH
+# (docker-compose.backup.yml → container path DEFAULT_BACKUP_MIRROR_DESTINATION).
+# The mirror NEVER deletes destination objects (fat-finger/ransomware protection).
+DEFAULT_BACKUP_MIRROR_ENABLED = False  # opt-in: reads the whole media bucket
+DEFAULT_BACKUP_MIRROR_SCHEDULE = "30 3 * * *"  # nightly, offset from the 03:00 DB dump
+DEFAULT_BACKUP_MIRROR_DESTINATION_TYPE = "local"  # "local" | "s3"
+DEFAULT_BACKUP_MIRROR_DESTINATION = "/media-mirror"  # container path; mount a host dir here
+DEFAULT_BACKUP_MIRROR_THROTTLE_MS = 0  # inter-object sleep (ms) to cap I/O pressure
+DEFAULT_BACKUP_MIRROR_S3_ENDPOINT_URL = ""  # empty = real AWS S3; set for MinIO/B2/etc.
+DEFAULT_BACKUP_MIRROR_S3_REGION = ""
+DEFAULT_BACKUP_MIRROR_S3_BUCKET = ""  # target bucket (must already exist)
+DEFAULT_BACKUP_MIRROR_S3_PREFIX = "opentranscribe-media/"  # key prefix within the bucket
+DEFAULT_BACKUP_MIRROR_S3_ACCESS_KEY_ID = ""
+
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
 DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)
 DEFAULT_VAD_MIN_SILENCE_MS = 2000  # Min silence to split segments (ms)

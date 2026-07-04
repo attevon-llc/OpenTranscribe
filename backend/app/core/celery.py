@@ -211,6 +211,10 @@ celery_app.conf.update(
         # Scheduled database backups (Feature C)
         "backup.check_schedule": {"queue": CeleryQueues.UTILITY},
         "backup.run": {"queue": CeleryQueues.UTILITY},
+        # Media mirror (issue #242): due-check is lightweight (utility); the run is
+        # bulk object I/O → download queue (NEVER the gpu queue).
+        "backup.mirror_check_schedule": {"queue": CeleryQueues.UTILITY},
+        "backup.mirror_run": {"queue": CeleryQueues.DOWNLOAD},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -275,6 +279,13 @@ celery_app.conf.update(
             # decides (against the stored cron + last_run_at) whether a backup is
             # due — fully DB-driven, no beat restart when the schedule changes.
             "schedule": crontab(minute="*/5"),
+            "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
+        },
+        "media-mirror-check-schedule": {
+            "task": "backup.mirror_check_schedule",
+            # Same DB-driven due-check pattern for the media mirror (issue #242);
+            # offset from the backup check so both never contend on the same tick.
+            "schedule": crontab(minute="2-59/5"),
             "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
         },
     },

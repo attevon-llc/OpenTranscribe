@@ -17,6 +17,7 @@ from prometheus_client import generate_latest
 from starlette.responses import Response
 
 from app.core.backup_metrics import update_backup_metrics
+from app.core.backup_metrics import update_media_mirror_metrics
 from app.core.celery_metrics import update_queue_depths
 
 router = APIRouter()
@@ -27,4 +28,5 @@ def metrics() -> Response:
     """Render all registered collectors in the Prometheus text exposition format."""
     update_queue_depths()
     update_backup_metrics()
+    update_media_mirror_metrics()
     return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)

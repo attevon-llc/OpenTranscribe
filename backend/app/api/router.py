@@ -18,6 +18,7 @@ from .endpoints import groups
 from .endpoints import llm_settings
 from .endpoints import llm_status
 from .endpoints import media_collections
+from .endpoints import media_mirror_settings
 from .endpoints import org_admin
 from .endpoints import prompts
 from .endpoints import redaction_settings
@@ -159,6 +160,9 @@ include_router_with_consistency(
     redaction_settings.admin_router, prefix="/admin/redaction-policy", tags=["admin"]
 )
 include_router_with_consistency(backup_settings.router, prefix="/admin/backup", tags=["admin"])
+include_router_with_consistency(
+    media_mirror_settings.router, prefix="/admin/backup/mirror", tags=["admin"]
+)
 include_router_with_consistency(topics.router, prefix="/files", tags=["topics"])
 include_router_with_consistency(
     transcript_segments.router, prefix="/transcripts", tags=["transcript-segments"]

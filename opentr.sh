@@ -1065,15 +1065,19 @@ start_app() {
     fi
   fi
 
-  # Add Backup overlay if requested (mounts BACKUP_HOST_PATH for scheduled backups)
+  # Add Backup overlay if requested (mounts BACKUP_HOST_PATH for scheduled backups
+  # and BACKUP_MIRROR_HOST_PATH for the incremental media mirror, issue #242)
   if [ -n "$WITH_BACKUP_FLAG" ]; then
     if [ -f "docker-compose.backup.yml" ]; then
       BACKUP_HOST_PATH="${BACKUP_HOST_PATH:-./backups}"
+      BACKUP_MIRROR_HOST_PATH="${BACKUP_MIRROR_HOST_PATH:-./media-mirror}"
       mkdir -p "$BACKUP_HOST_PATH" 2>/dev/null || true
-      export BACKUP_HOST_PATH
+      mkdir -p "$BACKUP_MIRROR_HOST_PATH" 2>/dev/null || true
+      export BACKUP_HOST_PATH BACKUP_MIRROR_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.backup.yml"
       echo "💾 Adding Backup overlay (docker-compose.backup.yml)"
       echo "   Backup destination: $BACKUP_HOST_PATH → /backups (configure in admin UI → Backups)"
+      echo "   Media mirror:       $BACKUP_MIRROR_HOST_PATH → /media-mirror (admin UI → Backups → Media Mirror)"
     else
       echo "⚠️  --with-backup specified but docker-compose.backup.yml not found"
     fi
@@ -1567,15 +1571,19 @@ reset_and_init() {
     fi
   fi
 
-  # Add Backup overlay if requested (mounts BACKUP_HOST_PATH for scheduled backups)
+  # Add Backup overlay if requested (mounts BACKUP_HOST_PATH for scheduled backups
+  # and BACKUP_MIRROR_HOST_PATH for the incremental media mirror, issue #242)
   if [ -n "$WITH_BACKUP_FLAG" ]; then
     if [ -f "docker-compose.backup.yml" ]; then
       BACKUP_HOST_PATH="${BACKUP_HOST_PATH:-./backups}"
+      BACKUP_MIRROR_HOST_PATH="${BACKUP_MIRROR_HOST_PATH:-./media-mirror}"
       mkdir -p "$BACKUP_HOST_PATH" 2>/dev/null || true
-      export BACKUP_HOST_PATH
+      mkdir -p "$BACKUP_MIRROR_HOST_PATH" 2>/dev/null || true
+      export BACKUP_HOST_PATH BACKUP_MIRROR_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.backup.yml"
       echo "💾 Adding Backup overlay (docker-compose.backup.yml)"
       echo "   Backup destination: $BACKUP_HOST_PATH → /backups (configure in admin UI → Backups)"
+      echo "   Media mirror:       $BACKUP_MIRROR_HOST_PATH → /media-mirror (admin UI → Backups → Media Mirror)"
     else
       echo "⚠️  --with-backup specified but docker-compose.backup.yml not found"
     fi

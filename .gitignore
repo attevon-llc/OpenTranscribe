@@ -41,6 +41,7 @@ backend/VERSION
 *.log
 logs/
 backups/
+media-mirror/
 temp/
 npm-debug.log*
 yarn-debug.log*

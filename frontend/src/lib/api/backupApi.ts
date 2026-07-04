@@ -25,6 +25,13 @@ export interface OpenSearchSnapshotStatus {
   last_snapshot?: string | null;
 }
 
+export interface RecoveryCompanionResult {
+  status: string; // keys_included | readme_written | error
+  filename?: string | null;
+  path?: string | null;
+  error?: string | null;
+}
+
 export interface BackupResult {
   ok: boolean;
   status: string;
@@ -35,8 +42,10 @@ export interface BackupResult {
   duration_s?: number | null;
   encrypted?: boolean | null;
   pruned?: string[] | null;
+  prune_error?: string | null;
   started_at?: string | null;
   opensearch?: OpenSearchSnapshotResult | null;
+  recovery?: RecoveryCompanionResult | null;
 }
 
 export interface DestinationStatus {

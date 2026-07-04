@@ -543,6 +543,31 @@
           <div class="status-error">{lastResult.opensearch.error}</div>
         {/if}
       {/if}
+      {#if lastResult?.prune_error}
+        <div class="status-item">
+          <span class="status-label">{$t('settings.backup.pruneSection')}:</span>
+          <span class="status-badge bad" title={lastResult.prune_error}>{$t('settings.backup.pruneFailed')}</span>
+        </div>
+        <div class="status-error">{lastResult.prune_error}</div>
+      {/if}
+      {#if lastResult?.recovery}
+        <div class="status-item">
+          <span class="status-label">{$t('settings.backup.recoverySection')}:</span>
+          {#if lastResult.recovery.status === 'keys_included'}
+            <span class="status-badge ok">{$t('settings.backup.recoveryKeysIncluded')}</span>
+          {:else if lastResult.recovery.status === 'readme_written'}
+            <span class="status-value">{$t('settings.backup.recoveryReadmeWritten')}</span>
+          {:else}
+            <span class="status-badge bad" title={lastResult.recovery.error ?? ''}>{$t('settings.backup.recoveryFailed')}</span>
+          {/if}
+        </div>
+        {#if lastResult.recovery.status === 'readme_written'}
+          <div class="field-hint">{$t('settings.backup.recoveryKeysHint')}</div>
+        {/if}
+        {#if lastResult.recovery.status === 'error' && lastResult.recovery.error}
+          <div class="status-error">{lastResult.recovery.error}</div>
+        {/if}
+      {/if}
     </div>
 
     <!-- Actions -->

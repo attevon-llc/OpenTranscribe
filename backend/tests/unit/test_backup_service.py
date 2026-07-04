@@ -456,14 +456,17 @@ def test_s3_backup_success_uploads_and_cleans_temp(db_session, tmp_path):
     assert result["ok"] is True
     assert result["status"] == "success"
     assert result["path"].startswith("s3://backups/ot/")
-    # The object landed in the bucket under the prefix.
-    assert len(fake.uploaded) == 1
+    # The dump landed in the bucket under the prefix, plus the recovery README (#243).
+    assert len(fake.uploaded) == 2
     bucket, key = fake.uploaded[0]
     assert bucket == "backups"
     assert key.startswith("ot/opentranscribe-")
     assert key.endswith(".dump")
-    # No temp dump left behind in the scratch dir.
+    assert fake.uploaded[1] == ("backups", "ot/RECOVERY-README.txt")
+    assert result["recovery"]["status"] == "readme_written"
+    # No temp dump (or recovery artifact) left behind in the scratch dir.
     assert list(Path(tmp_path).glob("*.dump")) == []
+    assert not (tmp_path / "RECOVERY-README.txt").exists()
 
 
 def test_s3_backup_prunes_bucket(db_session, tmp_path):
@@ -567,3 +570,215 @@ def test_list_backups_s3_parses_and_sorts(db_session):
     assert listed[0]["filename"] == "opentranscribe-20260603-030000.dump.gpg"
     assert listed[0]["encrypted"] is True
     assert listed[1]["filename"] == "opentranscribe-20260601-030000.dump"
+
+
+# =============================================================================
+# Prune-failure isolation (#244): a failed prune warns but never fails the run
+# =============================================================================
+def test_prune_failure_does_not_fail_local_backup(db_session, tmp_path):
+    bs.update_settings(db_session, destination=str(tmp_path), encrypt=False)
+
+    with (
+        mock.patch("app.services.backup_service.subprocess.run", side_effect=_pgdump_writes()),
+        mock.patch("app.services.backup_service.prune_backups", side_effect=OSError("disk gone")),
+    ):
+        result = bs.perform_backup(db_session)
+
+    assert result["ok"] is True
+    assert result["status"] == "success"
+    assert result["pruned"] == []
+    assert "disk gone" in result["prune_error"]
+    # The warning is persisted for the admin UI.
+    assert bs.get_settings(db_session)["last_result"]["prune_error"] == result["prune_error"]
+
+
+def test_prune_failure_does_not_fail_s3_backup(db_session, tmp_path):
+    bs.update_settings(
+        db_session, destination_type="s3", destination=str(tmp_path), s3_bucket="backups"
+    )
+
+    with (
+        mock.patch("app.services.backup_service.subprocess.run", side_effect=_pgdump_writes()),
+        mock.patch("app.services.backup_service._build_s3_client", return_value=_FakeS3Client()),
+        mock.patch(
+            "app.services.backup_service.prune_backups_s3",
+            side_effect=RuntimeError("list denied"),
+        ),
+    ):
+        result = bs.perform_backup(db_session)
+
+    assert result["ok"] is True
+    assert "list denied" in result["prune_error"]
+
+
+# =============================================================================
+# Recovery companion (#243)
+# =============================================================================
+def _pgdump_and_gpg_writes(payload=b"FAKE PGDUMP DATA"):
+    """Fake subprocess.run handling both pg_dump (stdout) and gpg (--output file)."""
+
+    def fake_run(cmd, **kwargs):
+        if cmd[0] == "pg_dump":
+            out = kwargs.get("stdout")
+            if out is not None:
+                out.write(payload)
+                out.flush()
+        elif cmd[0] == "gpg":
+            out_path = Path(cmd[cmd.index("--output") + 1])
+            out_path.write_bytes(b"GPG ENCRYPTED")
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    return fake_run
+
+
+def test_recovery_readme_written_when_unencrypted(db_session, tmp_path):
+    from app.core.config import settings as app_settings
+    from app.services import backup_recovery
+
+    bs.update_settings(db_session, destination=str(tmp_path), encrypt=False)
+    sentinel = "SENTINEL-ENCRYPTION-KEY-VALUE"
+
+    with (
+        mock.patch.object(app_settings, "ENCRYPTION_KEY", sentinel),
+        mock.patch("app.services.backup_service.subprocess.run", side_effect=_pgdump_writes()),
+    ):
+        result = bs.perform_backup(db_session)
+
+    assert result["ok"] is True
+    assert result["recovery"] == {
+        "status": "readme_written",
+        "filename": backup_recovery.README_NAME,
+    }
+    readme = (tmp_path / backup_recovery.README_NAME).read_text()
+    # The README names the keys + fingerprints but NEVER contains the values.
+    assert "ENCRYPTION_KEY" in readme
+    assert "JWT_SECRET_KEY" in readme
+    assert sentinel not in readme
+    assert backup_recovery.key_fingerprint(sentinel) in readme
+
+
+def test_recovery_companion_written_when_encrypted(db_session, tmp_path):
+    from app.services import backup_recovery
+
+    pass_file = tmp_path / ".pass"
+    pass_file.write_text("hunter2\n")
+    bs.update_settings(
+        db_session, destination=str(tmp_path), encrypt=True, passphrase_file=str(pass_file)
+    )
+
+    with mock.patch(
+        "app.services.backup_service.subprocess.run", side_effect=_pgdump_and_gpg_writes()
+    ):
+        result = bs.perform_backup(db_session)
+
+    assert result["ok"] is True
+    assert result["encrypted"] is True
+    assert result["recovery"] == {
+        "status": "keys_included",
+        "filename": backup_recovery.COMPANION_NAME,
+    }
+    assert (tmp_path / backup_recovery.COMPANION_NAME).is_file()
+    # No plaintext staging file or README left beside the encrypted companion.
+    assert list(tmp_path.glob("*.tmp")) == []
+    assert not (tmp_path / backup_recovery.README_NAME).exists()
+
+
+def test_recovery_companion_uploaded_to_s3(db_session, tmp_path):
+    from app.services import backup_recovery
+
+    pass_file = tmp_path / ".pass"
+    pass_file.write_text("hunter2\n")
+    bs.update_settings(
+        db_session,
+        destination_type="s3",
+        destination=str(tmp_path),
+        s3_bucket="backups",
+        s3_prefix="ot/",
+        encrypt=True,
+        passphrase_file=str(pass_file),
+    )
+    fake = _FakeS3Client()
+
+    with (
+        mock.patch(
+            "app.services.backup_service.subprocess.run", side_effect=_pgdump_and_gpg_writes()
+        ),
+        mock.patch("app.services.backup_service._build_s3_client", return_value=fake),
+    ):
+        result = bs.perform_backup(db_session)
+
+    assert result["ok"] is True
+    assert ("backups", f"ot/{backup_recovery.COMPANION_NAME}") in fake.uploaded
+    assert result["recovery"]["status"] == "keys_included"
+    assert result["recovery"]["path"] == f"s3://backups/ot/{backup_recovery.COMPANION_NAME}"
+    # Local scratch copy removed after upload.
+    assert not (tmp_path / backup_recovery.COMPANION_NAME).exists()
+
+
+def test_recovery_companion_failure_never_fails_backup(db_session, tmp_path):
+    bs.update_settings(db_session, destination=str(tmp_path), encrypt=False)
+
+    with (
+        mock.patch("app.services.backup_service.subprocess.run", side_effect=_pgdump_writes()),
+        mock.patch(
+            "app.services.backup_recovery.write_readme",
+            return_value={"status": "error", "error": "read-only fs"},
+        ),
+    ):
+        result = bs.perform_backup(db_session)
+
+    assert result["ok"] is True
+    assert result["recovery"]["status"] == "error"
+
+
+def test_no_key_material_in_logs(db_session, tmp_path, caplog):
+    from app.core.config import settings as app_settings
+
+    pass_file = tmp_path / ".pass"
+    pass_file.write_text("hunter2\n")
+    bs.update_settings(
+        db_session, destination=str(tmp_path), encrypt=True, passphrase_file=str(pass_file)
+    )
+    enc_sentinel = "SENTINEL-ENCRYPTION-KEY-VALUE"
+    jwt_sentinel = "SENTINEL-JWT-SECRET-VALUE"
+
+    with (
+        caplog.at_level("DEBUG"),
+        mock.patch.object(app_settings, "ENCRYPTION_KEY", enc_sentinel),
+        mock.patch.object(app_settings, "JWT_SECRET_KEY", jwt_sentinel),
+        mock.patch(
+            "app.services.backup_service.subprocess.run", side_effect=_pgdump_and_gpg_writes()
+        ),
+    ):
+        result = bs.perform_backup(db_session)
+
+    assert result["ok"] is True
+    assert enc_sentinel not in caplog.text
+    assert jwt_sentinel not in caplog.text
+    assert "hunter2" not in caplog.text
+    # And key values never land in the persisted result either.
+    raw = sss.get_setting(db_session, bs.KEY_LAST_RESULT)
+    assert raw is not None
+    assert enc_sentinel not in raw
+    assert jwt_sentinel not in raw
+
+
+# =============================================================================
+# Run bookkeeping for metrics (#244): counters + last-success timestamp
+# =============================================================================
+def test_record_result_updates_counters_and_last_success(db_session):
+    from app.models.system_settings import SystemSettings
+
+    db_session.query(SystemSettings).filter(SystemSettings.key.like("backup.%")).delete(
+        synchronize_session=False
+    )
+    with mock.patch("app.services.backup_alerts.notify_backup_result"):
+        bs._record_result(db_session, "2026-07-01T03:00:00+00:00", {"ok": True})
+        bs._record_result(db_session, "2026-07-02T03:00:00+00:00", {"ok": True})
+        bs._record_result(db_session, "2026-07-03T03:00:00+00:00", {"ok": False, "error": "x"})
+
+    assert sss.get_setting_int(db_session, bs.KEY_RUNS_SUCCESS) == 2
+    assert sss.get_setting_int(db_session, bs.KEY_RUNS_FAILURE) == 1
+    # last_success_at stays on the last OK run; last_run_at moves with every run.
+    assert sss.get_setting(db_session, bs.KEY_LAST_SUCCESS_AT) == "2026-07-02T03:00:00+00:00"
+    assert sss.get_setting(db_session, bs.KEY_LAST_RUN_AT) == "2026-07-03T03:00:00+00:00"

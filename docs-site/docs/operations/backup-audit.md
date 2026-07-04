@@ -29,10 +29,10 @@ below.
 | **PostgreSQL** (users, transcripts, segments, speakers, settings) | In-app scheduled `pg_dump -Fc` (GFS retention, optional gpg) to a local mount **or** S3-compatible bucket; manual `./opentr.sh backup [--encrypt]`; `restore` documented | Restore is documented but not automatically *verified* (no scheduled restore drill / checksum) | **Low** | Run the quarterly restore drill in [Backup & Restore](./backup-restore.md#testing-backups). Good as shipped. |
 | **MinIO media** (~484 GB, irreplaceable originals) | **Not** in the in-app backup system. Protected only by host RAID/NAS, which is *not* a backup (no offsite copy, no point-in-time recovery, no protection from deletion/ransomware/bit-rot) | No automated, off-host, point-in-time copy of the irreplaceable media | **High** (co-critical with Postgres) | Add an off-host media copy: `mc mirror` to another box/drive on a schedule, and/or S3 bucket **versioning** + an offsite replica. See [MinIO media](#2-minio-media--the-484-gb-gap). |
 | **OpenSearch** (search + vector indices) | Optional in-app `fs` snapshot alongside each dump (`backup.include_opensearch`); fully **rebuildable** from Postgres via reindex | None that matters — derived data | **Low** | Leave snapshots off unless you want to skip reindex time on restore. Confirmed adequate. |
-| **Configuration & Secrets** (`.env`: `ENCRYPTION_KEY`, `JWT_SECRET_KEY`, DB/MinIO creds; gpg passphrase) | **Nothing automated.** Keys are environment-sourced and are *not* part of any backup artifact | A DB backup is undecryptable without these keys; they are the single point of total data loss | **Critical** | Back up `.env` + gpg passphrase to a separate secure location (password manager / secrets vault). See [§4](#secrets-gap). |
+| **Configuration & Secrets** (`.env`: `ENCRYPTION_KEY`, `JWT_SECRET_KEY`, DB/MinIO creds; gpg passphrase) | **Addressed (#243):** encrypted runs write `opentranscribe-recovery.env.gpg` (the essential keys, same passphrase) beside the dumps; unencrypted runs write a no-secrets `RECOVERY-README.txt` + a one-time admin warning | With encryption off, keys must still be preserved separately (by design — no plaintext keys beside a plaintext dump) | **Low** (was Critical) | Keep the gpg passphrase in a password manager and verify keys in every restore drill. See [§4](#secrets-gap). |
 | **Redis** (Celery broker/cache) | Nothing — by design | None | **None** | Ephemeral. Tasks re-queue (acks-late). No backup needed. Confirmed. |
 | **Model cache** (~2.5 GB AI weights) | Nothing — by design | None | **None** | Re-downloaded on first use. Back up only for air-gapped installs. |
-| **Backup-failure visibility** | `backup.last_result` is recorded and readable on the admin Backups page | A **silently failing** scheduled backup is not surfaced via metric, notification, or banner — you only see it if you go look | **Medium** | Emit a Prometheus gauge + a notification on failure. See [§6](#6-backup-failure-visibility). |
+| **Backup-failure visibility** | **Addressed (#244):** failed runs send an admin WebSocket notification and land in `backup.last_result`; Prometheus exposes `backup_last_success_timestamp_seconds`, `backup_last_status`, and `backup_runs_total{result}` for staleness alerting | Alert rules are not pre-provisioned in Grafana — add one on last-success staleness | **Low** (was Medium) | Alert on `time() - backup_last_success_timestamp_seconds > N`. See [§6](#6-backup-failure-visibility). |
 
 ## 1. PostgreSQL — adequate
 
@@ -131,6 +131,15 @@ manager or secrets vault, **separately** from the database dumps (so a single co
 location can't expose both), and verify them as part of every restore drill. **Severity:
 Critical** — this is almost always the biggest real-world gap.
 
+**Status: addressed by issue #243.** Every successful scheduled run now writes a recovery
+companion beside the dumps: with backup encryption on, `opentranscribe-recovery.env.gpg`
+carries `ENCRYPTION_KEY` / `JWT_SECRET_KEY` (and `MINIO_KMS_SECRET_KEY` when set) under
+the same gpg passphrase, making the destination self-sufficient for restore; with
+encryption off, a no-secrets `RECOVERY-README.txt` (key names + SHA-256 fingerprints)
+documents what to preserve separately, and admins get a one-time warning notification.
+The **gpg passphrase itself** remains the one secret you must keep off the backup media.
+See [Backup & Restore](./backup-restore.md#recovery-keys-travel-with-the-backup).
+
 ## 5. Redis — no backup needed (confirmed)
 
 Redis is the Celery broker and a cache. Tasks are dispatched with **acks-late**, so
@@ -150,6 +159,15 @@ silently failing backup is **worse than no backup**, because it creates false co
 `backend/app/core/metrics.py` so the existing Grafana/Prometheus stack can alert on
 "no successful backup in N hours", and (b) send a notification when `last_result.ok` is
 false. **Severity: Medium.**
+
+**Status: addressed by issue #244.** The backend now exposes
+`backup_last_success_timestamp_seconds`, `backup_last_status`, and
+`backup_runs_total{result="success"|"failure"}` (persisted by the run task, projected onto
+`/metrics` at scrape time so they survive restarts), and every failed run — plus any
+success-with-warnings (prune / OpenSearch snapshot / recovery companion) — sends a
+`backup_status` WebSocket notification to all admins. Alerting example:
+`time() - backup_last_success_timestamp_seconds > 2 * 86400`. See
+[Backup & Restore](./backup-restore.md#failure-alerting-metrics--notifications).
 
 ## 3-2-1 for OpenTranscribe
 

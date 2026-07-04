@@ -53,6 +53,13 @@ KEY_PASSPHRASE_FILE = "backup.passphrase_file"  # noqa: S105  # nosec B105 - set
 KEY_INCLUDE_OPENSEARCH = "backup.include_opensearch"
 KEY_LAST_RUN_AT = "backup.last_run_at"
 KEY_LAST_RESULT = "backup.last_result"
+# Failure-surfacing state (issues #243/#244): cumulative run counts + last-success
+# timestamp back the scrape-time Prometheus refresh (core/backup_metrics.py); the
+# notice flag gates the one-time "backups exclude your encryption keys" admin warning.
+KEY_RUNS_SUCCESS = "backup.runs_success_total"
+KEY_RUNS_FAILURE = "backup.runs_failure_total"
+KEY_LAST_SUCCESS_AT = "backup.last_success_at"
+KEY_RECOVERY_NOTICE_SENT = "backup.recovery_notice_sent"
 # S3-compatible destination (off-host backups).
 KEY_DESTINATION_TYPE = "backup.destination_type"
 KEY_S3_ENDPOINT_URL = "backup.s3_endpoint_url"
@@ -751,6 +758,65 @@ def _maybe_snapshot_opensearch(cfg: dict[str, Any], ts: str) -> dict[str, Any] |
     return opensearch_snapshot.perform_snapshot(cfg, ts=ts)
 
 
+def _prune_local_safe(destination: str, cfg: dict[str, Any]) -> tuple[list[str], str | None]:
+    """Prune with failure isolation: a prune error warns but never fails the run (#244)."""
+    try:
+        return prune_backups(destination, cfg), None
+    except Exception as exc:  # noqa: BLE001 - the dump already succeeded; record + continue
+        logger.warning("Backup retention pruning failed (dump itself succeeded): %s", exc)
+        return [], str(exc)
+
+
+def _prune_s3_safe(cfg: dict[str, Any], client: Any) -> tuple[list[str], str | None]:
+    """S3 twin of ``_prune_local_safe`` — prune errors never fail a completed upload."""
+    try:
+        return prune_backups_s3(cfg, client=client), None
+    except Exception as exc:  # noqa: BLE001 - the upload already succeeded; record + continue
+        logger.warning("S3 backup retention pruning failed (dump itself succeeded): %s", exc)
+        return [], str(exc)
+
+
+def _build_recovery_artifact(cfg: dict[str, Any], dest_dir: Path) -> dict[str, Any]:
+    """Write the recovery companion (encrypted) or key README (plaintext) into ``dest_dir``.
+
+    Issue #243: with gpg encryption on, the essential env keys travel beside the dump in
+    ``opentranscribe-recovery.env.gpg`` (same passphrase); otherwise a no-secrets
+    ``RECOVERY-README.txt`` names what the operator must preserve separately. Returns the
+    ``recovery`` status sub-object; never raises and never fails the backup.
+    """
+    from app.services import backup_recovery
+
+    if cfg["encrypt"]:
+        try:
+            passphrase = _read_passphrase(cfg["passphrase_file"])
+        except (OSError, ValueError) as exc:
+            return {"status": backup_recovery.STATUS_ERROR, "error": str(exc)}
+        return backup_recovery.write_companion(dest_dir, passphrase)
+    return backup_recovery.write_readme(dest_dir)
+
+
+def _write_recovery_s3(
+    cfg: dict[str, Any], scratch: Path, client: Any, bucket: str, prefix: str
+) -> dict[str, Any]:
+    """Build the recovery artifact in ``scratch`` and upload it beside the dumps (S3)."""
+    result = _build_recovery_artifact(cfg, scratch)
+    filename = result.get("filename")
+    if not filename:
+        return result
+    local = scratch / filename
+    key = f"{prefix}{filename}"
+    try:
+        client.upload_file(str(local), bucket, key)
+        result["path"] = f"s3://{bucket}/{key}"
+    except Exception as exc:  # noqa: BLE001 - companion upload never fails the backup
+        logger.warning("Could not upload recovery companion to s3://%s/%s: %s", bucket, key, exc)
+        result = {"status": "error", "error": str(exc)}
+    finally:
+        with contextlib.suppress(OSError):
+            local.unlink(missing_ok=True)
+    return result
+
+
 def _perform_backup_local(cfg: dict[str, Any], db: Session | None) -> dict[str, Any]:
     """Local-dir backend: pg_dump straight to the mounted destination, prune in-place."""
     destination = cfg["destination"]
@@ -778,7 +844,7 @@ def _perform_backup_local(cfg: dict[str, Any], db: Session | None) -> dict[str, 
             passphrase_file=cfg["passphrase_file"],
         )
         size = artifact.stat().st_size
-        pruned = prune_backups(destination, cfg)
+        pruned, prune_error = _prune_local_safe(destination, cfg)
         duration = round(time.monotonic() - started, 2)
         result = {
             "ok": True,
@@ -791,9 +857,12 @@ def _perform_backup_local(cfg: dict[str, Any], db: Session | None) -> dict[str, 
             "pruned": pruned,
             "started_at": now_iso,
         }
+        if prune_error:
+            result["prune_error"] = prune_error
         os_result = _maybe_snapshot_opensearch(cfg, ts)
         if os_result is not None:
             result["opensearch"] = os_result
+        result["recovery"] = _build_recovery_artifact(cfg, Path(destination))
         logger.info(
             "Backup complete: %s (%.1f MB, %.2fs, pruned %d)",
             artifact.name,
@@ -877,7 +946,7 @@ def _perform_backup_s3(cfg: dict[str, Any], db: Session | None) -> dict[str, Any
         key = f"{prefix}{artifact.name}"
         logger.info("Uploading backup → s3://%s/%s (%.1f MB)", bucket, key, size / 1_048_576)
         client.upload_file(str(artifact), bucket, key)
-        pruned = prune_backups_s3(cfg, client=client)
+        pruned, prune_error = _prune_s3_safe(cfg, client)
         duration = round(time.monotonic() - started, 2)
         result = {
             "ok": True,
@@ -890,9 +959,12 @@ def _perform_backup_s3(cfg: dict[str, Any], db: Session | None) -> dict[str, Any
             "pruned": pruned,
             "started_at": now_iso,
         }
+        if prune_error:
+            result["prune_error"] = prune_error
         os_result = _maybe_snapshot_opensearch(cfg, ts)
         if os_result is not None:
             result["opensearch"] = os_result
+        result["recovery"] = _write_recovery_s3(cfg, scratch, client, bucket, prefix)
         logger.info(
             "S3 backup complete: %s (%.1f MB, %.2fs, pruned %d)",
             key,
@@ -943,10 +1015,30 @@ def _cleanup_partial(dest_path: Path) -> None:
 
 
 def _record_result(db: Session | None, run_at_iso: str, result: dict[str, Any]) -> None:
-    """Persist last_run_at + last_result to SystemSettings (own session if needed)."""
+    """Persist run bookkeeping and fire admin alerting (own session if needed).
+
+    Beyond ``last_run_at``/``last_result``, this maintains the cumulative
+    success/failure counters and last-success timestamp that back the scrape-time
+    Prometheus refresh (issue #244), then delegates proactive notifications to
+    ``backup_alerts.notify_backup_result`` (never raises).
+    """
+    ok = bool(result.get("ok"))
     with _session(db) as s:
         sss.set_setting(s, KEY_LAST_RUN_AT, run_at_iso, "Timestamp of the last backup run (UTC)")
         sss.set_setting(s, KEY_LAST_RESULT, json.dumps(result), "Result of the last backup run")
+        counter_key = KEY_RUNS_SUCCESS if ok else KEY_RUNS_FAILURE
+        current = sss.get_setting_int(s, counter_key, 0)
+        sss.set_setting(s, counter_key, current + 1, "Cumulative backup run count (metrics)")
+        if ok:
+            sss.set_setting(
+                s,
+                KEY_LAST_SUCCESS_AT,
+                run_at_iso,
+                "Timestamp of the last successful backup run (UTC)",
+            )
+        from app.services import backup_alerts
+
+        backup_alerts.notify_backup_result(s, result)
 
 
 def pg_dump_available() -> bool:

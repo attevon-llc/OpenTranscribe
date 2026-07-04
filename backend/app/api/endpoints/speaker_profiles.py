@@ -572,9 +572,11 @@ def get_speaker_profile_occurrences(
             raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id
 
-        # Initialize matching service
-        embedding_service = SpeakerEmbeddingService()
-        matching_service = SpeakerMatchingService(db, embedding_service)
+        # find_speaker_occurrences is a pure DB read — never construct
+        # SpeakerEmbeddingService here: it imports pyannote and loads the
+        # embedding model, which the API/CI image doesn't ship (→ 500) and
+        # which would waste model loads per request even where it does.
+        matching_service = SpeakerMatchingService(db, None)
 
         # Get occurrences
         occurrences = matching_service.find_speaker_occurrences(int(profile_id), current_user.id)

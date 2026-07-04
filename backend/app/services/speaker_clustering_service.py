@@ -55,15 +55,17 @@ SIM_CHUNK = 500
 class SpeakerClusteringService:
     """Service for clustering speakers across media files.
 
-    Tenant scope (cloud edition): cluster-centroid kNN queries are gated by
-    the org of the speaker's media file (``_media_file_org_id``). Cluster
-    centroid docs themselves are currently written WITHOUT an
-    ``organization_id`` (``store_cluster_embedding`` has no tenant field), so
-    under org scope the term filter matches nothing — org-file speakers form
-    their own singleton clusters instead of joining a personal/cross-tenant
-    cluster. Personal/community files (org None) hit the personal gate
-    (``must_not exists organization_id``), which is a no-op on the org-less
-    centroid docs — behavior unchanged.
+    Tenant scope (cloud edition): clusters are tenant-scoped like every other
+    speaker-plane object. ``SpeakerCluster.organization_id`` (NULL = personal)
+    is stamped at creation from the member speakers' FILE org and mirrored
+    onto the centroid doc (``store_cluster_embedding``); cluster-centroid kNN
+    queries are gated by the searching speaker's file org
+    (``_media_file_org_id`` -> ``find_matching_clusters``), so org files join
+    org clusters and personal files join personal clusters — never across.
+    ``batch_recluster`` partitions the Phase-2 similarity graph per tenant
+    scope so a member's org and personal speakers are never AHC-linked.
+    Community edition: every file org is NULL, one personal partition, no org
+    field on any doc — behavior identical to the pre-tenant code.
     """
 
     def __init__(self, db: Session):
@@ -191,8 +193,10 @@ class SpeakerClusteringService:
                     self._update_cluster_centroid(cluster, user_id)
                     return cluster  # type: ignore[no-any-return]
 
-            # No match — create a new singleton cluster
-            cluster = self._create_singleton_cluster(speaker, user_id, embedding)
+            # No match — create a new singleton cluster in the file's scope
+            cluster = self._create_singleton_cluster(
+                speaker, user_id, embedding, organization_id=organization_id
+            )
             return cluster  # type: ignore[no-any-return]
 
         except Exception as e:
@@ -339,9 +343,17 @@ class SpeakerClusteringService:
                 profile = (
                     self.db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
                 )
+                # Tenant scope: a profile-backed cluster lives in its profile's
+                # scope (profiles are already org-stamped at creation).
+                profile_org = (
+                    int(profile.organization_id)
+                    if profile and profile.organization_id is not None
+                    else None
+                )
                 cluster = SpeakerCluster(
                     uuid=uuid4(),
                     user_id=user_id,
+                    organization_id=profile_org,
                     member_count=0,
                     label=profile.name if profile else None,
                     promoted_to_profile_id=profile.id if profile else None,
@@ -371,20 +383,11 @@ class SpeakerClusteringService:
             # ----------------------------------------------------------
             # Step 3 (Phase 2): GPU-accelerated cosine similarity + AHC
             #
-            # PyTorch on CUDA for fast matrix operations, CPU fallback.
-            #
             # a) Query unlabeled speaker UUIDs from DB
-            # b) Fetch embeddings from OpenSearch -> PyTorch tensor
-            # c) F.normalize (L2) on device
-            # d) Chunked matmul on GPU: chunk @ M.T  (SIM_CHUNK x N)
-            #    -> write results to CPU float32 sim_full np array
-            # e) AHC (complete linkage) on distance matrix
-            #
-            # GPU memory budget (worst case 15k x 512-dim float16):
-            #   M           = 15000 x 512 x 2  ~  15 MB VRAM
-            #   M.T         = transposed copy     ~  15 MB VRAM
-            #   sim chunk   = 2000 x 15000 x 2  ~  60 MB VRAM
-            #   peak total  ~  90 MB VRAM (trivial for any GPU)
+            # b) Fetch embeddings from OpenSearch
+            # c) Partition per tenant scope (the speaker's file org)
+            # d) Per partition: chunked cosine matmul + AHC (complete
+            #    linkage) — see _compute_similarity_groups
             # ----------------------------------------------------------
             _report(3, 5, "Loading unlabeled embeddings...", 0.25)
             unlabeled_rows = (
@@ -437,113 +440,50 @@ class SpeakerClusteringService:
                     emb_rows = [emb_rows[i] for i in valid_indices]
                     ordered_ids = [ordered_ids[i] for i in valid_indices]
 
-            n = len(emb_rows)
+            # ----------------------------------------------------------
+            # Tenant partitioning: the similarity graph is built PER tenant
+            # scope (the speaker's FILE org, None = personal) so a member's
+            # org and personal speakers are never AHC-linked into one
+            # cluster. Community edition: every file org is NULL -> a single
+            # personal partition -> identical grouping to the unpartitioned
+            # code.
+            # ----------------------------------------------------------
+            org_by_speaker: dict[int, int | None] = {}
+            if ordered_ids:
+                for sid, org in (
+                    self.db.query(Speaker.id, MediaFile.organization_id)
+                    .join(MediaFile, MediaFile.id == Speaker.media_file_id)
+                    .filter(Speaker.id.in_(ordered_ids))
+                    .all()
+                ):
+                    org_by_speaker[int(sid)] = int(org) if org is not None else None
 
-            if n > 1:
-                # Use GPU for large matrices, CPU for small ones.
-                # GPU is faster for matmul but creates a CUDA context (~1.4GB)
-                # that persists in prefork worker children. For small speaker
-                # counts, CPU is fast enough and avoids the context overhead.
-                use_gpu = torch.cuda.is_available() and n >= 500
-                device = torch.device("cuda:0" if use_gpu else "cpu")
-                dtype = torch.float16 if use_gpu else torch.float32
+            partitions: dict[int | None, tuple[list[int], list[list[float]]]] = {}
+            for sid, emb_row in zip(ordered_ids, emb_rows):
+                p_ids, p_rows = partitions.setdefault(org_by_speaker.get(sid), ([], []))
+                p_ids.append(sid)
+                p_rows.append(emb_row)
+            del emb_rows
+
+            # Groups keyed by (partition index, AHC label); group_org carries
+            # each group's tenant scope through to cluster creation.
+            groups: dict[tuple[int, int], list[int]] = {}
+            group_org: dict[tuple[int, int], int | None] = {}
+            for p_idx, (scope_org, (p_ids, p_rows)) in enumerate(partitions.items()):
+                if len(p_ids) < 2:
+                    continue
+                p_groups = self._compute_similarity_groups(p_rows, p_ids, threshold, _report)
+                for lbl, g_member_ids in p_groups.items():
+                    groups[(p_idx, lbl)] = g_member_ids
+                    group_org[(p_idx, lbl)] = scope_org
                 logger.info(
-                    "Phase 2: computing similarities for %d speakers on %s (dim=%d)",
-                    n,
-                    device,
-                    len(emb_rows[0]),
+                    "Phase 2 AHC (%s): %d groups (>= 2 members: %d) from %d speakers",
+                    f"org {scope_org}" if scope_org is not None else "personal",
+                    len(p_groups),
+                    sum(1 for g in p_groups.values() if len(g) >= 2),
+                    len(p_ids),
                 )
-
-                _report(4, 5, "Computing cosine similarities...", 0.4)
-
-                # Pre-allocate CPU float32 array for full similarity matrix
-                emb_matrix = np.array(emb_rows, dtype=np.float32)
-                del emb_rows
-                sim_full = np.empty((n, n), dtype=np.float32)
-
-                try:
-                    M = torch.tensor(
-                        emb_matrix,
-                        dtype=dtype,
-                        device=device,
-                    )
-                    del emb_matrix
-
-                    # Safe L2-normalize: clamp norms to avoid NaN from zero-length embeddings
-                    norms = M.norm(dim=1, keepdim=True).clamp(min=1e-8)
-                    M = M / norms
-
-                    # Pre-transpose once — .T is not contiguous, make it so
-                    MT = M.T.contiguous()
-
-                    sim_chunk = 2000 if use_gpu else SIM_CHUNK
-                    total_chunks = math.ceil(n / sim_chunk)
-
-                    for ci in range(total_chunks):
-                        start = ci * sim_chunk
-                        end = min(start + sim_chunk, n)
-
-                        # (chunk, D) @ (D, N) -> (chunk, N) cosine sims
-                        sim_block = torch.mm(M[start:end], MT)
-                        sim_full[start:end] = sim_block.float().cpu().numpy()
-                        del sim_block
-
-                        _report(
-                            4,
-                            5,
-                            "Computing cosine similarities...",
-                            0.4 + 0.3 * (ci + 1) / total_chunks,
-                        )
-
-                    del M, MT
-                finally:
-                    if use_gpu:
-                        torch.cuda.empty_cache()
-                        # Release the CUDA context from this prefork child.
-                        # Without this, each child holds ~1.4GB+ of GPU memory
-                        # until it exits (max-tasks-per-child).
-                        torch.cuda.ipc_collect()
-                        import gc
-
-                        gc.collect()
-                        torch.cuda.empty_cache()
-
-                # --- AHC with complete linkage ---
-                _report(4, 5, "Clustering with AHC (complete linkage)...", 0.75)
-
-                # Ensure diagonal is exactly 1.0 and matrix is symmetric
-                np.fill_diagonal(sim_full, 1.0)
-                sim_full = np.maximum(sim_full, sim_full.T)
-
-                # Convert similarity to distance
-                dist = 1.0 - sim_full
-                np.clip(dist, 0.0, 2.0, out=dist)
-                np.fill_diagonal(dist, 0.0)
-                del sim_full
-
-                # scipy AHC
-                condensed = squareform(dist, checks=False)
-                del dist
-                Z = linkage(condensed, method="complete")
-                del condensed
-                labels = fcluster(Z, t=1.0 - threshold, criterion="distance")
-                del Z
-
-                # Build groups from fcluster labels
-                groups: dict[int, list[int]] = defaultdict(list)
-                for idx, label in enumerate(labels):
-                    groups[int(label)].append(ordered_ids[idx])
-                del labels
-
-                logger.info(
-                    "Phase 2 AHC: %d groups (>= 2 members: %d) from %d speakers",
-                    len(groups),
-                    sum(1 for g in groups.values() if len(g) >= 2),
-                    n,
-                )
-            else:
-                del emb_rows
-                groups = {}
+            del partitions
 
             # ----------------------------------------------------------
             # Step 5: Create cluster records from AHC groups
@@ -686,13 +626,17 @@ class SpeakerClusteringService:
 
             from app.services.opensearch_service import store_cluster_embedding
 
-            for _label, member_ids in groups.items():
+            for gkey, member_ids in groups.items():
                 if len(member_ids) < 2:
                     continue
 
+                # Stamp the group's tenant scope (all members share it — the
+                # similarity graph was partitioned per scope above).
+                cluster_org = group_org.get(gkey)
                 cluster = SpeakerCluster(
                     uuid=uuid4(),
                     user_id=user_id,
+                    organization_id=cluster_org,
                     member_count=0,
                 )
                 self.db.add(cluster)
@@ -764,6 +708,7 @@ class SpeakerClusteringService:
                             embedding=centroid.tolist(),
                             label=cluster.label,
                             refresh=False,
+                            organization_id=cluster_org,
                         )
                     except Exception as e:
                         logger.warning(
@@ -982,6 +927,126 @@ class SpeakerClusteringService:
             self.db.rollback()
             raise
 
+    def _compute_similarity_groups(
+        self,
+        emb_rows: list[list[float]],
+        ordered_ids: list[int],
+        threshold: float,
+        report: Any,
+    ) -> dict[int, list[int]]:
+        """Cosine similarity matrix + AHC (complete linkage) for one partition.
+
+        PyTorch on CUDA for fast matrix operations, CPU fallback. Called once
+        per tenant partition by ``batch_recluster`` — the returned groups map
+        AHC labels to speaker ids and include singleton groups (filtered by
+        the caller).
+
+        GPU memory budget (worst case 15k x 512-dim float16):
+          M           = 15000 x 512 x 2  ~  15 MB VRAM
+          M.T         = transposed copy     ~  15 MB VRAM
+          sim chunk   = 2000 x 15000 x 2  ~  60 MB VRAM
+          peak total  ~  90 MB VRAM (trivial for any GPU)
+        """
+        n = len(emb_rows)
+        if n < 2:
+            return {}
+
+        # Use GPU for large matrices, CPU for small ones.
+        # GPU is faster for matmul but creates a CUDA context (~1.4GB)
+        # that persists in prefork worker children. For small speaker
+        # counts, CPU is fast enough and avoids the context overhead.
+        use_gpu = torch.cuda.is_available() and n >= 500
+        device = torch.device("cuda:0" if use_gpu else "cpu")
+        dtype = torch.float16 if use_gpu else torch.float32
+        logger.info(
+            "Phase 2: computing similarities for %d speakers on %s (dim=%d)",
+            n,
+            device,
+            len(emb_rows[0]),
+        )
+
+        report(4, 5, "Computing cosine similarities...", 0.4)
+
+        # Pre-allocate CPU float32 array for full similarity matrix
+        emb_matrix = np.array(emb_rows, dtype=np.float32)
+        sim_full = np.empty((n, n), dtype=np.float32)
+
+        try:
+            M = torch.tensor(
+                emb_matrix,
+                dtype=dtype,
+                device=device,
+            )
+            del emb_matrix
+
+            # Safe L2-normalize: clamp norms to avoid NaN from zero-length embeddings
+            norms = M.norm(dim=1, keepdim=True).clamp(min=1e-8)
+            M = M / norms
+
+            # Pre-transpose once — .T is not contiguous, make it so
+            MT = M.T.contiguous()
+
+            sim_chunk = 2000 if use_gpu else SIM_CHUNK
+            total_chunks = math.ceil(n / sim_chunk)
+
+            for ci in range(total_chunks):
+                start = ci * sim_chunk
+                end = min(start + sim_chunk, n)
+
+                # (chunk, D) @ (D, N) -> (chunk, N) cosine sims
+                sim_block = torch.mm(M[start:end], MT)
+                sim_full[start:end] = sim_block.float().cpu().numpy()
+                del sim_block
+
+                report(
+                    4,
+                    5,
+                    "Computing cosine similarities...",
+                    0.4 + 0.3 * (ci + 1) / total_chunks,
+                )
+
+            del M, MT
+        finally:
+            if use_gpu:
+                torch.cuda.empty_cache()
+                # Release the CUDA context from this prefork child.
+                # Without this, each child holds ~1.4GB+ of GPU memory
+                # until it exits (max-tasks-per-child).
+                torch.cuda.ipc_collect()
+                import gc
+
+                gc.collect()
+                torch.cuda.empty_cache()
+
+        # --- AHC with complete linkage ---
+        report(4, 5, "Clustering with AHC (complete linkage)...", 0.75)
+
+        # Ensure diagonal is exactly 1.0 and matrix is symmetric
+        np.fill_diagonal(sim_full, 1.0)
+        sim_full = np.maximum(sim_full, sim_full.T)
+
+        # Convert similarity to distance
+        dist = 1.0 - sim_full
+        np.clip(dist, 0.0, 2.0, out=dist)
+        np.fill_diagonal(dist, 0.0)
+        del sim_full
+
+        # scipy AHC
+        condensed = squareform(dist, checks=False)
+        del dist
+        Z = linkage(condensed, method="complete")
+        del condensed
+        labels = fcluster(Z, t=1.0 - threshold, criterion="distance")
+        del Z
+
+        # Build groups from fcluster labels
+        groups: dict[int, list[int]] = defaultdict(list)
+        for idx, label in enumerate(labels):
+            groups[int(label)].append(ordered_ids[idx])
+        del labels
+
+        return dict(groups)
+
     # ------------------------------------------------------------------
     # Cluster operations (merge, split, promote)
     # ------------------------------------------------------------------
@@ -1134,10 +1199,12 @@ class SpeakerClusteringService:
                 logger.warning("No speakers from source cluster to split")
                 return None
 
-            # Create new cluster
+            # Create new cluster (same tenant scope as the source — members
+            # can only come from the source cluster).
             new_cluster = SpeakerCluster(
                 uuid=uuid4(),
                 user_id=user_id,
+                organization_id=source.organization_id,
                 member_count=0,
             )
             self.db.add(new_cluster)
@@ -2202,11 +2269,13 @@ class SpeakerClusteringService:
         speaker: Speaker,
         user_id: int,
         embedding: list[float],
+        organization_id: int | None = None,
     ) -> SpeakerCluster:
-        """Create a new cluster with one speaker."""
+        """Create a new cluster with one speaker, in the speaker's tenant scope."""
         cluster = SpeakerCluster(
             uuid=uuid4(),
             user_id=user_id,
+            organization_id=organization_id,
             member_count=1,
             quality_score=1.0,
             min_similarity=1.0,
@@ -2241,6 +2310,7 @@ class SpeakerClusteringService:
                 cluster_uuid=str(cluster.uuid),
                 user_id=user_id,
                 embedding=embedding,
+                organization_id=organization_id,
             )
         except Exception as e:
             logger.warning("Could not store cluster centroid in OpenSearch: %s", e)
@@ -2326,6 +2396,9 @@ class SpeakerClusteringService:
                 embedding=centroid.tolist(),
                 label=cluster.label,
                 refresh=refresh,
+                organization_id=(
+                    int(cluster.organization_id) if cluster.organization_id is not None else None
+                ),
             )
         except Exception as e:
             logger.warning("Could not update cluster centroid in OpenSearch: %s", e)

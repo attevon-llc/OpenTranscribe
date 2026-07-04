@@ -21,8 +21,14 @@ Speaker-plane scope rules (must match the query gates in
   files stay personal).
 * **Profile docs** (``document_type: profile``) mirror the
   ``SpeakerProfile.organization_id`` row value.
-* **Cluster docs** (``document_type: cluster``) are personal-plane (the write
-  path has no tenant field) — any stray ``organization_id`` is removed.
+* **Cluster docs** (``document_type: cluster``) mirror the v373
+  ``SpeakerCluster.organization_id`` rows, which this task ALSO backfills from
+  the member speakers' file orgs: when every member's file belongs to one org,
+  the cluster row + doc are stamped with that org; clusters whose members span
+  scopes (org + personal, or two orgs — only possible for clusters created
+  before the tenant gates) are left NULL and counted (``mixed_clusters`` in the
+  summary) — splitting them is deliberately out of scope, and the next
+  ``batch_recluster`` dissolves them into per-scope clusters anyway.
 
 A repair pass also strips ``organization_id`` from members' personal file /
 profile / cluster docs, undoing the earlier (buggy) backfill that stamped ALL
@@ -79,6 +85,14 @@ class SpeakerScopeMaps:
         the old user_id-wide backfill could have mislabeled.
     ``personal_file_ids`` / ``personal_profile_ids``: members' org-NULL files /
         profiles whose docs must NOT carry an ``organization_id``.
+    ``org_to_cluster_ids`` / ``org_to_cluster_uuids``: clusters whose member
+        speakers' files ALL belong to one org (rows stamped by id, docs by
+        uuid).
+    ``personal_cluster_ids`` / ``personal_cluster_uuids``: every other
+        member-owned cluster (all-personal members, empty, or mixed-scope) —
+        rows/docs must stay org-less.
+    ``mixed_cluster_count``: clusters spanning tenant scopes — left NULL by
+        design (see module docstring).
     """
 
     org_to_file_ids: dict[int, list[int]] = field(default_factory=dict)
@@ -86,6 +100,11 @@ class SpeakerScopeMaps:
     member_user_ids: list[int] = field(default_factory=list)
     personal_file_ids: list[int] = field(default_factory=list)
     personal_profile_ids: list[int] = field(default_factory=list)
+    org_to_cluster_ids: dict[int, list[int]] = field(default_factory=dict)
+    org_to_cluster_uuids: dict[int, list[str]] = field(default_factory=dict)
+    personal_cluster_ids: list[int] = field(default_factory=list)
+    personal_cluster_uuids: list[str] = field(default_factory=list)
+    mixed_cluster_count: int = 0
 
 
 def _build_speaker_scope_maps(db: Any) -> SpeakerScopeMaps:
@@ -132,8 +151,56 @@ def _build_speaker_scope_maps(db: Any) -> SpeakerScopeMaps:
             )
             .all()
         ]
+        _resolve_cluster_scopes(db, scope, member_ids)
 
     return scope
+
+
+def _resolve_cluster_scopes(db: Any, scope: SpeakerScopeMaps, member_ids: set[int]) -> None:
+    """Resolve each member-owned cluster's tenant scope from its MEMBER speakers.
+
+    A cluster belongs to org X iff every member speaker's file is in org X
+    (all-same-org rule). All-personal, empty, and mixed-scope clusters resolve
+    to personal (org NULL); mixed ones are additionally counted — they predate
+    the tenant gates and are deliberately NOT split (the next batch_recluster
+    dissolves them into per-scope clusters).
+    """
+    from app.models.media import MediaFile
+    from app.models.media import Speaker
+    from app.models.media import SpeakerCluster
+    from app.models.media import SpeakerClusterMember
+
+    all_clusters = (
+        db.query(SpeakerCluster.id, SpeakerCluster.uuid)
+        .filter(SpeakerCluster.user_id.in_(member_ids))
+        .all()
+    )
+    if not all_clusters:
+        return
+
+    orgs_by_cluster: dict[int, set[int | None]] = {}
+    for cid, org in (
+        db.query(SpeakerClusterMember.cluster_id, MediaFile.organization_id)
+        .join(Speaker, Speaker.id == SpeakerClusterMember.speaker_id)
+        .join(MediaFile, MediaFile.id == Speaker.media_file_id)
+        .join(SpeakerCluster, SpeakerCluster.id == SpeakerClusterMember.cluster_id)
+        .filter(SpeakerCluster.user_id.in_(member_ids))
+        .distinct()
+        .all()
+    ):
+        orgs_by_cluster.setdefault(int(cid), set()).add(int(org) if org is not None else None)
+
+    for cid, cuuid in all_clusters:
+        member_orgs = orgs_by_cluster.get(int(cid), set())
+        only_org = next(iter(member_orgs)) if len(member_orgs) == 1 else None
+        if only_org is not None:
+            scope.org_to_cluster_ids.setdefault(only_org, []).append(int(cid))
+            scope.org_to_cluster_uuids.setdefault(only_org, []).append(str(cuuid))
+        else:
+            if len(member_orgs) > 1:
+                scope.mixed_cluster_count += 1
+            scope.personal_cluster_ids.append(int(cid))
+            scope.personal_cluster_uuids.append(str(cuuid))
 
 
 def _backfill_transcript_chunks(client: Any, org_to_file_uuids: dict[int, list[str]]) -> int:
@@ -176,8 +243,8 @@ _REMOVE_ORG_SCRIPT = {
 }
 
 
-def _chunked(ids: list[int], size: int = _TERMS_CHUNK) -> list[list[int]]:
-    """Split an id list into terms-query-safe chunks."""
+def _chunked(ids: list, size: int = _TERMS_CHUNK) -> list[list]:
+    """Split an id/uuid list into terms-query-safe chunks."""
     return [ids[i : i + size] for i in range(0, len(ids), size)]
 
 
@@ -225,8 +292,9 @@ def _backfill_speaker_docs(client: Any, scope: SpeakerScopeMaps) -> int:
     * per-file speaker docs -> the file's org (``terms media_file_id``, like
       the per-file-uuid chunk backfill);
     * profile docs -> ``SpeakerProfile.organization_id``;
-    * cluster docs -> always personal (org field removed — the cluster write
-      path has no tenant field).
+    * cluster docs -> the resolved cluster scope (v373): all-same-org member
+      files -> stamped with that org; all-personal / empty / mixed-scope ->
+      org field removed (mixed clusters stay NULL by design).
 
     Idempotent: stamp queries skip docs already carrying the correct org, and
     repair queries only match docs that still carry a stray org field. Targets
@@ -293,21 +361,73 @@ def _backfill_speaker_docs(client: Any, scope: SpeakerScopeMaps) -> int:
                 client, index_name, query, _REMOVE_ORG_SCRIPT, "personal profile-docs repair"
             )
 
-        # 5) Repair: cluster docs are personal-plane — strip any stray org.
-        for chunk in _chunked(scope.member_user_ids):
+        # 5) Cluster docs: mirror the resolved cluster scope (v373). Clusters
+        #    whose member speakers' files are all in one org get stamped ...
+        for org_id, cluster_uuids in scope.org_to_cluster_uuids.items():
+            for chunk in _chunked(cluster_uuids):
+                query = {
+                    "bool": {
+                        "filter": [
+                            {"term": {"document_type": "cluster"}},
+                            {"terms": {"cluster_uuid": chunk}},
+                        ],
+                        "must_not": [{"term": {"organization_id": org_id}}],
+                    }
+                }
+                updated += _update_by_query(
+                    client, index_name, query, _stamp_script(org_id), f"cluster-docs org {org_id}"
+                )
+
+        # 6) ... every other member-owned cluster (all-personal, empty, or
+        #    mixed-scope) must stay org-less. Mixed legacy clusters are
+        #    deliberately left NULL — see the module docstring.
+        for chunk in _chunked(scope.personal_cluster_uuids):
             query = {
                 "bool": {
                     "filter": [
                         {"term": {"document_type": "cluster"}},
-                        {"terms": {"user_id": chunk}},
+                        {"terms": {"cluster_uuid": chunk}},
                         {"exists": {"field": "organization_id"}},
                     ]
                 }
             }
             updated += _update_by_query(
-                client, index_name, query, _REMOVE_ORG_SCRIPT, "cluster-docs repair"
+                client, index_name, query, _REMOVE_ORG_SCRIPT, "personal cluster-docs repair"
             )
     return updated
+
+
+def _stamp_cluster_rows(db: Any, scope: SpeakerScopeMaps) -> int:
+    """Sync ``speaker_cluster.organization_id`` rows with the resolved scope.
+
+    Idempotent: only rows whose value differs are updated. Mixed-scope
+    clusters are in the personal lists, so they are reset to NULL (or kept
+    NULL) — never stamped.
+    """
+    from app.models.media import SpeakerCluster
+
+    changed = 0
+    for org_id, cluster_ids in scope.org_to_cluster_ids.items():
+        for chunk in _chunked(cluster_ids):
+            changed += (
+                db.query(SpeakerCluster)
+                .filter(
+                    SpeakerCluster.id.in_(chunk),
+                    (SpeakerCluster.organization_id.is_(None))
+                    | (SpeakerCluster.organization_id != org_id),
+                )
+                .update({"organization_id": org_id}, synchronize_session=False)
+            )
+    for chunk in _chunked(scope.personal_cluster_ids):
+        changed += (
+            db.query(SpeakerCluster)
+            .filter(
+                SpeakerCluster.id.in_(chunk),
+                SpeakerCluster.organization_id.isnot(None),
+            )
+            .update({"organization_id": None}, synchronize_session=False)
+        )
+    return changed
 
 
 def run_tenant_backfill() -> dict[str, int]:
@@ -322,7 +442,7 @@ def run_tenant_backfill() -> dict[str, int]:
 
     if opensearch_client is None:
         logger.warning("Tenant backfill skipped: OpenSearch client not initialized")
-        return {"orgs": 0, "chunk_docs": 0, "speaker_docs": 0}
+        return {"orgs": 0, "chunk_docs": 0, "speaker_docs": 0, "cluster_rows": 0}
 
     org_to_file_uuids: dict[int, list[str]] = {}
 
@@ -336,19 +456,35 @@ def run_tenant_backfill() -> dict[str, int]:
         for org_id, file_uuid in rows:
             org_to_file_uuids.setdefault(int(org_id), []).append(str(file_uuid))
 
-        # Speaker plane: per-file / per-profile scope + personal repair lists
+        # Speaker plane: per-file / per-profile / per-cluster scope + repair lists
         scope = _build_speaker_scope_maps(db)
+        # Cluster ROWS are relational (v373) — stamp them in the same session.
+        cluster_rows = _stamp_cluster_rows(db, scope)
 
     org_count = len(
         set(org_to_file_uuids) | set(scope.org_to_file_ids) | set(scope.org_to_profile_ids)
     )
     if org_count == 0 and not scope.member_user_ids:
         logger.info("Tenant backfill: 0 orgs found (community edition) — nothing to do")
-        return {"orgs": 0, "chunk_docs": 0, "speaker_docs": 0}
+        return {"orgs": 0, "chunk_docs": 0, "speaker_docs": 0, "cluster_rows": 0}
+
+    if scope.mixed_cluster_count:
+        logger.warning(
+            "Tenant backfill: %d cluster(s) span multiple tenant scopes — left personal "
+            "(org NULL) by design; the next batch_recluster dissolves them into "
+            "per-scope clusters",
+            scope.mixed_cluster_count,
+        )
 
     chunk_docs = _backfill_transcript_chunks(opensearch_client, org_to_file_uuids)
     speaker_docs = _backfill_speaker_docs(opensearch_client, scope)
-    summary = {"orgs": org_count, "chunk_docs": chunk_docs, "speaker_docs": speaker_docs}
+    summary = {
+        "orgs": org_count,
+        "chunk_docs": chunk_docs,
+        "speaker_docs": speaker_docs,
+        "cluster_rows": cluster_rows,
+        "mixed_clusters": scope.mixed_cluster_count,
+    }
     logger.info(f"Tenant backfill complete: {summary}")
     return summary
 

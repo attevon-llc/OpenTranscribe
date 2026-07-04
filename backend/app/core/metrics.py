@@ -89,6 +89,9 @@ cache_operations_total: Counter
 celery_queue_depth: Gauge
 user_signups_total: Counter
 files_uploaded_total: Counter
+backup_runs_total: Counter
+backup_last_success_timestamp_seconds: Gauge
+backup_last_status: Gauge
 
 
 def _register() -> None:
@@ -103,6 +106,9 @@ def _register() -> None:
     global celery_queue_depth
     global user_signups_total
     global files_uploaded_total
+    global backup_runs_total
+    global backup_last_success_timestamp_seconds
+    global backup_last_status
 
     if _COLLECTORS_REGISTERED:
         return
@@ -153,6 +159,25 @@ def _register() -> None:
         "files_uploaded_total",
         "Media files accepted for processing by source (API process only).",
         ["source"],
+    )
+    # Backup collectors run in a Celery worker, so their state is persisted to
+    # SystemSettings by the run task and projected here at scrape time by
+    # ``app.core.backup_metrics.update_backup_metrics`` (same sample-at-scrape
+    # pattern as celery_queue_depth).
+    backup_runs_total = Counter(
+        "backup_runs_total",
+        "Scheduled/manual database backup runs by result (synced from the DB at scrape).",
+        ["result"],
+    )
+    backup_last_success_timestamp_seconds = Gauge(
+        "backup_last_success_timestamp_seconds",
+        "Unix timestamp of the last successful database backup "
+        "(0 = never; alert on time() - this > N).",
+    )
+    backup_last_status = Gauge(
+        "backup_last_status",
+        "1 when the most recent backup run succeeded, 0 when it failed "
+        "(0 also before any run — gate alerts on backup_runs_total > 0).",
     )
 
     _COLLECTORS_REGISTERED = True

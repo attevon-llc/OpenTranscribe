@@ -44,6 +44,15 @@ class OpenSearchSnapshotResult(BaseModel):
     pruned: list[str] | None = None
 
 
+class RecoveryCompanionResult(BaseModel):
+    """Outcome of the recovery-key companion leg of a backup run (issue #243)."""
+
+    status: str  # keys_included | readme_written | error
+    filename: str | None = None
+    path: str | None = None
+    error: str | None = None
+
+
 class BackupResultModel(BaseModel):
     ok: bool
     status: str
@@ -54,9 +63,13 @@ class BackupResultModel(BaseModel):
     duration_s: float | None = None
     encrypted: bool | None = None
     pruned: list[str] | None = None
+    # Set when retention pruning failed after a successful dump (warning, not failure).
+    prune_error: str | None = None
     started_at: str | None = None
     # Present only when include_opensearch was on for the run.
     opensearch: OpenSearchSnapshotResult | None = None
+    # Present on successful runs: whether key material travelled with the backup.
+    recovery: RecoveryCompanionResult | None = None
 
 
 class OpenSearchSnapshotStatus(BaseModel):

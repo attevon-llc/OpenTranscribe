@@ -2822,6 +2822,7 @@ def store_cluster_embedding(
     embedding: list[float],
     label: str | None = None,
     refresh: str | bool = "wait_for",
+    organization_id: int | None = None,
 ) -> bool:
     """Store a cluster centroid embedding in OpenSearch.
 
@@ -2832,6 +2833,9 @@ def store_cluster_embedding(
         label: Optional cluster label.
         refresh: Index refresh policy. Use ``False`` during batch operations
             and issue a single ``indices.refresh()`` at the end.
+        organization_id: Tenant scope of the cluster (None = personal). Only
+            written for org clusters — personal/community docs carry no
+            ``organization_id`` field, matching the per-file speaker docs.
 
     Returns:
         True if successful, False otherwise.
@@ -2857,6 +2861,8 @@ def store_cluster_embedding(
         }
         if label:
             doc["label"] = label
+        if organization_id is not None:
+            doc["organization_id"] = organization_id
 
         opensearch_client.index(
             index=active_index,

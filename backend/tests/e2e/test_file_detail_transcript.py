@@ -299,3 +299,84 @@ class TestSpeakerEditor:
         editor = detail_page.locator(".speaker-editor-container")
         expect(editor).to_be_visible(timeout=10000)
         expect(detail_page.locator(".speaker-editor-header")).to_be_visible(timeout=5000)
+
+
+def _pick_search_word(page: Page) -> str:
+    """Pick a real word (>=4 letters) from the first transcript segment.
+
+    Guarantees the transcript find bar will have at least one literal match to
+    highlight and navigate, without mutating any data.
+    """
+    text = (page.locator(".transcript-segment .segment-text").first.text_content() or "").strip()
+    for token in text.split():
+        cleaned = "".join(ch for ch in token if ch.isalpha())
+        if len(cleaned) >= 4:
+            return cleaned
+    return "the"
+
+
+def _open_transcript_search(page: Page):  # type: ignore[no-untyped-def]
+    """Open the in-transcript find bar and return its input locator."""
+    trigger = page.locator(".search-trigger-button")
+    expect(trigger).to_be_visible(timeout=10000)
+    trigger.click()
+    search_input = page.locator(".transcript-search input")
+    expect(search_input).to_be_visible(timeout=5000)
+    return search_input
+
+
+class TestTranscriptSearch:
+    """In-transcript find bar: open, match, highlight, navigate, close.
+
+    Read-only: search never edits the transcript.
+    """
+
+    def test_search_bar_opens_from_trigger(self, detail_page: Page) -> None:
+        """The find trigger reveals a search input in the transcript header."""
+        _open_transcript_search(detail_page)
+        expect(detail_page.locator(".transcript-search .search-bar")).to_be_visible(timeout=5000)
+
+    def test_query_highlights_and_counts_matches(self, detail_page: Page) -> None:
+        """Typing a real word highlights matches and shows an 'N of M' counter."""
+        search_input = _open_transcript_search(detail_page)
+        word = _pick_search_word(detail_page)
+        search_input.fill(word)
+
+        # Literal matches highlight in the (loaded) transcript.
+        expect(detail_page.locator(".transcript-search-highlight").first).to_be_visible(
+            timeout=8000
+        )
+        # The counter resolves to a match count (backend completeness probe may add '+').
+        # The loading status reuses .search-bar-counter, so target the match counter only.
+        counter = detail_page.locator(
+            ".transcript-search .search-bar-counter:not(.search-bar-status-text)"
+        )
+        expect(counter).to_be_visible(timeout=10000)
+        assert "of" in (counter.text_content() or ""), "Counter should read 'N of M'"
+
+    def test_next_navigation_flashes_current_match(self, detail_page: Page) -> None:
+        """Advancing to the next match scrolls to and flashes that segment."""
+        search_input = _open_transcript_search(detail_page)
+        search_input.fill(_pick_search_word(detail_page))
+        expect(detail_page.locator(".transcript-search-highlight").first).to_be_visible(
+            timeout=8000
+        )
+        # Second nav button in the shared SearchBar is "next".
+        detail_page.locator(".transcript-search .search-bar-btn").nth(1).click()
+        # The active match gets the whole-segment pulse class.
+        expect(detail_page.locator(".search-current-match").first).to_be_visible(timeout=5000)
+
+    def test_escape_closes_search(self, detail_page: Page) -> None:
+        """Escape closes the find bar and restores the trigger button."""
+        search_input = _open_transcript_search(detail_page)
+        search_input.fill(_pick_search_word(detail_page))
+        detail_page.keyboard.press("Escape")
+        expect(detail_page.locator(".search-trigger-button")).to_be_visible(timeout=5000)
+
+    def test_transcript_search_no_unexpected_console_errors(self, detail_page: Page) -> None:
+        """Searching the transcript produces no new (non-benign) console errors."""
+        search_input = _open_transcript_search(detail_page)
+        search_input.fill(_pick_search_word(detail_page))
+        detail_page.wait_for_timeout(3500)  # allow the backend completeness probe to resolve
+        unexpected = _unexpected_console_errors(detail_page._console_errors)  # type: ignore[attr-defined]
+        assert not unexpected, f"Unexpected console errors during transcript search: {unexpected}"

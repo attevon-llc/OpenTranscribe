@@ -1,0 +1,64 @@
+/*
+ * search.css — shared search-highlight + flash styles.
+ *
+ * Promoted out of TranscriptSearch.svelte so every search surface (transcript
+ * find, summary find, settings search) highlights identically in light and dark.
+ * Class names are load-bearing: `.transcript-search-highlight` is emitted by
+ * `$lib/utils/searchHighlight.ts` and consumed by TranscriptDisplay and
+ * TranscriptSegmentList — do not rename.
+ */
+
+/* Inline text-match highlight (the yellow marker on matched words). */
+.transcript-search-highlight {
+  background-color: rgba(250, 204, 21, 0.4);
+  padding: 0.05em 0.15em;
+  border-radius: 2px;
+}
+
+.transcript-search-highlight.current {
+  background-color: rgba(250, 204, 21, 0.6);
+  border: 1px solid rgba(250, 204, 21, 0.8);
+}
+
+[data-theme='dark'] .transcript-search-highlight {
+  background-color: rgba(250, 204, 21, 0.3);
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .transcript-search-highlight.current {
+  background-color: rgba(250, 204, 21, 0.5);
+  border: 1px solid rgba(250, 204, 21, 0.7);
+}
+
+/* Whole-element "current match" pulse — used when scrolling a container (e.g. a
+   transcript segment) into view. */
+.search-current-match {
+  background-color: rgba(var(--primary-color-rgb), 0.2) !important;
+  border: 2px solid var(--primary-color) !important;
+  animation: search-pulse 1s ease-in-out;
+}
+
+/* Settings search: flash the control the user jumped to. */
+.settings-search-flash {
+  animation: search-pulse 1.6s ease-in-out;
+  border-radius: 6px;
+}
+
+@keyframes search-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--primary-color-rgb), 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(var(--primary-color-rgb), 0);
+  }
+}
+
+/* Respect reduced-motion: keep a static ring instead of the pulse. */
+@media (prefers-reduced-motion: reduce) {
+  .search-current-match,
+  .settings-search-flash {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.35);
+  }
+}

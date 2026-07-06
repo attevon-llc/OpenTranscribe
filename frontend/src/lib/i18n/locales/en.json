@@ -3825,5 +3825,12 @@
   "settings.contentRedaction.showOriginalTooltip": "Reveal the original unredacted text (owners and admins only; admin-forced categories stay masked)",
   "settings.contentRedaction.showRedactedTooltip": "Switch back to the redacted view with sensitive content masked",
   "settings.sections.billingTeam": "Billing & Team",
-  "settings.orgContext.cloudTitle": "Transcript Context"
+  "settings.orgContext.cloudTitle": "Transcript Context",
+  "settingsSearch.placeholder": "Search settings",
+  "settingsSearch.ariaLabel": "Search settings",
+  "settingsSearch.resultsCount": "{{count}} results",
+  "settingsSearch.noResultsTitle": "No results",
+  "settingsSearch.noResults": "No settings found for \"{{query}}\"",
+  "transcriptSearch.searchingAll": "Searching entire transcript…",
+  "transcriptSearch.moreInTranscript": "More matches in unloaded transcript"
 }

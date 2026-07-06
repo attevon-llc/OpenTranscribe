@@ -3825,5 +3825,12 @@
   "settings.contentRedaction.showOriginalTooltip": "編集されていない元のテキストを表示（所有者と管理者のみ。管理者が強制したカテゴリはマスクされたままです）",
   "settings.contentRedaction.showRedactedTooltip": "機密コンテンツがマスクされた編集済みビューに戻す",
   "settings.sections.billingTeam": "請求とチーム",
-  "settings.orgContext.cloudTitle": "文字起こしコンテキスト"
+  "settings.orgContext.cloudTitle": "文字起こしコンテキスト",
+  "settingsSearch.placeholder": "設定を検索",
+  "settingsSearch.ariaLabel": "設定を検索",
+  "settingsSearch.resultsCount": "{{count}} 件の結果",
+  "settingsSearch.noResultsTitle": "結果なし",
+  "settingsSearch.noResults": "「{{query}}」に一致する設定が見つかりません",
+  "transcriptSearch.searchingAll": "文字起こし全体を検索中…",
+  "transcriptSearch.moreInTranscript": "未読み込みの文字起こしにさらに一致があります"
 }

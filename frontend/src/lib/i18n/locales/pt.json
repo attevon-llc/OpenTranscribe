@@ -3825,5 +3825,12 @@
   "settings.contentRedaction.showOriginalTooltip": "Mostrar o texto original sem censura (apenas proprietários e administradores; categorias impostas pelo administrador permanecem ocultas)",
   "settings.contentRedaction.showRedactedTooltip": "Voltar à visualização censurada com o conteúdo sensível oculto",
   "settings.sections.billingTeam": "Faturação e equipa",
-  "settings.orgContext.cloudTitle": "Contexto da transcrição"
+  "settings.orgContext.cloudTitle": "Contexto da transcrição",
+  "settingsSearch.placeholder": "Pesquisar configurações",
+  "settingsSearch.ariaLabel": "Pesquisar configurações",
+  "settingsSearch.resultsCount": "{{count}} resultados",
+  "settingsSearch.noResultsTitle": "Sem resultados",
+  "settingsSearch.noResults": "Nenhuma configuração encontrada para \"{{query}}\"",
+  "transcriptSearch.searchingAll": "Pesquisando toda a transcrição…",
+  "transcriptSearch.moreInTranscript": "Mais correspondências na transcrição não carregada"
 }

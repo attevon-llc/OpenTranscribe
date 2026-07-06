@@ -3825,5 +3825,12 @@
   "settings.contentRedaction.showOriginalTooltip": "Afficher le texte original non expurgé (propriétaires et administrateurs uniquement ; les catégories imposées par l'administrateur restent masquées)",
   "settings.contentRedaction.showRedactedTooltip": "Revenir à la vue expurgée avec le contenu sensible masqué",
   "settings.sections.billingTeam": "Facturation et équipe",
-  "settings.orgContext.cloudTitle": "Contexte de transcription"
+  "settings.orgContext.cloudTitle": "Contexte de transcription",
+  "settingsSearch.placeholder": "Rechercher dans les réglages",
+  "settingsSearch.ariaLabel": "Rechercher dans les réglages",
+  "settingsSearch.resultsCount": "{{count}} résultats",
+  "settingsSearch.noResultsTitle": "Aucun résultat",
+  "settingsSearch.noResults": "Aucun réglage trouvé pour « {{query}} »",
+  "transcriptSearch.searchingAll": "Recherche dans toute la transcription…",
+  "transcriptSearch.moreInTranscript": "Autres résultats dans la transcription non chargée"
 }

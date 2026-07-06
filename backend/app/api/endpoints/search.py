@@ -116,6 +116,13 @@ def search_transcripts(
     title_filter: str | None = Query(
         None, description="Filter by filename/title (substring match)"
     ),
+    file_uuid: str | None = Query(
+        None,
+        description=(
+            "Scope results to a single file (its UUID). Used by the in-page transcript "
+            "find bar to list every match across the whole paginated transcript."
+        ),
+    ),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
@@ -190,6 +197,7 @@ def search_transcripts(
         language=language,
         title_filter=title_filter,
         organization_id=ctx.org_id,
+        file_uuid=file_uuid,
     )
 
     # Abuse/DMCA: the OpenSearch transcript index has no quarantine field, so
@@ -199,6 +207,30 @@ def search_transcripts(
         _drop_quarantined_search_hits(db, response)
 
     return _search_response_to_schema(response)
+
+
+@router.get("/count")
+def search_match_count(
+    q: str = Query(..., min_length=1, description="Search query"),
+    file_uuid: str | None = Query(None, description="Scope the count to a single file (its UUID)."),
+    ctx: RequestContext = Depends(get_current_context),
+    _active: User = Depends(get_current_active_user),  # preserve the is_active gate
+) -> dict[str, int]:
+    """Lightweight transcript match-count for the in-page find bar.
+
+    Returns just ``{"total": N}`` — the number of transcript chunks matching ``q``
+    (optionally within a single file). This is intentionally far cheaper than the full
+    hybrid ``/search`` (no query embedding, RRF pipeline, snippets, or highlighting),
+    so it stays fast under concurrent use: the find bar polls it as the user types to
+    learn whether matches exist beyond the segments currently loaded in the browser.
+    """
+    from app.services.search.hybrid_search_service import HybridSearchService
+
+    service = HybridSearchService()
+    total = service.count_matches(
+        q, user_id=ctx.user.id, file_uuid=file_uuid, organization_id=ctx.org_id
+    )
+    return {"total": total}
 
 
 def _drop_quarantined_search_hits(db: Session, response: Any) -> None:

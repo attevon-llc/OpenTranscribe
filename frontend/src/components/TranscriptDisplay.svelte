@@ -429,9 +429,13 @@
     <TranscriptSearch
       {transcriptSegments}
       {speakerList}
+      fileUuid={file?.uuid ?? ''}
+      {hasMoreSegments}
+      {loadingMoreSegments}
       disabled={!file?.transcript_segments?.length}
       on:searchResults={handleSearchResults}
       on:navigateToMatch={handleNavigateToMatch}
+      on:loadMore
     />
   </div>
 

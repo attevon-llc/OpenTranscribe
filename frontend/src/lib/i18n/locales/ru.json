@@ -3825,5 +3825,12 @@
   "settings.contentRedaction.showOriginalTooltip": "Показать исходный текст без цензуры (только для владельцев и администраторов; категории, заданные администратором, остаются скрытыми)",
   "settings.contentRedaction.showRedactedTooltip": "Вернуться к отредактированному виду со скрытым конфиденциальным содержимым",
   "settings.sections.billingTeam": "Оплата и команда",
-  "settings.orgContext.cloudTitle": "Контекст транскрипции"
+  "settings.orgContext.cloudTitle": "Контекст транскрипции",
+  "settingsSearch.placeholder": "Поиск настроек",
+  "settingsSearch.ariaLabel": "Поиск настроек",
+  "settingsSearch.resultsCount": "{{count}} результатов",
+  "settingsSearch.noResultsTitle": "Нет результатов",
+  "settingsSearch.noResults": "Настройки по запросу «{{query}}» не найдены",
+  "transcriptSearch.searchingAll": "Поиск по всей расшифровке…",
+  "transcriptSearch.moreInTranscript": "Ещё совпадения в незагруженной части расшифровки"
 }

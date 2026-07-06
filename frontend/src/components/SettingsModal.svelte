@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
+  import i18next from 'i18next';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { page } from '$app/stores';
   import { user as userStore } from '$stores/auth';
@@ -48,8 +49,17 @@
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import ProcessingDetailsModal from '$components/settings/ProcessingDetailsModal.svelte';
 
+  import SettingsSearch from '$components/settings/SettingsSearch.svelte';
+  import {
+    buildSettingsSearchItems,
+    createSettingsFuzzyIndex,
+    type SettingsSearchItem,
+    type VisibleSection,
+  } from '$lib/search/settingsSearchIndex';
+  import type { FuzzyIndex } from '$lib/search/fuzzyMatcher';
+
   // Import i18n
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
 
   // Modal state
@@ -59,6 +69,12 @@
   // Settings state
   $: isOpen = $settingsModalStore.isOpen;
   $: activeSection = $settingsModalStore.activeSection;
+
+  // Settings search (macOS-style). Index is rebuilt when the visible-section set
+  // (capabilities/edition) or the locale changes; desktop + mobile instances share it.
+  let desktopSearchActive = false;
+  let mobileSearchActive = false;
+  let settingsSearchIndex: FuzzyIndex<SettingsSearchItem> | null = null;
 
   // Close modal when the user navigates to a different page
   let _prevPath = '';
@@ -232,6 +248,75 @@
       items: section.items.filter((item) => capOn(capState, (item as { cap?: string }).cap))
     }))
     .filter((section) => section.items.length > 0);
+
+  // Flat list of the sections this user can actually open — the search index is
+  // limited to these so it never surfaces a section the user can't navigate to.
+  $: visibleSections = sidebarSections.flatMap((section) =>
+    section.items.map((item) => ({ id: item.id, label: item.label }) as VisibleSection)
+  );
+
+  // Rebuild the fuzzy index only while the modal is open. `$locale` is referenced
+  // so the index refreshes when the UI language changes (labels are localized).
+  $: settingsSearchIndex = isOpen ? buildSettingsFuzzyIndex($locale, visibleSections) : null;
+
+  function buildSettingsFuzzyIndex(_locale: string, sections: VisibleSection[]) {
+    if (!i18next.isInitialized) return null;
+    const dict = i18next.getResourceBundle(i18next.language, 'translation') as Record<
+      string,
+      string
+    > | null;
+    const items = buildSettingsSearchItems(dict || {}, sections);
+    return createSettingsFuzzyIndex(items);
+  }
+
+  async function handleSettingsNavigate(
+    event: CustomEvent<{ sectionId: SettingsSection; anchorText: string }>
+  ) {
+    const { sectionId, anchorText } = event.detail;
+    switchSection(sectionId);
+    // Let the panel render (some load data async — flashSettingControl retries).
+    await tick();
+    flashSettingControl(anchorText);
+  }
+
+  // Tiered lookup: prefer labels/headings, then help text, then any element.
+  function findSettingElement(container: Element, needle: string): HTMLElement | null {
+    const target = needle.trim().toLowerCase();
+    if (!target) return null;
+    const tiers = [
+      'label, .section-title, .section-header, h3, h4, h5, legend',
+      '.form-text, .field-hint, .help-text, .field-desc, .input-hint, small, p',
+      '*',
+    ];
+    for (const selector of tiers) {
+      for (const el of Array.from(container.querySelectorAll(selector))) {
+        const text = (el.textContent || '').trim().toLowerCase();
+        if (text && text.includes(target)) return el as HTMLElement;
+      }
+    }
+    return null;
+  }
+
+  function flashSettingControl(anchorText: string, attempt = 0) {
+    if (!anchorText) return;
+    const container = modalElement?.querySelector('.settings-content');
+    const el = container ? findSettingElement(container, anchorText) : null;
+    if (!el) {
+      // Panel content may still be loading — retry briefly (~1s total) before giving up.
+      if (attempt < 20) window.setTimeout(() => flashSettingControl(anchorText, attempt + 1), 50);
+      return;
+    }
+    const scrollTarget =
+      (el.closest(
+        '.form-group, .form-row, .form-field, .settings-section, .content-section'
+      ) as HTMLElement) || el;
+    scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document
+      .querySelectorAll('.settings-search-flash')
+      .forEach((node) => node.classList.remove('settings-search-flash'));
+    scrollTarget.classList.add('settings-search-flash');
+    window.setTimeout(() => scrollTarget.classList.remove('settings-search-flash'), 1600);
+  }
 
   // Reactive recording settings change detection
   $: {
@@ -575,47 +660,63 @@
       <div class="settings-modal-container">
         <!-- Desktop sidebar -->
         <aside class="settings-sidebar">
-          {#each sidebarSections as section}
-            <div class="sidebar-section">
-              <h3 class="section-heading">{section.title}</h3>
-              <nav class="section-nav">
-                {#each section.items as item}
-                  <button
-                    class="nav-item"
-                    class:active={activeSection === item.id}
-                    class:dirty={$settingsModalStore.dirtyState[item.id]}
-                    on:click={() => switchSection(item.id)}
-                  >
-                    <span class="nav-item-label">{item.label}</span>
-                    {#if $settingsModalStore.dirtyState[item.id]}
-                      <span class="dirty-indicator" title={$t('settings.unsavedChanges')}>●</span>
-                    {/if}
-                  </button>
-                {/each}
-              </nav>
-            </div>
-          {/each}
+          <SettingsSearch
+            index={settingsSearchIndex}
+            idPrefix="settings-search-desktop"
+            bind:active={desktopSearchActive}
+            on:navigate={handleSettingsNavigate}
+          />
+          {#if !desktopSearchActive}
+            {#each sidebarSections as section}
+              <div class="sidebar-section">
+                <h3 class="section-heading">{section.title}</h3>
+                <nav class="section-nav">
+                  {#each section.items as item}
+                    <button
+                      class="nav-item"
+                      class:active={activeSection === item.id}
+                      class:dirty={$settingsModalStore.dirtyState[item.id]}
+                      on:click={() => switchSection(item.id)}
+                    >
+                      <span class="nav-item-label">{item.label}</span>
+                      {#if $settingsModalStore.dirtyState[item.id]}
+                        <span class="dirty-indicator" title={$t('settings.unsavedChanges')}>●</span>
+                      {/if}
+                    </button>
+                  {/each}
+                </nav>
+              </div>
+            {/each}
+          {/if}
         </aside>
 
         <!-- Content Area -->
         <main class="settings-content">
           <!-- Mobile section navigation (hidden on desktop where sidebar is visible) -->
           <div class="mobile-section-nav">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="mobile-nav-label">{$t('settings.title')}</label>
-            <select
-              class="mobile-nav-select"
-              value={activeSection}
-              on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}
-            >
-              {#each sidebarSections as section}
-                <optgroup label={section.title}>
-                  {#each section.items as item}
-                    <option value={item.id}>{item.label}</option>
-                  {/each}
-                </optgroup>
-              {/each}
-            </select>
+            <SettingsSearch
+              index={settingsSearchIndex}
+              idPrefix="settings-search-mobile"
+              bind:active={mobileSearchActive}
+              on:navigate={handleSettingsNavigate}
+            />
+            {#if !mobileSearchActive}
+              <!-- svelte-ignore a11y_label_has_associated_control -->
+              <label class="mobile-nav-label">{$t('settings.title')}</label>
+              <select
+                class="mobile-nav-select"
+                value={activeSection}
+                on:change={(e) => switchSection(e.currentTarget.value as SettingsSection)}
+              >
+                {#each sidebarSections as section}
+                  <optgroup label={section.title}>
+                    {#each section.items as item}
+                      <option value={item.id}>{item.label}</option>
+                    {/each}
+                  </optgroup>
+                {/each}
+              </select>
+            {/if}
           </div>
 
           <!-- Profile Section -->

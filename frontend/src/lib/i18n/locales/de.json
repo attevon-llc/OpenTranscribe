@@ -3825,5 +3825,12 @@
   "settings.contentRedaction.showOriginalTooltip": "Den ursprünglichen, unzensierten Text anzeigen (nur Eigentümer und Administratoren; vom Administrator erzwungene Kategorien bleiben maskiert)",
   "settings.contentRedaction.showRedactedTooltip": "Zurück zur zensierten Ansicht mit maskierten sensiblen Inhalten",
   "settings.sections.billingTeam": "Abrechnung & Team",
-  "settings.orgContext.cloudTitle": "Transkript-Kontext"
+  "settings.orgContext.cloudTitle": "Transkript-Kontext",
+  "settingsSearch.placeholder": "Einstellungen durchsuchen",
+  "settingsSearch.ariaLabel": "Einstellungen durchsuchen",
+  "settingsSearch.resultsCount": "{{count}} Ergebnisse",
+  "settingsSearch.noResultsTitle": "Keine Ergebnisse",
+  "settingsSearch.noResults": "Keine Einstellungen für „{{query}}“ gefunden",
+  "transcriptSearch.searchingAll": "Gesamtes Transkript wird durchsucht…",
+  "transcriptSearch.moreInTranscript": "Weitere Treffer im nicht geladenen Transkript"
 }

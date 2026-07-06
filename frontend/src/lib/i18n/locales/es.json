@@ -3825,5 +3825,12 @@
   "settings.contentRedaction.showOriginalTooltip": "Mostrar el texto original sin censura (solo propietarios y administradores; las categorías forzadas por el administrador permanecen ocultas)",
   "settings.contentRedaction.showRedactedTooltip": "Volver a la vista censurada con el contenido sensible oculto",
   "settings.sections.billingTeam": "Facturación y equipo",
-  "settings.orgContext.cloudTitle": "Contexto de la transcripción"
+  "settings.orgContext.cloudTitle": "Contexto de la transcripción",
+  "settingsSearch.placeholder": "Buscar ajustes",
+  "settingsSearch.ariaLabel": "Buscar ajustes",
+  "settingsSearch.resultsCount": "{{count}} resultados",
+  "settingsSearch.noResultsTitle": "Sin resultados",
+  "settingsSearch.noResults": "No se encontraron ajustes para «{{query}}»",
+  "transcriptSearch.searchingAll": "Buscando en toda la transcripción…",
+  "transcriptSearch.moreInTranscript": "Más coincidencias en la transcripción no cargada"
 }

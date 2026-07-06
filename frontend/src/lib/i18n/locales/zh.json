@@ -3825,5 +3825,12 @@
   "settings.contentRedaction.showOriginalTooltip": "显示未经编校的原始文本（仅限所有者和管理员；管理员强制的类别仍保持遮蔽）",
   "settings.contentRedaction.showRedactedTooltip": "切换回已编校视图，敏感内容将被遮蔽",
   "settings.sections.billingTeam": "账单与团队",
-  "settings.orgContext.cloudTitle": "转录上下文"
+  "settings.orgContext.cloudTitle": "转录上下文",
+  "settingsSearch.placeholder": "搜索设置",
+  "settingsSearch.ariaLabel": "搜索设置",
+  "settingsSearch.resultsCount": "{{count}} 个结果",
+  "settingsSearch.noResultsTitle": "无结果",
+  "settingsSearch.noResults": "未找到与“{{query}}”相关的设置",
+  "transcriptSearch.searchingAll": "正在搜索整个转录文本…",
+  "transcriptSearch.moreInTranscript": "未加载的转录文本中还有更多匹配项"
 }

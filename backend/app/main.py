@@ -118,6 +118,13 @@ async def _setup_minio():
     through presigned URLs, so public read is unnecessary and a security risk.
     """
     try:
+        from app.services.storage.routing import filesystem_enabled, local_storage
+
+        if filesystem_enabled():
+            local_storage().ensure_ready()
+            logger.info("Filesystem storage ready")
+            return
+
         import json
 
         from minio import Minio
@@ -411,6 +418,9 @@ async def _initialize_neural_search():
     For offline/air-gapped deployments, models are loaded from
     pre-downloaded local files (mounted at /ml-models in OpenSearch container).
     """
+    if settings.SEARCH_BACKEND.lower() == "sqlite":
+        logger.info("SQLite search backend active, skipping OpenSearch neural init")
+        return
     if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
         logger.info("Neural search disabled, skipping initialization")
         return
@@ -527,32 +537,35 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Initial data seeding failed (non-fatal): {e}")
 
-    # Check OpenSearch index health (auto-repair corrupted shards from unclean shutdowns)
-    try:
-        from app.services.opensearch_service import check_and_repair_indices
-        from app.services.opensearch_service import ensure_indices_exist
-        from app.services.opensearch_service import ensure_v4_index_exists
-
-        ensure_indices_exist()
-        ensure_v4_index_exists()
-        check_and_repair_indices()
-    except Exception as e:
-        logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")
-
-    # Sync speaker profile data from PostgreSQL to OpenSearch
-    try:
-        from app.db.base import SessionLocal
-        from app.services.opensearch_service import sync_speaker_profiles_to_opensearch
-
-        _db = SessionLocal()
+    # OpenSearch boot init (index health + speaker sync) is skipped entirely when
+    # SQLite is the search backend, so the JVM can be turned off; best-effort otherwise.
+    if settings.SEARCH_BACKEND.lower() != "sqlite":
+        # Check OpenSearch index health (auto-repair corrupted shards from unclean shutdowns)
         try:
-            sync_result = sync_speaker_profiles_to_opensearch(_db)
-            if sync_result["updated"] > 0:
-                logger.info(f"Speaker profile sync: {sync_result}")
-        finally:
-            _db.close()
-    except Exception as e:
-        logger.warning(f"Speaker profile sync failed (non-fatal): {e}")
+            from app.services.opensearch_service import check_and_repair_indices
+            from app.services.opensearch_service import ensure_indices_exist
+            from app.services.opensearch_service import ensure_v4_index_exists
+
+            ensure_indices_exist()
+            ensure_v4_index_exists()
+            check_and_repair_indices()
+        except Exception as e:
+            logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")
+
+        # Sync speaker profile data from PostgreSQL to OpenSearch
+        try:
+            from app.db.base import SessionLocal
+            from app.services.opensearch_service import sync_speaker_profiles_to_opensearch
+
+            _db = SessionLocal()
+            try:
+                sync_result = sync_speaker_profiles_to_opensearch(_db)
+                if sync_result["updated"] > 0:
+                    logger.info(f"Speaker profile sync: {sync_result}")
+            finally:
+                _db.close()
+        except Exception as e:
+            logger.warning(f"Speaker profile sync failed (non-fatal): {e}")
 
     # Apply the admin-configured derived-cache retention (DB over env) so the MinIO
     # lifecycle rule reflects UI changes after a restart — no redeploy needed. Also
@@ -589,7 +602,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Migration state cleanup failed (non-fatal): {e}")
 
-    logger.info("Setting up MinIO and task recovery...")
+    logger.info("Setting up object storage and task recovery...")
     minio_task = asyncio.create_task(_setup_minio())
     recovery_task = asyncio.create_task(_run_startup_recovery())
     search_maintenance = asyncio.create_task(_run_search_maintenance())
@@ -758,12 +771,18 @@ def readiness_check():
     except Exception as exc:  # noqa: BLE001
         checks["opensearch"] = f"error: {type(exc).__name__}"
 
-    # MinIO (degraded-but-ready) — reuse the existing client singleton.
+    # Object storage (degraded-but-ready) — use the selected backend.
     try:
-        from app.services.minio_service import minio_client
+        from app.services.storage.routing import filesystem_enabled, local_storage
 
-        minio_client.bucket_exists(settings.MEDIA_BUCKET_NAME)
-        checks["minio"] = "ok"
+        if filesystem_enabled():
+            local_storage().ensure_ready()
+            checks["minio"] = "skipped: filesystem storage"
+        else:
+            from app.services.minio_service import minio_client
+
+            minio_client.bucket_exists(settings.MEDIA_BUCKET_NAME)
+            checks["minio"] = "ok"
     except Exception as exc:  # noqa: BLE001
         checks["minio"] = f"error: {type(exc).__name__}"
 

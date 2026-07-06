@@ -104,8 +104,23 @@
     infiniteScrollObserver.observe(infiniteScrollSentinel);
   }
 
+  // Map segment uuid -> its index in file.transcript_segments. Search matches are
+  // keyed by that flat index; when segments come from the backend `grouped_segments`
+  // payload they are DIFFERENT object refs than `transcript_segments`, so a plain
+  // `indexOf` returns -1 and highlights silently vanish. Look up by uuid instead.
+  $: segmentIndexByUuid = (() => {
+    const map = new Map<string | number, number>();
+    (file?.transcript_segments || []).forEach((s: any, i: number) => {
+      if (s?.uuid != null) map.set(s.uuid, i);
+    });
+    return map;
+  })();
+
   // Helper to get original segment index for search highlighting
   function getOriginalSegmentIndex(segment: any): number {
+    if (segment?.uuid != null && segmentIndexByUuid.has(segment.uuid)) {
+      return segmentIndexByUuid.get(segment.uuid) as number;
+    }
     return file?.transcript_segments?.indexOf(segment) ?? -1;
   }
 

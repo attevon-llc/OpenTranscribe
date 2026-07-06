@@ -236,3 +236,86 @@ class TestTranscriptionSection:
         if app_page.locator("#min-speakers").count():
             expect(app_page.locator("#min-speakers")).to_be_visible()
             expect(app_page.locator("#max-speakers")).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# macOS-style settings search (search box above the sidebar tabs).
+# ---------------------------------------------------------------------------
+SEARCH_INPUT = "#settings-search-desktop-input"
+RESULT_ITEMS = '[id^="settings-search-desktop-result-"]'
+NAV_GROUPS = ".settings-sidebar .sidebar-section"
+
+
+def _open_settings_search(page: Page):  # type: ignore[no-untyped-def]
+    """Open the modal and return the sidebar search input locator."""
+    _open_settings_modal(page)
+    search_input = page.locator(SEARCH_INPUT)
+    expect(search_input).to_be_visible(timeout=8000)
+    return search_input
+
+
+class TestSettingsSearch:
+    """macOS-style settings search: query -> ranked results -> jump to section."""
+
+    def test_search_input_present(self, app_page: Page) -> None:
+        """A search box renders at the top of the settings sidebar."""
+        _open_settings_search(app_page)
+        # Normal grouped nav is visible before any query.
+        assert app_page.locator(NAV_GROUPS).count() >= 1
+
+    def test_query_shows_results_and_replaces_nav(self, app_page: Page) -> None:
+        """Typing a query lists matching settings and hides the grouped nav."""
+        search_input = _open_settings_search(app_page)
+        search_input.fill("transcription")
+        results = app_page.locator(RESULT_ITEMS)
+        expect(results.first).to_be_visible(timeout=5000)
+        assert results.count() >= 1, "Expected at least one settings search result"
+        # The grouped nav is replaced by the results list while searching.
+        expect(app_page.locator(NAV_GROUPS)).to_have_count(0, timeout=3000)
+        # Result rows highlight the matched term.
+        assert app_page.locator(f"{RESULT_ITEMS} .transcript-search-highlight").count() >= 1
+
+    def test_result_navigates_to_section_and_restores_nav(self, app_page: Page) -> None:
+        """Selecting a result switches the panel and restores the grouped nav."""
+        search_input = _open_settings_search(app_page)
+        search_input.fill("transcription")
+        expect(app_page.locator(RESULT_ITEMS).first).to_be_visible(timeout=5000)
+        app_page.locator(RESULT_ITEMS).first.click()
+
+        # A section panel is now shown, and the query cleared -> grouped nav is back.
+        expect(app_page.locator(".settings-content .section-title").first).to_be_visible(
+            timeout=8000
+        )
+        expect(app_page.locator(NAV_GROUPS).first).to_be_visible(timeout=5000)
+        expect(app_page.locator(SEARCH_INPUT)).to_have_value("")
+
+    def test_no_results_state(self, app_page: Page) -> None:
+        """A query with no matches shows an empty state and no result rows."""
+        search_input = _open_settings_search(app_page)
+        search_input.fill("zzzqqxnotarealsetting")
+        expect(app_page.locator(RESULT_ITEMS)).to_have_count(0, timeout=3000)
+        expect(app_page.locator(".settings-search-results .empty-state")).to_be_visible(
+            timeout=5000
+        )
+
+    def test_escape_clears_query_and_restores_nav(self, app_page: Page) -> None:
+        """Escape with a non-empty query clears it (does not close the modal)."""
+        search_input = _open_settings_search(app_page)
+        search_input.fill("download")
+        expect(app_page.locator(RESULT_ITEMS).first).to_be_visible(timeout=5000)
+        search_input.press("Escape")
+        expect(app_page.locator(SEARCH_INPUT)).to_have_value("")
+        expect(app_page.locator(NAV_GROUPS).first).to_be_visible(timeout=5000)
+        # The modal is still open (first Escape only cleared the query).
+        expect(app_page.locator(".settings-modal")).to_be_visible()
+
+    def test_search_emits_no_unexpected_console_errors(self, app_page: Page) -> None:
+        """Searching + navigating produces no new (non-benign) console errors."""
+        search_input = _open_settings_search(app_page)
+        search_input.fill("redaction")
+        app_page.wait_for_timeout(400)
+        if app_page.locator(RESULT_ITEMS).count():
+            app_page.locator(RESULT_ITEMS).first.click()
+            app_page.wait_for_timeout(400)
+        unexpected = _unexpected_console_errors(app_page._console_errors)  # type: ignore[attr-defined]
+        assert not unexpected, f"Unexpected console errors during settings search: {unexpected}"

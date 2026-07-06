@@ -514,6 +514,7 @@ class HybridSearchService:
         language: str | None = None,
         title_filter: str | None = None,
         organization_id: int | None = None,
+        file_uuid: str | None = None,
     ) -> SearchResponse:
         """Execute hybrid search and return grouped results.
 
@@ -565,6 +566,7 @@ class HybridSearchService:
             language=language,
             title_filter=title_filter,
             organization_id=organization_id,
+            file_uuid=file_uuid,
         )
         cached = _get_cached_response(cache_key)
         if cached:
@@ -599,6 +601,7 @@ class HybridSearchService:
             language=language,
             title_filter=title_filter,
             organization_id=organization_id,
+            file_uuid=file_uuid,
         )
         filters_applied = _collect_filters_applied(
             speakers=speakers,
@@ -1062,6 +1065,7 @@ class HybridSearchService:
         language: str | None = None,
         title_filter: str | None = None,
         organization_id: int | None = None,
+        file_uuid: str | None = None,
     ) -> list[dict[str, Any]]:
         """Build OpenSearch filter clauses.
 
@@ -1069,12 +1073,18 @@ class HybridSearchService:
         adds the default-deny tenant gate (org term when set, else exclude any
         org-stamped doc). Community-edition invariance: ``organization_id`` is
         always None and docs are org-less, so the personal gate is a no-op.
+
+        ``file_uuid`` scopes results to a single file — used by the in-page
+        transcript find bar so it can list every match across the whole
+        (paginated) transcript, including segments not yet loaded in the browser.
         """
         from app.services.search.tenant_scope import org_filter_clauses
 
         filters: list[dict[str, Any]] = [{"terms": {"accessible_user_ids": [user_id]}}]
         filters.extend(org_filter_clauses(organization_id))
 
+        if file_uuid:
+            filters.append({"term": {"file_uuid": file_uuid}})
         if speakers:
             filters.append({"terms": {"speaker": speakers}})
         if tags:
@@ -1098,6 +1108,57 @@ class HybridSearchService:
         _append_range_filter(filters, "file_size", min_file_size, max_file_size)
 
         return filters
+
+    def count_matches(
+        self,
+        query: str,
+        user_id: int,
+        file_uuid: str | None = None,
+        organization_id: int | None = None,
+    ) -> int:
+        """Count transcript chunks matching ``query`` (optionally within one file).
+
+        A deliberately lightweight path for the in-page transcript find bar. It runs a
+        single ``size=0`` OpenSearch query — no query embedding, no RRF pipeline, no
+        snippet extraction, no highlighting — so it stays cheap even when many users
+        search at once (FastAPI runs this sync call in its threadpool and OpenSearch
+        serves the searches concurrently). Returns the exact matching-chunk count
+        (``track_total_hits``), used purely as a "matches exist beyond the loaded
+        window" signal for progressive loading.
+        """
+        clean = (query or "").strip()
+        if not clean:
+            return 0
+        client = get_opensearch_client()
+        if not client:
+            return 0
+
+        _ensure_infrastructure()
+        filters = self._build_filters(
+            user_id,
+            None,
+            None,
+            None,
+            None,
+            file_uuid=file_uuid,
+            organization_id=organization_id,
+        )
+        text_query = self._build_text_query(clean, ["content", "content.exact"])
+        body = {
+            "size": 0,
+            "track_total_hits": True,
+            "query": {"bool": {"filter": filters, "must": [text_query]}},
+        }
+        try:
+            resp = client.search(index=settings.OPENSEARCH_CHUNKS_INDEX, body=body)
+        except Exception as exc:  # noqa: BLE001 — degrade to "unknown" on any OS error
+            logger.warning(f"count_matches failed: {exc}")
+            return 0
+
+        total = resp.get("hits", {}).get("total", {})
+        if isinstance(total, dict):
+            return int(total.get("value", 0))
+        return int(total or 0)
 
     def _build_highlight_fields(
         self,

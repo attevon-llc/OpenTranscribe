@@ -1,9 +1,9 @@
 # fastapi 0.137+ stops flattening include_router prefixes into scope["route"].path,
 # which breaks route-templated metrics labels (test_observability_middleware).
 # Cap until the observability middleware adapts to the new routing.
-fastapi>=0.136.3,<0.137
-uvicorn[standard]>=0.49.0
-websockets>=11.0.3
+fastapi>=0.139.0,<0.140
+uvicorn[standard]>=0.51.0
+websockets>=16.1
 sqlalchemy>=2.0.51
 alembic>=1.18.5
 pydantic>=2.13.4
@@ -11,7 +11,7 @@ pydantic-settings>=2.14.2
 python-jose[cryptography]>=3.5.0
 python-multipart>=0.0.32
 passlib[bcrypt]>=1.7.4
-bcrypt==3.2.2
+bcrypt==5.0.0
 email-validator
 
 # Observability (Prometheus metrics + structured JSON logs)
@@ -46,12 +46,12 @@ qrcode[pil]>=8.2
 
 # AI/ML Stack - All cuDNN 9 compatible for CUDA 12.8
 # NumPy 2.x - required by whisperx>=3.7.6
-numpy>=2.1.0
+numpy>=2.5.1
 
 # PyTorch with CUDA 12.8 support (CVE-2025-32434 fixed in 2.6.0+)
 --extra-index-url https://download.pytorch.org/whl/cu128
-torch==2.8.0
-torchaudio==2.8.0
+torch==2.13.0+cpu
+torchaudio==2.11.0+cu128
 
 # =============================================================================
 # WhisperX 3.8.1 Dependencies (explicit since we install with --no-deps)
@@ -67,8 +67,8 @@ ctranslate2>=4.8.1,<5
 faster-whisper>=1.2.1
 
 # ML/Data processing
-transformers>=4.48.0
-huggingface-hub<1.0.0
+transformers>=5.13.1
+huggingface-hub<2.0.0
 # pandas removed: only used by diarizer/speaker_assigner/reprocess, replaced with
 # DiarizeResult numpy dataclass. Saves ~72 MB. See app/transcription/diarize_result.py.
 # triton removed: openai/triton only needed for torch.compile(backend="inductor") JIT,
@@ -110,28 +110,28 @@ omegaconf>=2.3.1
 # Supporting libraries
 ffmpeg-python>=0.2.0
 gender-guesser>=0.4.0
-sentencepiece>=0.2.1
+sentencepiece>=0.2.2
 psutil>=7.2.2
 pyexiftool>=0.5.6
 # [default] extras: mutagen (metadata), pycryptodomex (stream decryption),
 # websockets (WS-based extractors), brotli (compressed responses), certifi (SSL)
-yt-dlp[default]>=2026.6.9
+yt-dlp[default]>=2026.7.4
 
 # Semantic search and NLP
 sentence-transformers>=5.6.0  # For semantic search embeddings (all-MiniLM-L6-v2)
-nltk>=3.9.4  # Required by whisperx>=3.7.6, also for SnowballStemmer
+nltk>=3.10.0  # Required by whisperx>=3.7.6, also for SnowballStemmer
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
 deepgram-sdk>=7.4.0
-assemblyai>=0.64.25
+assemblyai>=0.64.26
 google-cloud-speech>=2.40.0
 azure-cognitiveservices-speech>=1.50.0
-speechmatics-batch>=0.4.8
+speechmatics-batch>=0.5.0
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
-boto3>=1.43.40
+boto3>=1.43.46
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai>=2.44.0
+openai>=2.45.0
 # requests is pulled in by many packages but listed explicitly for Gladia REST calls
 requests>=2.34.2
 
@@ -146,7 +146,7 @@ meeteval>=0.4.3
 # Loaded only by the celery-redaction worker (PRELOAD_REDACTION_MODELS=true).
 # Presidio = PII detection orchestration (built-in regex recognizers + NER).
 presidio-analyzer>=2.2.363
-presidio-anonymizer>=2.2.355
+presidio-anonymizer>=2.2.363
 # GLiNER = small CPU zero-shot NER for names/addresses (plugs into Presidio).
 gliner>=0.2.27
 # detoxify = toxicity classification (segment-level). transformers (above) backs
@@ -160,7 +160,7 @@ detoxify>=0.5.2
 # default; events are an additive speedup on real local filesystems only).
 watchdog>=6.0.0
 # smbprotocol = pure-Python SMB2/3 client (no cifs-utils / mount; runs non-root).
-smbprotocol>=1.16.1
+smbprotocol>=1.17.0
 # msal = Microsoft Authentication Library for M365 Graph sendMail (OAuth2) when
 # the tenant has SMTP basic-auth disabled. (boto3 already listed above for S3.)
 msal>=1.37.0

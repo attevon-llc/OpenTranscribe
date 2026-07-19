@@ -6,8 +6,8 @@
 
 # Code Quality & Formatting
 black>=26.5.1
-ruff>=0.15.20
-mypy>=2.1.0
+ruff>=0.15.22
+mypy>=2.3.0
 mypy-extensions>=1.1.0
 import-linter>=2.13  # Enforces the app ↛ cloud seam (forbidden contract in pyproject.toml)
 

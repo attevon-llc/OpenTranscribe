@@ -1,3 +1,7 @@
+---
+description: Cut an OpenTranscribe release — version bump, CHANGELOG, annotated tag, multi-arch image build/push, and a published (never draft) GitHub release. Follows docs/RELEASE_PROCESS.md.
+---
+
 # OpenTranscribe Release Assistant
 
 You are helping to create a new release for OpenTranscribe. Follow the complete release process documented in `docs/RELEASE_PROCESS.md`.

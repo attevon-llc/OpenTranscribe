@@ -296,6 +296,9 @@ scripts/pki/test-certs/
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# Claude Code personal project memory (never share; CLAUDE.md is the team file)
+CLAUDE.local.md
 test-results/
 
 # Watch Sources local mount (test/runtime media — issue #26)

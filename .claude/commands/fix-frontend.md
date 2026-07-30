@@ -1,3 +1,7 @@
+---
+description: Fix frontend build, type-check, lint, and test failures in the OpenTranscribe SvelteKit SPA. Use when svelte-check, eslint, vitest, or the Vite build fails, or when the frontend-check pre-commit hook blocks a commit.
+---
+
 # Fix Frontend Build Errors
 
 You are fixing frontend build and type-check errors in the OpenTranscribe project.

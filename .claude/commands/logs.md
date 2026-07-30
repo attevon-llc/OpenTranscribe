@@ -28,6 +28,9 @@ Tail logs for the running OpenTranscribe stack.
 # Backend + celery (async tasks)
 ./opentr.sh logs backend & ./opentr.sh logs celery-worker
 
-# Just errors across the stack
+# Just errors across the stack.
+# Read-only cross-service inspection is the documented exception to the
+# "always use ./opentr.sh" rule — reading logs can't attach you to the wrong
+# database. Anything that starts, stops, builds, or execs goes through the script.
 docker compose logs --since 10m | grep -iE "error|exception|traceback"
 ```

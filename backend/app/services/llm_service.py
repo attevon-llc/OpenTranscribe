@@ -1641,6 +1641,67 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         return None
 
     @staticmethod
+    def create_from_config_id(user_id: int, config_id: int) -> Optional["LLMService"]:
+        """Create LLMService from ONE specific LLM configuration the user may use.
+
+        Used by RAG chat, where a conversation can pin a model different from the
+        user's active default. Shares the ownership check and key decryption with
+        :meth:`create_from_user_settings` so a per-conversation override can never
+        reach a configuration the caller isn't entitled to.
+
+        Args:
+            user_id: The caller (owner, or a user of a shared configuration).
+            config_id: ``user_llm_settings.id`` to load.
+
+        Returns:
+            A configured service, or None if the config is missing or not theirs.
+        """
+        from sqlalchemy import or_
+
+        from app.db.base import SessionLocal
+        from app.models.user_llm_settings import UserLLMSettings
+        from app.utils.encryption import decrypt_api_key
+
+        db = SessionLocal()
+        try:
+            user_settings = (
+                db.query(UserLLMSettings)
+                .filter(
+                    UserLLMSettings.id == config_id,
+                    or_(
+                        UserLLMSettings.user_id == user_id,
+                        UserLLMSettings.is_shared == True,  # noqa: E712
+                    ),
+                )
+                .first()
+            )
+            if not user_settings:
+                logger.warning(f"LLM config {config_id} not available to user {user_id}")
+                return None
+
+            api_key = None
+            if user_settings.api_key:
+                api_key = decrypt_api_key(str(user_settings.api_key))
+                if not api_key:
+                    logger.error(f"Failed to decrypt API key for LLM config {config_id}")
+                    return None
+
+            config = LLMConfig(
+                provider=LLMProvider(user_settings.provider),
+                model=str(user_settings.model_name),
+                api_key=api_key,
+                base_url=str(user_settings.base_url) if user_settings.base_url else None,
+                max_tokens=int(user_settings.max_tokens),
+                temperature=float(user_settings.temperature),
+            )
+            return LLMService(config)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Could not build LLMService from config {config_id}: {e}")
+            return None
+        finally:
+            db.close()
+
+    @staticmethod
     def create_from_user_settings(user_id: int) -> Optional["LLMService"]:
         """Create LLMService from user-specific database settings"""
         from app import models

@@ -77,12 +77,6 @@ interface UploadResult {
   isDuplicate: boolean;
 }
 
-// Hash calculation for duplicate detection. Uses a Web Worker so the UI
-// stays responsive on multi-GB files — see $lib/services/sha256Hasher.
-async function calculateFileHash(file: File): Promise<string> {
-  return hashFileSHA256(file);
-}
-
 class UploadService {
   private uploads: Map<string, UploadItem> = new Map();
   private eventListeners: ((event: UploadEvent) => void)[] = [];
@@ -342,7 +336,7 @@ class UploadService {
           progress: 0,
           estimatedTime: get(t)('upload.calculatingHash'),
         });
-        fileHash = await calculateFileHash(file);
+        fileHash = await hashFileSHA256(file);
       } catch {
         // File hash calculation is optional, continue without it
       }

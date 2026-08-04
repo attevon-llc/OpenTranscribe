@@ -7,7 +7,21 @@ End-to-end validation for every OpenTranscribe release. Two scenarios:
 | `test-fresh-install.sh` | A new user runs the documented `setup-opentranscribe.sh` one-liner and ends up with a working stack on the current release |
 | `test-upgrade-from-v033.sh` | A user with real data on the previous release can run the documented upgrade path and find their data intact, migrations applied, new features available |
 
-Both scripts run inside hard-isolated test deployments and **never** touch the live `opentranscribe-*` containers, the production MinIO at `/mnt/nas/opentranscribe-minio`, or the production Postgres at `/mnt/nvm/opentranscribe/pg`. The safety harness in `lib/guardrails.sh` enforces this.
+## ⚠️ Precondition: the live stack must be STOPPED
+
+**These scripts are not sandboxed from the live deployment and cannot run alongside it.** Run `./opentr.sh stop` first.
+
+That is deliberate, not an oversight. Both scenarios validate what a *real user* gets from the documented `setup-opentranscribe.sh` one-liner, so they run under the one-liner's own compose project name (`opentranscribe`), its stock `opentranscribe-*` container names, and its standard **5173–5180** host ports. Renaming any of that would test a configuration nobody actually deploys. `TEST_PROJECT_NAME` (`ot-reltest-*`) is only a **label namespace for cleanup** — it is not passed to `docker compose` as `COMPOSE_PROJECT_NAME`.
+
+Rather than isolate by name, `lib/guardrails.sh` refuses to start unless the field is clear, and walls off live data:
+
+- **Refuses to run if any `opentranscribe-*` container exists**, running *or* stopped (a stopped one would collide on `container_name`).
+- **Refuses to run if any of the 5173–5180 ports is already bound.**
+- **Refuses any `TEST_ROOT` or bind-mount source that resolves under a protected path** — `/mnt/nas/opentranscribe-minio`, `/mnt/nas/opentranscribe`, `/mnt/nvm/opentranscribe`, `/mnt/nvm/repos/transcribe-app`, and several personal-data paths. `TEST_ROOT` must additionally sit under `/mnt/nvm/opentranscribe-test-runs` or `/tmp/ot-reltest-` unless `OT_RELEASE_TEST_ALLOW_PATH=1`.
+- **Never deletes the production named volumes** (`postgres_data`, `minio_data`, `redis_data`, `opensearch_data`, `flower_data`); cleanup re-checks the path allowlist before removing anything.
+- **Requires an interactive `I UNDERSTAND` confirmation** and a free-disk check before touching anything.
+
+So the production MinIO at `/mnt/nas/opentranscribe-minio` and Postgres at `/mnt/nvm/opentranscribe/pg` are genuinely protected — but by refusing to start, not by running in parallel. If you want a stack that *can* run beside the live one, use `./opentr.sh start dev --fresh <name> --port-offset N` instead; that is the isolated-deployment machinery.
 
 ## Pre-release checklist
 
@@ -77,16 +91,23 @@ Each scenario writes:
 
 ## Isolation summary
 
+The scenarios are isolated from live **data**, not from live **names or ports** — which is why the
+live stack has to be down. The only columns that differ from a real user's deployment are the data
+root and the cleanup label.
+
 | Property | Live deployment | Scenario A | Scenario B |
 |---|---|---|---|
-| Project name | `transcribe-app` | `ot-reltest-fresh` | `ot-reltest-upgrade` |
-| Container prefix | `opentranscribe-` | `ot-reltest-fresh-` | `ot-reltest-upgrade-` |
-| Volume prefix | `<unprefixed>` | `ot_reltest_fresh_` | `ot_reltest_upgrade_` |
-| Frontend port | 5173 | 6173 | 6273 |
-| Backend port | 5174 | 6174 | 6274 |
-| Postgres port | 5435 | 6176 | 6276 |
+| Compose project name | `transcribe-app` | `opentranscribe` (one-liner default) | `opentranscribe` (one-liner default) |
+| Container prefix | `opentranscribe-` | `opentranscribe-` | `opentranscribe-` |
+| Frontend port | 5173 | 5173 | 5173 |
+| Backend port | 5174 | 5174 | 5174 |
+| Postgres port | 5176 | 5176 | 5176 |
 | Data root | `/mnt/nas/opentranscribe-minio`, `/mnt/nvm/opentranscribe/pg` | `$TEST_ROOT/install/.../data/` | `$TEST_ROOT/before/.../data/` then upgraded in place |
+| Cleanup label namespace | none | `ot-reltest-fresh` | `ot-reltest-upgrade` |
 | Label | none | `com.opentranscribe.release-test=fresh-install` | `com.opentranscribe.release-test=upgrade` |
+
+Every port is overridable (`FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT`, …) if you need to move
+them, but the container names are not — they come from the installer being tested.
 
 ## Future releases
 

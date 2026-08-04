@@ -48,10 +48,16 @@ this file is for.
   superseded by `backend/app/tasks/recovery.py`. (`comprehensive-database-review.sql` is read-only.)
 - `cleanup-test-users.py` — `DELETE FROM "user"`; dry-run unless `--execute`.
 - `uninstall-offline-package.sh` — `docker compose down -v`, `docker rmi`, `rm -rf /opt/opentranscribe`.
-- `release-tests/*` — `docker volume rm` on `opentranscribe_*` plus `rm -rf $TEST_ROOT`. They also
-  **require the live stack to be stopped** (they bind the standard 5173–5180 ports under the stock
-  `opentranscribe-*` container names, contrary to their own README). Gated by an `I UNDERSTAND` prompt
-  and a protected-path/volume allowlist in `lib/guardrails.sh`.
+- `release-tests/*` — `docker volume rm` on `opentranscribe_*` plus `rm -rf $TEST_ROOT`. They
+  **require the live stack to be stopped**: they bind the standard 5173–5180 ports under the stock
+  `opentranscribe-*` names and the one-liner's `opentranscribe` compose project, **by design**, so the
+  run exercises exactly what a real user's install produces. `TEST_PROJECT_NAME` (`ot-reltest-*`) is a
+  cleanup label namespace only, never `COMPOSE_PROJECT_NAME`. Isolation is from live *data*, not live
+  *names*: `lib/guardrails.sh` refuses to start if any `opentranscribe-*` container exists (running or
+  stopped) or any port is bound, rejects a `TEST_ROOT`/bind-mount under a protected path, never deletes
+  the production volumes, and gates on an `I UNDERSTAND` prompt. For a stack that runs *beside* the
+  live one, use `./opentr.sh start dev --fresh <name> --port-offset N` instead. (The README claimed
+  hard isolation with 6173+/6273+ ports until #303 — it never worked that way.)
 - `run_benchmark.py` — `docker compose down -v` on `-p otbench`, plus a legacy cleanup pass aimed at the
   **`transcribe-app` dev project** (suppress with `--no-cleanup-legacy`).
 - `test-model-download.sh` — `rm -rf ./test-model-cache`, **relative to cwd**.

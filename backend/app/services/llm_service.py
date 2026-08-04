@@ -8,7 +8,9 @@ Designed specifically for Celery tasks - no asyncio conflicts.
 import json
 import logging
 import re
+import threading
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -20,6 +22,9 @@ from urllib3.util.retry import Retry
 
 from app.core.config import settings
 from app.core.constants import LLM_OUTPUT_LANGUAGES
+from app.services.llm_stream import LLMStreamEvent
+from app.services.llm_stream import apply_stream_payload
+from app.services.llm_stream import get_stream_parser
 
 logger = logging.getLogger(__name__)
 
@@ -445,6 +450,100 @@ class LLMService:
                 f"Unexpected error in LLM request to {self.config.provider}: {type(e).__name__}: {e}"
             )
             raise
+
+    def _iter_stream_lines(
+        self, response: requests.Response, cancel_event: threading.Event | None
+    ) -> Iterator[str]:
+        """Yield decoded response lines, stopping early when cancellation is requested."""
+        for line in response.iter_lines(decode_unicode=True):
+            if cancel_event is not None and cancel_event.is_set():
+                return
+            if line is None:
+                continue
+            yield str(line)
+
+    def chat_completion_stream(
+        self,
+        messages: list[dict[str, str]],
+        cancel_event: threading.Event | None = None,
+        **kwargs,
+    ) -> Iterator[LLMStreamEvent]:
+        """Stream a chat completion token-by-token from the configured provider.
+
+        The interactive counterpart to :meth:`chat_completion`. Payload construction is
+        shared with the non-streaming path (``_prepare_payload``), so model, temperature
+        and token settings can never drift between the two.
+
+        Failures are yielded as a single ``error`` event rather than raised: a streaming
+        HTTP response has already committed its status line by the time most provider
+        problems surface, so the caller relays the error in-band as an SSE frame.
+
+        Args:
+            messages: Chat messages in OpenAI format.
+            cancel_event: Set by the caller (client disconnect / stop button) to abort
+                the stream; the generator closes the connection and reports
+                ``finish_reason="cancelled"``.
+            **kwargs: Overrides forwarded to the payload builder (max_tokens,
+                temperature, ...).
+
+        Yields:
+            :class:`LLMStreamEvent` values, always terminated by exactly one ``done``
+            or ``error`` event.
+        """
+        url = self.endpoints[self.config.provider]
+        if url is None:
+            yield LLMStreamEvent(
+                type="error", message=f"No endpoint configured for provider {self.config.provider}"
+            )
+            return
+
+        provider = self.config.provider.value
+        headers = self._get_headers()
+        payload = apply_stream_payload(self._prepare_payload(messages, **kwargs), provider)
+        parser = get_stream_parser(provider)
+
+        logger.info(
+            f"Starting LLM stream: {provider}/{self.config.model}, "
+            f"{len(messages)} messages, "
+            f"{sum(len(m.get('content', '')) for m in messages)} chars"
+        )
+
+        try:
+            # (connect, read) — a 120s idle gap means the provider stopped producing.
+            response = self.session.post(
+                url, json=payload, headers=headers, timeout=(10, 120), stream=True
+            )
+        except requests.exceptions.RequestException as e:
+            logger.error(f"LLM stream connection failed for {provider}: {type(e).__name__}")
+            yield LLMStreamEvent(type="error", message=f"Connection error: {e}")
+            return
+
+        try:
+            if response.status_code != 200:
+                detail = response.text[:500]
+                logger.error(f"LLM stream error ({response.status_code}): {detail}")
+                yield LLMStreamEvent(
+                    type="error",
+                    message=f"LLM API error ({response.status_code}): {detail}",
+                )
+                return
+
+            for event in parser(self._iter_stream_lines(response, cancel_event)):
+                if event.type == "done" and cancel_event is not None and cancel_event.is_set():
+                    yield LLMStreamEvent(type="done", finish_reason="cancelled")
+                    return
+                yield event
+                if event.type in ("done", "error"):
+                    return
+        except requests.exceptions.RequestException as e:
+            logger.error(f"LLM stream interrupted for {provider}: {type(e).__name__}: {e}")
+            yield LLMStreamEvent(type="error", message=f"Stream interrupted: {e}")
+        finally:
+            response.close()
+
+    def estimate_tokens(self, text: str) -> int:
+        """Public wrapper over the internal token heuristic (see :meth:`_estimate_tokens`)."""
+        return self._estimate_tokens(text)
 
     def _estimate_tokens(self, text: str) -> int:
         """

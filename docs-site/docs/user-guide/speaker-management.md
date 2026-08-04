@@ -136,7 +136,7 @@ View comprehensive speaker statistics:
 
 ### Jump-to-Timestamp in Speaker Editor
 
-The speaker editor includes jump-to-timestamp links next to each segment ([#147](https://github.com/davidamacey/OpenTranscribe/issues/147)):
+The speaker editor includes jump-to-timestamp links next to each segment ([#147](https://github.com/attevon-llc/OpenTranscribe/issues/147)):
 
 - Click the timestamp badge next to any segment in the speaker editor to jump the media player to that moment
 - Useful for quickly verifying speaker assignments by listening to the actual audio

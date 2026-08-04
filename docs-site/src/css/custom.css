@@ -21,6 +21,11 @@
   --ot-surface: #f8fafc;
   --ot-surface-alt: #f1f5f9;
   --ot-border: #e2e8f0;
+  /* Infima leaves --ifm-background-color as `transparent` in light mode, so it is
+     unusable as a backdrop. Anything that must actually occlude what scrolls beneath
+     it — sticky table columns, scroll-edge fades — uses this instead. */
+  --ot-bg: #ffffff;
+  --ot-dash: #cbd5e1;
 }
 
 [data-theme='dark'] {
@@ -38,6 +43,8 @@
   --ot-surface: #1e293b;
   --ot-surface-alt: #0f172a;
   --ot-border: #334155;
+  --ot-bg: #1b1b1d;
+  --ot-dash: #475569;
 }
 
 html {
@@ -63,4 +70,79 @@ html {
 
 .alert {
   border-radius: 8px;
+}
+
+/* ===== Responsive content =====
+   Everything below keeps wide content inside the viewport on phones and tablets.
+   The rule of thumb: give the wide thing its own scroller, never let it widen the
+   page. A document-level horizontal scrollbar is always a bug here. */
+
+/* Tables are wrapped by src/components/ScrollableTable (see src/theme/MDXComponents).
+   Infima styles the bare `table` element, so re-target the wrapped one. */
+.markdown table {
+  display: table;
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.markdown table th,
+.markdown table td {
+  /* A bare URL or a long snake_case identifier in a cell must not set the column's
+     minimum width — without this the table can exceed the scroller and clip. */
+  overflow-wrap: break-word;
+}
+
+/* Keep the first column of a wide table narrow enough that the value columns are
+   reachable on a phone; without a cap a long label eats the whole viewport. */
+@media screen and (max-width: 768px) {
+  .markdown table th:first-child,
+  .markdown table td:first-child {
+    min-width: 6rem;
+  }
+
+  .markdown table {
+    font-size: 0.875rem;
+  }
+}
+
+/* Mermaid renders a fixed-width SVG; let it scroll instead of overflowing. */
+.docusaurus-mermaid-container {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Screenshots and diagrams scale down rather than forcing the page wider. */
+.markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Long unbroken strings (paths, URLs, base64) in prose and headings. */
+.markdown > p,
+.markdown li {
+  overflow-wrap: break-word;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  overflow-wrap: break-word;
+}
+
+/* Inline code is a common overflow source on narrow screens. `overflow-wrap` breaks
+   only when a token genuinely cannot fit — deliberately not `word-break: break-word`,
+   which shatters short identifiers like `backend:8080/metrics` across three lines even
+   when the table it sits in could simply have scrolled. */
+.markdown code {
+  overflow-wrap: break-word;
+}
+
+/* ...but never break code *blocks* — those scroll horizontally by design, and
+   breaking them would corrupt copy-pasted commands. */
+.markdown pre code,
+.theme-code-block code {
+  overflow-wrap: normal;
+  word-break: normal;
 }

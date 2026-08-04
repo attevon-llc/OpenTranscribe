@@ -141,6 +141,9 @@ services:
     build:
       context: ./docs-site
       dockerfile: Dockerfile
+      args:
+        # Repo-root VERSION is outside this build context; opentr.sh exports it.
+        OT_VERSION: ${APP_VERSION:-}
     ports:
       - "${DOCS_PORT:-5183}:8080"
 

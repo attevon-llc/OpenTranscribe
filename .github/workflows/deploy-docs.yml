@@ -8,6 +8,9 @@ on:
     paths:
       - 'docs-site/**'
       - '.github/workflows/deploy-docs.yml'
+      # The homepage version badge is read from VERSION at build time, so a release
+      # bump has to redeploy the site or the badge stays on the previous version.
+      - 'VERSION'
   workflow_dispatch:
 
 permissions:

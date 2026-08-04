@@ -57,7 +57,7 @@ Prompt inheritance follows a clear priority chain: per-file custom prompt > coll
 
 ### Auto-Label (New in v0.4.0)
 
-AI-powered automatic tagging and collection assignment ([#140](https://github.com/davidamacey/OpenTranscribe/issues/140)):
+AI-powered automatic tagging and collection assignment ([#140](https://github.com/attevon-llc/OpenTranscribe/issues/140)):
 
 - After transcription, the LLM suggests topic tags based on content analysis
 - High-confidence suggestions (>= configurable threshold, default 0.75) are automatically applied as tags

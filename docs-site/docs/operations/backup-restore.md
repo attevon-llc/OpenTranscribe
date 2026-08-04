@@ -619,7 +619,7 @@ If you need to rebuild the entire system from backups:
 # 1. Install Docker and Docker Compose on the new server
 
 # 2. Clone or copy the OpenTranscribe repository
-git clone https://github.com/davidamacey/OpenTranscribe.git /opt/opentranscribe
+git clone https://github.com/attevon-llc/OpenTranscribe.git /opt/opentranscribe
 cd /opt/opentranscribe
 
 # 3. Restore configuration

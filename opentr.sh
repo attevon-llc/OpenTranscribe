@@ -159,7 +159,11 @@ build_prod_images() {
   }
 
   echo "🧱 Building docs image (davidamacey/opentranscribe-docs:latest)..."
-  docker build --build-arg DOCS_BASE_URL=/docs/ -t davidamacey/opentranscribe-docs:latest docs-site || {
+  # The docs build context is docs-site/, so pass the repo-root VERSION in explicitly —
+  # docusaurus.config.ts cannot read ../VERSION from inside the container.
+  docker build --build-arg DOCS_BASE_URL=/docs/ \
+    --build-arg "OT_VERSION=${APP_VERSION}" \
+    -t davidamacey/opentranscribe-docs:latest docs-site || {
     echo "❌ Docs image build failed"
     exit 1
   }

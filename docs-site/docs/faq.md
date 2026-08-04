@@ -644,6 +644,6 @@ All are permissive licenses compatible with commercial use.
 
 ## Still Have Questions?
 
-- **GitHub Discussions**: [github.com/davidamacey/OpenTranscribe/discussions](https://github.com/davidamacey/OpenTranscribe/discussions)
-- **GitHub Issues**: [github.com/davidamacey/OpenTranscribe/issues](https://github.com/davidamacey/OpenTranscribe/issues)
+- **GitHub Discussions**: [github.com/attevon-llc/OpenTranscribe/discussions](https://github.com/attevon-llc/OpenTranscribe/discussions)
+- **GitHub Issues**: [github.com/attevon-llc/OpenTranscribe/issues](https://github.com/attevon-llc/OpenTranscribe/issues)
 - **Documentation**: Browse the rest of the docs!

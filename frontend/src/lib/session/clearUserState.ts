@@ -57,6 +57,9 @@ export async function clearUserState(): Promise<void> {
     import('$stores/groups').then(({ groupsStore }) => groupsStore.reset()),
     import('$stores/downloads').then(({ downloadStore }) => downloadStore.reset()),
     import('$stores/notifications').then(({ clearAllNotifications }) => clearAllNotifications()),
+    // Also aborts any in-flight stream: logging out mid-answer must not keep
+    // streaming one user's conversation into the next user's session.
+    import('$stores/chat').then(({ chatStore }) => chatStore.reset()),
 
     // ── Recording (stops tracks, closes audio context, clears blob) ──
     import('$stores/recording').then(({ recordingManager }) => {

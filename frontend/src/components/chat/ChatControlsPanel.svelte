@@ -1,0 +1,262 @@
+<!--
+  ChatControlsPanel.svelte — per-conversation behaviour, from the header gear.
+
+  Scoped to ONE conversation on purpose. Turning context off or pinning a
+  different system prompt is usually something you want for the thing you're
+  working on right now, not a permanent change to how chat behaves — the
+  account-wide equivalents live in Settings → Chat.
+-->
+<script lang="ts">
+  import { createEventDispatcher } from 'svelte';
+  import { t } from '$stores/locale';
+  import type { ConversationSettings, SearchMode } from '$lib/types/chat';
+
+  export let isOpen = false;
+  export let settings: ConversationSettings = {};
+  /** Resolved use-context (conversation override, else the user default). */
+  export let useContext = true;
+  export let disabled = false;
+
+  const dispatch = createEventDispatcher<{
+    change: Partial<ConversationSettings>;
+    close: void;
+  }>();
+
+  const SEARCH_MODES: SearchMode[] = ['hybrid', 'semantic', 'keyword'];
+
+  let systemPromptDraft = '';
+  let promptDirty = false;
+
+  $: if (isOpen && !promptDirty) {
+    systemPromptDraft = settings.system_prompt ?? '';
+  }
+
+  $: temperature = settings.temperature ?? 0.3;
+  $: searchMode = settings.search_mode ?? 'hybrid';
+
+  function toggleContext(): void {
+    dispatch('change', { use_context: !useContext });
+  }
+
+  function commitPrompt(): void {
+    promptDirty = false;
+    dispatch('change', { system_prompt: systemPromptDraft.trim() || null });
+  }
+</script>
+
+{#if isOpen}
+  <div class="controls-panel" data-testid="chat-controls-panel">
+    <div class="panel-header">
+      <h2>{$t('chat.controls.title')}</h2>
+      {#if promptDirty}
+        <span class="dirty-indicator" title={$t('common.unsavedChanges')}>●</span>
+      {/if}
+      <button
+        type="button"
+        class="close-btn"
+        on:click={() => dispatch('close')}
+        aria-label={$t('common.close')}
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="control-group">
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          checked={useContext}
+          on:change={toggleContext}
+          {disabled}
+          data-testid="chat-use-context-toggle"
+        />
+        <span>
+          <span class="toggle-label">{$t('chat.controls.useContext')}</span>
+          <span class="toggle-hint">{$t('chat.controls.useContextHint')}</span>
+        </span>
+      </label>
+    </div>
+
+    <div class="control-group">
+      <label class="field-label" for="chat-system-prompt">
+        {$t('chat.controls.systemPrompt')}
+      </label>
+      <textarea
+        id="chat-system-prompt"
+        bind:value={systemPromptDraft}
+        on:input={() => (promptDirty = true)}
+        on:blur={commitPrompt}
+        rows="4"
+        maxlength="2000"
+        placeholder={$t('chat.controls.systemPromptPlaceholder')}
+        {disabled}
+        data-testid="chat-system-prompt"
+      ></textarea>
+      <span class="char-count">{systemPromptDraft.length} / 2000</span>
+    </div>
+
+    <div class="control-group">
+      <label class="field-label" for="chat-temperature">
+        {$t('chat.controls.temperature')}
+        <span class="value">{temperature.toFixed(2)}</span>
+      </label>
+      <input
+        id="chat-temperature"
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        value={temperature}
+        on:change={(e) =>
+          dispatch('change', { temperature: Number((e.target as HTMLInputElement).value) })}
+        {disabled}
+        data-testid="chat-temperature"
+      />
+      <span class="range-hint">{$t('chat.controls.temperatureHint')}</span>
+    </div>
+
+    <div class="control-group">
+      <label class="field-label" for="chat-search-mode">{$t('chat.controls.searchMode')}</label>
+      <select
+        id="chat-search-mode"
+        value={searchMode}
+        on:change={(e) =>
+          dispatch('change', {
+            search_mode: (e.target as HTMLSelectElement).value as SearchMode,
+          })}
+        disabled={disabled || !useContext}
+        data-testid="chat-search-mode"
+      >
+        {#each SEARCH_MODES as mode}
+          <option value={mode}>{$t(`chat.searchMode.${mode}`)}</option>
+        {/each}
+      </select>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .controls-panel {
+    position: absolute;
+    top: 3.25rem;
+    right: 0.75rem;
+    z-index: 20;
+    width: min(22rem, calc(100vw - 2rem));
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background-color: var(--card-background);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .panel-header h2 {
+    margin: 0;
+    flex: 1;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .dirty-indicator {
+    color: var(--primary-color);
+    font-size: 0.9rem;
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 1.3rem;
+    line-height: 1;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0 0.25rem;
+    border-radius: 4px;
+  }
+
+  .close-btn:hover {
+    background-color: var(--button-hover);
+    color: var(--text-color);
+  }
+
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    cursor: pointer;
+  }
+
+  .toggle-label {
+    display: block;
+    font-size: 0.87rem;
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .toggle-hint,
+  .range-hint {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .field-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .value {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  textarea,
+  select {
+    width: 100%;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-family: inherit;
+    font-size: 0.85rem;
+    resize: vertical;
+  }
+
+  textarea:focus,
+  select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+  }
+
+  input[type='range'] {
+    width: 100%;
+    accent-color: var(--primary-color);
+  }
+
+  .char-count {
+    align-self: flex-end;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+</style>

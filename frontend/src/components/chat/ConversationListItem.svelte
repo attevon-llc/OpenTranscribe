@@ -1,0 +1,281 @@
+<!--
+  ConversationListItem.svelte — one row in the history sidebar.
+
+  Rename is inline (Enter commits, Escape reverts) rather than a modal, and
+  delete asks for confirmation in place: a conversation is unrecoverable once
+  deleted, but interrupting the user with a dialog for every rename would be
+  disproportionate.
+-->
+<script lang="ts">
+  import { createEventDispatcher, tick } from 'svelte';
+  import { t } from '$stores/locale';
+  import type { ConversationSummary } from '$lib/types/chat';
+
+  export let conversation: ConversationSummary;
+  export let active = false;
+
+  const dispatch = createEventDispatcher<{
+    select: string;
+    rename: { uuid: string; title: string };
+    delete: string;
+  }>();
+
+  let editing = false;
+  let confirmingDelete = false;
+  let draftTitle = '';
+  let input: HTMLInputElement;
+
+  $: displayTitle = conversation.title || $t('chat.conversation.untitled');
+
+  async function startRename(): Promise<void> {
+    draftTitle = conversation.title ?? '';
+    editing = true;
+    await tick();
+    input?.focus();
+    input?.select();
+  }
+
+  function commitRename(): void {
+    const next = draftTitle.trim();
+    editing = false;
+    if (next && next !== conversation.title) {
+      dispatch('rename', { uuid: conversation.uuid, title: next });
+    }
+  }
+
+  function handleRenameKey(event: KeyboardEvent): void {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commitRename();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      editing = false;
+    }
+  }
+</script>
+
+<li class="conversation-item" class:active data-testid="chat-conversation-item">
+  {#if editing}
+    <input
+      class="rename-input"
+      bind:this={input}
+      bind:value={draftTitle}
+      on:keydown={handleRenameKey}
+      on:blur={commitRename}
+      aria-label={$t('chat.conversation.rename')}
+      data-testid="chat-rename-input"
+    />
+  {:else if confirmingDelete}
+    <div class="confirm-row">
+      <span class="confirm-text">{$t('chat.conversation.deleteConfirmMessage')}</span>
+      <div class="confirm-actions">
+        <button
+          type="button"
+          class="confirm-btn danger"
+          on:click={() => dispatch('delete', conversation.uuid)}
+          data-testid="chat-delete-confirm"
+        >
+          {$t('common.delete')}
+        </button>
+        <button type="button" class="confirm-btn" on:click={() => (confirmingDelete = false)}>
+          {$t('common.cancel')}
+        </button>
+      </div>
+    </div>
+  {:else}
+    <button
+      type="button"
+      class="item-button"
+      on:click={() => dispatch('select', conversation.uuid)}
+      title={displayTitle}
+      data-testid="chat-conversation-select"
+    >
+      <span class="item-title">{displayTitle}</span>
+    </button>
+
+    <div class="item-actions">
+      <button
+        type="button"
+        class="icon-btn"
+        on:click|stopPropagation={startRename}
+        title={$t('chat.conversation.rename')}
+        aria-label={$t('chat.conversation.rename')}
+        data-testid="chat-rename"
+      >
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="icon-btn danger"
+        on:click|stopPropagation={() => (confirmingDelete = true)}
+        title={$t('chat.conversation.delete')}
+        aria-label={$t('chat.conversation.delete')}
+        data-testid="chat-delete"
+      >
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        </svg>
+      </button>
+    </div>
+  {/if}
+</li>
+
+<style>
+  .conversation-item {
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    border-radius: 8px;
+    padding: 0 0.2rem;
+    position: relative;
+  }
+
+  .conversation-item:hover {
+    background-color: var(--button-hover);
+  }
+
+  .conversation-item.active {
+    background-color: rgba(var(--primary-color-rgb), 0.12);
+  }
+
+  .conversation-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background-color: var(--primary-color);
+  }
+
+  .item-button {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0.5rem 0.35rem;
+    color: var(--text-color);
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+
+  .item-title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .item-actions {
+    display: flex;
+    gap: 0.1rem;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .conversation-item:hover .item-actions,
+  .item-actions:focus-within {
+    opacity: 1;
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .icon-btn:hover {
+    background-color: var(--card-background);
+    color: var(--text-color);
+  }
+
+  .icon-btn.danger:hover {
+    color: var(--error-color, #dc3545);
+  }
+
+  .rename-input {
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--primary-color);
+    border-radius: 6px;
+    background-color: var(--card-background);
+    color: var(--text-color);
+    font-size: 0.85rem;
+  }
+
+  .rename-input:focus {
+    outline: none;
+  }
+
+  .confirm-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.5rem 0.35rem;
+    width: 100%;
+  }
+
+  .confirm-text {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+
+  .confirm-actions {
+    display: flex;
+    gap: 0.35rem;
+  }
+
+  .confirm-btn {
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background-color: var(--card-background);
+    color: var(--text-color);
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  .confirm-btn:hover {
+    background-color: var(--button-hover);
+  }
+
+  .confirm-btn.danger {
+    border-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.5);
+    color: var(--error-color, #dc3545);
+  }
+
+  @media (hover: none) {
+    .item-actions {
+      opacity: 1;
+    }
+  }
+</style>

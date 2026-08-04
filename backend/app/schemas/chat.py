@@ -68,13 +68,13 @@ class ConversationSettings(BaseModel):
     """Per-conversation overrides (None = inherit the user's default)."""
 
     use_context: bool | None = None
-    system_prompt: str | None = Field(None, max_length=MAX_SYSTEM_PROMPT_CHARS)
-    temperature: float | None = Field(None, ge=0.0, le=2.0)
+    system_prompt: str | None = Field(default=None, max_length=MAX_SYSTEM_PROMPT_CHARS)
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     search_mode: SearchMode | None = None
 
 
 class ConversationCreate(BaseModel):
-    title: str | None = Field(None, max_length=255)
+    title: str | None = Field(default=None, max_length=255)
     scope: ChatScope = Field(default_factory=ChatScope)
     llm_config_uuid: str | None = None
     settings: ConversationSettings | None = None
@@ -83,7 +83,7 @@ class ConversationCreate(BaseModel):
 class ConversationUpdate(BaseModel):
     """PATCH body — only provided fields are applied."""
 
-    title: str | None = Field(None, max_length=255)
+    title: str | None = Field(default=None, max_length=255)
     is_archived: bool | None = None
     scope: ChatScope | None = None
     llm_config_uuid: str | None = None
@@ -140,8 +140,11 @@ class ConversationSummary(BaseModel):
 
 
 class ConversationDetail(ConversationSummary):
-    scope: ChatScope = Field(default_factory=ChatScope)
-    settings: ConversationSettings = Field(default_factory=ConversationSettings)
+    # Pydantic v2 deep-copies model defaults per instance, so a bare instance is
+    # safe here and keeps mypy happy (default_factory over a BaseModel subclass
+    # trips the plugin's overload resolution).
+    scope: ChatScope = ChatScope()
+    settings: ConversationSettings = ConversationSettings()
     llm_config_uuid: str | None = None
     use_context: bool = True  # resolved value (conversation override ∪ user default)
 
@@ -174,7 +177,7 @@ class ChatUserSettings(BaseModel):
 
 
 class ChatUserSettingsUpdate(BaseModel):
-    system_prompt: str | None = Field(None, max_length=MAX_SYSTEM_PROMPT_CHARS)
+    system_prompt: str | None = Field(default=None, max_length=MAX_SYSTEM_PROMPT_CHARS)
     use_context_default: bool | None = None
     default_search_mode: SearchMode | None = None
 
@@ -208,16 +211,16 @@ class ChatAdminSettings(BaseModel):
 
 
 class ChatAdminSettingsUpdate(BaseModel):
-    candidate_pool: int | None = Field(None, ge=1, le=500)
-    final_chunks: int | None = Field(None, ge=1, le=100)
-    max_chunks_per_file: int | None = Field(None, ge=1, le=50)
+    candidate_pool: int | None = Field(default=None, ge=1, le=500)
+    final_chunks: int | None = Field(default=None, ge=1, le=100)
+    max_chunks_per_file: int | None = Field(default=None, ge=1, le=50)
     rerank_enabled: bool | None = None
-    rerank_max_pairs: int | None = Field(None, ge=1, le=500)
+    rerank_max_pairs: int | None = Field(default=None, ge=1, le=500)
     query_rewrite_enabled: bool | None = None
-    cache_ttl_seconds: int | None = Field(None, ge=0, le=86400)
+    cache_ttl_seconds: int | None = Field(default=None, ge=0, le=86400)
     semantic_cache_enabled: bool | None = None
-    semantic_cache_threshold: float | None = Field(None, ge=0.5, le=1.0)
-    history_max_turns: int | None = Field(None, ge=1, le=50)
-    messages_per_hour: int | None = Field(None, ge=1, le=10000)
-    max_concurrent_streams: int | None = Field(None, ge=1, le=20)
-    retention_days: int | None = Field(None, ge=0, le=3650)
+    semantic_cache_threshold: float | None = Field(default=None, ge=0.5, le=1.0)
+    history_max_turns: int | None = Field(default=None, ge=1, le=50)
+    messages_per_hour: int | None = Field(default=None, ge=1, le=10000)
+    max_concurrent_streams: int | None = Field(default=None, ge=1, le=20)
+    retention_days: int | None = Field(default=None, ge=0, le=3650)

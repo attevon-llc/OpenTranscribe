@@ -60,6 +60,7 @@ const sidebars: SidebarsConfig = {
         'features/content-redaction',
         'features/watch-sources',
         'features/llm-integration',
+        'features/rag-chat',
         'features/authentication',
         'features/pipeline-optimization',
       ],

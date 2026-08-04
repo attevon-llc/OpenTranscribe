@@ -2307,6 +2307,7 @@
   "uploader.internetRequired": "Internetverbindung erforderlich",
   "uploader.invalidMediaUrl": "Bitte geben Sie eine gültige URL ein (muss mit http:// oder https:// beginnen)",
   "uploader.keepRecording": "Aufnahme Behalten",
+  "uploader.largeFilesWarning": "{{count}} große Datei(en) in der Warteschlange. Uploads können eine Weile dauern und erfordern eine stabile Internetverbindung.",
   "uploader.largeFileWarning": "Warnung: Dies ist eine große Datei ({{fileSize}}). Der Upload kann eine Weile dauern oder das Zeitlimit überschreiten.",
   "uploader.largeFileTip": "Für große Dateien sollten Sie eine schnellere Verbindung verwenden oder die Datei in kleinere Segmente aufteilen.",
   "uploader.maxSpeakers": "Max. Sprecher",

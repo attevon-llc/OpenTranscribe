@@ -2308,6 +2308,7 @@
   "uploader.invalidMediaUrl": "Por favor ingresa una URL válida (debe comenzar con http:// o https://)",
   "uploader.keepRecording": "Mantener Grabación",
   "uploader.largeFileTip": "Para archivos grandes, considera usar una conexión más rápida o dividir el archivo en segmentos más pequeños.",
+  "uploader.largeFilesWarning": "{{count}} archivo(s) grande(s) en cola. Las subidas pueden tardar y requieren una conexión a internet estable.",
   "uploader.largeFileWarning": "Advertencia: Este es un archivo grande ({{fileSize}}). La carga puede tomar tiempo y requiere una conexión a Internet estable. Haz clic en subir nuevamente para continuar.",
   "uploader.maxSpeakers": "Hablantes Máximos",
   "uploader.maxSpeakersHint": "Hablantes máximos esperados",

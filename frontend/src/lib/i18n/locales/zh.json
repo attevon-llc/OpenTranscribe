@@ -1713,6 +1713,7 @@
   "uploader.fileTypeError": "文件类型错误",
   "uploader.unsupportedTypeError": "不支持 \"{{type}}\" 文件类型。请上传音频或视频文件。",
   "uploader.fileTooLargeError": "文件太大（{{fileSize}}）。最大文件大小为 {{maxSize}}。请尝试：\n• 压缩视频/音频文件\n• 使用压缩率更好的格式\n• 将大文件拆分为较小的部分",
+  "uploader.largeFilesWarning": "已加入队列的大文件 {{count}} 个。上传可能需要一段时间，并需要稳定的网络连接。",
   "uploader.largeFileWarning": "警告：这是一个大文件（{{fileSize}}）。上传可能需要一段时间，需要稳定的网络连接。再次点击上传以继续。",
   "uploader.skippedInvalidFiles": "跳过了 {{count}} 个无效文件：\n{{files}}",
   "uploader.addedToQueue": "已将 {{count}} 个文件添加到队列，正在从 {{extractCount}} 个视频中提取音频",

@@ -2307,6 +2307,7 @@
   "uploader.internetRequired": "Connexion Internet requise",
   "uploader.invalidMediaUrl": "Veuillez entrer une URL valide (doit commencer par http:// ou https://)",
   "uploader.keepRecording": "Conserver l'Enregistrement",
+  "uploader.largeFilesWarning": "{{count}} fichier(s) volumineux en file d'attente. Les envois peuvent prendre du temps et nécessitent une connexion internet stable.",
   "uploader.largeFileWarning": "Attention : Fichier volumineux ({{fileSize}}). Le téléchargement peut prendre du temps et nécessite une connexion Internet stable. Cliquez à nouveau sur télécharger pour continuer.",
   "uploader.largeFileTip": "Pour les fichiers volumineux, envisagez d'utiliser une connexion plus rapide ou de diviser le fichier en segments plus petits.",
   "uploader.maxSpeakers": "Locuteurs Max",

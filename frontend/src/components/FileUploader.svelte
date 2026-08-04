@@ -27,6 +27,7 @@
     DEFAULT_TRANSCRIPTION_SETTINGS
   } from '$lib/api/transcriptionSettings';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
+  import { MAX_UPLOAD_BYTES, exceedsUploadLimit, warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
 
   // Step components
   import MediaFilePanel from './upload/MediaFilePanel.svelte';
@@ -59,7 +60,6 @@
   // ── Constants ──
   const MEDIA_URL_REGEX = /^https?:\/\/.+$/;
   const PREVIOUS_VALUES_KEY = 'opentr:uploadPreviousValues';
-  const FILE_SIZE_LIMIT = 2 * 1024 * 1024 * 1024;
   const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024;
 
   // ── Stepper State ──
@@ -421,14 +421,13 @@
       return;
     }
 
-    const MAX_FILE_SIZE = 15 * 1024 * 1024 * 1024;
-    if (selectedFile.size > MAX_FILE_SIZE) {
-      error = $t('uploader.fileTooLargeError', { fileSize: formatFileSize(selectedFile.size), maxSize: formatFileSize(MAX_FILE_SIZE) });
+    if (exceedsUploadLimit(selectedFile.size)) {
+      error = $t('uploader.fileTooLargeError', { fileSize: formatFileSize(selectedFile.size), maxSize: formatFileSize(MAX_UPLOAD_BYTES) });
       file = null;
       return;
     }
 
-    if (selectedFile.size > 2 * 1024 * 1024 * 1024) {
+    if (warrantsLargeUploadWarning(selectedFile.size)) {
       error = $t('uploader.largeFileWarning', { fileSize: formatFileSize(selectedFile.size) });
     }
 
@@ -461,7 +460,7 @@
     const invalidFiles: string[] = [];
 
     files.forEach(f => {
-      if (f.size > FILE_SIZE_LIMIT) {
+      if (exceedsUploadLimit(f.size)) {
         invalidFiles.push(`${f.name} (${$t('uploader.tooLarge', { size: formatFileSize(f.size) })})`);
         return;
       }
@@ -479,6 +478,12 @@
 
     if (invalidFiles.length > 0) {
       toastStore.error($t('uploader.skippedInvalidFiles', { count: invalidFiles.length, files: invalidFiles.join('\n') }));
+    }
+
+    // Same soft warning the single-file path gives — large files are accepted, just slow.
+    const largeFiles = validFiles.filter(f => warrantsLargeUploadWarning(f.size));
+    if (largeFiles.length > 0) {
+      toastStore.warning($t('uploader.largeFilesWarning', { count: largeFiles.length }));
     }
 
     if (validFiles.length > 0) {

@@ -1715,6 +1715,7 @@
   "uploader.unsupportedTypeError": "File type \"{{type}}\" is not supported. Please upload an audio or video file.",
   "uploader.fileTooLargeError": "File too large ({{fileSize}}). Maximum file size is {{maxSize}}. Please try:\n• Compressing the video/audio file\n• Using a different format with better compression\n• Splitting large files into smaller parts",
   "uploader.largeFileWarning": "Warning: This is a large file ({{fileSize}}). Upload may take a while and requires stable internet connection. Click upload again to proceed.",
+  "uploader.largeFilesWarning": "{{count}} large file(s) queued. Uploads may take a while and require a stable internet connection.",
   "uploader.skippedInvalidFiles": "Skipped {{count}} invalid files:\n{{files}}",
   "uploader.addedToQueue": "Added {{count}} file(s) to queue, extracting audio from {{extractCount}} video(s)",
   "uploader.addedToQueueOnly": "Added {{count}} file(s) to upload queue",

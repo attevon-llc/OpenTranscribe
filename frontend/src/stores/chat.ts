@@ -14,6 +14,7 @@ import { get, writable } from 'svelte/store';
 import { goto } from '$app/navigation';
 
 import * as chatApi from '$lib/api/chatApi';
+import { canTransition } from '$lib/utils/chatStateMachine';
 import { streamChatMessage, streamRegenerate } from '$lib/api/chatStream';
 import {
   emptyScope,
@@ -68,28 +69,6 @@ const initialState: ChatState = {
   tokenUsage: null,
   error: null,
 };
-
-/**
- * Legal stream-status transitions.
- *
- * Exported for tests: a stray `status` frame arriving after `done` must not
- * reopen the stream and re-disable the composer.
- */
-export function canTransition(from: StreamStatus, to: StreamStatus): boolean {
-  if (from === to) return true;
-  const terminal: StreamStatus[] = ['done', 'error', 'aborted'];
-  if (terminal.includes(from)) {
-    // Only a fresh send may leave a terminal state.
-    return to === 'submitting' || to === 'idle';
-  }
-  const order: StreamStatus[] = ['idle', 'submitting', 'retrieving', 'thinking', 'streaming'];
-  if (terminal.includes(to)) return from !== 'idle';
-  const fromIndex = order.indexOf(from);
-  const toIndex = order.indexOf(to);
-  if (fromIndex === -1 || toIndex === -1) return false;
-  // Never move backwards (a late 'retrieving' after tokens started is noise).
-  return toIndex >= fromIndex;
-}
 
 function createChatStore() {
   const { subscribe, set, update } = writable<ChatState>({ ...initialState });

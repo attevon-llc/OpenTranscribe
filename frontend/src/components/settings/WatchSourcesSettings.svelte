@@ -382,8 +382,9 @@
             <input id="gs-stab" type="number" min="0" class="form-input" bind:value={globalSettings.file_stability_seconds} />
           </div>
           <div class="form-group">
-            <label for="gs-conc">{$t('settings.watchSources.global.maxConcurrent')}</label>
-            <input id="gs-conc" type="number" min="1" class="form-input" bind:value={globalSettings.max_concurrent_imports} />
+            <label for="gs-max-per-scan">{$t('settings.watchSources.global.maxImportsPerScan')}</label>
+            <input id="gs-max-per-scan" type="number" min="1" class="form-input" bind:value={globalSettings.max_imports_per_scan} />
+            <small class="form-hint">{$t('settings.watchSources.global.maxImportsPerScanHelp')}</small>
           </div>
         </div>
         <label class="checkbox-row">
@@ -593,6 +594,13 @@
   .form-group label {
     font-size: 0.85rem;
     color: var(--text-secondary);
+  }
+  .form-hint {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-style: italic;
   }
   /* .form-input inherits the global input styling (form-elements.css). */
   .checkbox-row {

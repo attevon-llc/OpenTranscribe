@@ -433,10 +433,13 @@ DEFAULT_GARBAGE_CLEANUP_THRESHOLD = 50
 # no restart). Coded defaults here are the single source of truth — there are
 # NO watch tuning .env vars (only the physical WATCH_FOLDER_PATH mount).
 # SystemSettings keys: watch.enabled / watch.file_stability_seconds /
-# watch.max_concurrent_imports / watch.fs_events_enabled.
+# watch.max_imports_per_scan / watch.fs_events_enabled.
 DEFAULT_WATCH_ENABLED = True
 DEFAULT_WATCH_FILE_STABILITY_SECONDS = 30  # skip files modified within N s (still writing)
-DEFAULT_WATCH_MAX_CONCURRENT_IMPORTS = 5  # files imported concurrently per scan
+# Per-scan cap on how many standalone files one scan imports, NOT a concurrency
+# limit — imports run serially inline inside scan_single. Raising this lengthens a
+# single scan task rather than parallelizing it (issue #295).
+DEFAULT_WATCH_MAX_IMPORTS_PER_SCAN = 5
 DEFAULT_WATCH_FS_EVENTS_ENABLED = False  # optional watchdog layer (polling is the baseline)
 
 # Scheduled database backups (Feature C, issue: data-loss incident).

@@ -25,7 +25,7 @@ Samba test share. Seed data: `bash scripts/setup-watch-source-test-data.sh ./wat
 - **DB-backed, no-restart config.** The only env vars are the physical mount
   (`WATCH_FOLDER_PATH`, `WATCH_TEMP_DIR`). Per-source connection/credentials/schedule live on the
   `watch_source` row; the four global knobs (`watch.enabled`, `watch.file_stability_seconds`,
-  `watch.max_concurrent_imports`, `watch.fs_events_enabled`) are `SystemSettings` read via
+  `watch.max_imports_per_scan`, `watch.fs_events_enabled`) are `SystemSettings` read via
   `services/watch_settings_service.py`, defaults `DEFAULT_WATCH_*` in `core/constants.py`.
   Secrets are AES-256-GCM (`encrypted_s3_secret_key`, `encrypted_smb_password`), never returned.
 - **Dedup is 3-layer on the imohash fingerprint**: within-source `remote_path` tracking row →
@@ -59,9 +59,12 @@ Samba test share. Seed data: `bash scripts/setup-watch-source-test-data.sh ./wat
 - **The stability check is local-only.** `LocalWatchClient.list_files` skips files modified within
   `watch.file_stability_seconds` (30 s) as "still writing"; S3 and SMB have no equivalent. Symptom:
   a just-landed local file misses the first scan.
-- **`watch.max_concurrent_imports` is not concurrency** — it's a per-scan cap
-  (`standalone[:max_imports]` in `_perform_scan`) and imports run **serially inline** inside
-  `scan_single`. Raising it lengthens one task; it does not parallelize.
+- **`watch.max_imports_per_scan` is a per-scan cap, not concurrency** — `standalone[:max_imports]`
+  in `_perform_scan`, and imports run **serially inline** inside `scan_single`. Raising it
+  lengthens one task; it does not parallelize. Renamed from `watch.max_concurrent_imports` in
+  #295; `watch_settings_service.LEGACY_KEY_MAX_CONCURRENT_IMPORTS` is still **read** as a
+  fallback (writes only go to the new key) and the PUT endpoint still accepts the old field
+  name, so don't delete either until the next major.
 - **`min_modified` is never passed by the scanner.** `_perform_scan` calls `list_files` without it
   and age-filters in Python so each too-old file gets a persisted `skipped_old` row. Don't "optimize"
   it into the client call — you'd lose the user-visible skip record.

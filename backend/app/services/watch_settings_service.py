@@ -23,15 +23,20 @@ from sqlalchemy.orm import Session
 from app.core.constants import DEFAULT_WATCH_ENABLED
 from app.core.constants import DEFAULT_WATCH_FILE_STABILITY_SECONDS
 from app.core.constants import DEFAULT_WATCH_FS_EVENTS_ENABLED
-from app.core.constants import DEFAULT_WATCH_MAX_CONCURRENT_IMPORTS
+from app.core.constants import DEFAULT_WATCH_MAX_IMPORTS_PER_SCAN
 from app.services import system_settings_service
 
 logger = logging.getLogger(__name__)
 
 KEY_ENABLED = "watch.enabled"
 KEY_FILE_STABILITY_SECONDS = "watch.file_stability_seconds"
-KEY_MAX_CONCURRENT_IMPORTS = "watch.max_concurrent_imports"
+KEY_MAX_IMPORTS_PER_SCAN = "watch.max_imports_per_scan"
 KEY_FS_EVENTS_ENABLED = "watch.fs_events_enabled"
+
+# Pre-#295 name for KEY_MAX_IMPORTS_PER_SCAN. Read-only fallback so a deployment that
+# configured the old key keeps its value across the upgrade without a data migration;
+# writes only ever go to the new key, so the legacy row goes inert on the next save.
+LEGACY_KEY_MAX_CONCURRENT_IMPORTS = "watch.max_concurrent_imports"
 
 
 @contextlib.contextmanager
@@ -61,11 +66,13 @@ def file_stability_seconds(db: Session | None = None) -> int:
         )
 
 
-def max_concurrent_imports(db: Session | None = None) -> int:
+def max_imports_per_scan(db: Session | None = None) -> int:
+    """Max standalone files one scan imports (a per-scan cap, not a concurrency limit)."""
     with _session(db) as s:
-        return system_settings_service.get_setting_int(
-            s, KEY_MAX_CONCURRENT_IMPORTS, DEFAULT_WATCH_MAX_CONCURRENT_IMPORTS
+        legacy_default = system_settings_service.get_setting_int(
+            s, LEGACY_KEY_MAX_CONCURRENT_IMPORTS, DEFAULT_WATCH_MAX_IMPORTS_PER_SCAN
         )
+        return system_settings_service.get_setting_int(s, KEY_MAX_IMPORTS_PER_SCAN, legacy_default)
 
 
 def fs_events_enabled(db: Session | None = None) -> bool:
@@ -83,7 +90,8 @@ def get_global_settings(db: Session | None = None) -> dict[str, Any]:
             [
                 KEY_ENABLED,
                 KEY_FILE_STABILITY_SECONDS,
-                KEY_MAX_CONCURRENT_IMPORTS,
+                KEY_MAX_IMPORTS_PER_SCAN,
+                LEGACY_KEY_MAX_CONCURRENT_IMPORTS,
                 KEY_FS_EVENTS_ENABLED,
             ],
         )
@@ -106,8 +114,9 @@ def get_global_settings(db: Session | None = None) -> dict[str, Any]:
             "file_stability_seconds": _i(
                 KEY_FILE_STABILITY_SECONDS, DEFAULT_WATCH_FILE_STABILITY_SECONDS
             ),
-            "max_concurrent_imports": _i(
-                KEY_MAX_CONCURRENT_IMPORTS, DEFAULT_WATCH_MAX_CONCURRENT_IMPORTS
+            "max_imports_per_scan": _i(
+                KEY_MAX_IMPORTS_PER_SCAN,
+                _i(LEGACY_KEY_MAX_CONCURRENT_IMPORTS, DEFAULT_WATCH_MAX_IMPORTS_PER_SCAN),
             ),
             "fs_events_enabled": _b(KEY_FS_EVENTS_ENABLED, DEFAULT_WATCH_FS_EVENTS_ENABLED),
         }
@@ -118,7 +127,7 @@ def update_global_settings(
     *,
     enabled: bool | None = None,
     file_stability_seconds: int | None = None,
-    max_concurrent_imports: int | None = None,
+    max_imports_per_scan: int | None = None,
     fs_events_enabled: bool | None = None,
 ) -> dict[str, Any]:
     """Persist any provided global watch settings; return the full current set."""
@@ -131,12 +140,12 @@ def update_global_settings(
             int(file_stability_seconds),
             "Skip files modified within N seconds (still being written)",
         )
-    if max_concurrent_imports is not None:
+    if max_imports_per_scan is not None:
         system_settings_service.set_setting(
             db,
-            KEY_MAX_CONCURRENT_IMPORTS,
-            int(max_concurrent_imports),
-            "Max files imported concurrently per watch-source scan",
+            KEY_MAX_IMPORTS_PER_SCAN,
+            int(max_imports_per_scan),
+            "Max files imported per watch-source scan (serial, not concurrent)",
         )
     if fs_events_enabled is not None:
         system_settings_service.set_setting(

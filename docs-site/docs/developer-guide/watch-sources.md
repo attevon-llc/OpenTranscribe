@@ -37,7 +37,11 @@ The **only** environment variables are the physical mount paths (`WATCH_HOST_PAT
 - Global tuning knobs are `SystemSettings` keys read through
   `services/watch_settings_service.py` with coded defaults (`DEFAULT_WATCH_*` in
   `core/constants.py`): `watch.enabled`, `watch.file_stability_seconds`,
-  `watch.max_concurrent_imports`, `watch.fs_events_enabled`.
+  `watch.max_imports_per_scan`, `watch.fs_events_enabled`. `watch.max_imports_per_scan` is a
+  **per-scan cap, not a concurrency limit** — imports run serially inline, so raising it
+  lengthens a single scan rather than parallelizing it. (Renamed from
+  `watch.max_concurrent_imports`, which promised parallelism the code never implemented; the
+  old key is still read as a fallback so existing deployments keep their configured value.)
 
 This means an operator reconfigures everything from the admin UI; changes apply on the next
 scan with no redeploy.
@@ -92,7 +96,7 @@ deliberate — watch imports and manual uploads share one ingest path.
 - `watch_source.scan_all` — beat, every minute (utility queue). Dispatches `scan_single` only
   for enabled sources whose `polling_interval_minutes` is due. Guarded by a Redis lock.
 - `watch_source.scan_single` — download queue. Lists, records age-skips, imports standalone
-  files inline (bounded by `max_concurrent_imports`), dispatches complete multi-part groups to
+  files inline (bounded by `max_imports_per_scan`), dispatches complete multi-part groups to
   `stitch_and_import`, updates scan status, and fires `send_notification` when email is linked.
   Per-source Redis lock.
 - `watch_source.stitch_and_import` — cpu queue. Downloads parts, `multipart.stitch_files`

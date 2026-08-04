@@ -259,7 +259,11 @@ def update_global_settings(
         db,
         enabled=payload.get("enabled"),
         file_stability_seconds=payload.get("file_stability_seconds"),
-        max_concurrent_imports=payload.get("max_concurrent_imports"),
+        # Accept the pre-#295 field name so an older client keeps working; the
+        # response only ever carries the new name.
+        max_imports_per_scan=payload.get(
+            "max_imports_per_scan", payload.get("max_concurrent_imports")
+        ),
         fs_events_enabled=payload.get("fs_events_enabled"),
     )
     logger.info("Admin %s updated global watch settings", current_user.email)

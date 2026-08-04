@@ -27,8 +27,11 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
 
 ## Markers and gates
 
-- Registered (pyproject): `slow`, `pki`, `e2e`, `integration`, `models`. `addopts` =
-  `-n auto --dist loadgroup --tb=short -q -m 'not integration'`; `norecursedirs=["tests/e2e"]`.
+- Registered (pyproject): `slow`, `unit`, `pki`, `e2e`, `integration`, `gpu`, `models`. `addopts` =
+  `-n auto --dist loadgroup --tb=short -q --strict-markers -m 'not integration and not gpu'`;
+  `norecursedirs=["tests/e2e"]`. **`--strict-markers` makes an unregistered marker a collection
+  error** — register any new marker in `[tool.pytest.ini_options] markers` or collection fails.
+  (The e2e markers live in `tests/e2e/pytest.ini`, which is a separate rootdir config.)
 - `@pytest.mark.models` = needs Presidio/GLiNER/toxicity weights; those modules also
   `importorskip` + `preload()`-skip, so fast CI passes without weights.
 - Module-level `skipif` env gates → suite: `RUN_PKI_TESTS`→`test_pki_auth`, `RUN_MFA_TESTS`→
@@ -57,11 +60,14 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
 
 ## Gotchas
 
-- **`tests/integration/` is a directory name, not a marker.** Only 4 of its 24 tests carry
-  `@pytest.mark.integration`; the other 20 (boundary/diarization regression, lifecycle, perf
-  gates) are marked `gpu` — an **unregistered marker** silenced by `filterwarnings` — so they
-  run in the *default* suite and in CI on their own runtime skip guards. Conversely the gate
-  script's `-m integration` phase covers only those 4.
+- **`tests/integration/` is a directory name, not a marker.** Its contents split three ways:
+  `integration`-marked (need the live stack), `gpu`-marked (boundary/diarization regression,
+  lifecycle, perf gates), and three deliberately service-free tests in
+  `test_metering_pipeline.py` that belong in the fast suite. The gate script runs the first two
+  as separate phases (`-m integration`, then `-m gpu`); the fast suite and CI deselect both.
+  Before #297 `gpu` was unregistered and silenced by a `PytestUnknownMarkWarning` filter, so
+  those 17 tests ran in the fast suite *and* CPU-only CI, passing only on their own runtime skip
+  guards, while the gate selected none of them.
 - `db_session` rolls back the DB, **not MinIO or OpenSearch**. Hence `upload_test_file`'s API
   delete and the forced `AUDIT_LOG_TO_OPENSEARCH=false` — savepoints can't undo index writes
   into the live dev cluster.

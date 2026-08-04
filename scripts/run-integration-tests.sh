@@ -5,6 +5,8 @@
 #   1. ungated unit/API tests (includes S3/OpenSearch tests via auto-detection)
 #   2. the security-gated suites (RUN_* env vars) in both FIPS modes
 #   3. integration-marked tests (-m integration)
+#   4. gpu-marked tests (-m gpu) — deselected everywhere else, so this is their
+#      only run; each module keeps its own runtime skip guard for CPU-only hosts
 #
 # GitHub Actions only runs the subset that fits a bare runner — THIS script
 # is the pre-merge source of truth. Requires: ./opentr.sh start dev
@@ -15,6 +17,7 @@
 #   ./scripts/run-integration-tests.sh --e2e-smoke    # + browser smoke tests
 #   ./scripts/run-integration-tests.sh --search-quality  # + corpus relevance harness
 #   ./scripts/run-integration-tests.sh --cleanup      # + orphaned test-user dry run
+#   ./scripts/run-integration-tests.sh --skip-gpu     # drop the GPU phase
 
 set -euo pipefail
 
@@ -32,12 +35,14 @@ COVERAGE=false
 E2E_SMOKE=false
 SEARCH_QUALITY=false
 CLEANUP=false
+RUN_GPU=true
 for arg in "$@"; do
     case "$arg" in
         --coverage) COVERAGE=true ;;
         --e2e-smoke) E2E_SMOKE=true ;;
         --search-quality) SEARCH_QUALITY=true ;;
         --cleanup) CLEANUP=true ;;
+        --skip-gpu) RUN_GPU=false ;;
         -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo -e "${RED}Unknown option: $arg${NC}"; exit 2 ;;
     esac
@@ -109,20 +114,31 @@ run_phase "Gated security suites (FIPS_MODE=true)" \
 run_phase "Integration-marked tests" \
     "$VENV_PY" -m pytest tests/ -o addopts="" -m integration -q --tb=short
 
-# 4. Optional: corpus-dependent search relevance harness
+# 4. GPU-marked tests. Deselected from the fast suite and from CI (both CPU-only), so
+# this gate is the ONLY place they run — they were silently ungated before #297.
+# Each module still carries its own runtime skip guard, so this is a no-op on a
+# machine without CUDA; pass --skip-gpu to drop the phase entirely.
+if $RUN_GPU; then
+    run_phase "GPU-marked tests" \
+        "$VENV_PY" -m pytest tests/ -o addopts="" -m gpu -q --tb=short
+else
+    echo -e "${YELLOW}Skipping GPU-marked tests (--skip-gpu).${NC}"
+fi
+
+# 5. Optional: corpus-dependent search relevance harness
 if $SEARCH_QUALITY; then
     run_phase "Search quality harness (corpus-dependent)" \
         env RUN_SEARCH_QUALITY_TESTS=true "$VENV_PY" -m pytest tests/test_search_quality.py -o addopts="" -q --tb=short
 fi
 
-# 5. Optional: browser smoke tests against the live stack
+# 6. Optional: browser smoke tests against the live stack
 if $E2E_SMOKE; then
     run_phase "E2E smoke (browser)" \
         "$VENV_PY" -m pytest tests/e2e/test_settings_modal.py tests/e2e/test_a11y.py \
             tests/e2e/test_file_detail_transcript.py tests/e2e/test_media_download.py -q --tb=short
 fi
 
-# 6. Optional: orphaned test-user report (dry run — pass --execute manually to apply)
+# 7. Optional: orphaned test-user report (dry run — pass --execute manually to apply)
 if $CLEANUP; then
     echo -e "${BLUE}--- Orphaned test users (dry run) ---${NC}"
     "$VENV_PY" "$PROJECT_ROOT/scripts/cleanup-test-users.py" || true

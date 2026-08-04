@@ -88,15 +88,21 @@ forbidden_modules = ["cloud", "clerk", "stripe"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-n auto --dist loadgroup --tb=short -q -m 'not integration'"
+# --strict-markers turns an unregistered marker into a collection error. Without it,
+# `gpu` sat unregistered and silently ungated for months: the modules using it carried no
+# `integration` marker, so they ran in the fast suite AND in CPU-only CI, passing only on
+# their own runtime skip guards, while the gate's `-m integration` phase never selected
+# them. Register every marker you use — see scripts/run-integration-tests.sh for the phases.
+addopts = "-n auto --dist loadgroup --tb=short -q --strict-markers -m 'not integration and not gpu'"
 markers = [
     "slow: marks tests as slow",
+    "unit: pure unit test, no external service",
     "pki: PKI certificate tests",
     "e2e: end-to-end browser tests",
     "integration: integration tests requiring running dev environment",
+    "gpu: tests requiring a physical GPU — deselected from the fast suite, run by the gate",
     "models: tests requiring ML model weights (Presidio/GLiNER/toxicity) — skipped in fast CI",
 ]
-filterwarnings = ["ignore::pytest.PytestUnknownMarkWarning"]
 norecursedirs = ["tests/e2e"]
 
 # Coverage runs via `pytest --cov=app` (CI backend-tests job + the local gate's

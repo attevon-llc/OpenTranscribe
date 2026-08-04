@@ -54,8 +54,9 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
 
 - **Redaction is OPT-OUT (`DEFAULT_REDACTION_ENABLED = False`) and detection is gated on it.**
   `tasks/transcription/postprocess.py::_dispatch_redaction` skips the scan when the owner has it
-  off; `redaction_task.py`'s docstring still claims it "runs unconditionally" — **stale**.
-  Never-scanned files are dispatched lazily on first read.
+  off. Never-scanned files are dispatched lazily on first read, so an existing transcript with no
+  spans is expected rather than a bug. (`redaction_task.py`'s docstring claimed the opposite until
+  #296 — it now documents the gate.)
 - **Enabling redaction withholds the transcript** until detection finishes:
   `crud.py::_redaction_pending` returns `redaction_pending: True` for `None|pending|processing`
   (`done`/`failed` never block). Usual cause of "my transcript is empty".

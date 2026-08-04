@@ -383,8 +383,10 @@ def enrich_and_dispatch(
     except Exception as e:
         logger.warning(f"Search indexing failed for file {file_id}: {e}")
 
-    # Content redaction detection — runs ALWAYS (independent of user settings).
-    # Dedicated CPU service; masking applies at read time once spans land.
+    # Content redaction detection — gated on the owner's effective config (opt-out by
+    # default); _dispatch_redaction returns early when it's off, and detection then
+    # happens lazily on first open. Dedicated CPU service; masking applies at read
+    # time once spans land.
     try:
         _dispatch_redaction(file_id, user_id, pipeline_task_id=pipeline_task_id)
     except Exception as e:

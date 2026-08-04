@@ -52,6 +52,7 @@ from sqlalchemy.orm import Session
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.models.chat import ChatConversation
 from app.models.media import Collection
 from app.models.media import FileTag
 from app.models.media import MediaFile
@@ -209,6 +210,9 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     for model, key in (
         (SpeakerCollection, "speaker_collections_deleted"),
         (Collection, "collections_deleted"),
+        # Chat threads quote transcript content back to the user, so they must
+        # be erased even when a legal hold retains the user row and its files.
+        (ChatConversation, "chat_conversations_deleted"),
     ):
         rows = db.query(model).filter(model.user_id == user_id).all()
         for row in rows:
@@ -233,6 +237,7 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "speaker_collections_deleted": 0,
         "collections_deleted": 0,
         "tags_deleted": 0,
+        "chat_conversations_deleted": 0,
         "voiceprints_deleted": 0,
         "users_deleted": 0,
         "legal_holds_skipped": 0,
@@ -374,6 +379,9 @@ def erase_org_member_data(
     for model, key in (
         (SpeakerCollection, "speaker_collections_deleted"),
         (Collection, "collections_deleted"),
+        # Only this member's conversations stamped with THIS org — their
+        # personal-scope chats stay, exactly like their personal files.
+        (ChatConversation, "chat_conversations_deleted"),
     ):
         rows = (
             db.query(model).filter(model.user_id == user_id, model.organization_id == org_id).all()

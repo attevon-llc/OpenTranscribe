@@ -56,6 +56,7 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     "asr.user_providers": True,  # per-user cloud-ASR provider configs + keys
     "llm.user_settings": True,  # per-user LLM provider/endpoint/keys
     "watch_sources": True,  # local/S3/SMB auto-import (Settings → Watch Sources)
+    "chat.rag": True,  # RAG chat over selected transcripts
     # -- team-facing (inner-team collaboration) ----------------------------------
     "sharing.teams": True,  # groups + collection shares
     "collections.shared": True,  # shared/org-visible collections
@@ -92,6 +93,7 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
     "asr.user_providers": AUDIENCE_USER,
     "llm.user_settings": AUDIENCE_USER,
     "watch_sources": AUDIENCE_USER,
+    "chat.rag": AUDIENCE_USER,
     "sharing.teams": AUDIENCE_TEAM,
     "collections.shared": AUDIENCE_TEAM,
     "speakers.shared": AUDIENCE_TEAM,

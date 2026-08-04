@@ -271,7 +271,26 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'tag' AND column_name = 'user_id')"
     )
 
+    # v375 guard: the RAG chat tables (issue #52).
+    has_chat_tables = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+        "WHERE table_name = 'chat_conversation')"
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v375: RAG chat conversations + messages (chat_conversation table).
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+    ):
+        return "v375_add_chat_tables"
     # v374: per-user tag ownership (tag.user_id).
     if (
         has_cloud_seams

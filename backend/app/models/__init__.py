@@ -6,6 +6,8 @@ This package contains database models for all entities in the system.
 
 from .auth_config import AuthConfig
 from .auth_config import AuthConfigAudit
+from .chat import ChatConversation
+from .chat import ChatMessage
 from .custom_vocabulary import CustomVocabulary
 from .email_notification_config import EmailNotificationConfig
 from .email_notification_config import WatchSourceEmail
@@ -94,4 +96,6 @@ __all__ = [
     "Organization",
     "OrganizationMembership",
     "UsageEvent",
+    "ChatConversation",
+    "ChatMessage",
 ]

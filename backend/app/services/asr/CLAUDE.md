@@ -8,10 +8,13 @@ deepgram, assemblyai, openai, google, azure, aws, speechmatics, gladia, pyannote
 
 ## Key files
 
-- `base.py` — the `ASRProvider` ABC plus two shared helpers every provider must use:
-  `_normalize_speaker_label` (maps `S1` / `A` / `"0"` / `spk_0` / `speaker_0` / `Guest-1` → `SPEAKER_XX`,
-  each with a **different base index** — read its docstring before adding a format) and
-  `_sanitize_error` (scrubs keys before they reach logs or the UI).
+- `base.py` — the `ASRProvider` ABC plus two **module-level** helpers every provider must use:
+  `normalize_speaker_label` (maps `S1` / `A` / `"0"` / `spk_0` / `speaker_0` / `Guest-1` → `SPEAKER_XX`,
+  each with a **different base index** — read its docstring before adding a format; the
+  `SPEAKER_`-prefixed branch re-pads, so `SPEAKER_1` → `SPEAKER_01`) and `sanitize_provider_error`
+  (scrubs keys before they reach logs or the UI). The `_normalize_speaker_label` / `_sanitize_error`
+  methods are thin delegates, and `../diarization/base.py` delegates to the same two functions —
+  they are module-level precisely so neither hierarchy needs an instance of the other's ABC (#299).
 - `types.py` — normalized DTOs: `ASRConfig` in, `ASRResult`/`ASRSegment`/`ASRWord` out. Plain
   dataclasses, not Pydantic.
 - `factory.py` (843 lines) — `ASR_PROVIDER_CATALOG` (the admin UI's whole provider/model/price table,
@@ -56,10 +59,12 @@ changing `provider` **clears** it.
 
 ## Gotchas
 
-- **`create_for_user` never forwards `access_key_id` to `create_from_config`** (`factory.py:526-548`),
-  though the endpoint does. An AWS config's stored access-key-id is therefore ignored at job time and
-  boto3 falls back to `AWS_ACCESS_KEY_ID`/IAM — "Test connection" can pass while the real job runs on
-  different credentials.
+- **Build providers from a saved config only via `ASRProviderFactory.create_from_db_config(cfg)`.**
+  It is the one place that decrypts `api_key` *and* `access_key_id`; both `create_for_user` (job path)
+  and the saved-config test-connection endpoint call it. Constructing `create_from_config(...)` directly
+  from a row is how #300 happened — the job path dropped `access_key_id`, so AWS jobs silently ran under
+  whatever boto3 resolved from `AWS_ACCESS_KEY_ID`/IAM while "Test connection" passed. Decryption
+  failure raises `ValueError`; `create_for_user` catches it and degrades to env/local.
 - Per-vendor: **aws** needs two creds and round-trips through an S3 bucket it may auto-create, wants
   BCP-47 (`en-US`) codes, and its custom vocabulary must pre-exist in AWS. **azure** needs a region, and
   diarization requires `ConversationTranscriber` — `SpeechRecognizer` silently returns no speakers.

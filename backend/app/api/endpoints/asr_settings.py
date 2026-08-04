@@ -824,7 +824,9 @@ def test_saved_asr_config(
     """Test a saved ASR configuration and persist the result (test_status, test_message, last_tested)."""
     config = _get_config_or_404(db, config_uuid, current_user.id, allow_shared=True)
 
-    # Decrypt the stored key (if any)
+    # Decrypt the stored key only for error sanitization below — provider construction
+    # (and its own decryption) goes through the shared factory helper so this path and
+    # the transcription-job path cannot drift apart (issue #300).
     api_key = None
     if config.api_key:
         api_key = decrypt_api_key(str(config.api_key))
@@ -832,23 +834,11 @@ def test_saved_asr_config(
             logger.error("Failed to decrypt API key for ASR config %s", config_uuid)
             raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
 
-    access_key_id = None
-    if getattr(config, "access_key_id", None):
-        access_key_id = decrypt_api_key(str(config.access_key_id))
-        if access_key_id is None:
-            logger.error("Failed to decrypt access key ID for ASR config %s", config_uuid)
-            raise HTTPException(status_code=500, detail="Failed to decrypt stored access key ID")
-
     start_time = time.time()
     try:
-        provider = _create_asr_provider(
-            provider=config.provider,
-            api_key=api_key,
-            model=config.model_name,
-            base_url=config.base_url,
-            region=config.region,
-            access_key_id=access_key_id,
-        )
+        from app.services.asr.factory import ASRProviderFactory
+
+        provider = ASRProviderFactory.create_from_db_config(config)
         success, message, response_time_ms = provider.validate_connection()
     except Exception as exc:
         success = False

@@ -454,6 +454,60 @@ ASR_PROVIDER_CATALOG: dict = {
 
 class ASRProviderFactory:
     @staticmethod
+    def create_from_db_config(cfg) -> ASRProvider:
+        """Build a provider from a stored ``UserASRSettings`` row, decrypting credentials.
+
+        The single place that turns a saved config into a live provider. Both the
+        transcription job path (:meth:`create_for_user`) and the saved-config
+        "Test connection" endpoint go through here so the two cannot drift — an
+        earlier split let the endpoint forward ``access_key_id`` while the job path
+        silently dropped it, so AWS jobs ran under whatever ambient credentials
+        boto3 resolved (issue #300).
+
+        Args:
+            cfg: A ``UserASRSettings`` row.
+
+        Returns:
+            The configured ASR provider.
+
+        Raises:
+            ValueError: If a stored credential is present but fails to decrypt.
+        """
+        from app.utils.encryption import decrypt_api_key
+
+        if cfg.provider == "local":
+            # Explicit "local" in DB config — honour it without trying to decrypt
+            # a (nonexistent) API key.
+            return LocalASRProvider()
+
+        api_key: str | None = None
+        if cfg.api_key:
+            api_key = decrypt_api_key(str(cfg.api_key))
+            if not api_key:
+                raise ValueError(
+                    f"Decryption of stored API key returned empty for ASR config id={cfg.id} "
+                    f"(provider={cfg.provider}); the stored key is corrupt or ENCRYPTION_KEY changed"
+                )
+
+        access_key_id: str | None = None
+        if getattr(cfg, "access_key_id", None):
+            access_key_id = decrypt_api_key(str(cfg.access_key_id))
+            if not access_key_id:
+                raise ValueError(
+                    f"Decryption of stored access key ID returned empty for ASR config "
+                    f"id={cfg.id} (provider={cfg.provider})"
+                )
+
+        return ASRProviderFactory.create_from_config(
+            provider=cfg.provider,
+            api_key=api_key,
+            model=cfg.model_name,
+            base_url=cfg.base_url,
+            region=cfg.region,
+            access_key_id=access_key_id,
+        )
+
+    @staticmethod
     def create_for_user(user_id: int, db) -> ASRProvider:
         """Load active ASR config from DB → env vars → default local.
 
@@ -463,7 +517,6 @@ class ASRProviderFactory:
         3. LocalASRProvider (default fallback)
         """
         from app import models
-        from app.utils.encryption import decrypt_api_key
 
         setting = (
             db.query(models.UserSetting)
@@ -491,61 +544,17 @@ class ASRProviderFactory:
                     .first()
                 )
                 if cfg:
-                    # Explicit "local" provider in DB config — honour it without trying
-                    # to decrypt a (nonexistent) API key.
-                    if cfg.provider == "local":
-                        logger.info(
-                            "ASR provider for user %d: local (explicit DB config id=%s)",
-                            user_id,
-                            cfg.id,
-                        )
-                        return LocalASRProvider()
-
-                    api_key: str | None = None
-                    if cfg.api_key:
-                        api_key = decrypt_api_key(cfg.api_key)
-                        if not api_key:
-                            # Decryption returned empty — the stored key is corrupt or the
-                            # encryption secret changed.  Log and fall through to env/local.
-                            logger.error(
-                                "Decryption of stored API key returned empty for ASR config id=%s "
-                                "(user %d, provider=%s). Falling back to env/local provider.",
-                                cfg.id,
-                                user_id,
-                                cfg.provider,
-                            )
-                            # Fall through intentionally
-                        else:
-                            logger.info(
-                                "ASR provider for user %d: %s (DB config id=%s model=%s)",
-                                user_id,
-                                cfg.provider,
-                                cfg.id,
-                                cfg.model_name,
-                            )
-                            return ASRProviderFactory.create_from_config(
-                                provider=cfg.provider,
-                                api_key=api_key,
-                                model=cfg.model_name,
-                                base_url=cfg.base_url,
-                                region=cfg.region,
-                            )
-                    else:
-                        # No API key stored — valid for providers like Google (service account)
-                        # or AWS (IAM role).
-                        logger.info(
-                            "ASR provider for user %d: %s (DB config id=%s, no API key)",
-                            user_id,
-                            cfg.provider,
-                            cfg.id,
-                        )
-                        return ASRProviderFactory.create_from_config(
-                            provider=cfg.provider,
-                            api_key=None,
-                            model=cfg.model_name,
-                            base_url=cfg.base_url,
-                            region=cfg.region,
-                        )
+                    logger.info(
+                        "ASR provider for user %d: %s (DB config id=%s model=%s%s)",
+                        user_id,
+                        cfg.provider,
+                        cfg.id,
+                        cfg.model_name,
+                        "" if cfg.api_key else ", no API key",
+                    )
+                    # Credential decryption failures raise ValueError, caught below,
+                    # which falls back to env/local exactly as before.
+                    return ASRProviderFactory.create_from_db_config(cfg)
             except Exception as exc:
                 logger.warning(
                     "Failed to load ASR config for user %d: %s — falling back to env/local",

@@ -44,6 +44,7 @@ from app.models.media import Speaker
 from app.models.media import SpeakerCollection
 from app.models.media import SpeakerCollectionMember
 from app.models.media import SpeakerProfile
+from app.models.media import Tag
 from app.models.media import Task as TaskModel
 from app.models.media import TranscriptSegment
 from app.models.prompt import SummaryPrompt
@@ -325,8 +326,8 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     """Delete all user-owned records that are not covered by DB-level CASCADE.
 
     Cleans up: SpeakerProfile, SpeakerCollection (+ members), Collection (+ members),
-    Comment, and Task records. Must be called BEFORE deleting MediaFile rows since
-    some of these tables have FK references to media_file.
+    Comment, Task, SummaryPrompt, and Tag records. Must be called BEFORE deleting
+    MediaFile rows since some of these tables have FK references to media_file.
     """
     # Speaker collections and their members
     sc_ids = [
@@ -392,6 +393,17 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     )
     if prompts_deleted:
         logger.info(f"Deleted {prompts_deleted} summary prompts for user {user_id}")
+
+    # Tags owned by the user (v374). tag.user_id is a plain FK, so the rows must
+    # go before the user row or the delete fails. Detach them first: a tag of
+    # theirs may hang off ANOTHER user's file (they tagged a file shared with
+    # them), and file_tag.tag_id has no ON DELETE clause. System tags
+    # (user_id IS NULL) are shared vocabulary and are never touched.
+    tag_ids = [t.id for t in db.query(Tag.id).filter(Tag.user_id == user_id).all()]
+    if tag_ids:
+        db.query(FileTag).filter(FileTag.tag_id.in_(tag_ids)).delete(synchronize_session=False)
+        db.query(Tag).filter(Tag.user_id == user_id).delete(synchronize_session=False)
+        logger.info(f"Deleted {len(tag_ids)} tags for user {user_id}")
 
 
 def _delete_user_media_files(db: Session, user_id: int) -> None:

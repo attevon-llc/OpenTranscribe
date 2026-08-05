@@ -53,9 +53,11 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.models.media import Collection
+from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import SpeakerCollection
 from app.models.media import SpeakerProfile
+from app.models.media import Tag
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.user import User
@@ -163,6 +165,12 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     ``purge_media_file`` deliberately preserves ``SpeakerProfile`` (and never
     touches empty ``Collection`` shells), so erasure must remove them
     explicitly. Their profile embeddings are cleared from OpenSearch first.
+
+    Tags owned by the subject go too (v374): tag names are user-authored free
+    text, i.e. personal data, and ``tag.user_id`` is a plain FK that would block
+    the user-row delete. Their ``file_tag`` rows are detached first — one may
+    hang off another user's file — while system tags (``user_id IS NULL``) are
+    shared vocabulary and are left alone.
     """
     profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == user_id).all()
     for profile in profiles:
@@ -181,6 +189,13 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
         for row in rows:
             db.delete(row)
             summary[key] += 1
+
+    tag_ids = [t.id for t in db.query(Tag.id).filter(Tag.user_id == user_id).all()]
+    if tag_ids:
+        db.query(FileTag).filter(FileTag.tag_id.in_(tag_ids)).delete(synchronize_session=False)
+        db.query(Tag).filter(Tag.user_id == user_id).delete(synchronize_session=False)
+        summary["tags_deleted"] = len(tag_ids)
+
     db.commit()
 
 
@@ -192,6 +207,7 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "speaker_profiles_deleted": 0,
         "speaker_collections_deleted": 0,
         "collections_deleted": 0,
+        "tags_deleted": 0,
         "voiceprints_deleted": 0,
         "users_deleted": 0,
         "legal_holds_skipped": 0,

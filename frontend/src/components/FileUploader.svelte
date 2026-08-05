@@ -18,7 +18,6 @@
   import { loadProtectedMediaAuthConfig } from '$lib/services/configService';
   import type { ExtractedAudio } from '$lib/types/audioExtraction';
   import { getAudioExtractionSettings, type AudioExtractionSettings } from '$lib/api/audioExtractionSettings';
-  import { audioExtractionService } from '$lib/services/audioExtractionService';
   import {
     getTranscriptionSettings,
     getTranscriptionSystemDefaults,
@@ -55,6 +54,20 @@
     selectedWhisperModel: string | null;
     skippedSteps: string[];  // step IDs that were skipped (e.g. ['tags', 'collections'])
     timestamp: number;
+  }
+
+  /**
+   * Load the FFmpeg.wasm wrapper on first use.
+   *
+   * A static import pulled `@ffmpeg/ffmpeg` + `@ffmpeg/util` into the home-page
+   * chunk, so every visitor downloaded the wrapper even though client-side audio
+   * extraction is an opt-in path taken only for video uploads. The dynamic
+   * `import()` moves it to its own chunk, fetched the first time a user actually
+   * extracts. The module caches itself, so repeat calls are free.
+   */
+  async function loadAudioExtractionService() {
+    const { audioExtractionService } = await import('$lib/services/audioExtractionService');
+    return audioExtractionService;
   }
 
   // ── Constants ──
@@ -551,7 +564,7 @@
     toastStore.info($t('uploader.extractingAudioFrom', { count: videoFiles.length }));
     videoFiles.forEach(async (videoFile) => {
       try {
-        const ea = await audioExtractionService.extractAudio(videoFile);
+        const ea = await (await loadAudioExtractionService()).extractAudio(videoFile);
         uploadsStore.addExtractedAudio(ea.blob, ea.filename, ea.metadata, ea.metadata.compressionRatio);
       } catch {
         toastStore.error($t('uploader.failedToExtractAudio', { filename: videoFile.name }));
@@ -609,7 +622,8 @@
       // Extraction runs in background — result is queued when done
       (async () => {
         try {
-          const extractedAudio = await audioExtractionService.extractAudio(fileToExtract);
+          const extractionService = await loadAudioExtractionService();
+          const extractedAudio = await extractionService.extractAudio(fileToExtract);
           uploadsStore.addExtractedAudio(
             extractedAudio.blob,
             extractedAudio.filename,

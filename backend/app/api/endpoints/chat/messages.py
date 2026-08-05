@@ -23,6 +23,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pydantic import Field
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
@@ -274,7 +275,14 @@ async def send_message(
     never lands in access logs or browser history.
     """
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
-    kwargs = _prepare_turn(request, db, ctx, conversation, body.content, body.search_mode)
+    # _prepare_turn is fully synchronous (Redis, key decryption, per-file
+    # permission checks, a commit). Calling it directly from an async handler
+    # would block the event loop — and with up to 100 files each fanning out into
+    # permission queries, that stalls every other request in the process,
+    # including other users' in-flight SSE streams.
+    kwargs = await run_in_threadpool(
+        _prepare_turn, request, db, ctx, conversation, body.content, body.search_mode
+    )
     return _streaming_response(kwargs, ctx.user.id)
 
 
@@ -301,7 +309,13 @@ async def regenerate(
     if last_user is None:
         raise HTTPException(status_code=400, detail="Nothing to regenerate")
 
-    # Retire the answers that followed it so history and the UI stay consistent.
+    # Prepare FIRST. _prepare_turn can still fail with 429/400/402, and
+    # superseding before that would retire the user's question with nothing to
+    # replace it — it vanishes from the thread, from prompt history and from
+    # export, with no answer and no way back.
+    question = str(last_user.content)
+    kwargs = await run_in_threadpool(_prepare_turn, request, db, ctx, conversation, question, None)
+
     db.query(ChatMessage).filter(
         ChatMessage.conversation_id == conversation.id,
         ChatMessage.role == ROLE_ASSISTANT,
@@ -311,7 +325,6 @@ async def regenerate(
     last_user.status = STATUS_SUPERSEDED
     db.commit()
 
-    kwargs = _prepare_turn(request, db, ctx, conversation, str(last_user.content), None)
     return _streaming_response(kwargs, ctx.user.id)
 
 
@@ -353,6 +366,12 @@ async def edit_message(
     if target is None:
         raise HTTPException(status_code=404, detail="Message not found")
 
+    # Prepare FIRST — see regenerate() for why superseding before a possible
+    # 429/400/402 would lose the user's question outright.
+    kwargs = await run_in_threadpool(
+        _prepare_turn, request, db, ctx, conversation, body.content, None
+    )
+
     # Retire the edited question and everything downstream of it.
     db.query(ChatMessage).filter(
         ChatMessage.conversation_id == conversation.id,
@@ -360,22 +379,46 @@ async def edit_message(
     ).update({ChatMessage.status: STATUS_SUPERSEDED}, synchronize_session=False)
     db.commit()
 
-    kwargs = _prepare_turn(request, db, ctx, conversation, body.content, None)
     return _streaming_response(kwargs, ctx.user.id)
 
 
 @router.post("/messages/{message_uuid}/cancel")
+@limiter.limit("60/minute")
 def cancel_message(
+    request: Request,
     message_uuid: str,
+    db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> dict:
     """Ask an in-flight generation to stop.
 
     Belt-and-braces beside client disconnect: a user on a flaky connection may
-    hit Stop over a new connection while the original request is still open. The
-    flag is keyed by the opaque message uuid and read only by that generation.
+    hit Stop over a new connection while the original request is still open.
+
+    Ownership is checked even though the id is a uuid4. Without it any
+    authenticated user could cancel a generation whose id they learned, and —
+    more practically — an unvalidated path segment became a Redis key, letting a
+    loop of requests write arbitrary 600s-TTL entries. The rate limit bounds that
+    further.
     """
-    limits.request_cancel(message_uuid)
+    try:
+        parsed = uuid_pkg.UUID(message_uuid)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Message not found") from exc
+
+    owned = (
+        db.query(ChatMessage.id)
+        .join(ChatConversation, ChatConversation.id == ChatMessage.conversation_id)
+        .filter(
+            ChatMessage.uuid == parsed,
+            ChatConversation.user_id == ctx.user.id,
+        )
+        .first()
+    )
+    if owned is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    limits.request_cancel(str(parsed))
     return {"status": "cancelling", "message_uuid": message_uuid}
 
 

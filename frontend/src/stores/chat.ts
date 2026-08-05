@@ -24,6 +24,7 @@ import {
   type ChatStreamEvent,
   type ContextEstimate,
   type Conversation,
+  type ConversationSettings,
   type ConversationSummary,
   type SearchMode,
   type StreamStatus,
@@ -48,6 +49,10 @@ export interface ChatState {
   streamingMessageId: string | null;
   scope: ChatScope;
   useContext: boolean;
+  /** Settings chosen before a conversation exists; applied at creation. */
+  draftSettings: ConversationSettings;
+  /** Model chosen before a conversation exists; applied at creation. */
+  draftLlmConfigUuid: string | null;
   contextEstimate: ContextEstimate | null;
   tokenUsage: TokenUsage | null;
   error: string | null;
@@ -68,6 +73,8 @@ const initialState: ChatState = {
   streamingMessageId: null,
   scope: emptyScope(),
   useContext: true,
+  draftSettings: {},
+  draftLlmConfigUuid: null,
   contextEstimate: null,
   tokenUsage: null,
   error: null,
@@ -398,6 +405,38 @@ function createChatStore() {
       }
     },
 
+    /**
+     * Apply per-conversation settings, buffering them when no conversation
+     * exists yet.
+     *
+     * Without the buffer, opening Chat Controls on a fresh /chat and setting a
+     * system prompt, temperature or model silently did nothing — the handler
+     * early-returned on a null id and the panel then re-read the unchanged
+     * default, so the control appeared to snap back on its own.
+     */
+    async applySettings(patch: ConversationSettings): Promise<void> {
+      const uuid = get({ subscribe }).activeConversationId;
+      if (!uuid) {
+        update((s) => ({ ...s, draftSettings: { ...s.draftSettings, ...patch } }));
+        return;
+      }
+      const updated = await chatApi.updateConversation(uuid, { settings: patch });
+      update((s) => ({ ...s, activeConversation: updated }));
+    },
+
+    /** Pin a model for this conversation, buffering before one exists. */
+    async applyModel(llmConfigUuid: string | null): Promise<void> {
+      const uuid = get({ subscribe }).activeConversationId;
+      if (!uuid) {
+        update((s) => ({ ...s, draftLlmConfigUuid: llmConfigUuid }));
+        return;
+      }
+      const updated = await chatApi.updateConversation(uuid, {
+        llm_config_uuid: llmConfigUuid,
+      });
+      update((s) => ({ ...s, activeConversation: updated }));
+    },
+
     async refreshEstimate(): Promise<void> {
       const scope = get({ subscribe }).scope;
       try {
@@ -439,7 +478,9 @@ function createChatStore() {
         try {
           const created = await chatApi.createConversation({
             scope: state.scope,
-            settings: { use_context: state.useContext },
+            // Carry anything chosen in Chat Controls before the row existed.
+            settings: { ...state.draftSettings, use_context: state.useContext },
+            llm_config_uuid: state.draftLlmConfigUuid,
           });
           conversationUuid = created.uuid;
           selfCreated.add(created.uuid);
@@ -447,6 +488,8 @@ function createChatStore() {
             ...s,
             activeConversationId: created.uuid,
             activeConversation: created,
+            draftSettings: {},
+            draftLlmConfigUuid: null,
             conversations: [
               { ...created, message_count: 0 } as ConversationSummary,
               ...s.conversations,

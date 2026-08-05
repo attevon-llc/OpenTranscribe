@@ -4180,5 +4180,8 @@
   "chat.warnings.largeSelectionHint": "Antworten bleiben belegt, aber pro Aufnahme kommen weniger Passagen an. Eine kleinere Auswahl liefert meist genauere Antworten.",
   "chat.warnings.largeSelectionMessage": "Du hast {{files}} Aufnahmen ausgewählt – etwa {{pct}} % des Kontexts dieses Modells.",
   "chat.warnings.largeSelectionTitle": "Große Auswahl",
-  "chat.warnings.proceed": "Trotzdem verwenden"
+  "chat.warnings.proceed": "Trotzdem verwenden",
+  "chat.composer.charCount": "{{count}} / {{max}}",
+  "chat.composer.tooLong": "Zu lang – bitte unter {{max}} Zeichen bleiben",
+  "gallery.bulk.chatTruncated": "Die ersten {{used}} von {{total}} Aufnahmen werden verwendet – mehr sind pro Chat nicht möglich."
 }

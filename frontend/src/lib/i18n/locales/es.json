@@ -4180,5 +4180,8 @@
   "chat.warnings.largeSelectionHint": "Las respuestas siguen fundamentadas, pero llegan menos fragmentos de cada grabación. Reducir la selección suele dar respuestas más concretas.",
   "chat.warnings.largeSelectionMessage": "Has seleccionado {{files}} grabaciones, aproximadamente el {{pct}} % del contexto de este modelo.",
   "chat.warnings.largeSelectionTitle": "Selección grande",
-  "chat.warnings.proceed": "Usarla igualmente"
+  "chat.warnings.proceed": "Usarla igualmente",
+  "chat.composer.charCount": "{{count}} / {{max}}",
+  "chat.composer.tooLong": "Demasiado largo: no superes los {{max}} caracteres",
+  "gallery.bulk.chatTruncated": "Se usarán las primeras {{used}} de {{total}} grabaciones: es el máximo por chat."
 }

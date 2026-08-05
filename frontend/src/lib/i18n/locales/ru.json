@@ -4180,5 +4180,8 @@
   "chat.warnings.largeSelectionHint": "Ответы останутся обоснованными, но из каждой записи попадёт меньше фрагментов. Более узкий выбор обычно даёт более конкретные ответы.",
   "chat.warnings.largeSelectionMessage": "Выбрано записей: {{files}} — примерно {{pct}} % контекста этой модели.",
   "chat.warnings.largeSelectionTitle": "Большой выбор",
-  "chat.warnings.proceed": "Всё равно использовать"
+  "chat.warnings.proceed": "Всё равно использовать",
+  "chat.composer.charCount": "{{count}} / {{max}}",
+  "chat.composer.tooLong": "Слишком длинно — не более {{max}} символов",
+  "gallery.bulk.chatTruncated": "Используются первые {{used}} из {{total}} записей — это максимум для одного чата."
 }

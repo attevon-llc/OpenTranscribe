@@ -61,14 +61,6 @@ def get_reranker() -> Any:
     return _reranker
 
 
-def reset_reranker() -> None:
-    """Drop the cached model and retry loading next call (tests / admin retune)."""
-    global _reranker, _load_attempted
-    with _lock:
-        _reranker = None
-        _load_attempted = False
-
-
 def rerank(query: str, hits: list, *, max_pairs: int = 50) -> list:
     """Reorder ``hits`` by cross-encoder relevance to ``query``.
 

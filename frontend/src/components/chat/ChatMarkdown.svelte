@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { t } from '$stores/locale';
   import { renderChatMarkdown } from '$lib/utils/chatMarkdown';
 
   export let content = '';
@@ -93,7 +94,14 @@
 </script>
 
 <!-- svelte-ignore a11y-no-static-element-interactions a11y-click-events-have-key-events -->
-<div class="chat-markdown" class:streaming on:click={handleCopyClick}>
+<div
+  class="chat-markdown"
+  class:streaming
+  style="--code-copy-label: '{$t('chat.message.copy')}'; --code-copied-label: '{$t(
+    'chat.message.copied'
+  )}'"
+  on:click={handleCopyClick}
+>
   <!-- Sanitized by renderChatMarkdown's dedicated DOMPurify profile. -->
   {@html html}
 </div>
@@ -172,7 +180,7 @@
   /* Copy affordance drawn on the block itself — see handleCopyClick for why
      this is CSS rather than an injected button. */
   .chat-markdown :global(pre)::before {
-    content: 'Copy';
+    content: var(--code-copy-label, 'Copy');
     position: absolute;
     top: 0.35rem;
     right: 0.4rem;
@@ -193,7 +201,7 @@
   }
 
   .chat-markdown :global(pre[data-copied='true'])::before {
-    content: 'Copied';
+    content: var(--code-copied-label, 'Copied');
     opacity: 1;
     color: var(--primary-color);
     border-color: var(--primary-color);

@@ -4180,5 +4180,8 @@
   "chat.warnings.largeSelectionHint": "回答仍有出处，但每个录音贡献的片段会变少。缩小范围通常能得到更具体的回答。",
   "chat.warnings.largeSelectionMessage": "你选择了 {{files}} 个录音，约占该模型上下文的 {{pct}}%。",
   "chat.warnings.largeSelectionTitle": "选择范围较大",
-  "chat.warnings.proceed": "仍然使用"
+  "chat.warnings.proceed": "仍然使用",
+  "chat.composer.charCount": "{{count}} / {{max}}",
+  "chat.composer.tooLong": "太长了 — 请控制在 {{max}} 字符以内",
+  "gallery.bulk.chatTruncated": "将使用 {{total}} 个录音中的前 {{used}} 个 — 这是单次对话的上限。"
 }

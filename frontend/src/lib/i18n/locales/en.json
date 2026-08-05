@@ -4180,5 +4180,8 @@
   "chat.warnings.largeSelectionHint": "Answers stay grounded, but fewer passages come from each recording. Narrowing the selection usually gives more specific answers.",
   "chat.warnings.largeSelectionMessage": "You selected {{files}} recordings, roughly {{pct}}% of this model's context.",
   "chat.warnings.largeSelectionTitle": "Large selection",
-  "chat.warnings.proceed": "Use it anyway"
+  "chat.warnings.proceed": "Use it anyway",
+  "chat.composer.charCount": "{{count}} / {{max}}",
+  "chat.composer.tooLong": "Too long — keep it under {{max}} characters",
+  "gallery.bulk.chatTruncated": "Using the first {{used}} of {{total}} recordings — that is the maximum per chat."
 }

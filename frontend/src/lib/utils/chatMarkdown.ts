@@ -16,8 +16,18 @@
  * each tick, so parse speed matters more than plugin support.
  */
 
-import DOMPurify from 'dompurify';
+import createDOMPurify from 'dompurify';
 import { marked } from 'marked';
+
+/**
+ * A DEDICATED DOMPurify instance.
+ *
+ * `DOMPurify.addHook` registers on the shared singleton, so a hook added here
+ * would silently apply to every other caller in the app (notably
+ * `sanitizeHtml.ts`, used for search snippets). An isolated instance keeps the
+ * link-hardening below genuinely scoped to chat output.
+ */
+const chatPurify = createDOMPurify(window);
 
 const ALLOWED_TAGS = [
   'p',
@@ -57,17 +67,23 @@ const ALLOWED_URI_REGEXP = /^(?:https?:|mailto:)/i;
 let hookInstalled = false;
 
 /**
- * Force safe link attributes on anchors in chat output.
+ * Force safe link attributes on anchors, and keep `class` to `language-*`.
  *
- * Guarded by a module flag and scoped by a data attribute we set during our own
- * sanitize call, so other DOMPurify callers in the app are unaffected.
+ * Registered on the chat-only instance above, so it cannot affect other
+ * DOMPurify callers. The class restriction matters because `.btn` and friends
+ * are GLOBAL classes in form-elements.css — without it, model output could
+ * render text styled as real application chrome.
  */
 function installHook(): void {
   if (hookInstalled) return;
-  DOMPurify.addHook('afterSanitizeAttributes', (node: Element) => {
+  chatPurify.addHook('afterSanitizeAttributes', (node: Element) => {
     if (node.tagName === 'A' && node.hasAttribute('href')) {
       node.setAttribute('target', '_blank');
       node.setAttribute('rel', 'noopener noreferrer nofollow');
+    }
+    const className = node.getAttribute?.('class');
+    if (className && !/^language-[\w-]+$/.test(className)) {
+      node.removeAttribute('class');
     }
   });
   hookInstalled = true;
@@ -98,7 +114,7 @@ export function renderChatMarkdown(markdown: string | null | undefined): string 
     parsed = escapeHtml(markdown);
   }
 
-  return DOMPurify.sanitize(parsed, {
+  return chatPurify.sanitize(parsed, {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOWED_URI_REGEXP,

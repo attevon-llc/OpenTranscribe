@@ -24,8 +24,11 @@
   --text-secondary: #64748b;
   --border-color: #e5e7eb;
   --error-color: #ef4444;
+  --error-color-rgb: 239, 68, 68;
   --success-color: #10b981;
+  --success-color-rgb: 16, 185, 129;
   --warning-color: #f59e0b;
+  --warning-color-rgb: 245, 158, 11;
   --info-color: #3b82f6;
   --card-background: #ffffff;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -201,8 +204,11 @@
   --text-secondary: #cbd5e1;
   --border-color: #334155;
   --error-color: #f87171;
+  --error-color-rgb: 248, 113, 113;
   --success-color: #34d399;
+  --success-color-rgb: 52, 211, 153;
   --warning-color: #fbbf24;
+  --warning-color-rgb: 251, 191, 36;
   --info-color: #60a5fa;
   --card-background: #1e293b;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);

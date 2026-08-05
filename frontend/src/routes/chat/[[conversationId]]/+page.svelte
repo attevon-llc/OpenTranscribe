@@ -16,7 +16,7 @@
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { llmStatusStore } from '$stores/llmStatus';
   import { chatStore } from '$stores/chat';
-  import { estimateContext, updateConversation } from '$lib/api/chatApi';
+  import { estimateContext } from '$lib/api/chatApi';
   import { emptyScope, type ChatScope, type ConversationSettings } from '$lib/types/chat';
 
   import ChatSidebar from '$components/chat/ChatSidebar.svelte';
@@ -46,7 +46,7 @@
   $: llmAvailable = $llmStatusStore.available;
   $: state = $chatStore;
   $: hasMessages = state.messages.length > 0;
-  $: settings = state.activeConversation?.settings ?? {};
+  $: settings = state.activeConversation?.settings ?? state.draftSettings;
   $: isStreaming = ['submitting', 'retrieving', 'thinking', 'streaming'].includes(
     state.streamStatus
   );
@@ -193,9 +193,9 @@
   }
 
   async function handleModelChange(uuid: string | null): Promise<void> {
-    if (!state.activeConversationId) return;
-    await updateConversation(state.activeConversationId, { llm_config_uuid: uuid });
-    await chatStore.openConversation(state.activeConversationId);
+    // Buffers when no conversation exists yet, so choosing a model on a fresh
+    // /chat is applied when the row is created rather than silently dropped.
+    await chatStore.applyModel(uuid);
   }
 
   async function handleClearScope(): Promise<void> {
@@ -209,10 +209,7 @@
       await chatStore.setUseContext(Boolean(patch.use_context));
       return;
     }
-    if (state.activeConversationId) {
-      await updateConversation(state.activeConversationId, { settings: patch });
-      await chatStore.openConversation(state.activeConversationId);
-    }
+    await chatStore.applySettings(patch);
   }
 </script>
 
@@ -336,7 +333,7 @@
           isOpen={controlsOpen}
           {settings}
           useContext={state.useContext}
-          llmConfigUuid={state.activeConversation?.llm_config_uuid ?? null}
+          llmConfigUuid={state.activeConversation?.llm_config_uuid ?? state.draftLlmConfigUuid}
           on:change={handleControlsChange}
           on:model={(e) => handleModelChange(e.detail)}
           on:close={() => (controlsOpen = false)}
@@ -344,6 +341,17 @@
       </header>
 
       <div class="chat-body">
+        {#if state.error}
+          <div class="chat-error" role="alert" data-testid="chat-error-banner">
+            <span>{$t(`chat.errors.${state.error}`)}</span>
+            {#if state.error === 'conversationNotFound'}
+              <button type="button" class="error-action" on:click={handleNewChat}>
+                {$t('chat.newChat')}
+              </button>
+            {/if}
+          </div>
+        {/if}
+
         {#if hasMessages}
           <ChatThread
             messages={state.messages}
@@ -475,6 +483,34 @@
     width: 100%;
     margin: 0 auto;
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .chat-error {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0.75rem 0 0;
+    padding: 0.6rem 0.85rem;
+    border: 1px solid rgba(var(--error-color-rgb, 220, 53, 69), 0.35);
+    border-radius: 8px;
+    background-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.08);
+    color: var(--error-color, #dc3545);
+    font-size: 0.85rem;
+  }
+
+  .error-action {
+    margin-left: auto;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+
+  .error-action:hover {
+    background-color: rgba(var(--error-color-rgb, 220, 53, 69), 0.12);
   }
 
   .chat-unavailable {

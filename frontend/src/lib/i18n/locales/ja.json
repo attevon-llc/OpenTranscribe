@@ -4180,5 +4180,8 @@
   "chat.warnings.largeSelectionHint": "回答の根拠は保たれますが、録音ごとの抜粋は少なくなります。範囲を絞ると、より具体的な回答が得られます。",
   "chat.warnings.largeSelectionMessage": "{{files}} 件の録音を選択しました。このモデルのコンテキストの約 {{pct}}% にあたります。",
   "chat.warnings.largeSelectionTitle": "選択範囲が大きすぎます",
-  "chat.warnings.proceed": "このまま使う"
+  "chat.warnings.proceed": "このまま使う",
+  "chat.composer.charCount": "{{count}} / {{max}}",
+  "chat.composer.tooLong": "長すぎます — {{max}} 文字以内にしてください",
+  "gallery.bulk.chatTruncated": "{{total}} 件のうち最初の {{used}} 件を使用します（1 チャットの上限です）。"
 }

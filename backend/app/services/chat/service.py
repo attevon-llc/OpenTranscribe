@@ -16,6 +16,7 @@ partial answer.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import threading
@@ -154,6 +155,30 @@ def _prepare_context(
     return masked, meta
 
 
+# SSE comment lines are ignored by every client but keep the connection warm.
+# Without them, retrieval (OpenSearch + cross-encoder + masking) and then the
+# wait for a first token can put ZERO bytes on the wire for well over nginx's
+# default 60s proxy_read_timeout, and the proxy closes the stream mid-answer.
+_KEEPALIVE = ": keepalive\n\n"
+_KEEPALIVE_INTERVAL_S = 15
+
+
+async def _with_keepalive(awaitable, queue: asyncio.Queue):
+    """Await ``awaitable``, pushing a keepalive frame into ``queue`` every 15s."""
+    task = asyncio.ensure_future(awaitable)
+    while True:
+        done, _ = await asyncio.wait({task}, timeout=_KEEPALIVE_INTERVAL_S)
+        if done:
+            return task.result()
+        queue.put_nowait(_KEEPALIVE)
+
+
+async def _drain(queue: asyncio.Queue):
+    """Yield everything buffered in ``queue`` without blocking."""
+    while not queue.empty():
+        yield queue.get_nowait()
+
+
 async def _finalize_turn(
     *,
     turn: ChatTurn,
@@ -290,6 +315,7 @@ class ChatService:
         from app.db.session_utils import session_scope
 
         turn = ChatTurn()
+        keepalive_q: asyncio.Queue = asyncio.Queue()
         cancel_event = threading.Event()
         started = time.monotonic()
 
@@ -332,7 +358,9 @@ class ChatService:
                             rewrite_enabled=settings.query_rewrite_enabled,
                         )
 
-                masked, meta = await run_in_threadpool(_prep)
+                masked, meta = await _with_keepalive(run_in_threadpool(_prep), keepalive_q)
+                async for frame in _drain(keepalive_q):
+                    yield frame
                 turn.metadata.update(meta)
 
                 turn.offered_citations = citations_mod.build_offered_citations(masked)
@@ -359,7 +387,13 @@ class ChatService:
             got_first_token = False
 
             stream = llm.chat_completion_stream(messages, cancel_event=cancel_event, **kwargs)
+            last_beat = time.monotonic()
             async for event in iterate_in_threadpool(stream):
+                # Long gaps between tokens (or before the first) must not look
+                # like a dead connection to an intermediary.
+                if time.monotonic() - last_beat >= _KEEPALIVE_INTERVAL_S:
+                    last_beat = time.monotonic()
+                    yield _KEEPALIVE
                 # A user Stop may arrive over a separate connection.
                 if not cancel_event.is_set() and limits.is_cancelled(assistant_message_uuid):
                     cancel_event.set()

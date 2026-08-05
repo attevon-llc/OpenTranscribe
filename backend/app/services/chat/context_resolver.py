@@ -28,8 +28,15 @@ from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 logger = logging.getLogger(__name__)
 
 
-def _visible_files_query(db: Session, ctx: RequestContext):
-    """Base query over files the caller may read, in their tenant scope."""
+def _visible_files_query(db: Session, ctx: RequestContext, *, owned_only: bool = False):
+    """Base query over files the caller may read, in their tenant scope.
+
+    ``owned_only`` restricts to the caller's OWN files. Callers that join through
+    an already-authorized relation (a collection they can access) leave it off;
+    callers that would otherwise enumerate the whole tenant — notably the
+    context-size estimator's "all transcripts" branch — must set it, or the
+    returned count discloses how many recordings other users have.
+    """
     query = db.query(MediaFile.uuid).filter(MediaFile.status == "completed")
 
     if ctx.org_id is not None:
@@ -40,6 +47,9 @@ def _visible_files_query(db: Session, ctx: RequestContext):
     # Quarantined files are invisible to everyone but admins (issue #262g).
     if not ctx.user.is_admin:
         query = query.filter(MediaFile.is_quarantined.is_(False))
+
+    if owned_only:
+        query = query.filter(MediaFile.user_id == ctx.user.id)
 
     return query
 
@@ -168,7 +178,18 @@ def count_scope_files(db: Session, ctx: RequestContext, scope: ChatScope) -> int
     An empty scope counts every accessible completed transcript, which is what
     "All transcripts" would actually search.
     """
-    resolved = resolve_scope_file_uuids(db, ctx, scope)
-    if resolved is not None:
-        return len(resolved)
-    return int(_visible_files_query(db, ctx).count())
+    if scope.is_empty:
+        # "All transcripts" — count only what this user owns. Retrieval is gated
+        # by accessible_user_ids regardless; this is about not leaking a count.
+        return int(_visible_files_query(db, ctx, owned_only=True).count())
+
+    # Count without enforcing the 500-file ceiling: the estimator exists to WARN
+    # about oversized selections, so raising there would silence it exactly when
+    # it is most useful.
+    try:
+        resolved = resolve_scope_file_uuids(db, ctx, scope)
+    except HTTPException as exc:
+        if exc.status_code != 400:
+            raise
+        return C.CHAT_MAX_SCOPE_FILES + 1
+    return len(resolved) if resolved is not None else 0

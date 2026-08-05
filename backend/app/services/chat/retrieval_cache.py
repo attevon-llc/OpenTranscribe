@@ -145,25 +145,6 @@ def set_cached(key: str, hits: list[ChunkHit], ttl_seconds: int) -> None:
         logger.debug(f"Chat retrieval cache write failed: {exc}")
 
 
-def invalidate_user(user_id: int) -> int:
-    """Drop every cached retrieval for one user (e.g. after new content indexes).
-
-    Uses SCAN rather than KEYS so a large keyspace doesn't block Redis.
-    """
-    pattern = _KEY.format(user_id=user_id, org="*", digest="*")
-    removed = 0
-    try:
-        from app.core.redis import get_redis
-
-        client = get_redis()
-        for key in client.scan_iter(match=pattern, count=200):
-            client.delete(key)
-            removed += 1
-    except Exception as exc:  # noqa: BLE001
-        logger.debug(f"Chat retrieval cache invalidation failed: {exc}")
-    return removed
-
-
 # ---------------------------------------------------------------------------
 # Tier 2: semantic cache (opt-in)
 #

@@ -116,9 +116,16 @@
 
   <div class="composer-footer">
     <span class="hint">{$t('chat.composer.hint')}</span>
-    {#if showCounter}
-      <span class="counter" class:over={tooLong} data-testid="chat-char-counter">
-        {value.length.toLocaleString()} / {maxLength.toLocaleString()}
+    {#if tooLong}
+      <span class="counter over" data-testid="chat-char-counter">
+        {$t('chat.composer.tooLong', { max: maxLength.toLocaleString() })}
+      </span>
+    {:else if showCounter}
+      <span class="counter" data-testid="chat-char-counter">
+        {$t('chat.composer.charCount', {
+          count: value.length.toLocaleString(),
+          max: maxLength.toLocaleString(),
+        })}
       </span>
     {/if}
   </div>

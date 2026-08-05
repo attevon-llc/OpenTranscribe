@@ -4180,5 +4180,8 @@
   "chat.warnings.largeSelectionHint": "Les réponses restent sourcées, mais moins d'extraits proviennent de chaque enregistrement. Réduire la sélection donne généralement des réponses plus précises.",
   "chat.warnings.largeSelectionMessage": "Vous avez sélectionné {{files}} enregistrements, soit environ {{pct}} % du contexte de ce modèle.",
   "chat.warnings.largeSelectionTitle": "Sélection volumineuse",
-  "chat.warnings.proceed": "Utiliser quand même"
+  "chat.warnings.proceed": "Utiliser quand même",
+  "chat.composer.charCount": "{{count}} / {{max}}",
+  "chat.composer.tooLong": "Trop long — restez sous {{max}} caractères",
+  "gallery.bulk.chatTruncated": "Utilisation des {{used}} premiers enregistrements sur {{total}} — c'est le maximum par discussion."
 }

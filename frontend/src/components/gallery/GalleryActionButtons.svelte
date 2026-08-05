@@ -2,6 +2,10 @@
   import { onMount, onDestroy } from 'svelte';
   import { galleryStore, galleryState, selectedCount, allFilesSelected } from '../../stores/gallery';
   import { chatStore } from '../../stores/chat';
+  import { toastStore } from '../../stores/toast';
+
+  /** Mirrors ChatScope.file_uuids max_length in backend/app/schemas/chat.py. */
+  const CHAT_MAX_FILES = 100;
   import { goto } from '$app/navigation';
   import { t } from '../../stores/locale';
   import type { MediaFile } from '$lib/types/media';
@@ -78,7 +82,17 @@
       .filter((f) => f.status === 'completed')
       .map((f) => f.uuid);
     if (!completed.length) return;
-    chatStore.setPendingContext(completed);
+
+    // ChatScope.file_uuids is capped at 100 server-side. Truncating with a
+    // notice beats letting the create/estimate calls 422 with no explanation.
+    const capped = completed.slice(0, CHAT_MAX_FILES);
+    if (completed.length > CHAT_MAX_FILES) {
+      toastStore.info(
+        $t('gallery.bulk.chatTruncated', { used: CHAT_MAX_FILES, total: completed.length })
+      );
+    }
+
+    chatStore.setPendingContext(capped);
     closeAllMenus();
     await goto('/chat');
   }
@@ -142,7 +156,12 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
               </svg>
-              {$t('gallery.bulk.chatWithSelected', { count: $selectedCount })}
+              {$t('gallery.bulk.chatWithSelected', {
+                count: Math.min(
+                  selectedFileObjects.filter((f) => f.status === 'completed').length,
+                  CHAT_MAX_FILES
+                ),
+              })}
             </button>
             <button
               class="dropdown-item"

@@ -5,6 +5,16 @@ import ssl
 
 logger = logging.getLogger(__name__)
 
+
+def _int_env(key: str, default: int) -> int:
+    """Read an int env var, falling back to *default* on absence or garbage."""
+    try:
+        return int(os.getenv(key, str(default)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid integer for %s; using %d", key, default)
+        return default
+
+
 _SKIP_CELERY = os.environ.get("SKIP_CELERY", "").lower() == "true"
 
 if not _SKIP_CELERY:
@@ -135,6 +145,25 @@ celery_app.conf.update(
     # makes every worker round-trip the broker between tasks (issue #284 A1.8).
     # Keep the GPU worker at 1 — it must never hold a second task it cannot start.
     worker_prefetch_multiplier=1,
+    # Global task time limits (issue #284 A1.2). There were NONE, so a hung CUDA call
+    # held the single GPU slot forever and no later transcription could start.
+    #
+    # Deliberately GENEROUS rather than tight. Media is capped at 4 h and hybrid/CPU
+    # transcription of a long file is legitimately slow, so a tight global limit would
+    # truncate real work — and getting per-task overrides wrong on even one long task
+    # silently kills valid jobs. A 3 h ceiling still converts "wedged forever" into
+    # "recovered in 3 h", which is the actual failure this addresses. Tasks needing more
+    # override per-task (see combined_speaker_analysis_task for the pattern).
+    #
+    # Kept under visibility_timeout (6 h) so a timeout kill happens before redelivery,
+    # not after — otherwise the two mechanisms would fight and duplicate work.
+    #
+    # CAVEAT: soft_time_limit is delivered via SIGALRM, which is unreliable under
+    # --pool=threads — which is exactly what the GPU workers use. Treat these as a
+    # backstop for the prefork/CPU queues; on GPU the real protection is
+    # visibility_timeout plus the DB-status crash recovery in tasks/recovery.py.
+    task_soft_time_limit=_int_env("CELERY_SOFT_TIME_LIMIT", 10800),  # 3 h
+    task_time_limit=_int_env("CELERY_HARD_TIME_LIMIT", 11700),  # 3 h 15 m
     worker_send_task_events=True,  # Enable real-time task events for Flower
     task_send_sent_event=True,  # Fire event when task is dispatched to queue
     result_expires=86400,  # Expire results after 24h (prevent Redis bloat)

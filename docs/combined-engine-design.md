@@ -27,7 +27,7 @@ The engine splits the pipeline into three stages, each running on the appropriat
 
 ```
 [CPU worker]  Stage 1: preprocess  →  [GPU worker]  Stage 2: GPU inference  →  [CPU worker]  Stage 3: finalize
-preprocess_for_transcription()           transcribe_gpu_task()                    postprocess_task()
+preprocess_for_transcription()           transcribe_gpu_task()                    finalize_transcription()
 ```
 
 ---

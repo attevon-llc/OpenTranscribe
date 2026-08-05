@@ -11,6 +11,7 @@ All operations are idempotent (safe to run multiple times).
 """
 
 import logging
+import secrets
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -29,34 +30,94 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 
-def _ensure_admin_user(db: Session) -> None:
-    """Create the default admin user if it doesn't exist.
+#: The well-known development credential. NEVER seeded in a hardened environment.
+_DEV_ADMIN_EMAIL = "admin@example.com"
+_DEV_ADMIN_PASSWORD = "password"  # noqa: S105  # nosec B105  # gitleaks:allow
 
-    The default admin is the platform owner, so it gets ``super_admin`` (which
+
+def _resolve_bootstrap_admin() -> tuple[str, str, bool]:
+    """Decide which admin credential to seed.
+
+    Returns:
+        ``(email, password, generated)`` — *generated* is True when the password was
+        randomly generated and must be surfaced to the operator exactly once.
+    """
+    from app.core.config import settings
+
+    if not settings.is_hardened:
+        # Dev/test: the well-known credential the e2e suite and local workflow expect.
+        return _DEV_ADMIN_EMAIL, _DEV_ADMIN_PASSWORD, False
+
+    if settings.INITIAL_ADMIN_PASSWORD:
+        return settings.INITIAL_ADMIN_EMAIL, settings.INITIAL_ADMIN_PASSWORD, False
+
+    # Hardened with no password supplied: generate one rather than shipping a known
+    # default. token_urlsafe(24) is 192 bits of entropy.
+    return settings.INITIAL_ADMIN_EMAIL, secrets.token_urlsafe(24), True
+
+
+def _ensure_admin_user(db: Session) -> None:
+    """Create the bootstrap admin user if no admin exists yet.
+
+    The bootstrap admin is the platform owner, so it gets ``super_admin`` (which
     can configure authentication, change roles, etc.). ``is_superuser`` is the
     derived mirror of ``role == super_admin`` — see ``app.auth.roles``.
+
+    **The hardcoded dev super_admin credential is only ever created in
+    a relaxed environment** (issue #284 A0.9). It used to be seeded unconditionally on
+    every boot with no env gate, so any public deployment shipped with a known
+    super-admin credential. A hardened deployment instead gets ``INITIAL_ADMIN_EMAIL``
+    with ``INITIAL_ADMIN_PASSWORD``, or a generated password logged once at startup.
     """
-    user = db.query(User).filter(User.email == "admin@example.com").first()
+    email, password, generated = _resolve_bootstrap_admin()
+
+    user = db.query(User).filter(User.email == email).first()
+
+    # In a hardened environment, never resurrect the dev credential — and don't create
+    # a second bootstrap admin if the operator already has one under another address.
+    if not user and _admin_exists(db):
+        logger.debug("An admin already exists; skipping bootstrap admin creation")
+        return
+
     if not user:
         user = User(
-            email="admin@example.com",
+            email=email,
             full_name="Admin User",
-            hashed_password=get_password_hash("password"),
+            hashed_password=get_password_hash(password),
             role=ROLE_SUPER_ADMIN,
             is_superuser=role_implies_superuser(ROLE_SUPER_ADMIN),
         )
         db.add(user)
         db.commit()
-        logger.info("Created default admin user: admin@example.com (super_admin)")
+        if generated:
+            # The only time this password is ever visible. Logged at CRITICAL so it
+            # survives a production log level and the operator cannot miss it.
+            logger.critical(
+                "Created bootstrap admin %s with a GENERATED password: %s\n"
+                "Store it now and change it after first login — it is not recoverable. "
+                "Set INITIAL_ADMIN_PASSWORD to choose your own instead.",
+                email,
+                password,
+            )
+        else:
+            logger.info("Created bootstrap admin user: %s (super_admin)", email)
     elif user.role != ROLE_SUPER_ADMIN and user.is_superuser:
         # Self-heal a legacy default admin (role='admin' + is_superuser=True),
         # which could not reach the super_admin-gated surfaces. Idempotent.
         user.role = ROLE_SUPER_ADMIN
         user.is_superuser = True
         db.commit()
-        logger.info("Promoted legacy default admin admin@example.com to super_admin")
+        logger.info("Promoted legacy default admin %s to super_admin", email)
     else:
         logger.debug("Admin user already exists")
+
+
+def _admin_exists(db: Session) -> bool:
+    """Whether any super_admin account already exists."""
+    return (
+        db.query(User).filter(User.role == ROLE_SUPER_ADMIN).first() is not None
+        or db.query(User).filter(User.is_superuser.is_(True)).first() is not None
+    )
 
 
 def _ensure_default_tags(db: Session) -> None:

@@ -20,7 +20,7 @@ ACCESS_MAX_AGE = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
 REFRESH_MAX_AGE = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
 
 # Only set Secure flag when not in dev (allows HTTP cookies in development)
-_IS_DEV = settings.ENVIRONMENT.lower() in ("development", "dev", "testing", "test")
+_IS_DEV = not settings.is_hardened
 _SECURE = not _IS_DEV
 
 

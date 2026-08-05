@@ -580,7 +580,7 @@ class MinIOService:
             if url.startswith("http://minio:9000"):
                 from app.core.config import settings
 
-                if settings.ENVIRONMENT == "development":
+                if not settings.is_hardened:
                     url = url.replace("http://minio:9000", "http://localhost:5178")
                 else:
                     # For production, use environment variable for external MinIO URL

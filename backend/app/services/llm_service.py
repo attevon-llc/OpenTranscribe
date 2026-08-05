@@ -1452,6 +1452,18 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
 
             logger.info(f"Health check using models endpoint: {models_url}")
 
+            # The base URL is user-supplied config; refuse internal targets before
+            # fetching (issue #284 A0.1).
+            from app.core.config import settings as _settings
+            from app.utils.url_validation import is_safe_url
+
+            safe, reason = is_safe_url(
+                models_url, allow_private=_settings.LLM_ALLOW_PRIVATE_ENDPOINTS
+            )
+            if not safe:
+                logger.warning("Health check blocked for %s: %s", models_url, reason)
+                return False
+
             # Use a short timeout with no retries for health checks — this must
             # not block a sync thread for 30+ seconds if the LLM server is down.
             # Create a one-off session without the retry adapter.

@@ -11,6 +11,14 @@ should import `app.api` or `app.services` at module scope.
 - `config.py` — pydantic-settings `Settings`; the module-level `settings` singleton is the only
   supported import. `extra="ignore"`, so an undeclared/typo'd compose env var is silently
   dropped rather than crashing startup.
+  **Gate every security control on `settings.is_hardened`, never on
+  `ENVIRONMENT in ("production", "prod")`.** `ENVIRONMENT` defaults to `production` and only the
+  closed `RELAXED_ENVIRONMENTS` set (`development`/`dev`/`testing`/`test`/`local`) relaxes
+  anything, so an unset, empty, or misspelled value fails closed. The old form fails **open**,
+  and because nothing passed `ENVIRONMENT` into the containers it was never true in any
+  deployment — the default-secret refusal, `DEBUG` enforcement, Redis-password requirement, and
+  cookie `Secure` flag were all dead code until #284 A0.3. Dev declares itself via the
+  `x-dev-environment` anchor in `docker-compose.override.yml`, which prod never loads.
 - `constants.py` — magic numbers, `CeleryQueues` (**single source of truth for queue names**),
   the `OPENSEARCH_EMBEDDING_MODELS` tiers, and the `DEFAULT_*` values backing DB-stored settings
   (redaction, watch sources, engine/boundary). **Check here before adding a `.env` var.**

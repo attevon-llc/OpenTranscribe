@@ -30,8 +30,14 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_production_secrets():
-    """Validate that production secrets are properly configured."""
-    is_production = settings.ENVIRONMENT.lower() in ("production", "prod")
+    """Validate that production secrets are properly configured.
+
+    Gated on ``settings.is_hardened`` (fail-closed): every check below applies unless
+    ENVIRONMENT explicitly names a relaxed environment. The previous
+    ``ENVIRONMENT in ("production", "prod")`` test was never true in practice — nothing
+    passes ENVIRONMENT into the containers — so none of these ran anywhere (#284 A0.3).
+    """
+    is_production = settings.is_hardened
 
     # Check JWT secret key
     insecure_jwt_secrets = (

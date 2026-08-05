@@ -2,17 +2,29 @@
  * Shared media file types used across gallery components.
  */
 
+/**
+ * Every value of the backend `FileStatus` enum (`backend/app/core/enums.py`).
+ *
+ * Hand-maintained mirror — there is no codegen and no `openapi-typescript`, so nothing
+ * detects drift but `media.status.test.ts`, which pins this list. Add new statuses to
+ * both, and audit `switch`/`if` chains over status when you do.
+ */
+export type MediaFileStatus =
+  | 'pending'
+  | 'queued'
+  | 'downloading'
+  | 'processing'
+  | 'completed'
+  | 'error'
+  | 'cancelling'
+  | 'cancelled'
+  | 'orphaned'
+  | 'quarantined';
+
 export interface MediaFile {
   uuid: string;
   filename: string;
-  status:
-    | 'pending'
-    | 'processing'
-    | 'completed'
-    | 'error'
-    | 'cancelling'
-    | 'cancelled'
-    | 'orphaned';
+  status: MediaFileStatus;
   upload_time: string;
   duration?: number;
   file_size?: number;

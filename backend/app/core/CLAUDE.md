@@ -44,9 +44,12 @@ should import `app.api` or `app.services` at module scope.
 
 ## Gotchas
 
-- **Import-linter (pre-commit) forbids `app.*` from importing `cloud`, `clerk`, or `stripe`.**
-  Contract: `backend/pyproject.toml [tool.importlinter]`; the hook runs `lint-imports` from
-  `backend/`. Keep seams as resolver hooks so the static AST check stays clean.
+- **Import-linter (pre-commit) forbids `app.*` from importing `cloud` or the managed edition's
+  vendor packages.** The authoritative list is the contract itself —
+  `backend/pyproject.toml [tool.importlinter]`; the hook runs `lint-imports` from `backend/`.
+  Keep seams as resolver hooks so the static AST check stays clean. Don't restate the vendor
+  names here: CI's seam guard greps `backend/app` and `frontend/src` for them and fails the
+  build on any match, **including in docs** — that is what took master red at `2a71fb1`.
 - `SETTINGS_CACHE_TTL` (30 s) staleness is **cross-process by design**: an admin change is
   instant in the API process but up to 30 s stale in Celery workers. The cache fully bypasses
   when `TESTING=true`, read from `os.environ` at call time.

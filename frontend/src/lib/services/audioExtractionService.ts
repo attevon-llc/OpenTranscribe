@@ -23,6 +23,11 @@ import {
 } from '../utils/metadataMapper';
 import { websocketStore } from '../../stores/websocket';
 import { get } from 'svelte/store';
+// Hashing runs in a Web Worker so the UI stays responsive. Audio extraction runs on
+// VIDEO files — the largest inputs the app accepts (15 GB limit) — and the previous
+// main-thread `file.arrayBuffer()` + `crypto.subtle.digest` buffered the whole file
+// into memory and blocked the event loop for its duration (issue #302).
+import { hashFileSHA256 } from '$lib/services/sha256Hasher';
 import { t } from '../../stores/locale';
 import { generateId } from '$lib/utils/ids';
 
@@ -295,17 +300,6 @@ class AudioExtractionService {
   }
 
   /**
-   * Calculate file hash for duplicate detection
-   */
-  private async calculateFileHash(file: File): Promise<string> {
-    const arrayBuffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-    return hashHex;
-  }
-
-  /**
    * Extract audio from video file (queued for sequential processing)
    */
   public async extractAudio(
@@ -411,7 +405,7 @@ class AudioExtractionService {
         fileName
       );
 
-      const originalFileHash = await this.calculateFileHash(file);
+      const originalFileHash = await hashFileSHA256(file);
 
       // Extract metadata first
       const metadata = await this.extractMetadata(file);

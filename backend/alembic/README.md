@@ -6,11 +6,16 @@
 
 ## Database Authority
 
-Alembic migrations in `backend/alembic/versions/` are the **sole authority** for the database schema in all environments. There is no `init_db.sql` — the baseline migration (`v010_baseline.py`) creates the full schema from scratch and subsequent migrations handle schema evolution.
+Alembic migrations in `backend/alembic/versions/` are the **sole authority** for the database schema in all environments. The baseline migration (`v010_baseline.py`) creates the full schema from scratch and subsequent migrations handle schema evolution.
+
+`database/init_db.sql` does still exist, but it is **legacy reference only and is not used for schema** — do not treat it as authoritative or keep it in sync.
 
 ## Current Migration Chain
 
-The migration chain spans v010 (baseline) through v355 (v0.4.0), covering ~35 migrations:
+The chain spans v010 (baseline) through the current head, **59 revisions**. Run
+`alembic history` for the authoritative list and `alembic heads` to confirm exactly one head —
+the ranges below are a rough map, and the chain is neither numerically contiguous nor
+guaranteed to match filename order (see `CLAUDE.md` in this directory for the `v270` branch).
 
 | Range | Description |
 |-------|-------------|
@@ -21,6 +26,7 @@ The migration chain spans v010 (baseline) through v355 (v0.4.0), covering ~35 mi
 | v220–v260 | Speaker clustering, auto-labeling, cluster quality |
 | v270–v300 | ASR provider support, upload sessions, password reset, gender |
 | v310–v355 | Speaker constraints, shared configs/prompts, user media sources, diarization settings, AI summary settings, requested whisper model |
+| v360–v373 | Prompt sharing, watch sources, cloud seams, UUID guard, superuser role invariant, quarantine, audit/cluster org scoping |
 
 ## Startup Runner (`app/db/migrations.py`)
 

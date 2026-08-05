@@ -45,7 +45,8 @@ so keep heavy imports lazy.
 ## Conventions / patterns
 
 - No `app.api` imports from here (`db_helpers` types `RequestContext` under `TYPE_CHECKING`).
-  Import-linter also forbids any `cloud`/`clerk`/`stripe` import — see `backend/app/core/CLAUDE.md`.
+  Import-linter also forbids `cloud` and managed-edition vendor imports — see
+  `backend/app/core/CLAUDE.md`.
 - Optional heavy deps (pyannote.metrics, meeteval, torch) are imported **inside** the function
   that needs them so these modules stay importable on CPU-only workers and in fast unit tests.
 - Best-effort side paths (cache invalidation, WS publish, metrics) log and swallow — they must

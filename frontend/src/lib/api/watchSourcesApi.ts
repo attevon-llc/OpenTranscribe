@@ -178,7 +178,8 @@ export interface MultipartRegexTestResult {
 export interface GlobalWatchSettings {
   enabled: boolean;
   file_stability_seconds: number;
-  max_concurrent_imports: number;
+  /** Per-scan cap on files imported, NOT a concurrency limit — imports run serially. */
+  max_imports_per_scan: number;
   fs_events_enabled: boolean;
 }
 

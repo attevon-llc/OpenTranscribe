@@ -40,9 +40,13 @@ a second one in a component. (`AudioExtractionService` is also exported as a cla
 ## Gotchas
 
 - These are `.ts` files: use `get(t)(...)` / `get(store)`. `$store` syntax is `.svelte`-only.
-- **Two different hashers.** `uploadService` hashes off-thread; `audioExtractionService.calculateFileHash`
-  still does `file.arrayBuffer()` + `crypto.subtle` **on the main thread** and will freeze the tab on a
-  large video. Route new hashing through `sha256Hasher`.
+- **One hasher: `hashFileSHA256` from `$lib/services/sha256Hasher`.** It runs in a Web Worker (with a
+  main-thread fallback for jsdom/SSR/old browsers) so the UI stays responsive on multi-GB files —
+  never call `file.arrayBuffer()` + `crypto.subtle.digest` directly. `audioExtractionService` did
+  exactly that until #302, on **video** files, which are the largest inputs the app accepts (15 GB):
+  it buffered the whole file into memory and blocked the event loop for the length of the hash.
+  `uploadService` previously wrapped it in a local `calculateFileHash`; that wrapper is gone and both
+  call sites now use `hashFileSHA256` directly.
 - `audioExtractionService.ts` and `configService.ts` still use relative imports (`../types/…`,
   `../../stores/…`, `../axios`). Everything else uses `$lib`/`$stores` — don't copy that.
 - The presigned→legacy fallback swallows the error with no log; a broken presign looks like a slow

@@ -16,19 +16,7 @@
   let drag = false;
   let dragDropCleanup: (() => void) | null = null;
 
-  // Constants
-  const MAX_FILE_SIZE = 15 * 1024 * 1024 * 1024; // 15GB
-
-  const allowedTypes = [
-    'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac', 'audio/aac', 'audio/m4a',
-    'audio/x-wav', 'audio/x-aiff', 'audio/x-m4a', 'audio/x-m4b', 'audio/x-m4p',
-    'audio/mp3', 'audio/x-mpeg', 'audio/x-ms-wma', 'audio/x-ms-wax', 'audio/x-ms-wmv',
-    'audio/vnd.rn-realaudio', 'audio/x-realaudio', 'audio/webm', 'audio/3gpp', 'audio/3gpp2',
-    'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo',
-    'video/x-ms-wmv', 'video/x-matroska', 'video/3gpp', 'video/3gpp2', 'video/x-flv',
-    'video/x-m4v', 'video/mpeg', 'video/x-ms-asf', 'video/x-ms-wvx', 'video/avi'
-  ];
-
+  /** Fallback MIME types for files the browser reports with an empty `type`. */
   const extensionMap: Record<string, string> = {
     'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg', 'flac': 'audio/flac',
     'aac': 'audio/aac', 'm4a': 'audio/m4a', 'aif': 'audio/x-aiff', 'aiff': 'audio/x-aiff',
@@ -48,10 +36,18 @@
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
   }
 
+  /**
+   * Normalize the MIME type where the browser gave us none, then hand the file up.
+   *
+   * This panel deliberately does NOT validate — the parent owns type/size rejection and
+   * renders the error, so every path here dispatches `fileSelect`. It previously carried
+   * type and size guard branches that each dispatched the identical event and returned,
+   * plus a 15 GB constant none of them could enforce (issue #298). Validate in
+   * `FileUploader`, against `$lib/utils/uploadLimits`.
+   */
   function handleFileSelect(selectedFile: File) {
     let processedFile: File = selectedFile;
 
-    // Resolve unknown MIME types from extension
     if (!selectedFile.type) {
       const extension = selectedFile.name.split('.').pop()?.toLowerCase() || '';
       const mimeType = extensionMap[extension];
@@ -60,22 +56,7 @@
           type: mimeType,
           lastModified: selectedFile.lastModified
         });
-      } else {
-        dispatch('fileSelect', { file: selectedFile }); // Let parent show error
-        return;
       }
-    }
-
-    // Check file type
-    if (!allowedTypes.some(type => processedFile.type.startsWith(type.split('/')[0]))) {
-      dispatch('fileSelect', { file: processedFile });
-      return;
-    }
-
-    // Check file size
-    if (selectedFile.size > MAX_FILE_SIZE) {
-      dispatch('fileSelect', { file: processedFile });
-      return;
     }
 
     dispatch('fileSelect', { file: processedFile });

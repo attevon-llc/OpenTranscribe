@@ -125,13 +125,21 @@ class SMBWatchClient(BaseWatchSourceClient):
                     break
                 dst.write(chunk)
                 written += len(chunk)
-        # Size verify against the remote stat.
+        # Size verify against the remote stat. The try covers ONLY the stat call —
+        # a mismatch must propagate, not be swallowed by the skip handler that
+        # exists for servers where stat() is unavailable (issue #293).
         try:
             expected = int(smbclient.stat(remote_path).st_size)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "smb size verification skipped for %s (stat failed: %s) — "
+                "a truncated download cannot be detected for this file",
+                remote_path,
+                e,
+            )
+        else:
             if written != expected:
                 raise RuntimeError(f"SMB download size mismatch ({written} != {expected})")
-        except Exception as e:  # noqa: BLE001
-            logger.debug("smb size verify skipped for %s: %s", remote_path, e)
         return written
 
     def upload_file(self, local_path: str, remote_path: str) -> bool:

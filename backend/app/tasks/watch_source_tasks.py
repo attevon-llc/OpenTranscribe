@@ -156,7 +156,7 @@ def _perform_scan(db, source: WatchSource, summary: dict, scan_started: datetime
     Mutates ``summary`` in place. Raises on connection/list failure so the
     caller records ``last_scan_status='error'``.
     """
-    max_imports = watch_settings_service.max_concurrent_imports(db)
+    max_imports = watch_settings_service.max_imports_per_scan(db)
     extensions = parse_extensions(source.file_extensions)
     age_cutoff = None
     if source.skip_files_older_than_days is not None:

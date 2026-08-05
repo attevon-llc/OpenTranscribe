@@ -59,9 +59,10 @@ indexing → WebSocket notification.
   only on the GPU workers; `PRELOAD_REDACTION_MODELS=true` only on `celery-redaction`
   (dedicated CPU service owning the `redaction` queue, run under `nice`). Importing a
   model-loading module into a task that runs on the wrong queue wastes 15+ GB of VRAM.
-- Redaction detection is **not** unconditional despite the stale comment in `postprocess.py`:
-  `_dispatch_redaction` returns early unless `resolve_effective_config(db, user_id).enabled`.
-  Enabling redaction later triggers lazy detection on first file open.
+- Redaction detection is **not** unconditional: `_dispatch_redaction` returns early unless
+  `resolve_effective_config(db, user_id).enabled`, and redaction is opt-out by default.
+  Enabling redaction later triggers lazy detection on first file open. (Both the
+  `postprocess.py` comment and the `redaction_task.py` docstring claimed "always" until #296.)
 - Multi-GPU scaling: `./opentr.sh start dev --gpu-scale` sets `COMPOSE_PROFILES=gpu-scale`
   and loads `docker-compose.gpu-scale.yml` (N threads on `GPU_SCALE_DEVICE_ID`, tune
   `GPU_SCALE_WORKERS` to VRAM). **`GPU_SCALE_ENABLED` does not enable scaling** — only the

@@ -1,16 +1,18 @@
 """Phase D.4/D.5/D.6 — performance regression, soak, coexistence gates.
 
-These are marked ``pytest.mark.slow`` and skipped by default; run in CI
-on a nightly cadence. The thresholds encode Phase A.2 measurements:
-deviating from them is a regression worth failing the build for.
+Marked ``gpu`` + ``slow``, so the default suite and CI both deselect them; they run
+in the ``-m gpu`` phase of ``scripts/run-integration-tests.sh`` and need a physical
+GPU. The thresholds encode Phase A.2 measurements: deviating from them is a
+regression worth failing the build for.
 
-Run (in-container):
+Run (in-container). ``-o addopts=""`` is required because the project default
+selector excludes ``gpu``:
 
     docker compose -f docker-compose.yml -f docker-compose.override.yml \\
                    -f docker-compose.gpu.yml -f docker-compose.benchmark.yml \\
                    run --rm --entrypoint "" diarization-probe \\
         python -m pytest /app/tests/integration/test_diarization_perf_gates.py \\
-                         -v -m slow --run-slow
+                         -v -o addopts="" -m gpu
 
 Refs: plan i-need-a-full-stateful-origami.md D.4, D.5, D.6.
 """

@@ -128,8 +128,14 @@ class FormattingService:
             FileStatus.CANCELLING: "Cancelling",
             FileStatus.CANCELLED: "Cancelled",
             FileStatus.ORPHANED: "Needs Recovery",
+            FileStatus.QUARANTINED: "Quarantined",
         }
-        return status_map.get(status, str(status))
+        # Fall back on the VALUE, never str(status): FileStatus is deliberately not a
+        # StrEnum, so str() yields "FileStatus.QUARANTINED" — which is exactly what the
+        # UI displayed for quarantined files before this entry existed (issue #301).
+        return status_map.get(
+            status, str(getattr(status, "value", status)).replace("_", " ").title()
+        )
 
     @staticmethod
     def create_speaker_summary(speakers: list[Speaker]) -> dict[str, Any]:
@@ -495,6 +501,7 @@ class FormattingService:
             "cancelling": "status-cancelling",
             "cancelled": "status-cancelled",
             "orphaned": "status-orphaned",
+            "quarantined": "status-quarantined",
         }
         return status_classes.get(status.lower(), "status-unknown")
 

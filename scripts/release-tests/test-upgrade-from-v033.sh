@@ -77,12 +77,19 @@ while (( $# > 0 )); do
         --help|-h)
             cat <<EOF
 Usage: $0 [--cleanup] [--force] [--yes]
+
+Prerequisite: stop the live deployment first with \`./opentr.sh stop\`.
+This scenario runs under the one-liner's stock container names and ports so it
+exercises what a real user gets; it cannot run alongside the live stack.
+After the test, restart it with \`./opentr.sh start dev\` (or whichever
+mode you were using).
+
 Env:
-  TEST_PROJECT_NAME      default ot-reltest-upgrade
+  TEST_PROJECT_NAME      default ot-reltest-upgrade  (used as label namespace)
   TEST_ROOT              default /mnt/nvm/opentranscribe-test-runs/<name>-<ts>
   FROM_VERSION           default v0.3.3   (Docker Hub tag for the "before" stack)
   LOCAL_IMAGE_TAG        default 0.4.0    (locally built tag for the "after" stack)
-  TEST_FRONTEND_PORT..   default 6273-6280
+  FRONTEND_PORT..        default 5173-5180 (one-liner defaults; see README)
 EOF
             exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;

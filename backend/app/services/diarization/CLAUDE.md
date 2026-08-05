@@ -33,14 +33,12 @@ Speaker segmentation decoupled from ASR. Same skeleton as `../asr/` (`base.py` +
 
 ## Gotchas
 
-- **`base.py:57-59` is broken at runtime.** `_normalize_speaker_label` proxies through
-  `object.__new__(ASRProvider)`, but `object.__new__` performs the ABC check — so **every** call raises
-  `TypeError: Can't instantiate abstract class ASRProvider` (verified). That kills
-  `pyannote_provider.py:476` (the cloud-diarization happy path) and `local_provider.py:91`. Nothing
-  tests it — `tests/unit/test_pyannote_provider.py` covers the *ASR* provider. Fix by making the ASR
-  helper a module-level function or `@staticmethod`.
-- `base.py:61-73` copy-pastes `_sanitize_error` from `asr/base.py` instead of reusing it — keep both in
-  sync if you touch either.
+- **Label normalization and error sanitization are shared, not duplicated.** `base.py` delegates
+  `_normalize_speaker_label` / `_sanitize_error` to the module-level `normalize_speaker_label` /
+  `sanitize_provider_error` in `asr/base.py`. Change behavior *there* — both hierarchies use it, and
+  `tests/unit/test_speaker_label_normalization.py` asserts they agree. (Until #299 this proxied through
+  `object.__new__(ASRProvider)`, which trips the ABC check and raised `TypeError` on **every** call,
+  killing `pyannote_provider.py:476` and `local_provider.py:91`.)
 - `factory.py:95` still says "UserDiarizationSettings model will be created in a separate task". The
   model exists (`models/user_diarization_settings.py`); the comment is stale.
 - `test_provider_sdk_compat.py` covers **no** module in this package.

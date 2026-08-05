@@ -156,7 +156,7 @@ def _get_source_or_404(db: Session, source_uuid: str, current_user: User) -> Wat
     if not source:
         raise HTTPException(status_code=404, detail="Watch source not found")
     # Owner or admin may access.
-    if source.user_id != current_user.id and current_user.role != "admin":
+    if source.user_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized for this watch source")
     return source
 
@@ -430,7 +430,7 @@ def list_watch_sources(
     current_user: User = Depends(get_current_active_user),
 ) -> WatchSourcesList:
     query = db.query(WatchSource)
-    if scope == "all" and current_user.role == "admin":
+    if scope == "all" and current_user.is_admin:
         query = query.order_by(WatchSource.created_at.desc())
     else:
         query = query.filter(WatchSource.user_id == current_user.id).order_by(
@@ -453,7 +453,7 @@ def create_watch_source(
 
     # Admins may assign the source (and its imported files) to another user.
     owner_id = current_user.id
-    if data.assign_to_user_uuid and current_user.role == "admin":
+    if data.assign_to_user_uuid and current_user.is_admin:
         target = db.query(User).filter(User.uuid == data.assign_to_user_uuid).first()
         if not target:
             raise HTTPException(status_code=404, detail="assign_to_user not found")

@@ -3,6 +3,7 @@ import * as authStore from './auth';
 import { downloadStore, type DownloadState } from './downloads';
 import { t } from '$stores/locale';
 import { generateId } from '$lib/utils/ids';
+import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
 
 // Define notification types
@@ -826,22 +827,22 @@ function createWebSocketStore() {
     });
   };
 
-  // Try to reconnect with exponential backoff
+  // Try to reconnect with jittered exponential backoff.
+  //
+  // The jitter matters: a backend restart drops every connected client at the
+  // same instant, and an un-jittered 2/4/8/16/30 s grid makes all of them
+  // retry in lockstep, so the server takes a synchronised burst on every tick
+  // while it is still coming up. `reconnectDelayMs` spreads each client over
+  // the second half of its backoff window instead.
   const tryReconnect = () => {
     update((state: WebSocketState) => {
       state.reconnectAttempts += 1;
       return state;
     });
 
-    // Calculate backoff time (max 30 seconds)
-    const backoffTime = Math.min(
-      Math.pow(2, Math.min(10, getState().reconnectAttempts)) * 1000,
-      30000
-    );
-
     reconnectTimeout = setTimeout(() => {
       connect();
-    }, backoffTime);
+    }, reconnectDelayMs(getState().reconnectAttempts));
   };
 
   // Disconnect

@@ -1430,6 +1430,7 @@
   "upload.fileAlreadyExists": "File already exists: {{name}}",
   "upload.uploadCompleted": "Upload completed: {{name}}",
   "upload.uploadFailed": "Upload failed: {{name}} - {{error}}",
+  "upload.stalled": "Upload stalled — no data transferred for {{seconds}} seconds. Check your connection.",
   "upload.calculatingHash": "Calculating file hash...",
   "upload.uploadPausedBrowserClosed": "Upload paused. Open the app to resume.",
   "fileDetail.unknownFile": "Unknown File",

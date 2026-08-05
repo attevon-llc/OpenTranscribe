@@ -9,6 +9,11 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   **client-side SPA** (`fallback: index.html`, no SSR, no `+page.server.ts`). Data is fetched
   client-side (`onMount`/reactive) from the FastAPI backend.
 - i18n via i18next (8 locales in `src/lib/i18n/locales`). Node pinned to 22 (`.nvmrc`).
+  Locales are **code-split, one chunk per language** — `src/lib/i18n/index.ts` globs them
+  non-eagerly and `ensureLocaleLoaded()` fetches only the active one. Never static-import a
+  locale JSON: that puts all ~2.3 MB back into the entry chunk. Only the active language is
+  loaded (not the `en` fallback), which is safe because `npm run check:i18n` enforces exact
+  key parity — keep it green.
 
 ## Commands (run in `frontend/`)
 

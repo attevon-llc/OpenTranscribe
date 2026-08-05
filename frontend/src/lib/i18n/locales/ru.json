@@ -1419,6 +1419,7 @@
   "upload.fileAlreadyExists": "Файл уже существует: {{name}}",
   "upload.uploadCompleted": "Загрузка завершена: {{name}}",
   "upload.uploadFailed": "Загрузка не удалась: {{name}} - {{error}}",
+  "upload.stalled": "Загрузка остановлена: данные не передавались {{seconds}} секунд. Проверьте подключение.",
   "upload.calculatingHash": "Вычисление хеша файла...",
   "upload.uploadPausedBrowserClosed": "Загрузка приостановлена. Откройте приложение для продолжения.",
   "fileDetail.unknownFile": "Неизвестный файл",

@@ -2258,6 +2258,7 @@
   "upload.unknownType": "Tipo de carga desconocido: {{type}}",
   "upload.uploadCompleted": "Carga completada: {{name}}",
   "upload.uploadFailed": "Carga fallida: {{name}} - {{error}}",
+  "upload.stalled": "Subida detenida: no se transfirieron datos durante {{seconds}} segundos. Comprueba tu conexión.",
   "upload.uploading": "subiendo",
   "upload.uploads": "subidas",
   "upload.uploadPausedBrowserClosed": "Upload paused. Open the app to resume.",

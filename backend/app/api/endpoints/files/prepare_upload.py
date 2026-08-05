@@ -269,7 +269,21 @@ async def prepare_upload(
         # once the PUT succeeds. We mint the application task_id here so all
         # HTTP-phase markers share the benchmark:{task_id} Redis hash with
         # the downstream pipeline.
-        if request.use_presigned:
+        # AWS S3 rejects a single PUT above 5 GiB with EntityTooLarge — after the
+        # browser has already streamed the whole body. Withholding the URL makes the
+        # client fall back to POST /files, which spools to disk and writes through
+        # minio-py's multipart uploader (issue #284 A1.11). MinIO's single-PUT ceiling
+        # is 5 TiB, so this never fires on the default self-hosted backend.
+        from app.services.storage_backend import supports_single_put
+
+        can_presign = supports_single_put(request.file_size)
+        if request.use_presigned and not can_presign:
+            logger.info(
+                f"Skipping presigned PUT for {request.filename}: {request.file_size} bytes "
+                "exceeds the backend's single-PUT limit; using multipart upload via the API"
+            )
+
+        if request.use_presigned and can_presign:
             from app.services.minio_service import presigned_put_url
 
             task_id = str(uuid_lib.uuid4())

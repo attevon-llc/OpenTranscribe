@@ -176,6 +176,54 @@ def test_prepare_presigned_returns_upload_url(client, user_token_headers):
     assert body["task_id"]
 
 
+def test_prepare_withholds_presigned_url_above_the_s3_single_put_limit(
+    client, user_token_headers, monkeypatch
+):
+    """On native S3 a >5 GiB object cannot be uploaded with one PUT (issue #284 A1.11).
+
+    S3 answers ``EntityTooLarge`` only after the browser has streamed the whole body,
+    so /prepare withholds the URL instead. The client then falls back to POST /files,
+    which spools to disk and writes through minio-py's multipart uploader. No storage
+    round-trip happens here: the point is that no presigned URL is minted.
+    """
+    from app.core.config import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "STORAGE_BACKEND", "s3")
+
+    response = client.post(
+        "/api/files/prepare",
+        headers=user_token_headers,
+        json=_prepare_payload(
+            filename="huge.mp4",
+            file_size=6 * 1024**3,
+            content_type="video/mp4",
+            use_presigned=True,
+        ),
+    )
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["is_duplicate"] == 0
+    assert "upload_url" not in body
+    assert "upload_method" not in body
+
+
+@pytest.mark.skipif(not S3_LIVE, reason="presigned PUT URL requires MinIO (SKIP_S3=False)")
+def test_prepare_still_presigns_large_files_on_minio(client, user_token_headers):
+    """MinIO's single-PUT ceiling is 5 TiB, so the S3 guard must not fire on it."""
+    response = client.post(
+        "/api/files/prepare",
+        headers=user_token_headers,
+        json=_prepare_payload(
+            filename="huge-minio.mp4",
+            file_size=6 * 1024**3,
+            content_type="video/mp4",
+            use_presigned=True,
+        ),
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["upload_method"] == "PUT"
+
+
 # ---------------------------------------------------------------------------
 # POST /api/files/complete
 # ---------------------------------------------------------------------------

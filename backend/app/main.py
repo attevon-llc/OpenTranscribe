@@ -102,14 +102,11 @@ def _validate_production_secrets():
         raise ValueError("DEBUG must be false in production environment")
 
     # Warn about insecure presigned URLs in production
-    if (
-        is_production
-        and settings.MINIO_PUBLIC_URL
-        and not settings.MINIO_PUBLIC_URL.startswith("https://")
-    ):
+    public_storage_url = settings.STORAGE_PUBLIC_URL or settings.MINIO_PUBLIC_URL
+    if is_production and public_storage_url and not public_storage_url.startswith("https://"):
         logger.warning(
-            "SECURITY WARNING: MINIO_PUBLIC_URL uses HTTP instead of HTTPS. "
-            "Presigned URLs will be served over an insecure connection in production."
+            "SECURITY WARNING: STORAGE_PUBLIC_URL/MINIO_PUBLIC_URL uses HTTP instead of "
+            "HTTPS. Presigned URLs will be served over an insecure connection in production."
         )
 
     # TESTING=true enables auth shortcuts (a fabricated user, a password-free login
@@ -153,35 +150,47 @@ async def _drain_websockets() -> None:
 
 
 async def _setup_minio():
-    """Initialize MinIO bucket on startup.
+    """Initialize the media bucket on startup.
 
     Creates the media bucket if it doesn't exist and ensures the bucket
     policy is private (no anonymous/public access). All file access goes
     through presigned URLs, so public read is unnecessary and a security risk.
+
+    Uses the shared storage client so ``STORAGE_BACKEND=s3`` bootstraps against
+    the real bucket instead of a MinIO-shaped client built from raw env vars
+    (issue #284 A1.11). On native S3 the bucket is owned by the operator's
+    infrastructure: we verify it and configure CORS, but never create it and
+    never touch its bucket policy — a globally-unique name created in the wrong
+    region, or a deleted policy, is not ours to guess at.
     """
     try:
         import json
 
-        from minio import Minio
+        from app.services import storage_backend
+        from app.services.minio_service import minio_client
 
-        minio_host = os.getenv("MINIO_HOST", "minio")
-        minio_port = os.getenv("MINIO_PORT", "9000")
-        minio_user = os.getenv("MINIO_ROOT_USER", "minioadmin")
-        minio_password = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
-        bucket_name = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
+        bucket_name = settings.MEDIA_BUCKET_NAME
+        native_s3 = storage_backend.is_native_s3()
 
-        client = Minio(
-            f"{minio_host}:{minio_port}",
-            access_key=minio_user,
-            secret_key=minio_password,
-            secure=settings.MINIO_SECURE,
-        )
-
-        if not client.bucket_exists(bucket_name):
-            client.make_bucket(bucket_name)
+        if not minio_client.bucket_exists(bucket_name):
+            if native_s3:
+                logger.error(
+                    f"S3 bucket '{bucket_name}' does not exist or is not reachable with the "
+                    "configured credentials. Create it (and grant the role access) before "
+                    "starting OpenTranscribe."
+                )
+                return
+            minio_client.make_bucket(bucket_name)
             logger.info(f"MinIO bucket '{bucket_name}' created successfully")
         else:
-            logger.info(f"MinIO bucket '{bucket_name}' already exists")
+            logger.info(f"Media bucket '{bucket_name}' already exists")
+
+        # Browser-direct uploads need a bucket CORS policy on S3 (MinIO allows any
+        # origin already). Opt-in and best-effort; never blocks startup.
+        storage_backend.ensure_bucket_cors(bucket_name)
+
+        if native_s3:
+            return
 
         # Security: ensure bucket has no public access policy.
         # Previous versions set a public read policy ("Principal": {"AWS": "*"})
@@ -189,7 +198,7 @@ async def _setup_minio():
         # access goes through presigned URLs, public read is unnecessary.
         # Remove any existing public policy to lock down the bucket.
         try:
-            existing_policy = client.get_bucket_policy(bucket_name)
+            existing_policy = minio_client.get_bucket_policy(bucket_name)
             if existing_policy:
                 policy_data = json.loads(existing_policy)
                 has_public_access = any(
@@ -197,7 +206,7 @@ async def _setup_minio():
                     for stmt in policy_data.get("Statement", [])
                 )
                 if has_public_access:
-                    client.delete_bucket_policy(bucket_name)
+                    minio_client.delete_bucket_policy(bucket_name)
                     logger.warning(
                         f"SECURITY FIX: Removed public access policy from bucket '{bucket_name}'. "
                         "All file access now requires authentication via presigned URLs."
@@ -207,7 +216,7 @@ async def _setup_minio():
             logger.debug("No bucket policy set for '%s' (secure default)", bucket_name)
 
     except Exception as e:
-        logger.error(f"Error setting up MinIO bucket: {e}")
+        logger.error(f"Error setting up media bucket: {e}")
 
 
 def _clear_stale_task_state():

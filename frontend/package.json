@@ -9,8 +9,8 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "prebuild": "node scripts/download-fonts.js",
-    "build:analyze": "node scripts/download-fonts.js && ANALYZE=true vite build && node -e \"require('fs').copyFileSync('.bundle-stats/stats.html','dist/stats.html')\" && echo \"bundle report: dist/stats.html\"",
+    "prebuild": "node scripts/download-fonts.js && node scripts/download-ffmpeg.js",
+    "build:analyze": "node scripts/download-fonts.js && node scripts/download-ffmpeg.js && ANALYZE=true vite build && node -e \"require('fs').copyFileSync('.bundle-stats/stats.html','dist/stats.html')\" && echo \"bundle report: dist/stats.html\"",
     "deadcode": "knip",
     "cycles": "madge --circular --extensions ts,js,svelte --ts-config tsconfig.json src",
     "preview": "vite preview",
@@ -56,7 +56,6 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.60.1",
     "vite": "^6.4.3",
-    "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.1.8"
   },
   "dependencies": {

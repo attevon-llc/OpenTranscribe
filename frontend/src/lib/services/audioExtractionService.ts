@@ -129,7 +129,8 @@ class AudioExtractionService {
         });
       });
 
-      // Load FFmpeg core from local files (bundled in frontend/public/ffmpeg/)
+      // Load FFmpeg core from local files (frontend/static/ffmpeg/, populated by the
+      // download-ffmpeg.js prebuild step and copied verbatim into dist/ffmpeg/).
       const baseURL = '/ffmpeg';
       await this.ffmpeg.load({
         coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),

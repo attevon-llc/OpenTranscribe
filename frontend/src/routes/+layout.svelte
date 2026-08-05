@@ -19,7 +19,7 @@
   import { locale } from "../stores/locale";
   import { llmStatusStore } from "../stores/llmStatus";
   import { networkStore } from "../stores/network";
-  import { register as registerServiceWorker } from "../serviceWorkerRegistration";
+  import { unregisterServiceWorkers } from "$lib/serviceWorkerCleanup";
   import { resetScrollLock } from '$lib/scrollLock';
   import { initMonitoring } from '$lib/monitoring';
 
@@ -67,8 +67,9 @@
     // Optional, env-gated error reporting — no-op unless VITE_SENTRY_DSN is set.
     void initMonitoring();
 
-    // Register service worker for PWA support
-    registerServiceWorker();
+    // The app ships no service worker — shed any left over from an older build
+    // (and the caches it created) so nobody is pinned to a stale bundle.
+    void unregisterServiceWorkers();
 
     // Initialize theme
     document.documentElement.setAttribute('data-theme', get(theme));

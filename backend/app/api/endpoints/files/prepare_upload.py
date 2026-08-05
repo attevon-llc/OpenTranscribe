@@ -99,27 +99,49 @@ def add_file_to_collections(
     """Add a media file to the specified collections owned by the user.
 
     Silently skips collections that don't exist or aren't owned by the user.
-    """
-    for coll_uuid in collection_ids:
-        collection = (
-            db.query(Collection)
-            .filter(Collection.uuid == str(coll_uuid), Collection.user_id == user_id)
-            .first()
-        )
-        if not collection:
-            logger.warning(f"Collection {coll_uuid} not found for user {user_id}, skipping")
-            continue
 
-        existing = (
-            db.query(CollectionMember)
-            .filter(
-                CollectionMember.collection_id == collection.id,
-                CollectionMember.media_file_id == file_id,
-            )
-            .first()
+    Two queries regardless of how many collections are named (issue #284 A2.8). This
+    used to run a `Collection` lookup and a `CollectionMember` existence check per
+    UUID — 2N round trips on the upload-prep path, which the SPA calls once per file
+    in a multi-file upload, so a 50-file batch across 5 collections paid 500 queries.
+    Bounded N is not unbounded, but it is on the hot upload path and the batched form
+    is no harder to read.
+    """
+    if not collection_ids:
+        return
+
+    wanted = [str(coll_uuid) for coll_uuid in collection_ids]
+
+    collections = (
+        db.query(Collection)
+        .filter(Collection.uuid.in_(wanted), Collection.user_id == user_id)
+        .all()
+    )
+    by_uuid = {str(collection.uuid): collection for collection in collections}
+
+    for coll_uuid in wanted:
+        if coll_uuid not in by_uuid:
+            logger.warning(f"Collection {coll_uuid} not found for user {user_id}, skipping")
+
+    resolved_ids = [collection.id for collection in collections]
+    if not resolved_ids:
+        db.flush()
+        return
+
+    already_member = {
+        row[0]
+        for row in db.query(CollectionMember.collection_id).filter(
+            CollectionMember.collection_id.in_(resolved_ids),
+            CollectionMember.media_file_id == file_id,
         )
-        if not existing:
-            db.add(CollectionMember(collection_id=collection.id, media_file_id=file_id))
+    }
+
+    # dict.fromkeys keeps insertion order while de-duplicating a repeated UUID —
+    # the per-UUID loop relied on the just-added row being visible to the next
+    # existence check, which autoflush=False sessions do not guarantee.
+    for collection_id in dict.fromkeys(resolved_ids):
+        if collection_id not in already_member:
+            db.add(CollectionMember(collection_id=collection_id, media_file_id=file_id))
 
     db.flush()
 
@@ -135,26 +157,37 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: i
 
     Uses SAVEPOINTs for race-condition safety without corrupting the
     enclosing transaction.
+
+    Resolution is batched (issue #284 A2.8): one `Tag` lookup and one `FileTag`
+    lookup for the whole list instead of one of each per name (2N round trips on the
+    upload-prep path). Only names that genuinely do not exist yet still cost a query,
+    and those keep the per-name SAVEPOINT so a concurrent insert of the same name
+    cannot poison the enclosing transaction.
     """
     owned_or_system = or_(Tag.user_id == user_id, Tag.user_id.is_(None))
 
-    for name in tag_names:
-        name = name.strip()[:50]
-        if not name:
-            continue
+    names = list(dict.fromkeys(filter(None, (name.strip()[:50] for name in tag_names))))
+    if not names:
+        db.flush()
+        return
 
-        normalized = AutoLabelService.normalize_name(name)
+    # ORDER BY user_id is ASC NULLS LAST, so an owned row beats the system row;
+    # first match per name wins, exactly as the per-name `.first()` did.
+    resolved: dict[str, Tag] = {}
+    for row in db.query(Tag).filter(Tag.name.in_(names), owned_or_system).order_by(Tag.user_id):
+        resolved.setdefault(str(row.name), row)
 
-        # ORDER BY user_id is ASC NULLS LAST, so an owned row beats the system row.
-        tag = db.query(Tag).filter(Tag.name == name, owned_or_system).order_by(Tag.user_id).first()
-        if not tag:
+    tag_ids: list[int] = []
+    for name in names:
+        tag: Tag | None = resolved.get(name)
+        if tag is None:
             try:
                 nested = db.begin_nested()
                 tag = Tag(
                     name=name,
                     user_id=user_id,
                     source=TAG_SOURCE_MANUAL,
-                    normalized_name=normalized,
+                    normalized_name=AutoLabelService.normalize_name(name),
                 )
                 db.add(tag)
                 db.flush()
@@ -168,14 +201,21 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: i
                 )
                 if not tag:
                     continue
+        tag_ids.append(tag.id)
 
-        existing = (
-            db.query(FileTag)
-            .filter(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id)
-            .first()
+    if not tag_ids:
+        db.flush()
+        return
+
+    already_tagged = {
+        row[0]
+        for row in db.query(FileTag.tag_id).filter(
+            FileTag.media_file_id == file_id, FileTag.tag_id.in_(tag_ids)
         )
-        if not existing:
-            db.add(FileTag(media_file_id=file_id, tag_id=tag.id, source=TAG_SOURCE_MANUAL))
+    }
+    for tag_id in dict.fromkeys(tag_ids):
+        if tag_id not in already_tagged:
+            db.add(FileTag(media_file_id=file_id, tag_id=tag_id, source=TAG_SOURCE_MANUAL))
 
     db.flush()
 

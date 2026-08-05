@@ -561,7 +561,7 @@ def _dispatch_video_task(
         ) from e
 
 
-async def _send_file_created_notification(media_file: MediaFile, user_id: int) -> None:
+def _send_file_created_notification(media_file: MediaFile, user_id: int) -> None:
     """Send WebSocket notification for newly created file.
 
     Routed through Redis pub/sub rather than the in-process ConnectionManager
@@ -570,6 +570,10 @@ async def _send_file_created_notification(media_file: MediaFile, user_id: int) -
     saw the new file appear — the gallery just looked stuck until a manual refresh.
     ``send_ws_event`` publishes on the ``websocket_notifications`` channel, which every
     replica's subscriber consumes, so the owning process delivers it wherever it is.
+
+    Synchronous on purpose: ``send_ws_event`` is a blocking Redis PUBLISH, so declaring
+    this ``async`` only made the blocking call happen *on the event loop* (issue #284
+    A2.4). It is now called from a sync request handler, i.e. Starlette's threadpool.
 
     Args:
         media_file: The created MediaFile.
@@ -606,7 +610,7 @@ async def _send_file_created_notification(media_file: MediaFile, user_id: int) -
 
 
 @router.post("/process-url", response_model=URLProcessingResponse)
-async def process_media_url(
+def process_media_url(
     request_data: URLProcessingRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -617,6 +621,15 @@ async def process_media_url(
 
     Supports YouTube, Vimeo, Twitter/X, TikTok, and 1800+ other platforms via yt-dlp.
     YouTube playlists are also supported.
+
+    Declared ``def``, not ``async def`` (issue #284 A2.4). Every call in this handler is
+    blocking: ``yt-dlp``'s ``extract_info`` performs a full metadata fetch against the
+    remote platform (seconds, sometimes tens of seconds), the rate limiter talks to Redis,
+    and the duplicate check / placeholder insert talk to Postgres. In an ``async def``
+    handler all of that ran *on the event loop*, so a single slow YouTube lookup stalled
+    every other request served by the process. A plain ``def`` handler is dispatched to
+    Starlette's threadpool instead, which is the same mechanism as ``run_in_threadpool``
+    without hand-wrapping each call site.
 
     Args:
         request_data: URLProcessingRequest containing the media URL
@@ -739,7 +752,7 @@ async def process_media_url(
         )
 
         # Send WebSocket notification
-        await _send_file_created_notification(media_file, current_user.id)
+        _send_file_created_notification(media_file, current_user.id)
 
         logger.info(f"Created placeholder MediaFile {media_file.id} for media URL processing")
         # ORM MediaFile serialized to the schema via response_model (from_attributes)
@@ -756,10 +769,12 @@ async def process_media_url(
 
 
 @router.get("/youtube/quota")
-async def get_youtube_download_quota(
+def get_youtube_download_quota(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get user's remaining YouTube download quota.
+
+    Sync handler: the quota lookup is a blocking Redis read (issue #284 A2.4).
 
     Returns:
         dict: Quota information with hourly/daily remaining and limits.

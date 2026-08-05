@@ -173,29 +173,42 @@ class FormattingService:
 
         Returns:
             MediaFileSchema with formatted fields
-        """
-        # Convert to dict first to allow modifications
-        file_dict = MediaFileSchema.model_validate(media_file).model_dump()
 
-        # Add formatted fields to the dict
-        file_dict["formatted_duration"] = FormattingService.format_duration(
-            float(media_file.duration) if media_file.duration is not None else None
-        )
-        file_dict["formatted_upload_date"] = FormattingService.format_upload_date(
-            media_file.upload_time  # type: ignore[arg-type]
-        )
-        file_dict["formatted_file_age"] = FormattingService.format_file_age(
-            media_file.upload_time  # type: ignore[arg-type]
-        )
-        file_dict["formatted_file_size"] = FormattingService.format_bytes_detailed(
-            int(media_file.file_size) if media_file.file_size is not None else None
-        )
-        file_dict["display_status"] = FormattingService.format_status(
-            media_file.status  # type: ignore[arg-type]
-        )
-        file_dict["status_badge_class"] = FormattingService.get_status_badge_class(
-            media_file.status.value  # type: ignore[arg-type]
-        )
+        Note:
+            Validates **once** (issue #284 A2.7). This used to
+            ``model_validate(row).model_dump()``, mutate the dict, then
+            ``model_validate(dict)`` again — two full Pydantic passes plus a
+            ``model_dump`` per row, i.e. ~200 validations for a 100-item gallery page.
+            The second pass could not fail: the only keys added are the pre-formatted
+            display fields, all typed ``str | None`` / ``dict | None`` /
+            ``list[str] | None`` / ``bool | None`` on ``MediaFileSchema`` and produced
+            here as exactly those Python types. ``model_copy(update=...)`` therefore
+            yields an identical model. It is a shallow copy, but every updated field is
+            freshly built here and the untouched fields are the same objects the single
+            validation produced, so nothing is aliased across rows.
+        """
+        validated = MediaFileSchema.model_validate(media_file)
+
+        updates: dict[str, Any] = {
+            "formatted_duration": FormattingService.format_duration(
+                float(media_file.duration) if media_file.duration is not None else None
+            ),
+            "formatted_upload_date": FormattingService.format_upload_date(
+                media_file.upload_time  # type: ignore[arg-type]
+            ),
+            "formatted_file_age": FormattingService.format_file_age(
+                media_file.upload_time  # type: ignore[arg-type]
+            ),
+            "formatted_file_size": FormattingService.format_bytes_detailed(
+                int(media_file.file_size) if media_file.file_size is not None else None
+            ),
+            "display_status": FormattingService.format_status(
+                media_file.status  # type: ignore[arg-type]
+            ),
+            "status_badge_class": FormattingService.get_status_badge_class(
+                media_file.status.value  # type: ignore[arg-type]
+            ),
+        }
 
         # Add error categorization for failed files
         if media_file.status == FileStatus.ERROR and hasattr(media_file, "last_error_message"):
@@ -204,16 +217,15 @@ class FormattingService:
                 if media_file.last_error_message is not None
                 else None
             )
-            file_dict["error_category"] = error_info["category"]
-            file_dict["error_suggestions"] = error_info["suggestions"]
-            file_dict["is_retryable"] = error_info["is_retryable"]
+            updates["error_category"] = error_info["category"]
+            updates["error_suggestions"] = error_info["suggestions"]
+            updates["is_retryable"] = error_info["is_retryable"]
 
         # Add speaker summary if speakers provided
         if speakers:
-            file_dict["speaker_summary"] = FormattingService.create_speaker_summary(speakers)
+            updates["speaker_summary"] = FormattingService.create_speaker_summary(speakers)
 
-        # Create a new schema instance from the enriched dict
-        return MediaFileSchema.model_validate(file_dict)  # type: ignore[no-any-return]
+        return validated.model_copy(update=updates)  # type: ignore[no-any-return]
 
     @staticmethod
     def format_transcript_segment(
@@ -236,6 +248,18 @@ class FormattingService:
 
         Returns:
             TranscriptSegment with formatted (and optionally redacted) fields
+
+        Note:
+            The double validation here is deliberately left alone (issue #284 A2.7).
+            Applying the ``format_media_file`` treatment — swap the trailing
+            ``model_validate(dict)`` for ``model_copy(update=...)`` — was measured at
+            44.6 ms vs 44.2 ms per 1000 segments, i.e. inside the noise. Unlike the
+            media-file path this cannot drop the ``model_dump()`` as well, because
+            ``_apply_redaction`` and the speaker-label resolution below both operate on
+            the dict form, and the dump plus the ORM validation are what actually cost
+            (≈22 ms and ≈7 ms per 1000 against ≈6 ms for the second validation).
+            Removing the dump means restructuring the read-time redaction masking path,
+            which is not worth doing blind.
         """
         # Security: Validate input segment
         if segment is None:

@@ -103,6 +103,7 @@ celery_app = Celery(
         "app.tasks.speaker_tasks",
         "app.tasks.speaker_identification_task",
         "app.tasks.speaker_update_task",
+        "app.tasks.speaker_merge_task",
         "app.tasks.speaker_embedding_task",
         "app.tasks.speaker_attribute_task",
         "app.tasks.topic_extraction",
@@ -244,6 +245,7 @@ celery_app.conf.update(
         "speaker_embedding_consistency_check": {"queue": CeleryQueues.CPU},
         "speaker_embedding_consistency_repair_batch": {"queue": CeleryQueues.GPU},
         "process_speaker_update_background": {"queue": CeleryQueues.CPU},
+        "process_speaker_merge_background": {"queue": CeleryQueues.CPU},
         "extract_speaker_embeddings": {"queue": CeleryQueues.GPU},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
         "ai.generate_summary": {"queue": CeleryQueues.NLP},

@@ -448,6 +448,44 @@ async def _run_one_time_embedding_normalization():
 # No need to load them into runtime config - they're read directly from DB when needed.
 
 
+def _managed_embedding_mode() -> bool:
+    """Whether the embedding model is owned by the OpenSearch domain, not by us."""
+    return settings.OPENSEARCH_EMBEDDING_MODE.strip().lower() == "managed"
+
+
+async def _adopt_managed_embedding_model(ml_service) -> None:
+    """Use an embedding model the OpenSearch domain already hosts (issue #284 A1.13).
+
+    The default "local" path mutates ML Commons cluster settings and registers a
+    model from a ``file://`` or public ``https://`` URL. Amazon OpenSearch Service
+    exposes neither knob, so on a managed domain that path fails at the first
+    cluster-settings PUT and neural search never comes up. In "managed" mode the
+    operator has already registered the model (typically a remote-model connector),
+    and all we do is adopt its id and wire the ingest pipeline.
+
+    Args:
+        ml_service: The ``MLModelService`` singleton.
+    """
+    from app.services.search.indexing_service import ensure_neural_ingest_pipeline
+
+    model_id = settings.OPENSEARCH_NEURAL_MODEL_ID.strip() or ml_service.get_active_model_id()
+    if not model_id:
+        logger.warning(
+            "OPENSEARCH_EMBEDDING_MODE=managed but no model id is configured. Set "
+            "OPENSEARCH_NEURAL_MODEL_ID to a model already registered in the domain, "
+            "or set OPENSEARCH_NEURAL_SEARCH_ENABLED=false to run keyword-only search."
+        )
+        return
+
+    ml_service.set_active_model_id(model_id)
+    logger.info(f"Neural search using domain-managed model: {model_id}")
+
+    if ensure_neural_ingest_pipeline():
+        logger.info("Neural ingest pipeline configured successfully")
+    else:
+        logger.warning("Could not configure neural ingest pipeline")
+
+
 async def _initialize_neural_search():
     """Initialize OpenSearch neural search models on startup.
 
@@ -461,6 +499,9 @@ async def _initialize_neural_search():
     Runs after a delay to allow OpenSearch to fully start.
     For offline/air-gapped deployments, models are loaded from
     pre-downloaded local files (mounted at /ml-models in OpenSearch container).
+
+    ``OPENSEARCH_EMBEDDING_MODE=managed`` short-circuits steps 1-4 and adopts a model
+    the domain already hosts — see :func:`_adopt_managed_embedding_model`.
     """
     if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
         logger.info("Neural search disabled, skipping initialization")
@@ -473,6 +514,10 @@ async def _initialize_neural_search():
         from app.services.search.ml_model_service import get_ml_model_service
 
         ml_service = get_ml_model_service()
+
+        if _managed_embedding_mode():
+            await _adopt_managed_embedding_model(ml_service)
+            return
 
         # Configure ML Commons settings
         if not ml_service.configure_ml_settings():

@@ -116,18 +116,9 @@ class AuditLogger:
             try:
                 from opensearchpy import OpenSearch
 
-                self._opensearch_client = OpenSearch(
-                    hosts=[
-                        {
-                            "host": settings.OPENSEARCH_HOST,
-                            "port": int(settings.OPENSEARCH_PORT),
-                        }
-                    ],
-                    http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-                    use_ssl=settings.OPENSEARCH_USE_TLS,
-                    verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
-                    ssl_show_warn=False,
-                )
+                from app.core.opensearch_auth import opensearch_connection_kwargs
+
+                self._opensearch_client = OpenSearch(**opensearch_connection_kwargs())
             except Exception as e:
                 self._logger.warning(f"Failed to initialize OpenSearch client: {e}")
                 return None
@@ -504,18 +495,9 @@ def _build_audit_opensearch_client():
     try:
         from opensearchpy import OpenSearch
 
-        return OpenSearch(
-            hosts=[
-                {
-                    "host": settings.OPENSEARCH_HOST,
-                    "port": int(settings.OPENSEARCH_PORT),
-                }
-            ],
-            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-            use_ssl=settings.OPENSEARCH_USE_TLS,
-            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
-            ssl_show_warn=False,
-        )
+        from app.core.opensearch_auth import opensearch_connection_kwargs
+
+        return OpenSearch(**opensearch_connection_kwargs())
     except Exception as e:  # noqa: BLE001 — OpenSearch optional
         logging.getLogger("audit").warning(f"Failed to build audit OpenSearch client: {e}")
         return None

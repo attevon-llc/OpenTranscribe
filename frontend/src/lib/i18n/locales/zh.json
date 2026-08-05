@@ -4158,5 +4158,12 @@
   "gallery.bulk.chatWithSelected": "与 {{count}} 个对话",
   "gallery.bulk.chatWithSelectedTooltip": "就选中的录音提问",
   "nav.chat": "对话",
-  "settings.watchSources.global.maxConcurrent": "每次扫描最大导入数"
+  "settings.watchSources.global.maxConcurrent": "每次扫描最大导入数",
+  "chat.model.switchAnyway": "仍要切换",
+  "chat.model.switchWarningMessage": "该模型可容纳 {{tokens}} 个词元，少于当前模型。在长对话中，较早的内容可能被丢弃。",
+  "chat.model.switchWarningTitle": "上下文窗口更小",
+  "chat.warnings.largeSelectionHint": "回答仍有出处，但每个录音贡献的片段会变少。缩小范围通常能得到更具体的回答。",
+  "chat.warnings.largeSelectionMessage": "你选择了 {{files}} 个录音，约占该模型上下文的 {{pct}}%。",
+  "chat.warnings.largeSelectionTitle": "选择范围较大",
+  "chat.warnings.proceed": "仍然使用"
 }

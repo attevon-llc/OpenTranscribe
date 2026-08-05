@@ -4158,5 +4158,12 @@
   "gallery.bulk.chatWithSelected": "Conversar com {{count}}",
   "gallery.bulk.chatWithSelectedTooltip": "Faça perguntas sobre as gravações selecionadas",
   "nav.chat": "Conversa",
-  "settings.watchSources.global.maxConcurrent": "Importações máx. por verificação"
+  "settings.watchSources.global.maxConcurrent": "Importações máx. por verificação",
+  "chat.model.switchAnyway": "Mudar mesmo assim",
+  "chat.model.switchWarningMessage": "Este modelo comporta {{tokens}} tokens — menos do que o atual. Em conversas longas, trocas anteriores podem ser descartadas.",
+  "chat.model.switchWarningTitle": "Janela de contexto mais pequena",
+  "chat.warnings.largeSelectionHint": "As respostas continuam fundamentadas, mas chegam menos excertos de cada gravação. Reduzir a seleção costuma dar respostas mais específicas.",
+  "chat.warnings.largeSelectionMessage": "Selecionou {{files}} gravações, cerca de {{pct}} % do contexto deste modelo.",
+  "chat.warnings.largeSelectionTitle": "Seleção grande",
+  "chat.warnings.proceed": "Usar mesmo assim"
 }

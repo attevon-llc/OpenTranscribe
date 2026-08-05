@@ -4158,5 +4158,12 @@
   "gallery.bulk.chatWithSelected": "Chat with {{count}}",
   "gallery.bulk.chatWithSelectedTooltip": "Ask questions about the selected recordings",
   "nav.chat": "Chat",
-  "settings.watchSources.global.maxConcurrent": "Max imports per scan"
+  "settings.watchSources.global.maxConcurrent": "Max imports per scan",
+  "chat.model.switchAnyway": "Switch anyway",
+  "chat.model.switchWarningMessage": "This model holds {{tokens}} tokens — less than the current one. Earlier turns may be dropped from long conversations.",
+  "chat.model.switchWarningTitle": "Smaller context window",
+  "chat.warnings.largeSelectionHint": "Answers stay grounded, but fewer passages come from each recording. Narrowing the selection usually gives more specific answers.",
+  "chat.warnings.largeSelectionMessage": "You selected {{files}} recordings, roughly {{pct}}% of this model's context.",
+  "chat.warnings.largeSelectionTitle": "Large selection",
+  "chat.warnings.proceed": "Use it anyway"
 }

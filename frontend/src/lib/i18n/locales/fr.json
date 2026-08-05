@@ -4158,5 +4158,12 @@
   "gallery.bulk.chatWithSelected": "Discuter avec {{count}}",
   "gallery.bulk.chatWithSelectedTooltip": "Poser des questions sur les enregistrements sélectionnés",
   "nav.chat": "Discussion",
-  "settings.watchSources.global.maxConcurrent": "Imports max. par analyse"
+  "settings.watchSources.global.maxConcurrent": "Imports max. par analyse",
+  "chat.model.switchAnyway": "Changer quand même",
+  "chat.model.switchWarningMessage": "Ce modèle accepte {{tokens}} jetons, moins que l'actuel. Dans les longues conversations, les échanges anciens peuvent être écartés.",
+  "chat.model.switchWarningTitle": "Fenêtre de contexte plus petite",
+  "chat.warnings.largeSelectionHint": "Les réponses restent sourcées, mais moins d'extraits proviennent de chaque enregistrement. Réduire la sélection donne généralement des réponses plus précises.",
+  "chat.warnings.largeSelectionMessage": "Vous avez sélectionné {{files}} enregistrements, soit environ {{pct}} % du contexte de ce modèle.",
+  "chat.warnings.largeSelectionTitle": "Sélection volumineuse",
+  "chat.warnings.proceed": "Utiliser quand même"
 }

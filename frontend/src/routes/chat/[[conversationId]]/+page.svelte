@@ -16,7 +16,7 @@
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { llmStatusStore } from '$stores/llmStatus';
   import { chatStore } from '$stores/chat';
-  import { updateConversation } from '$lib/api/chatApi';
+  import { estimateContext, updateConversation } from '$lib/api/chatApi';
   import { emptyScope, type ChatScope, type ConversationSettings } from '$lib/types/chat';
 
   import ChatSidebar from '$components/chat/ChatSidebar.svelte';
@@ -26,6 +26,8 @@
   import ChatEmptyState from '$components/chat/ChatEmptyState.svelte';
   import ChatControlsPanel from '$components/chat/ChatControlsPanel.svelte';
   import FilePickerModal from '$components/chat/FilePickerModal.svelte';
+  import TokenUsagePanel from '$components/chat/TokenUsagePanel.svelte';
+  import LargeSelectionWarningModal from '$components/chat/LargeSelectionWarningModal.svelte';
 
   import type { PageData } from './$types';
 
@@ -37,6 +39,8 @@
   let controlsOpen = false;
   let sidebarOpen = false;
   let lastLoadedId: string | null = null;
+  let pendingScope: ChatScope | null = null;
+  let contextWindow = 0;
 
   $: chatEnabled = isCapabilityEnabled($capabilities, 'chat.rag');
   $: llmAvailable = $llmStatusStore.available;
@@ -56,6 +60,16 @@
 
   onMount(() => {
     chatStore.loadConversations(true);
+    // The token panel needs the active model's window to show a ratio.
+    (async () => {
+      try {
+        const { LLMSettingsApi } = await import('$lib/api/llmSettings');
+        const status = await LLMSettingsApi.getStatus();
+        contextWindow = status.active_configuration?.max_tokens ?? 0;
+      } catch {
+        contextWindow = 0;
+      }
+    })();
 
     // A gallery hand-off ("Chat with 12") is consumed exactly once, so a later
     // navigation back to /chat doesn't silently re-apply a stale selection.
@@ -97,10 +111,48 @@
     await goto('/chat');
   }
 
+  async function applyScope(scope: ChatScope): Promise<void> {
+    await chatStore.persistScope(scope);
+    await chatStore.refreshEstimate();
+  }
+
   async function handleScopeConfirm(event: CustomEvent<ChatScope>): Promise<void> {
     pickerOpen = false;
-    await chatStore.persistScope(event.detail);
-    await chatStore.refreshEstimate();
+    const scope = event.detail;
+
+    // An oversized selection does not fail — it quietly thins each recording's
+    // contribution, so confirm rather than let the user discover it from a
+    // vague answer.
+    try {
+      const estimate = await estimateContext(scope);
+      if (estimate.warning_level === 'over') {
+        pendingScope = scope;
+        chatStore.setScope(scope);
+        return;
+      }
+    } catch {
+      // Estimator unavailable — proceed rather than block on an advisory check.
+    }
+
+    await applyScope(scope);
+  }
+
+  async function confirmLargeSelection(): Promise<void> {
+    const scope = pendingScope;
+    pendingScope = null;
+    if (scope) await applyScope(scope);
+  }
+
+  function cancelLargeSelection(): void {
+    pendingScope = null;
+    // Restore whatever the conversation was actually scoped to.
+    chatStore.setScope(state.activeConversation?.scope ?? emptyScope());
+  }
+
+  async function handleModelChange(uuid: string | null): Promise<void> {
+    if (!state.activeConversationId) return;
+    await updateConversation(state.activeConversationId, { llm_config_uuid: uuid });
+    await chatStore.openConversation(state.activeConversationId);
   }
 
   async function handleClearScope(): Promise<void> {
@@ -211,7 +263,9 @@
           isOpen={controlsOpen}
           {settings}
           useContext={state.useContext}
+          llmConfigUuid={state.activeConversation?.llm_config_uuid ?? null}
           on:change={handleControlsChange}
+          on:model={(e) => handleModelChange(e.detail)}
           on:close={() => (controlsOpen = false)}
         />
       </header>
@@ -231,6 +285,7 @@
       </div>
 
       <div class="chat-footer">
+        <TokenUsagePanel usage={state.tokenUsage} {contextWindow} />
         <ChatContextBar
           scope={state.scope}
           useContext={state.useContext}
@@ -255,6 +310,13 @@
     scope={state.scope}
     on:confirm={handleScopeConfirm}
     on:close={() => (pickerOpen = false)}
+  />
+
+  <LargeSelectionWarningModal
+    isOpen={pendingScope !== null}
+    estimate={state.contextEstimate}
+    on:proceed={confirmLargeSelection}
+    on:cancel={cancelLargeSelection}
   />
 {/if}
 

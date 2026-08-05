@@ -4158,5 +4158,12 @@
   "gallery.bulk.chatWithSelected": "{{count}} 件とチャット",
   "gallery.bulk.chatWithSelectedTooltip": "選択した録音について質問する",
   "nav.chat": "チャット",
-  "settings.watchSources.global.maxConcurrent": "スキャンあたりの最大インポート数"
+  "settings.watchSources.global.maxConcurrent": "スキャンあたりの最大インポート数",
+  "chat.model.switchAnyway": "それでも切り替える",
+  "chat.model.switchWarningMessage": "このモデルは {{tokens}} トークンまでで、現在のモデルより小さいため、長い会話では以前のやり取りが除外される場合があります。",
+  "chat.model.switchWarningTitle": "コンテキストウィンドウが小さくなります",
+  "chat.warnings.largeSelectionHint": "回答の根拠は保たれますが、録音ごとの抜粋は少なくなります。範囲を絞ると、より具体的な回答が得られます。",
+  "chat.warnings.largeSelectionMessage": "{{files}} 件の録音を選択しました。このモデルのコンテキストの約 {{pct}}% にあたります。",
+  "chat.warnings.largeSelectionTitle": "選択範囲が大きすぎます",
+  "chat.warnings.proceed": "このまま使う"
 }

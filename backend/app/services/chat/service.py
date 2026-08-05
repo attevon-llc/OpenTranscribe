@@ -211,7 +211,14 @@ class ChatService:
         messages: list[dict[str, str]] = []
         try:
             if use_context:
-                yield sse("status", {"stage": "retrieving"})
+                # Query rewriting is a separate LLM round trip, so it is worth
+                # its own stage. Retrieval and reranking happen inside one
+                # threadpool call and are reported together as "retrieving" —
+                # the frontend renders every pre-generation stage with the same
+                # label anyway, so splitting them further would add machinery
+                # for no visible difference.
+                will_rewrite = settings.query_rewrite_enabled and bool(history)
+                yield sse("status", {"stage": "rewriting" if will_rewrite else "retrieving"})
 
                 def _prep():
                     with session_scope() as db:

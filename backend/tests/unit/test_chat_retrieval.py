@@ -6,6 +6,7 @@ ordering, the adaptive RRF window, and the cache's key discipline.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -265,3 +266,275 @@ def test_rerank_leaves_the_tail_beyond_max_pairs_in_place():
 
     assert len(reordered) == 5
     assert [h.chunk_index for h in reordered[2:]] == [2, 3, 4]
+
+
+# ---------------------------------------------------------------------------
+# Semantic cache (tier 2, opt-in)
+# ---------------------------------------------------------------------------
+
+
+def test_cosine_similarity_bounds():
+    from app.services.chat.retrieval_cache import _cosine
+
+    assert _cosine([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
+    assert _cosine([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+    # Degenerate inputs must score 0, never raise or divide by zero.
+    assert _cosine([0.0, 0.0], [1.0, 1.0]) == 0.0
+    assert _cosine([1.0], [1.0, 0.0]) == 0.0
+
+
+def test_semantic_cache_reuses_a_rephrased_question():
+    """The point of tier 2: a rewording hits the same cached retrieval."""
+    from app.services.chat import retrieval_cache
+
+    hits = [_hit("a", 0)]
+    entry = {
+        "key": "chat:retr:1:0:abc",
+        "vector": [1.0, 0.0, 0.0],
+        "scope": "scope1",
+        "rev": "rev1",
+        "corpus": "5",
+    }
+    redis = MagicMock()
+    redis.get.return_value = json.dumps([entry])
+
+    with (
+        patch.object(retrieval_cache, "_embed_query", return_value=[0.99, 0.01, 0.0]),
+        patch.object(retrieval_cache, "corpus_version", return_value="5"),
+        patch("app.core.redis.get_redis", return_value=redis),
+        patch.object(retrieval_cache, "get_cached", return_value=hits),
+    ):
+        result = retrieval_cache.find_semantic_match(
+            user_id=1,
+            organization_id=None,
+            query="what was the pricing decision",
+            scope_digest="scope1",
+            settings_rev="rev1",
+            threshold=0.97,
+        )
+
+    assert result is not None
+    assert result[0] == hits
+
+
+def test_semantic_cache_misses_below_threshold():
+    """A merely related question must NOT reuse another question's passages."""
+    from app.services.chat import retrieval_cache
+
+    entry = {"key": "k", "vector": [1.0, 0.0], "scope": "s", "rev": "r", "corpus": "1"}
+    redis = MagicMock()
+    redis.get.return_value = json.dumps([entry])
+
+    with (
+        patch.object(retrieval_cache, "_embed_query", return_value=[0.0, 1.0]),
+        patch.object(retrieval_cache, "corpus_version", return_value="1"),
+        patch("app.core.redis.get_redis", return_value=redis),
+    ):
+        assert (
+            retrieval_cache.find_semantic_match(
+                user_id=1,
+                organization_id=None,
+                query="something unrelated",
+                scope_digest="s",
+                settings_rev="r",
+                threshold=0.97,
+            )
+            is None
+        )
+
+
+def test_semantic_cache_never_crosses_scope_or_settings():
+    """Same wording, different files (or retuned settings) must not reuse."""
+    from app.services.chat import retrieval_cache
+
+    entries = [
+        {"key": "k1", "vector": [1.0, 0.0], "scope": "OTHER_SCOPE", "rev": "r", "corpus": "1"},
+        {"key": "k2", "vector": [1.0, 0.0], "scope": "s", "rev": "OTHER_REV", "corpus": "1"},
+    ]
+    redis = MagicMock()
+    redis.get.return_value = json.dumps(entries)
+
+    with (
+        patch.object(retrieval_cache, "_embed_query", return_value=[1.0, 0.0]),
+        patch.object(retrieval_cache, "corpus_version", return_value="1"),
+        patch("app.core.redis.get_redis", return_value=redis),
+    ):
+        assert (
+            retrieval_cache.find_semantic_match(
+                user_id=1,
+                organization_id=None,
+                query="identical question",
+                scope_digest="s",
+                settings_rev="r",
+                threshold=0.9,
+            )
+            is None
+        )
+
+
+def test_semantic_cache_degrades_when_embedding_unavailable():
+    """No embedding model deployed → plain miss, never an error."""
+    from app.services.chat import retrieval_cache
+
+    with patch.object(retrieval_cache, "_embed_query", return_value=None):
+        assert (
+            retrieval_cache.find_semantic_match(
+                user_id=1,
+                organization_id=None,
+                query="q",
+                scope_digest="s",
+                settings_rev="r",
+                threshold=0.97,
+            )
+            is None
+        )
+
+
+def test_semantic_cache_history_is_bounded():
+    """The per-user entry list must not grow without limit."""
+    from app.services.chat import retrieval_cache
+
+    existing = [{"key": f"k{i}", "vector": [1.0], "scope": "s", "rev": "r"} for i in range(60)]
+    redis = MagicMock()
+    redis.get.return_value = json.dumps(existing)
+
+    with patch("app.core.redis.get_redis", return_value=redis):
+        retrieval_cache.remember_semantic(
+            user_id=1,
+            organization_id=None,
+            query="q",
+            cache_key_value="new-key",
+            scope_digest="s",
+            settings_rev="r",
+            ttl_seconds=300,
+            embedding=[1.0],
+        )
+
+    stored = json.loads(redis.setex.call_args[0][2])
+    assert len(stored) == 50
+    assert stored[-1]["key"] == "new-key"
+
+
+def test_semantic_cache_write_is_skipped_when_caching_disabled():
+    from app.services.chat import retrieval_cache
+
+    redis = MagicMock()
+    with patch("app.core.redis.get_redis", return_value=redis):
+        retrieval_cache.remember_semantic(
+            user_id=1,
+            organization_id=None,
+            query="q",
+            cache_key_value="k",
+            scope_digest="s",
+            settings_rev="r",
+            ttl_seconds=0,
+            embedding=[1.0],
+        )
+    redis.setex.assert_not_called()
+
+
+def test_semantic_cache_is_skipped_when_disabled_in_settings():
+    """The admin toggle must actually gate the tier-2 path."""
+    from app.services.chat import retrieval
+
+    with (
+        patch.object(retrieval, "retrieve_chunks", return_value=[]),
+        patch("app.services.chat.retrieval_cache.get_cached", return_value=None),
+        patch("app.services.chat.retrieval_cache.set_cached"),
+        patch("app.services.chat.retrieval_cache.find_semantic_match") as semantic,
+    ):
+        retrieval.retrieve_context(
+            query="q",
+            user_id=1,
+            organization_id=None,
+            file_uuids=None,
+            settings=ChatSettings(semantic_cache_enabled=False),
+        )
+    semantic.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Corpus versioning — the cache must not outlive the content it describes
+# ---------------------------------------------------------------------------
+
+
+def _key_with_corpus(corpus: str) -> str:
+    from app.services.chat import retrieval_cache
+
+    return retrieval_cache.cache_key(
+        user_id=1,
+        organization_id=None,
+        query="what was decided",
+        scope_digest="s",
+        settings_rev="r",
+        search_mode="hybrid",
+        corpus_rev=corpus,
+    )
+
+
+def test_cache_key_changes_when_corpus_changes():
+    """Re-transcribing, editing or deleting content must strand old entries."""
+    assert _key_with_corpus("1") != _key_with_corpus("2")
+
+
+def test_cache_key_is_stable_within_one_corpus_version():
+    assert _key_with_corpus("7") == _key_with_corpus("7")
+
+
+def test_indexing_bumps_the_corpus_version():
+    """New transcript content invalidates every cached retrieval."""
+    from app.services.search import indexing_service
+
+    with patch("app.services.chat.retrieval_cache.bump_corpus_version") as bump:
+        indexing_service._invalidate_chat_retrieval_cache()
+    bump.assert_called_once()
+
+
+def test_corpus_bump_failure_never_breaks_indexing():
+    """A Redis outage must not fail transcription indexing."""
+    from app.services.search import indexing_service
+
+    with patch(
+        "app.services.chat.retrieval_cache.bump_corpus_version",
+        side_effect=RuntimeError("redis down"),
+    ):
+        indexing_service._invalidate_chat_retrieval_cache()  # must not raise
+
+
+def test_corpus_version_degrades_to_zero_without_redis():
+    from app.services.chat import retrieval_cache
+
+    with patch("app.core.redis.get_redis", side_effect=RuntimeError("no redis")):
+        assert retrieval_cache.corpus_version() == "0"
+
+
+def test_semantic_cache_ignores_entries_from_an_older_corpus():
+    """A rephrased question must not reuse passages from changed content."""
+    from app.services.chat import retrieval_cache
+
+    entry = {
+        "key": "k",
+        "vector": [1.0, 0.0],
+        "scope": "s",
+        "rev": "r",
+        "corpus": "1",  # stale: the corpus has moved on
+    }
+    redis = MagicMock()
+    redis.get.return_value = json.dumps([entry])
+
+    with (
+        patch.object(retrieval_cache, "_embed_query", return_value=[1.0, 0.0]),
+        patch.object(retrieval_cache, "corpus_version", return_value="2"),
+        patch("app.core.redis.get_redis", return_value=redis),
+    ):
+        assert (
+            retrieval_cache.find_semantic_match(
+                user_id=1,
+                organization_id=None,
+                query="identical question",
+                scope_digest="s",
+                settings_rev="r",
+                threshold=0.9,
+            )
+            is None
+        )

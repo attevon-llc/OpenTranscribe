@@ -4158,5 +4158,12 @@
   "gallery.bulk.chatWithSelected": "Чат по {{count}}",
   "gallery.bulk.chatWithSelectedTooltip": "Задать вопросы о выбранных записях",
   "nav.chat": "Чат",
-  "settings.watchSources.global.maxConcurrent": "Макс. импортов за сканирование"
+  "settings.watchSources.global.maxConcurrent": "Макс. импортов за сканирование",
+  "chat.model.switchAnyway": "Всё равно переключить",
+  "chat.model.switchWarningMessage": "Эта модель вмещает {{tokens}} токенов — меньше текущей. В длинных разговорах ранние реплики могут отбрасываться.",
+  "chat.model.switchWarningTitle": "Меньшее окно контекста",
+  "chat.warnings.largeSelectionHint": "Ответы останутся обоснованными, но из каждой записи попадёт меньше фрагментов. Более узкий выбор обычно даёт более конкретные ответы.",
+  "chat.warnings.largeSelectionMessage": "Выбрано записей: {{files}} — примерно {{pct}} % контекста этой модели.",
+  "chat.warnings.largeSelectionTitle": "Большой выбор",
+  "chat.warnings.proceed": "Всё равно использовать"
 }

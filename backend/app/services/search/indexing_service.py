@@ -135,6 +135,23 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
 }
 
 
+def _invalidate_chat_retrieval_cache() -> None:
+    """Mark the searchable corpus as changed so chat can't serve stale passages.
+
+    RAG chat caches retrieval results for a few minutes. Without this, for the
+    length of that window an answer could quote a recording that was just
+    deleted, quarantined or re-transcribed — and cite a link that no longer
+    resolves. Contained: indexing must never fail because a cache marker
+    could not be written.
+    """
+    try:
+        from app.services.chat.retrieval_cache import bump_corpus_version
+
+        bump_corpus_version()
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not bump chat corpus version", exc_info=True)
+
+
 def _build_hybrid_search_pipeline() -> dict[str, Any]:
     """Build the RRF search pipeline configuration with configurable rank_constant.
 
@@ -714,6 +731,9 @@ class TranscriptIndexingService:
                 f"Indexed {indexed} chunks for file {file_uuid} "
                 f"(mode: {mode_str}, chunk={chunk_ms}ms, index={index_ms}ms)"
             )
+            # New/changed transcript content: chat must not keep serving
+            # retrieval results computed against the previous version.
+            _invalidate_chat_retrieval_cache()
             return {
                 "chunk_count": indexed,
                 "chunk_ms": chunk_ms,
@@ -750,6 +770,8 @@ class TranscriptIndexingService:
             )
             deleted: int = response.get("deleted", 0)
             logger.info(f"Deleted {deleted} chunks for file {file_uuid}")
+            if deleted:
+                _invalidate_chat_retrieval_cache()
             return deleted
         except Exception as e:
             logger.error(f"Error deleting chunks for file {file_uuid}: {e}")

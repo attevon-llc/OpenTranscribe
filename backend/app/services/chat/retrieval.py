@@ -86,6 +86,26 @@ def retrieve_context(
         logger.info("Chat retrieval cache hit (%d chunks)", len(result.chunks))
         return result
 
+    # Tier 2: a rephrasing of a recent question retrieves the same passages.
+    # Reused here so we don't re-embed on the write path below.
+    query_embedding: list[float] | None = None
+    if settings.semantic_cache_enabled:
+        semantic = retrieval_cache.find_semantic_match(
+            user_id=user_id,
+            organization_id=organization_id,
+            query=query,
+            scope_digest=scope_digest,
+            settings_rev=settings.revision,
+            threshold=settings.semantic_cache_threshold,
+        )
+        if semantic is not None:
+            hits, query_embedding = semantic
+            result.chunks = hits[: settings.final_chunks]
+            result.retrieved = len(hits)
+            result.cache_hit = True
+            result.timings_ms["total"] = int((time.monotonic() - started) * 1000)
+            return result
+
     # Over-fetch: the pool feeds diversity sampling and reranking, not the prompt.
     retrieve_started = time.monotonic()
     hits = retrieve_chunks(
@@ -122,6 +142,17 @@ def retrieve_context(
     result.timings_ms["total"] = int((time.monotonic() - started) * 1000)
 
     retrieval_cache.set_cached(key, selected, settings.cache_ttl_seconds)
+    if settings.semantic_cache_enabled:
+        retrieval_cache.remember_semantic(
+            user_id=user_id,
+            organization_id=organization_id,
+            query=query,
+            cache_key_value=key,
+            scope_digest=scope_digest,
+            settings_rev=settings.revision,
+            ttl_seconds=settings.cache_ttl_seconds,
+            embedding=query_embedding,
+        )
 
     logger.info(
         "Chat retrieval: %d candidates -> %d selected across %d files (%dms)",

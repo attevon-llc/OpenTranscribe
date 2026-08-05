@@ -9,6 +9,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import ModelSwitcher from './ModelSwitcher.svelte';
   import type { ConversationSettings, SearchMode } from '$lib/types/chat';
 
   export let isOpen = false;
@@ -16,9 +17,12 @@
   /** Resolved use-context (conversation override, else the user default). */
   export let useContext = true;
   export let disabled = false;
+  /** Conversation's pinned LLM config uuid (null follows the account default). */
+  export let llmConfigUuid: string | null = null;
 
   const dispatch = createEventDispatcher<{
     change: Partial<ConversationSettings>;
+    model: string | null;
     close: void;
   }>();
 
@@ -113,6 +117,14 @@
         data-testid="chat-temperature"
       />
       <span class="range-hint">{$t('chat.controls.temperatureHint')}</span>
+    </div>
+
+    <div class="control-group">
+      <ModelSwitcher
+        selectedUuid={llmConfigUuid}
+        {disabled}
+        on:change={(e) => dispatch('model', e.detail)}
+      />
     </div>
 
     <div class="control-group">

@@ -1,8 +1,19 @@
 # Skip heavy AI imports during testing - speeds up test startup significantly
 import logging
 import os
+import ssl
 
 logger = logging.getLogger(__name__)
+
+
+def _int_env(key: str, default: int) -> int:
+    """Read an int env var, falling back to *default* on absence or garbage."""
+    try:
+        return int(os.getenv(key, str(default)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid integer for %s; using %d", key, default)
+        return default
+
 
 _SKIP_CELERY = os.environ.get("SKIP_CELERY", "").lower() == "true"
 
@@ -46,6 +57,27 @@ from app.core.constants import CeleryQueues  # noqa: E402
 CELERY_QUEUES = tuple(Queue(q) for q in CeleryQueues.ALL)
 
 # Initialize Celery
+# kombu refuses to connect over `rediss://` unless an SSL context is supplied — it does
+# NOT fall back to a default. config.py builds a rediss:// URL whenever REDIS_USE_TLS is
+# set, so without this every worker dies at startup on a TLS Redis (issue #284 A1.17).
+# CERT_REQUIRED (the default) verifies the server certificate; set
+# CELERY_REDIS_SSL_CERT_REQS=optional|none only for a self-signed broker you control.
+_REDIS_SSL_MODES = {
+    "required": ssl.CERT_REQUIRED,
+    "optional": ssl.CERT_OPTIONAL,
+    "none": ssl.CERT_NONE,
+}
+_redis_uses_tls = str(settings.CELERY_BROKER_URL).startswith("rediss://")
+_redis_ssl_options = (
+    {
+        "ssl_cert_reqs": _REDIS_SSL_MODES.get(
+            os.getenv("CELERY_REDIS_SSL_CERT_REQS", "required").lower(), ssl.CERT_REQUIRED
+        )
+    }
+    if _redis_uses_tls
+    else None
+)
+
 celery_app = Celery(
     "transcribe_app",
     broker=settings.CELERY_BROKER_URL,
@@ -100,13 +132,38 @@ celery_app = Celery(
 
 # Configure Celery
 celery_app.conf.update(
+    broker_use_ssl=_redis_ssl_options,
+    redis_backend_use_ssl=_redis_ssl_options,
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
     task_track_started=True,
-    worker_prefetch_multiplier=1,  # One task at a time for GPU tasks
+    # GPU-safe default: one task at a time. Short-task queues (cpu/nlp/download/
+    # utility) override this per-worker with --prefetch-multiplier, since a global 1
+    # makes every worker round-trip the broker between tasks (issue #284 A1.8).
+    # Keep the GPU worker at 1 — it must never hold a second task it cannot start.
+    worker_prefetch_multiplier=1,
+    # Global task time limits (issue #284 A1.2). There were NONE, so a hung CUDA call
+    # held the single GPU slot forever and no later transcription could start.
+    #
+    # Deliberately GENEROUS rather than tight. Media is capped at 4 h and hybrid/CPU
+    # transcription of a long file is legitimately slow, so a tight global limit would
+    # truncate real work — and getting per-task overrides wrong on even one long task
+    # silently kills valid jobs. A 3 h ceiling still converts "wedged forever" into
+    # "recovered in 3 h", which is the actual failure this addresses. Tasks needing more
+    # override per-task (see combined_speaker_analysis_task for the pattern).
+    #
+    # Kept under visibility_timeout (6 h) so a timeout kill happens before redelivery,
+    # not after — otherwise the two mechanisms would fight and duplicate work.
+    #
+    # CAVEAT: soft_time_limit is delivered via SIGALRM, which is unreliable under
+    # --pool=threads — which is exactly what the GPU workers use. Treat these as a
+    # backstop for the prefork/CPU queues; on GPU the real protection is
+    # visibility_timeout plus the DB-status crash recovery in tasks/recovery.py.
+    task_soft_time_limit=_int_env("CELERY_SOFT_TIME_LIMIT", 10800),  # 3 h
+    task_time_limit=_int_env("CELERY_HARD_TIME_LIMIT", 11700),  # 3 h 15 m
     worker_send_task_events=True,  # Enable real-time task events for Flower
     task_send_sent_event=True,  # Fire event when task is dispatched to queue
     result_expires=86400,  # Expire results after 24h (prevent Redis bloat)
@@ -125,6 +182,22 @@ celery_app.conf.update(
     broker_transport_options={
         "priority_steps": list(range(10)),
         "queue_order_strategy": "priority",
+        # visibility_timeout MUST exceed the longest task (issue #284 A1.1).
+        #
+        # With Redis as the broker, an un-acked message is redelivered to another
+        # worker once this elapses. The transcription tasks are acks_late=True, so a
+        # run that outlives it is handed to a SECOND worker while the first is still
+        # going — the same file transcribed twice, on the GPU, concurrently.
+        #
+        # Nothing set this before, so the kombu default of 3600s applied: ANY
+        # transcription over one hour was silently duplicated. A 4-hour media limit
+        # makes that reachable with an ordinary file, not just a pathological one.
+        #
+        # 21600 (6h) covers the longest supported job with headroom. Do NOT set it
+        # absurdly high "to be safe": crash recovery keys off DB status
+        # (tasks/recovery.py), not off redelivery, so an inflated value only delays
+        # requeueing after a genuine worker loss.
+        "visibility_timeout": int(os.getenv("CELERY_VISIBILITY_TIMEOUT", "21600")),
     },
     task_routes={
         # GPU Queue - GPU-intensive AI tasks (concurrency=1, requires GPU)
@@ -380,6 +453,47 @@ def init_worker_process(**kwargs):
 
 
 @worker_ready.connect
+def warn_inert_max_tasks_per_child(**kwargs):
+    """Warn when --max-tasks-per-child is configured but cannot take effect.
+
+    ``--max-tasks-per-child`` is a PREFORK-pool feature: it recycles the child process
+    after N tasks. Under ``--pool=threads`` there are no child processes, so Celery
+    silently ignores it (issue #284 A1.7). The GPU workers default to threads —
+    deliberately, so model weights stay pinned in VRAM between tasks — which means an
+    operator lowering GPU_MAX_TASKS to bound a VRAM leak gets **no recycling at all**
+    and no indication of that.
+
+    We warn rather than switch pools: forcing prefork would reload the model on every
+    task and destroy the performance characteristic threads exists to provide. An
+    operator who genuinely needs recycling sets GPU_WORKER_POOL=prefork and accepts
+    that cost.
+    """
+    import os
+    import sys
+
+    argv = " ".join(sys.argv)
+    if "--pool=threads" not in argv and os.getenv("GPU_WORKER_POOL", "threads") != "threads":
+        return
+    if "--max-tasks-per-child" not in argv:
+        return
+
+    # A deliberately huge value means "never recycle" and is not a misconfiguration.
+    try:
+        configured = int(argv.split("--max-tasks-per-child=")[1].split()[0])
+    except (IndexError, ValueError):
+        return
+    if configured >= 10000:
+        return
+
+    logger.warning(
+        "--max-tasks-per-child=%d is set but this worker uses the threads pool, where "
+        "Celery IGNORES it — there is no worker recycling and no VRAM-leak guard. "
+        "Set GPU_WORKER_POOL=prefork if you need recycling (models reload per task).",
+        configured,
+    )
+
+
+@worker_ready.connect
 def preload_models(**kwargs):
     """Preload AI models at worker startup.
 
@@ -525,12 +639,19 @@ def _validate_task_routes():
 
 @task_postrun.connect
 def close_session_after_task(**kwargs):
-    """Close DB connections and clear the per-task request_id correlation."""
-    from app.db.base import engine
+    """Clear the per-task request_id correlation.
+
+    Deliberately does NOT call ``engine.dispose()`` (issue #284 A1.6). Disposing on
+    every ``task_postrun`` tears down the whole connection pool after each task, so
+    every task paid a fresh Postgres TCP + TLS + auth handshake and pooling did nothing.
+    The post-fork dispose in ``worker_process_init`` is what actually matters — it stops
+    a forked child inheriting the parent's sockets — and that is still in place.
+
+    Sessions are closed by their own context managers (``session_scope`` /
+    ``SessionLocal`` teardown), not here, so nothing leaks by removing this.
+    """
     from app.middleware.audit import set_request_id
 
     # Clear the request_id adopted in task_prerun so it can't leak into the next
     # task that reuses this thread/process (threads pool reuses workers).
     set_request_id("")
-
-    engine.dispose()

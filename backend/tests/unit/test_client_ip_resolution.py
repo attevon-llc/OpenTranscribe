@@ -28,6 +28,22 @@ def _request(peer: str | None, **headers):
     )
 
 
+@pytest.fixture(autouse=True)
+def _restore_resolver_module():
+    """Reload the resolver back to the real config after each test.
+
+    `_module_with_proxies` reloads `app.utils.client_ip` so its module-level
+    `_TRUSTED_NETWORKS` picks up a patched allowlist. Without restoring it, the last
+    test's fake proxy list would leak into every other test that resolves a client IP.
+    Note it reloads only `client_ip`, never `app.core.config` — reloading config would
+    replace the `settings` OBJECT and desync every module holding a reference to it.
+    """
+    yield
+    import app.utils.client_ip as client_ip
+
+    importlib.reload(client_ip)
+
+
 def _module_with_proxies(monkeypatch, trusted: str):
     """Reload the resolver with a given trusted-proxy allowlist."""
     from app.core.config import settings

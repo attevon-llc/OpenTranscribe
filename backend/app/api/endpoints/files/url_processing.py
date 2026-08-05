@@ -564,14 +564,21 @@ def _dispatch_video_task(
 async def _send_file_created_notification(media_file: MediaFile, user_id: int) -> None:
     """Send WebSocket notification for newly created file.
 
+    Routed through Redis pub/sub rather than the in-process ConnectionManager
+    (issue #284 A1.14). ``send_notification`` only reaches sockets held by THIS
+    process, so behind a load balancer a user connected to a different replica never
+    saw the new file appear — the gallery just looked stuck until a manual refresh.
+    ``send_ws_event`` publishes on the ``websocket_notifications`` channel, which every
+    replica's subscriber consumes, so the owning process delivers it wherever it is.
+
     Args:
         media_file: The created MediaFile.
         user_id: User ID to notify.
     """
     try:
-        from app.api.websockets import send_notification
+        from app.utils.websocket_notify import send_ws_event
 
-        await send_notification(
+        send_ws_event(
             user_id=user_id,
             notification_type="file_created",
             data={

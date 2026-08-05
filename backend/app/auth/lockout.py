@@ -16,6 +16,7 @@ import contextlib
 import json
 import logging
 import threading
+import time
 from dataclasses import asdict
 from dataclasses import dataclass
 from datetime import UTC
@@ -155,11 +156,26 @@ _redis_client = None
 _in_memory_store: InMemoryLockoutStore | None = None
 _store_initialized = False
 _store_lock = threading.Lock()
+_last_redis_probe: float = 0.0
+
+#: How long to stay on the in-memory fallback before re-probing Redis.
+REDIS_REPROBE_SECONDS = 30.0
 
 
 def _get_store():
-    """Get the storage backend (Redis or in-memory fallback)."""
-    global _redis_client, _in_memory_store, _store_initialized
+    """Get the storage backend (Redis, or the in-memory fallback while it is down).
+
+    Re-probes Redis instead of latching (issue #284 A1.16). The fallback used to be
+    permanent for the process lifetime: one transient Redis failure at first use and
+    that replica counted failed logins **in its own memory forever**, even after Redis
+    came back. Behind a load balancer that is an auth-throttling bypass — each replica
+    tracks its own counter, so an attacker gets N x the allowed attempts, and lockouts
+    stop being visible across replicas at all.
+
+    Probing is rate-limited to one attempt per ``REDIS_REPROBE_SECONDS`` so a hard Redis
+    outage doesn't add a connection attempt to every single login.
+    """
+    global _redis_client, _in_memory_store, _store_initialized, _last_redis_probe
 
     with _store_lock:
         if not _store_initialized:
@@ -171,6 +187,16 @@ def _get_store():
                 )
                 _in_memory_store = InMemoryLockoutStore()
             _store_initialized = True
+            _last_redis_probe = time.monotonic()
+        elif _redis_client is None:
+            # On the fallback — retry Redis, but not on every call.
+            now = time.monotonic()
+            if now - _last_redis_probe >= REDIS_REPROBE_SECONDS:
+                _last_redis_probe = now
+                recovered = _get_redis_client()
+                if recovered is not None:
+                    logger.info("Redis recovered — resuming distributed lockout storage")
+                    _redis_client = recovered
 
         return _redis_client if _redis_client else _in_memory_store
 

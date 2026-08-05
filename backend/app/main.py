@@ -138,6 +138,20 @@ def _validate_production_secrets():
         logger.info("Production security validation passed")
 
 
+async def _drain_websockets() -> None:
+    """Close live WebSockets on shutdown so the process doesn't hang to SIGKILL.
+
+    See ``ConnectionManager.drain`` (issue #284 A1.21). Never raises — a failure here
+    must not block shutdown.
+    """
+    try:
+        from app.api.websockets import manager
+
+        await manager.drain()
+    except Exception as e:  # noqa: BLE001 - never block shutdown on drain
+        logger.warning(f"WebSocket drain failed (non-fatal): {e}")
+
+
 async def _setup_minio():
     """Initialize MinIO bucket on startup.
 
@@ -534,13 +548,25 @@ async def lifespan(app: FastAPI):
     logger.info("Starting application...")
     _validate_production_secrets()
 
-    from app.db.migrations import run_migrations
+    # Migrations run on startup for self-host (a single container owns the DB). On
+    # an orchestrated deploy a dedicated migrate Job owns them instead, and every API
+    # replica racing Alembic is exactly what RUN_MIGRATIONS_ON_STARTUP=false prevents
+    # (issue #284 A1.4). When gated off we do NOT silently trust the DB: readiness
+    # asserts the schema is at head and fails 503 otherwise, so a replica started
+    # against an un-migrated database never takes traffic.
+    if settings.RUN_MIGRATIONS_ON_STARTUP:
+        from app.db.migrations import run_migrations
 
-    try:
-        run_migrations()
-    except Exception as e:
-        logger.critical(f"Database migration failed — aborting startup: {e}")
-        raise SystemExit(1) from e
+        try:
+            run_migrations()
+        except Exception as e:
+            logger.critical(f"Database migration failed — aborting startup: {e}")
+            raise SystemExit(1) from e
+    else:
+        logger.info(
+            "RUN_MIGRATIONS_ON_STARTUP=false — skipping migrations; a migrate job is "
+            "expected to own them. Readiness will verify the schema is at head."
+        )
 
     # Seed initial data (admin user, default tags, system prompts)
     try:
@@ -555,15 +581,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Initial data seeding failed (non-fatal): {e}")
 
-    # Check OpenSearch index health (auto-repair corrupted shards from unclean shutdowns)
+    # Check OpenSearch index health (auto-repair corrupted shards from unclean shutdowns).
+    #
+    # ensure_*_exist are idempotent no-ops once the indices are there, so every replica
+    # may run them. check_and_repair_indices is NOT cheap and acts on shared cluster
+    # state, so it is elected — N replicas repairing the same indices concurrently is
+    # wasted work at best (issue #284 A1.15).
     try:
         from app.services.opensearch_service import check_and_repair_indices
         from app.services.opensearch_service import ensure_indices_exist
         from app.services.opensearch_service import ensure_v4_index_exists
+        from app.utils.boot_once import run_once_per_boot
 
         ensure_indices_exist()
         ensure_v4_index_exists()
-        check_and_repair_indices()
+        if run_once_per_boot("opensearch_repair_indices"):
+            check_and_repair_indices()
     except Exception as e:
         logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")
 
@@ -611,9 +644,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Derived-cache retention/reclaim setup failed (non-fatal): {e}")
 
-    # Clear stale migration state from Redis (orphaned by unclean shutdown)
+    # Clear stale migration state from Redis (orphaned by unclean shutdown).
+    #
+    # Elected, because this deletes ALL task_progress:* keys and every coordination
+    # lock. Unelected, the second replica to boot wipes progress and locks belonging to
+    # work the first replica is actively coordinating (issue #284 A1.3).
     try:
-        _clear_stale_task_state()
+        from app.utils.boot_once import run_once_per_boot
+
+        if run_once_per_boot("clear_stale_task_state"):
+            _clear_stale_task_state()
     except Exception as e:
         logger.warning(f"Migration state cleanup failed (non-fatal): {e}")
 
@@ -629,6 +669,9 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("Shutting down application...")
+
+    await _drain_websockets()
+
     for task in [
         minio_task,
         recovery_task,
@@ -795,7 +838,30 @@ def readiness_check():
     except Exception as exc:  # noqa: BLE001
         checks["minio"] = f"error: {type(exc).__name__}"
 
-    critical_ok = checks["postgres"] == "ok" and checks["redis"] == "ok"
+    # Schema freshness (critical) — only when a migrate job owns migrations. If this
+    # replica did not run Alembic itself, it must prove the DB is actually at head
+    # before taking traffic; otherwise a rollout that outpaces the migrate job serves
+    # requests against an old schema (issue #284 A1.4).
+    if not settings.RUN_MIGRATIONS_ON_STARTUP:
+        try:
+            from alembic.migration import MigrationContext
+            from alembic.script import ScriptDirectory
+
+            from app.db.base import engine
+            from app.db.migrations import get_alembic_config
+
+            head = ScriptDirectory.from_config(get_alembic_config()).get_current_head()
+            with engine.connect() as conn:
+                current = MigrationContext.configure(conn).get_current_revision()
+            checks["schema"] = "ok" if current == head else f"stale: {current} != head {head}"
+        except Exception as exc:  # noqa: BLE001
+            checks["schema"] = f"error: {type(exc).__name__}"
+
+    critical_ok = (
+        checks["postgres"] == "ok"
+        and checks["redis"] == "ok"
+        and checks.get("schema", "ok") == "ok"
+    )
     if not critical_ok:
         return JSONResponse(
             status_code=503,

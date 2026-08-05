@@ -1064,6 +1064,25 @@ class LLMService:
         Returns:
             Tuple of (success, message)
         """
+        # Refuse internal targets before any request (issue #284 A0.1). This is a SECOND
+        # outbound path for a user-supplied base_url — separate from the health check
+        # below, which uses a one-off requests.get while this uses self.session with a
+        # retry adapter. Guarding only one of them left the other reachable.
+        if self.config.base_url:
+            from app.core.config import settings as _settings
+            from app.utils.url_validation import is_safe_url
+
+            safe, reason = is_safe_url(
+                self.config.base_url, allow_private=_settings.LLM_ALLOW_PRIVATE_ENDPOINTS
+            )
+            if not safe:
+                logger.warning("Connection test blocked for %s: %s", self.config.base_url, reason)
+                return False, (
+                    "Connection failed: the endpoint must be a publicly reachable "
+                    "http(s) address. Set LLM_ALLOW_PRIVATE_ENDPOINTS=true to allow a "
+                    "self-hosted endpoint on a private network."
+                )
+
         try:
             headers = self._get_headers()
 

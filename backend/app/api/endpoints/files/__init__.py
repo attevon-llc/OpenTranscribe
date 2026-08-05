@@ -8,6 +8,7 @@ This module contains the refactored files endpoint split into modular components
 - streaming.py: Video/audio streaming endpoints
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -730,6 +731,26 @@ def prepare_download(
     return {"status": "processing", "file_id": str(db_file.uuid)}
 
 
+def _download_event_frame(data: dict, mode: str) -> tuple[str | None, bool]:
+    """Map one download pub/sub event to an SSE frame.
+
+    Returns:
+        ``(frame, terminal)`` — *frame* is None when the event is for another mode and
+        should be ignored; *terminal* means the stream should close after yielding it.
+    """
+    if data.get("mode") != mode:
+        return None, False
+    status = data.get("status")
+    if status == "completed" and data.get("url"):
+        payload = {"url": data["url"], "filename": data.get("filename", "")}
+        return f"event: ready\ndata: {json.dumps(payload)}\n\n", True
+    if status == "error":
+        payload = {"message": data.get("message", "Download failed.")}
+        return f"event: error\ndata: {json.dumps(payload)}\n\n", True
+    payload = {"message": data.get("message", ""), "progress": data.get("progress", 0)}
+    return f"event: progress\ndata: {json.dumps(payload)}\n\n", False
+
+
 @router.get("/{file_uuid}/download-stream")
 async def download_stream(
     file_uuid: str,
@@ -765,22 +786,23 @@ async def download_stream(
     user_id = current_user.id
 
     def sse(event: str, payload: dict) -> str:
-        return f"event: {event}\ndata: {_json.dumps(payload)}\n\n"
+        return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
-    async def event_stream():
-        # 1. Already available? deliver immediately (covers reconnects after completion).
+    def _ready_frame() -> str | None:
+        """SSE frame if the download is ready or errored, else None to keep waiting."""
         try:
             ready = _resolve_ready_download(db_file, mode)
         except HTTPException as e:
-            yield sse("error", {"message": e.detail})
-            return
-        if ready:
-            yield sse("ready", ready)
-            return
+            return sse("error", {"message": e.detail})
+        return sse("ready", ready) if ready else None
 
-        # 2. Make sure the work is running, then stream its events.
-        _ensure_prepare_enqueued(db_file, user_id, mode)
-        yield sse("progress", {"message": "Preparing your download…", "progress": 0})
+    async def event_stream():
+        # 1. Fast path — already available (covers reconnects after completion). Checked
+        # BEFORE touching Redis so a ready download still works when Redis is down.
+        frame = _ready_frame()
+        if frame:
+            yield frame
+            return
 
         from redis.exceptions import RedisError
         from redis.exceptions import TimeoutError as RedisTimeoutError
@@ -791,6 +813,23 @@ async def download_stream(
         pubsub = client.pubsub()
         await pubsub.subscribe(download_events_channel(file_uuid))
         try:
+            # 2. RE-CHECK after subscribing (issue #284 A1.22).
+            #
+            # A single check-then-subscribe has a lost-wakeup race: a prepare that
+            # finishes in the gap publishes to an empty channel, and this stream then
+            # waits forever for an event that already happened — the download appears
+            # to hang until the client gives up. Subscribing first and re-checking
+            # means the completion is either buffered on the subscription or visible
+            # to this second check; it cannot fall between them.
+            frame = _ready_frame()
+            if frame:
+                yield frame
+                return
+
+            # 3. Make sure the work is running, then stream its events.
+            _ensure_prepare_enqueued(db_file, user_id, mode)
+            yield sse("progress", {"message": "Preparing your download…", "progress": 0})
+
             while True:
                 try:
                     msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
@@ -809,22 +848,12 @@ async def download_stream(
                 except Exception:
                     logger.debug("Skipping malformed download event payload")
                     continue
-                if data.get("mode") != mode:
+                frame, terminal = _download_event_frame(data, mode)
+                if frame is None:
                     continue
-                status = data.get("status")
-                if status == "completed" and data.get("url"):
-                    yield sse("ready", {"url": data["url"], "filename": data.get("filename", "")})
+                yield frame
+                if terminal:
                     return
-                if status == "error":
-                    yield sse("error", {"message": data.get("message", "Download failed.")})
-                    return
-                yield sse(
-                    "progress",
-                    {
-                        "message": data.get("message", ""),
-                        "progress": data.get("progress", 0),
-                    },
-                )
         except asyncio.CancelledError:
             raise
         finally:

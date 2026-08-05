@@ -257,6 +257,13 @@ services:
       - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
+      # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
+      # overflow = up to 60 connections PER PROCESS; across ~10 worker services that
+      # is ~600 against a Postgres whose default max_connections is 100. Workers are
+      # mostly CPU/GPU-bound and hold a session only briefly, so a small pool is
+      # ample. The API keeps the larger default — it is the latency-sensitive one.
+      - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
+      - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
       # Per-container batch size override (default worker is typically a smaller GPU)
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
       # Signal to celery.py preload_models() that this is a GPU worker.
@@ -296,6 +303,13 @@ services:
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
       - TEMP_DIR=/app/temp
+      # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
+      # overflow = up to 60 connections PER PROCESS; across ~10 worker services that
+      # is ~600 against a Postgres whose default max_connections is 100. Workers are
+      # mostly CPU/GPU-bound and hold a session only briefly, so a small pool is
+      # ample. The API keeps the larger default — it is the latency-sensitive one.
+      - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
+      - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d media-downloader@$$HOSTNAME"]
       interval: 30s
@@ -340,6 +354,13 @@ services:
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
       - TEMP_DIR=/app/temp
+      # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
+      # overflow = up to 60 connections PER PROCESS; across ~10 worker services that
+      # is ~600 against a Postgres whose default max_connections is 100. Workers are
+      # mostly CPU/GPU-bound and hold a session only briefly, so a small pool is
+      # ample. The API keeps the larger default — it is the latency-sensitive one.
+      - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
+      - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d cpu-processor@$$HOSTNAME"]
       interval: 30s
@@ -396,6 +417,13 @@ services:
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
       - TEMP_DIR=/app/temp
+      # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
+      # overflow = up to 60 connections PER PROCESS; across ~10 worker services that
+      # is ~600 against a Postgres whose default max_connections is 100. Workers are
+      # mostly CPU/GPU-bound and hold a session only briefly, so a small pool is
+      # ample. The API keeps the larger default — it is the latency-sensitive one.
+      - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
+      - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d redaction@$$HOSTNAME"]
       interval: 30s
@@ -434,6 +462,13 @@ services:
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
       - TEMP_DIR=/app/temp
+      # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
+      # overflow = up to 60 connections PER PROCESS; across ~10 worker services that
+      # is ~600 against a Postgres whose default max_connections is 100. Workers are
+      # mostly CPU/GPU-bound and hold a session only briefly, so a small pool is
+      # ample. The API keeps the larger default — it is the latency-sensitive one.
+      - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
+      - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d cloud-asr@$$HOSTNAME"]
       interval: 30s
@@ -466,6 +501,13 @@ services:
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
       - TEMP_DIR=/app/temp
+      # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
+      # overflow = up to 60 connections PER PROCESS; across ~10 worker services that
+      # is ~600 against a Postgres whose default max_connections is 100. Workers are
+      # mostly CPU/GPU-bound and hold a session only briefly, so a small pool is
+      # ample. The API keeps the larger default — it is the latency-sensitive one.
+      - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
+      - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d ai-nlp@$$HOSTNAME"]
       interval: 30s
@@ -505,6 +547,13 @@ services:
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
       - TEMP_DIR=/app/temp
+      # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
+      # overflow = up to 60 connections PER PROCESS; across ~10 worker services that
+      # is ~600 against a Postgres whose default max_connections is 100. Workers are
+      # mostly CPU/GPU-bound and hold a session only briefly, so a small pool is
+      # ample. The API keeps the larger default — it is the latency-sensitive one.
+      - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
+      - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d search-indexer@$$HOSTNAME"]
       interval: 30s
@@ -536,6 +585,13 @@ services:
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
       - TEMP_DIR=/app/temp
+      # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
+      # overflow = up to 60 connections PER PROCESS; across ~10 worker services that
+      # is ~600 against a Postgres whose default max_connections is 100. Workers are
+      # mostly CPU/GPU-bound and hold a session only briefly, so a small pool is
+      # ample. The API keeps the larger default — it is the latency-sensitive one.
+      - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
+      - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
       test: ["CMD-SHELL", "python3 -c 'import os,time; exit(0 if os.path.exists(\"/app/celerybeat-schedule\") and time.time()-os.path.getmtime(\"/app/celerybeat-schedule\")<300 else 1)'"]
       interval: 30s
@@ -584,6 +640,13 @@ services:
       - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
+      # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
+      # overflow = up to 60 connections PER PROCESS; across ~10 worker services that
+      # is ~600 against a Postgres whose default max_connections is 100. Workers are
+      # mostly CPU/GPU-bound and hold a session only briefly, so a small pool is
+      # ample. The API keeps the larger default — it is the latency-sensitive one.
+      - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
+      - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
       - PRELOAD_GPU_MODELS=true
       # docker-compose.gpu-split.yml reserves the host GPU (GPU_TRANSCRIBE_DEVICE_ID)
@@ -632,6 +695,13 @@ services:
       - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
+      # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
+      # overflow = up to 60 connections PER PROCESS; across ~10 worker services that
+      # is ~600 against a Postgres whose default max_connections is 100. Workers are
+      # mostly CPU/GPU-bound and hold a session only briefly, so a small pool is
+      # ample. The API keeps the larger default — it is the latency-sensitive one.
+      - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
+      - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
       - PRELOAD_GPU_MODELS=true
       # docker-compose.gpu-split.yml reserves the host GPU (GPU_DIARIZE_DEVICE_ID)
@@ -678,6 +748,13 @@ services:
       - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
+      # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
+      # overflow = up to 60 connections PER PROCESS; across ~10 worker services that
+      # is ~600 against a Postgres whose default max_connections is 100. Workers are
+      # mostly CPU/GPU-bound and hold a session only briefly, so a small pool is
+      # ample. The API keeps the larger default — it is the latency-sensitive one.
+      - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
+      - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     volumes:
       # Shared scratch — reads the preprocessed WAV the CPU worker staged. MUST
       # match the other transcription workers or the scaled worker can't see the

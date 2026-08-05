@@ -142,6 +142,15 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")
     DEBUG: bool = is_relaxed_environment(ENVIRONMENT)
 
+    # Whether the API runs Alembic on startup (issue #284 A1.4). True suits self-host,
+    # where one container owns the database. Set false on an orchestrated deploy where a
+    # dedicated migrate Job owns migrations — otherwise every API replica races Alembic
+    # on rollout. When false, /health/ready asserts the schema is at head and fails 503
+    # if not, so a replica pointed at an un-migrated database never takes traffic.
+    RUN_MIGRATIONS_ON_STARTUP: bool = (
+        os.getenv("RUN_MIGRATIONS_ON_STARTUP", "true").lower() == "true"
+    )
+
     # Global server-side upload ceiling, in bytes (issue #284 A0.12). Matches the 15 GB
     # the UI advertises and the yt-dlp `max_filesize`. Before this there was NO
     # server-side ceiling in community: the only limit lived in the browser, so a client

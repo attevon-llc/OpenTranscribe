@@ -56,12 +56,27 @@ def check_backup_schedule() -> dict:
     return {"status": "dispatched", "schedule": cfg["schedule"]}
 
 
+#: Overlap guard for backup.run. Sized well above a normal pg_dump so a slow dump is
+#: never treated as finished while it is still writing.
+BACKUP_LOCK_KEY = "backup_run"
+BACKUP_LOCK_TIMEOUT = 3 * 3600
+
+
 @shared_task(name="backup.run", priority=UtilityPriority.ROUTINE)
 def run_backup() -> dict:
-    """Execute one database backup end-to-end and return the result dict."""
-    logger.info("Starting database backup run")
-    result = backup_service.perform_backup()
-    return result
+    """Execute one database backup end-to-end and return the result dict.
+
+    Guarded against overlap (issue #284 A1.18): ``backup.run`` had no lock, unlike its
+    ``backup.mirror_run`` sibling, so a double beat tick — or a manual Run Now landing
+    on a scheduled window — started two concurrent ``pg_dump`` processes against the
+    same database, competing for I/O and racing to write the retention set.
+    """
+    with task_lock_manager.acquire_lock(BACKUP_LOCK_KEY, timeout=BACKUP_LOCK_TIMEOUT) as acquired:
+        if not acquired:
+            logger.info("Backup already running — skipping this dispatch")
+            return {"status": "skipped", "reason": "backup already running"}
+        logger.info("Starting database backup run")
+        return backup_service.perform_backup()
 
 
 @shared_task(name="backup.mirror_check_schedule", priority=UtilityPriority.ROUTINE)

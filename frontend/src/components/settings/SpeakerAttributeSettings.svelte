@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { t } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
-  import { getCsrfToken } from '$lib/axios';
+  import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import {
     getSpeakerAttributeSettings,
@@ -137,12 +137,7 @@
   async function loadMigrationStatus(silent = false) {
     if (!silent) loadingMigrationStatus = true;
     try {
-      const response = await fetch('/api/speaker-attributes/migration/status', {
-        credentials: 'include',
-      });
-      if (!response.ok) return;
-
-      const data = await response.json();
+      const { data } = await axiosInstance.get('/speaker-attributes/migration/status');
       pendingFiles = data.pending_files || 0;
       totalFiles = data.total_files || 0;
 
@@ -166,15 +161,7 @@
   async function startMigration() {
     migrationInProgress = true;
     try {
-      const response = await fetch('/api/speaker-attributes/migration/start', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
-      });
-
-      if (!response.ok) throw new Error('Failed to start migration');
-
-      const data = await response.json();
+      const { data } = await axiosInstance.post('/speaker-attributes/migration/start');
       if (data.status === 'already_running') return;
 
       toastStore.success($t('settings.speakerAttributes.migrationStarted'));
@@ -189,15 +176,9 @@
     showForceReprocessConfirm = false;
     migrationInProgress = true;
     try {
-      const response = await fetch('/api/speaker-attributes/migration/start?force=true', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
+      const { data } = await axiosInstance.post('/speaker-attributes/migration/start', null, {
+        params: { force: true },
       });
-
-      if (!response.ok) throw new Error('Failed to start force reprocessing');
-
-      const data = await response.json();
       if (data.status === 'already_running') return;
 
       toastStore.success($t('settings.speakerAttributes.forceReprocessStarted'));
@@ -211,13 +192,7 @@
   async function stopMigration() {
     stoppingMigration = true;
     try {
-      const response = await fetch('/api/speaker-attributes/migration/stop', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
-      });
-
-      if (!response.ok) throw new Error('Failed to stop migration');
+      await axiosInstance.post('/speaker-attributes/migration/stop');
 
       toastStore.success($t('settings.speakerAttributes.stopMigration'));
       await loadMigrationStatus();

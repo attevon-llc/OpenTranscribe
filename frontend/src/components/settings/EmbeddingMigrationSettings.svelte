@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getCsrfToken } from '$lib/axios';
+  import axiosInstance from '$lib/axios';
+  import { getErrorStatus } from '$lib/utils/apiError';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
@@ -110,19 +111,7 @@
     error = '';
 
     try {
-      const response = await fetch('/api/embeddings/migration/status', {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          error = $t('settings.embeddingMigration.adminRequired');
-          return;
-        }
-        throw new Error($t('settings.embeddingMigration.statusLoadFailed'));
-      }
-
-      const data = await response.json();
+      const { data } = await axiosInstance.get('/embeddings/migration/status');
       currentMode = data.current_mode;
       migrationNeeded = data.migration_needed;
       v3DocumentCount = data.v3_document_count || 0;
@@ -145,6 +134,10 @@
       // Progress is loaded in parallel from onMount — no need to await here
 
     } catch (err) {
+      if (getErrorStatus(err) === 403) {
+        error = $t('settings.embeddingMigration.adminRequired');
+        return;
+      }
       console.error('Failed to load migration status:', err);
       error = $t('settings.embeddingMigration.loadFailed');
     } finally {
@@ -154,15 +147,7 @@
 
   async function loadMigrationProgress() {
     try {
-      const response = await fetch('/api/embeddings/migration/progress', {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        return; // Progress endpoint might not be available
-      }
-
-      const data = await response.json();
+      const { data } = await axiosInstance.get('/embeddings/migration/progress');
       migrationInProgress = data.running || false;
       totalFiles = data.total_files || 0;
       processedFiles = data.processed_files || 0;
@@ -179,17 +164,7 @@
     migrationInProgress = true;
 
     try {
-      const response = await fetch('/api/embeddings/migration/start', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
-      });
-
-      if (!response.ok) {
-        throw new Error($t('settings.embeddingMigration.migrationStartFailed'));
-      }
-
-      const data = await response.json();
+      const { data } = await axiosInstance.post('/embeddings/migration/start');
 
       // Handle "already_running" response
       if (data.status === 'already_running') {
@@ -213,17 +188,9 @@
     migrationInProgress = true;
 
     try {
-      const response = await fetch('/api/embeddings/migration/start?force=true', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
+      const { data } = await axiosInstance.post('/embeddings/migration/start', null, {
+        params: { force: true },
       });
-
-      if (!response.ok) {
-        throw new Error($t('settings.embeddingMigration.migrationStartFailed'));
-      }
-
-      const data = await response.json();
       if (data.status === 'already_running') {
         return;
       }
@@ -240,15 +207,7 @@
     stoppingMigration = true;
 
     try {
-      const response = await fetch('/api/embeddings/migration/stop', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
-      });
-
-      if (!response.ok) {
-        throw new Error($t('settings.embeddingMigration.stopFailed'));
-      }
+      await axiosInstance.post('/embeddings/migration/stop');
 
       toastStore.success($t('settings.embeddingMigration.migrationStopped'));
 
@@ -266,17 +225,7 @@
   async function retryFailedFiles() {
     retryingFailed = true;
     try {
-      const response = await fetch('/api/embeddings/migration/retry-failed', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
-      });
-
-      if (!response.ok) {
-        throw new Error($t('settings.embeddingMigration.retryFailed'));
-      }
-
-      const data = await response.json();
+      const { data } = await axiosInstance.post('/embeddings/migration/retry-failed');
       if (data.status === 'started') {
         migrationInProgress = true;
         stalled = false;
@@ -297,15 +246,7 @@
   async function forceCompleteMigration() {
     showForceCompleteConfirm = false;
     try {
-      const response = await fetch('/api/embeddings/migration/force-complete', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
-      });
-
-      if (!response.ok) {
-        throw new Error($t('settings.embeddingMigration.forceCompleteFailed'));
-      }
+      await axiosInstance.post('/embeddings/migration/force-complete');
 
       toastStore.success($t('settings.embeddingMigration.forceCompleted'));
       stalled = false;
@@ -319,15 +260,7 @@
   async function finalizeMigration() {
     finalizing = true;
     try {
-      const response = await fetch('/api/embeddings/migration/finalize', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
-      });
-
-      if (!response.ok) {
-        throw new Error($t('settings.embeddingMigration.migrationFinalizeFailed'));
-      }
+      await axiosInstance.post('/embeddings/migration/finalize');
 
       // Celery task dispatched — WS event 'migration-finalized' will update state
 

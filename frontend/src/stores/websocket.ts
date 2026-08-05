@@ -2,6 +2,7 @@ import { writable, derived, get, type Writable } from 'svelte/store';
 import * as authStore from './auth';
 import { downloadStore, type DownloadState } from './downloads';
 import { t } from '$stores/locale';
+import axiosInstance from '$lib/axios';
 import { generateId } from '$lib/utils/ids';
 import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
@@ -1140,17 +1141,17 @@ function createWebSocketStore() {
   // Recover active task progress from backend on connect/reconnect
   const recoverActiveProgress = async () => {
     try {
-      const response = await fetch('/api/tasks/progress/active', { credentials: 'include' });
-      if (!response.ok) return;
-      const activeTasks: Array<{
-        task_type: string;
-        user_id: number;
-        total: number;
-        processed: number;
-        status: string;
-        message: string;
-        eta_seconds: number | null;
-      }> = await response.json();
+      const { data: activeTasks } = await axiosInstance.get<
+        Array<{
+          task_type: string;
+          user_id: number;
+          total: number;
+          processed: number;
+          status: string;
+          message: string;
+          eta_seconds: number | null;
+        }>
+      >('/tasks/progress/active');
 
       if (!activeTasks || activeTasks.length === 0) return;
 

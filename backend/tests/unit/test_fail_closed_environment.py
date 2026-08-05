@@ -60,34 +60,22 @@ def test_relaxed_set_is_closed():
 # ── Settings wiring ──────────────────────────────────────────────────────────────
 
 
-def test_default_environment_is_hardened(tmp_path):
+def test_default_environment_is_hardened(run_in_clean_process, tmp_path):
     """The whole point of A0.3: an unset ENVIRONMENT must NOT relax anything.
 
-    Runs in a clean subprocess with ENVIRONMENT removed. It cannot be done in-process:
-    `ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")` binds its default when
-    the class body executes, and conftest sets ENVIRONMENT=testing before app.* is
-    imported — so monkeypatching the variable afterwards cannot reach the default.
+    Runs in a clean child process with ENVIRONMENT removed. It cannot be done
+    in-process: `ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")` binds its
+    default when the class body executes, and the root conftest sets
+    ENVIRONMENT=testing before app.* is imported.
     """
-    import os
-    import subprocess
-    import sys
-
-    env = {k: v for k, v in os.environ.items() if k != "ENVIRONMENT"}
-    env.update({"UPLOAD_DIR": str(tmp_path / "up"), "TEMP_DIR": str(tmp_path / "tmp")})
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from app.core.config import settings;"
-            "print(f'{settings.ENVIRONMENT}|{settings.is_hardened}|{settings.DEBUG}')",
-        ],
-        capture_output=True,
-        text=True,
-        env=env,
-        check=True,
+    out = run_in_clean_process(
+        "from app.core.config import settings;"
+        "print(f'{settings.ENVIRONMENT}|{settings.is_hardened}|{settings.DEBUG}')",
+        unset=("ENVIRONMENT",),
+        UPLOAD_DIR=str(tmp_path / "up"),
+        TEMP_DIR=str(tmp_path / "tmp"),
     )
-    environment, hardened, debug = result.stdout.strip().splitlines()[-1].split("|")
+    environment, hardened, debug = out.split("|")
 
     assert environment == "production", "unset ENVIRONMENT must default to production"
     assert hardened == "True", "unset ENVIRONMENT must fail closed"

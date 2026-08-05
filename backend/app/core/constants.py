@@ -828,6 +828,15 @@ DEFAULT_REDACTION_TOXICITY_THRESHOLD = 0.5
 DEFAULT_REDACTION_REDACT_BEFORE_LLM = True
 DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED = True
 
+# Substituted for a segment whose masking raised. Never fall back to the original
+# text: under redact_before_llm the whole point is that unmaskable content must not
+# reach a third-party provider. See services/redaction/llm_guard.py.
+REDACTION_LLM_FAILSAFE_TEXT = "[redacted — masking unavailable]"
+# How many times an LLM task may defer itself waiting for detection spans before
+# failing. 10 × 60s covers a slow CPU scan; past that something is wrong, and a
+# loud failure beats an unbounded retry loop.
+REDACTION_LLM_MAX_DEFERRALS = 10
+
 # PII detection confidence floor (Presidio/GLiNER scores below this are dropped).
 DEFAULT_REDACTION_PII_CONFIDENCE = 0.4
 

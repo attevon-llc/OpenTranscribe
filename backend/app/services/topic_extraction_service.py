@@ -334,8 +334,17 @@ IMPORTANT GUIDELINES:
             return False
 
     def _get_transcript_text(self, media_file: MediaFile) -> str | None:
-        """Extract transcript text from media file"""
+        """Extract transcript text from media file, masked per the owner's LLM policy.
+
+        Raises:
+            RedactionNotReadyError: Masking is required but detection spans are missing.
+                The caller defers rather than sending raw text to a provider.
+        """
         from app.models.media import TranscriptSegment
+        from app.services.redaction.llm_guard import resolve_llm_masking
+        from app.utils.transcript_builders import mask_segment_text
+
+        redaction_cfg = resolve_llm_masking(self.db, media_file)
 
         segments = (
             self.db.query(TranscriptSegment)
@@ -351,7 +360,7 @@ IMPORTANT GUIDELINES:
         transcript_parts = []
         for segment in segments:
             speaker_name = segment.speaker.display_name if segment.speaker else "Unknown"
-            transcript_parts.append(f"{speaker_name}: {segment.text}")
+            transcript_parts.append(f"{speaker_name}: {mask_segment_text(segment, redaction_cfg)}")
 
         return "\n".join(transcript_parts)
 

@@ -74,7 +74,7 @@ def _mask_from_segments(db: Session, chunk: ChunkHit, cfg) -> str | None:
     safe. Chat is exactly the surface where you ask about recordings you never
     opened, so unscanned files are the common case, not the edge case.
 
-    Deliberately does NOT use ``transcript_builders._seg_text``: that helper
+    Deliberately does NOT use ``transcript_builders.mask_segment_text``: that helper
     swallows masking errors and returns the ORIGINAL text, which is the opposite
     of what this path needs. Exceptions propagate to the caller's fail-closed
     handler instead.

@@ -2,6 +2,7 @@ import logging
 import time
 from typing import Any
 
+from celery.exceptions import Retry
 from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
@@ -11,6 +12,9 @@ from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.services.llm_service import LLMService
 from app.services.opensearch_summary_service import OpenSearchSummaryService
+from app.services.redaction.llm_guard import RedactionNotReadyError
+from app.services.redaction.llm_guard import defer_for_redaction
+from app.services.redaction.llm_guard import resolve_llm_masking
 from app.utils.transcript_builders import build_transcript_and_stats
 from app.utils.user_settings_helpers import get_user_llm_output_language
 
@@ -531,18 +535,21 @@ def summarize_transcript_task(
 
             # Redact PII/profanity before sending to the LLM provider when the
             # owner's (or admin-forced) policy requires it (don't leak to third parties).
+            # Errors are NOT swallowed: an unresolvable policy or missing detection
+            # spans must defer or abort, never fall through to sending raw text.
             try:
-                from app.services.redaction.config import resolve_effective_config
-
-                _cfg = resolve_effective_config(db, int(media_file.user_id))
+                redaction_cfg = resolve_llm_masking(db, media_file)
+            except RedactionNotReadyError as not_ready:
+                # Detection hasn't cached spans yet, so masking would be a no-op.
+                defer_for_redaction(self, not_ready)
+                raise  # unreachable — defer_for_redaction always raises
             except Exception as _redact_err:
-                # FAIL CLOSED. Leaving redaction_cfg as None made `_seg_text`
-                # take its "redaction disabled" early return, so the full
-                # unredacted transcript was posted to an EXTERNAL LLM provider —
-                # defeating both `redact_before_llm` and the admin
-                # `force_redact_before_llm` floor, and it was logged at debug so
-                # the leak was silent. We cannot prove redaction is unnecessary,
-                # so we do not send the transcript off-box at all.
+                # FAIL CLOSED. Leaving redaction_cfg as None made mask_segment_text
+                # take its "redaction disabled" early return, so the full unredacted
+                # transcript was posted to an EXTERNAL LLM provider — defeating both
+                # `redact_before_llm` and the admin `force_redact_before_llm` floor,
+                # and it was logged at debug so the leak was silent. We cannot prove
+                # redaction is unnecessary, so we do not send the transcript at all.
                 logger.exception(
                     "Could not resolve the redaction policy; aborting summarization rather "
                     "than sending a possibly unredacted transcript to an external provider"
@@ -551,8 +558,6 @@ def summarize_transcript_task(
                     "Redaction policy unavailable; summarization aborted to avoid "
                     "sending unredacted content to an external provider"
                 ) from _redact_err
-
-            redaction_cfg = _cfg if (_cfg.enabled and _cfg.redact_before_llm) else None
 
             full_transcript, speaker_stats = build_transcript_and_stats(
                 transcript_segments, redaction_cfg
@@ -628,6 +633,10 @@ def summarize_transcript_task(
                 },
             }
 
+        except Retry:
+            # Celery signals deferral with an exception that subclasses Exception, so
+            # the broad handler below would "handle" it and mark the summary failed.
+            raise
         except Exception as e:
             # file_id might be None if error occurred before it was set
             return _handle_task_error(

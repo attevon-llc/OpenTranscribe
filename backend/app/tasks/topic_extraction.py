@@ -9,9 +9,13 @@ is configured for the user.
 import logging
 from typing import Any
 
+from celery.exceptions import Retry
+
 from app.core.celery import celery_app
 from app.core.constants import NLPPriority
 from app.db.session_utils import session_scope
+from app.services.redaction.llm_guard import RedactionNotReadyError
+from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.topic_extraction_service import TopicExtractionService
 
 logger = logging.getLogger(__name__)
@@ -214,6 +218,15 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
                 "collection_count": collection_count,
             }
 
+        except RedactionNotReadyError as not_ready:
+            # Detection spans aren't cached yet, so the transcript cannot be masked.
+            # Come back later rather than posting raw text to the provider.
+            defer_for_redaction(self, not_ready)
+            raise  # unreachable — defer_for_redaction always raises
+        except Retry:
+            # Celery signals deferral with an exception that subclasses Exception,
+            # so the handler below would otherwise report it as a failure.
+            raise
         except Exception as e:
             error_msg = f"Error extracting topics: {str(e)}"
             logger.error(f"{error_msg} for file {file_uuid}")

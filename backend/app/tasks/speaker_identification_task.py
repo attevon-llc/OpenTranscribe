@@ -9,6 +9,7 @@ manual user verification -- they are NOT auto-applied.
 import logging
 from typing import Any
 
+from celery.exceptions import Retry
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -24,6 +25,9 @@ from app.services.llm_service import LLMService
 from app.services.metadata_speaker_extractor import MetadataSpeakerExtractor
 from app.services.metadata_speaker_extractor import build_cross_reference_context
 from app.services.metadata_speaker_extractor import cross_reference_attributes
+from app.services.redaction.llm_guard import RedactionNotReadyError
+from app.services.redaction.llm_guard import defer_for_redaction
+from app.services.redaction.llm_guard import resolve_llm_masking
 from app.utils.transcript_builders import build_full_transcript
 from app.utils.transcript_builders import build_speaker_segments
 from app.utils.user_settings_helpers import get_user_llm_output_language
@@ -336,14 +340,16 @@ def identify_speakers_llm_task(self, file_uuid: str):
                 return {"status": "skipped", "message": "No speakers to identify"}
 
             # Redact PII/profanity before the transcript leaves for the LLM
-            # provider, exactly as the summarization task does. This path used
-            # to pass no config at all, so `redact_before_llm` (and the admin
+            # provider, exactly as the summarization task does. This path used to
+            # pass no config at all, so `redact_before_llm` (and the admin
             # `force_redact_before_llm` floor) had no effect on speaker
-            # identification. Fail closed if the policy cannot be resolved.
+            # identification. Defer if spans aren't cached; fail closed if the
+            # policy cannot be resolved at all.
             try:
-                from app.services.redaction.config import resolve_effective_config
-
-                _redact_cfg = resolve_effective_config(db, int(media_file.user_id))
+                redaction_cfg = resolve_llm_masking(db, media_file)
+            except RedactionNotReadyError as not_ready:
+                defer_for_redaction(self, not_ready)
+                raise  # unreachable — defer_for_redaction always raises
             except Exception as _redact_err:
                 logger.exception(
                     "Could not resolve the redaction policy; aborting speaker identification "
@@ -354,12 +360,9 @@ def identify_speakers_llm_task(self, file_uuid: str):
                     "sending unredacted content to an external provider"
                 ) from _redact_err
 
-            llm_redaction_cfg = (
-                _redact_cfg if (_redact_cfg.enabled and _redact_cfg.redact_before_llm) else None
-            )
-            full_transcript = build_full_transcript(transcript_segments, llm_redaction_cfg)
+            full_transcript = build_full_transcript(transcript_segments, redaction_cfg)
             speaker_segments = build_speaker_segments(
-                transcript_segments, redaction_cfg=llm_redaction_cfg
+                transcript_segments, redaction_cfg=redaction_cfg
             )
             known_speakers = _get_known_speakers(db, int(media_file.user_id))
             metadata_context = _build_metadata_context(media_file)
@@ -396,6 +399,10 @@ def identify_speakers_llm_task(self, file_uuid: str):
                 "overall_confidence": predictions.get("overall_confidence", "unknown"),
             }
 
+        except Retry:
+            # Celery signals deferral with an exception that subclasses Exception, so
+            # the broad handler below would "handle" it and mark the task failed.
+            raise
         except Exception as e:
             logger.error(f"Error in speaker identification task for file {file_id}: {str(e)}")
             update_task_status(db, task_id, "failed", error_message=str(e), completed=True)

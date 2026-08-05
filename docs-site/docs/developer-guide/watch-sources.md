@@ -37,7 +37,8 @@ The **only** environment variables are the physical mount paths (`WATCH_HOST_PAT
 - Global tuning knobs are `SystemSettings` keys read through
   `services/watch_settings_service.py` with coded defaults (`DEFAULT_WATCH_*` in
   `core/constants.py`): `watch.enabled`, `watch.file_stability_seconds`,
-  `watch.max_imports_per_scan`, `watch.fs_events_enabled`. `watch.max_imports_per_scan` is a
+  `watch.max_imports_per_scan`, `watch.fs_events_enabled`, `watch.fs_events_mode`,
+  `watch.fs_events_poll_seconds`. `watch.max_imports_per_scan` is a
   **per-scan cap, not a concurrency limit** — imports run serially inline, so raising it
   lengthens a single scan rather than parallelizing it. (Renamed from
   `watch.max_concurrent_imports`, which promised parallelism the code never implemented; the
@@ -108,6 +109,73 @@ Multi-part detection (`services/watch_sources/multipart.py`) groups files by a c
 regex (default `^(.+?)_P(\d{3})(\.[^.]+)$`) within a time window; incomplete groups wait a
 bounded number of scans before stitching what arrived.
 
+## Filesystem events (issue #294)
+
+`watch.fs_events_enabled` used to be a setting with no consumer — the admin could enable it and
+still wait a full `polling_interval_minutes` (15 by default). `services/watch_sources/fs_events/`
+is the consumer. It is an **accelerator, not a mechanism**: it never imports anything, it only
+makes the existing `watch_source.scan_single` fire sooner, and the every-minute `scan_all` poll
+is untouched and remains the safety net.
+
+### Where it runs
+
+In **celery-beat**, started from Celery's `beat_init` signal (`core/celery.py`). Beat is the one
+service that is single-instance by design, so exactly one observer set exists per deployment.
+`docker-compose.watch.yml` therefore mounts the watch folder into `celery-beat` as well as the
+backend and the download/cpu workers.
+
+### Choosing an observer — and why `auto` is not just `Observer()`
+
+The backend always runs in a **Linux container**, so watchdog will always offer
+`InotifyObserver` for any path. That is exactly the trap: inotify is a kernel-local mechanism
+and does not see
+
+- host-side writes through a **macOS** Docker bind mount (VirtioFS / gRPC-FUSE),
+- writes to a **Windows** drive under Docker Desktop/WSL2 (9p / drvfs),
+- a **remote writer** on any network mount — NFS, SMB/CIFS, a NAS — on any host OS.
+
+A naive observer would look correct on a Linux dev box and silently do nothing for everyone
+else. `fs_events/detection.py` answers the question twice, cheapest first:
+
+1. `classify_path` reads the filesystem type backing the directory from `/proc/self/mountinfo`
+   and rejects the network/passthrough families outright.
+2. `probe_delivery` is authoritative: with the observer already running, it creates a
+   dot-prefixed `.opentranscribe-fsprobe-*` file in the watched directory and waits to be told
+   about it. The file is deleted immediately (and any orphan from a crashed process is swept on
+   the next start); the scanner's file-stability window means a scan can never see it. A
+   directory that cannot be written to counts as "undecidable" → treated as unsupported.
+
+Either negative answer falls back to watchdog's `PollingObserver`, which works on every
+filesystem at the cost of a stat sweep every `watch.fs_events_poll_seconds` (15 s default).
+`watch.fs_events_mode` overrides the policy globally: `auto` (default), `native`, `polling`, or
+`off`.
+
+### Debounce, locking, reconciliation
+
+- **Debounce** — writing one large recording produces hundreds of events, so events fold into a
+  per-source timer that fires once the source has been *quiet* for
+  `file_stability_seconds + 5 s`. That margin is load-bearing: `LocalWatchClient.list_files`
+  skips files younger than the stability window, so an earlier dispatch would scan and find
+  nothing. A `max_defer` cap (5 min) still fires under continuous churn, and a cooldown floors
+  the interval between event-driven dispatches.
+- **Locking** — each dispatch is taken under the shared Redis task lock
+  (`watch_source:fs_dispatch:{id}`), and `scan_single` keeps its own per-source lock, so no
+  duplicate scans even with multiple supervisors.
+- **Reconciliation** — the watched set is re-read from the database every 30 s (sources are
+  added, edited, and disabled at runtime); a changed path/recursion/filter restarts that watch.
+- **Failure** — every failure path publishes a status and degrades to polling. Nothing here can
+  raise into the beat process.
+
+### Surfacing the actual mode
+
+The observer runs in beat while the API runs in the backend container, so the supervisor
+publishes a small JSON blob per source to Redis (`watch_source:fs_status:{id}`) with a 120 s TTL
+refreshed on every reconcile. `GET /watch-sources` reads them in one `MGET` and returns
+`fs_events` on each source (`mode` = `native` / `polling` / `error` / `unavailable`, plus the
+human-readable `detail`, `fs_type`, counters, and timestamps). A missing key means nothing is
+watching, and the UI says "every N min" instead of guessing — which is also what happens on its
+own if the beat container stops.
+
 ## Email
 
 `services/watch_email_service.py` (kept separate from the password-reset `email_service.py`)
@@ -128,7 +196,10 @@ Graph `sendMail` for M365. **Delivery is experimental** — verify against a rea
 ## Testing
 
 - Unit (GPU-free, host pytest): `backend/tests/unit/test_watch_multipart_detection.py`,
-  `test_imohash_package_parity.py`, `test_watch_cross_pipeline_dedup.py`.
+  `test_imohash_package_parity.py`, `test_watch_cross_pipeline_dedup.py`,
+  `test_watch_fs_event_detection.py` (mount classification, probe, event filtering, debounce),
+  `test_watch_fs_event_supervisor.py` (mode selection/fallback, reconciliation, and the
+  "a broken observer degrades to polling instead of raising" invariant).
 - UI E2E (Playwright): `backend/tests/e2e/test_watch_sources_e2e.py` (panel, stepper,
   create→list→delete).
 - Full live E2E incl. real GPU transcription: `./scripts/test-watch-e2e.sh` runs
@@ -139,6 +210,7 @@ Graph `sendMail` for M365. **Delivery is experimental** — verify against a rea
 
 ## Infrastructure
 
-`docker-compose.watch.yml` mounts `WATCH_HOST_PATH` into the backend + download + cpu workers;
+`docker-compose.watch.yml` mounts `WATCH_HOST_PATH` into the backend + download + cpu workers
++ celery-beat (the FS-event observer);
 `docker-compose.smb-test.yml` is a Samba test share. `opentr.sh` adds `--with-watch` and
 `--with-smb-test`. Seed data: `scripts/setup-watch-source-test-data.sh`.

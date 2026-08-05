@@ -78,7 +78,7 @@ async def get_llm_status(
         return status_info
 
     except Exception as e:
-        logger.error(f"Error checking LLM status: {e}")
+        logger.exception(f"Error checking LLM status: {e}")
         return {
             "available": False,
             "user_id": current_user.id,
@@ -120,7 +120,7 @@ async def test_llm_connection(
         }
 
     except Exception as e:
-        logger.error(f"Error testing LLM connection: {e}")
+        logger.exception(f"Error testing LLM connection: {e}")
         return {
             "success": False,
             "message": "Connection test failed due to an unexpected error. Check server logs for details.",

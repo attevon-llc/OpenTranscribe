@@ -375,7 +375,7 @@ async def prepare_upload(
         # duplicate) — don't bury them in a generic 500.
         raise
     except Exception as e:
-        logger.error(f"Error preparing upload: {str(e)}")
+        logger.exception(f"Error preparing upload: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error preparing upload: {str(e)}",

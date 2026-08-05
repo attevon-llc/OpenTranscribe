@@ -166,7 +166,7 @@ def get_file_status_detail(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting file status detail for {file_uuid}: {e}")
+        logger.exception(f"Error getting file status detail for {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving file status details",
@@ -212,7 +212,7 @@ def cancel_file_processing(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error cancelling file {file_uuid}: {e}")
+        logger.exception(f"Error cancelling file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error cancelling file processing",
@@ -293,7 +293,7 @@ def retry_file_processing(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrying file {file_uuid}: {e}")
+        logger.exception(f"Error retrying file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrying file processing",
@@ -335,7 +335,7 @@ def recover_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error recovering file {file_uuid}: {e}")
+        logger.exception(f"Error recovering file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error recovering file",
@@ -363,7 +363,7 @@ def force_delete_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error force deleting file {file_uuid}: {e}")
+        logger.exception(f"Error force deleting file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error force deleting file",
@@ -416,7 +416,7 @@ def get_stuck_files(
         }
 
     except Exception as e:
-        logger.error(f"Error getting stuck files: {e}")
+        logger.exception(f"Error getting stuck files: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving stuck files",
@@ -585,6 +585,9 @@ def _handle_summarize_action(
             )
         llm_service.close()
     except Exception:
+        # Bulk actions report per-file outcomes instead of aborting the batch,
+        # so an unconstructable LLM client becomes this file's failure result.
+        logger.exception(f"Could not construct an LLM client for file {file_uuid}")
         return BulkActionResult(
             file_uuid=file_uuid,
             success=False,
@@ -741,7 +744,7 @@ def bulk_file_action(
                     )
                 )
             except Exception as e:
-                logger.error(f"Error processing bulk action for file {file_uuid}: {e}")
+                logger.exception(f"Error processing bulk action for file {file_uuid}: {e}")
                 results.append(
                     BulkActionResult(
                         file_uuid=file_uuid,
@@ -754,7 +757,7 @@ def bulk_file_action(
         return results
 
     except Exception as e:
-        logger.error(f"Error in bulk file action: {e}")
+        logger.exception(f"Error in bulk file action: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error performing bulk file action",
@@ -799,6 +802,9 @@ def cleanup_orphaned_files(
                         if isinstance(errors_list, list):
                             errors_list.append(f"Failed to recover file {file_id}")
                 except Exception as e:
+                    # Per-file failure is recorded and the sweep continues; the
+                    # caller reads cleanup_results["errors"].
+                    logger.exception(f"Orphan cleanup failed for file {file_id}")
                     errors_list = cleanup_results["errors"]
                     if isinstance(errors_list, list):
                         errors_list.append(f"Error processing file {file_id}: {str(e)}")
@@ -806,7 +812,7 @@ def cleanup_orphaned_files(
         return cleanup_results
 
     except Exception as e:
-        logger.error(f"Error in cleanup orphaned files: {e}")
+        logger.exception(f"Error in cleanup orphaned files: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error cleaning up orphaned files",

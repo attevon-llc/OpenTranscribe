@@ -287,7 +287,7 @@ def _handle_playlist_processing(
         )
 
     except Exception as e:
-        logger.error(f"Failed to dispatch YouTube playlist processing task: {e}")
+        logger.exception(f"Failed to dispatch YouTube playlist processing task: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to start playlist processing. Please try again.",
@@ -327,7 +327,7 @@ def _extract_video_info(
         # Re-raise HTTPExceptions (they already have proper error messages)
         raise
     except Exception as e:
-        logger.error(f"Error extracting video info from {normalized_url}: {e}")
+        logger.exception(f"Error extracting video info from {normalized_url}: {e}")
         # Create user-friendly error message
         user_friendly_error = create_user_friendly_error(str(e), normalized_url)
         raise HTTPException(
@@ -552,7 +552,7 @@ def _dispatch_video_task(
 
         files_uploaded_total.labels(source="url").inc()
     except Exception as e:
-        logger.error(f"Failed to dispatch media processing task: {e}")
+        logger.exception(f"Failed to dispatch media processing task: {e}")
         db.delete(media_file)
         db.commit()
         raise HTTPException(

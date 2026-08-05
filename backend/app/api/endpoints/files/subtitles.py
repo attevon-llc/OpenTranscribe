@@ -128,12 +128,16 @@ async def get_subtitles(
             },
         )
 
+    except HTTPException:
+        # The 404 raised above for an empty transcript is a deliberate status;
+        # the broad handler below turned it into a 500 whose detail embedded the
+        # 404's message.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to generate subtitles: {str(e)}"
-        ) from e
+        logger.exception(f"Failed to generate {subtitle_format} subtitles for file {file_uuid}")
+        raise HTTPException(status_code=500, detail="Failed to generate subtitles.") from e
 
 
 @router.get("/{file_uuid}/subtitles/validate", response_model=SubtitleValidationResult)
@@ -185,10 +189,11 @@ async def validate_subtitles(
             total_duration=float(total_duration),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to validate subtitles: {str(e)}"
-        ) from e
+        logger.exception(f"Failed to validate subtitles for file {file_uuid}")
+        raise HTTPException(status_code=500, detail="Failed to validate subtitles.") from e
 
 
 class BulkExportPrepareRequest(BaseModel):

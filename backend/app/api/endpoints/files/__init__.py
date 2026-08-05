@@ -598,7 +598,7 @@ def get_media_file_stream_url(
             "is_public": getattr(db_file, "is_public", False),
         }
     except Exception as e:
-        logger.error(f"Error generating presigned URL for file {file_uuid}: {e}")
+        logger.exception(f"Error generating presigned URL for file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating streaming URL: {str(e)}",
@@ -692,7 +692,10 @@ def _ensure_prepare_enqueued(db_file: MediaFile, user_id: int, mode: str) -> Non
     try:
         first = get_redis().set(guard_key, "1", nx=True, ex=900)
     except Exception:
-        first = True  # Redis hiccup → don't block the download
+        # The Redis key is only a duplicate-dispatch guard; losing it costs one
+        # redundant prepare task, whereas failing here would block the download.
+        logger.exception("Download-prepare dedup guard unavailable; dispatching anyway")
+        first = True
     if first:
         prepare_media_download_task.delay(file_id=db_file.id, user_id=user_id, mode=mode)
 
@@ -1021,7 +1024,7 @@ def clear_video_cache(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error clearing video cache for file {file_id}: {e}")
+        logger.exception(f"Error clearing video cache for file {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error clearing video cache",
@@ -1084,7 +1087,7 @@ def refresh_analytics(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error refreshing analytics for file {file_id}: {e}")
+        logger.exception(f"Error refreshing analytics for file {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error refreshing analytics",

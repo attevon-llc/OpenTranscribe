@@ -75,7 +75,7 @@ def list_clusters(
             search=search,
         )
     except Exception as e:
-        logger.error("Error listing clusters: %s", e)
+        logger.exception("Error listing clusters: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
@@ -115,7 +115,7 @@ def trigger_recluster(
             "message": "Re-clustering started in background",
         }
     except Exception as e:
-        logger.error("Error triggering recluster: %s", e)
+        logger.exception("Error triggering recluster: %s", e)
         raise HTTPException(status_code=500, detail="Failed to start re-clustering") from e
 
 
@@ -344,7 +344,7 @@ def update_cluster(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Error updating cluster: %s", e)
+        logger.exception("Error updating cluster: %s", e)
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
@@ -386,7 +386,7 @@ def delete_cluster(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Error deleting cluster: %s", e)
+        logger.exception("Error deleting cluster: %s", e)
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error") from e
 

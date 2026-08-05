@@ -105,7 +105,7 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
             detail="Thumbnail not found in storage",
         ) from e
     except Exception as e:
-        logger.error(f"Error retrieving thumbnail: {e}")
+        logger.exception(f"Error retrieving thumbnail: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving thumbnail: {str(e)}",

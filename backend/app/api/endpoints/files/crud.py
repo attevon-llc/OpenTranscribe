@@ -109,7 +109,7 @@ def get_file_tags(db: Session, file_id: int) -> list[str]:
         tags = db.query(Tag.name).join(FileTag).filter(FileTag.media_file_id == file_id).all()
         return [tag[0] for tag in tags]
     except Exception as tag_error:
-        logger.error(f"Error getting tags: {tag_error}")
+        logger.exception(f"Error getting tags: {tag_error}")
         db.rollback()
         return []
 
@@ -139,7 +139,7 @@ def get_file_collections(db: Session, file_id: int, user_id: int) -> list[dict]:
             for col in collection_objs
         ]
     except Exception as collection_error:
-        logger.error(f"Error getting collections: {collection_error}")
+        logger.exception(f"Error getting collections: {collection_error}")
         db.rollback()
         return []
 
@@ -733,7 +733,7 @@ def get_media_file_detail(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in get_media_file_detail: {e}")
+        logger.exception(f"Error in get_media_file_detail: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving media file: {str(e)}",

@@ -415,7 +415,7 @@ def trigger_reindex(
                     )
                     indexed_uuids = {b["key"] for b in buckets}
             except Exception as e:
-                logger.error(f"Error querying indexed files: {e}")
+                logger.exception(f"Error querying indexed files: {e}")
 
         # Compute the difference: files that need indexing
         pending_uuids = list(all_uuids - indexed_uuids)
@@ -568,7 +568,7 @@ def reindex_status(
             indexed_files = aggs.get("unique_files", {}).get("value", 0)
             last_indexed_at = aggs.get("last_indexed", {}).get("value_as_string")
         except Exception as e:
-            logger.error(f"Error checking index status: {e}")
+            logger.exception(f"Error checking index status: {e}")
 
     # Check if a reindex task is actively running for this user
     in_progress = _check_reindex_task_active(current_user.id)
@@ -729,7 +729,7 @@ def repair_indices(
                     else:
                         results[idx] = "failed"
                 except Exception as e:
-                    logger.error(f"Failed to rebuild speakers index: {e}")
+                    logger.exception(f"Failed to rebuild speakers index: {e}")
                     results[idx] = "failed"
             else:
                 repaired = _repair_index(idx)

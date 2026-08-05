@@ -304,7 +304,7 @@ def apply_transcript_search_filter(
             query = query.filter(MediaFile.uuid.in_(file_uuids))
 
     except Exception as e:
-        logger.error(f"OpenSearch transcript search failed: {e}")
+        logger.exception(f"OpenSearch transcript search failed: {e}")
         # Degrade gracefully — skip filter rather than error the whole request
 
     return query

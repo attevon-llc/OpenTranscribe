@@ -574,6 +574,9 @@ def test_watch_source(
         with create_client(source) as client:
             ok, message = client.test_connection()
     except Exception as e:  # noqa: BLE001
+        # This endpoint's whole purpose is to report whether the connection
+        # works, so any failure is a successful *test* with a negative result.
+        logger.exception(f"Connection test failed for watch source {source_uuid}")
         return ConnectionTestResponse(success=False, message=str(e))
     return ConnectionTestResponse(
         success=ok, message=message, latency_ms=round((time.perf_counter() - started) * 1000, 1)

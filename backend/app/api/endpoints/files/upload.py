@@ -170,7 +170,7 @@ def create_media_file_record(
         return db_file
 
     except Exception as e:
-        logger.error(f"Error creating MediaFile: {e}")
+        logger.exception(f"Error creating MediaFile: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating media file record: {str(e)}",

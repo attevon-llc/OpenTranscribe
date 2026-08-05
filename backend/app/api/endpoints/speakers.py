@@ -718,7 +718,7 @@ def cleanup_orphaned_embeddings(
             "message": f"Cleaned up {deleted_count} orphaned speaker embeddings",
         }
     except Exception as e:
-        logger.error(f"Error during cleanup: {e}")
+        logger.exception(f"Error during cleanup: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -858,6 +858,9 @@ def debug_cross_media_data(
                     )
 
         except Exception as e:
+            # Diagnostic endpoint: the OpenSearch section is optional, and the
+            # error is surfaced in the payload rather than failing the report.
+            logger.exception("OpenSearch section of the speaker debug report failed")
             debug_info["opensearch_error"] = str(e)
 
         # Add summary analysis
@@ -872,7 +875,7 @@ def debug_cross_media_data(
         return debug_info
 
     except Exception as e:
-        logger.error(f"Error in debug endpoint: {e}")
+        logger.exception(f"Error in debug endpoint: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -983,7 +986,7 @@ def debug_cross_media_by_name(
         return results
 
     except Exception as e:
-        logger.error(f"Error in cross-media-by-name debug endpoint: {e}")
+        logger.exception(f"Error in cross-media-by-name debug endpoint: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -1041,7 +1044,7 @@ def get_speaker_cross_media_occurrences(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting cross-media occurrences: {e}")
+        logger.exception(f"Error getting cross-media occurrences: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -1083,7 +1086,7 @@ def verify_speaker_identification(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error verifying speaker: {e}")
+        logger.exception(f"Error verifying speaker: {e}")
         db.rollback()
         raise ErrorHandler.internal_error() from e
 
@@ -1302,7 +1305,7 @@ def _handle_profile_embedding_updates(
                 )
 
     except Exception as e:
-        logger.error(f"Error updating profile embeddings for speaker {speaker_id}: {e}")
+        logger.exception(f"Error updating profile embeddings for speaker {speaker_id}: {e}")
         # Don't fail the operation if embedding update fails
 
 
@@ -1311,7 +1314,7 @@ def _update_opensearch_speaker_name(speaker_uuid: str, display_name: str) -> Non
     try:
         update_speaker_display_name(speaker_uuid, display_name)
     except Exception as e:
-        logger.error(f"Failed to update speaker display name in OpenSearch: {e}")
+        logger.exception(f"Failed to update speaker display name in OpenSearch: {e}")
 
 
 def _handle_speaker_labeling_workflow(
@@ -1348,7 +1351,7 @@ def _clear_video_cache_for_speaker(db: Session, media_file_id: int) -> None:
         video_processing_service = VideoProcessingService(minio_service)
         video_processing_service.clear_cache_for_media_file(db, media_file_id)
     except Exception as e:
-        logger.error(f"Warning: Failed to clear video cache after speaker update: {e}")
+        logger.exception(f"Warning: Failed to clear video cache after speaker update: {e}")
 
 
 def _handle_update_profile_action(
@@ -1740,7 +1743,7 @@ def _accept_speaker_profile_match(
                 f"Failed to update profile {profile_id} embedding for speaker {speaker_id}"
             )
     except Exception as e:
-        logger.error(f"Error updating profile embedding: {e}")
+        logger.exception(f"Error updating profile embedding: {e}")
 
     return {
         "status": "accepted",
@@ -1778,7 +1781,7 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
                     f"Failed to update profile {old_profile_id} embedding after removing speaker {speaker_id}"
                 )
         except Exception as e:
-            logger.error(f"Error updating profile embedding after rejection: {e}")
+            logger.exception(f"Error updating profile embedding after rejection: {e}")
 
     return {
         "status": "rejected",
@@ -1836,7 +1839,7 @@ def _create_new_speaker_profile(
                 f"Failed to update new profile {new_profile.id} embedding for speaker {speaker_id}"
             )
     except Exception as e:
-        logger.error(f"Error updating new profile embedding: {e}")
+        logger.exception(f"Error updating new profile embedding: {e}")
 
     return {
         "status": "created_and_assigned",
@@ -1942,7 +1945,7 @@ def _merge_speaker_embeddings(source_speaker_uuid: str, target_speaker: Speaker)
         else:
             logger.warning("Could not retrieve embeddings for speaker merge")
     except Exception as e:
-        logger.error(f"Error averaging speaker embeddings during merge: {e}")
+        logger.exception(f"Error averaging speaker embeddings during merge: {e}")
 
 
 def _clear_speaker_video_cache(db: Session, affected_media_files: set[int]) -> None:
@@ -1957,7 +1960,7 @@ def _clear_speaker_video_cache(db: Session, affected_media_files: set[int]) -> N
         for media_file_id in affected_media_files:
             video_processing_service.clear_cache_for_media_file(db, media_file_id)
     except Exception as e:
-        logger.error(f"Warning: Failed to clear video cache after speaker merge: {e}")
+        logger.exception(f"Warning: Failed to clear video cache after speaker merge: {e}")
 
 
 def _update_opensearch_speaker_merge(source_speaker_uuid: str, target_speaker_uuid: str) -> None:
@@ -1970,7 +1973,7 @@ def _update_opensearch_speaker_merge(source_speaker_uuid: str, target_speaker_uu
             f"Merged speaker embeddings in OpenSearch: {source_speaker_uuid} -> {target_speaker_uuid}"
         )
     except Exception as e:
-        logger.error(f"Error merging speaker embeddings in OpenSearch: {e}")
+        logger.exception(f"Error merging speaker embeddings in OpenSearch: {e}")
 
 
 def _refresh_analytics_after_merge(db: Session, affected_media_files: set[int]) -> None:
@@ -1986,7 +1989,7 @@ def _refresh_analytics_after_merge(db: Session, affected_media_files: set[int]) 
             else:
                 logger.warning(f"Failed to refresh analytics for media file {media_file_id}")
     except Exception as e:
-        logger.error(f"Error refreshing analytics after speaker merge: {e}")
+        logger.exception(f"Error refreshing analytics after speaker merge: {e}")
 
 
 def _update_profile_embeddings_after_merge(
@@ -2016,7 +2019,7 @@ def _update_profile_embeddings_after_merge(
             logger.info(f"Updated target profile {target_profile_id} embedding after speaker merge")
 
     except Exception as e:
-        logger.error(f"Error updating profile embeddings after speaker merge: {e}")
+        logger.exception(f"Error updating profile embeddings after speaker merge: {e}")
 
 
 # --- Helper functions for get_speaker_cross_media_occurrences ---

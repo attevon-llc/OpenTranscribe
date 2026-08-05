@@ -122,6 +122,9 @@ async def get_migration_status(
 
             status["consistency_status"] = get_embedding_consistency_status()
         except Exception:
+            # Optional Redis-backed enrichment of an otherwise complete status
+            # payload — a missing sub-field must not fail the whole endpoint.
+            logger.exception("Could not read embedding consistency status")
             status["consistency_status"] = None
 
         return status

@@ -213,7 +213,9 @@ def test_scope_hash_is_order_independent():
     from app.services.chat import retrieval_cache
 
     assert retrieval_cache.scope_hash(["b", "a"]) == retrieval_cache.scope_hash(["a", "b"])
-    assert retrieval_cache.scope_hash(None) == "all"
+    # "all accessible" is stable and distinct from any explicit selection.
+    assert retrieval_cache.scope_hash(None) == retrieval_cache.scope_hash(None)
+    assert retrieval_cache.scope_hash(None) != retrieval_cache.scope_hash(["a"])
 
 
 # ---------------------------------------------------------------------------
@@ -538,3 +540,69 @@ def test_semantic_cache_ignores_entries_from_an_older_corpus():
             )
             is None
         )
+
+
+# ---------------------------------------------------------------------------
+# Speaker scoping — the transcript-native filter
+# ---------------------------------------------------------------------------
+
+
+def test_speaker_filter_reaches_opensearch():
+    """Chunks are speaker turns, so this filter is exact 'only their words'."""
+    client = MagicMock()
+    client.search.return_value = {"hits": {"hits": []}}
+    with patch("app.services.search.chunk_retrieval.get_opensearch_client", return_value=client):
+        retrieve_chunks("q", user_id=1, speakers=["Dana", "Ravi"], search_mode="keyword")
+
+    filters = client.search.call_args.kwargs["body"]["query"]["bool"]["filter"]
+    assert {"terms": {"speaker": ["Dana", "Ravi"]}} in filters
+
+
+def test_no_speaker_filter_when_unset():
+    client = MagicMock()
+    client.search.return_value = {"hits": {"hits": []}}
+    with patch("app.services.search.chunk_retrieval.get_opensearch_client", return_value=client):
+        retrieve_chunks("q", user_id=1, speakers=[], search_mode="keyword")
+
+    filters = client.search.call_args.kwargs["body"]["query"]["bool"]["filter"]
+    assert not any("speaker" in f.get("terms", {}) for f in filters)
+
+
+def test_speakers_are_part_of_the_cache_identity():
+    """Same question, different speaker MUST NOT reuse the other's passages."""
+    from app.services.chat import retrieval_cache
+
+    dana = retrieval_cache.scope_hash(None, ["Dana"])
+    ravi = retrieval_cache.scope_hash(None, ["Ravi"])
+    nobody = retrieval_cache.scope_hash(None, [])
+    assert len({dana, ravi, nobody}) == 3
+
+
+def test_speaker_scope_hash_is_order_independent():
+    from app.services.chat import retrieval_cache
+
+    assert retrieval_cache.scope_hash(None, ["b", "a"]) == retrieval_cache.scope_hash(
+        None, ["a", "b"]
+    )
+
+
+def test_speaker_only_scope_still_searches_all_recordings():
+    """'Everything Dana said, anywhere' is a valid scope."""
+    from app.schemas.chat import ChatScope
+
+    scope = ChatScope(speakers=["Dana"])
+    # Speakers deliberately don't make the RECORDING scope non-empty, so file
+    # resolution still yields "all accessible".
+    assert scope.is_empty is True
+    assert scope.speakers == ["Dana"]
+
+
+def test_speaker_scope_is_length_validated():
+    from pydantic import ValidationError
+
+    from app.schemas.chat import ChatScope
+
+    with pytest.raises(ValidationError):
+        ChatScope(speakers=[""])
+    with pytest.raises(ValidationError):
+        ChatScope(speakers=["x" * 201])

@@ -31,13 +31,32 @@ that were promised and never closed.
 The bar above the composer always shows what the conversation is grounded in.
 By default it is **All transcripts** — everything you can access.
 
-To narrow it, use **Add context**, which offers three ways to select:
+To narrow it, use **Add context**, which offers four ways to select:
 
 | Tab | Use when |
 |---|---|
 | **Recordings** | You know the specific files. |
 | **Collections** | You want a whole project or client. Membership is resolved at query time, so recordings added to the collection later are automatically in scope. |
 | **Tags** | You organise by topic or status rather than by folder. |
+| **Speakers** | You care about what specific people said. |
+
+### Asking about one person
+
+The **Speakers** tab is the filter with no equivalent in a general-purpose
+document chat, and it is exact rather than approximate. Transcripts are indexed
+as *speaker turns*, so one passage is one person talking — selecting a speaker
+retrieves only their words.
+
+That difference matters. Without it, "what did Dana commit to?" can be answered
+from a sentence in which someone *else* mentions Dana. With it, the answer can
+only come from Dana's own turns.
+
+Speakers are a separate axis from the other three: recordings, collections and
+tags choose *which* recordings to search, speakers choose *who* to listen to
+within them. Use them together ("what did Dana say in the Q3 calls?") or on
+their own ("everything Dana said, anywhere"). The assistant is told about an
+active speaker filter, so it says a person is out of scope rather than claiming
+they were never discussed.
 
 You can also start from the gallery: select recordings and choose **Chat with N**
 from the bulk actions menu.
@@ -65,6 +84,20 @@ prose, so a citation always points where it claims to point.
 If the excerpts do not contain the answer, the assistant is instructed to say so
 rather than guess.
 
+## Working with a conversation
+
+| Action | Where |
+|---|---|
+| **Edit a question** | Hover a question → pencil. The answer is regenerated from that point; later turns are retired, not deleted. |
+| **Regenerate** | Hover the latest answer → circular arrow. |
+| **Stop generating** | The send button becomes Stop while streaming, or press `Escape`. |
+| **Copy** | Hover any message → copy. Code blocks get their own copy button. |
+| **Export** | Download icon in the chat header — Markdown or JSON, with sources as deep links. |
+| **Rename / archive / delete** | Hover a conversation in the sidebar. Archived chats stay available under *Show archived*. |
+
+Keyboard shortcuts follow the usual conventions: `Cmd/Ctrl+Shift+O` starts a new
+chat, `Cmd/Ctrl+/` focuses the composer, and `Escape` stops generation.
+
 ## Chat controls
 
 The gear icon in the chat header opens per-conversation settings:
@@ -76,6 +109,9 @@ The gear icon in the chat header opens per-conversation settings:
   (for example, *"answer as a concise meeting summary, action items last"*).
 - **Creativity** — lower values stay closer to what was actually said.
 - **Retrieval mode** — Hybrid (default), Meaning, or Exact words.
+- **Model** — pin a different AI provider or model for this conversation only.
+  Switching to one with a smaller context window warns first, since it silently
+  changes how much of the conversation the model can see.
 
 Account-wide defaults for new conversations live in **Settings → Chat**. Any
 individual conversation can override them.

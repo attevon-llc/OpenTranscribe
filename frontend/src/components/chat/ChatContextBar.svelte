@@ -27,6 +27,7 @@
   $: fileCount = scope?.file_uuids?.length ?? 0;
   $: collectionCount = scope?.collection_uuids?.length ?? 0;
   $: tagCount = scope?.tag_names?.length ?? 0;
+  $: speakerNames = scope?.speakers ?? [];
 </script>
 
 <div class="context-bar" data-testid="chat-context-bar">
@@ -77,6 +78,26 @@
     >
       {$t('chat.context.clearAll')}
     </button>
+  {/if}
+
+  {#if useContext && speakerNames.length > 0}
+    <span class="chip chip-speaker" data-testid="chat-scope-speakers">
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        aria-hidden="true"
+      >
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+      {speakerNames.length === 1
+        ? speakerNames[0]
+        : $t('chat.context.speakersCount', { count: speakerNames.length })}
+    </span>
   {/if}
 
   {#if useContext && estimate && estimate.warning_level !== 'ok'}
@@ -146,6 +167,16 @@
     background-color: rgba(var(--warning-color-rgb, 255, 193, 7), 0.12);
     color: var(--text-color);
     font-weight: 500;
+  }
+
+  .chip-speaker {
+    border-color: rgba(var(--primary-color-rgb), 0.35);
+    background-color: rgba(var(--primary-color-rgb), 0.08);
+    color: var(--primary-color);
+    font-weight: 500;
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .chip-estimate {

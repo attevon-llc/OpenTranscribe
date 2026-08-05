@@ -165,6 +165,7 @@ def retrieve_chunks(
     user_id: int,
     organization_id: int | None = None,
     file_uuids: list[str] | None = None,
+    speakers: list[str] | None = None,
     size: int = 48,
     search_mode: str = "hybrid",
 ) -> list[ChunkHit]:
@@ -176,6 +177,8 @@ def retrieve_chunks(
         organization_id: Active tenant, or None for personal scope.
         file_uuids: Resolved scope. ``None`` means every accessible transcript;
             an empty list means nothing matches (a scope that resolved to no files).
+        speakers: Restrict to chunks spoken by these display names. Exact, because
+            chunks are speaker turns — one chunk is one person talking.
         size: Candidate pool size to return before reranking.
         search_mode: ``hybrid`` (BM25 + vector), ``semantic``, or ``keyword``.
 
@@ -198,7 +201,7 @@ def retrieve_chunks(
     service = HybridSearchService()
     filters = service._build_filters(
         user_id,
-        None,
+        speakers or None,
         None,
         None,
         None,
@@ -225,11 +228,12 @@ def retrieve_chunks(
     hits = response.get("hits", {}).get("hits", [])
     chunks = [chunk for chunk in (_hit_to_chunk(h) for h in hits) if chunk is not None]
     logger.info(
-        "Chat retrieval: %d chunks (mode=%s, neural=%s, scope=%s files)",
+        "Chat retrieval: %d chunks (mode=%s, neural=%s, scope=%s files, speakers=%s)",
         len(chunks),
         search_mode,
         bool(model_id),
         "all" if file_uuids is None else len(file_uuids),
+        len(speakers) if speakers else "any",
     )
     return chunks
 

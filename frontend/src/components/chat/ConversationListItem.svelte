@@ -13,11 +13,14 @@
 
   export let conversation: ConversationSummary;
   export let active = false;
+  /** Viewing the archived list — the archive action becomes restore. */
+  export let showArchived = false;
 
   const dispatch = createEventDispatcher<{
     select: string;
     rename: { uuid: string; title: string };
     delete: string;
+    archive: string;
   }>();
 
   let editing = false;
@@ -113,6 +116,32 @@
         >
           <path d="M12 20h9" />
           <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="icon-btn"
+        on:click|stopPropagation={() => dispatch('archive', conversation.uuid)}
+        title={showArchived
+          ? $t('chat.conversation.restore')
+          : $t('chat.conversation.archive')}
+        aria-label={showArchived
+          ? $t('chat.conversation.restore')
+          : $t('chat.conversation.archive')}
+        data-testid="chat-archive"
+      >
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <polyline points="21 8 21 21 3 21 3 8" />
+          <rect x="1" y="3" width="22" height="5" />
+          <line x1="10" y1="12" x2="14" y2="12" />
         </svg>
       </button>
       <button

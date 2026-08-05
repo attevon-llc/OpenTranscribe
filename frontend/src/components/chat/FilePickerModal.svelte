@@ -17,6 +17,7 @@
   import { emptyScope, type ChatScope, type ContextEstimate } from '$lib/types/chat';
   import PickerCollectionsTab from './picker/PickerCollectionsTab.svelte';
   import PickerFilesTab from './picker/PickerFilesTab.svelte';
+  import PickerSpeakersTab from './picker/PickerSpeakersTab.svelte';
   import PickerTagsTab from './picker/PickerTagsTab.svelte';
 
   export let isOpen = false;
@@ -35,11 +36,15 @@
       file_uuids: [...(scope?.file_uuids ?? [])],
       collection_uuids: [...(scope?.collection_uuids ?? [])],
       tag_names: [...(scope?.tag_names ?? [])],
+      speakers: [...(scope?.speakers ?? [])],
     };
   }
 
   $: totalSelected =
-    draft.file_uuids.length + draft.collection_uuids.length + draft.tag_names.length;
+    draft.file_uuids.length +
+    draft.collection_uuids.length +
+    draft.tag_names.length +
+    draft.speakers.length;
 
   $: tabs = [
     { id: 'files', label: $t('chat.picker.tabFiles'), badge: draft.file_uuids.length || null },
@@ -49,6 +54,11 @@
       badge: draft.collection_uuids.length || null,
     },
     { id: 'tags', label: $t('chat.picker.tabTags'), badge: draft.tag_names.length || null },
+    {
+      id: 'speakers',
+      label: $t('chat.picker.tabSpeakers'),
+      badge: draft.speakers.length || null,
+    },
   ];
 
   /** Debounced so dragging through a checkbox list doesn't spam the estimator. */
@@ -76,6 +86,12 @@
   function updateTags(next: string[]): void {
     draft = { ...draft, tag_names: next };
     scheduleEstimate();
+  }
+
+  function updateSpeakers(next: string[]): void {
+    // Speakers narrow within the chosen recordings rather than changing which
+    // recordings are searched, so the file-count estimate is unaffected.
+    draft = { ...draft, speakers: next };
   }
 
   function clearAll(): void {
@@ -107,8 +123,13 @@
           selected={draft.collection_uuids}
           on:change={(e) => updateCollections(e.detail)}
         />
-      {:else}
+      {:else if activeTab === 'tags'}
         <PickerTagsTab selected={draft.tag_names} on:change={(e) => updateTags(e.detail)} />
+      {:else}
+        <PickerSpeakersTab
+          selected={draft.speakers}
+          on:change={(e) => updateSpeakers(e.detail)}
+        />
       {/if}
     </div>
 

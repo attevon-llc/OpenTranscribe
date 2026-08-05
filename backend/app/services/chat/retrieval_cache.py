@@ -78,11 +78,16 @@ def bump_corpus_version() -> None:
         logger.debug(f"Chat corpus version bump failed: {exc}")
 
 
-def scope_hash(file_uuids: list[str] | None) -> str:
-    """Stable digest of a resolved scope (``None`` = all accessible)."""
-    if file_uuids is None:
-        return "all"
-    return hashlib.sha256(",".join(sorted(file_uuids)).encode()).hexdigest()[:16]
+def scope_hash(file_uuids: list[str] | None, speakers: list[str] | None = None) -> str:
+    """Stable digest of a resolved scope (``None`` files = all accessible).
+
+    Speakers are part of the scope identity: without them, "what did Dana say
+    about pricing" and "what did Ravi say about pricing" would share a cache
+    entry and one would be answered with the other's passages.
+    """
+    files_part = "all" if file_uuids is None else ",".join(sorted(file_uuids))
+    speakers_part = ",".join(sorted(speakers)) if speakers else ""
+    return hashlib.sha256(f"{files_part}|{speakers_part}".encode()).hexdigest()[:16]
 
 
 def cache_key(

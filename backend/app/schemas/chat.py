@@ -40,27 +40,40 @@ def _validate_uuid_list(values: list[str]) -> list[str]:
 
 
 class ChatScope(BaseModel):
-    """Which transcripts a conversation may retrieve from (empty = all accessible)."""
+    """Which transcripts a conversation may retrieve from (empty = all accessible).
+
+    ``speakers`` is a different axis from the other three: files, collections and
+    tags choose WHICH RECORDINGS to search, while speakers narrow to WHO WAS
+    TALKING within them. Because chunks are speaker turns, a speaker filter is
+    exact — "what did Dana say about pricing" retrieves only Dana's words.
+    """
 
     file_uuids: list[str] = Field(default_factory=list, max_length=100)
     collection_uuids: list[str] = Field(default_factory=list, max_length=20)
     tag_names: list[str] = Field(default_factory=list, max_length=20)
+    speakers: list[str] = Field(default_factory=list, max_length=20)
 
     @field_validator("file_uuids", "collection_uuids")
     @classmethod
     def _check_uuids(cls, v: list[str]) -> list[str]:
         return _validate_uuid_list(v)
 
-    @field_validator("tag_names")
+    @field_validator("tag_names", "speakers")
     @classmethod
-    def _check_tags(cls, v: list[str]) -> list[str]:
+    def _check_names(cls, v: list[str]) -> list[str]:
         for name in v:
-            if not name.strip() or len(name) > 100:
-                raise ValueError("Tag names must be 1-100 characters")
+            if not name.strip() or len(name) > 200:
+                raise ValueError("Names must be 1-200 characters")
         return v
 
     @property
     def is_empty(self) -> bool:
+        """Whether the RECORDING scope is unset (speakers are a separate axis).
+
+        Speakers deliberately do not count here: "everything Dana said, across
+        all my recordings" is a valid and useful scope, and it still resolves
+        the file set to "all accessible".
+        """
         return not (self.file_uuids or self.collection_uuids or self.tag_names)
 
 

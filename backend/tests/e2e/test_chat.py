@@ -21,6 +21,7 @@ here is deleted in the same test, and no transcript is modified.
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 import requests
@@ -467,3 +468,143 @@ def test_chat_settings_section_saves(gallery_page: Page):
         pytest.skip("Settings modal could not be opened programmatically in this build")
 
     expect(section).to_be_visible(timeout=15_000)
+
+
+# ---------------------------------------------------------------------------
+# Speaker scoping — the transcript-native filter
+# ---------------------------------------------------------------------------
+
+
+def test_speaker_tab_scopes_the_conversation(
+    gallery_page: Page, api_session: requests.Session, cleanup_conversations: list[str]
+):
+    """Select a speaker and the conversation shows a speaker chip."""
+    response = api_session.get(
+        f"{BACKEND_URL}/api/speakers", params={"for_filter": "true"}, timeout=20
+    )
+    named = [s for s in (response.json() if response.ok else []) if s.get("display_name")]
+    if not named:
+        pytest.skip("No named speakers — label a speaker on a transcript first")
+
+    _open_chat(gallery_page)
+    gallery_page.locator('[data-testid="chat-add-context"]').click()
+
+    gallery_page.get_by_role("tab", name=re.compile("speaker", re.I)).click()
+    checkbox = gallery_page.locator('[data-testid="picker-speaker-checkbox"]').first
+    expect(checkbox).to_be_visible(timeout=20_000)
+    checkbox.check()
+
+    gallery_page.locator('[data-testid="picker-confirm"]').click()
+    expect(gallery_page.locator('[data-testid="chat-scope-speakers"]')).to_be_visible(
+        timeout=15_000
+    )
+
+
+# ---------------------------------------------------------------------------
+# ChatGPT-parity interactions
+# ---------------------------------------------------------------------------
+
+
+def test_edit_a_question_and_resend(
+    gallery_page: Page, api_session: requests.Session, cleanup_conversations: list[str]
+):
+    """Editing an earlier question re-answers from that point."""
+    if not _llm_configured(api_session):
+        pytest.skip("Requires a configured LLM")
+
+    _open_chat(gallery_page)
+    gallery_page.locator('[data-testid="chat-composer-input"]').fill("First question")
+    gallery_page.locator('[data-testid="chat-send"]').click()
+
+    gallery_page.wait_for_url("**/chat/*", timeout=30_000)
+    cleanup_conversations.append(gallery_page.url.rstrip("/").split("/")[-1])
+    expect(gallery_page.locator('[data-testid="chat-send"]')).to_be_visible(
+        timeout=STREAM_TIMEOUT_MS
+    )
+
+    user_message = gallery_page.locator('[data-testid="chat-message-user"]').first
+    user_message.hover()
+    user_message.locator('[data-testid="chat-edit"]').click()
+
+    editor = gallery_page.locator('[data-testid="chat-edit-input"]')
+    expect(editor).to_be_visible()
+    editor.fill("Corrected question about the recordings")
+    gallery_page.get_by_role("button", name=re.compile("resend", re.I)).click()
+
+    expect(gallery_page.locator('[data-testid="chat-message-user"]').first).to_contain_text(
+        "Corrected question", timeout=30_000
+    )
+
+
+def test_export_downloads_the_conversation(gallery_page: Page, api_session: requests.Session):
+    """Export produces a Markdown file the user can keep."""
+    response = api_session.post(
+        f"{BACKEND_URL}/api/chat/conversations",
+        json={"title": "E2E export"},
+        timeout=20,
+    )
+    assert response.status_code == 201, response.text
+    uuid = response.json()["uuid"]
+
+    try:
+        gallery_page.goto(f"{FRONTEND_URL}/chat/{uuid}")
+        gallery_page.wait_for_selector('[data-testid="chat-composer-input"]', timeout=30_000)
+
+        with gallery_page.expect_download(timeout=20_000) as download_info:
+            gallery_page.locator('[data-testid="chat-export"]').click()
+
+        download = download_info.value
+        assert download.suggested_filename.endswith(".md")
+    finally:
+        api_session.delete(f"{BACKEND_URL}/api/chat/conversations/{uuid}", timeout=15)
+
+
+def test_archive_and_restore_a_conversation(gallery_page: Page, api_session: requests.Session):
+    """Archiving hides a conversation; the archived view brings it back."""
+    response = api_session.post(
+        f"{BACKEND_URL}/api/chat/conversations",
+        json={"title": "E2E archive target"},
+        timeout=20,
+    )
+    assert response.status_code == 201, response.text
+    uuid = response.json()["uuid"]
+
+    try:
+        _open_chat(gallery_page)
+        sidebar = gallery_page.locator('[data-testid="chat-sidebar"]')
+        item = gallery_page.locator('[data-testid="chat-conversation-item"]').filter(
+            has_text="E2E archive target"
+        )
+        expect(item).to_be_visible(timeout=15_000)
+
+        item.hover()
+        item.locator('[data-testid="chat-archive"]').click()
+        expect(sidebar.get_by_text("E2E archive target")).to_have_count(0, timeout=15_000)
+
+        # It is not gone — it moved.
+        gallery_page.locator('[data-testid="chat-toggle-archived"]').click()
+        expect(sidebar.get_by_text("E2E archive target")).to_be_visible(timeout=15_000)
+    finally:
+        api_session.delete(f"{BACKEND_URL}/api/chat/conversations/{uuid}", timeout=15)
+
+
+def test_escape_stops_generation(
+    gallery_page: Page, api_session: requests.Session, cleanup_conversations: list[str]
+):
+    """Escape is the conventional stop key and must reach the stream."""
+    if not _llm_configured(api_session):
+        pytest.skip("Requires a configured LLM")
+
+    _open_chat(gallery_page)
+    gallery_page.locator('[data-testid="chat-composer-input"]').fill(
+        "Write an extremely long and detailed summary."
+    )
+    gallery_page.locator('[data-testid="chat-send"]').click()
+
+    gallery_page.wait_for_url("**/chat/*", timeout=30_000)
+    cleanup_conversations.append(gallery_page.url.rstrip("/").split("/")[-1])
+
+    expect(gallery_page.locator('[data-testid="chat-stop"]')).to_be_visible(timeout=30_000)
+    gallery_page.keyboard.press("Escape")
+
+    expect(gallery_page.locator('[data-testid="chat-send"]')).to_be_visible(timeout=20_000)

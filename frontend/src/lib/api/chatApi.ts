@@ -98,6 +98,28 @@ export async function cancelMessage(messageUuid: string): Promise<void> {
   await axiosInstance.post(`/chat/messages/${encodeURIComponent(messageUuid)}/cancel`);
 }
 
+/**
+ * Download a conversation as Markdown or JSON.
+ *
+ * Fetched as a blob and saved client-side rather than navigating to the URL:
+ * the endpoint is cookie-authenticated and a plain link would lose the axios
+ * auth/refresh handling.
+ */
+export async function exportConversation(
+  uuid: string,
+  format: 'markdown' | 'json' = 'markdown'
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await axiosInstance.get(
+    `/chat/conversations/${encodeURIComponent(uuid)}/export`,
+    { params: { format }, responseType: 'blob' }
+  );
+
+  const disposition = String(response.headers?.['content-disposition'] ?? '');
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const filename = match?.[1] ?? `conversation.${format === 'json' ? 'json' : 'md'}`;
+  return { blob: response.data as Blob, filename };
+}
+
 export async function estimateContext(scope: ChatScope): Promise<ContextEstimate> {
   const { data } = await axiosInstance.post<ContextEstimate>('/chat/context/estimate', scope);
   return data;

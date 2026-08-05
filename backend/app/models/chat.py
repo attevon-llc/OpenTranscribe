@@ -83,12 +83,18 @@ class ChatConversation(Base):
 
     @property
     def scope(self) -> dict[str, list]:
-        """Pinned scope with all three keys present (empty lists when unset)."""
+        """Pinned scope with every key present (empty lists when unset).
+
+        Defaulting missing keys matters for forward compatibility: conversations
+        created before ``speakers`` existed have no such key in their JSONB, and
+        must still deserialize into a valid scope.
+        """
         raw = self.context or {}
         return {
             "file_uuids": list(raw.get("file_uuids") or []),
             "collection_uuids": list(raw.get("collection_uuids") or []),
             "tag_names": list(raw.get("tag_names") or []),
+            "speakers": list(raw.get("speakers") or []),
         }
 
 

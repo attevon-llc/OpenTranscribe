@@ -19,11 +19,14 @@
   export let activeId: string | null = null;
   export let loading = false;
   export let hasMore = false;
+  export let showArchived = false;
 
   const dispatch = createEventDispatcher<{
     select: string;
     rename: { uuid: string; title: string };
     delete: string;
+    archive: string;
+    toggleArchived: void;
     newChat: void;
     search: string;
     loadMore: void;
@@ -96,6 +99,17 @@
       size="sm"
       on:search={() => dispatch('search', query)}
     />
+
+    <button
+      type="button"
+      class="archive-toggle"
+      class:active={showArchived}
+      on:click={() => dispatch('toggleArchived')}
+      aria-pressed={showArchived}
+      data-testid="chat-toggle-archived"
+    >
+      {showArchived ? $t('chat.showActive') : $t('chat.showArchived')}
+    </button>
   </div>
 
   <nav class="sidebar-list" aria-label={$t('chat.title')}>
@@ -107,9 +121,11 @@
             <ConversationListItem
               {conversation}
               active={conversation.uuid === activeId}
+              {showArchived}
               on:select
               on:rename
               on:delete
+              on:archive
             />
           {/each}
         </ul>
@@ -117,7 +133,9 @@
     {/each}
 
     {#if !loading && conversations.length === 0}
-      <p class="empty">{$t('chat.emptyHistory')}</p>
+      <p class="empty">
+        {showArchived ? $t('chat.emptyArchive') : $t('chat.emptyHistory')}
+      </p>
     {/if}
 
     <div class="sentinel" bind:this={sentinel}>
@@ -169,6 +187,28 @@
 
   .new-chat-btn:hover {
     background-color: var(--button-hover);
+  }
+
+  .archive-toggle {
+    align-self: flex-start;
+    padding: 0.15rem 0.4rem;
+    margin-left: -0.4rem;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    cursor: pointer;
+  }
+
+  .archive-toggle:hover {
+    background-color: var(--button-hover);
+    color: var(--text-color);
+  }
+
+  .archive-toggle.active {
+    color: var(--primary-color);
+    font-weight: 500;
   }
 
   .sidebar-list {

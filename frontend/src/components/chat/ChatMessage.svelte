@@ -7,7 +7,7 @@
   Assistant messages go through ChatMarkdown's sanitized pipeline.
 -->
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, tick } from 'svelte';
   import { t } from '$stores/locale';
   import CopyButton from '$components/ui/CopyButton.svelte';
   import ChatMarkdown from './ChatMarkdown.svelte';
@@ -20,12 +20,55 @@
   export let isLast = false;
   export let streaming = false;
 
-  const dispatch = createEventDispatcher<{ regenerate: void; retry: void }>();
+  const dispatch = createEventDispatcher<{
+    regenerate: void;
+    retry: void;
+    edit: { uuid: string; content: string };
+  }>();
+
+  let editing = false;
+  let draft = '';
+  let editArea: HTMLTextAreaElement;
+
+  async function startEdit(): Promise<void> {
+    draft = message.content;
+    editing = true;
+    await tick();
+    editArea?.focus();
+    editArea?.select();
+  }
+
+  function submitEdit(): void {
+    const next = draft.trim();
+    editing = false;
+    if (next && next !== message.content) {
+      dispatch('edit', { uuid: message.uuid, content: next });
+    }
+  }
+
+  function handleEditKey(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      submitEdit();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      editing = false;
+    }
+  }
+
+  /** Local time, shown on hover — absolute beats "2 hours ago" when citing. */
+  function formatTimestamp(iso: string | null | undefined): string {
+    if (!iso) return '';
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+  }
 
   $: isUser = message.role === 'user';
   $: hasError = message.status === 'error';
   $: wasCancelled = message.status === 'cancelled';
   $: sources = message.citations ?? [];
+  $: timestamp = formatTimestamp(message.created_at);
+  $: canEdit = isUser && !message.pending;
 </script>
 
 <article
@@ -37,7 +80,28 @@
 >
   <div class="bubble">
     {#if isUser}
-      <p class="user-text">{message.content}</p>
+      {#if editing}
+        <div class="edit-box">
+          <textarea
+            bind:this={editArea}
+            bind:value={draft}
+            on:keydown={handleEditKey}
+            rows="3"
+            aria-label={$t('chat.message.edit')}
+            data-testid="chat-edit-input"
+          ></textarea>
+          <div class="edit-actions">
+            <button type="button" class="edit-btn primary" on:click={submitEdit}>
+              {$t('chat.message.saveAndResend')}
+            </button>
+            <button type="button" class="edit-btn" on:click={() => (editing = false)}>
+              {$t('common.cancel')}
+            </button>
+          </div>
+        </div>
+      {:else}
+        <p class="user-text">{message.content}</p>
+      {/if}
     {:else}
       {#if message.content}
         <ChatMarkdown content={message.content} {streaming} />
@@ -70,6 +134,34 @@
           label={$t('chat.message.copy')}
           copiedLabel={$t('chat.message.copied')}
         />
+      {/if}
+
+      {#if canEdit && !editing}
+        <button
+          type="button"
+          class="action-btn"
+          on:click={startEdit}
+          title={$t('chat.message.edit')}
+          aria-label={$t('chat.message.edit')}
+          data-testid="chat-edit"
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        </button>
+      {/if}
+
+      {#if timestamp}
+        <span class="timestamp" title={timestamp}>{timestamp}</span>
       {/if}
 
       {#if !isUser && isLast && !hasError}
@@ -193,6 +285,63 @@
   .action-btn:hover {
     background-color: var(--button-hover);
     color: var(--text-color);
+  }
+
+  .edit-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: min(32rem, 70vw);
+  }
+
+  .edit-box textarea {
+    width: 100%;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--primary-color);
+    border-radius: 10px;
+    background-color: var(--card-background);
+    color: var(--text-color);
+    font-family: inherit;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    resize: vertical;
+  }
+
+  .edit-box textarea:focus {
+    outline: none;
+  }
+
+  .edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.35rem;
+  }
+
+  .edit-btn {
+    padding: 0.25rem 0.7rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--card-background);
+    color: var(--text-color);
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+
+  .edit-btn:hover {
+    background-color: var(--button-hover);
+  }
+
+  .edit-btn.primary {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    font-weight: 500;
+  }
+
+  .timestamp {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    padding: 0 0.3rem;
+    font-variant-numeric: tabular-nums;
   }
 
   .sr-only {

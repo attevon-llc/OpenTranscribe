@@ -13,17 +13,26 @@ export type MessageRole = 'user' | 'assistant';
 
 export type MessageStatus = 'streaming' | 'complete' | 'error' | 'cancelled' | 'superseded';
 
-/** Retrieval scope. All-empty means "every transcript I can access". */
+/**
+ * Retrieval scope.
+ *
+ * Files, collections and tags choose WHICH RECORDINGS to search; `speakers` is a
+ * separate axis that narrows to WHO WAS TALKING within them. Because transcript
+ * chunks are speaker turns, a speaker filter is exact — "what did Dana say about
+ * pricing" retrieves only Dana's words.
+ */
 export interface ChatScope {
   file_uuids: string[];
   collection_uuids: string[];
   tag_names: string[];
+  speakers: string[];
 }
 
 export function emptyScope(): ChatScope {
-  return { file_uuids: [], collection_uuids: [], tag_names: [] };
+  return { file_uuids: [], collection_uuids: [], tag_names: [], speakers: [] };
 }
 
+/** Whether the RECORDING scope is unset ("all transcripts"). */
 export function isScopeEmpty(scope: ChatScope | null | undefined): boolean {
   if (!scope) return true;
   return (
@@ -31,6 +40,11 @@ export function isScopeEmpty(scope: ChatScope | null | undefined): boolean {
     scope.collection_uuids.length === 0 &&
     scope.tag_names.length === 0
   );
+}
+
+/** Whether the scope narrows nothing at all — no recordings AND no speakers. */
+export function isScopeUnfiltered(scope: ChatScope | null | undefined): boolean {
+  return isScopeEmpty(scope) && !(scope?.speakers?.length ?? 0);
 }
 
 /** One transcript excerpt an answer may reference as `[n]`. */

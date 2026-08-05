@@ -20,6 +20,8 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
@@ -34,6 +36,7 @@ from app.models.chat import ROLE_USER
 from app.models.chat import STATUS_SUPERSEDED
 from app.models.chat import ChatConversation
 from app.models.chat import ChatMessage
+from app.schemas.chat import MAX_MESSAGE_CHARS
 from app.schemas.chat import ChatScope
 from app.schemas.chat import ContextEstimate
 from app.schemas.chat import MessageCreate
@@ -172,8 +175,13 @@ def _prepare_turn(
         use_context = resolve_use_context(conversation, user_defaults)
 
         file_uuids = None
+        speakers: list[str] = []
         if use_context:
-            file_uuids = resolve_scope_file_uuids(db, ctx, ChatScope(**conversation.scope))
+            scope = ChatScope(**conversation.scope)
+            file_uuids = resolve_scope_file_uuids(db, ctx, scope)
+            # Speakers filter WITHIN the resolved recordings rather than
+            # reducing them, so it is passed straight to retrieval.
+            speakers = scope.speakers
 
         assistant_uuid = str(uuid_pkg.uuid4())
         fire_before_message(
@@ -204,6 +212,7 @@ def _prepare_turn(
             use_context=use_context,
             user_system_prompt=user_defaults["system_prompt"],
             conversation_system_prompt=conv_settings.get("system_prompt"),
+            speakers=speakers,
         )
 
         return {
@@ -214,6 +223,7 @@ def _prepare_turn(
             "question": content,
             "history": history,
             "file_uuids": file_uuids,
+            "speakers": speakers,
             "settings": chat_settings,
             "use_context": use_context,
             "system_prompt": system_prompt,
@@ -302,6 +312,55 @@ async def regenerate(
     db.commit()
 
     kwargs = _prepare_turn(request, db, ctx, conversation, str(last_user.content), None)
+    return _streaming_response(kwargs, ctx.user.id)
+
+
+class MessageEdit(BaseModel):
+    """Replace a user message and re-answer from that point."""
+
+    content: str = Field(..., min_length=1, max_length=MAX_MESSAGE_CHARS)
+
+
+@router.post("/conversations/{conversation_uuid}/messages/{message_uuid}/edit")
+@limiter.limit("20/minute")
+async def edit_message(
+    request: Request,
+    conversation_uuid: str,
+    message_uuid: str,
+    body: MessageEdit,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Rewrite one of your questions and re-answer from there.
+
+    A conversation is a chain: changing an earlier question invalidates every
+    answer that followed it. Rather than delete that history (which would lose
+    the audit trail and any citations already acted on), the tail is marked
+    ``superseded`` — hidden from the thread and excluded from prompt history,
+    but still on record.
+    """
+    conversation = get_owned_conversation(db, ctx, conversation_uuid)
+
+    target = (
+        db.query(ChatMessage)
+        .filter(
+            ChatMessage.uuid == message_uuid,
+            ChatMessage.conversation_id == conversation.id,
+            ChatMessage.role == ROLE_USER,
+        )
+        .first()
+    )
+    if target is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    # Retire the edited question and everything downstream of it.
+    db.query(ChatMessage).filter(
+        ChatMessage.conversation_id == conversation.id,
+        ChatMessage.id >= target.id,
+    ).update({ChatMessage.status: STATUS_SUPERSEDED}, synchronize_session=False)
+    db.commit()
+
+    kwargs = _prepare_turn(request, db, ctx, conversation, body.content, None)
     return _streaming_response(kwargs, ctx.user.id)
 
 

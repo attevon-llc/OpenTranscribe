@@ -47,6 +47,9 @@
   $: state = $chatStore;
   $: hasMessages = state.messages.length > 0;
   $: settings = state.activeConversation?.settings ?? {};
+  $: isStreaming = ['submitting', 'retrieving', 'thinking', 'streaming'].includes(
+    state.streamStatus
+  );
 
   // Route → store. Opening a different conversation (including via back/forward)
   // loads it; landing on bare /chat resets to a fresh thread.
@@ -90,6 +93,37 @@
     // Leaving the page must not leave a stream running in the background.
     if (state.streamStatus === 'streaming') chatStore.stopGeneration();
   });
+
+  /**
+   * App-level chat shortcuts, matching what ChatGPT users already reach for.
+   *
+   * Escape only stops an in-flight generation — it must not steal the key from
+   * an open modal or an inline rename, so it checks that a stream is running.
+   */
+  function handleShortcuts(event: KeyboardEvent): void {
+    const mod = event.metaKey || event.ctrlKey;
+
+    if (mod && event.shiftKey && event.key.toLowerCase() === 'o') {
+      event.preventDefault();
+      handleNewChat();
+      return;
+    }
+
+    if (event.key === 'Escape' && isStreaming) {
+      event.preventDefault();
+      chatStore.stopGeneration();
+      return;
+    }
+
+    // Focus the composer from anywhere that isn't already a text field.
+    if (mod && event.key === '/') {
+      const tag = (event.target as HTMLElement)?.tagName;
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        event.preventDefault();
+        composer?.focus();
+      }
+    }
+  }
 
   async function handleSend(event: CustomEvent<string>): Promise<void> {
     await chatStore.sendMessage(event.detail);
@@ -173,6 +207,8 @@
   }
 </script>
 
+<svelte:window on:keydown={handleShortcuts} />
+
 <svelte:head>
   <title>{$t('chat.title')} · OpenTranscribe</title>
 </svelte:head>
@@ -189,11 +225,14 @@
         activeId={state.activeConversationId}
         loading={state.conversationsLoading}
         hasMore={state.conversations.length < state.conversationsTotal}
+        showArchived={state.showArchived}
         on:select={handleSelectConversation}
         on:newChat={handleNewChat}
         on:search={(e) => chatStore.searchConversations(e.detail)}
         on:rename={(e) => chatStore.renameConversation(e.detail.uuid, e.detail.title)}
         on:delete={(e) => chatStore.deleteConversation(e.detail)}
+        on:archive={(e) => chatStore.setArchived(e.detail, !state.showArchived)}
+        on:toggleArchived={() => chatStore.toggleArchivedView()}
         on:loadMore={() => chatStore.loadConversations()}
       />
     </div>
@@ -234,6 +273,31 @@
         <h1 class="chat-title">
           {state.activeConversation?.title || $t('chat.newChat')}
         </h1>
+
+        {#if state.activeConversationId}
+          <button
+            type="button"
+            class="gear"
+            on:click={() => chatStore.exportConversation('markdown')}
+            aria-label={$t('chat.conversation.export')}
+            title={$t('chat.conversation.export')}
+            data-testid="chat-export"
+          >
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+        {/if}
 
         <button
           type="button"
@@ -278,6 +342,7 @@
             streamingMessageId={state.streamingMessageId}
             on:regenerate={() => chatStore.regenerate()}
             on:retry={() => chatStore.regenerate()}
+            on:edit={(e) => chatStore.editMessage(e.detail.uuid, e.detail.content)}
           />
         {:else}
           <ChatEmptyState {llmAvailable} on:suggestion={handleSuggestion} />

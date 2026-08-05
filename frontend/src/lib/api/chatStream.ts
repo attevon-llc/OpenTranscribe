@@ -199,6 +199,29 @@ export async function streamChatMessage(
   );
 }
 
+/**
+ * Rewrite an earlier question and stream a fresh answer from that point.
+ *
+ * The server supersedes the edited turn and everything after it, so the reply
+ * is generated against the corrected question with the later (now invalid)
+ * exchanges excluded from history.
+ */
+export async function streamEditMessage(
+  conversationUuid: string,
+  messageUuid: string,
+  content: string,
+  onEvent: (event: ChatStreamEvent) => void,
+  signal: AbortSignal
+): Promise<void> {
+  await streamPost(
+    `/api/chat/conversations/${encodeURIComponent(conversationUuid)}/messages/` +
+      `${encodeURIComponent(messageUuid)}/edit`,
+    { content },
+    onEvent,
+    signal
+  );
+}
+
 /** Re-answer the last question in a conversation, streaming the new reply. */
 export async function streamRegenerate(
   conversationUuid: string,

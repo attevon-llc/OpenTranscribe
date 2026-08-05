@@ -102,6 +102,7 @@ def _prepare_context(
     history: list[dict[str, str]],
     settings: ChatSettings,
     file_uuids: list[str] | None,
+    speakers: list[str] | None,
     search_mode: str,
     llm,
     rewrite_enabled: bool,
@@ -130,6 +131,7 @@ def _prepare_context(
         user_id=user_id,
         organization_id=organization_id,
         file_uuids=file_uuids,
+        speakers=speakers,
         settings=settings,
         search_mode=search_mode,
     )
@@ -141,6 +143,8 @@ def _prepare_context(
     meta["reranked"] = result.reranked
     meta["cache_hit"] = result.cache_hit
     meta["files_searched"] = "all" if file_uuids is None else len(file_uuids)
+    if speakers:
+        meta["speakers_filtered"] = list(speakers)
     timings = meta.setdefault("timings_ms", {})
     timings.update(result.timings_ms)
     return masked, meta
@@ -159,6 +163,7 @@ class ChatService:
         question: str,
         history: list[dict[str, str]],
         file_uuids: list[str] | None,
+        speakers: list[str] | None,
         settings: ChatSettings,
         use_context: bool,
         system_prompt: str,
@@ -179,6 +184,7 @@ class ChatService:
             question: The user's message (already persisted by the endpoint).
             history: Prior turns, oldest first.
             file_uuids: Resolved scope; None = all accessible transcripts.
+            speakers: Restrict retrieval to these speakers' turns.
             settings: Admin-tuned RAG knobs.
             use_context: False skips retrieval entirely (pure-LLM chat).
             system_prompt: Fully layered system prompt.
@@ -230,6 +236,7 @@ class ChatService:
                             history=history,
                             settings=settings,
                             file_uuids=file_uuids,
+                            speakers=speakers,
                             search_mode=search_mode,
                             llm=llm,
                             rewrite_enabled=settings.query_rewrite_enabled,

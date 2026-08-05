@@ -45,6 +45,7 @@ def retrieve_context(
     user_id: int,
     organization_id: int | None,
     file_uuids: list[str] | None,
+    speakers: list[str] | None = None,
     settings: ChatSettings,
     search_mode: str = "hybrid",
 ) -> RetrievalResult:
@@ -55,6 +56,7 @@ def retrieve_context(
         user_id: Caller — enforced inside the OpenSearch filter.
         organization_id: Active tenant, or None for personal scope.
         file_uuids: Resolved scope; None means all accessible transcripts.
+        speakers: Restrict to these speakers' turns (None/empty = anyone).
         settings: Admin-tuned RAG knobs.
         search_mode: ``hybrid`` | ``semantic`` | ``keyword``.
 
@@ -67,7 +69,7 @@ def retrieve_context(
     result = RetrievalResult()
     started = time.monotonic()
 
-    scope_digest = retrieval_cache.scope_hash(file_uuids)
+    scope_digest = retrieval_cache.scope_hash(file_uuids, speakers)
     key = retrieval_cache.cache_key(
         user_id=user_id,
         organization_id=organization_id,
@@ -113,6 +115,7 @@ def retrieve_context(
         user_id=user_id,
         organization_id=organization_id,
         file_uuids=file_uuids,
+        speakers=speakers,
         size=settings.candidate_pool,
         search_mode=search_mode,
     )

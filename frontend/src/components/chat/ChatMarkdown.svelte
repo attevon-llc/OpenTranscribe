@@ -56,6 +56,34 @@
     }
   }
 
+  /**
+   * Copy a fenced code block.
+   *
+   * Delegated rather than rendered into the markup: the sanitized HTML is
+   * replaced wholesale on every streaming tick, so any button injected into it
+   * would be destroyed and recreated constantly. A single delegated handler on
+   * the container survives re-renders, and the button itself is drawn by CSS on
+   * the <pre> so no sanitized markup has to be trusted.
+   */
+  async function handleCopyClick(event: MouseEvent): Promise<void> {
+    const target = event.target as HTMLElement | null;
+    const pre = target?.closest?.('pre');
+    if (!pre) return;
+
+    // Only the top-right affordance area triggers a copy, so selecting text
+    // inside the block still works normally.
+    const rect = pre.getBoundingClientRect();
+    if (event.clientX < rect.right - 56 || event.clientY > rect.top + 34) return;
+
+    const code = pre.textContent ?? '';
+    if (!code.trim()) return;
+
+    const { copyToClipboard } = await import('$lib/utils/clipboard');
+    const result = await copyToClipboard(code);
+    pre.setAttribute('data-copied', result.success ? 'true' : 'false');
+    setTimeout(() => pre.removeAttribute('data-copied'), 1500);
+  }
+
   onDestroy(() => {
     if (frame !== undefined) {
       cancelAnimationFrame(frame);
@@ -64,7 +92,8 @@
   });
 </script>
 
-<div class="chat-markdown" class:streaming>
+<!-- svelte-ignore a11y-no-static-element-interactions a11y-click-events-have-key-events -->
+<div class="chat-markdown" class:streaming on:click={handleCopyClick}>
   <!-- Sanitized by renderChatMarkdown's dedicated DOMPurify profile. -->
   {@html html}
 </div>
@@ -131,12 +160,43 @@
   }
 
   .chat-markdown :global(pre) {
+    position: relative;
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 0.85rem 1rem;
     overflow-x: auto;
     margin: 0 0 0.75rem;
+  }
+
+  /* Copy affordance drawn on the block itself — see handleCopyClick for why
+     this is CSS rather than an injected button. */
+  .chat-markdown :global(pre)::before {
+    content: 'Copy';
+    position: absolute;
+    top: 0.35rem;
+    right: 0.4rem;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background-color: var(--card-background);
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-family: inherit;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    cursor: pointer;
+  }
+
+  .chat-markdown :global(pre:hover)::before {
+    opacity: 1;
+  }
+
+  .chat-markdown :global(pre[data-copied='true'])::before {
+    content: 'Copied';
+    opacity: 1;
+    color: var(--primary-color);
+    border-color: var(--primary-color);
   }
 
   .chat-markdown :global(pre code) {

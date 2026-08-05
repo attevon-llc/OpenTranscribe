@@ -15,7 +15,7 @@ import { goto } from '$app/navigation';
 
 import * as chatApi from '$lib/api/chatApi';
 import { canTransition } from '$lib/utils/chatStateMachine';
-import { streamChatMessage, streamRegenerate } from '$lib/api/chatStream';
+import { streamChatMessage, streamEditMessage, streamRegenerate } from '$lib/api/chatStream';
 import {
   emptyScope,
   type ChatMessage,
@@ -38,6 +38,8 @@ export interface ChatState {
   conversationsOffset: number;
   conversationsQuery: string;
   conversationsLoading: boolean;
+  /** Whether the sidebar is showing archived conversations. */
+  showArchived: boolean;
   activeConversationId: string | null;
   activeConversation: Conversation | null;
   messages: ChatMessage[];
@@ -57,6 +59,7 @@ const initialState: ChatState = {
   conversationsOffset: 0,
   conversationsQuery: '',
   conversationsLoading: false,
+  showArchived: false,
   activeConversationId: null,
   activeConversation: null,
   messages: [],
@@ -94,6 +97,7 @@ function createChatStore() {
         limit: CONVERSATIONS_PAGE_SIZE,
         offset,
         q: state.conversationsQuery || undefined,
+        archived: state.showArchived,
       });
       update((s) => ({
         ...s,
@@ -440,6 +444,84 @@ function createChatStore() {
           signal
         )
       );
+    },
+
+    /**
+     * Rewrite an earlier question and re-answer from there.
+     *
+     * Everything after the edited turn is dropped locally (the server marks it
+     * superseded) — a conversation is a chain, so answers that followed the old
+     * wording are no longer about anything the user asked.
+     */
+    async editMessage(messageUuid: string, content: string): Promise<void> {
+      const state = get({ subscribe });
+      const trimmed = content.trim();
+      if (!state.activeConversationId || !trimmed) return;
+      if (state.streamStatus === 'streaming' || state.streamStatus === 'submitting') return;
+
+      const index = state.messages.findIndex((m) => m.uuid === messageUuid);
+      if (index === -1) return;
+
+      setStatus('submitting');
+      const assistantLocalId = `local-assistant-${crypto.randomUUID()}`;
+      update((s) => ({
+        ...s,
+        error: null,
+        tokenUsage: null,
+        messages: [
+          ...s.messages.slice(0, index),
+          { ...s.messages[index], content: trimmed, pending: true },
+          {
+            uuid: assistantLocalId,
+            role: 'assistant',
+            content: '',
+            pending: true,
+            status: 'streaming',
+          },
+        ],
+        streamingMessageId: assistantLocalId,
+      }));
+
+      await runStream(assistantLocalId, (onEvent, signal) =>
+        streamEditMessage(state.activeConversationId!, messageUuid, trimmed, onEvent, signal)
+      );
+    },
+
+    /**
+     * Archive or restore a conversation.
+     *
+     * Either way it leaves the list currently on screen — archiving removes it
+     * from the active list, restoring removes it from the archived list — so the
+     * same optimistic removal is correct in both directions.
+     */
+    async setArchived(uuid: string, archived: boolean): Promise<void> {
+      await chatApi.updateConversation(uuid, { is_archived: archived });
+      update((s) => ({
+        ...s,
+        conversations: s.conversations.filter((c) => c.uuid !== uuid),
+        conversationsTotal: Math.max(0, s.conversationsTotal - 1),
+      }));
+    },
+
+    /** Switch the sidebar between active and archived conversations. */
+    async toggleArchivedView(): Promise<void> {
+      update((s) => ({ ...s, showArchived: !s.showArchived, conversationsOffset: 0 }));
+      await loadConversations(true);
+    },
+
+    /** Download the active conversation as Markdown or JSON. */
+    async exportConversation(format: 'markdown' | 'json' = 'markdown'): Promise<void> {
+      const uuid = get({ subscribe }).activeConversationId;
+      if (!uuid) return;
+      const { blob, filename } = await chatApi.exportConversation(uuid, format);
+      const url = URL.createObjectURL(blob);
+      const anchorEl = document.createElement('a');
+      anchorEl.href = url;
+      anchorEl.download = filename;
+      document.body.appendChild(anchorEl);
+      anchorEl.click();
+      anchorEl.remove();
+      URL.revokeObjectURL(url);
     },
 
     async regenerate(): Promise<void> {

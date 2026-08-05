@@ -245,3 +245,34 @@ def test_build_messages_respects_varied_context_windows(window):
     # 4 chars/token budgeting, generously bounded.
     assert prompt_chars <= window * 4
     assert used >= 1
+
+
+# ---------------------------------------------------------------------------
+# Speaker-scoped prompting
+# ---------------------------------------------------------------------------
+
+
+def test_speaker_filter_is_declared_to_the_model():
+    """Without this the model reports 'X wasn't discussed' when X was filtered out."""
+    prompt = build_system_prompt(use_context=True, speakers=["Dana", "Ravi"])
+    assert "Dana, Ravi" in prompt
+    assert "ONLY what these speakers said" in prompt
+    assert prompt.startswith(BASE_SYSTEM_RULES)
+
+
+def test_no_speaker_rule_without_a_filter():
+    prompt = build_system_prompt(use_context=True, speakers=[])
+    assert "ONLY what these speakers said" not in prompt
+
+
+def test_speaker_rule_is_omitted_in_no_context_mode():
+    """No transcripts means no speaker scope to describe."""
+    prompt = build_system_prompt(use_context=False, speakers=["Dana"])
+    assert prompt == NO_CONTEXT_SYSTEM_RULES
+
+
+def test_speaker_rule_sits_above_user_preferences():
+    prompt = build_system_prompt(
+        use_context=True, speakers=["Dana"], user_system_prompt="Be terse."
+    )
+    assert prompt.index("ONLY what these speakers said") < prompt.index("Be terse.")

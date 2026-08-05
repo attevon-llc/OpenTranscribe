@@ -34,7 +34,8 @@ Rules:
 4. Speech is messy: quote accurately, and do not smooth over hesitation, disagreement or uncertainty in what people said.
 5. Attribute statements to the speaker the excerpt names. Never merge different speakers into one claim.
 6. Some excerpts may contain masked spans such as [NAME] or [EMAIL] where sensitive content was removed. Treat those as genuinely unknown — never guess what was masked.
-7. Be concise and specific. Prefer concrete details, timestamps and quotes over generalities."""  # noqa: E501
+7. Be concise and specific. Prefer concrete details, timestamps and quotes over generalities.
+8. When the excerpts point somewhere obviously worth following up — an unresolved decision, a named person who was not asked about, a promised action with no outcome — end with a single short "Next:" line proposing that question. Skip it when the answer is complete."""  # noqa: E501
 
 NO_CONTEXT_SYSTEM_RULES = """You are OpenTranscribe's assistant, currently in direct chat mode with no transcript context attached.
 
@@ -83,11 +84,19 @@ def _clock(seconds: float) -> str:
     return f"{minutes:d}:{secs:02d}"
 
 
+SPEAKER_SCOPE_RULE = (
+    "\n\nSCOPE: the excerpts below contain ONLY what these speakers said: {names}. "
+    "Answer strictly about them. If the user asks what someone else said, say that "
+    "the current speaker filter excludes that person rather than guessing."
+)
+
+
 def build_system_prompt(
     *,
     use_context: bool,
     user_system_prompt: str | None = None,
     conversation_system_prompt: str | None = None,
+    speakers: list[str] | None = None,
 ) -> str:
     """Compose the layered system prompt.
 
@@ -96,11 +105,16 @@ def build_system_prompt(
         user_system_prompt: The user's Settings → Chat default (layer 2).
         conversation_system_prompt: Per-conversation override, which REPLACES
             layer 2 for this conversation only (layer 3).
+        speakers: Active speaker filter. The model must be told, or it will
+            report "X was not discussed" when X simply was not in scope.
 
     Returns:
         Base rules, followed by at most one user layer in a delimited block.
     """
     base = BASE_SYSTEM_RULES if use_context else NO_CONTEXT_SYSTEM_RULES
+    if use_context and speakers:
+        # Names are ours (validated scope values), not model output — safe to join.
+        base += SPEAKER_SCOPE_RULE.format(names=", ".join(speakers))
 
     override = conversation_system_prompt if conversation_system_prompt is not None else None
     layer = override if override else (user_system_prompt or "")

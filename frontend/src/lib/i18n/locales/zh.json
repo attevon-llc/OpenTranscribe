@@ -1429,6 +1429,7 @@
   "upload.fileAlreadyExists": "文件已存在：{{name}}",
   "upload.uploadCompleted": "上传完成：{{name}}",
   "upload.uploadFailed": "上传失败：{{name}} - {{error}}",
+  "upload.stalled": "上传已停滞：{{seconds}} 秒内未传输任何数据。请检查您的网络连接。",
   "upload.calculatingHash": "正在计算文件哈希...",
   "upload.uploadPausedBrowserClosed": "Upload paused. Open the app to resume.",
   "fileDetail.unknownFile": "未知文件",

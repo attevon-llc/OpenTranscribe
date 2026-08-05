@@ -7,6 +7,11 @@ import axios, { type AxiosProgressEvent, type CancelTokenSource } from 'axios';
 import type { ExtractedAudioMetadata } from '$lib/types/audioExtraction';
 import { generateId } from '$lib/utils/ids';
 import { hashFileSHA256 } from '$lib/services/sha256Hasher';
+import {
+  createStallWatchdog,
+  DEFAULT_STALL_TIMEOUT_MS,
+  type StallWatchdog,
+} from '$lib/services/stallWatchdog';
 
 // Upload item types
 export type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
@@ -52,8 +57,12 @@ export interface UploadItem {
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 1000;
 const MAX_CONCURRENT_UPLOADS = 3;
-const UPLOAD_TIMEOUT_MS = 300000; // 5 minutes
 const QUEUE_PROCESS_DELAY_MS = 100;
+
+// Total-request timeout for the small JSON control-plane calls only (prepare,
+// complete, process-url). File bodies must NEVER use a total-request timeout —
+// see the note on UploadStalledError below.
+const CONTROL_REQUEST_TIMEOUT_MS = 300000; // 5 minutes
 
 // Event types for upload lifecycle
 export type UploadEventType =
@@ -75,6 +84,23 @@ export interface UploadEvent {
 interface UploadResult {
   uuid: string;
   isDuplicate: boolean;
+}
+
+/**
+ * Raised when the stall watchdog aborts a body transfer.
+ *
+ * File bodies used to carry a 5-minute *total-request* timeout while the UI
+ * advertises a 15 GB limit, so every upload slower than ~50 MB/s failed on the
+ * clock alone — then burned all 3 retries doing it again. The timeout is now a
+ * stall watchdog (abort only when no bytes have moved), and its abort surfaces
+ * as this type rather than an axios `CanceledError`, because `axios.isCancel`
+ * means "the user cancelled" everywhere else in this file and suppresses retry.
+ */
+export class UploadStalledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UploadStalledError';
+  }
 }
 
 class UploadService {
@@ -319,6 +345,55 @@ class UploadService {
     this.persistUploads();
   }
 
+  /**
+   * Run a whole-file body transfer under a stall watchdog.
+   *
+   * Replaces the total-request `timeout` that used to guard these calls: that
+   * capped how long a *healthy* upload was allowed to take, which is exactly
+   * wrong for a 15 GB limit. The watchdog aborts only when the byte stream goes
+   * quiet, and its abort is rethrown as `UploadStalledError` so the caller can
+   * tell it apart from a user cancellation.
+   *
+   * @param run - Issues the request; must pass `watchdog.signal` to axios and
+   *   feed `watchdog` from `onUploadProgress`.
+   */
+  private async sendBody<T>(run: (watchdog: StallWatchdog) => Promise<T>): Promise<T> {
+    const watchdog = createStallWatchdog();
+    try {
+      return await run(watchdog);
+    } catch (err: unknown) {
+      if (watchdog.stalled) {
+        throw new UploadStalledError(
+          get(t)('upload.stalled', { seconds: Math.round(DEFAULT_STALL_TIMEOUT_MS / 1000) })
+        );
+      }
+      throw err;
+    } finally {
+      watchdog.dispose();
+    }
+  }
+
+  /**
+   * Build the axios progress callback for one upload: updates percentage + ETA
+   * and keeps the stall watchdog fed.
+   */
+  private makeProgressHandler(uploadId: string, upload: UploadItem) {
+    return (watchdog: StallWatchdog) => (progressEvent: AxiosProgressEvent) => {
+      watchdog.notifyProgress(progressEvent.loaded, progressEvent.total);
+      if (!progressEvent.total) return;
+      const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+      const progress = Math.min(percentCompleted, 99);
+      this.updateUpload(uploadId, { progress });
+      this.emit('progress', uploadId, { progress });
+      const elapsed = Date.now() - (upload.startTime || Date.now());
+      if (elapsed > 0) {
+        const rate = progressEvent.loaded / elapsed;
+        const remaining = (progressEvent.total - progressEvent.loaded) / rate;
+        this.updateUpload(uploadId, { estimatedTime: this.formatTimeRemaining(remaining) });
+      }
+    };
+  }
+
   private async uploadFile(uploadId: string, file: File | Blob): Promise<UploadResult> {
     const upload = this.uploads.get(uploadId)!;
 
@@ -376,34 +451,24 @@ class UploadService {
       estimatedTime: 'Uploading...',
     });
 
-    const progressHandler = (progressEvent: AxiosProgressEvent) => {
-      if (!progressEvent.total) return;
-      const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-      const progress = Math.min(percentCompleted, 99);
-      this.updateUpload(uploadId, { progress });
-      this.emit('progress', uploadId, { progress });
-      const elapsed = Date.now() - (upload.startTime || Date.now());
-      if (elapsed > 0) {
-        const rate = progressEvent.loaded / elapsed;
-        const remaining = (progressEvent.total - progressEvent.loaded) / rate;
-        this.updateUpload(uploadId, { estimatedTime: this.formatTimeRemaining(remaining) });
-      }
-    };
+    const progressHandler = this.makeProgressHandler(uploadId, upload);
 
     // --- Presigned flow ---------------------------------------------------
     if (uploadUrl && uploadMethod === 'PUT' && taskId) {
       try {
         const clientPutStartMs = Date.now();
-        await axios.put(uploadUrl, file, {
-          headers: {
-            'Content-Type': file instanceof File ? file.type : 'audio/webm',
-          },
-          timeout: UPLOAD_TIMEOUT_MS,
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-          cancelToken: cancelToken.token,
-          onUploadProgress: progressHandler,
-        });
+        await this.sendBody((watchdog) =>
+          axios.put(uploadUrl, file, {
+            headers: {
+              'Content-Type': file instanceof File ? file.type : 'audio/webm',
+            },
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+            cancelToken: cancelToken.token,
+            signal: watchdog.signal,
+            onUploadProgress: progressHandler(watchdog),
+          })
+        );
         const clientPutEndMs = Date.now();
 
         await axiosInstance.post('/files/complete', {
@@ -422,7 +487,10 @@ class UploadService {
 
         return { uuid: fileId, isDuplicate: false };
       } catch (err: unknown) {
-        if (axios.isCancel(err)) {
+        // A stalled connection is a network fault, not "the server can't do
+        // presigned uploads" — re-sending the whole body through the API
+        // container would stall too. Let the queue retry the presigned path.
+        if (axios.isCancel(err) || err instanceof UploadStalledError) {
           throw err;
         }
         // Fall through to the legacy flow below.
@@ -449,14 +517,16 @@ class UploadService {
       headers['X-Num-Speakers'] = upload.numSpeakers.toString();
     }
 
-    await axiosInstance.post('/files', formData, {
-      headers,
-      timeout: UPLOAD_TIMEOUT_MS,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      cancelToken: cancelToken.token,
-      onUploadProgress: progressHandler,
-    });
+    await this.sendBody((watchdog) =>
+      axiosInstance.post('/files', formData, {
+        headers,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        cancelToken: cancelToken.token,
+        signal: watchdog.signal,
+        onUploadProgress: progressHandler(watchdog),
+      })
+    );
 
     return { uuid: fileId, isDuplicate: false };
   }
@@ -509,32 +579,22 @@ class UploadService {
       estimatedTime: 'Uploading extracted audio...',
     });
 
-    const progressHandler = (progressEvent: AxiosProgressEvent) => {
-      if (!progressEvent.total) return;
-      const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-      const progress = Math.min(percentCompleted, 99);
-      this.updateUpload(uploadId, { progress });
-      this.emit('progress', uploadId, { progress });
-      const elapsed = Date.now() - (upload.startTime || Date.now());
-      if (elapsed > 0) {
-        const rate = progressEvent.loaded / elapsed;
-        const remaining = (progressEvent.total - progressEvent.loaded) / rate;
-        this.updateUpload(uploadId, { estimatedTime: this.formatTimeRemaining(remaining) });
-      }
-    };
+    const progressHandler = this.makeProgressHandler(uploadId, upload);
 
     // --- Presigned flow: PUT the audio blob straight to MinIO, then finalize.
     if (uploadUrl && uploadMethod === 'PUT' && taskId) {
       try {
         const clientPutStartMs = Date.now();
-        await axios.put(uploadUrl, audioBlob, {
-          headers: { 'Content-Type': contentType },
-          timeout: UPLOAD_TIMEOUT_MS,
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-          cancelToken: cancelToken.token,
-          onUploadProgress: progressHandler,
-        });
+        await this.sendBody((watchdog) =>
+          axios.put(uploadUrl, audioBlob, {
+            headers: { 'Content-Type': contentType },
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+            cancelToken: cancelToken.token,
+            signal: watchdog.signal,
+            onUploadProgress: progressHandler(watchdog),
+          })
+        );
         const clientPutEndMs = Date.now();
 
         await axiosInstance.post('/files/complete', {
@@ -551,7 +611,9 @@ class UploadService {
 
         return { uuid: fileId, isDuplicate: false };
       } catch (err: unknown) {
-        if (axios.isCancel(err)) {
+        // See uploadFile(): a stall must not silently re-send the body through
+        // the API container.
+        if (axios.isCancel(err) || err instanceof UploadStalledError) {
           throw err;
         }
         // Fall through to the legacy flow below.
@@ -562,18 +624,20 @@ class UploadService {
     const formData = new FormData();
     formData.append('file', audioBlob, upload.name);
 
-    await axiosInstance.post('/files', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        'X-File-ID': fileId,
-        'X-File-Hash': originalFileHash || '',
-      },
-      timeout: UPLOAD_TIMEOUT_MS,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      cancelToken: cancelToken.token,
-      onUploadProgress: progressHandler,
-    });
+    await this.sendBody((watchdog) =>
+      axiosInstance.post('/files', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          'X-File-ID': fileId,
+          'X-File-Hash': originalFileHash || '',
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        cancelToken: cancelToken.token,
+        signal: watchdog.signal,
+        onUploadProgress: progressHandler(watchdog),
+      })
+    );
 
     return { uuid: fileId, isDuplicate: false };
   }
@@ -596,7 +660,7 @@ class UploadService {
         tag_names: upload.tagNames || undefined,
       },
       {
-        timeout: UPLOAD_TIMEOUT_MS,
+        timeout: CONTROL_REQUEST_TIMEOUT_MS,
         cancelToken: cancelToken.token,
         onUploadProgress: (progressEvent: AxiosProgressEvent) => {
           if (progressEvent.total) {

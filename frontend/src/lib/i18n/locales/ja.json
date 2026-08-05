@@ -1429,6 +1429,7 @@
   "upload.fileAlreadyExists": "ファイルは既に存在します：{{name}}",
   "upload.uploadCompleted": "アップロード完了：{{name}}",
   "upload.uploadFailed": "アップロード失敗：{{name}} - {{error}}",
+  "upload.stalled": "アップロードが停止しました: {{seconds}} 秒間データが転送されませんでした。接続を確認してください。",
   "upload.calculatingHash": "ファイルハッシュを計算中...",
   "upload.uploadPausedBrowserClosed": "Upload paused. Open the app to resume.",
   "fileDetail.unknownFile": "不明なファイル",

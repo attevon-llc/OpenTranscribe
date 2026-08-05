@@ -14,13 +14,15 @@ runtime, a Web Worker, a TTL cache. Import via `$lib/services/...`.
 
 If a new module has no state and no lifecycle it belongs in `api/` or `utils/`, not here.
 Every module here exports **one shared instance** (`export const xService = …`); never construct
-a second one in a component. (`AudioExtractionService` is also exported as a class — for tests only.)
+a second one in a component. (`AudioExtractionService` is also exported as a class — for tests only.
+`stallWatchdog.ts` is the other exception: a per-request factory, not a singleton.)
 
 ## Key files
 
 - `uploadService.ts` — the upload queue singleton: max 3 concurrent, 3 retries with exponential
-  backoff, 5-min timeout, persisted to `localStorage['upload_queue']`. Tries a **presigned PUT
+  backoff, persisted to `localStorage['upload_queue']`. Tries a **presigned PUT
   straight to MinIO, then silently falls back** to the legacy multipart `POST /files`.
+- `stallWatchdog.ts` — `createStallWatchdog()`: the timeout control for file bodies. See gotchas.
 - `audioExtractionService.ts` — in-browser video→audio via FFmpeg.wasm (`-c:a copy`, no re-encode),
   core loaded from `frontend/public/ffmpeg/`; extractions run **one at a time** through an internal queue.
   **Import it with a dynamic `import()`** (see `FileUploader.svelte`) — a static import drags the
@@ -51,6 +53,15 @@ a second one in a component. (`AudioExtractionService` is also exported as a cla
   call sites now use `hashFileSHA256` directly.
 - `audioExtractionService.ts` and `configService.ts` still use relative imports (`../types/…`,
   `../../stores/…`, `../axios`). Everything else uses `$lib`/`$stores` — don't copy that.
+- **Never put a total-request `timeout` on a request whose body is the file.** That caps how long a
+  _healthy_ upload may take: the old 5-minute cap against the app's 15 GB limit failed every upload
+  slower than ~50 MB/s, then burned all 3 retries repeating it. File bodies go through
+  `uploadService.sendBody()`, which arms a `createStallWatchdog()` (abort only when no bytes have
+  moved) and passes `watchdog.signal` to axios. `CONTROL_REQUEST_TIMEOUT_MS` is for the small JSON
+  calls (`/files/prepare`, `/files/complete`, `/files/process-url`) only.
+- A watchdog abort surfaces as `UploadStalledError`, **not** an axios `CanceledError`: `axios.isCancel`
+  means "the user cancelled" throughout `uploadService` and suppresses retry. A stall must also not
+  fall through to the legacy multipart path — re-sending the body through the API container stalls too.
 - The presigned→legacy fallback swallows the error with no log; a broken presign looks like a slow
   upload. `configService` likewise swallows its fetch error and marks itself loaded, so "config
   failed" is indistinguishable from "no protected hosts".
@@ -59,4 +70,4 @@ a second one in a component. (`AudioExtractionService` is also exported as a cla
   multi-GB video), like `$lib/export/`. Don't extend the precedent to business logic.
 - `uploadService.formatTimeRemaining` is a compact `Xh Ym` ETA that returns `''` — it is on the explicit
   do-NOT-migrate list in `$lib/utils/CLAUDE.md`. Leave it alone.
-- No tests in this folder.
+- Tests here cover `sha256Hasher` and `stallWatchdog` only; the queue itself is untested.

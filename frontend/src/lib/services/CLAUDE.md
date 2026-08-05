@@ -24,7 +24,9 @@ a second one in a component. (`AudioExtractionService` is also exported as a cla
   straight to MinIO, then silently falls back** to the legacy multipart `POST /files`.
 - `stallWatchdog.ts` — `createStallWatchdog()`: the timeout control for file bodies. See gotchas.
 - `audioExtractionService.ts` — in-browser video→audio via FFmpeg.wasm (`-c:a copy`, no re-encode),
-  core loaded from `frontend/public/ffmpeg/`; extractions run **one at a time** through an internal queue.
+  core loaded from `frontend/static/ffmpeg/` (gitignored, ~31 MB — fetched by the
+  `download-ffmpeg.js` prebuild step, so a clean checkout still ships it); extractions run
+  **one at a time** through an internal queue.
   **Import it with a dynamic `import()`** (see `FileUploader.svelte`) — a static import drags the
   `@ffmpeg/*` wrapper into whichever route chunk references it, and extraction is an opt-in path.
 - `sha256Hasher.ts` — client for `$lib/workers/sha256Worker`, with a main-thread `crypto.subtle` fallback.

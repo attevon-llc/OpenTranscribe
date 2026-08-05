@@ -4,7 +4,25 @@
   import BaseModal from './ui/BaseModal.svelte';
 
   export let showModal = false;
-  let appVersion = '';
+
+  // Compile-time constants (vite.config.ts `define`) — the identity of the bundle this
+  // tab is actually running, which can lag the server after a deploy.
+  const buildVersion = __APP_VERSION__;
+  const buildTime = __BUILD_TIME__;
+
+  let serverVersion = '';
+
+  // The backend reports the repo-root VERSION file verbatim (`v0.4.1`) while
+  // package.json carries a bare semver (`0.4.1`), and it falls back to the literal
+  // "unknown" when neither the file nor $APP_VERSION is present. Compare on the
+  // normalized form and stay silent when the server can't identify itself — a false
+  // "you are out of date" is worse than no warning at all.
+  const normalizeVersion = (value: string) => value.trim().replace(/^v/i, '');
+
+  $: versionMismatch =
+    Boolean(serverVersion) &&
+    serverVersion !== 'unknown' &&
+    normalizeVersion(serverVersion) !== normalizeVersion(buildVersion);
 
   function closeModal() {
     showModal = false;
@@ -13,13 +31,13 @@
   async function fetchVersion() {
     try {
       const res = await axios.get('/health');
-      appVersion = res.data?.version || '';
+      serverVersion = res.data?.version || '';
     } catch {
-      appVersion = '';
+      serverVersion = '';
     }
   }
 
-  $: if (showModal && !appVersion) {
+  $: if (showModal && !serverVersion) {
     fetchVersion();
   }
 
@@ -31,16 +49,26 @@
     <div class="header-title-group">
       <h2 class="modal-title">{$t('about.title')}</h2>
       <div class="header-version">
-        {#if appVersion}
-          <span class="header-version-number">{appVersion}</span>
+        <span class="header-version-number" title={buildTime}>
+          {$t('about.buildVersion')} {buildVersion}
+        </span>
+        {#if serverVersion}
           <span class="header-version-sep">&middot;</span>
+          <span class="header-version-number" class:mismatch={versionMismatch}>
+            {$t('about.serverVersion')} {serverVersion}
+          </span>
         {/if}
+        <span class="header-version-sep">&middot;</span>
         <span class="header-version-tagline">{$t('about.version')}</span>
       </div>
     </div>
   </svelte:fragment>
 
   <div class="about-content">
+    {#if versionMismatch}
+      <p class="version-mismatch" role="status">{$t('about.versionMismatch')}</p>
+    {/if}
+
     <section class="intro-section">
       <p class="subtitle">{$t('about.subtitle')}</p>
               <p class="description">
@@ -416,10 +444,26 @@
     white-space: nowrap;
   }
 
+  .header-version-number.mismatch {
+    color: var(--warning-text, var(--warning-color));
+    font-weight: 600;
+  }
+
   .header-version-sep {
     color: var(--text-secondary);
     opacity: 0.5;
     font-size: 0.9rem;
+  }
+
+  .version-mismatch {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--warning-border);
+    border-radius: 6px;
+    background: var(--warning-bg);
+    color: var(--warning-text, var(--text-primary));
+    font-size: 0.9rem;
+    line-height: 1.5;
   }
 
   .header-version-tagline {

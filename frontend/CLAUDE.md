@@ -42,6 +42,19 @@ already-downloaded data (TXT/SRT/VTT/CSV export).
 - **prod**: `frontend/Dockerfile.prod` builds static assets served by **nginx** (`nginx.conf`,
   `nginx-pki.conf`) with CSP/HSTS/security headers. Any change touching `app.html`, asset paths,
   env (`import.meta.env.VITE_*`), or CSP must be verified in BOTH. No secrets in the bundle.
+- **No service worker, deliberately.** This is an authenticated always-online SPA, so a worker
+  buys nothing and risks plenty: a cache-first worker would cache the app shell _and_ same-origin
+  `/s3/` media, and Cache Storage is not cleared by `$lib/session/clearUserState`. Chrome dropped
+  the service-worker requirement for installability (M108/M112), so the manifest alone keeps the
+  PWA installable. `$lib/serviceWorkerCleanup` unregisters strays on boot — don't re-add one.
+- **Anything in `static/` is unhashed** and nginx caches `*.js`/`*.css`/images for a year. `app.html`
+  busts `/theme.js` with a `?v=` content digest (`%sveltekit.env.PUBLIC_THEME_VERSION%`, computed in
+  `vite.config.ts`); a new unhashed asset needs the same treatment. `static/fonts/` and
+  `static/ffmpeg/` are gitignored and fetched by the `prebuild` scripts — a clean checkout must
+  still produce a complete image.
+- **Build identity**: `__APP_VERSION__` / `__BUILD_TIME__` are `define`d in `vite.config.ts` (and
+  mirrored in `vitest.config.ts`). The About dialog compares `__APP_VERSION__` against the
+  backend's `/health` version so a stale cached tab is visible rather than silent.
 
 ## Where things live
 

@@ -1,12 +1,32 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
+import { createHash } from 'crypto';
+import { readFileSync } from 'fs';
 import path, { dirname } from 'path';
-import serviceWorker from './plugins/vite-plugin-service-worker';
 import { visualizer } from 'rollup-plugin-visualizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
+
+/**
+ * `static/theme.js` is the render-blocking theme bootstrap. It is deliberately an
+ * external file (so the CSP can omit `script-src 'unsafe-inline'`), which also means
+ * Vite never hashes it: nginx serves `/theme.js` with `expires 1y`, so an unversioned
+ * URL can pin a stale copy in a browser cache indefinitely. Hash its contents and
+ * append the digest as a cache-busting query string in `app.html`, giving it the same
+ * change-exactly-when-the-file-changes behaviour as a hashed bundle asset.
+ */
+const themeVersion = createHash('sha256')
+  .update(readFileSync(path.resolve(__dirname, 'static/theme.js')))
+  .digest('hex')
+  .slice(0, 8);
+
+// Consumed by `%sveltekit.env.PUBLIC_THEME_VERSION%` in src/app.html. SvelteKit only
+// substitutes vars carrying the public prefix, so this can never leak a private value.
+process.env.PUBLIC_THEME_VERSION = themeVersion;
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -21,7 +41,6 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       sveltekit(),
-      serviceWorker(),
       ...(analyze
         ? [
             // adapter-static empties dist/ during finalization (after the Vite
@@ -137,6 +156,12 @@ export default defineConfig(({ mode }) => {
     define: {
       'import.meta.env.PROD': JSON.stringify(mode === 'production'),
       'import.meta.env.DEV': JSON.stringify(mode !== 'production'),
+      // Build identity, so the bundle knows which version of itself it is. Without
+      // this the About dialog could only report the *backend* version, which makes a
+      // stale cached tab indistinguishable from a current one for users and support.
+      // The timestamp is what discriminates two builds of the same release.
+      __APP_VERSION__: JSON.stringify(pkg.version),
+      __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
     },
     base: '/',
     optimizeDeps: {

@@ -183,9 +183,14 @@
     resize: vertical;
   }
 
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+
   select:focus,
   textarea:focus {
-    outline: none;
     border-color: var(--primary-color);
   }
 

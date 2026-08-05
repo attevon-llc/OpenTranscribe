@@ -65,6 +65,25 @@ Exactly ONE stream is in flight at a time.
 | `FilePickerModal`     | Edits a **draft**, commits on Confirm — scope changes rewrite what every later answer is based on                         |
 | `ChatStatusIndicator` | The ONLY `aria-live` region; announcing the token stream would read the answer character by character                     |
 
+## Accessibility invariants
+
+These are easy to regress and hard to notice without a keyboard:
+
+- **`ChatControlsPanel`** uses `focusTrap` + `clickOutside` (`$lib/actions/`) and stops
+  its own Escape from propagating — otherwise closing the panel would also cancel an
+  in-flight generation via the page-level Escape handler.
+- **The mobile drawer is `inert` when closed.** It is hidden with `transform` only, so
+  without `inert` a keyboard or screen-reader user tabs straight into an invisible
+  sidebar. The `inert` flag is driven by a `matchMedia` listener mirroring the 900px
+  CSS breakpoint — above it the sidebar is a normal visible column and must stay
+  reachable.
+- **Inline editors return focus** to the button that opened them (`ChatMessage` edit,
+  `ConversationListItem` rename). Dropping focus to `<body>` loses the user's place.
+- **Code-block copy is a real `<button>`**, injected after each render. It was once a
+  CSS `::before` activated by click coordinates — invisible to screen readers and
+  unreachable by keyboard. It stays visible while focused, not just on hover.
+- Never `outline: none` without a `:focus-visible` replacement.
+
 ## Conventions
 
 - Svelte **4 idiom** (`export let`, `$:`, `createEventDispatcher`, `on:click`) —

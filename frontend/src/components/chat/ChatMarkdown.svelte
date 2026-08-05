@@ -10,7 +10,7 @@
   thrash, with one final unthrottled render when the stream completes.
 -->
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { t } from '$stores/locale';
   import { renderChatMarkdown } from '$lib/utils/chatMarkdown';
 
@@ -20,6 +20,10 @@
 
   const MIN_RENDER_INTERVAL_MS = 100;
 
+  $: copyLabel = $t('chat.message.copy');
+  $: copiedLabel = $t('chat.message.copied');
+
+  let container: HTMLDivElement;
   let html = '';
   let lastRenderAt = 0;
   let frame: number | undefined;
@@ -28,6 +32,7 @@
     html = renderChatMarkdown(content);
     lastRenderAt = Date.now();
     frame = undefined;
+    tick().then(attachCopyButtons);
   }
 
   function scheduleRender(): void {
@@ -58,31 +63,38 @@
   }
 
   /**
-   * Copy a fenced code block.
+   * Attach a real copy button to every code block after each render.
    *
-   * Delegated rather than rendered into the markup: the sanitized HTML is
-   * replaced wholesale on every streaming tick, so any button injected into it
-   * would be destroyed and recreated constantly. A single delegated handler on
-   * the container survives re-renders, and the button itself is drawn by CSS on
-   * the <pre> so no sanitized markup has to be trusted.
+   * The earlier version drew the affordance with a CSS ::before and detected
+   * clicks by comparing coordinates — which is invisible to screen readers and
+   * unreachable by keyboard. A real <button> is injected instead. It has to be
+   * (re)attached after each render because the sanitized HTML is replaced
+   * wholesale on every streaming tick, so anything inside it is destroyed.
    */
-  async function handleCopyClick(event: MouseEvent): Promise<void> {
-    const target = event.target as HTMLElement | null;
-    const pre = target?.closest?.('pre');
-    if (!pre) return;
+  function attachCopyButtons(): void {
+    if (!container) return;
+    for (const pre of Array.from(container.querySelectorAll('pre'))) {
+      if (pre.querySelector('.code-copy')) continue;
 
-    // Only the top-right affordance area triggers a copy, so selecting text
-    // inside the block still works normally.
-    const rect = pre.getBoundingClientRect();
-    if (event.clientX < rect.right - 56 || event.clientY > rect.top + 34) return;
-
-    const code = pre.textContent ?? '';
-    if (!code.trim()) return;
-
-    const { copyToClipboard } = await import('$lib/utils/clipboard');
-    const result = await copyToClipboard(code);
-    pre.setAttribute('data-copied', result.success ? 'true' : 'false');
-    setTimeout(() => pre.removeAttribute('data-copied'), 1500);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'code-copy';
+      button.textContent = copyLabel;
+      button.setAttribute('aria-label', copyLabel);
+      button.addEventListener('click', async () => {
+        const code = pre.querySelector('code')?.textContent ?? pre.textContent ?? '';
+        if (!code.trim()) return;
+        const { copyToClipboard } = await import('$lib/utils/clipboard');
+        const result = await copyToClipboard(code);
+        button.textContent = result.success ? copiedLabel : copyLabel;
+        button.setAttribute('aria-label', result.success ? copiedLabel : copyLabel);
+        setTimeout(() => {
+          button.textContent = copyLabel;
+          button.setAttribute('aria-label', copyLabel);
+        }, 1500);
+      });
+      pre.appendChild(button);
+    }
   }
 
   onDestroy(() => {
@@ -93,15 +105,7 @@
   });
 </script>
 
-<!-- svelte-ignore a11y-no-static-element-interactions a11y-click-events-have-key-events -->
-<div
-  class="chat-markdown"
-  class:streaming
-  style="--code-copy-label: '{$t('chat.message.copy')}'; --code-copied-label: '{$t(
-    'chat.message.copied'
-  )}'"
-  on:click={handleCopyClick}
->
+<div class="chat-markdown" class:streaming bind:this={container}>
   <!-- Sanitized by renderChatMarkdown's dedicated DOMPurify profile. -->
   {@html html}
 </div>
@@ -177,10 +181,7 @@
     margin: 0 0 0.75rem;
   }
 
-  /* Copy affordance drawn on the block itself — see handleCopyClick for why
-     this is CSS rather than an injected button. */
-  .chat-markdown :global(pre)::before {
-    content: var(--code-copy-label, 'Copy');
+  .chat-markdown :global(.code-copy) {
     position: absolute;
     top: 0.35rem;
     right: 0.4rem;
@@ -196,15 +197,16 @@
     cursor: pointer;
   }
 
-  .chat-markdown :global(pre:hover)::before {
+  /* Visible on hover, and ALWAYS visible once focused — otherwise a keyboard
+     user tabs onto a control they cannot see. */
+  .chat-markdown :global(pre:hover .code-copy),
+  .chat-markdown :global(.code-copy:focus-visible) {
     opacity: 1;
   }
 
-  .chat-markdown :global(pre[data-copied='true'])::before {
-    content: var(--code-copied-label, 'Copied');
-    opacity: 1;
-    color: var(--primary-color);
-    border-color: var(--primary-color);
+  .chat-markdown :global(.code-copy:focus-visible) {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
   }
 
   .chat-markdown :global(pre code) {

@@ -23,14 +23,21 @@
       ? $t('chat.status.complete')
       : status === 'aborted'
         ? $t('chat.status.stopped')
-        : label;
+        : status === 'error'
+          ? $t('chat.message.errorGeneric')
+          : label;
 </script>
 
-<div class="status-region" role="status" aria-live="polite" data-testid="chat-status">
+<!--
+  The visible label is aria-hidden so the region announces ONCE. Previously both
+  it and an identical sr-only copy sat inside the same live region, so every
+  stage change was read twice.
+-->
+<div class="status-region" data-testid="chat-status">
   {#if label}
-    <span class="shimmer">{label}</span>
+    <span class="shimmer" aria-hidden="true">{label}</span>
   {/if}
-  <span class="sr-only">{announcement}</span>
+  <span class="sr-only" role="status" aria-live="polite">{announcement}</span>
 </div>
 
 <style>

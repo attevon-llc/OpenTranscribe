@@ -9,6 +9,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
+  import { clickOutside } from '$lib/actions/clickOutside';
+  import { focusTrap } from '$lib/actions/focusTrap';
   import ModelSwitcher from './ModelSwitcher.svelte';
   import type { ConversationSettings, SearchMode } from '$lib/types/chat';
 
@@ -19,6 +21,8 @@
   export let disabled = false;
   /** Conversation's pinned LLM config uuid (null follows the account default). */
   export let llmConfigUuid: string | null = null;
+  /** The gear button — so its click doesn't count as "outside" and re-close us. */
+  export let triggerEl: HTMLElement | null = null;
 
   const dispatch = createEventDispatcher<{
     change: Partial<ConversationSettings>;
@@ -46,10 +50,35 @@
     promptDirty = false;
     dispatch('change', { system_prompt: systemPromptDraft.trim() || null });
   }
+
+  /**
+   * Escape closes the panel.
+   *
+   * Stopped from propagating so it doesn't also reach the page-level handler,
+   * which uses Escape to stop an in-flight generation — closing a settings
+   * panel should never cancel someone's answer.
+   */
+  function handleKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      dispatch('close');
+    }
+  }
 </script>
 
 {#if isOpen}
-  <div class="controls-panel" data-testid="chat-controls-panel">
+  <div
+    class="controls-panel"
+    role="dialog"
+    tabindex="-1"
+    aria-modal="false"
+    aria-label={$t('chat.controls.title')}
+    use:focusTrap={{ enabled: isOpen }}
+    use:clickOutside={{ enabled: isOpen, ignore: [triggerEl] }}
+    on:click_outside={() => dispatch('close')}
+    on:keydown={handleKeydown}
+    data-testid="chat-controls-panel"
+  >
     <div class="panel-header">
       <h2>{$t('chat.controls.title')}</h2>
       {#if promptDirty}
@@ -254,9 +283,15 @@
     resize: vertical;
   }
 
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+    border-color: var(--primary-color);
+  }
+
   textarea:focus,
   select:focus {
-    outline: none;
     border-color: var(--primary-color);
   }
 

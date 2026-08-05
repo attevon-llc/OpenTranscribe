@@ -107,8 +107,20 @@ def _build_body(
     use_neural: bool,
     model_id: str | None,
     service: HybridSearchService,
+    search_mode: str = "hybrid",
 ) -> dict[str, Any]:
-    """Build the retrieval body: hybrid when neural is up, BM25 otherwise."""
+    """Build the retrieval body for the requested mode.
+
+    The three modes are genuinely different queries, which is what makes the
+    user-facing selector meaningful:
+
+    * ``keyword``  — BM25 only. Exact words, no embedding.
+    * ``semantic`` — the neural (vector) leg only. Finds passages that mean the
+      same thing in different words, at the cost of missing rare literal terms
+      like a product code the model never learned.
+    * ``hybrid``   — both, fused with RRF. The default, and the right answer
+      almost always.
+    """
     text_query = service._build_text_query(query, ["content", "content.exact", "title"])
     source_fields = [
         "file_id",
@@ -122,28 +134,32 @@ def _build_body(
     ]
 
     if use_neural and model_id:
+        neural_clause = {
+            "neural": {
+                "embedding": {
+                    "query_text": query,
+                    "model_id": model_id,
+                    "k": dynamic_rrf_window(size),
+                }
+            }
+        }
+
+        if search_mode == "semantic":
+            # Vector only — no BM25 leg, and therefore no RRF pipeline needed.
+            return {
+                "size": size,
+                "query": {"bool": {"must": [neural_clause], "filter": filters}},
+                "_source": source_fields,
+                "track_total_hits": False,
+            }
+
         return {
             "size": size,
             "query": {
                 "hybrid": {
                     "queries": [
                         {"bool": {"must": [text_query], "filter": filters}},
-                        {
-                            "bool": {
-                                "must": [
-                                    {
-                                        "neural": {
-                                            "embedding": {
-                                                "query_text": query,
-                                                "model_id": model_id,
-                                                "k": dynamic_rrf_window(size),
-                                            }
-                                        }
-                                    }
-                                ],
-                                "filter": filters,
-                            }
-                        },
+                        {"bool": {"must": [neural_clause], "filter": filters}},
                     ]
                 }
             },
@@ -211,10 +227,12 @@ def retrieve_chunks(
 
     _, use_neural, use_neural_query = service._generate_query_embedding(clean, search_mode)
     model_id = service._get_neural_model_id() if use_neural_query else None
-    body = _build_body(clean, filters, size, use_neural_query, model_id, service)
+    body = _build_body(clean, filters, size, use_neural_query, model_id, service, search_mode)
 
     params = {}
-    if use_neural_query and model_id:
+    # The RRF pipeline fuses the two legs of a hybrid query. A semantic-only or
+    # BM25-only body has one leg, so applying it would be meaningless work.
+    if use_neural_query and model_id and search_mode != "semantic":
         params["search_pipeline"] = settings.OPENSEARCH_SEARCH_PIPELINE
 
     try:

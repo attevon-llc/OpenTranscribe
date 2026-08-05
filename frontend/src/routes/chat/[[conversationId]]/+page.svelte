@@ -39,6 +39,9 @@
   let controlsOpen = false;
   let sidebarOpen = false;
   let lastLoadedId: string | null = null;
+  let gearEl: HTMLButtonElement;
+  let isNarrow = false;
+  let mediaCleanup: (() => void) | undefined;
   let pendingScope: ChatScope | null = null;
   let contextWindow = 0;
 
@@ -72,6 +75,16 @@
 
   onMount(() => {
     chatStore.loadConversations(true);
+
+    // Mirror the 900px breakpoint the layout uses. Below it the sidebar is an
+    // off-screen drawer; above it, a normal column that must stay reachable.
+    const narrow = window.matchMedia('(max-width: 900px)');
+    isNarrow = narrow.matches;
+    const onChange = (event: MediaQueryListEvent) => {
+      isNarrow = event.matches;
+    };
+    narrow.addEventListener('change', onChange);
+    mediaCleanup = () => narrow.removeEventListener('change', onChange);
     // The token panel needs the active model's window to show a ratio.
     (async () => {
       try {
@@ -99,6 +112,7 @@
   });
 
   onDestroy(() => {
+    mediaCleanup?.();
     // Leaving the page must not leave a stream running in the background.
     if (state.streamStatus === 'streaming') chatStore.stopGeneration();
   });
@@ -115,6 +129,12 @@
     if (mod && event.shiftKey && event.key.toLowerCase() === 'o') {
       event.preventDefault();
       handleNewChat();
+      return;
+    }
+
+    if (event.key === 'Escape' && sidebarOpen) {
+      event.preventDefault();
+      sidebarOpen = false;
       return;
     }
 
@@ -225,7 +245,7 @@
   </div>
 {:else}
   <div class="chat-page" class:sidebar-open={sidebarOpen}>
-    <div class="sidebar-pane">
+    <div class="sidebar-pane" inert={isNarrow && !sidebarOpen ? true : undefined}>
       <ChatSidebar
         conversations={state.conversations}
         activeId={state.activeConversationId}
@@ -308,6 +328,7 @@
         <button
           type="button"
           class="gear"
+          bind:this={gearEl}
           on:click={() => (controlsOpen = !controlsOpen)}
           aria-label={$t('chat.controls.title')}
           aria-expanded={controlsOpen}
@@ -334,6 +355,7 @@
           {settings}
           useContext={state.useContext}
           llmConfigUuid={state.activeConversation?.llm_config_uuid ?? state.draftLlmConfigUuid}
+          triggerEl={gearEl}
           on:change={handleControlsChange}
           on:model={(e) => handleModelChange(e.detail)}
           on:close={() => (controlsOpen = false)}

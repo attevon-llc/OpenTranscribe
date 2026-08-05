@@ -17,6 +17,7 @@ from app.services.search.chunk_retrieval import ChunkHit
 from app.services.search.chunk_retrieval import diversity_sample
 from app.services.search.chunk_retrieval import dynamic_rrf_window
 from app.services.search.chunk_retrieval import retrieve_chunks
+from app.services.search.hybrid_search_service import HybridSearchService
 
 
 def _hit(file_uuid: str, index: int, score: float = 1.0) -> ChunkHit:
@@ -606,3 +607,73 @@ def test_speaker_scope_is_length_validated():
         ChatScope(speakers=[""])
     with pytest.raises(ValidationError):
         ChatScope(speakers=["x" * 201])
+
+
+# ---------------------------------------------------------------------------
+# Search modes must be genuinely different queries
+# ---------------------------------------------------------------------------
+
+
+def _body_for(mode: str) -> dict:
+    client = MagicMock()
+    client.search.return_value = {"hits": {"hits": []}}
+    with (
+        patch("app.services.search.chunk_retrieval.get_opensearch_client", return_value=client),
+        patch.object(
+            HybridSearchService, "_generate_query_embedding", return_value=(None, True, True)
+        ),
+        patch.object(HybridSearchService, "_get_neural_model_id", return_value="model-1"),
+    ):
+        retrieve_chunks("what was decided", user_id=1, search_mode=mode)
+    kwargs: dict = client.search.call_args.kwargs
+    return kwargs
+
+
+def test_hybrid_mode_sends_both_legs():
+    body = _body_for("hybrid")["body"]
+    assert "hybrid" in body["query"]
+    assert len(body["query"]["hybrid"]["queries"]) == 2
+
+
+def test_semantic_mode_sends_only_the_vector_leg():
+    """Regression: semantic and hybrid built an identical query, so the
+    user-facing three-way selector had only two distinct behaviours."""
+    kwargs = _body_for("semantic")
+    body = kwargs["body"]
+
+    assert "hybrid" not in body["query"]
+    must = body["query"]["bool"]["must"]
+    assert len(must) == 1
+    assert "neural" in must[0]
+    # No BM25 leg means nothing to fuse — the RRF pipeline would be dead weight.
+    assert not kwargs.get("params")
+
+
+def test_keyword_mode_sends_no_vector_leg():
+    client = MagicMock()
+    client.search.return_value = {"hits": {"hits": []}}
+    with patch("app.services.search.chunk_retrieval.get_opensearch_client", return_value=client):
+        retrieve_chunks("exact phrase", user_id=1, search_mode="keyword")
+
+    body = client.search.call_args.kwargs["body"]
+    assert "hybrid" not in body["query"]
+    assert "neural" not in str(body["query"])
+
+
+def test_every_mode_still_carries_the_authorization_filter():
+    """Whatever the mode, isolation is non-negotiable."""
+    for mode in ("hybrid", "semantic", "keyword"):
+        client = MagicMock()
+        client.search.return_value = {"hits": {"hits": []}}
+        with (
+            patch("app.services.search.chunk_retrieval.get_opensearch_client", return_value=client),
+            patch.object(
+                HybridSearchService, "_generate_query_embedding", return_value=(None, True, True)
+            ),
+            patch.object(HybridSearchService, "_get_neural_model_id", return_value="model-1"),
+        ):
+            retrieve_chunks("q", user_id=42, search_mode=mode)
+
+        assert '"accessible_user_ids": [42]' in str(client.search.call_args.kwargs["body"]).replace(
+            "'", '"'
+        ), f"mode={mode} lost its authorization filter"

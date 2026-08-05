@@ -108,7 +108,11 @@ The gear icon in the chat header opens per-conversation settings:
 - **Instructions for this chat** — extra guidance for this conversation only
   (for example, *"answer as a concise meeting summary, action items last"*).
 - **Creativity** — lower values stay closer to what was actually said.
-- **Retrieval mode** — Hybrid (default), Meaning, or Exact words.
+- **Retrieval mode** — three genuinely different searches:
+  - *Hybrid* (default) — keyword and meaning together, fused. Right almost always.
+  - *Meaning* — vector search only. Finds passages that say the same thing in
+    different words; may miss a rare literal term like a product code.
+  - *Exact words* — keyword only. Use when you know the phrasing.
 - **Model** — pin a different AI provider or model for this conversation only.
   Switching to one with a smaller context window warns first, since it silently
   changes how much of the conversation the model can see.

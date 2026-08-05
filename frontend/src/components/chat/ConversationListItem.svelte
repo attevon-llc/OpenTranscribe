@@ -27,6 +27,7 @@
   let confirmingDelete = false;
   let draftTitle = '';
   let input: HTMLInputElement;
+  let renameTrigger: HTMLButtonElement;
 
   $: displayTitle = conversation.title || $t('chat.conversation.untitled');
 
@@ -38,9 +39,15 @@
     input?.select();
   }
 
-  function commitRename(): void {
-    const next = draftTitle.trim();
+  async function endRename(): Promise<void> {
     editing = false;
+    await tick();
+    renameTrigger?.focus();
+  }
+
+  async function commitRename(): Promise<void> {
+    const next = draftTitle.trim();
+    await endRename();
     if (next && next !== conversation.title) {
       dispatch('rename', { uuid: conversation.uuid, title: next });
     }
@@ -52,7 +59,8 @@
       commitRename();
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      editing = false;
+      event.stopPropagation();
+      endRename();
     }
   }
 </script>
@@ -100,6 +108,7 @@
       <button
         type="button"
         class="icon-btn"
+        bind:this={renameTrigger}
         on:click|stopPropagation={startRename}
         title={$t('chat.conversation.rename')}
         aria-label={$t('chat.conversation.rename')}
@@ -261,8 +270,9 @@
     font-size: 0.85rem;
   }
 
-  .rename-input:focus {
-    outline: none;
+  .rename-input:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
   }
 
   .confirm-row {

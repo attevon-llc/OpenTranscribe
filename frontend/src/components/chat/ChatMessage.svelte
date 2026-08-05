@@ -29,6 +29,9 @@
   let editing = false;
   let draft = '';
   let editArea: HTMLTextAreaElement;
+  // Focus must return here when editing ends, or it falls to <body> and a
+  // keyboard user loses their place in the thread.
+  let editTrigger: HTMLButtonElement;
 
   async function startEdit(): Promise<void> {
     draft = message.content;
@@ -38,9 +41,15 @@
     editArea?.select();
   }
 
-  function submitEdit(): void {
-    const next = draft.trim();
+  async function endEdit(): Promise<void> {
     editing = false;
+    await tick();
+    editTrigger?.focus();
+  }
+
+  async function submitEdit(): Promise<void> {
+    const next = draft.trim();
+    await endEdit();
     if (next && next !== message.content) {
       dispatch('edit', { uuid: message.uuid, content: next });
     }
@@ -52,7 +61,8 @@
       submitEdit();
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      editing = false;
+      event.stopPropagation();
+      endEdit();
     }
   }
 
@@ -94,7 +104,7 @@
             <button type="button" class="edit-btn primary" on:click={submitEdit}>
               {$t('chat.message.saveAndResend')}
             </button>
-            <button type="button" class="edit-btn" on:click={() => (editing = false)}>
+            <button type="button" class="edit-btn" on:click={endEdit}>
               {$t('common.cancel')}
             </button>
           </div>
@@ -140,6 +150,7 @@
         <button
           type="button"
           class="action-btn"
+          bind:this={editTrigger}
           on:click={startEdit}
           title={$t('chat.message.edit')}
           aria-label={$t('chat.message.edit')}
@@ -307,8 +318,9 @@
     resize: vertical;
   }
 
-  .edit-box textarea:focus {
-    outline: none;
+  .edit-box textarea:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
   }
 
   .edit-actions {

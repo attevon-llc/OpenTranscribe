@@ -72,6 +72,41 @@ class BaseWatchSourceClient(ABC):
         self.close()
 
 
+def _assert_safe_watch_target(host_or_url: str | None, *, source_type: str) -> None:
+    """Refuse a watch source pointing at internal infrastructure (issue #284 A0.10).
+
+    Any user can create a watch source, and its ``s3_endpoint_url`` / SMB ``server`` is
+    fetched server-side — the same SSRF class as the LLM/ASR test-connection endpoints,
+    and semi-blind because the connection error surfaces in the scan status. Validated
+    here, at the single construction point, so every caller is covered.
+
+    ``WATCH_ALLOW_PRIVATE_ENDPOINTS`` re-enables private targets, which is the norm for a
+    self-hosted NAS on the LAN; it must stay off on a multi-tenant deployment.
+
+    Raises:
+        ValueError: if the target must not be contacted.
+    """
+    if not host_or_url:
+        return
+
+    from app.core.config import settings
+    from app.utils.url_validation import is_safe_url
+
+    if settings.WATCH_ALLOW_PRIVATE_ENDPOINTS:
+        return
+
+    # SMB gives a bare host; wrap it so the same resolver/range checks apply.
+    candidate = host_or_url if "://" in host_or_url else f"http://{host_or_url}"
+    safe, reason = is_safe_url(candidate)
+    if not safe:
+        logger.warning("Blocked %s watch source target %r: %s", source_type, host_or_url, reason)
+        raise ValueError(
+            "The configured server address could not be used. It must be a publicly "
+            "reachable address, or set WATCH_ALLOW_PRIVATE_ENDPOINTS=true for a "
+            "private/LAN source."
+        )
+
+
 def create_client(source: WatchSource) -> BaseWatchSourceClient:
     """Build the right client for ``source.source_type`` with decrypted creds.
 
@@ -95,6 +130,7 @@ def create_client(source: WatchSource) -> BaseWatchSourceClient:
             if source.encrypted_s3_secret_key
             else None
         )
+        _assert_safe_watch_target(source.s3_endpoint_url, source_type="s3")
         return S3WatchClient(
             endpoint_url=source.s3_endpoint_url,
             bucket=source.s3_bucket_name,
@@ -113,6 +149,7 @@ def create_client(source: WatchSource) -> BaseWatchSourceClient:
             if source.encrypted_smb_password
             else None
         )
+        _assert_safe_watch_target(source.smb_server, source_type="smb")
         return SMBWatchClient(
             server=source.smb_server,
             share=source.smb_share,

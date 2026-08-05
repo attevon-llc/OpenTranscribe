@@ -49,28 +49,53 @@ def validate_file_type(file: UploadFile) -> None:
 
 
 def validate_file_size_for_tenant(file_size: int, organization_id: int | None) -> None:
-    """Enforce a per-tenant (per-tier) max upload size when the cloud sets one.
+    """Enforce the max upload size — the global ceiling, or a tighter per-tenant one.
 
-    Cloud-edition seam: ``resolve_upload_limits`` returns a per-org ceiling (or
-    None to use the global limit). Community/self-host registers no resolver, so
-    this is a no-op and behavior is unchanged. ``file_size`` of 0 (unknown at
-    this point) is not rejected — the byte-count path enforces it once known.
+    Two layers:
+
+    1. ``settings.MAX_UPLOAD_BYTES`` — the GLOBAL ceiling, enforced for everyone.
+       Until issue #284 A0.12 there was none: ``resolve_upload_limits`` returns None in
+       community, so this function was a complete no-op and the only 15 GB limit in the
+       product lived in the browser. Anyone could skip the UI and PUT an arbitrarily
+       large object straight to the presigned URL.
+    2. ``resolve_upload_limits`` — cloud-edition seam for a tighter per-tier ceiling.
+       Community registers no resolver, so only layer 1 applies.
+
+    ``file_size`` of 0/unknown is not rejected here; ``complete_upload`` re-checks against
+    the size MinIO actually observed, which is the authoritative number.
+
+    Args:
+        file_size: Declared (prepare) or observed (complete) size in bytes.
+        organization_id: Tenant scope for the per-tier ceiling.
+
+    Raises:
+        HTTPException: 413 when the file exceeds the applicable ceiling.
     """
     if not file_size or file_size <= 0:
         return
+
+    from app.core.config import settings as app_settings
     from app.core.tenant_limits import resolve_upload_limits
 
+    ceiling = app_settings.MAX_UPLOAD_BYTES
+    detail = (
+        f"File exceeds the maximum upload size of {ceiling / (1024**3):.1f} GB." if ceiling else ""
+    )
+
     limits = resolve_upload_limits(organization_id)
-    if limits is None or limits.max_file_bytes is None:
-        return
-    if file_size > limits.max_file_bytes:
-        max_gb = limits.max_file_bytes / (1024**3)
+    tier_ceiling = limits.max_file_bytes if limits is not None else None
+    # A per-tier ceiling only ever tightens the global one, never loosens it.
+    if tier_ceiling is not None and (ceiling is None or tier_ceiling < ceiling):
+        ceiling = tier_ceiling
+        detail = (
+            f"File exceeds your plan's maximum upload size of "
+            f"{ceiling / (1024**3):.1f} GB. Upgrade your plan to upload larger files."
+        )
+
+    if ceiling is not None and file_size > ceiling:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=(
-                f"File exceeds your plan's maximum upload size of {max_gb:.1f} GB. "
-                "Upgrade your plan to upload larger files."
-            ),
+            detail=detail,
         )
 
 

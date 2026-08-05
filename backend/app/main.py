@@ -30,8 +30,14 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_production_secrets():
-    """Validate that production secrets are properly configured."""
-    is_production = settings.ENVIRONMENT.lower() in ("production", "prod")
+    """Validate that production secrets are properly configured.
+
+    Gated on ``settings.is_hardened`` (fail-closed): every check below applies unless
+    ENVIRONMENT explicitly names a relaxed environment. The previous
+    ``ENVIRONMENT in ("production", "prod")`` test was never true in practice — nothing
+    passes ENVIRONMENT into the containers — so none of these ran anywhere (#284 A0.3).
+    """
+    is_production = settings.is_hardened
 
     # Check JWT secret key
     insecure_jwt_secrets = (
@@ -105,6 +111,28 @@ def _validate_production_secrets():
             "SECURITY WARNING: MINIO_PUBLIC_URL uses HTTP instead of HTTPS. "
             "Presigned URLs will be served over an insecure connection in production."
         )
+
+    # TESTING=true enables auth shortcuts (a fabricated user, a password-free login
+    # path). Enforcement lives at the USE sites in endpoints/auth.py, which additionally
+    # require `not settings.is_hardened` — so the flag is inert in a real deployment even
+    # if it leaks into the environment. Warn here rather than refusing to boot: the
+    # secrets-guard test suite legitimately simulates production while TESTING is set
+    # process-wide by conftest (issue #284 A0.8).
+    if is_production and os.environ.get("TESTING", "False").lower() == "true":
+        logger.warning(
+            "TESTING=true in a hardened environment. Auth shortcuts are disabled by "
+            "is_hardened, but this variable should not be set in production."
+        )
+
+    # A wildcard origin combined with allow_credentials=True lets any site read
+    # authenticated responses. Browsers reject that pairing, but the misconfiguration
+    # should surface at boot rather than as confusing CORS failures (issue #284 A0.8).
+    if is_production and "*" in settings.CORS_ORIGINS:
+        logger.critical(
+            "CORS_ORIGINS contains '*' while credentials are allowed. "
+            "Set explicit origins. Refusing to start."
+        )
+        raise ValueError("Wildcard CORS_ORIGINS is not permitted with credentialed requests")
 
     if is_production:
         logger.info("Production security validation passed")

@@ -91,8 +91,10 @@ class AuditMiddleware(BaseHTTPMiddleware):
         """
         Extract the client IP address from the request.
 
-        Handles X-Forwarded-For header for requests behind proxies.
-        In production, configure trusted proxies appropriately.
+        Delegates to the shared trusted-proxy resolver. This method previously trusted
+        ``X-Forwarded-For`` and ``X-Real-IP`` **unconditionally**, so any client could
+        forge the address recorded against it in the audit log simply by sending the
+        header — in a security audit trail, of all places (issue #284 A0.5).
 
         Args:
             request: The incoming request
@@ -100,23 +102,9 @@ class AuditMiddleware(BaseHTTPMiddleware):
         Returns:
             The client IP address
         """
-        # Check for X-Forwarded-For header (set by reverse proxy)
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # X-Forwarded-For can contain multiple IPs: client, proxy1, proxy2, ...
-            # The first IP is the original client
-            return str(forwarded_for.split(",")[0].strip())
+        from app.utils.client_ip import resolve_client_ip
 
-        # Check for X-Real-IP header (used by some proxies)
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return str(real_ip.strip())
-
-        # Fall back to direct client IP
-        if request.client:
-            return str(request.client.host)
-
-        return "unknown"
+        return resolve_client_ip(request)
 
 
 def get_request_context(request: Request) -> dict:

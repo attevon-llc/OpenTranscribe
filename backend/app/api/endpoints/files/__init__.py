@@ -965,15 +965,17 @@ def clear_video_cache(
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Clear cached processed videos for a file (e.g., after speaker name updates)"""
-    try:
-        # Verify user owns the file or is admin (tenant-gated via ctx.org_id)
-        is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
-        )
-        file_id = db_file.id  # Get internal ID for cache operations
+    # Authorization runs OUTSIDE the try: get_media_file_by_uuid raises HTTPException
+    # 403/404, and a broad `except Exception` around it re-wrapped that as a 500 — hiding
+    # the authz result — then referenced the still-unassigned `file_id` in its own log
+    # line and crashed a second time with NameError (issue #284 A0.6).
+    is_admin = current_user.is_admin
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+    )
+    file_id = db_file.id  # Internal ID for cache operations
 
-        # Clear the cache using video processing service
+    try:
         from app.services.minio_service import MinIOService
         from app.services.video_processing_service import VideoProcessingService
 
@@ -987,11 +989,13 @@ def clear_video_cache(
 
         return None
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error clearing video cache for file {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error clearing video cache: {str(e)}",
+            detail="Error clearing video cache",
         ) from e
 
 
@@ -1025,15 +1029,16 @@ def refresh_analytics(
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Refresh analytics for a media file by recomputing them"""
-    try:
-        # Verify user owns the file or is admin (tenant-gated via ctx.org_id)
-        is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
-        )
-        file_id = db_file.id  # Get internal ID for analytics refresh
+    # Authorization runs OUTSIDE the try — see clear_video_cache above for why
+    # (issue #284 A0.6). The `raise HTTPException(500)` below was also swallowed by the
+    # broad handler and re-wrapped, doubling the `from e` chain.
+    is_admin = current_user.is_admin
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+    )
+    file_id = db_file.id  # Internal ID for analytics refresh
 
-        # Refresh analytics using the analytics service
+    try:
         from app.services.analytics_service import AnalyticsService
 
         success = AnalyticsService.refresh_analytics(db, file_id)
@@ -1047,11 +1052,13 @@ def refresh_analytics(
 
         return None
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error refreshing analytics for file {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error refreshing analytics: {str(e)}",
+            detail="Error refreshing analytics",
         ) from e
 
 

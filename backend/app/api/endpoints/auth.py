@@ -95,7 +95,12 @@ def _get_client_info(request: Request) -> tuple[str, str]:
     Returns:
         Tuple of (client_ip, user_agent)
     """
-    client_ip = request.client.host if request.client else "unknown"
+    # Resolve through the trusted-proxy chain, not the raw peer: behind a reverse proxy
+    # request.client.host is the PROXY, so every audited login recorded the proxy's
+    # address instead of the user's (issue #284 A0.5).
+    from app.utils.client_ip import resolve_client_ip
+
+    client_ip = resolve_client_ip(request)
     user_agent = request.headers.get("User-Agent", "unknown")
     return client_ip, user_agent
 
@@ -244,7 +249,12 @@ def get_current_user(
         # Handle database connection errors or other issues
         logger.error(f"Error retrieving user: {e}")
         # In testing environment, we can create a mock user with the UUID from the token
-        testing_environment = os.environ.get("TESTING", "False").lower() == "true"
+        # TESTING enables auth shortcuts (here, a fabricated user). Gate on
+        # is_hardened as well, so the flag can never take effect in a real
+        # deployment even if it leaks into the environment (issue #284 A0.8).
+        testing_environment = (
+            os.environ.get("TESTING", "False").lower() == "true" and not settings.is_hardened
+        )
         if testing_environment:
             logger.info(f"Creating mock user for testing with uuid {token_data.sub}")
             # For tests, create a basic user object with the UUID from the token
@@ -695,7 +705,12 @@ def _perform_authentication(
     Raises:
         HTTPException: If user is inactive (400) or other non-auth errors
     """
-    testing_environment = os.environ.get("TESTING", "False").lower() == "true"
+    # TESTING enables auth shortcuts (a fabricated user, a password-free login path).
+    # Gate on is_hardened as well, so the flag can never take effect in a real
+    # deployment even if it leaks into the environment (issue #284 A0.8).
+    testing_environment = (
+        os.environ.get("TESTING", "False").lower() == "true" and not settings.is_hardened
+    )
 
     if testing_environment:
         user_uuid_str = _authenticate_testing_user(db, username, password)
@@ -1045,6 +1060,7 @@ def login_for_access_token(
 
 
 @router.post("/register", response_model=UserSchema)
+@limiter.limit(get_auth_rate_limit())
 def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
     """
     Register a new user.
@@ -1059,7 +1075,22 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
 
     Note: When LDAP is enabled, local registration is still allowed for admin accounts.
     Regular users should use LDAP authentication.
+
+    Rate-limited like every other auth route — this was the ONLY one without a limiter,
+    while creating accounts that are immediately active and GPU-capable (issue #284
+    A0.11). Registration can also be closed entirely with ALLOW_OPEN_REGISTRATION=false,
+    which a deployment fronted by an external IdP should always do.
     """
+    if not settings.ALLOW_OPEN_REGISTRATION:
+        logger.warning(
+            "Rejected registration attempt for %s: open registration is disabled",
+            user_in.email,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Self-registration is disabled. Contact your administrator for an account.",
+        )
+
     # Check if email already exists
     user_exists = db.query(User).filter(User.email == user_in.email).first()
 
@@ -1989,7 +2020,9 @@ def _verify_mfa_code(
 
     # Try TOTP verification first (6 digits)
     if len(normalized_code) == 6 and normalized_code.isdigit():
-        is_valid = MFAService.verify_totp(decrypted_secret, normalized_code)
+        is_valid = MFAService.verify_totp(
+            decrypted_secret, normalized_code, user_id=user_mfa.user_id
+        )
 
     # Try backup code verification (8 characters)
     if not is_valid:
@@ -2255,7 +2288,7 @@ def verify_mfa_setup(
 
     # Verify the TOTP code
     client_ip, user_agent = _get_client_info(request)
-    if not MFAService.verify_totp(decrypted_secret, request_body.code):
+    if not MFAService.verify_totp(decrypted_secret, request_body.code, user_id=current_user.id):
         logger.warning(f"MFA setup verification failed for user: {str(current_user.email)}")
         # Log MFA setup verification failure
         audit_logger.log_mfa_event(
@@ -2423,7 +2456,7 @@ def disable_mfa(
 
     # Try TOTP verification first
     if len(code) == 6 and code.isdigit():
-        is_valid = MFAService.verify_totp(decrypted_secret, code)
+        is_valid = MFAService.verify_totp(decrypted_secret, code, user_id=current_user.id)
 
     # Try backup code verification
     if not is_valid:

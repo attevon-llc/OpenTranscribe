@@ -55,6 +55,11 @@ def _service_reachable(host: str, port: int, timeout: float = 0.3) -> bool:
 
 # Set testing environment flag and disable external services in tests
 os.environ["TESTING"] = "True"
+# Declare the suite as a relaxed environment. ENVIRONMENT defaults to "production"
+# and fails closed (#284 A0.3), which would otherwise put Secure=True on session
+# cookies — and the TestClient talks plain http://testserver, so it would silently
+# drop them and every cookie-auth test would see an anonymous session.
+os.environ["ENVIRONMENT"] = "testing"
 os.environ["SKIP_CELERY"] = "True"
 os.environ["SKIP_REDIS"] = "True"
 os.environ["SKIP_WEBSOCKET"] = "True"

@@ -150,6 +150,27 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
     ]
 
 
+def _assert_safe_llm_endpoint(base_url: str | None, purpose: str) -> None:
+    """Refuse a user-supplied LLM endpoint that points at internal infrastructure.
+
+    These endpoints take an arbitrary ``base_url`` from any authenticated user and fetch
+    it server-side. With open self-registration that is effectively anonymous reach into
+    the deployment's private network and cloud instance metadata (issue #284 A0.1).
+    Set ``LLM_ALLOW_PRIVATE_ENDPOINTS=true`` on a single-tenant deployment that genuinely
+    runs Ollama/vLLM on a private LAN.
+    """
+    if not base_url:
+        return
+    from app.core.config import settings
+    from app.utils.url_validation import assert_safe_outbound_url
+
+    assert_safe_outbound_url(
+        base_url,
+        purpose=purpose,
+        allow_private=settings.LLM_ALLOW_PRIVATE_ENDPOINTS,
+    )
+
+
 @router.get("/providers", response_model=schemas.SupportedProvidersResponse)
 def get_supported_providers() -> Any:
     """Get list of supported LLM providers with their default configurations.
@@ -613,6 +634,7 @@ async def test_llm_connection(
     Test connection to LLM provider without saving settings.
     If config_id is provided and no api_key, will use the stored API key from that config.
     """
+    _assert_safe_llm_endpoint(test_request.base_url, "LLM test-connection")
     start_time = time.time()
 
     try:
@@ -845,6 +867,7 @@ async def get_ollama_models(
     """
     Get available models from an Ollama instance
     """
+    _assert_safe_llm_endpoint(base_url, "Ollama model discovery")
     import aiohttp
 
     try:
@@ -1024,6 +1047,8 @@ async def get_openai_compatible_models(
     Supports: OpenAI, vLLM, OpenRouter, and other OpenAI-compatible providers.
     If config_id is provided and no api_key, will use the stored API key from that config.
     """
+    _assert_safe_llm_endpoint(base_url, "OpenAI-compatible model discovery")
+
     import aiohttp
 
     # Resolve effective API key

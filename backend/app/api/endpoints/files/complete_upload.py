@@ -15,6 +15,7 @@ See ``docs/PIPELINE_TIMING.md`` for the marker reference.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -133,6 +134,29 @@ def complete_upload(
         logger.warning(
             f"size mismatch for {request.file_id}: client={request.file_size} server={minio_size}"
         )
+
+    # Enforce the upload ceiling against the size MinIO ACTUALLY observed, not the size
+    # the client declared at /prepare. The declared value only gates minting the
+    # presigned URL; the object is written browser→MinIO directly, so this is the first
+    # authoritative number and the only place an oversized upload can be caught
+    # (issue #284 A0.12). Delete the object and the row rather than leaving either behind.
+    from app.api.endpoints.files.upload import validate_file_size_for_tenant
+
+    try:
+        validate_file_size_for_tenant(minio_size, db_file.organization_id)
+    except HTTPException:
+        logger.warning(
+            "Rejecting oversized upload %s: %d bytes exceeds the ceiling",
+            request.file_id,
+            minio_size,
+        )
+        from app.services.minio_service import delete_file
+
+        with contextlib.suppress(Exception):
+            delete_file(str(db_file.storage_path))
+        db.delete(db_file)
+        db.commit()
+        raise
 
     # Magic-byte validation — parity with the legacy path. The bytes went
     # browser→MinIO directly, so verify the object's real signature matches

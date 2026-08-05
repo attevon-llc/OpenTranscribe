@@ -27,6 +27,26 @@ def _int_env(key: str, default: int) -> int:
         return default
 
 
+# The ONLY environment names that relax security controls. Anything else — including
+# a typo, an empty string, or an unset variable falling back to the default — is
+# treated as production and gets the hardened path. Keep this list closed: adding a
+# name here disables default-secret refusal, DEBUG enforcement, the Redis-password
+# requirement, and the cookie Secure flag for that value (issue #284 A0.3).
+RELAXED_ENVIRONMENTS = frozenset({"development", "dev", "testing", "test", "local"})
+
+
+def is_relaxed_environment(environment: str) -> bool:
+    """Whether *environment* names a non-production environment.
+
+    Args:
+        environment: The raw ``ENVIRONMENT`` value.
+
+    Returns:
+        True only for an explicit member of :data:`RELAXED_ENVIRONMENTS`.
+    """
+    return environment.strip().lower() in RELAXED_ENVIRONMENTS
+
+
 def _validate_ldap_settings(settings: "Settings") -> None:
     """Validate LDAP configuration when LDAP authentication is enabled.
 
@@ -107,9 +127,58 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
     PROJECT_NAME: str = "Transcription App"
 
-    # Environment configuration
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
-    DEBUG: bool = ENVIRONMENT == "development"
+    # Environment configuration.
+    #
+    # FAIL-CLOSED (issue #284 A0.3): the default is "production", so a deployment
+    # that never sets ENVIRONMENT gets the hardened path — default-secret refusal,
+    # DEBUG off, Redis password required, Secure cookies. It used to default to
+    # "development", and because NOTHING passes ENVIRONMENT into the containers
+    # (opentr.sh uses a shell-local variable of the same name and exports BUILD_ENV
+    # instead), every deployment — including `./opentr.sh start prod` — silently ran
+    # with all of those protections disabled.
+    #
+    # Dev relaxation is now explicit: docker-compose.override.yml sets
+    # ENVIRONMENT=development, and that file is never loaded in prod.
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")
+    DEBUG: bool = is_relaxed_environment(ENVIRONMENT)
+
+    # Global server-side upload ceiling, in bytes (issue #284 A0.12). Matches the 15 GB
+    # the UI advertises and the yt-dlp `max_filesize`. Before this there was NO
+    # server-side ceiling in community: the only limit lived in the browser, so a client
+    # could skip the UI and PUT an arbitrarily large object to the presigned URL.
+    # Enforced at prepare (declared size) AND complete (the size MinIO observed).
+    # Set 0 to disable — only sensible on a trusted single-user install.
+    MAX_UPLOAD_BYTES: int | None = _int_env("MAX_UPLOAD_BYTES", 15 * 1024 * 1024 * 1024) or None
+
+    # Whether anyone can create their own account via POST /api/auth/register.
+    # New users are immediately active and GPU-capable, so on a public deployment this
+    # is the door in front of every per-user cost (issue #284 A0.11). Set false when an
+    # external IdP owns identity, or when accounts should be admin-provisioned.
+    ALLOW_OPEN_REGISTRATION: bool = os.getenv("ALLOW_OPEN_REGISTRATION", "true").lower() == "true"
+
+    # SSRF egress policy for user-supplied endpoint URLs (issue #284 A0.1/A0.10).
+    # Self-hosted Ollama/vLLM on a private LAN is a legitimate setup, so a single-tenant
+    # deployment can opt back into private targets. MUST stay false on anything
+    # multi-tenant or publicly registerable: with it on, any user can point a
+    # "test connection" at internal services and cloud instance metadata.
+    LLM_ALLOW_PRIVATE_ENDPOINTS: bool = (
+        os.getenv("LLM_ALLOW_PRIVATE_ENDPOINTS", "false").lower() == "true"
+    )
+    # Same policy for watch-source S3 endpoints and SMB servers. A self-hosted NAS on
+    # the LAN is the normal case for single-tenant installs, so this defaults ON for
+    # watch sources; turn it OFF on a multi-tenant or publicly-registerable deployment.
+    WATCH_ALLOW_PRIVATE_ENDPOINTS: bool = (
+        os.getenv("WATCH_ALLOW_PRIVATE_ENDPOINTS", "true").lower() == "true"
+    )
+
+    # Bootstrap admin (issue #284 A0.9). In a relaxed environment the seeder creates
+    # the well-known admin@example.com / "password" super_admin that the test suite
+    # and local workflow depend on. In a hardened environment that credential is NEVER
+    # created: the seeder uses these values, generating a strong random password (logged
+    # once at startup) when INITIAL_ADMIN_PASSWORD is unset, so a public deploy can never
+    # ship with a known super-admin login.
+    INITIAL_ADMIN_EMAIL: str = os.getenv("INITIAL_ADMIN_EMAIL", "admin@example.com")
+    INITIAL_ADMIN_PASSWORD: str | None = os.getenv("INITIAL_ADMIN_PASSWORD") or None
 
     # Edition: "community" (self-hosted, default — everything enabled) or
     # "cloud" (commercial managed edition; the private cloud layer overrides
@@ -386,6 +455,16 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = REDIS_URL
     CELERY_RESULT_BACKEND: str = REDIS_URL
 
+    @property
+    def is_hardened(self) -> bool:
+        """Whether security controls are enforced (the fail-closed default).
+
+        True unless ``ENVIRONMENT`` explicitly names a relaxed environment. Gate every
+        security control on THIS, never on ``ENVIRONMENT in ("production", "prod")`` —
+        that form fails open for an unset, empty, or misspelled value (issue #284 A0.3).
+        """
+        return not is_relaxed_environment(self.ENVIRONMENT)
+
     # CORS settings
     # Note: Remove "*" in production and specify exact origins for security
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -568,7 +647,7 @@ class Settings(BaseSettings):
     PKI_REVOCATION_SOFT_FAIL: bool = (
         os.getenv(
             "PKI_REVOCATION_SOFT_FAIL",
-            "false" if ENVIRONMENT.lower() in ("production", "prod") else "true",
+            "true" if is_relaxed_environment(ENVIRONMENT) else "false",
         ).lower()
         == "true"
     )

@@ -8,6 +8,12 @@
 #   - Mount source code for live reloading
 #   - Development-specific commands
 
+# Every service running the backend image must agree on the environment. The app
+# defaults ENVIRONMENT to "production" and fails closed (#284 A0.3); this anchor is
+# what marks a dev stack as development. This file is NEVER loaded in prod.
+x-dev-environment: &dev-environment
+  ENVIRONMENT: development
+
 services:
   # All backend services share the same image to save disk space
   # Image is built once and reused by all backend-based services
@@ -21,6 +27,7 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload  # Enable hot reload
     environment:
+      <<: *dev-environment
       # Dev-only security-limit relaxation. The e2e suite performs hundreds of
       # real logins (plus deliberate failed ones) per run; the production
       # limits are security controls, not test gates. This file is NEVER
@@ -32,6 +39,8 @@ services:
 
   celery-worker:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -44,6 +53,8 @@ services:
 
   celery-download-worker:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -54,6 +65,8 @@ services:
 
   celery-cpu-worker:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -62,6 +75,8 @@ services:
 
   celery-redaction:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -72,6 +87,8 @@ services:
 
   celery-cloud-asr-worker:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -80,6 +97,8 @@ services:
 
   celery-nlp-worker:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -88,6 +107,8 @@ services:
 
   celery-embedding-worker:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -97,6 +118,8 @@ services:
 
   celery-beat:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -128,6 +151,8 @@ services:
 
   flower:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -150,6 +175,8 @@ services:
   # GPU Scaled Worker - Development build (only active with --gpu-scale flag)
   celery-worker-gpu-scaled:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -166,6 +193,8 @@ services:
   # only supply the local image/build/volumes (mirrors celery-worker-gpu-scaled).
   celery-worker-gpu-transcribe:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -180,6 +209,8 @@ services:
 
   celery-worker-gpu-diarize:
     image: opentranscribe-backend:latest
+    environment:
+      <<: *dev-environment
     build:
       context: ./backend
       dockerfile: Dockerfile.prod

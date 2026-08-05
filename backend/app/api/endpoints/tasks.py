@@ -1,3 +1,13 @@
+"""Task-system API: task listing, health, recovery, and retry.
+
+Handlers are declared ``def``, not ``async def`` (issue #284 A2.5). Their bodies are
+pure blocking work — SQLAlchemy aggregates over ``Task``/``MediaFile``, the detection
+and recovery services, Celery ``.delay()`` — with no ``await`` anywhere, so running
+them as coroutines pinned the event loop for the duration of each admin sweep. The
+same applies to the nested ``BackgroundTasks`` callables: they call the synchronous
+``dispatch_transcription_pipeline``, so they too are ``def`` and get threadpooled.
+"""
+
 import logging
 import math
 from datetime import UTC
@@ -230,7 +240,7 @@ def list_tasks(
 
 
 @router.get("/system/health", response_model=dict[str, Any])
-async def task_system_health(
+def task_system_health(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),  # Only admins can access this endpoint
 ):
@@ -329,7 +339,7 @@ async def task_system_health(
 
 
 @router.post("/recover-stuck-tasks", response_model=dict[str, Any])
-async def recover_all_stuck_tasks(
+def recover_all_stuck_tasks(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),  # Only admins can recover tasks
@@ -355,7 +365,7 @@ async def recover_all_stuck_tasks(
                 # If it's a transcription task, retry it
                 if task.task_type == "transcription" and task.media_file_id:
                     # Schedule a retry in the background for each recovered task
-                    async def retry_transcription(file_uuid):
+                    def retry_transcription(file_uuid):
                         try:
                             from app.tasks.transcription import dispatch_transcription_pipeline
 
@@ -387,7 +397,7 @@ async def recover_all_stuck_tasks(
 
 
 @router.post("/system/startup-recovery", response_model=dict[str, Any])
-async def trigger_startup_recovery(
+def trigger_startup_recovery(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -400,7 +410,7 @@ async def trigger_startup_recovery(
     """
     try:
         # Schedule startup recovery in background
-        async def run_recovery():
+        def run_recovery():
             try:
                 from app.tasks.recovery import startup_recovery_task
 
@@ -424,7 +434,7 @@ async def trigger_startup_recovery(
 
 
 @router.post("/system/recover-all-user-files", response_model=dict[str, Any])
-async def trigger_all_user_file_recovery(
+def trigger_all_user_file_recovery(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -436,7 +446,7 @@ async def trigger_all_user_file_recovery(
     """
     try:
         # Schedule recovery for all users in background
-        async def run_all_user_recovery():
+        def run_all_user_recovery():
             try:
                 from app.tasks.recovery import recover_user_files_task
 
@@ -457,7 +467,7 @@ async def trigger_all_user_file_recovery(
 
 
 @router.post("/system/recover-user-files/{user_uuid}", response_model=dict[str, Any])
-async def trigger_user_file_recovery(
+def trigger_user_file_recovery(
     user_uuid: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -475,7 +485,7 @@ async def trigger_user_file_recovery(
         # Schedule user file recovery in background using internal integer ID
         user_id = target_user.id
 
-        async def run_user_recovery():
+        def run_user_recovery():
             try:
                 from app.tasks.recovery import recover_user_files_task
 
@@ -502,7 +512,7 @@ async def trigger_user_file_recovery(
 
 
 @router.post("/system/recover-task/{task_id}", response_model=dict[str, Any])
-async def recover_task(
+def recover_task(
     task_id: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -529,7 +539,7 @@ async def recover_task(
             file_uuid = str(task.media_file.uuid) if task.media_file else None
             if file_uuid:
 
-                async def retry_transcription():
+                def retry_transcription():
                     try:
                         from app.tasks.transcription import dispatch_transcription_pipeline
 
@@ -559,7 +569,7 @@ async def recover_task(
 
 
 @router.post("/system/fix-file/{file_uuid}", response_model=dict[str, Any])
-async def fix_inconsistent_file(
+def fix_inconsistent_file(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),  # Only admins can fix files
@@ -593,7 +603,7 @@ async def fix_inconsistent_file(
 
 
 @router.post("/fix-inconsistent-files", response_model=dict[str, Any])
-async def fix_all_inconsistent_files(
+def fix_all_inconsistent_files(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
@@ -631,7 +641,7 @@ async def fix_all_inconsistent_files(
 
 
 @router.post("/retry/{file_uuid}", response_model=dict[str, Any])
-async def retry_file_processing(
+def retry_file_processing(
     file_uuid: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -688,7 +698,7 @@ async def retry_file_processing(
         db.commit()
 
         # Schedule a new transcription in the background
-        async def start_new_transcription():
+        def start_new_transcription():
             try:
                 from app.tasks.transcription import dispatch_transcription_pipeline
 

@@ -6,6 +6,11 @@ Simplified endpoints for:
 - Extracting/regenerating suggestions
 - Applying approved suggestions
 - Batch extraction
+
+Handlers are declared ``def``, not ``async def`` (issue #284 A2.5): they only do
+blocking work (SQLAlchemy, Redis progress reads, Celery ``.delay()``) and never
+``await``, so as coroutines they occupied the event loop for the whole request.
+A plain ``def`` handler runs in Starlette's threadpool instead.
 """
 
 import logging
@@ -45,7 +50,7 @@ router = APIRouter()
 
 
 @router.post("/batch-extract", status_code=status.HTTP_202_ACCEPTED)
-async def batch_extract_topics(
+def batch_extract_topics(
     file_uuids: list[str] = Body(..., embed=True),
     force_regenerate: bool = Body(False, embed=True),
     db: Session = Depends(get_db),
@@ -157,7 +162,7 @@ async def batch_extract_topics(
 
 
 @router.get("/retroactive-auto-label/status")
-async def get_retroactive_auto_label_status(
+def get_retroactive_auto_label_status(
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """Get the current auto-label retroactive apply progress."""
@@ -198,7 +203,7 @@ async def get_retroactive_auto_label_status(
 
 
 @router.post("/retroactive-auto-label", status_code=status.HTTP_202_ACCEPTED)
-async def retroactive_auto_label(
+def retroactive_auto_label(
     request_data: RetroactiveAutoLabelRequest = Body(
         default=RetroactiveAutoLabelRequest()  # type: ignore[call-arg]  # file_uuids defaults to None
     ),
@@ -225,7 +230,7 @@ async def retroactive_auto_label(
 
 
 @router.post("/{file_uuid}/auto-label")
-async def auto_label_single_file(
+def auto_label_single_file(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -278,7 +283,7 @@ async def auto_label_single_file(
 
 
 @router.get("/{file_uuid}/suggestions", response_model=TopicSuggestionResponse)
-async def get_topic_suggestions(
+def get_topic_suggestions(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -343,7 +348,7 @@ async def get_topic_suggestions(
 
 
 @router.post("/{file_uuid}/extract", status_code=status.HTTP_202_ACCEPTED)
-async def extract_topics(
+def extract_topics(
     file_uuid: str,
     request_data: ExtractTopicsRequest = Body(default=ExtractTopicsRequest(force_regenerate=False)),
     db: Session = Depends(get_db),
@@ -413,7 +418,7 @@ async def extract_topics(
 
 
 @router.post("/{file_uuid}/apply", response_model=dict)
-async def apply_topic_suggestions(
+def apply_topic_suggestions(
     file_uuid: str,
     request_data: ApplyTopicSuggestionsRequest,
     db: Session = Depends(get_db),
@@ -472,7 +477,7 @@ async def apply_topic_suggestions(
 
 
 @router.delete("/{file_uuid}/suggestions", status_code=status.HTTP_204_NO_CONTENT)
-async def dismiss_topic_suggestions(
+def dismiss_topic_suggestions(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

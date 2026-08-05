@@ -132,7 +132,7 @@ def test_websocket_auth_returns_none_for_revoked_token(monkeypatch):
     import app.auth.provider_registry as _registry
 
     monkeypatch.setattr(_registry, "has_verifiers", lambda: False)
-    monkeypatch.setattr(ws_module.token_service, "is_token_revoked", lambda jti: True)
+    monkeypatch.setattr(ws_module.token_service, "is_token_revoked", lambda jti, **_kw: True)
 
     assert ws_module._try_authenticate_token("tok", db) is None
 
@@ -159,7 +159,7 @@ def test_websocket_auth_accepts_active_user_with_valid_token(monkeypatch):
     import app.auth.provider_registry as _registry
 
     monkeypatch.setattr(_registry, "has_verifiers", lambda: False)
-    monkeypatch.setattr(ws_module.token_service, "is_token_revoked", lambda jti: False)
+    monkeypatch.setattr(ws_module.token_service, "is_token_revoked", lambda jti, **_kw: False)
 
     assert ws_module._try_authenticate_token("tok", db) is cast("User", active)
 

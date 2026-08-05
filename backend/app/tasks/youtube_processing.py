@@ -303,7 +303,8 @@ def process_youtube_url_task(
                             db, file_id, user_id, [_UUID(c) for c in collection_ids]
                         )
                     if tag_names:
-                        add_tags_to_file(db, file_id, tag_names)
+                        # Background task: the tag belongs to the file owner.
+                        add_tags_to_file(db, file_id, tag_names, user_id)
                     db.commit()
 
                 # Send completion notification
@@ -808,7 +809,8 @@ def _handle_playlist_result(
             if collection_ids:
                 add_file_to_collections(db, int(media_file.id), user_id, parsed_ids)
             if tag_names:
-                add_tags_to_file(db, int(media_file.id), tag_names)
+                # Background task: the tag belongs to the file owner.
+                add_tags_to_file(db, int(media_file.id), tag_names, user_id)
         db.commit()
 
     # Send file_created notifications for each video

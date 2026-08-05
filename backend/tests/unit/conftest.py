@@ -63,3 +63,28 @@ def run_in_clean_process():
         return lines[-1]
 
     return _run
+
+
+@pytest.fixture(scope="session")
+def revisions_at_or_after():
+    """Return ``base -> {base and every revision that descends from it}``.
+
+    The migration-consistency tests assert that ``_detect_schema_version`` does not
+    fall BELOW a given revision on the current schema. Only the newest revision can
+    assert an exact value — every older arm stops being the answer the moment a new
+    revision lands — so they compare against this set instead of a hard-coded list
+    that has to be edited on every schema change.
+    """
+    from alembic.script import ScriptDirectory
+
+    from app.db.migrations import get_alembic_config
+
+    config = get_alembic_config()
+    # alembic.ini's script_location is cwd-relative; pin it for the test runner.
+    config.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
+    scripts = ScriptDirectory.from_config(config)
+
+    def _at_or_after(base: str) -> set[str]:
+        return {rev.revision for rev in scripts.iterate_revisions("heads", base)}
+
+    return _at_or_after

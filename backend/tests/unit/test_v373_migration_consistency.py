@@ -49,13 +49,22 @@ def test_v373_migration_is_vendor_neutral():
         assert vendor_noun not in source.lower()
 
 
-def test_detection_arm_returns_v373_on_current_schema(db_session):
-    """An untracked DB with the current (post-v373) schema stamps at v373."""
+def test_detection_arm_returns_v373_or_later_on_current_schema(db_session, revisions_at_or_after):
+    """An untracked DB with the current schema stamps at v373 or a later arm.
+
+    v373's arm is only the *answer* while v373 is head; once a newer revision
+    lands (v374 added ``tag.user_id``) the newest-first ladder correctly returns
+    that instead. What must never happen is falling BACK below v373 — that would
+    re-stamp a v373-shaped DB at v372 and replay v373's DDL. The precise
+    post-v374 assertion lives in ``test_v374_migration_consistency.py``.
+    """
     from app.db.migrations import _detect_schema_version
 
     conn = db_session.connection()
     tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) == "v373_add_cluster_organization_id"
+    assert _detect_schema_version(conn, tables) in revisions_at_or_after(
+        "v373_add_cluster_organization_id"
+    )
 
 
 def test_speaker_cluster_org_column_exists(db_session):

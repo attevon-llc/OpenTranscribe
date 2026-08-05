@@ -720,7 +720,7 @@ async def process_media_url(
                     [_UUID(c) for c in request_data.collection_ids],
                 )
             if request_data.tag_names:
-                add_tags_to_file(db, media_file.id, request_data.tag_names)
+                add_tags_to_file(db, media_file.id, request_data.tag_names, current_user.id)
             db.commit()
 
         # Dispatch background task (pass credentials only for this processing request)

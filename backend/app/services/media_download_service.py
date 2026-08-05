@@ -33,7 +33,7 @@ from app.services.minio_service import upload_file
 from app.services.minio_service import upload_file_tuned
 from app.services.protected_media_providers import PROTECTED_MEDIA_PROVIDERS
 from app.services.protected_media_providers import ProtectedMediaProvider
-from app.utils.thumbnail import generate_and_upload_thumbnail_sync
+from app.utils.thumbnail import generate_and_upload_thumbnail
 from app.utils.url_validation import is_safe_url
 
 logger = logging.getLogger(__name__)
@@ -399,7 +399,7 @@ def _get_thumbnail_with_fallback(
 
     # Inline fallback — keeps legacy behavior for callers that opt out.
     try:
-        return generate_and_upload_thumbnail_sync(
+        return generate_and_upload_thumbnail(
             user_id=user_id,
             media_file_id=media_file_id,
             video_path=video_path,

@@ -31,8 +31,13 @@ class ConnectionManager:
         # user_id -> List[WebSocket]
         self.active_connections: dict[int, list[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket, user_id: int):
-        """Register a WebSocket connection for a user (accept() must be called before this)."""
+    def connect(self, websocket: WebSocket, user_id: int):
+        """Register a WebSocket connection for a user (accept() must be called before this).
+
+        Bookkeeping only — no I/O — so it is a plain function, mirroring ``disconnect``.
+        It is still owned by the connection's own coroutine; nothing outside this
+        process may touch ``manager`` (publish via ``utils/websocket_notify.py``).
+        """
         if user_id not in self.active_connections:
             self.active_connections[user_id] = []
         self.active_connections[user_id].append(websocket)
@@ -98,8 +103,14 @@ manager = ConnectionManager()
 redis_client: redis.Redis | None = None
 
 
-async def setup_redis():
-    """Initialize Redis connection for pub/sub notifications."""
+def setup_redis():
+    """Initialize Redis connection for pub/sub notifications.
+
+    ``redis.asyncio.from_url`` only builds a lazily-connecting pool and
+    ``asyncio.create_task`` needs a running loop, not an ``await`` — so nothing here
+    yields. Declaring it ``async def`` claimed otherwise (issue #320); callers must
+    still invoke it from a coroutine so ``create_task`` has a loop to attach to.
+    """
     global redis_client
     if not redis_client:
         # health_check_interval + keepalive keep the long-lived pub/sub connection
@@ -183,7 +194,7 @@ async def redis_subscriber():
 async def publish_notification(user_id: int, notification_type: str, data: dict):
     """Publish notification via Redis pub/sub."""
     if not redis_client:
-        await setup_redis()
+        setup_redis()
 
     notification = {"user_id": user_id, "type": notification_type, "data": data}
 
@@ -267,7 +278,7 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
        message loop; on failure, close with an appropriate error code.
     """
     # Initialize Redis subscriber if not already running
-    await setup_redis()
+    setup_redis()
 
     # Accept the connection first, then authenticate
     await websocket.accept()
@@ -304,7 +315,7 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
             return
 
     # Register the authenticated connection
-    await manager.connect(websocket, user.id)
+    manager.connect(websocket, user.id)
 
     # Send initial connection status
     await websocket.send_text(

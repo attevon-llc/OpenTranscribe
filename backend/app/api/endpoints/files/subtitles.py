@@ -285,58 +285,66 @@ def bulk_export_stream(
     from redis.exceptions import TimeoutError as RedisTimeoutError
 
     from app.core.config import settings
-    from app.core.redis import get_redis
     from app.services.download_events import bulk_export_channel
 
     def sse(event: str, payload: dict) -> str:
         return f"event: {event}\ndata: {_json.dumps(payload)}\n\n"
 
     async def event_stream():
-        # 1. Already finished? deliver immediately (covers reconnects after completion).
-        cached = get_redis().get(f"bulk_export_result:{job}")
-        if cached:
-            yield sse("ready", _json.loads(cached))
-            return
-
+        # The whole generator is iterated ON the event loop, so every Redis call in it
+        # must be async. The result-cache read used to go through the synchronous
+        # ``get_redis()`` singleton, stalling every other request for the round trip
+        # (issue #320); it now shares the async client already used for the pub/sub.
         client = aioredis.from_url(
             settings.REDIS_URL, health_check_interval=30, socket_keepalive=True
         )
-        pubsub = client.pubsub()
-        await pubsub.subscribe(bulk_export_channel(job))
-        yield sse("progress", {"message": "Preparing export…", "progress": 0})
         try:
-            while True:
-                try:
-                    msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
-                except (TimeoutError, RedisTimeoutError):
-                    yield ": keepalive\n\n"
-                    continue
-                except RedisError as e:
-                    logger.warning(f"Bulk export SSE pubsub error for job {job}: {e}")
-                    yield sse("error", {"message": "Connection interrupted."})
-                    return
-                if msg is None:
-                    yield ": keepalive\n\n"
-                    continue
-                try:
-                    data = _json.loads(msg["data"])
-                except Exception:
-                    logger.debug("Skipping malformed bulk export event payload")
-                    continue
-                status = data.get("status")
-                if status == "completed" and data.get("url"):
-                    yield sse("ready", data)
-                    return
-                if status == "error":
-                    yield sse("error", data)
-                    return
-                yield sse("progress", data)
+            # 1. Already finished? deliver immediately (covers reconnects after completion).
+            cached = await client.get(f"bulk_export_result:{job}")
+            if cached:
+                yield sse("ready", _json.loads(cached))
+                return
+
+            pubsub = client.pubsub()
+            await pubsub.subscribe(bulk_export_channel(job))
+            try:
+                yield sse("progress", {"message": "Preparing export…", "progress": 0})
+                while True:
+                    try:
+                        msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
+                    except (TimeoutError, RedisTimeoutError):
+                        yield ": keepalive\n\n"
+                        continue
+                    except RedisError as e:
+                        logger.warning(f"Bulk export SSE pubsub error for job {job}: {e}")
+                        yield sse("error", {"message": "Connection interrupted."})
+                        return
+                    if msg is None:
+                        yield ": keepalive\n\n"
+                        continue
+                    try:
+                        data = _json.loads(msg["data"])
+                    except Exception:
+                        logger.debug("Skipping malformed bulk export event payload")
+                        continue
+                    status = data.get("status")
+                    if status == "completed" and data.get("url"):
+                        yield sse("ready", data)
+                        return
+                    if status == "error":
+                        yield sse("error", data)
+                        return
+                    yield sse("progress", data)
+            finally:
+                # Only reached once subscribed — unsubscribing an unsubscribed pubsub
+                # would open a connection just to tear it down.
+                with contextlib.suppress(Exception):
+                    await pubsub.unsubscribe(bulk_export_channel(job))
+                    await pubsub.close()
         except asyncio.CancelledError:
             raise
         finally:
             with contextlib.suppress(Exception):
-                await pubsub.unsubscribe(bulk_export_channel(job))
-                await pubsub.close()
                 await client.close()
 
     return StreamingResponse(

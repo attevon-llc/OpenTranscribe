@@ -173,8 +173,7 @@ def test_managed_embedding_mode_is_detected(monkeypatch):
     assert _managed_embedding_mode() is True
 
 
-@pytest.mark.asyncio
-async def test_managed_mode_adopts_the_configured_model_without_touching_the_cluster(
+def test_managed_mode_adopts_the_configured_model_without_touching_the_cluster(
     monkeypatch,
 ):
     """A managed domain exposes neither the ML Commons cluster settings nor URL-based
@@ -188,7 +187,7 @@ async def test_managed_mode_adopts_the_configured_model_without_touching_the_clu
     with patch(
         "app.services.search.indexing_service.ensure_neural_ingest_pipeline", return_value=True
     ) as ensure_pipeline:
-        await _adopt_managed_embedding_model(ml_service)
+        _adopt_managed_embedding_model(ml_service)
 
     ml_service.set_active_model_id.assert_called_once_with("abc123")
     ml_service.configure_ml_settings.assert_not_called()
@@ -196,8 +195,7 @@ async def test_managed_mode_adopts_the_configured_model_without_touching_the_clu
     ensure_pipeline.assert_called_once()
 
 
-@pytest.mark.asyncio
-async def test_managed_mode_without_a_model_id_falls_back_to_the_active_one(monkeypatch):
+def test_managed_mode_without_a_model_id_falls_back_to_the_active_one(monkeypatch):
     from app.main import _adopt_managed_embedding_model
 
     monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_MODEL_ID", "")
@@ -207,13 +205,12 @@ async def test_managed_mode_without_a_model_id_falls_back_to_the_active_one(monk
     with patch(
         "app.services.search.indexing_service.ensure_neural_ingest_pipeline", return_value=True
     ):
-        await _adopt_managed_embedding_model(ml_service)
+        _adopt_managed_embedding_model(ml_service)
 
     ml_service.set_active_model_id.assert_called_once_with("already-registered")
 
 
-@pytest.mark.asyncio
-async def test_managed_mode_with_no_model_at_all_is_a_logged_no_op(monkeypatch):
+def test_managed_mode_with_no_model_at_all_is_a_logged_no_op(monkeypatch):
     from app.main import _adopt_managed_embedding_model
 
     monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_MODEL_ID", "")
@@ -223,7 +220,7 @@ async def test_managed_mode_with_no_model_at_all_is_a_logged_no_op(monkeypatch):
     with patch(
         "app.services.search.indexing_service.ensure_neural_ingest_pipeline"
     ) as ensure_pipeline:
-        await _adopt_managed_embedding_model(ml_service)
+        _adopt_managed_embedding_model(ml_service)
 
     ml_service.set_active_model_id.assert_not_called()
     ensure_pipeline.assert_not_called()

@@ -249,9 +249,13 @@ async def prepare_upload(
         duplicate_id: str | None = None
         if request.file_hash:
             # First clean up any failed files with the same hash to allow re-upload
-            await cleanup_failed_duplicates(db, request.file_hash, current_user.id)
+            await run_in_threadpool(
+                cleanup_failed_duplicates, db, request.file_hash, current_user.id
+            )
 
-            duplicate_id = await check_duplicate_by_hash(db, request.file_hash, current_user.id)
+            duplicate_id = await run_in_threadpool(
+                check_duplicate_by_hash, db, request.file_hash, current_user.id
+            )
 
             if duplicate_id:
                 logger.info(

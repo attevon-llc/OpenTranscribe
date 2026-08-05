@@ -28,7 +28,7 @@
 
   // Bulk reprocess modal state
   let showBulkReprocessModal = false;
-  let bulkReprocessFiles: any[] = [];
+  let bulkReprocessFiles: MediaFile[] = [];
   let bulkReprocessing = false;
 
   // Define types

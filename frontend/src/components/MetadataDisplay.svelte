@@ -1,10 +1,11 @@
 <script lang="ts">
+  import type { MediaFileDetail } from '$lib/types/media';
   import { slide } from 'svelte/transition';
   import { formatDuration } from '$lib/utils/formatting';
   import { authStore } from '$stores/auth';
   import { t } from '$stores/locale';
 
-  export let file: any = null;
+  export let file: MediaFileDetail | null = null;
   export let showMetadata: boolean = false;
 
 

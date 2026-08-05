@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { MediaFile } from '$lib/types/media';
   import { createEventDispatcher } from 'svelte';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
@@ -44,10 +45,10 @@
   // A completed file always has a transcript, so use status as the indicator.
   // For mixed selections (completed + error), enable stages if ANY file qualifies.
   $: hasTranscript = bulkMode
-    ? bulkFiles.some((f: any) => f.status === 'completed')
+    ? bulkFiles.some((f: MediaFile) => f.status === 'completed')
     : file?.status === 'completed' && ((file?.transcript_segments?.length ?? 0) > 0 || (file?.total_segments ?? 0) > 0);
   $: hasWordTimestamps = bulkMode
-    ? bulkFiles.some((f: any) => f.status === 'completed')
+    ? bulkFiles.some((f: MediaFile) => f.status === 'completed')
     : file?.status === 'completed' && ((file?.transcript_segments?.length ?? 0) > 0 || (file?.total_segments ?? 0) > 0);
   $: showSpeakerSettings =
     (selectedStages.has('transcription') || selectedStages.has('rediarize')) && !isCloudASR;
@@ -210,7 +211,7 @@
 
       if (bulkMode) {
         // Bulk mode: POST to bulk-action endpoint
-        requestBody.file_uuids = bulkFiles.map((f: any) => f.uuid);
+        requestBody.file_uuids = bulkFiles.map((f: MediaFile) => f.uuid);
         requestBody.action = 'reprocess';
 
         const response = await axiosInstance.post(
@@ -309,7 +310,7 @@
   }
 
   $: hasDiarizationDisabled = bulkMode
-    ? bulkFiles.some((f: any) => f.diarization_disabled)
+    ? bulkFiles.some((f: MediaFile) => f.diarization_disabled)
     : file?.diarization_disabled === true;
 
   $: allSelected = allStages.filter(s => !s.disabled && s.id !== 'rediarize').every(s => selectedStages.has(s.id));

@@ -86,6 +86,43 @@ export interface MediaFile {
 }
 
 /**
+ * What `GET /files/{uuid}` actually returns — `MediaFile` plus everything the
+ * detail page needs and the gallery list does not.
+ *
+ * `MediaFile` stays the gallery/list shape on purpose (see this folder's
+ * CLAUDE.md); this extends it rather than widening it, so a list component
+ * can't silently start depending on a field the list endpoint never sends.
+ */
+export interface MediaFileDetail extends MediaFile {
+  transcript_segments?: unknown[];
+  grouped_segments?: GroupedTranscriptSegment[];
+  total_segments?: number;
+  speakers?: unknown[];
+  collections?: unknown[];
+  analytics?: Record<string, unknown> | null;
+
+  // Summary / enrichment
+  has_summary?: boolean;
+  summary_opensearch_id?: string | null;
+  summary_status?: string | null;
+
+  // Model provenance (rendered by MetadataDisplay)
+  asr_model?: string;
+  asr_provider?: string;
+  whisper_model?: string;
+  diarization_model?: string;
+  embedding_mode?: string;
+
+  // Source / delivery
+  source_url?: string;
+  download_url?: string;
+
+  // In-flight processing state
+  progress?: number;
+  error_message?: string;
+}
+
+/**
  * Backend-shaped overlap-grouped transcript segment (snake_case), guaranteed
  * present on the file-detail payload as `grouped_segments`. Mirrors the Pydantic
  * `GroupedTranscriptSegment` schema. The frontend prefers this over recomputing
@@ -98,6 +135,27 @@ export interface GroupedTranscriptSegment {
   end_time: number;
   start_segment_index: number;
   segments: any[];
+}
+
+/**
+ * Client-side camelCase view of {@link GroupedTranscriptSegment}.
+ *
+ * `TranscriptDisplay` maps the backend payload into this shape (and falls back to
+ * computing it locally for older payloads that predate `grouped_segments`), then
+ * passes it to `TranscriptSegmentList`. It lives here so the coordinator and the
+ * child can't drift — it used to be declared privately in `TranscriptDisplay` while
+ * the child typed the same prop `any[]`.
+ *
+ * `segments` stays open for the same reason `GroupedTranscriptSegment.segments` does.
+ */
+export interface GroupedSegmentView {
+  isOverlapGroup: boolean;
+  overlapGroupId?: string;
+  startTime: number;
+  endTime: number;
+  segments: any[];
+  /** Index of the first segment in the flat array — drives reading progress. */
+  startSegmentIndex: number;
 }
 
 export interface DurationRange {

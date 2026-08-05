@@ -8,7 +8,8 @@
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
   // Use the shared axios instance so auth token is always sent
 
-  type Tag = { uuid: string; name: string; source?: string; usage_count?: number };
+  import type { Tag } from '$lib/types/tag';
+
   type AISuggestion = { name: string; confidence: number; rationale?: string };
 
   export let fileId = "";

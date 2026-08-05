@@ -1,15 +1,7 @@
 <script context="module" lang="ts">
-  export type Collection = {
-    uuid: string;
-    name: string;
-    description?: string | null;
-    media_count: number;
-    is_public?: boolean;
-    default_prompt_name?: string | null;
-    default_prompt_id?: string | null;
-    share_count?: number;
-    [key: string]: any;
-  };
+  // Re-exported for the components that already import it from here; the
+  // canonical declaration lives in $lib/types/collection.
+  export type { Collection } from '$lib/types/collection';
 </script>
 
 <script lang="ts">
@@ -17,6 +9,7 @@
   import { slide } from 'svelte/transition';
   import { t } from '$stores/locale';
   import ShareBadge from '$components/sharing/ShareBadge.svelte';
+  import type { Collection } from '$lib/types/collection';
 
   // Props
   export let collections: Collection[] = [];

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { GroupedSegmentView, GroupedTranscriptSegment } from '$lib/types/media';
+  import type { Segment, Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onDestroy } from 'svelte';
   import TranscriptSearch from './TranscriptSearch.svelte';
   import SpeakerEditorPanel from './transcript/SpeakerEditorPanel.svelte';
@@ -23,7 +25,7 @@
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
   export let isEditingSpeakers: boolean = false;
-  export let speakerList: any[] = [];
+  export let speakerList: Speaker[] = [];
   export let reprocessing: boolean = false;
   export let currentTime: number = 0;
   export let diarizationDisabled: boolean = false;
@@ -59,19 +61,9 @@
   // Reactive transcript segments (passed to search + segment list children)
   $: transcriptSegments = (file?.transcript_segments || []) as TranscriptSegment[];
 
-  // Interface for grouped segments (including overlap groups)
-  interface GroupedSegment {
-    isOverlapGroup: boolean;
-    overlapGroupId?: string;
-    startTime: number;
-    endTime: number;
-    segments: any[];
-    startSegmentIndex: number;  // Track starting index in original array for reading progress
-  }
-
   // Map a backend-shaped grouped segment (snake_case) to the camelCase shape the
   // template consumes. Keeps downstream rendering identical to the client path.
-  function mapBackendGroup(group: any): GroupedSegment {
+  function mapBackendGroup(group: GroupedTranscriptSegment): GroupedSegmentView {
     return {
       isOverlapGroup: group.is_overlap_group ?? false,
       overlapGroupId: group.overlap_group_id ?? undefined,
@@ -94,7 +86,7 @@
     const segments = file?.transcript_segments || [];
     if (!segments.length) return [];
 
-    const groups: GroupedSegment[] = [];
+    const groups: GroupedSegmentView[] = [];
     let i = 0;
 
     while (i < segments.length) {
@@ -214,7 +206,7 @@
 
     // Find the segment in our local state
     const segmentIndex = file.transcript_segments.findIndex(
-      (s: any) => s.uuid === segmentUuid
+      (s: Segment) => s.uuid === segmentUuid
     );
 
     if (segmentIndex === -1) {
@@ -228,7 +220,7 @@
 
     // Optimistic update - find the new speaker from our speaker list
     const newSpeaker = speakerUuid
-      ? speakerList.find((s: any) => s.uuid === speakerUuid)
+      ? speakerList.find((s: Speaker) => s.uuid === speakerUuid)
       : null;
 
     file.transcript_segments[segmentIndex].speaker = newSpeaker;
@@ -247,7 +239,7 @@
       const originalSpeakerUuid = originalSpeaker?.uuid;
       if (originalSpeaker && originalSpeakerUuid) {
         const oldSpeakerStillUsed = file.transcript_segments.some(
-          (s: any) => s.speaker?.uuid === originalSpeakerUuid
+          (s: Segment) => s.speaker?.uuid === originalSpeakerUuid
         );
 
         if (!oldSpeakerStillUsed) {

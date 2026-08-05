@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Collection } from '$lib/types/collection';
   import { onMount, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import axiosInstance from '$lib/axios';
@@ -21,7 +22,7 @@
   export let viewMode: 'manage' | 'add' = 'manage';
 
   // State
-  let collections: any[] = [];
+  let collections: Collection[] = [];
   let sharedCollections: SharedCollection[] = [];
   let loadingShared = false;
   let showShareModal = false;
@@ -31,8 +32,8 @@
   let showCreateModal = false;
   let showEditModal = false;
   let showDeleteConfirm = false;
-  let collectionToEdit: any = null;
-  let collectionToDelete: any = null;
+  let collectionToEdit: Collection | null = null;
+  let collectionToDelete: Collection | null = null;
   let newCollectionName = '';
   let newCollectionDescription = '';
   let editCollectionName = '';
@@ -123,7 +124,7 @@
   }
 
   // Open share modal for a collection
-  function openShareModal(collection: any) {
+  function openShareModal(collection: Collection) {
     shareModalCollectionUuid = collection.uuid;
     shareModalCollectionName = collection.name;
     showShareModal = true;
@@ -180,6 +181,8 @@
   // Update collection
   async function updateCollection() {
     if (!collectionToEdit || !editCollectionName.trim()) return;
+    // Capture before the await — the closure below can't rely on the narrowing.
+    const editing = collectionToEdit;
 
     updating = true;
 
@@ -192,7 +195,7 @@
 
       // Update local state
       collections = collections.map(col =>
-        col.uuid === collectionToEdit.uuid ? { ...col, ...response.data } : col
+        col.uuid === editing.uuid ? { ...col, ...response.data } : col
       );
 
       toastStore.success($t('collectionsPanel.updatedSuccess', { name: editCollectionName }));
@@ -207,7 +210,7 @@
   }
 
   // Open edit modal
-  function openEditModal(collection: any) {
+  function openEditModal(collection: Collection) {
     collectionToEdit = collection;
     editCollectionName = collection.name;
     editCollectionDescription = collection.description || '';
@@ -216,7 +219,7 @@
   }
 
   // Open delete confirmation
-  function openDeleteConfirm(collection: any) {
+  function openDeleteConfirm(collection: Collection) {
     collectionToDelete = collection;
     showDeleteConfirm = true;
   }
@@ -224,14 +227,15 @@
   // Delete collection
   async function deleteCollection() {
     if (!collectionToDelete) return;
+    const deletingCollection = collectionToDelete;
 
     deleting = true;
 
     try {
-      await axiosInstance.delete(`/collections/${collectionToDelete.uuid}`);
-      collections = collections.filter(col => col.uuid !== collectionToDelete.uuid);
+      await axiosInstance.delete(`/collections/${deletingCollection.uuid}`);
+      collections = collections.filter(col => col.uuid !== deletingCollection.uuid);
 
-      if (selectedCollectionId === collectionToDelete.uuid) {
+      if (selectedCollectionId === deletingCollection.uuid) {
         selectedCollectionId = null;
       }
 
@@ -290,7 +294,7 @@
   }
 
   // Handle collection click
-  function handleCollectionClick(collection: any) {
+  function handleCollectionClick(collection: Collection) {
     if (viewMode === 'manage') {
       selectedCollectionId = collection.uuid;
       onCollectionSelect(collection.uuid);

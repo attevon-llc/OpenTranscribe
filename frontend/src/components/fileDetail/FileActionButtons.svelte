@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { MediaFileDetail } from '$lib/types/media';
   /**
    * Action buttons in the file-detail video header: view transcript, AI summary
    * (view / generating / generate), and reprocess.
@@ -10,7 +11,7 @@
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
 
-  export let file: any = null;
+  export let file: MediaFileDetail | null = null;
   export let canEdit = true;
   export let llmAvailable = false;
   export let summaryGenerating = false;
@@ -78,7 +79,9 @@
     </button>
   {/if}
   <!-- Reprocess Button (opens SelectiveReprocessModal) - editors/owners only -->
-  {#if canEdit && file && (file.status === 'error' || file.status === 'completed' || file.status === 'failed')}
+  <!-- 'failed' is not a FileStatus value (the backend enum uses 'error'); the
+       dead third comparison was dropped when this prop became typed. -->
+  {#if canEdit && file && (file.status === 'error' || file.status === 'completed')}
     <button
       class="reprocess-button-header"
       on:click={() => dispatch('openReprocess')}

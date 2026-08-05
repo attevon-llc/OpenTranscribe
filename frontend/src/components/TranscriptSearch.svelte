@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import { type SearchMatch } from '$lib/utils/searchHighlight';
@@ -10,7 +11,7 @@
   import SearchBar from '$components/ui/SearchBar.svelte';
 
   export let transcriptSegments: TranscriptSegment[] = [];
-  export let speakerList: any[] = [];
+  export let speakerList: Speaker[] = [];
   export let disabled: boolean = false;
   /** File UUID — enables the whole-transcript completeness probe (backend, file-scoped). */
   export let fileUuid: string = '';
@@ -51,7 +52,7 @@
     if (!normalizedQuery || !transcriptSegments?.length) return [];
 
     const speakerMapping = new Map<string, string>();
-    speakerList.forEach((speaker: any) => {
+    speakerList.forEach((speaker: Speaker) => {
       speakerMapping.set(speaker.name, translateSpeakerLabel(speaker.display_name || speaker.name));
     });
 

@@ -38,6 +38,7 @@ from app.schemas.watch_source import CapabilitiesResponse
 from app.schemas.watch_source import ConnectionTestResponse
 from app.schemas.watch_source import DirectoryListResponse
 from app.schemas.watch_source import EmailLinkCreate
+from app.schemas.watch_source import FsEventsStatus
 from app.schemas.watch_source import MultipartRegexTestRequest
 from app.schemas.watch_source import MultipartRegexTestResponse
 from app.schemas.watch_source import ScanResponse
@@ -95,7 +96,37 @@ _PLAIN_FIELDS = (
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
-def _source_to_response(source: WatchSource, current_user: User) -> WatchSourceResponse:
+def _fs_events_status(
+    source: WatchSource, fs_status_map: dict[int, dict] | None = None
+) -> FsEventsStatus | None:
+    """Read the live observer status the beat supervisor publishes to Redis.
+
+    ``None`` means nothing is watching this source, so the UI reports the
+    Celery poll interval instead. The status key has a short TTL, so a dead
+    beat container degrades to that answer on its own rather than lying.
+    ``fs_status_map`` is the list endpoint's single-round-trip prefetch.
+    """
+    if not source.use_fs_events or source.source_type != "local":
+        return None
+    if fs_status_map is not None:
+        raw = fs_status_map.get(int(source.id))
+    else:
+        from app.services.watch_sources.fs_events import status as fs_status
+
+        raw = fs_status.get(int(source.id))
+    if not raw:
+        return None
+    try:
+        parsed: FsEventsStatus = FsEventsStatus.model_validate(raw)
+        return parsed
+    except Exception as e:  # noqa: BLE001 - a stale blob must not 500 the list
+        logger.debug("Ignoring unreadable FS-event status for source %s: %s", source.id, e)
+        return None
+
+
+def _source_to_response(
+    source: WatchSource, current_user: User, fs_status_map: dict[int, dict] | None = None
+) -> WatchSourceResponse:
     owner = source.user
     return WatchSourceResponse(
         uuid=str(source.uuid),
@@ -120,6 +151,7 @@ def _source_to_response(source: WatchSource, current_user: User) -> WatchSourceR
         has_smb_password=source.has_smb_password,
         polling_interval_minutes=source.polling_interval_minutes,
         use_fs_events=source.use_fs_events,
+        fs_events=_fs_events_status(source, fs_status_map),
         file_extensions=source.file_extensions,
         skip_files_older_than_days=source.skip_files_older_than_days,
         recursive=source.recursive,
@@ -195,6 +227,7 @@ def get_capabilities(
         watch_source_enabled=watch_settings_service.is_enabled(db),
         local_enabled=bool(settings.WATCH_FOLDER_PATH),
         fs_events_enabled=watch_settings_service.fs_events_enabled(db),
+        fs_events_mode=watch_settings_service.fs_events_mode(db),
     )
 
 
@@ -265,6 +298,8 @@ def update_global_settings(
             "max_imports_per_scan", payload.get("max_concurrent_imports")
         ),
         fs_events_enabled=payload.get("fs_events_enabled"),
+        fs_events_mode=payload.get("fs_events_mode"),
+        fs_events_poll_seconds=payload.get("fs_events_poll_seconds"),
     )
     logger.info("Admin %s updated global watch settings", current_user.email)
     return result
@@ -437,7 +472,15 @@ def list_watch_sources(
             WatchSource.created_at.desc()
         )
     sources = query.all()
-    return WatchSourcesList(sources=[_source_to_response(s, current_user) for s in sources])
+    # One Redis MGET for every FS-watched source instead of one GET per row.
+    from app.services.watch_sources.fs_events import status as fs_status
+
+    fs_status_map = fs_status.get_many(
+        [int(s.id) for s in sources if s.use_fs_events and s.source_type == "local"]
+    )
+    return WatchSourcesList(
+        sources=[_source_to_response(s, current_user, fs_status_map) for s in sources]
+    )
 
 
 @router.post("", response_model=WatchSourceResponse)

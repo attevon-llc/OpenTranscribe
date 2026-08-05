@@ -70,7 +70,10 @@ ERASURE_SLA_DAYS = 30
 
 
 def _erase_speaker_voiceprints(
-    *, user_id: int | None = None, organization_id: int | None = None
+    *,
+    user_id: int | None = None,
+    organization_id: int | None = None,
+    errors: list[dict[str, Any]] | None = None,
 ) -> int:
     """Delete speaker/profile embedding docs (biometric data) from OpenSearch.
 
@@ -81,11 +84,30 @@ def _erase_speaker_voiceprints(
     storage erasure (those are the legally-binding deletions; this catches
     orphaned biometric docs).
 
+    Args:
+        user_id: Scope the deletion to one user.
+        organization_id: Scope the deletion to one organization.
+        errors: The caller's ``summary["errors"]`` list. Failures are appended
+            here so the erasure is audited as PARTIAL rather than SUCCESS —
+            biometric data surviving an Art. 17 request must not be recorded as
+            a completed erasure.
+
     Returns the number of voiceprint documents deleted (0 if OpenSearch is
     unavailable).
     """
     if user_id is None and organization_id is None:
         return 0
+
+    def _record(reason: str) -> None:
+        if errors is not None:
+            errors.append(
+                {
+                    "stage": "voiceprints",
+                    "user_id": user_id,
+                    "org_id": organization_id,
+                    "error": reason,
+                }
+            )
 
     deleted = 0
     try:
@@ -96,6 +118,7 @@ def _erase_speaker_voiceprints(
 
         if opensearch_client is None:
             logger.warning("OpenSearch unavailable — skipping voiceprint erasure (orphan docs)")
+            _record("OpenSearch client unavailable")
             return 0
 
         terms = []
@@ -119,8 +142,10 @@ def _erase_speaker_voiceprints(
                 deleted += int(resp.get("deleted", 0))
             except Exception as idx_err:  # noqa: BLE001 — best-effort per index
                 logger.warning(f"Voiceprint erasure failed on index {idx}: {idx_err}")
+                _record(f"index {idx}: {idx_err}")
     except Exception as e:  # noqa: BLE001 — OpenSearch optional
         logger.warning(f"Voiceprint erasure skipped (OpenSearch error): {e}")
+        _record(str(e))
 
     if deleted:
         logger.info(
@@ -256,7 +281,9 @@ def erase_user(
     _purge_files(db, files, summary)
     _delete_owner_scoped_rows(db, user_id, summary)
 
-    summary["voiceprints_deleted"] = _erase_speaker_voiceprints(user_id=user_id)
+    summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
+        user_id=user_id, errors=summary["errors"]
+    )
 
     if summary["legal_holds_skipped"]:
         logger.warning(
@@ -357,7 +384,7 @@ def erase_org_member_data(
     db.commit()
 
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
-        user_id=user_id, organization_id=org_id
+        user_id=user_id, organization_id=org_id, errors=summary["errors"]
     )
 
     audit_logger.log(
@@ -445,7 +472,9 @@ def erase_organization(
         summary["collections_deleted"] += 1
     db.commit()
 
-    summary["voiceprints_deleted"] = _erase_speaker_voiceprints(organization_id=org_id)
+    summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
+        organization_id=org_id, errors=summary["errors"]
+    )
 
     # Drop the org row (organization_membership rows CASCADE on delete).
     member_count = (

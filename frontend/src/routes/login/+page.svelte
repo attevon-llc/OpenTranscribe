@@ -371,7 +371,7 @@
       // Note: keycloakLoading stays true during redirect to Keycloak
     } catch (error) {
       keycloakLoading = false;
-      toastStore.error('Unable to connect to Keycloak. Please try again later.');
+      toastStore.error($t('auth.error.keycloakUnreachable'));
     }
   }
 
@@ -392,7 +392,7 @@
   // Handle MFA verification
   async function handleMFASubmit() {
     if (!mfaCode.trim()) {
-      toastStore.error($t('auth.mfaCodeRequired') || 'Please enter your verification code');
+      toastStore.error($t('auth.mfaCodeRequired'));
       return;
     }
 
@@ -405,7 +405,7 @@
         loginSuccess = true;
         setTimeout(() => goto('/', { replaceState: true }), 600);
       } else {
-        toastStore.error(result.message || $t('auth.mfaVerificationFailed') || 'Verification failed');
+        toastStore.error(result.message || $t('auth.mfaVerificationFailed'));
         mfaCode = "";
       }
     } catch (err) {
@@ -463,7 +463,7 @@
   <div class="login-success-fullpage">
     <img src="/icons/icon-192x192.png" class="login-success-logo" alt="" />
     <Spinner size="small" />
-    <p class="login-success-text">{$t('auth.signingIn') || 'Signing in...'}</p>
+    <p class="login-success-text">{$t('auth.signingIn')}</p>
   </div>
 {:else}
 {#if showLoginBanner && !bannerAcknowledged}
@@ -486,7 +486,7 @@
       {#if externalAuthLoading}
         <div class="external-auth-loading">
           <Spinner size="small" />
-          <p>{$t('auth.signingIn') || 'Loading...'}</p>
+          <p>{$t('auth.signingIn')}</p>
         </div>
       {/if}
       <div class="external-auth-mount" bind:this={externalSignInNode}></div>
@@ -501,12 +501,12 @@
             <circle cx="12" cy="16" r="1"/>
           </svg>
         </div>
-        <h2>{$t('auth.mfaRequired') || 'Multi-Factor Authentication Required'}</h2>
+        <h2>{$t('auth.mfaRequired')}</h2>
         <p class="mfa-description">
           {#if useBackupCode}
-            {$t('auth.mfaEnterBackupCode') || 'Enter one of your backup codes'}
+            {$t('auth.mfaEnterBackupCode')}
           {:else}
-            {$t('auth.mfaEnterCode') || 'Enter the 6-digit code from your authenticator app'}
+            {$t('auth.mfaEnterCode')}
           {/if}
         </p>
 
@@ -514,9 +514,9 @@
           <div class="form-group">
             <label for="mfaCode">
               {#if useBackupCode}
-                {$t('auth.backupCode') || 'Backup Code'}
+                {$t('auth.backupCode')}
               {:else}
-                {$t('auth.mfaCode') || 'Authentication Code'}
+                {$t('auth.mfaCode')}
               {/if}
             </label>
             <!-- svelte-ignore a11y_autofocus -->
@@ -539,9 +539,9 @@
             disabled={mfaLoading}
           >
             {#if mfaLoading}
-              <Spinner size="small" color="white" /> {$t('auth.verifying') || 'Verifying...'}
+              <Spinner size="small" color="white" /> {$t('auth.verifying')}
             {:else}
-              {$t('auth.mfaVerify') || 'Verify'}
+              {$t('auth.mfaVerify')}
             {/if}
           </button>
         </form>
@@ -553,9 +553,9 @@
             on:click={() => useBackupCode = !useBackupCode}
           >
             {#if useBackupCode}
-              {$t('auth.useAuthenticatorApp') || 'Use authenticator app'}
+              {$t('auth.useAuthenticatorApp')}
             {:else}
-              {$t('auth.useBackupCode') || 'Use a backup code'}
+              {$t('auth.useBackupCode')}
             {/if}
           </button>
           <button
@@ -563,7 +563,7 @@
             class="text-button cancel-button"
             on:click={cancelMFA}
           >
-            {$t('auth.cancel') || 'Cancel'}
+            {$t('auth.cancel')}
           </button>
         </div>
       </div>
@@ -667,7 +667,7 @@
 
     {#if authMethods.keycloak_enabled || authMethods.pki_enabled}
       <div class="auth-divider">
-        <span>{$t('auth.orContinueWith') || 'Or continue with'}</span>
+        <span>{$t('auth.orContinueWith')}</span>
       </div>
 
       <div class="external-auth-buttons">
@@ -685,7 +685,7 @@
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
               </svg>
             {/if}
-            <span>{$t('auth.loginWithKeycloak') || 'Sign in with Keycloak'}</span>
+            <span>{$t('auth.loginWithKeycloak')}</span>
           </button>
         {/if}
 
@@ -705,7 +705,7 @@
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
               </svg>
             {/if}
-            <span>{$t('auth.loginWithCertificate') || 'Sign in with Certificate'}</span>
+            <span>{$t('auth.loginWithCertificate')}</span>
           </button>
         {/if}
       </div>

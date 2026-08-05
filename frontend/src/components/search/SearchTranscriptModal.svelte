@@ -915,7 +915,7 @@
                   {#if loadingMoreSegments}
                     <div class="loading-more-indicator">
                       <Spinner size="small" />
-                      <span>Loading more...</span>
+                      <span>{$t('searchTranscript.loadingMore')}</span>
                     </div>
                   {/if}
                 </div>

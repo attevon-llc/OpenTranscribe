@@ -74,12 +74,12 @@
                 <span class="detail-value">{formatTime(stats.file_timing?.max_secs || 0)}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">{$t('settings.statistics.completed')} files</span>
+                <span class="detail-label">{$t('settings.statistics.completedFiles')}</span>
                 <span class="detail-value">{stats.file_timing?.files || 0}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">{$t('settings.statistics.speakers')}</span>
-                <span class="detail-value">{stats.speakers?.total || 0} ({$t('settings.statistics.avgProcessTime')}: {stats.speakers?.avg_per_file || 0}/file)</span>
+                <span class="detail-value">{stats.speakers?.total || 0} ({$t('settings.statistics.avgProcessTime')}: {$t('settings.statistics.perFile', { value: stats.speakers?.avg_per_file || 0 })})</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">{$t('settings.statistics.successRate')}</span>
@@ -120,7 +120,7 @@
               <div class="detail-grid">
                 <div class="detail-row">
                   <span class="detail-label">{$t('settings.statistics.remaining')}</span>
-                  <span class="detail-value">{stats.eta.remaining} files</span>
+                  <span class="detail-value">{$t('settings.statistics.remainingFiles', { count: stats.eta.remaining })}</span>
                 </div>
                 <div class="detail-row">
                   <span class="detail-label">{$t('settings.statistics.filesPerHour')}</span>

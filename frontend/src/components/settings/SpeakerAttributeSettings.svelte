@@ -95,7 +95,7 @@
     loadMigrationStatus(true);
 
     if (data.status === 'stopped') {
-      toastStore.info($t('settings.speakerAttributes.migrationStopped') || 'Migration stopped.');
+      toastStore.info($t('settings.speakerAttributes.migrationStopped'));
     } else if ((data.failed_files || []).length === 0) {
       toastStore.success($t('settings.speakerAttributes.migrationComplete'));
     } else {

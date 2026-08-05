@@ -193,18 +193,18 @@
             {/if}
             {#if file.diarization_model}
               <span class="model-badge">
-                <span class="model-label">Diarization:</span>
+                <span class="model-label">{$t('metadata.diarizationLabel')}</span>
                 <span class="model-name">{file.diarization_model}</span>
               </span>
             {:else if file.diarization_disabled}
               <span class="model-badge diarization-disabled">
-                <span class="model-label">Diarization:</span>
+                <span class="model-label">{$t('metadata.diarizationLabel')}</span>
                 <span class="model-name">{$t('metadata.diarizationDisabled')}</span>
               </span>
             {/if}
             {#if file.embedding_mode}
               <span class="model-badge">
-                <span class="model-label">Embeddings:</span>
+                <span class="model-label">{$t('metadata.embeddingsLabel')}</span>
                 <span class="model-name">{file.embedding_mode}</span>
               </span>
             {/if}

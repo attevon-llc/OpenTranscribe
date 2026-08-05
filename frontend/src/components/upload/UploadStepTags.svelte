@@ -83,7 +83,7 @@
     <input
       type="text"
       class="item-filter"
-      placeholder="Filter tags..."
+      placeholder={$t('upload.filterTags')}
       bind:value={filterQuery}
     />
   {/if}
@@ -110,9 +110,9 @@
       {/each}
     </div>
   {:else if filterQuery}
-    <p class="empty-text">No tags match "{filterQuery}"</p>
+    <p class="empty-text">{$t('upload.noTagsMatch', { query: filterQuery })}</p>
   {:else}
-    <p class="empty-text">No tags yet. Create one below.</p>
+    <p class="empty-text">{$t('upload.noTagsYet')}</p>
   {/if}
 
   <!-- Create new -->
@@ -134,7 +134,7 @@
         <line x1="12" y1="5" x2="12" y2="19"></line>
         <line x1="5" y1="12" x2="19" y2="12"></line>
       </svg>
-      Add
+      {$t('tags.add')}
     </button>
   </div>
 </div>

@@ -1,5 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import axiosInstance, { abortAllRequests } from '../lib/axios';
+import { t } from '$stores/locale';
 import { clearUserState } from '$lib/session/clearUserState';
 import { isCloudEdition } from '$lib/edition';
 
@@ -261,7 +262,7 @@ export async function login(
 
     if (response.status !== 200 || !response.data.access_token) {
       console.error('auth.ts: Invalid login response');
-      return { success: false, message: 'Invalid login response from server' };
+      return { success: false, message: get(t)('auth.error.invalidLoginResponse') };
     }
 
     // Clear ALL stale user state from any previous session before the new
@@ -283,39 +284,39 @@ export async function login(
     authStore.reset();
 
     // Extract meaningful error message from backend response
-    let errorMessage = 'Login failed. Please check your credentials and try again.';
+    let errorMessage = get(t)('auth.error.loginFailedCheckCredentials');
 
     if (err.response) {
       // Server responded with an error status
       switch (err.response.status) {
         case 401:
           errorMessage =
-            (err.response.data?.detail as string) || 'Invalid email or password. Please try again.';
+            (err.response.data?.detail as string) || get(t)('auth.error.invalidCredentials');
           break;
         case 400:
           errorMessage =
-            (err.response.data?.detail as string) || 'Invalid request. Please check your input.';
+            (err.response.data?.detail as string) || get(t)('auth.error.invalidRequest');
           break;
         case 429:
-          errorMessage = 'Too many login attempts. Please try again later.';
+          errorMessage = get(t)('auth.error.tooManyLoginAttempts');
           break;
         case 500:
         case 502:
         case 503:
-          errorMessage = 'Server error. Please try again later.';
+          errorMessage = get(t)('auth.error.serverError');
           break;
         default:
           errorMessage =
             (err.response.data?.detail as string) ||
             (err.response.data?.message as string) ||
-            'Login failed. Please try again.';
+            get(t)('auth.error.loginFailed');
       }
     } else if (err.request) {
       // Network error - no response received
-      errorMessage = 'Unable to connect to the server. Please check your internet connection.';
+      errorMessage = get(t)('auth.error.networkUnreachable');
     } else if (err.message) {
       // Something else happened
-      errorMessage = 'An unexpected error occurred. Please try again.';
+      errorMessage = get(t)('auth.error.unexpected');
     }
 
     return {
@@ -339,7 +340,7 @@ export async function register(email: string, fullName: string, password: string
     console.error('auth.ts: Registration error:', error);
 
     // Handle validation errors (array) vs simple error messages (string)
-    let errorMessage = 'Registration failed. Please try again.';
+    let errorMessage = get(t)('auth.error.registrationFailed');
     const detail = asAuthError(error).response?.data?.detail;
 
     if (detail) {
@@ -602,19 +603,19 @@ export async function verifyMFA(
 
     return {
       success: false,
-      message: 'Invalid response from MFA verification',
+      message: get(t)('auth.error.mfaInvalidResponse'),
     };
   } catch (rawError: unknown) {
     const error = asAuthError(rawError);
     console.error('MFA verification error:', rawError);
 
-    let message = 'MFA verification failed';
+    let message = get(t)('auth.error.mfaFailed');
     if (error.response?.status === 401) {
-      message = (error.response?.data?.detail as string) || 'Invalid verification code';
+      message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidCode');
     } else if (error.response?.status === 400) {
       message = (error.response?.data?.detail as string) || 'Invalid MFA token or code';
     } else if (error.response?.status === 429) {
-      message = 'Too many verification attempts. Please try again later.';
+      message = get(t)('auth.error.mfaTooManyAttempts');
     }
 
     return { success: false, message };

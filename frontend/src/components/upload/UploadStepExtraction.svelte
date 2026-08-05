@@ -73,9 +73,9 @@
               <circle cx="18" cy="16" r="3"></circle>
             </svg>
             <span class="choice-title">{$t('extraction.extractAudio')}</span>
-            <span class="choice-badge recommended">Recommended</span>
+            <span class="choice-badge recommended">{$t('extraction.recommendedBadge')}</span>
           </div>
-          <span class="choice-desc">~{compressionRatio}% smaller &bull; Faster upload &bull; Metadata preserved</span>
+          <span class="choice-desc">{$t('extraction.extractSavings', { ratio: compressionRatio })}</span>
         </div>
       </label>
 
@@ -90,7 +90,7 @@
             </svg>
             <span class="choice-title">{$t('extraction.uploadFullVideo')}</span>
           </div>
-          <span class="choice-desc">Upload the original {formatFileSize(file.size)} video file as-is</span>
+          <span class="choice-desc">{$t('extraction.uploadFullDesc', { size: formatFileSize(file.size) })}</span>
         </div>
       </label>
     </div>

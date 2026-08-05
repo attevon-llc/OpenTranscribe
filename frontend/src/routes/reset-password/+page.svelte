@@ -71,9 +71,9 @@
     </div>
 
     <div class="auth-header">
-      <h1>{$t('auth.resetPassword') || 'Reset Password'}</h1>
+      <h1>{$t('auth.resetPassword')}</h1>
       {#if !success}
-        <p>{$t('auth.resetPasswordDescription') || 'Enter your new password below.'}</p>
+        <p>{$t('auth.resetPasswordDescription')}</p>
       {/if}
     </div>
 
@@ -82,18 +82,18 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline points="20,6 9,17 4,12"/>
         </svg>
-        <span>{$t('auth.passwordResetSuccess') || 'Your password has been reset successfully.'}</span>
+        <span>{$t('auth.passwordResetSuccess')}</span>
       </div>
 
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin') || 'Back to login'}</a>
+        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {:else if !tokenParam}
       <div class="error-message" role="alert">
-        {$t('auth.invalidResetLink') || 'Invalid or missing reset link. Please request a new one.'}
+        {$t('auth.invalidResetLink')}
       </div>
       <div class="auth-links">
-        <a href="/forgot-password" class="auth-link">{$t('auth.requestNewLink') || 'Request a new link'}</a>
+        <a href="/forgot-password" class="auth-link">{$t('auth.requestNewLink')}</a>
       </div>
     {:else}
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
@@ -103,7 +103,7 @@
 
         <div class="form-group">
           <div class="password-header">
-            <label for="newPassword">{$t('auth.newPassword') || 'New Password'}</label>
+            <label for="newPassword">{$t('auth.newPassword')}</label>
             <button
               type="button"
               class="toggle-password"
@@ -132,19 +132,19 @@
             type={showPassword ? 'text' : 'password'}
             id="newPassword"
             bind:value={newPassword}
-            placeholder={$t('auth.newPasswordPlaceholder') || 'Enter new password'}
+            placeholder={$t('auth.newPasswordPlaceholder')}
             autocomplete="new-password"
             required
           />
         </div>
 
         <div class="form-group">
-          <label for="confirmPassword">{$t('auth.confirmPassword') || 'Confirm Password'}</label>
+          <label for="confirmPassword">{$t('auth.confirmPassword')}</label>
           <input
             type={showPassword ? 'text' : 'password'}
             id="confirmPassword"
             bind:value={confirmPassword}
-            placeholder={$t('auth.confirmPasswordPlaceholder') || 'Confirm new password'}
+            placeholder={$t('auth.confirmPasswordPlaceholder')}
             autocomplete="new-password"
             required
           />
@@ -152,15 +152,15 @@
 
         <button type="submit" class="auth-button" disabled={loading}>
           {#if loading}
-            <span class="spinner"></span> {$t('auth.resetting') || 'Resetting...'}
+            <span class="spinner"></span> {$t('auth.resetting')}
           {:else}
-            {$t('auth.resetPassword') || 'Reset Password'}
+            {$t('auth.resetPassword')}
           {/if}
         </button>
       </form>
 
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin') || 'Back to login'}</a>
+        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {/if}
   </div>

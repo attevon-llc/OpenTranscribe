@@ -94,7 +94,7 @@
     });
 
     if (data.status === 'stopped') {
-      toastStore.info($t('settings.embeddingMigration.migrationStopped') || 'Migration stopped.');
+      toastStore.info($t('settings.embeddingMigration.migrationStopped'));
     } else if (completedFailedFiles.length === 0) {
       toastStore.success($t('settings.embeddingMigration.migrationComplete'));
     } else {
@@ -505,7 +505,7 @@
       {#if v4DocumentCount > 0 && currentMode === 'v3' && !migrationInProgress}
         <div class="finalize-section">
           {#if finalizing}
-            <p>{$t('settings.embeddingMigration.finalizing') || 'Finalizing migration — swapping indices...'}</p>
+            <p>{$t('settings.embeddingMigration.finalizing')}</p>
             <button class="btn btn-primary" disabled>
               <Spinner size="small" color="white" />
               {$t('settings.embeddingMigration.finalizeMigration')}

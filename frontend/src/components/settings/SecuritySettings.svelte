@@ -246,7 +246,7 @@
 
         <div class="qr-section">
           <div class="qr-code">
-            <img src="data:image/png;base64,{setupData.qr_code_base64}" alt="MFA QR Code" />
+            <img src="data:image/png;base64,{setupData.qr_code_base64}" alt={$t('settings.security.qrCodeAlt')} />
           </div>
 
           <button class="btn-link" on:click={() => showManualEntry = !showManualEntry}>

@@ -1,13 +1,16 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { clickOutside } from '$lib/actions/clickOutside';
+  import { t } from '$stores/locale';
 
   /** Open state. Bindable: `<Dropdown bind:open>`. */
   export let open = false;
   /** Menu alignment relative to the trigger. */
   export let align: 'left' | 'right' = 'left';
-  /** Accessible label for the trigger button. */
-  export let ariaLabel = 'Menu';
+  /** Accessible label for the trigger button. Defaults to the translated "Menu". */
+  export let ariaLabel: string | undefined = undefined;
+
+  $: resolvedAriaLabel = ariaLabel ?? $t('common.menu');
   /** Extra classes for the trigger button (lets callers reuse existing button styles). */
   export let buttonClass = '';
 
@@ -36,7 +39,7 @@
     class={`dropdown-trigger ${buttonClass}`.trim()}
     aria-haspopup="menu"
     aria-expanded={open}
-    aria-label={ariaLabel}
+    aria-label={resolvedAriaLabel}
     on:click={toggle}
   >
     <slot name="trigger" {open} />

@@ -131,7 +131,7 @@
             <option {value}>{label}</option>
           {/each}
         {:else}
-          <option value="best">Best Available</option>
+          <option value="best">{$t('settings.download.bestAvailable')}</option>
         {/if}
       </select>
       {#if audioOnly}
@@ -173,7 +173,7 @@
               <option {value}>{label}</option>
             {/each}
           {:else}
-            <option value="best">Best Available</option>
+            <option value="best">{$t('settings.download.bestAvailable')}</option>
           {/if}
         </select>
         <p class="form-hint">{$t('settings.download.audioQualityHint')}</p>

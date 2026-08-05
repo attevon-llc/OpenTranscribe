@@ -4,13 +4,16 @@
 
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { t } from '$stores/locale';
 
   /** Visual variant — maps to the app's semantic status colors. */
   export let variant: ChipVariant = 'default';
   /** When true, renders a × button that dispatches `remove`. */
   export let removable = false;
-  /** Accessible label for the remove button. Caller should pass translated text. */
-  export let removeLabel = 'Remove';
+  /** Accessible label for the remove button. Defaults to the translated "Remove". */
+  export let removeLabel: string | undefined = undefined;
+
+  $: resolvedRemoveLabel = removeLabel ?? $t('common.remove');
 
   const dispatch = createEventDispatcher<{ remove: void }>();
 
@@ -22,7 +25,7 @@
 <span class={`chip chip-${variant}`} class:removable>
   <span class="chip-content"><slot /></span>
   {#if removable}
-    <button type="button" class="chip-remove" aria-label={removeLabel} on:click={onRemove}>
+    <button type="button" class="chip-remove" aria-label={resolvedRemoveLabel} on:click={onRemove}>
       <svg
         width="14"
         height="14"

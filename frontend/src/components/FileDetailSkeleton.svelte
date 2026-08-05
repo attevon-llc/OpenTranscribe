@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from '$stores/locale';
+
   // Skeleton loader for the file detail page.
   // Mirrors the final layout (file header + 2-column grid with video on left,
   // transcript on right) so the user sees "progress" and structure immediately
@@ -10,7 +12,7 @@
 </script>
 
 <div class="skeleton-page" role="status" aria-busy="true" aria-live="polite">
-  <span class="sr-only">Loading file details</span>
+  <span class="sr-only">{$t('fileDetail.loading')}</span>
 
   <!-- File header (title, metadata strip) -->
   <div class="skeleton-file-header">

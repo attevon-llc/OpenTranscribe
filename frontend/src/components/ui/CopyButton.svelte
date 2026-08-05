@@ -1,13 +1,17 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy } from 'svelte';
   import { copyToClipboard } from '$lib/utils/clipboard';
+  import { t } from '$stores/locale';
 
   /** Text that gets written to the clipboard. */
   export let text: string;
-  /** Button label in the idle state. Caller should pass translated text. */
-  export let label = 'Copy';
-  /** Button label shown briefly after a successful copy. Caller should pass translated text. */
-  export let copiedLabel = 'Copied';
+  /** Button label in the idle state. Defaults to the translated "Copy". */
+  export let label: string | undefined = undefined;
+  /** Label shown briefly after a successful copy. Defaults to the translated "Copied". */
+  export let copiedLabel: string | undefined = undefined;
+
+  $: idleLabel = label ?? $t('common.copy');
+  $: doneLabel = copiedLabel ?? $t('common.copied');
   /** When true, only the icon shows; the label becomes the aria-label. */
   export let iconOnly = false;
   /** Optional native tooltip text. */
@@ -41,7 +45,7 @@
     if (timer) clearTimeout(timer);
   });
 
-  $: currentLabel = copied ? copiedLabel : label;
+  $: currentLabel = copied ? doneLabel : idleLabel;
 </script>
 
 <button

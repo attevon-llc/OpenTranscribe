@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from '$stores/locale';
+
   /**
    * Reusable card-grid skeleton loader for page/section-level loads.
    *
@@ -47,7 +49,7 @@
   aria-busy="true"
   aria-live="polite"
 >
-  <span class="sr-only">Loading content</span>
+  <span class="sr-only">{$t('common.loading')}</span>
 
   {#each cards as _, i}
     <div class="skel-card">

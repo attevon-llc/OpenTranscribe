@@ -332,7 +332,7 @@
               on:click={() => { if (stepNum < currentStep) { direction = -1; currentStep = stepNum; } }}
               disabled={stepNum > currentStep}
               type="button"
-              aria-label="{$t(label)} (step {stepNum})"
+              aria-label={$t('reprocess.stepAria', { label: $t(label), step: stepNum })}
             >
               {#if currentStep > stepNum}
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">

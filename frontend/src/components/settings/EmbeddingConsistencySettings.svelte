@@ -310,7 +310,7 @@
               {processedFiles}/{totalFiles}
               ({Math.round((processedFiles / totalFiles) * 100)}%)
               {#if etaSeconds != null && etaSeconds > 0}
-                — ETA {formatDuration(etaSeconds)}
+                {$t('settings.embeddingConsistency.eta', { eta: formatDuration(etaSeconds) })}
               {/if}
             </span>
           </div>

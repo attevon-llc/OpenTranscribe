@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import time
 from typing import Any
@@ -29,7 +28,7 @@ def _handle_force_regeneration(media_file: MediaFile, db: Session) -> None:
     if media_file.summary_opensearch_id:
         try:
             summary_service = OpenSearchSummaryService()
-            asyncio.run(summary_service.delete_summary(str(media_file.summary_opensearch_id)))
+            summary_service.delete_summary(str(media_file.summary_opensearch_id))
             logger.info(f"Cleared OpenSearch document {media_file.summary_opensearch_id}")
         except Exception as e:
             logger.warning(f"Could not clear OpenSearch summary: {e}")
@@ -126,7 +125,7 @@ def _store_summary_to_opensearch(
     summary_service = OpenSearchSummaryService()
 
     # Get the latest version number for proper versioning
-    max_version = asyncio.run(summary_service.get_max_version(file_id, int(media_file.user_id)))
+    max_version = summary_service.get_max_version(file_id, int(media_file.user_id))
 
     # Make a copy for OpenSearch indexing with tracking fields
     opensearch_data = summary_data.copy()
@@ -141,7 +140,7 @@ def _store_summary_to_opensearch(
     )
 
     # Index in OpenSearch
-    document_id = asyncio.run(summary_service.index_summary(opensearch_data))
+    document_id = summary_service.index_summary(opensearch_data)
 
     return document_id
 

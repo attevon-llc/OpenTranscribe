@@ -89,7 +89,7 @@ async def get_llm_status(
 
 
 @router.post("/test-connection")
-async def test_llm_connection(
+def test_llm_connection(
     current_user: User = Depends(get_current_active_user),
 ) -> dict[str, Any]:
     """

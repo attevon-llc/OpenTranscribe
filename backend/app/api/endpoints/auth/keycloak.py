@@ -41,7 +41,7 @@ _OIDC_STATE_EXPIRY_SECONDS = 600
 
 
 @router.get("/keycloak/login")
-async def keycloak_login(db: Session = Depends(get_db)):
+def keycloak_login(db: Session = Depends(get_db)):
     """
     Initiate Keycloak OIDC login flow.
 

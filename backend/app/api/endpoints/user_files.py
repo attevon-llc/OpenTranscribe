@@ -307,7 +307,7 @@ def get_file_detailed_status(
 
 
 @router.post("/{file_uuid}/retry", response_model=dict[str, Any])
-async def retry_file_processing(
+def retry_file_processing(
     file_uuid: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -403,7 +403,7 @@ async def retry_file_processing(
 
 
 @router.post("/request-recovery", response_model=dict[str, Any])
-async def request_user_recovery(
+def request_user_recovery(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -417,7 +417,7 @@ async def request_user_recovery(
         # This could be implemented with Redis or database tracking
 
         # Schedule user-specific recovery
-        async def run_user_recovery():
+        def run_user_recovery():
             try:
                 from app.tasks.recovery import recover_user_files_task
 

@@ -730,7 +730,7 @@ def delete_admin_user(
 
 
 @router.get("/settings/retry-config", response_model=RetryConfig)
-async def get_retry_configuration(
+def get_retry_configuration(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> RetryConfig:
@@ -747,7 +747,7 @@ async def get_retry_configuration(
 
 
 @router.put("/settings/retry-config", response_model=RetryConfig)
-async def update_retry_configuration(
+def update_retry_configuration(
     config: RetryConfigUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -773,7 +773,7 @@ async def update_retry_configuration(
 
 
 @router.get("/settings/garbage-cleanup", response_model=GarbageCleanupConfig)
-async def get_garbage_cleanup_configuration(
+def get_garbage_cleanup_configuration(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> GarbageCleanupConfig:
@@ -790,7 +790,7 @@ async def get_garbage_cleanup_configuration(
 
 
 @router.put("/settings/garbage-cleanup", response_model=GarbageCleanupConfig)
-async def update_garbage_cleanup_configuration(
+def update_garbage_cleanup_configuration(
     config: GarbageCleanupConfigUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -840,7 +840,7 @@ def _get_retention_eligible_files(db: Session, retention_days: int, delete_error
 
 
 @router.get("/settings/retention-config", response_model=RetentionConfig)
-async def get_retention_configuration(
+def get_retention_configuration(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> RetentionConfig:
@@ -862,7 +862,7 @@ async def get_retention_configuration(
 
 
 @router.put("/settings/retention-config", response_model=RetentionConfig)
-async def update_retention_configuration(
+def update_retention_configuration(
     config: RetentionConfigUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -891,7 +891,7 @@ async def update_retention_configuration(
 
 
 @router.get("/settings/cache-config", response_model=CacheConfig)
-async def get_cache_configuration(
+def get_cache_configuration(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> CacheConfig:
@@ -911,7 +911,7 @@ async def get_cache_configuration(
 
 
 @router.put("/settings/cache-config", response_model=CacheConfig)
-async def update_cache_configuration(
+def update_cache_configuration(
     config: CacheConfigUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -931,7 +931,7 @@ async def update_cache_configuration(
 
 
 @router.post("/settings/cache-config/clear", response_model=CacheClearResponse)
-async def clear_cache_now(
+def clear_cache_now(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> CacheClearResponse:
@@ -947,7 +947,7 @@ async def clear_cache_now(
 
 
 @router.get("/settings/retention-config/preview", response_model=RetentionPreviewResponse)
-async def preview_retention_deletion(
+def preview_retention_deletion(
     retention_days: int = Query(..., ge=1, le=3650, description="Retention window in days"),
     delete_error_files: bool = Query(False, description="Include error-status files"),
     db: Session = Depends(get_db),
@@ -1008,7 +1008,7 @@ async def preview_retention_deletion(
 
 
 @router.post("/settings/retention-config/run", response_model=RetentionRunResponse)
-async def trigger_retention_run(
+def trigger_retention_run(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> RetentionRunResponse:
@@ -1037,7 +1037,7 @@ async def trigger_retention_run(
 
 
 @router.get("/settings/retention-config/status", response_model=RetentionConfig)
-async def get_retention_status(
+def get_retention_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> RetentionConfig:
@@ -1055,7 +1055,7 @@ async def get_retention_status(
 
 
 @router.get("/settings/media-sources", response_model=MediaSourcesList)
-async def get_media_sources(
+def get_media_sources(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> MediaSourcesList:
@@ -1065,7 +1065,7 @@ async def get_media_sources(
 
 
 @router.post("/settings/media-sources", response_model=MediaSource)
-async def add_media_source(
+def add_media_source(
     source: MediaSourceCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -1116,7 +1116,7 @@ async def add_media_source(
 
 
 @router.put("/settings/media-sources/{source_id}", response_model=MediaSource)
-async def update_media_source(
+def update_media_source(
     source_id: str,
     update: MediaSourceUpdate,
     db: Session = Depends(get_db),
@@ -1154,7 +1154,7 @@ async def update_media_source(
 
 
 @router.delete("/settings/media-sources/{source_id}")
-async def delete_media_source(
+def delete_media_source(
     source_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -1206,7 +1206,7 @@ def get_current_super_admin_user(
 
 
 @router.post("/users/{user_uuid}/reset-password")
-async def admin_reset_user_password(
+def admin_reset_user_password(
     user_uuid: str,
     request_body: AdminPasswordResetRequest,
     db: Session = Depends(get_db),
@@ -1242,7 +1242,7 @@ async def admin_reset_user_password(
 
 
 @router.post("/users/{user_uuid}/unlock")
-async def admin_unlock_account(
+def admin_unlock_account(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -1271,7 +1271,7 @@ async def admin_unlock_account(
 
 
 @router.post("/users/{user_uuid}/lock")
-async def admin_lock_account(
+def admin_lock_account(
     user_uuid: str,
     reason: str = Query("Admin action", description="Reason for locking the account"),
     db: Session = Depends(get_db),
@@ -1301,7 +1301,7 @@ async def admin_lock_account(
 
 
 @router.delete("/users/{user_uuid}/sessions")
-async def admin_terminate_user_sessions(
+def admin_terminate_user_sessions(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -1345,7 +1345,7 @@ async def admin_terminate_user_sessions(
 
 
 @router.get("/users/{user_uuid}/sessions")
-async def admin_get_user_sessions(
+def admin_get_user_sessions(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -1380,7 +1380,7 @@ async def admin_get_user_sessions(
 
 
 @router.put("/users/{user_uuid}/role")
-async def admin_change_user_role(
+def admin_change_user_role(
     user_uuid: str,
     new_role: str = Query(..., description="New role for the user (user, admin, super_admin)"),
     db: Session = Depends(get_db),
@@ -1422,7 +1422,7 @@ async def admin_change_user_role(
 
 
 @router.post("/users/{user_uuid}/mfa/reset")
-async def admin_reset_user_mfa(
+def admin_reset_user_mfa(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
@@ -1457,7 +1457,7 @@ async def admin_reset_user_mfa(
 
 
 @router.get("/users/search")
-async def admin_search_users(
+def admin_search_users(
     query: str | None = Query(None, description="Search query for email or name"),
     role: str | None = Query(None, description="Filter by role"),
     auth_type: str | None = Query(None, description="Filter by auth type"),
@@ -1510,7 +1510,7 @@ async def admin_search_users(
 
 
 @router.get("/reports/account-status")
-async def get_account_status_report(
+def get_account_status_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
@@ -1699,7 +1699,7 @@ def admin_erase_user(
 
 
 @router.post("/data-integrity")
-async def start_data_integrity_check(
+def start_data_integrity_check(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Start an OpenSearch orphan cleanup task.
@@ -1719,7 +1719,7 @@ async def start_data_integrity_check(
 
 
 @router.get("/data-integrity/status")
-async def get_data_integrity_status(
+def get_data_integrity_status(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Get data integrity check status, last run results, and index overview."""
@@ -1732,7 +1732,7 @@ async def get_data_integrity_status(
 
 
 @router.get("/data-integrity/counts")
-async def get_data_integrity_counts(
+def get_data_integrity_counts(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Quick dry-run scan to count orphaned documents without deleting."""
@@ -1747,7 +1747,7 @@ async def get_data_integrity_counts(
 
 
 @router.get("/embedding-consistency/status")
-async def get_embedding_consistency_status(
+def get_embedding_consistency_status(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Get embedding consistency check status and last run results."""
@@ -1757,7 +1757,7 @@ async def get_embedding_consistency_status(
 
 
 @router.get("/embedding-consistency/counts")
-async def get_embedding_consistency_counts(
+def get_embedding_consistency_counts(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Quick dry-run count of speakers missing from OpenSearch indices."""
@@ -1767,7 +1767,7 @@ async def get_embedding_consistency_counts(
 
 
 @router.post("/embedding-consistency/repair")
-async def start_embedding_consistency_repair(
+def start_embedding_consistency_repair(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Start an embedding consistency repair task."""
@@ -1790,7 +1790,7 @@ async def start_embedding_consistency_repair(
 
 
 @router.get("/gpu-profiles")
-async def get_gpu_profiles(
+def get_gpu_profiles(
     current_user: User = Depends(get_current_admin_user),
     limit: int = Query(default=20, ge=1, le=100),
 ) -> list[dict]:
@@ -1819,7 +1819,7 @@ async def get_gpu_profiles(
 
 
 @router.post("/embedding-consistency/stop")
-async def stop_embedding_consistency_repair(
+def stop_embedding_consistency_repair(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Cancel a running embedding consistency repair."""
@@ -1829,7 +1829,7 @@ async def stop_embedding_consistency_repair(
 
 
 @router.post("/profile-embeddings/repair")
-async def repair_profile_embeddings(
+def repair_profile_embeddings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:

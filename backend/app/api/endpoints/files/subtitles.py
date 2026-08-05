@@ -60,7 +60,7 @@ def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
 
 
 @router.get("/{file_uuid}/subtitles", response_class=Response)
-async def get_subtitles(
+def get_subtitles(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -141,7 +141,7 @@ async def get_subtitles(
 
 
 @router.get("/{file_uuid}/subtitles/validate", response_model=SubtitleValidationResult)
-async def validate_subtitles(
+def validate_subtitles(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -266,7 +266,7 @@ def prepare_bulk_export(
 
 
 @router.get("/bulk-export-stream")
-async def bulk_export_stream(
+def bulk_export_stream(
     job: str = Query(..., description="Job id returned by /bulk-export/prepare"),
     current_user: User = Depends(get_current_active_user),  # cookie-auth gates the stream
 ):
@@ -351,7 +351,7 @@ async def bulk_export_stream(
 
 
 @router.get("/supported-formats")
-async def get_supported_formats():
+def get_supported_formats():
     """
     Get list of supported subtitle formats.
 

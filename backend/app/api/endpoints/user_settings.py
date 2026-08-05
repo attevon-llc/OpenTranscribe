@@ -1423,7 +1423,7 @@ def get_download_system_defaults() -> DownloadSystemDefaults:
 
 
 @router.get("/auto-label")
-async def get_auto_label_settings(
+def get_auto_label_settings(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> dict:
@@ -1435,7 +1435,7 @@ async def get_auto_label_settings(
 
 
 @router.put("/auto-label")
-async def update_auto_label_settings(
+def update_auto_label_settings(
     settings_data: AutoLabelSettingsSchema = Body(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),

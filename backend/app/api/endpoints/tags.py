@@ -278,7 +278,7 @@ def cleanup_unused_tags(
 
 
 @router.post("/files/{file_uuid}/tags", response_model=TagSchema)
-async def add_tag_to_file(
+def add_tag_to_file(
     request: Request,
     file_uuid: str,
     tag_data: dict = Body(...),

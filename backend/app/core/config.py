@@ -142,6 +142,14 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")
     DEBUG: bool = is_relaxed_environment(ENVIRONMENT)
 
+    # Global server-side upload ceiling, in bytes (issue #284 A0.12). Matches the 15 GB
+    # the UI advertises and the yt-dlp `max_filesize`. Before this there was NO
+    # server-side ceiling in community: the only limit lived in the browser, so a client
+    # could skip the UI and PUT an arbitrarily large object to the presigned URL.
+    # Enforced at prepare (declared size) AND complete (the size MinIO observed).
+    # Set 0 to disable — only sensible on a trusted single-user install.
+    MAX_UPLOAD_BYTES: int | None = _int_env("MAX_UPLOAD_BYTES", 15 * 1024 * 1024 * 1024) or None
+
     # Whether anyone can create their own account via POST /api/auth/register.
     # New users are immediately active and GPU-capable, so on a public deployment this
     # is the door in front of every per-user cost (issue #284 A0.11). Set false when an

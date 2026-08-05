@@ -186,6 +186,36 @@ class WatchSourceUpdate(BaseModel):
         return v
 
 
+class FsEventsMode(StrEnum):
+    """Observer a source actually ended up with (issue #294)."""
+
+    NATIVE = "native"  # platform observer (inotify), delivery verified
+    POLLING = "polling"  # watchdog PollingObserver — network mount / macOS / Windows
+    ERROR = "error"  # observer could not be started; Celery polling only
+    UNAVAILABLE = "unavailable"  # watchdog not installed in this image
+
+
+class FsEventsStatus(BaseModel):
+    """Live FS-watching status, published by the beat supervisor via Redis.
+
+    ``None`` on a source means nothing is watching it and the Celery poll is the
+    only mechanism — which is also what the UI shows if the beat container is
+    down, because the status key carries a short TTL.
+    """
+
+    mode: FsEventsMode
+    active: bool = False
+    detail: str | None = None
+    fs_type: str | None = None
+    debounce_seconds: float | None = None
+    poll_seconds: int | None = None
+    since: datetime | None = None
+    last_event_at: datetime | None = None
+    events_seen: int = 0
+    scans_dispatched: int = 0
+    updated_at: datetime | None = None
+
+
 class WatchSourceResponse(BaseModel):
     """Watch source as returned by the API — never includes secrets."""
 
@@ -211,6 +241,8 @@ class WatchSourceResponse(BaseModel):
     has_smb_password: bool = False
     polling_interval_minutes: int = 15
     use_fs_events: bool = False
+    # Live observer status; None = polling only (see FsEventsStatus).
+    fs_events: FsEventsStatus | None = None
     file_extensions: str | None = None
     skip_files_older_than_days: int | None = None
     recursive: bool = True
@@ -327,6 +359,7 @@ class CapabilitiesResponse(BaseModel):
     watch_source_enabled: bool = True
     local_enabled: bool = False  # WATCH_FOLDER_PATH configured
     fs_events_enabled: bool = False
+    fs_events_mode: str = "auto"  # auto | native | polling | off
 
 
 class MultipartRegexTestRequest(BaseModel):

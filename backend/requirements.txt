@@ -156,8 +156,11 @@ detoxify>=0.5.2
 # =============================================================================
 # Watch Sources (auto-import from local folder / S3 / SMB) — issue #26
 # =============================================================================
-# watchdog = optional event-driven local FS watching (polling is the reliable
-# default; events are an additive speedup on real local filesystems only).
+# watchdog = event-driven local FS watching (issue #294), consumed by
+# app/services/watch_sources/fs_events/. Celery polling stays the reliable
+# baseline; this only makes a scan fire sooner. Both Observer (native/inotify)
+# and PollingObserver are used — the latter is the fallback wherever native
+# events are not delivered (network mounts, macOS/Windows Docker bind mounts).
 watchdog>=6.0.0
 # smbprotocol = pure-Python SMB2/3 client (no cifs-utils / mount; runs non-root).
 smbprotocol>=1.16.1

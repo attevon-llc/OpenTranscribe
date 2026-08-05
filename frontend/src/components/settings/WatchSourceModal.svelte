@@ -25,6 +25,7 @@
     watch_source_enabled: true,
     local_enabled: false,
     fs_events_enabled: false,
+    fs_events_mode: 'auto',
   };
 
   const dispatch = createEventDispatcher();

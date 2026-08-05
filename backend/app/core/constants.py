@@ -433,7 +433,8 @@ DEFAULT_GARBAGE_CLEANUP_THRESHOLD = 50
 # no restart). Coded defaults here are the single source of truth — there are
 # NO watch tuning .env vars (only the physical WATCH_FOLDER_PATH mount).
 # SystemSettings keys: watch.enabled / watch.file_stability_seconds /
-# watch.max_imports_per_scan / watch.fs_events_enabled.
+# watch.max_imports_per_scan / watch.fs_events_enabled / watch.fs_events_mode /
+# watch.fs_events_poll_seconds.
 DEFAULT_WATCH_ENABLED = True
 DEFAULT_WATCH_FILE_STABILITY_SECONDS = 30  # skip files modified within N s (still writing)
 # Per-scan cap on how many standalone files one scan imports, NOT a concurrency
@@ -441,6 +442,18 @@ DEFAULT_WATCH_FILE_STABILITY_SECONDS = 30  # skip files modified within N s (sti
 # single scan task rather than parallelizing it (issue #295).
 DEFAULT_WATCH_MAX_IMPORTS_PER_SCAN = 5
 DEFAULT_WATCH_FS_EVENTS_ENABLED = False  # optional watchdog layer (polling is the baseline)
+# How the FS-event layer picks an observer per local source (issue #294):
+#   auto    — filesystem heuristic + live delivery probe, falling back to the
+#             cross-platform PollingObserver when native events don't arrive
+#             (macOS/Windows Docker bind mounts, NFS/SMB/NAS mounts).
+#   native  — force the platform observer (inotify in our Linux containers).
+#   polling — force watchdog's PollingObserver (works everywhere, costs a stat sweep).
+#   off     — run no observer at all; Celery polling remains the only mechanism.
+DEFAULT_WATCH_FS_EVENTS_MODE = "auto"
+WATCH_FS_EVENTS_MODES = ("auto", "native", "polling", "off")
+# Stat-sweep interval for the PollingObserver fallback. Lower = lower latency,
+# higher = cheaper on a large or network-mounted tree.
+DEFAULT_WATCH_FS_EVENTS_POLL_SECONDS = 15
 
 # Scheduled database backups (Feature C, issue: data-loss incident).
 # DB-backed via SystemSettings (admin-UI managed, no beat restart). Coded defaults

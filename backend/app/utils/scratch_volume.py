@@ -52,17 +52,32 @@ DEFAULT_TTL_SECONDS = 60 * 60
 
 
 def is_scratch_available() -> bool:
-    """Return True when the scratch volume is mounted and writable.
+    """Return True when the scratch volume is mounted, writable, and SHARED.
 
     Checked on every call — the mount can appear/disappear at runtime
     on systems using systemd-managed bind mounts. Cheap syscall.
+
+    ``PIPELINE_SCRATCH_SHARED=false`` disables the fast path outright (issue #284
+    A1.19). The scratch hand-off writes the preprocessed WAV to a local path and skips
+    the MinIO upload entirely, which is correct only when every worker sees the SAME
+    filesystem. On a multi-node deployment each pod gets its own emptyDir, so the CPU
+    pod stages the audio somewhere the GPU pod cannot read and EVERY file fails — with
+    a confusing missing-file error rather than anything pointing at the mount. A
+    single-host Docker deployment (the default) shares the volume, so this stays on.
     """
+    if not _scratch_is_shared():
+        return False
     try:
         if not SCRATCH_DIR.is_dir():
             return False
         return os.access(SCRATCH_DIR, os.W_OK | os.X_OK)
     except OSError:
         return False
+
+
+def _scratch_is_shared() -> bool:
+    """Whether the scratch mount is shared by all workers (env-gated kill switch)."""
+    return os.getenv("PIPELINE_SCRATCH_SHARED", "true").strip().lower() != "false"
 
 
 def scratch_dir_for(file_uuid: str) -> Path:

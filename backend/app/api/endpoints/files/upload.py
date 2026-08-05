@@ -1,9 +1,11 @@
 import contextlib
-import io
 import logging
 import os
+import tempfile
 import uuid
 from pathlib import Path
+from typing import BinaryIO
+from typing import cast
 
 from fastapi import HTTPException
 from fastapi import UploadFile
@@ -176,20 +178,21 @@ def create_media_file_record(
 
 
 def upload_file_to_storage(
-    file_content: bytes | bytearray, file_size: int, storage_path: str, content_type: str
+    file_content: BinaryIO, file_size: int, storage_path: str, content_type: str
 ) -> None:
     """
     Upload file content to MinIO storage.
 
     Args:
-        file_content: File content as bytes
+        file_content: Seekable binary stream positioned at 0 (a spooled temp file).
         file_size: Size of the file
         storage_path: Storage path in MinIO
         content_type: MIME type of the file
     """
     if os.environ.get("SKIP_S3", "False").lower() != "true":
+        file_content.seek(0)
         upload_file_tuned(
-            file_content=io.BytesIO(file_content),
+            file_content=file_content,
             file_size=file_size,
             object_name=storage_path,
             content_type=content_type,
@@ -374,22 +377,50 @@ async def _read_first_chunk(file: UploadFile) -> tuple[bytearray, int]:
     return buf, len(buf)
 
 
+#: Spool uploads larger than this to disk instead of RAM. Small uploads (the common
+#: case) stay in memory and pay nothing; only genuinely large ones touch the filesystem.
+UPLOAD_SPOOL_MAX_MEMORY = 32 * 1024 * 1024
+
+
 async def _continue_read_after_first_chunk(
     file: UploadFile, buffered: bytearray
-) -> tuple[bytearray, int]:
-    """Extend ``buffered`` by reading the remaining chunks of the upload.
+) -> tuple[BinaryIO, int]:
+    """Spool the upload to a rolling temp file and return it positioned at 0.
 
-    Used after ``_read_first_chunk`` passes magic-byte validation — keeps
-    the already-read first chunk and appends the rest in place.
+    Used after ``_read_first_chunk`` passes magic-byte validation.
+
+    Previously this extended a bytearray to EOF, holding the ENTIRE file in RAM
+    (issue #284 A1.20). A multi-GB legacy upload therefore OOMKilled the process — and
+    because it is the API process, that drops every other in-flight request, WebSocket,
+    and SSE stream with it. One user's large upload could take out everyone's session.
+
+    ``SpooledTemporaryFile`` keeps the first ``UPLOAD_SPOOL_MAX_MEMORY`` in memory and
+    transparently rolls over to disk beyond it, so the common small upload is unchanged
+    while a large one is bounded by disk rather than RAM.
+
+    Returns:
+        ``(spooled_file, total_bytes)`` — the file is seeked to 0, ready to read.
     """
+    # Not a context manager on purpose: the spool is RETURNED and must outlive this
+    # function. The caller owns it and closes it in its finally (which also unlinks
+    # the on-disk backing file once it has rolled over).
+    spool = cast(
+        "BinaryIO",
+        tempfile.SpooledTemporaryFile(  # noqa: SIM115 - caller-owned lifetime
+            max_size=UPLOAD_SPOOL_MAX_MEMORY
+        ),
+    )
     total_read = len(buffered)
+    if buffered:
+        spool.write(bytes(buffered))
     while True:
         chunk = await file.read(UPLOAD_CHUNK_SIZE)
         if not chunk:
             break
-        buffered.extend(chunk)
+        spool.write(chunk)
         total_read += len(chunk)
-    return buffered, total_read
+    spool.seek(0)
+    return spool, total_read
 
 
 def _update_file_hash(db_file: MediaFile, client_file_hash: str | None, filename: str) -> None:
@@ -494,6 +525,7 @@ async def process_file_upload(
         file.filename or "unknown", current_user.id, db_file.id
     )
 
+    spooled_upload: BinaryIO | None = None
     try:
         # Read and validate the first chunk BEFORE committing to the full read
         # (Phase 2 PR #7, item E19). Streaming magic-byte validation lets us
@@ -511,8 +543,11 @@ async def process_file_upload(
             )
         logger.info(f"File validated: {file.filename} (detected: {validation_result})")
 
-        # Now read the remainder; the first chunk is kept in place.
+        # Spool the remainder to a rolling temp file (RAM up to a threshold, then
+        # disk). Closed in the finally below — which also unlinks the backing file if
+        # it rolled over, so a failed upload cannot leave one behind.
         file_content, file_size = await _continue_read_after_first_chunk(file, first_chunk)
+        spooled_upload = file_content
         benchmark_timing.mark(task_id, "http_read_complete")
 
         # Cloud-edition seam: enforce the tenant's per-tier max upload size now
@@ -527,10 +562,16 @@ async def process_file_upload(
         # regardless of file size). Used for server-side dedup + artifact
         # caching. Best-effort — failures never break uploads.
         try:
-            from app.services.imohash_service import compute_from_bytes
+            from app.services.imohash_service import compute_from_stream
 
             benchmark_timing.mark(task_id, "imohash_start")
-            db_file.imohash = compute_from_bytes(bytes(file_content))  # type: ignore[assignment]
+            # Stream-based: imohash samples 3x128KiB regardless of size, so this never
+            # materializes the file (which is the whole point of spooling it).
+            file_content.seek(0)
+            db_file.imohash = compute_from_stream(  # type: ignore[assignment]
+                file_content, size=file_size
+            )
+            file_content.seek(0)
             benchmark_timing.mark(task_id, "imohash_end")
         except Exception as im_err:
             logger.debug(f"imohash compute failed (non-fatal): {im_err}")
@@ -610,3 +651,10 @@ async def process_file_upload(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error during file upload: {str(e)}",
         ) from e
+    finally:
+        # Close the spool on every path. Once it has rolled over to disk this also
+        # unlinks the backing file, so a failed multi-GB upload cannot leave one
+        # behind (issue #284 A1.20).
+        if spooled_upload is not None:
+            with contextlib.suppress(Exception):
+                spooled_upload.close()

@@ -142,6 +142,12 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")
     DEBUG: bool = is_relaxed_environment(ENVIRONMENT)
 
+    # Whether anyone can create their own account via POST /api/auth/register.
+    # New users are immediately active and GPU-capable, so on a public deployment this
+    # is the door in front of every per-user cost (issue #284 A0.11). Set false when an
+    # external IdP owns identity, or when accounts should be admin-provisioned.
+    ALLOW_OPEN_REGISTRATION: bool = os.getenv("ALLOW_OPEN_REGISTRATION", "true").lower() == "true"
+
     # SSRF egress policy for user-supplied endpoint URLs (issue #284 A0.1/A0.10).
     # Self-hosted Ollama/vLLM on a private LAN is a legitimate setup, so a single-tenant
     # deployment can opt back into private targets. MUST stay false on anything

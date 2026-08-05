@@ -167,20 +167,24 @@ def test_websocket_auth_accepts_active_user_with_valid_token(monkeypatch):
 # ── A0.8: startup assertions ─────────────────────────────────────────────────────
 
 
-def test_hardened_refuses_to_boot_with_testing_flag(monkeypatch):
-    """TESTING=true enables a mock-user auth fallback — never allow it in production."""
-    from app.core.config import settings
-    from app.main import _validate_production_secrets
+def test_testing_shortcuts_are_inert_when_hardened(monkeypatch):
+    """TESTING=true enables a mock-user auth fallback; is_hardened must disable it.
 
-    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
-    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "a-real-and-sufficiently-long-secret")
-    monkeypatch.setattr(settings, "ENCRYPTION_KEY", "a-real-and-sufficiently-long-key")
-    monkeypatch.setattr(settings, "REDIS_PASSWORD", "redis-pass")
-    monkeypatch.setattr(settings, "DEBUG", False)
-    monkeypatch.setenv("TESTING", "true")
+    Enforcement is at the USE site rather than a boot refusal, because the secrets-guard
+    suite legitimately simulates production while conftest sets TESTING process-wide.
+    """
+    import inspect
 
-    with pytest.raises(ValueError, match="TESTING"):
-        _validate_production_secrets()
+    from app.api.endpoints import auth as auth_module
+
+    source = inspect.getsource(auth_module)
+    testing_gates = source.count('os.environ.get("TESTING", "False").lower() == "true"')
+    guarded = source.count("and not settings.is_hardened")
+
+    assert testing_gates > 0, "TESTING gate not found — did it move?"
+    assert guarded >= testing_gates, (
+        "every TESTING auth shortcut must also require `not settings.is_hardened`"
+    )
 
 
 def test_hardened_refuses_wildcard_cors_with_credentials(monkeypatch):

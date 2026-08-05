@@ -11,7 +11,6 @@ Configuration is managed via settings:
 - RATE_LIMIT_TRUSTED_PROXIES: Comma-separated list of trusted proxy IPs/CIDRs
 """
 
-import ipaddress
 import logging
 from collections.abc import Callable
 
@@ -19,76 +18,11 @@ from fastapi import Request
 from fastapi import Response
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-
-def _parse_trusted_proxies(
-    trusted_proxies_str: str,
-) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
-    """
-    Parse trusted proxies configuration string into a list of IP networks.
-
-    Args:
-        trusted_proxies_str: Comma-separated list of IPs or CIDR ranges
-
-    Returns:
-        List of parsed IP networks
-    """
-    if not trusted_proxies_str:
-        return []
-
-    networks = []
-    for proxy in trusted_proxies_str.split(","):
-        proxy = proxy.strip()
-        if not proxy:
-            continue
-        try:
-            # Try parsing as a network (CIDR notation)
-            if "/" in proxy:
-                networks.append(ipaddress.ip_network(proxy, strict=False))
-            else:
-                # Single IP - convert to /32 or /128 network
-                ip = ipaddress.ip_address(proxy)
-                if isinstance(ip, ipaddress.IPv4Address):
-                    networks.append(ipaddress.ip_network(f"{proxy}/32"))
-                else:
-                    networks.append(ipaddress.ip_network(f"{proxy}/128"))
-        except ValueError as e:
-            logger.warning(f"Invalid trusted proxy address '{proxy}': {e}")
-    return networks
-
-
-def _is_trusted_proxy(client_ip: str, trusted_networks: list) -> bool:
-    """
-    Check if an IP address is in the list of trusted proxy networks.
-
-    Args:
-        client_ip: IP address to check
-        trusted_networks: List of trusted IP networks
-
-    Returns:
-        True if the IP is trusted, False otherwise
-    """
-    if not trusted_networks:
-        return False
-
-    try:
-        ip = ipaddress.ip_address(client_ip)
-        for network in trusted_networks:
-            if ip in network:
-                return True
-    except ValueError:
-        logger.warning(f"Invalid IP address format: {client_ip}")
-    return False
-
-
-# Parse trusted proxies at module load time for efficiency
-_trusted_proxy_networks = _parse_trusted_proxies(settings.RATE_LIMIT_TRUSTED_PROXIES)
 
 
 def _get_redis_storage() -> str | None:
@@ -128,25 +62,14 @@ def _get_key_func() -> Callable[[Request], str]:
     """
 
     def key_func(request: Request) -> str:
-        # Get direct connection IP first
-        direct_ip = get_remote_address(request) or "unknown"
+        # Shared with the audit log and login records so all three bucket a request the
+        # same way. Note this walks the forwarded chain right-to-left; taking the FIRST
+        # X-Forwarded-For entry (as this did) lets a client prepend its own value and
+        # pick its own rate-limit bucket when more than one proxy is in front of the
+        # app (issue #284 A0.5).
+        from app.utils.client_ip import resolve_client_ip
 
-        # Only trust X-Forwarded-For if request comes from a trusted proxy
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for and _trusted_proxy_networks:
-            if _is_trusted_proxy(direct_ip, _trusted_proxy_networks):
-                # Take the first IP in the chain (original client)
-                client_ip = forwarded_for.split(",")[0].strip()
-                return client_ip  # type: ignore[no-any-return]
-            else:
-                # X-Forwarded-For header from untrusted source - log and ignore
-                logger.warning(
-                    "X-Forwarded-For header received from untrusted IP %s, ignoring",
-                    direct_ip,
-                )
-
-        # Fall back to direct connection IP
-        return direct_ip
+        return resolve_client_ip(request)
 
     return key_func
 
@@ -214,18 +137,10 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Res
     Returns:
         JSONResponse with 429 status code and error details.
     """
-    # Extract client IP for logging (using same trusted proxy logic)
-    direct_ip = get_remote_address(request) or "unknown"
-    forwarded_for = request.headers.get("X-Forwarded-For")
+    # Same resolver as key_func, so the logged address matches the bucketed one.
+    from app.utils.client_ip import resolve_client_ip
 
-    if (
-        forwarded_for
-        and _trusted_proxy_networks
-        and _is_trusted_proxy(direct_ip, _trusted_proxy_networks)
-    ):
-        client_ip = forwarded_for.split(",")[0].strip()
-    else:
-        client_ip = direct_ip
+    client_ip = resolve_client_ip(request)
 
     # Log the rate-limited request
     logger.warning(

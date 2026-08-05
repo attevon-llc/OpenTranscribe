@@ -37,6 +37,9 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   (`formatted_duration`, `display_status`, `resolved_speaker_name`, …). The SPA renders them.
 - Read surfaces mask transcript text at read time via `services/redaction/spans.py`; owner
   reveal is `?redact=false` and is audited (`files/crud.py`, `files/subtitles.py`).
+- **Owner-scoped listings go through `PermissionService.get_accessible_file_ids_subquery`** —
+  it already covers owned files plus collections shared directly and via groups, and applies the
+  org tenant gate. Never write a second sharing rule beside it.
 
 ## How it connects
 
@@ -48,6 +51,12 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 
 - `require_capability(key)` (`core/capabilities.py`) returns **404, not 403** — a gated router
   must look like an unknown route. Platform superusers bypass it.
+- **`endpoints/tags.py` visibility rule** (`v374_add_tag_user_id`): a tag is visible if it is a
+  system tag (`Tag.user_id IS NULL`), owned by the caller, **or** attached to a file in the
+  accessible-files subquery — that's `_visible_to()`; `_owned_or_system()` is the narrower
+  write/`/unused` scope. `_get_or_create_tag` takes a `user_id` and reuses the caller's row
+  first, then a same-named system row. Tag names are only unique **per owner**, so
+  `remove_tag_from_file` resolves the tag by joining `FileTag` for that file, never by name.
 - `GET /api/auth/session` must **never 401** (200 for anonymous); it is the SPA's session probe.
 - The WS endpoint `accept()`s *before* authenticating (cookie, else a 10 s first-message
   `authenticate` frame), then closes with 4001/4002/4003 — not HTTP status codes.

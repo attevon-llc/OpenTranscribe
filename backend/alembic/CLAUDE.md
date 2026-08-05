@@ -9,7 +9,7 @@ authoring the revision file itself.
 
 ## Key files
 
-- `versions/` — 59 revisions, `v010_baseline` … head `v373_add_cluster_organization_id`.
+- `versions/` — 60 revisions, `v010_baseline` … head `v374_add_tag_user_id`.
 - `env.py` — builds the URL from `POSTGRES_*` env (`load_dotenv()`), `target_metadata =
   Base.metadata`. No `compare_type`, no naming convention.
 - `script.py.mako` — **stock alembic template**: it emits neither the `v###` id nor idempotent
@@ -28,7 +28,10 @@ authoring the revision file itself.
   `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns …) THEN … END IF; END $$;`.
   Reason: the startup runner stamps *untracked* production DBs by schema fingerprint, so a
   revision routinely re-runs against a database that already has part of its changes. Read
-  `v373` for the plain additive shape and `v371` for the guarded rename/backfill shape.
+  `v373` for the plain additive shape, `v371` for the guarded rename/backfill shape, and
+  `v374` for a data-splitting backfill (its `BACKFILL_SQL` is a module-level constant so the
+  consistency test can replay it against seeded rows — the `DO $$` block is written to be
+  re-runnable, which is also what makes it idempotent).
 - `downgrade()` mirrors with `DROP … IF EXISTS`. Repair revisions may deliberately implement
   only the additive half — say so in the docstring (see `v371`).
 - Docstring first: **why**, which deployments are affected, and what "community edition"

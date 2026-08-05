@@ -140,9 +140,26 @@ def confirm_password_reset(
         PasswordResetToken.used_at.is_(None),
     ).update({"used_at": datetime.now(UTC)})
 
-    # Invalidate all existing sessions (FedRAMP AC-12)
-    token_service.revoke_all_user_tokens(db, int(user.id))
+    # Invalidate all existing sessions (FedRAMP AC-12).
+    #
+    # This must be part of the same transaction as the password change, and it
+    # must be allowed to fail the whole reset. Previously this called
+    # revoke_all_user_tokens(), which commits on success and calls db.rollback()
+    # on ANY error — so a Redis outage or a failed commit silently reverted the
+    # new password hash, the history row and the used-token markers, and we still
+    # returned success (issue #324). The user was told their password had changed
+    # when it had not, and their existing sessions were left live — the precise
+    # outcome AC-12 exists to prevent, at the moment it matters most, since a
+    # reset is often triggered by a suspected compromise.
+    try:
+        token_service.revoke_all_user_tokens_in_transaction(db, int(user.id))
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Password reset aborted for user %s: could not revoke existing sessions", user.id
+        )
+        return False, ["Could not complete the password reset. Please try again."]
 
-    db.commit()
     logger.info(f"Password reset completed for user {user.id}")
     return True, []

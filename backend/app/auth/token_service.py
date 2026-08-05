@@ -394,52 +394,84 @@ class TokenService:
             logger.error(f"Error revoking token: {e}")
             return False
 
+    def revoke_all_user_tokens_in_transaction(self, db: Session, user_id: int) -> int:
+        """
+        Revoke all refresh tokens for a user **without** committing.
+
+        The caller owns the transaction and MUST commit. Exceptions propagate
+        rather than being swallowed, so a caller that is changing credentials in
+        the same transaction can abort the whole unit of work instead of
+        reporting success for changes that were rolled back underneath it.
+
+        Use this whenever ``db`` already holds uncommitted work. Use
+        :meth:`revoke_all_user_tokens` only for a standalone revocation.
+
+        Args:
+            db: Database session (transaction owned by the caller)
+            user_id: User ID whose tokens should be revoked
+
+        Returns:
+            Number of tokens revoked
+        """
+        tokens = (
+            db.query(RefreshToken)
+            .filter(
+                RefreshToken.user_id == user_id,
+                RefreshToken.revoked_at.is_(None),
+            )
+            .all()
+        )
+
+        now = datetime.now(UTC)
+        count = 0
+
+        for token in tokens:
+            # Add to Redis blacklist. Not transactional — if the commit later
+            # fails, these keys stay set. Revoking a token that turns out to
+            # still be valid fails closed (the user re-authenticates), which is
+            # the safe direction for the inverse mistake.
+            ttl_seconds = max(1, int((token.expires_at - now).total_seconds()))
+            key = f"{REVOKED_TOKEN_PREFIX}{token.jti}"
+            self.store.set(key, "revoked", ex=ttl_seconds)
+
+            # Update database record
+            token.revoked_at = now  # type: ignore[assignment]
+            count += 1
+
+        return count
+
     def revoke_all_user_tokens(self, db: Session, user_id: int) -> int:
         """
-        Revoke all refresh tokens for a user.
+        Revoke all refresh tokens for a user, committing on success.
+
+        Best-effort: returns 0 and logs on failure rather than raising.
 
         Used for:
         - Logout from all devices
-        - Password change
         - Account security concerns
+
+        **Do not call this while ``db`` holds uncommitted work.** It commits, and
+        on failure it rolls the whole session back — which silently discards the
+        caller's unrelated changes. ``confirm_password_reset`` used to do exactly
+        that: a failure here reverted the new password hash while the caller went
+        on to report success (issue #324). Use
+        :meth:`revoke_all_user_tokens_in_transaction` for that case.
 
         Args:
             db: Database session
             user_id: User ID whose tokens should be revoked
 
         Returns:
-            Number of tokens revoked
+            Number of tokens revoked, or 0 if the revocation failed
         """
         try:
-            # Get all active refresh tokens for user
-            tokens = (
-                db.query(RefreshToken)
-                .filter(
-                    RefreshToken.user_id == user_id,
-                    RefreshToken.revoked_at.is_(None),
-                )
-                .all()
-            )
-
-            now = datetime.now(UTC)
-            count = 0
-
-            for token in tokens:
-                # Add to Redis blacklist
-                ttl_seconds = max(1, int((token.expires_at - now).total_seconds()))
-                key = f"{REVOKED_TOKEN_PREFIX}{token.jti}"
-                self.store.set(key, "revoked", ex=ttl_seconds)
-
-                # Update database record
-                token.revoked_at = now  # type: ignore[assignment]
-                count += 1
-
+            count = self.revoke_all_user_tokens_in_transaction(db, user_id)
             db.commit()
             logger.info(f"Revoked {count} tokens for user {user_id}")
             return count
 
-        except Exception as e:
-            logger.error(f"Error revoking user tokens: {e}")
+        except Exception:
+            logger.exception(f"Error revoking user tokens for user {user_id}")
             db.rollback()
             return 0
 

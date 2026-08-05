@@ -34,7 +34,7 @@
           <line x1="12" y1="16" x2="12" y2="12"></line>
           <line x1="12" y1="8" x2="12.01" y2="8"></line>
         </svg>
-        <span>{$t('uploader.usingSystemDefaults')}{#if transcriptionSystemDefaults} (min: {transcriptionSystemDefaults.min_speakers}, max: {transcriptionSystemDefaults.max_speakers}){/if}</span>
+        <span>{$t('uploader.usingSystemDefaults')}{#if transcriptionSystemDefaults} {$t('uploader.speakerDefaultsRange', { min: transcriptionSystemDefaults.min_speakers, max: transcriptionSystemDefaults.max_speakers })}{/if}</span>
       </div>
     {:else if transcriptionSettings.speaker_prompt_behavior === 'use_custom'}
       <div class="info-note">
@@ -43,7 +43,7 @@
           <line x1="12" y1="16" x2="12" y2="12"></line>
           <line x1="12" y1="8" x2="12.01" y2="8"></line>
         </svg>
-        <span>{$t('uploader.usingSavedSettings')} (min: {transcriptionSettings.min_speakers}, max: {transcriptionSettings.max_speakers})</span>
+        <span>{$t('uploader.usingSavedSettings')} {$t('uploader.speakerDefaultsRange', { min: transcriptionSettings.min_speakers, max: transcriptionSettings.max_speakers })}</span>
       </div>
     {/if}
   {/if}

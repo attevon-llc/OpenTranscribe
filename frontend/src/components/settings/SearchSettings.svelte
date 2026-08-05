@@ -80,7 +80,7 @@
     lastReindexStats = event.detail?.stats || null;
     // Reload status to get updated counts
     loadStatus();
-    toastStore.success($t('search.reindexComplete') || 'Re-indexing complete!');
+    toastStore.success($t('search.reindexComplete'));
   }
 
   function handleReindexStopped(event: CustomEvent<{ stats: any; reason: string }>) {
@@ -88,7 +88,7 @@
     isReindexing = false;
     isStopping = false;
     loadStatus();
-    toastStore.success($t('search.reindexStopped') || 'Re-indexing stopped.');
+    toastStore.success($t('search.reindexStopped'));
   }
 
   onMount(async () => {
@@ -286,8 +286,8 @@
         <span class="reindex-label">
           <Spinner size="small" />
           {isStopping
-            ? ($t('search.stoppingReindex') || 'Stopping...')
-            : ($t('search.reindexingInProgress') || 'Re-indexing in progress...')}
+            ? ($t('search.stoppingReindex'))
+            : ($t('search.reindexingInProgress'))}
         </span>
         {#if reindexProgress && reindexProgress.total_files > 0}
           <span class="reindex-count">
@@ -317,7 +317,7 @@
           <div class="progress-bar-wrapper">
             <ProgressBar percent={null} />
           </div>
-          <span class="progress-text">{$t('search.reindexStarting') || 'Starting...'}</span>
+          <span class="progress-text">{$t('search.reindexStarting')}</span>
         </div>
       {/if}
       <div class="reindex-actions">
@@ -326,7 +326,7 @@
           on:click={handleStopReindex}
           disabled={isStopping}
         >
-          {isStopping ? ($t('search.stoppingReindex') || 'Stopping...') : ($t('search.stopReindex') || 'Stop')}
+          {isStopping ? ($t('search.stoppingReindex')) : ($t('search.stopReindex'))}
         </button>
       </div>
     </div>
@@ -335,7 +335,7 @@
       <div class="progress-bar">
         <div class="progress-fill" style="width: {progressPercent}%"></div>
       </div>
-      <span class="progress-text">{progressPercent}% indexed</span>
+      <span class="progress-text">{$t('settings.search.percentIndexed', { percent: progressPercent })}</span>
     </div>
   {/if}
 
@@ -343,19 +343,19 @@
   {#if lastReindexStats && !isReindexing}
     <div class="reindex-stats">
       <div class="stats-header">
-        <span class="stats-label">{$t('settings.search.lastReindex') || 'Last Re-index'}</span>
+        <span class="stats-label">{$t('settings.search.lastReindex')}</span>
         <button class="btn-dismiss" on:click={() => lastReindexStats = null}>&times;</button>
       </div>
       <div class="stats-row">
-        <span>{lastReindexStats.indexed_files}/{lastReindexStats.total_files} files</span>
-        <span>{lastReindexStats.total_chunks} chunks</span>
+        <span>{$t('settings.search.filesIndexed', { indexed: lastReindexStats.indexed_files, total: lastReindexStats.total_files })}</span>
+        <span>{$t('settings.search.chunksCount', { count: lastReindexStats.total_chunks })}</span>
         <span class="stats-mode {lastReindexStats.mode || 'cpu'}">
           {(lastReindexStats.mode || 'cpu').toUpperCase()}
         </span>
       </div>
       {#if lastReindexStats.failed_files > 0}
         <div class="stats-row error">
-          <span>{lastReindexStats.failed_files} failed</span>
+          <span>{$t('settings.search.failedCount', { count: lastReindexStats.failed_files })}</span>
         </div>
       {/if}
     </div>
@@ -364,7 +364,7 @@
   <!-- Embedding Model Selection -->
   <div class="section-divider"></div>
   <div class="subsection-header">
-    <h4 class="subsection-title">{$t('search.embeddingModel') || 'Embedding Model'}</h4>
+    <h4 class="subsection-title">{$t('search.embeddingModel')}</h4>
     <div class="subsection-actions">
       {#if indexStatus && indexStatus.pending_files > 0 && !isReindexing}
         <button
@@ -381,7 +381,7 @@
           on:click={handleReindexAll}
           disabled={isReindexing}
         >
-          {isReindexing ? ($t('search.reindexing') || 'Re-indexing...') : ($t('search.reindexAll') || 'Re-index All')}
+          {isReindexing ? ($t('search.reindexing')) : ($t('search.reindexAll'))}
         </button>
       {/if}
     </div>
@@ -396,7 +396,7 @@
       disabled={isSwitchingModel || isReindexing || models.length === 0}
     >
       {#if models.length === 0}
-        <option value="">Loading models...</option>
+        <option value="">{$t('settings.search.loadingModels')}</option>
       {:else}
         {#each models as model}
           <option value={model.model_id}>

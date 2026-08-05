@@ -195,13 +195,13 @@
     <!-- Right Column: hosted account portal link (cloud) OR local password change -->
     {#if isCloudEdition}
     <div class="profile-card">
-      <h4 class="card-title">{$t('settings.profile.accountSecurity') || 'Account & Security'}</h4>
+      <h4 class="card-title">{$t('settings.profile.accountSecurity')}</h4>
       <p class="form-text">
-        {$t('settings.profile.externalManaged') || 'Your password, multi-factor authentication, and security settings are managed in your account portal.'}
+        {$t('settings.profile.externalManaged')}
       </p>
       <div class="form-actions">
         <button type="button" class="btn btn-primary" on:click={openHostedAccountPortal}>
-          {$t('settings.profile.manageAccount') || 'Manage Account'}
+          {$t('settings.profile.manageAccount')}
         </button>
       </div>
     </div>

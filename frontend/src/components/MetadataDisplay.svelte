@@ -1,10 +1,11 @@
 <script lang="ts">
+  import type { MediaFileDetail } from '$lib/types/media';
   import { slide } from 'svelte/transition';
   import { formatDuration } from '$lib/utils/formatting';
   import { authStore } from '$stores/auth';
   import { t } from '$stores/locale';
 
-  export let file: any = null;
+  export let file: MediaFileDetail | null = null;
   export let showMetadata: boolean = false;
 
 
@@ -193,18 +194,18 @@
             {/if}
             {#if file.diarization_model}
               <span class="model-badge">
-                <span class="model-label">Diarization:</span>
+                <span class="model-label">{$t('metadata.diarizationLabel')}</span>
                 <span class="model-name">{file.diarization_model}</span>
               </span>
             {:else if file.diarization_disabled}
               <span class="model-badge diarization-disabled">
-                <span class="model-label">Diarization:</span>
+                <span class="model-label">{$t('metadata.diarizationLabel')}</span>
                 <span class="model-name">{$t('metadata.diarizationDisabled')}</span>
               </span>
             {/if}
             {#if file.embedding_mode}
               <span class="model-badge">
-                <span class="model-label">Embeddings:</span>
+                <span class="model-label">{$t('metadata.embeddingsLabel')}</span>
                 <span class="model-name">{file.embedding_mode}</span>
               </span>
             {/if}

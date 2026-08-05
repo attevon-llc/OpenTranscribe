@@ -1,8 +1,9 @@
 <script lang="ts">
+  import type { MediaFileDetail } from '$lib/types/media';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
 
-  export let file: any = null;
+  export let file: MediaFileDetail | null = null;
   export let diarizationDisabled: boolean = false;
   export let isEditingSpeakers: boolean = false;
   export let isDownloading: boolean = false;

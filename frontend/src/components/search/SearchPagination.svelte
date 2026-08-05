@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { t } from '$stores/locale';
 
   export let page: number = 1;
   export let totalPages: number = 1;
@@ -65,12 +66,12 @@
   }
 </script>
 
-<nav class="pagination" aria-label="Search results pagination">
+<nav class="pagination" aria-label={$t('pagination.nav')}>
   <button
     class="page-btn prev"
     disabled={page <= 1}
     on:click={() => goToPage(page - 1)}
-    aria-label="Previous page"
+    aria-label={$t('pagination.previousPage')}
   >
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="15 18 9 12 15 6"></polyline>
@@ -85,7 +86,7 @@
         class="page-btn"
         class:active={p === page}
         on:click={() => goToPage(p)}
-        aria-label="Page {p}"
+        aria-label={$t('pagination.page', { page: p })}
         aria-current={p === page ? 'page' : undefined}
       >
         {p}
@@ -97,7 +98,7 @@
     class="page-btn next"
     disabled={page >= totalPages}
     on:click={() => goToPage(page + 1)}
-    aria-label="Next page"
+    aria-label={$t('pagination.nextPage')}
   >
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="9 18 15 12 9 6"></polyline>

@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate } from 'svelte';
+  import type { Segment, Speaker } from '$lib/types/speaker';
+  import type { Collection } from '$lib/types/collection';
+  import type { Comment } from '$lib/types/comment';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import { writable, get } from 'svelte/store';
   import axiosInstance from '$lib/axios';
@@ -65,7 +68,7 @@
   let loadProgress = 0;
   let playerInitialized = false;
   let videoElementChecked = false;
-  let collections: any[] = [];
+  let collections: Collection[] = [];
 
   // UI state
   let showMetadata = false;
@@ -276,7 +279,7 @@
         redactionPending = response.data.redaction_pending || false;
         redactionStatus = response.data.redaction_status || '';
         if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
-          if (response.data.transcript_segments.some((s: any) => s?.redactions?.length)) {
+          if (response.data.transcript_segments.some((s: Segment) => s?.redactions?.length)) {
             redactionActive = true;
           }
         }
@@ -350,7 +353,7 @@
         redactionPending = response.data.redaction_pending || false;
         redactionStatus = response.data.redaction_status || '';
         if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
-          if (response.data.transcript_segments.some((s: any) => s?.redactions?.length)) {
+          if (response.data.transcript_segments.some((s: Segment) => s?.redactions?.length)) {
             redactionActive = true;
           }
         }
@@ -538,7 +541,7 @@
       file.transcript_segments = transcriptData;
 
       // Update transcript text for editing
-      editedTranscript = transcriptData.map((seg: any) =>
+      editedTranscript = transcriptData.map((seg: Segment) =>
         `${seg.display_timestamp || seg.formatted_timestamp || formatDuration(seg.start_time)} [${seg.speaker_label || seg.speaker?.name || 'Speaker'}]: ${seg.text}`
       ).join('\n');
 
@@ -598,8 +601,9 @@
 
       if (response.data && Array.isArray(response.data)) {
         // Use pre-processed data directly from backend - no frontend business logic
-        speakerList = response.data.map((speaker: any) => ({
+        speakerList = response.data.map((speaker: Speaker) => ({
             ...speaker,
+            verified: speaker.verified ?? false,
             showMatches: false,  // Only UI state, not business logic
             showSuggestions: false  // Only UI state, not business logic
           }));
@@ -624,7 +628,7 @@
         const transcriptData = file?.transcript_segments;
         if (transcriptData) {
           const speakers = new Map();
-          transcriptData.forEach((segment: any) => {
+          transcriptData.forEach((segment: Segment) => {
             const speakerLabel = segment.speaker_label || segment.speaker?.name || $t('fileDetail.unknownSpeaker');
             if (!speakers.has(speakerLabel)) {
               speakers.set(speakerLabel, {
@@ -648,7 +652,7 @@
       const transcriptData = file?.transcript_segments;
       if (transcriptData) {
         const speakers = new Map();
-        transcriptData.forEach((segment: any) => {
+        transcriptData.forEach((segment: Segment) => {
           const speakerLabel = segment.speaker_label || segment.speaker?.name || get(t)('fileDetail.unknownSpeaker');
           if (!speakers.has(speakerLabel)) {
             speakers.set(speakerLabel, {
@@ -753,7 +757,7 @@
       segment.classList.remove('active-segment');
     });
 
-    const currentSegment = transcriptData.find((segment: any) => {
+    const currentSegment = transcriptData.find((segment: Segment) => {
       return currentPlaybackTime >= segment.start_time && currentPlaybackTime <= segment.end_time;
     });
 
@@ -1091,7 +1095,7 @@
         // Update the specific segment in local data
         const transcriptData = file?.transcript_segments;
         if (transcriptData && file) {
-          const segmentIndex = transcriptData.findIndex((s: any) => s.uuid === segmentUuid);
+          const segmentIndex = transcriptData.findIndex((s: Segment) => s.uuid === segmentUuid);
 
           if (segmentIndex !== -1) {
             // Create a new array with the updated segment, preserving speaker data
@@ -1238,7 +1242,7 @@
     let transcriptData = file?.transcript_segments;
     if (!file || !transcriptData) return;
     // Fetch comments if user wants to include them
-    let fileComments: any[] = [];
+    let fileComments: Comment[] = [];
     if (includeComments) {
       try {
         const endpoint = `/comments/files/${file.uuid}/comments`;
@@ -1249,7 +1253,7 @@
         const userData = $authStore.user || {} as any;
 
         // Add current user data to each comment
-        fileComments = fileComments.map((comment: any) => {
+        fileComments = fileComments.map((comment: Comment) => {
           // If the comment is from the current user, add their details
           if (!comment.user && comment.user_id === userData.uuid) {
             comment.user = {
@@ -1270,7 +1274,7 @@
         });
 
         // Sort comments by timestamp
-        fileComments.sort((a: any, b: any) => a.timestamp - b.timestamp);
+        fileComments.sort((a: Comment, b: Comment) => a.timestamp - b.timestamp);
       } catch (error) {
         console.error('Error fetching comments for export:', error);
         // Continue with export even if comments can't be fetched
@@ -1432,9 +1436,9 @@
     // STEP 1: Optimistic UI updates - immediately update voice suggestions with new names
     const nameChanges = new Map(); // Track profile name changes for voice suggestions
 
-    speakersToUpdate.forEach((speaker: any) => {
+    speakersToUpdate.forEach((speaker: SpeakerItem) => {
       const decision = decisions.get(speaker.uuid);
-      const newName = speaker.display_name.trim();
+      const newName = (speaker.display_name ?? '').trim();
 
       // If updating a profile globally, track the name change
       if (decision && decision.decision === 'update_profile' && speaker.profile) {
@@ -1461,10 +1465,10 @@
 
     // STEP 2: Update speakers in the backend with decisions
     // Backend returns immediately after saving to PostgreSQL - heavy processing happens in background
-    const updatePromises = speakersToUpdate.map(async (speaker: any) => {
+    const updatePromises = speakersToUpdate.map(async (speaker: SpeakerItem) => {
       const decision = decisions.get(speaker.uuid);
       const payload: any = {
-        display_name: speaker.display_name.trim(),
+        display_name: (speaker.display_name ?? '').trim(),
         name: speaker.name
       };
 
@@ -1489,7 +1493,7 @@
     );
 
     // STEP 5: Update the transcript store for reactive updates (instant)
-    speakerList.forEach((speaker: any) => {
+    speakerList.forEach((speaker: SpeakerItem) => {
       if (speaker.uuid && speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
         transcriptStore.updateSpeakerName(speaker.uuid, speaker.display_name.trim());
       }
@@ -1499,22 +1503,26 @@
     const transcriptData = file?.transcript_segments;
     if (transcriptData) {
       const speakerMapping = new Map();
-      speakerList.forEach((speaker: any) => {
+      speakerList.forEach((speaker: SpeakerItem) => {
         if (speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
           speakerMapping.set(speaker.name, speaker.display_name.trim());
         }
       });
 
-      transcriptData.forEach((segment: any) => {
+      transcriptData.forEach((segment: Segment) => {
         const speakerName = segment.speaker_label || segment.speaker?.name;
+        if (!speakerName) return;
         const newDisplayName = speakerMapping.get(speakerName);
         if (newDisplayName) {
           segment.resolved_speaker_name = newDisplayName;
           if (segment.speaker) {
             segment.speaker.display_name = newDisplayName;
           } else {
+            // `uuid`, not `id` — SegmentSpeakerDropdown and transcriptStore both
+            // read `segment.speaker.uuid`, so the old `id` key left the
+            // synthesized speaker unmatchable after a rename.
             segment.speaker = {
-              id: segment.speaker_id,
+              uuid: segment.speaker_id ?? '',
               name: speakerName,
               display_name: newDisplayName
             };
@@ -1539,7 +1547,7 @@
     });
 
     // Refresh speakers from the backend to sync local state
-    speakerList.forEach((speaker: any) => {
+    speakerList.forEach((speaker: SpeakerItem) => {
       if (speaker.uuid && speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
         transcriptStore.updateSpeakerName(speaker.uuid, speaker.display_name.trim());
       }
@@ -1969,7 +1977,7 @@
   function scrollToSegmentAtTime(time: number) {
     const transcriptData = file?.transcript_segments;
     if (!transcriptData || !Array.isArray(transcriptData)) return;
-    const segment = transcriptData.find((s: any) => time >= s.start_time && time <= s.end_time);
+    const segment = transcriptData.find((s: Segment) => time >= s.start_time && time <= s.end_time);
     if (!segment) return;
     const segId = segment.uuid || segment.id || `${segment.start_time}-${segment.end_time}`;
     // Wait for DOM to update with the active-segment class

@@ -1,8 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { t } from '$stores/locale';
 
   export let tags: string[] = [];
-  export let placeholder = 'Add a tag...';
+  export let placeholder: string | undefined = undefined;
+
+  $: resolvedPlaceholder = placeholder ?? $t('common.addTagPlaceholder');
   export let disabled = false;
   export let maxTags = 20;
   export let maxLength = 50;
@@ -58,7 +61,7 @@
             type="button"
             class="tag-remove"
             on:click={() => removeTag(i)}
-            aria-label="Remove tag {tag}"
+            aria-label="{$t('tags.removeTag')} {tag}"
           >&times;</button>
         {/if}
       </span>
@@ -71,7 +74,7 @@
         bind:value={inputValue}
         on:keydown={handleKeydown}
         on:blur={addTag}
-        {placeholder}
+        placeholder={resolvedPlaceholder}
         maxlength={maxLength}
       />
     {/if}

@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { formatFileSize, calculateCompressionRatio, estimateAudioSize } from '$lib/utils/metadataMapper';
+  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
 
   export let file: File | null = null;
   export let choice: 'extract' | 'full' = 'extract';
@@ -35,8 +36,11 @@
           <circle cx="18" cy="16" r="3"></circle>
         </svg>
       </div>
+      <!-- The locale string carries a <strong>, so this has to be {@html}. i18next
+           runs with interpolation.escapeValue=false, so the interpolated value is
+           NOT escaped for us — sanitize the rendered result. -->
       <p class="info-message">
-        {@html $t('extraction.videoSizeMessage', { size: formatFileSize(file.size) })}
+        {@html sanitizeHighlightHtml($t('extraction.videoSizeMessage', { size: formatFileSize(file.size) }))}
       </p>
     </div>
 
@@ -69,9 +73,9 @@
               <circle cx="18" cy="16" r="3"></circle>
             </svg>
             <span class="choice-title">{$t('extraction.extractAudio')}</span>
-            <span class="choice-badge recommended">Recommended</span>
+            <span class="choice-badge recommended">{$t('extraction.recommendedBadge')}</span>
           </div>
-          <span class="choice-desc">~{compressionRatio}% smaller &bull; Faster upload &bull; Metadata preserved</span>
+          <span class="choice-desc">{$t('extraction.extractSavings', { ratio: compressionRatio })}</span>
         </div>
       </label>
 
@@ -86,7 +90,7 @@
             </svg>
             <span class="choice-title">{$t('extraction.uploadFullVideo')}</span>
           </div>
-          <span class="choice-desc">Upload the original {formatFileSize(file.size)} video file as-is</span>
+          <span class="choice-desc">{$t('extraction.uploadFullDesc', { size: formatFileSize(file.size) })}</span>
         </div>
       </label>
     </div>

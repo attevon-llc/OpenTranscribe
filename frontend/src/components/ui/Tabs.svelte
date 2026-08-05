@@ -10,12 +10,15 @@
 
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { t } from '$stores/locale';
 
   export let tabs: TabItem[] = [];
   /** The active tab id. Bindable: `<Tabs bind:activeId>`. */
   export let activeId: string = tabs[0]?.id ?? '';
-  /** Accessible label for the tablist (screen readers). */
-  export let ariaLabel: string = 'Tabs';
+  /** Accessible label for the tablist (screen readers). Defaults to the translated "Tabs". */
+  export let ariaLabel: string | undefined = undefined;
+
+  $: resolvedAriaLabel = ariaLabel ?? $t('common.tabs');
 
   const dispatch = createEventDispatcher<{ change: string }>();
 
@@ -58,7 +61,7 @@
   }
 </script>
 
-<div class="tabs" role="tablist" aria-label={ariaLabel}>
+<div class="tabs" role="tablist" aria-label={resolvedAriaLabel}>
   {#each tabs as tab, i (tab.id)}
     <button
       bind:this={tabEls[i]}

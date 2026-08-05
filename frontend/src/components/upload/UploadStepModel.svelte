@@ -38,7 +38,7 @@
 
   <!-- AI Summary -->
   <div class="section">
-    <h4 class="section-title">AI Summary</h4>
+    <h4 class="section-title">{$t('upload.aiSummary')}</h4>
     <label class="toggle-row">
       <span class="toggle-text">
         <span class="toggle-label">{$t('upload.skipSummary')}</span>

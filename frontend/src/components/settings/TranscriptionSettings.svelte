@@ -816,7 +816,13 @@
               <div class="defaults-info">
                 <span class="defaults-label">{$t('settings.transcription.advancedDefaults')}</span>
                 <span class="defaults-value">
-                  VAD: {systemDefaults.vad_threshold}, Silence: {systemDefaults.vad_min_silence_ms}ms, Speech: {systemDefaults.vad_min_speech_ms}ms, Pad: {systemDefaults.vad_speech_pad_ms}ms, Repetition: {systemDefaults.repetition_penalty}
+                  {$t('settings.transcription.advancedDefaultsValue', {
+                    vad: systemDefaults.vad_threshold,
+                    silence: systemDefaults.vad_min_silence_ms,
+                    speech: systemDefaults.vad_min_speech_ms,
+                    pad: systemDefaults.vad_speech_pad_ms,
+                    repetition: systemDefaults.repetition_penalty,
+                  })}
                 </span>
               </div>
             {/if}

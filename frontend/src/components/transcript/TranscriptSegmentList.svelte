@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { GroupedSegmentView } from '$lib/types/media';
+  import type { Segment, Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import ScrollbarIndicator from '$components/ScrollbarIndicator.svelte';
   import SegmentSpeakerDropdown from '$components/SegmentSpeakerDropdown.svelte';
@@ -10,9 +12,9 @@
   import { translateSpeakerLabel } from '$lib/i18n';
 
   export let file: any = null;
-  export let groupedTranscriptSegments: any[] = [];
+  export let groupedTranscriptSegments: GroupedSegmentView[] = [];
   export let transcriptSegments: TranscriptSegment[] = [];
-  export let speakerList: any[] = [];
+  export let speakerList: Speaker[] = [];
   export let currentTime: number = 0;
   export let diarizationDisabled: boolean = false;
   export let isEditingTranscript: boolean = false;
@@ -161,14 +163,14 @@
   // `indexOf` returns -1 and highlights silently vanish. Look up by uuid instead.
   $: segmentIndexByUuid = (() => {
     const map = new Map<string | number, number>();
-    (file?.transcript_segments || []).forEach((s: any, i: number) => {
+    (file?.transcript_segments || []).forEach((s: Segment, i: number) => {
       if (s?.uuid != null) map.set(s.uuid, i);
     });
     return map;
   })();
 
   // Helper to get original segment index for search highlighting
-  function getOriginalSegmentIndex(segment: any): number {
+  function getOriginalSegmentIndex(segment: Segment): number {
     if (segment?.uuid != null && segmentIndexByUuid.has(segment.uuid)) {
       return segmentIndexByUuid.get(segment.uuid) as number;
     }
@@ -215,11 +217,11 @@
     dispatch('segmentClick', { startTime });
   }
 
-  function editSegment(segment: any) {
+  function editSegment(segment: Segment) {
     dispatch('editSegment', { segment });
   }
 
-  function saveSegment(segment: any) {
+  function saveSegment(segment: Segment) {
     dispatch('saveSegment', { segment });
   }
 

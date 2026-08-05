@@ -752,7 +752,7 @@
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <div class="uploader-container" on:keydown={handleStepKeydown}>
   <!-- Stepper Indicator (always visible so users see the full journey) -->
-  <div class="step-indicator" role="navigation" aria-label="Upload steps">
+  <div class="step-indicator" role="navigation" aria-label={$t('uploader.stepsNav')}>
     {#each activeSteps as step, i}
       <button
         class="step-item"
@@ -762,7 +762,7 @@
         on:click={() => goToStep(i)}
         disabled={i > maxStepReached}
         type="button"
-        aria-label="{$t(step.labelKey)} (step {i + 1} of {activeSteps.length})"
+        aria-label={$t('uploader.stepAria', { label: $t(step.labelKey), step: i + 1, total: activeSteps.length })}
         aria-current={currentStepIndex === i ? 'step' : undefined}
       >
         <span class="step-dot">

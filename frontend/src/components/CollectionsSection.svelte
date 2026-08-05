@@ -1,10 +1,11 @@
 <script lang="ts">
+  import type { Collection } from '$lib/types/collection';
   import { slide } from 'svelte/transition';
   import { createEventDispatcher } from 'svelte';
   import CollectionsEditor from './CollectionsEditor.svelte';
   import { t } from '$stores/locale';
 
-  export let collections: any[] = [];
+  export let collections: Collection[] = [];
   export let isExpanded: boolean = false;
   export let fileId: string;
   export let aiCollectionSuggestions: Array<{name: string, confidence: number, rationale?: string, description?: string}> = [];

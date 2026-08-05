@@ -141,14 +141,17 @@
             {#if speaker.predicted_gender && speaker.predicted_gender !== 'unknown'}
               <span
                 class="gender-badge"
-                title="AI predicted gender: {speaker.predicted_gender} ({Math.round((speaker.attribute_confidence?.gender ?? 0) * 100)}% confidence)"
+                title={$t('speaker.predictedGenderTooltip', {
+                  gender: speaker.predicted_gender,
+                  confidence: Math.round((speaker.attribute_confidence?.gender ?? 0) * 100),
+                })}
               >
                 {#if speaker.predicted_gender === 'male'}
                   <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="7"/><line x1="15" y1="9" x2="21" y2="3"/><polyline points="15 3 21 3 21 9"/></svg>
-                  Male
+                  {$t('speaker.genderMale')}
                 {:else}
                   <svg class="gender-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="7"/><line x1="12" y1="16" x2="12" y2="23"/><line x1="9" y1="20" x2="15" y2="20"/></svg>
-                  Female
+                  {$t('speaker.genderFemale')}
                 {/if}
               </span>
             {/if}
@@ -291,9 +294,9 @@
                               </svg>
                             {/if}
                             {#if speaker.gender_alignment === 'match'}
-                              <span class="alignment-dot match" title="Gender matches metadata hint"></span>
+                              <span class="alignment-dot match" title={$t('speaker.genderMatchesHint')}></span>
                             {:else if speaker.gender_alignment === 'mismatch'}
-                              <span class="alignment-dot mismatch" title="Gender conflicts with metadata"></span>
+                              <span class="alignment-dot mismatch" title={$t('speaker.genderConflictsHint')}></span>
                             {/if}
                             {speaker.suggested_name}
                             <span class="chip-confidence">{Math.round(speaker.confidence * 100)}%</span>

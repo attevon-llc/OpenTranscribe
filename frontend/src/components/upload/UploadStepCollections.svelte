@@ -105,7 +105,7 @@
     <input
       type="text"
       class="item-filter"
-      placeholder="Filter collections..."
+      placeholder={$t('upload.filterCollections')}
       bind:value={filterQuery}
     />
   {/if}
@@ -128,9 +128,9 @@
       {/each}
     </div>
   {:else if filterQuery}
-    <p class="empty-text">No collections match "{filterQuery}"</p>
+    <p class="empty-text">{$t('upload.noCollectionsMatch', { query: filterQuery })}</p>
   {:else}
-    <p class="empty-text">No collections yet. Create one below.</p>
+    <p class="empty-text">{$t('upload.noCollectionsYet')}</p>
   {/if}
 
   <!-- Create new -->

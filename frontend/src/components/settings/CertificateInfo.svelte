@@ -25,13 +25,13 @@
         <svg class="icon-shield" viewBox="0 0 24 24" width="20" height="20">
           <path fill="currentColor" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
         </svg>
-        <span>{$t('settings.certificate.authenticatedWith') || 'Authenticated with Certificate'}</span>
+        <span>{$t('settings.certificate.authenticatedWith')}</span>
       </div>
     </div>
 
     {#if isExpired}
       <div class="warning-banner expired">
-        {$t('settings.certificate.expired') || 'Your certificate has expired'}
+        {$t('settings.certificate.expired')}
       </div>
     {:else if showExpirationWarning}
       <div class="warning-banner">
@@ -41,42 +41,42 @@
 
     <div class="cert-grid">
       <div class="cert-item">
-        <span class="cert-label">{$t('settings.certificate.organization') || 'Organization'}</span>
+        <span class="cert-label">{$t('settings.certificate.organization')}</span>
         <span>{certificate.organization || 'N/A'}</span>
       </div>
 
       <div class="cert-item">
-        <span class="cert-label">{$t('settings.certificate.organizationalUnit') || 'Organizational Unit'}</span>
+        <span class="cert-label">{$t('settings.certificate.organizationalUnit')}</span>
         <span>{certificate.organizational_unit || 'N/A'}</span>
       </div>
 
       <div class="cert-item">
-        <span class="cert-label">{$t('settings.certificate.serialNumber') || 'Serial Number'}</span>
+        <span class="cert-label">{$t('settings.certificate.serialNumber')}</span>
         <span class="mono">{certificate.serial_number || 'N/A'}</span>
       </div>
 
       <div class="cert-item">
-        <span class="cert-label">{$t('settings.certificate.validFrom') || 'Valid From'}</span>
+        <span class="cert-label">{$t('settings.certificate.validFrom')}</span>
         <span>{formatDate(certificate.valid_from)}</span>
       </div>
 
       <div class="cert-item">
-        <span class="cert-label">{$t('settings.certificate.validUntil') || 'Valid Until'}</span>
+        <span class="cert-label">{$t('settings.certificate.validUntil')}</span>
         <span class:expired={isExpired}>{formatDate(certificate.valid_until)}</span>
       </div>
 
       <div class="cert-item full-width">
-        <span class="cert-label">{$t('settings.certificate.subjectDN') || 'Subject DN'}</span>
+        <span class="cert-label">{$t('settings.certificate.subjectDN')}</span>
         <pre>{certificate.subject_dn || 'N/A'}</pre>
       </div>
 
       <div class="cert-item full-width">
-        <span class="cert-label">{$t('settings.certificate.issuerDN') || 'Issuer DN'}</span>
+        <span class="cert-label">{$t('settings.certificate.issuerDN')}</span>
         <pre>{certificate.issuer_dn || 'N/A'}</pre>
       </div>
 
       <div class="cert-item full-width">
-        <span class="cert-label">{$t('settings.certificate.fingerprint') || 'Fingerprint (SHA-256)'}</span>
+        <span class="cert-label">{$t('settings.certificate.fingerprint')}</span>
         <span class="mono fingerprint">{certificate.fingerprint || 'N/A'}</span>
       </div>
     </div>

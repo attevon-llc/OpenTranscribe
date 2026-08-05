@@ -53,5 +53,8 @@ addRecording` → `$lib/services/uploadService`; the progress UI is `UploadManag
   was rejected as "too large" when dropped alongside another. `MediaFilePanel` still validates
   nothing by design — it normalizes the MIME type and dispatches `fileSelect`; the parent owns
   rejection and error rendering.
-- Hardcoded English survives in `UploadStepExtraction` ("Recommended", the choice descriptions),
-  `UploadStepModel` ("AI Summary"), and `UploadStepReview` ("Processing") — bugs, not the pattern.
+- Every string in these steps is keyed (#284 A3.1 fixed the last hardcoded English in
+  `UploadStepExtraction`, `UploadStepModel`, `UploadStepReview`, `UploadStepTags`,
+  `UploadStepCollections` and `UploadStepSpeakers`). Keep it that way — only the active locale is
+  loaded at runtime, so a bare English literal here is a live regression for 7 of 8 languages.
+  New copy needs a key in all 8 locale files (`npm run check:i18n` gates it).

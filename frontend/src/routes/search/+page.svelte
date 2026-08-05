@@ -2,7 +2,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { page } from '$app/stores';
   import { goto, beforeNavigate } from '$app/navigation';
-  import axiosInstance from '$lib/axios';
+  import axiosInstance, { isRequestCancelled } from '$lib/axios';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { searchStore, type SearchResponse, type SearchOccurrence } from '$stores/search';
@@ -22,6 +22,12 @@
   let showFilters = true;
   let sidebarMounted = false;
   let neuralSearchActive: boolean | null = null; // null = loading/unknown
+
+  // Cancellation for the in-flight `GET /search`. Sorting, filtering, paging and
+  // typing all re-run `performSearch`, and a slow earlier query used to resolve
+  // *after* a newer one and overwrite the results with stale hits. Aborting the
+  // previous request makes the most recent call the only one that can win.
+  let searchController: AbortController | null = null;
 
   // FilterSidebar state
   let filterSearchQuery = '';
@@ -167,6 +173,11 @@
   async function performSearch(query: string, pageNum: number = 1) {
     if (!query.trim()) return;
 
+    // Supersede any in-flight search so its response can't land after this one.
+    searchController?.abort();
+    const controller = new AbortController();
+    searchController = controller;
+
     searchStore.setQuery(query);
     searchStore.setLoading(true);
 
@@ -221,6 +232,7 @@
 
       const res = await axiosInstance.get('/search', {
         params: apiParams,
+        signal: controller.signal,
         paramsSerializer: (params) => {
           const searchParams = new URLSearchParams();
           Object.entries(params).forEach(([key, value]) => {
@@ -246,9 +258,14 @@
         prefetchNextSearchPage(query, pageNum, totalPages, apiParams);
       }
     } catch (e: unknown) {
+      // A superseded search is not a failure: a newer request owns the results
+      // and the loading flag, so leave both alone.
+      if (isRequestCancelled(e)) return;
       console.error('Search failed:', e);
       searchStore.setError(getErrorMessage(e, 'Search failed'));
       searchStore.setLoading(false);
+    } finally {
+      if (searchController === controller) searchController = null;
     }
   }
 
@@ -451,6 +468,8 @@
 
   onDestroy(() => {
     saveState();
+    searchController?.abort();
+    searchController = null;
     if (previewUrlRefresher) {
       previewUrlRefresher.stop();
       previewUrlRefresher = null;
@@ -522,7 +541,7 @@
             on:clear={handleClearSearch}
             placeholder={$t('searchPage.placeholder')}
           />
-          <button class="search-btn" on:click={handleSearch} disabled={$searchStore.isLoading} aria-label={$t('searchPage.search') || 'Search'}>
+          <button class="search-btn" on:click={handleSearch} disabled={$searchStore.isLoading} aria-label={$t('searchPage.search')}>
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>

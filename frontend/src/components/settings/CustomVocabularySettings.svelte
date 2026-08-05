@@ -214,7 +214,7 @@
               <span class="category-text">{term.category}</span>
             {/if}
             {#if term.is_system}
-              <span class="system-badge">system</span>
+              <span class="system-badge">{$t('settings.customVocabulary.systemBadge')}</span>
             {/if}
           </div>
           <div class="term-actions">

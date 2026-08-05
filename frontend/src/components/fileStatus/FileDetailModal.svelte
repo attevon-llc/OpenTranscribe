@@ -128,12 +128,12 @@
             {/if}
             {#if detailedStatus.file.diarization_disabled}
               <div class="metadata-item">
-                <span class="metadata-label">Diarization:</span>
+                <span class="metadata-label">{$t('fileStatus.diarizationLabel')}</span>
                 <span class="metadata-value diarization-disabled-value">{$t('metadata.diarizationDisabled')}</span>
               </div>
             {:else if detailedStatus.file.diarization_model}
               <div class="metadata-item">
-                <span class="metadata-label">Diarization:</span>
+                <span class="metadata-label">{$t('fileStatus.diarizationLabel')}</span>
                 <span class="metadata-value model-name-value">{detailedStatus.file.diarization_model}</span>
               </div>
             {/if}
@@ -202,13 +202,13 @@
                     {/if}
                     {#if task.whisper_model}
                       <div class="metadata-item">
-                        <span class="metadata-label">Whisper Model</span>
+                        <span class="metadata-label">{$t('fileStatus.whisperModel')}</span>
                         <span class="metadata-value model-name-value">{task.whisper_model}</span>
                       </div>
                     {/if}
                     {#if task.diarization_model}
                       <div class="metadata-item">
-                        <span class="metadata-label">Diarization</span>
+                        <span class="metadata-label">{$t('fileStatus.diarization')}</span>
                         <span class="metadata-value model-name-value">{task.diarization_model}</span>
                       </div>
                     {/if}

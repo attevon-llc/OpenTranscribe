@@ -115,7 +115,7 @@
     resetInProgress = key;
     try {
       await axiosInstance.delete(`/admin/engine-settings/${key}`);
-      toastStore.success(`Reset ${key} to default`);
+      toastStore.success($t('settings.engineSettings.resetToDefault', { key }));
       await loadData();
     } catch (err: unknown) {
       toastStore.error(getErrorMessage(err, `Failed to reset ${key}`), 5000);

@@ -218,7 +218,9 @@
   function openFlowerDashboard() {
     // Dynamically construct Flower URL from current location
     const url = getFlowerUrl();
-    window.open(url, '_blank');
+    // 'noopener' — unlike <a target="_blank">, window.open() gets no implicit
+    // noopener, so the new tab would keep a live window.opener handle back here.
+    window.open(url, '_blank', 'noopener');
   }
 
   async function fetchDetailedStatus(fileId: any) {

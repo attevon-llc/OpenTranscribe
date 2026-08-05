@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { formatFileSize, calculateCompressionRatio, estimateAudioSize } from '$lib/utils/metadataMapper';
+  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { t } from '$stores/locale';
   import BaseModal from './ui/BaseModal.svelte';
 
@@ -48,8 +49,11 @@
         <circle cx="18" cy="16" r="3"></circle>
       </svg>
     </div>
+    <!-- extraction.bulkMessage carries a <strong>; rendered as text it leaked the
+         literal tags into the UI. Same treatment as UploadStepExtraction: {@html}
+         through the DOMPurify allowlist. -->
     <p class="info-message">
-      {$t('extraction.bulkMessage', { count: videoFiles.length })}
+      {@html sanitizeHighlightHtml($t('extraction.bulkMessage', { count: videoFiles.length }))}
     </p>
   </div>
 

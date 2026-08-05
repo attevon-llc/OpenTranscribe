@@ -56,12 +56,12 @@
 
     {#if extractionChoice}
       <div class="review-row">
-        <span class="review-label">Processing</span>
+        <span class="review-label">{$t('common.processing')}</span>
         <span class="review-value">
           {#if extractionChoice === 'extract'}
-            <span class="review-chip extract">Extract Audio Only</span>
+            <span class="review-chip extract">{$t('uploader.reviewExtractAudioOnly')}</span>
           {:else}
-            Upload Full Video
+            {$t('extraction.uploadFullVideo')}
           {/if}
         </span>
       </div>
@@ -114,7 +114,7 @@
     {#if skipSummary}
       <div class="review-row">
         <span class="review-label">{$t('upload.skipSummary')}</span>
-        <span class="review-value">Yes</span>
+        <span class="review-value">{$t('common.yes')}</span>
       </div>
     {/if}
   </div>

@@ -1,9 +1,10 @@
 <script lang="ts">
+  import type { MediaFileDetail } from '$lib/types/media';
   import axiosInstance from '$lib/axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import { t } from '$stores/locale';
 
-  export let file: any = null;
+  export let file: MediaFileDetail | null = null;
   export let currentProcessingStep: string = '';
   export let sharedPermission: string | null = null;
 
@@ -28,7 +29,7 @@
     isExpanded = !isExpanded;
   }
 
-  function getDisplayName(file: any): string {
+  function getDisplayName(file: MediaFileDetail | null): string {
     return file?.title || file?.filename || $t('fileDetail.unknownFile');
   }
 

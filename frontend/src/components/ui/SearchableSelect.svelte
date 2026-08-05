@@ -1,6 +1,7 @@
 <script lang="ts" generics="T">
   import { createEventDispatcher } from 'svelte';
   import { clickOutside } from '$lib/actions/clickOutside';
+  import { t } from '$stores/locale';
 
   /** Placeholder for the search input. Caller should pass translated text. */
   export let placeholder = '';
@@ -14,8 +15,10 @@
   export let minChars = 1;
   /** Debounce delay in milliseconds. */
   export let debounceMs = 250;
-  /** Shown when a search yields no results. Caller should pass translated text. */
-  export let emptyLabel = 'No results';
+  /** Shown when a search yields no results. Defaults to the translated "No results". */
+  export let emptyLabel: string | undefined = undefined;
+
+  $: resolvedEmptyLabel = emptyLabel ?? $t('common.noResults');
 
   const dispatch = createEventDispatcher<{ select: T }>();
 
@@ -137,7 +140,7 @@
           <span class="searchable-spinner" aria-hidden="true"></span>
         </div>
       {:else if results.length === 0}
-        <div class="searchable-status" aria-live="polite">{emptyLabel}</div>
+        <div class="searchable-status" aria-live="polite">{resolvedEmptyLabel}</div>
       {:else}
         <ul class="searchable-list" role="listbox" id={listboxId}>
           {#each results as item, i (i)}

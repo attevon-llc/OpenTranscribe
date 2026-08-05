@@ -38,8 +38,8 @@
     </div>
 
     <div class="auth-header">
-      <h1>{$t('auth.forgotPassword') || 'Forgot Password'}</h1>
-      <p>{$t('auth.forgotPasswordDescription') || 'Enter your email address and we\'ll send you a link to reset your password.'}</p>
+      <h1>{$t('auth.forgotPassword')}</h1>
+      <p>{$t('auth.forgotPasswordDescription')}</p>
     </div>
 
     {#if submitted}
@@ -47,11 +47,11 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline points="20,6 9,17 4,12"/>
         </svg>
-        <span>{$t('auth.resetLinkSent') || 'If that email address is registered, you will receive a reset link shortly.'}</span>
+        <span>{$t('auth.resetLinkSent')}</span>
       </div>
 
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin') || 'Back to login'}</a>
+        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {:else}
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
@@ -60,12 +60,12 @@
         {/if}
 
         <div class="form-group">
-          <label for="email">{$t('auth.email') || 'Email'}</label>
+          <label for="email">{$t('auth.email')}</label>
           <input
             type="email"
             id="email"
             bind:value={email}
-            placeholder={$t('auth.emailPlaceholder') || 'Enter your email'}
+            placeholder={$t('auth.emailPlaceholder')}
             autocomplete="email"
             required
           />
@@ -73,15 +73,15 @@
 
         <button type="submit" class="auth-button" disabled={loading}>
           {#if loading}
-            <span class="spinner"></span> {$t('auth.sending') || 'Sending...'}
+            <span class="spinner"></span> {$t('auth.sending')}
           {:else}
-            {$t('auth.sendResetLink') || 'Send Reset Link'}
+            {$t('auth.sendResetLink')}
           {/if}
         </button>
       </form>
 
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin') || 'Back to login'}</a>
+        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {/if}
   </div>

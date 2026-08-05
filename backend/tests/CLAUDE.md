@@ -77,3 +77,51 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
   UUID-suffixed emails for the same reason.
 - E2E runs from the repo root against `backend/tests/e2e/`, so `e2e/pytest.ini` becomes the
   rootdir config — pyproject `addopts` (`-n auto`, `-m 'not integration'`) do **not** apply.
+
+## Running DB-backed tests without the dev stack
+
+Most API/service tests need Postgres but nothing else. When the dev stack is down (or is
+being used by someone else), a throwaway instance on a non-conflicting port is enough — it
+cannot touch the dev database, its volumes, or the NAS data:
+
+```bash
+docker run -d --rm --name ot-testdb \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=testpw -e POSTGRES_DB=transcribe_test \
+  -p 127.0.0.1:55432:5432 --tmpfs /var/lib/postgresql/data postgres:17.5-alpine
+
+mkdir -p /tmp/ot-test/{data,models,temp}
+export DATA_DIR=/tmp/ot-test/data MODELS_DIR=/tmp/ot-test/models TEMP_DIR=/tmp/ot-test/temp
+export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=55432 POSTGRES_USER=postgres POSTGRES_PASSWORD=testpw \
+       POSTGRES_DB=transcribe_test SKIP_S3=True
+
+cd backend && python -m alembic upgrade head && python -m pytest tests/ --ignore=tests/e2e
+docker stop ot-testdb   # --rm removes it
+```
+
+Why each piece:
+- **Port 55432**, not 5176 — conftest only overrides `POSTGRES_PORT` when it is unset or
+  `5432`, so any other value is respected, and the dev stack's port stays free.
+- **`POSTGRES_HOST` explicitly** — conftest forces `localhost` for pytest, but `alembic`
+  does not import conftest and would otherwise resolve the compose service name.
+- **`DATA_DIR`/`MODELS_DIR`/`TEMP_DIR`** — `config.py` defaults these to `/app/...` and
+  `Settings.__init__` mkdirs them, which fails outside the container.
+- **`SKIP_S3=True`** — conftest TCP-probes `localhost:5178` and enables S3-backed tests if
+  *anything* answers. An unrelated service on that port produces `SignatureDoesNotMatch`
+  failures that look like real bugs.
+
+## Chat suites (issue #52)
+
+| File | Needs |
+|---|---|
+| `unit/test_llm_streaming.py`, `unit/test_chat_{prompting,retrieval,citations,redactor,hooks,limits}.py` | nothing — mocks only |
+| `unit/test_v374_migration_consistency.py`, `test_chat_{context_resolver,endpoints,user_settings,gdpr_erasure}.py` | Postgres |
+| `e2e/test_chat.py` (marker `chat`) | full stack + an LLM provider + a completed transcript |
+
+`test_chat_endpoints.py` patches `app.db.session_utils.session_scope` to the test session.
+The streaming service deliberately opens its **own** session (it outlives the request's
+dependency scope), which under the savepoint harness cannot see uncommitted rows — without
+the patch, persistence fails on a foreign key that is perfectly valid in production.
+
+**Each new migration breaks the previous suite's detection assertion.** `_detect_schema_version`
+returns the newest matching revision, so when you add vNNN, widen the vNNN-1 test to accept
+either value and pin the exact one in your own suite.

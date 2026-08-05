@@ -22,6 +22,7 @@ from fastapi import Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pydantic import Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -367,7 +368,15 @@ async def edit_message(
         raise HTTPException(status_code=404, detail="Message not found")
 
     # Prepare FIRST — see regenerate() for why superseding before a possible
-    # 429/400/402 would lose the user's question outright.
+    # 429/400/402 would lose the user's question outright. Note the ordering
+    # consequence: _prepare_turn persists the REPLACEMENT question, so the
+    # supersede below must be bounded to rows that existed before it, or it
+    # would immediately retire the very message it just created.
+    boundary = (
+        db.query(func.max(ChatMessage.id))
+        .filter(ChatMessage.conversation_id == conversation.id)
+        .scalar()
+    )
     kwargs = await run_in_threadpool(
         _prepare_turn, request, db, ctx, conversation, body.content, None
     )
@@ -376,6 +385,7 @@ async def edit_message(
     db.query(ChatMessage).filter(
         ChatMessage.conversation_id == conversation.id,
         ChatMessage.id >= target.id,
+        ChatMessage.id <= boundary,
     ).update({ChatMessage.status: STATUS_SUPERSEDED}, synchronize_session=False)
     db.commit()
 

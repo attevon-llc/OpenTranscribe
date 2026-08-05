@@ -38,6 +38,7 @@
     watch_source_enabled: true,
     local_enabled: false,
     fs_events_enabled: false,
+    fs_events_mode: 'auto',
   };
   let sources: WatchSource[] = [];
   let statsMap: Record<string, WatchSourceStats> = {};
@@ -169,6 +170,42 @@
     return 'badge-idle';
   }
 
+  /**
+   * Does this source opt into event-driven watching at all? Only local sources
+   * can — S3/SMB have no equivalent, so they never show a watch-mode badge.
+   */
+  function showsWatchMode(s: WatchSource): boolean {
+    return s.source_type === 'local' && s.use_fs_events && capabilities.fs_events_enabled;
+  }
+
+  /** Short badge label for the observer a source actually ended up with. */
+  function watchModeLabel(s: WatchSource): string {
+    const mode = s.fs_events?.mode;
+    if (mode === 'native') return $t('settings.watchSources.watchMode.native');
+    if (mode === 'polling') return $t('settings.watchSources.watchMode.polling');
+    if (mode === 'error') return $t('settings.watchSources.watchMode.error');
+    if (mode === 'unavailable') return $t('settings.watchSources.watchMode.unavailable');
+    return $t('settings.watchSources.watchMode.scanOnly', {
+      minutes: s.polling_interval_minutes,
+    });
+  }
+
+  function watchModeClass(s: WatchSource): string {
+    const mode = s.fs_events?.mode;
+    if (mode === 'native') return 'badge-success';
+    if (mode === 'polling') return 'badge-running';
+    if (mode === 'error' || mode === 'unavailable') return 'badge-error';
+    return 'badge-idle';
+  }
+
+  /** Tooltip: the backend's own explanation, or why nothing is watching. */
+  function watchModeTitle(s: WatchSource): string {
+    if (s.fs_events?.detail) return s.fs_events.detail;
+    return $t('settings.watchSources.watchMode.scanOnlyHelp', {
+      minutes: s.polling_interval_minutes,
+    });
+  }
+
   // admin email configs
   function openEmailCreate() {
     editingEmail = null;
@@ -268,6 +305,11 @@
               <span class="badge {scanBadgeClass(s.last_scan_status)}">
                 {s.last_scan_status || $t('settings.watchSources.neverScanned')}
               </span>
+              {#if showsWatchMode(s)}
+                <span class="badge {watchModeClass(s)}" title={watchModeTitle(s)}>
+                  {watchModeLabel(s)}
+                </span>
+              {/if}
               {#if !s.is_own}
                 <span class="badge owner-badge">{s.owner_name}</span>
               {/if}
@@ -391,6 +433,31 @@
           <input type="checkbox" bind:checked={globalSettings.fs_events_enabled} />
           <span>{$t('settings.watchSources.global.fsEvents')}</span>
         </label>
+        {#if globalSettings.fs_events_enabled}
+          <div class="form-row">
+            <div class="form-group">
+              <label for="gs-fs-mode">{$t('settings.watchSources.global.fsEventsMode')}</label>
+              <select id="gs-fs-mode" class="form-input" bind:value={globalSettings.fs_events_mode}>
+                <option value="auto">{$t('settings.watchSources.global.fsEventsModeAuto')}</option>
+                <option value="native">{$t('settings.watchSources.global.fsEventsModeNative')}</option>
+                <option value="polling">{$t('settings.watchSources.global.fsEventsModePolling')}</option>
+                <option value="off">{$t('settings.watchSources.global.fsEventsModeOff')}</option>
+              </select>
+              <small class="form-hint">{$t('settings.watchSources.global.fsEventsModeHelp')}</small>
+            </div>
+            <div class="form-group">
+              <label for="gs-fs-poll">{$t('settings.watchSources.global.fsEventsPollSeconds')}</label>
+              <input
+                id="gs-fs-poll"
+                type="number"
+                min="1"
+                class="form-input"
+                bind:value={globalSettings.fs_events_poll_seconds}
+              />
+              <small class="form-hint">{$t('settings.watchSources.global.fsEventsPollSecondsHelp')}</small>
+            </div>
+          </div>
+        {/if}
         <button class="btn btn-primary" on:click={saveGlobalSettings} disabled={saving}>
           {saving ? $t('common.saving') : $t('common.save')}
         </button>

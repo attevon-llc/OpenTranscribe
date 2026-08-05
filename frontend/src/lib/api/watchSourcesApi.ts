@@ -11,6 +11,33 @@ import axiosInstance from '$lib/axios';
 export type SourceType = 'local' | 's3' | 'smb';
 export type EmailProvider = 'smtp' | 'm365' | 'exchange';
 
+/** Observer mode a source actually ended up with (issue #294). */
+export type FsEventsMode = 'native' | 'polling' | 'error' | 'unavailable';
+
+/** Observer selection policy (global admin setting). */
+export type FsEventsPolicy = 'auto' | 'native' | 'polling' | 'off';
+
+/**
+ * Live FS-watching status published by the beat supervisor.
+ *
+ * Absent/null means nothing is watching the source right now, so the scheduled
+ * scan is the only mechanism — the status key expires on its own if the beat
+ * container stops, so this never claims a watcher that is not running.
+ */
+export interface FsEventsStatus {
+  mode: FsEventsMode;
+  active: boolean;
+  detail?: string | null;
+  fs_type?: string | null;
+  debounce_seconds?: number | null;
+  poll_seconds?: number | null;
+  since?: string | null;
+  last_event_at?: string | null;
+  events_seen: number;
+  scans_dispatched: number;
+  updated_at?: string | null;
+}
+
 export interface WatchSource {
   uuid: string;
   name: string;
@@ -34,6 +61,7 @@ export interface WatchSource {
   has_smb_password: boolean;
   polling_interval_minutes: number;
   use_fs_events: boolean;
+  fs_events?: FsEventsStatus | null;
   file_extensions?: string | null;
   skip_files_older_than_days?: number | null;
   recursive: boolean;
@@ -165,6 +193,7 @@ export interface Capabilities {
   watch_source_enabled: boolean;
   local_enabled: boolean;
   fs_events_enabled: boolean;
+  fs_events_mode: FsEventsPolicy;
 }
 
 export interface MultipartRegexTestResult {
@@ -181,6 +210,10 @@ export interface GlobalWatchSettings {
   /** Per-scan cap on files imported, NOT a concurrency limit — imports run serially. */
   max_imports_per_scan: number;
   fs_events_enabled: boolean;
+  /** How the observer is chosen per source; `auto` detects and falls back. */
+  fs_events_mode: FsEventsPolicy;
+  /** Stat-sweep interval for the polling-observer fallback. */
+  fs_events_poll_seconds: number;
 }
 
 export interface EmailConfig {

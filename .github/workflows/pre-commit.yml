@@ -66,6 +66,32 @@ jobs:
           echo "- Shell script validation (shellcheck)" >> $GITHUB_STEP_SUMMARY
           echo "- Dockerfile linting (Hadolint)" >> $GITHUB_STEP_SUMMARY
 
+  # Detects which parts of the tree a PR touches, so the expensive suites can skip
+  # work that cannot possibly be affected. Job-level (not workflow-level `paths:`)
+  # ON PURPOSE: all three jobs live in this file, and a workflow-level filter would
+  # also skip the pre-commit hooks — which DO matter for a docs-only PR (prettier,
+  # markdown, trailing whitespace).
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'requirements*.txt'
+              - '.github/workflows/pre-commit.yml'
+              - 'alembic.ini'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/pre-commit.yml'
+
   backend-tests:
     # Best-effort safety net: runs the unit/API suite + security-gated suites
     # against a fresh Postgres with CPU-only deps (requirements-ci.txt — no
@@ -73,6 +99,10 @@ jobs:
     # integration/E2E) runs locally via scripts/run-integration-tests.sh,
     # which remains the pre-merge source of truth.
     name: Backend Tests (pytest)
+    needs: changes
+    # ~17 min, dominated by installing CPU torch wheels and the FIPS security suites.
+    # A docs- or frontend-only PR cannot change its outcome, so don't pay for it.
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -167,6 +197,8 @@ jobs:
 
   frontend-tests:
     name: Frontend Unit Tests (Vitest)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

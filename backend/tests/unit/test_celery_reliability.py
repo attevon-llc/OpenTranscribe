@@ -87,34 +87,16 @@ def test_no_ssl_options_on_plain_redis():
     assert celery_app.conf.broker_use_ssl in (None, {})
 
 
-def test_ssl_options_are_set_for_rediss():
-    """config.py builds rediss:// under REDIS_USE_TLS; kombu refuses without a context.
-
-    Runs in a subprocess: reloading app.core.config in-process replaces the `settings`
-    OBJECT, and every module that did `from app.core.config import settings` keeps a
-    reference to the old one — so the reload silently desyncs the whole app and breaks
-    unrelated tests. Hermetic subprocess, no global mutation.
-    """
-    import os
-    import subprocess
-    import sys
-
-    env = {**os.environ, "REDIS_USE_TLS": "true", "SKIP_CELERY": "true"}
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from app.core.config import settings;"
-            "from app.core.celery import celery_app;"
-            "print(str(settings.CELERY_BROKER_URL).split('://')[0],"
-            "celery_app.conf.broker_use_ssl, celery_app.conf.redis_backend_use_ssl, sep='|')",
-        ],
-        capture_output=True,
-        text=True,
-        env=env,
-        check=True,
+def test_ssl_options_are_set_for_rediss(run_in_clean_process):
+    """config.py builds rediss:// under REDIS_USE_TLS; kombu refuses without a context."""
+    out = run_in_clean_process(
+        "from app.core.config import settings;"
+        "from app.core.celery import celery_app;"
+        "print(str(settings.CELERY_BROKER_URL).split('://')[0],"
+        "celery_app.conf.broker_use_ssl, celery_app.conf.redis_backend_use_ssl, sep='|')",
+        REDIS_USE_TLS="true",
     )
-    scheme, broker_ssl, backend_ssl = result.stdout.strip().splitlines()[-1].split("|")
+    scheme, broker_ssl, backend_ssl = out.split("|")
 
     assert scheme == "rediss"
     assert "CERT_REQUIRED" in broker_ssl
@@ -171,22 +153,9 @@ def test_readiness_asserts_schema_when_migrations_are_gated_off():
 
 
 @pytest.mark.parametrize("flag", ["true", "false"])
-def test_gate_is_env_driven(flag):
-    """Subprocess for the same reason as the TLS test — no in-process config reload."""
-    import os
-    import subprocess
-    import sys
-
-    env = {**os.environ, "RUN_MIGRATIONS_ON_STARTUP": flag}
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from app.core.config import settings;print(settings.RUN_MIGRATIONS_ON_STARTUP)",
-        ],
-        capture_output=True,
-        text=True,
-        env=env,
-        check=True,
+def test_gate_is_env_driven(run_in_clean_process, flag):
+    out = run_in_clean_process(
+        "from app.core.config import settings;print(settings.RUN_MIGRATIONS_ON_STARTUP)",
+        RUN_MIGRATIONS_ON_STARTUP=flag,
     )
-    assert result.stdout.strip().splitlines()[-1] == str(flag == "true")
+    assert out == str(flag == "true")

@@ -567,15 +567,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Initial data seeding failed (non-fatal): {e}")
 
-    # Check OpenSearch index health (auto-repair corrupted shards from unclean shutdowns)
+    # Check OpenSearch index health (auto-repair corrupted shards from unclean shutdowns).
+    #
+    # ensure_*_exist are idempotent no-ops once the indices are there, so every replica
+    # may run them. check_and_repair_indices is NOT cheap and acts on shared cluster
+    # state, so it is elected — N replicas repairing the same indices concurrently is
+    # wasted work at best (issue #284 A1.15).
     try:
         from app.services.opensearch_service import check_and_repair_indices
         from app.services.opensearch_service import ensure_indices_exist
         from app.services.opensearch_service import ensure_v4_index_exists
+        from app.utils.boot_once import run_once_per_boot
 
         ensure_indices_exist()
         ensure_v4_index_exists()
-        check_and_repair_indices()
+        if run_once_per_boot("opensearch_repair_indices"):
+            check_and_repair_indices()
     except Exception as e:
         logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")
 
@@ -623,9 +630,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Derived-cache retention/reclaim setup failed (non-fatal): {e}")
 
-    # Clear stale migration state from Redis (orphaned by unclean shutdown)
+    # Clear stale migration state from Redis (orphaned by unclean shutdown).
+    #
+    # Elected, because this deletes ALL task_progress:* keys and every coordination
+    # lock. Unelected, the second replica to boot wipes progress and locks belonging to
+    # work the first replica is actively coordinating (issue #284 A1.3).
     try:
-        _clear_stale_task_state()
+        from app.utils.boot_once import run_once_per_boot
+
+        if run_once_per_boot("clear_stale_task_state"):
+            _clear_stale_task_state()
     except Exception as e:
         logger.warning(f"Migration state cleanup failed (non-fatal): {e}")
 

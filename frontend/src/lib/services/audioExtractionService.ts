@@ -125,7 +125,7 @@ class AudioExtractionService {
         this.emitProgress({
           stage: 'extracting',
           percentage,
-          message: `Extracting audio... ${percentage}%`,
+          message: get(t)('extraction.progressExtractingPercent', { percent: percentage }),
         });
       });
 
@@ -141,7 +141,9 @@ class AudioExtractionService {
     } catch (error) {
       console.error('[AudioExtractionService] Failed to load FFmpeg:', error);
       throw new Error(
-        `Failed to load FFmpeg: ${error instanceof Error ? error.message : String(error)}`
+        get(t)('extraction.errorFfmpegLoadFailed', {
+          error: error instanceof Error ? error.message : String(error),
+        })
       );
     }
   }
@@ -185,19 +187,19 @@ class AudioExtractionService {
    */
   public async extractMetadata(file: File): Promise<VideoMetadata> {
     if (!this.isSupported()) {
-      throw new Error('FFmpeg is not supported in this browser');
+      throw new Error(get(t)('extraction.errorFfmpegUnsupported'));
     }
 
     await this.load();
     if (!this.ffmpeg) {
-      throw new Error('FFmpeg not initialized');
+      throw new Error(get(t)('extraction.errorFfmpegNotInitialized'));
     }
 
     try {
       this.emitProgress({
         stage: 'metadata',
         percentage: 5,
-        message: 'Reading video metadata...',
+        message: get(t)('extraction.progressReadingMetadata'),
       });
 
       // Capture FFmpeg metadata output
@@ -281,7 +283,7 @@ class AudioExtractionService {
       this.emitProgress({
         stage: 'metadata',
         percentage: 10,
-        message: 'Metadata extracted successfully',
+        message: get(t)('extraction.progressMetadataDone'),
       });
 
       return metadata;
@@ -350,7 +352,7 @@ class AudioExtractionService {
     if (!this.isSupported()) {
       throw this.createError(
         'UNSUPPORTED_BROWSER',
-        'Your browser does not support audio extraction. Please use a modern browser like Chrome, Edge, or Firefox.',
+        get(t)('extraction.errorBrowserUnsupported'),
         'initializing'
       );
     }
@@ -365,9 +367,10 @@ class AudioExtractionService {
     if (file.size > finalConfig.maxFileSize) {
       throw this.createError(
         'FILE_TOO_LARGE',
-        `File is too large (${Math.round(
-          file.size / (1024 * 1024 * 1024)
-        )}GB). Maximum size is ${Math.round(finalConfig.maxFileSize / (1024 * 1024 * 1024))}GB.`,
+        get(t)('extraction.errorFileTooLarge', {
+          size: Math.round(file.size / (1024 * 1024 * 1024)),
+          max: Math.round(finalConfig.maxFileSize / (1024 * 1024 * 1024)),
+        }),
         'initializing'
       );
     }
@@ -384,7 +387,7 @@ class AudioExtractionService {
         {
           stage: 'initializing',
           percentage: 0,
-          message: 'Initializing audio extraction...',
+          message: get(t)('extraction.progressInitializing'),
         },
         extractionId,
         fileName
@@ -392,7 +395,7 @@ class AudioExtractionService {
 
       await this.load();
       if (!this.ffmpeg) {
-        throw new Error('FFmpeg not initialized');
+        throw new Error(get(t)('extraction.errorFfmpegNotInitialized'));
       }
 
       // Calculate original file hash for duplicate detection
@@ -420,7 +423,7 @@ class AudioExtractionService {
         {
           stage: 'extracting',
           percentage: 15,
-          message: 'Loading video file...',
+          message: get(t)('extraction.progressLoadingVideo'),
         },
         extractionId,
         fileName
@@ -438,7 +441,7 @@ class AudioExtractionService {
         {
           stage: 'extracting',
           percentage: 20,
-          message: 'Extracting audio...',
+          message: get(t)('extraction.progressExtracting'),
         },
         extractionId,
         fileName
@@ -461,7 +464,7 @@ class AudioExtractionService {
         {
           stage: 'finalizing',
           percentage: 95,
-          message: 'Finalizing audio file...',
+          message: get(t)('extraction.progressFinalizing'),
         },
         extractionId,
         fileName
@@ -503,7 +506,7 @@ class AudioExtractionService {
         {
           stage: 'finalizing',
           percentage: 100,
-          message: 'Audio extraction complete!',
+          message: get(t)('extraction.progressComplete'),
         },
         extractionId,
         fileName
@@ -520,7 +523,7 @@ class AudioExtractionService {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw this.createError(
         'EXTRACTION_FAILED',
-        `Audio extraction failed: ${errorMessage}`,
+        get(t)('extraction.errorFailed', { error: errorMessage }),
         'extracting',
         error as Error
       );
@@ -558,7 +561,7 @@ class AudioExtractionService {
     if (extractionId && fileName) {
       websocketStore.addNotification({
         type: 'audio_extraction_status',
-        title: 'Audio Extraction',
+        title: get(t)('notifications.audioExtraction'),
         message: fileName,
         progressId: extractionId,
         currentStep: progress.message,

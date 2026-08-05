@@ -448,7 +448,7 @@ class UploadService {
       status: 'uploading',
       fileId,
       progress: 0,
-      estimatedTime: 'Uploading...',
+      estimatedTime: get(t)('upload.statusUploading'),
     });
 
     const progressHandler = this.makeProgressHandler(uploadId, upload);
@@ -576,7 +576,7 @@ class UploadService {
       status: 'uploading',
       fileId,
       progress: 0,
-      estimatedTime: 'Uploading extracted audio...',
+      estimatedTime: get(t)('upload.statusUploadingExtracted'),
     });
 
     const progressHandler = this.makeProgressHandler(uploadId, upload);
@@ -705,7 +705,7 @@ class UploadService {
 
     this.updateUpload(uploadId, {
       status: 'cancelled',
-      error: 'Cancelled by user',
+      error: get(t)('upload.cancelledByUser'),
     });
 
     // Remove from active uploads and queue
@@ -813,11 +813,11 @@ class UploadService {
         const url = new URL(source);
         // Try to extract YouTube video title or use a more descriptive name
         if (url.hostname.includes('youtube.com') || url.hostname.includes('youtu.be')) {
-          return 'YouTube Video';
+          return get(t)('upload.youtubeVideo');
         }
-        return url.pathname.split('/').pop() || 'Video URL';
+        return url.pathname.split('/').pop() || get(t)('upload.videoUrl');
       } catch {
-        return 'Video URL';
+        return get(t)('upload.videoUrl');
       }
     } else {
       // Blob (recording)
@@ -827,7 +827,7 @@ class UploadService {
 
   private getErrorMessage(error: unknown): string {
     if (axios.isCancel(error)) {
-      return 'Upload cancelled';
+      return get(t)('upload.cancelled');
     }
 
     const e = error as { response?: { data?: { detail?: string } }; message?: string };
@@ -839,7 +839,7 @@ class UploadService {
       return e.message;
     }
 
-    return 'Unknown error occurred';
+    return get(t)('common.unknownError');
   }
 
   private formatTimeRemaining(ms: number): string {

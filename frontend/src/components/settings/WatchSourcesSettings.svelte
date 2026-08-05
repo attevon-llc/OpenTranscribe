@@ -130,7 +130,7 @@
       if (res.success) toastStore.success(`${s.name}: ${res.message}`);
       else toastStore.error(`${s.name}: ${res.message}`, 6000);
     } catch (err) {
-      toastStore.error(getErrorMessage(err, 'Test failed'));
+      toastStore.error(getErrorMessage(err, $t('settings.watchSources.testFailed')));
     } finally {
       testingUuid = null;
     }
@@ -227,7 +227,7 @@
       else toastStore.error(`${c.name}: ${res.message}`, 6000);
       emailConfigs = await getEmailConfigs();
     } catch (err) {
-      toastStore.error(getErrorMessage(err, 'Test failed'));
+      toastStore.error(getErrorMessage(err, $t('settings.watchSources.testFailed')));
     }
   }
   async function handleEmailDelete(c: EmailConfig) {

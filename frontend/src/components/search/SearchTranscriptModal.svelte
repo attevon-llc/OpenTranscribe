@@ -505,7 +505,7 @@
       setupInfiniteScrollObserver();
     } catch (e: unknown) {
       console.error('Failed to load transcript:', e);
-      error = getErrorMessage(e, 'Failed to load transcript');
+      error = getErrorMessage(e, $t('searchTranscript.error'));
       loading = false;
     }
   }

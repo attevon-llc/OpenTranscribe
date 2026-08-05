@@ -99,7 +99,7 @@
       toastStore.success($t('settings.asrProvider.setActive') + ' — ' + (configurations.find(c => c.uuid === uuid)?.name || ''));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to activate ASR configuration'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.activateFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -115,7 +115,7 @@
       toastStore.success($t('settings.asrProvider.switchedToLocal'));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to switch to local'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.switchToLocalFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -134,7 +134,7 @@
         toastStore.error(`${config.name}: ${result.message}`, 8000);
       }
     } catch (err: unknown) {
-      toastStore.error(`${config.name}: ${getErrorMessage(err, 'Test failed')}`, 8000);
+      toastStore.error(`${config.name}: ${getErrorMessage(err, $t('settings.asrProvider.testFailed'))}`, 8000);
     } finally {
       testing = false;
       testingConfigId = null;
@@ -169,7 +169,7 @@
       toastStore.success(`"${deletedName}" deleted`);
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to delete configuration'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.deleteFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -186,7 +186,7 @@
       toastStore.success($t('settings.asrProvider.deletedAll'));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to delete configurations'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.deleteAllFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -235,7 +235,7 @@
         };
         configurations = configurations;
       }
-      toastStore.error(getErrorMessage(err, 'Failed to toggle sharing'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.shareFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -263,7 +263,7 @@
       activeLocalModelSource = 'database';
       toastStore.success($t('settings.asrProvider.localModelSet', { model: selectedLocalModel }));
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to set local model'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.setLocalModelFailed')), 5000);
     } finally {
       modelChangeInProgress = false;
     }
@@ -275,7 +275,7 @@
       const result = await ASRSettingsApi.restartGpuWorker();
       toastStore.success(result.message, 8000);
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to restart GPU worker'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.restartWorkerFailed')), 5000);
     } finally {
       restartInProgress = false;
     }

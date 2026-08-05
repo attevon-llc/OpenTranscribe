@@ -32,7 +32,7 @@
   }
 
   function formatDate(dateString: any) {
-    if (!dateString) return 'N/A';
+    if (!dateString) return $t('common.notAvailable');
 
     const date = new Date(dateString);
     return new Intl.DateTimeFormat('en-US', {

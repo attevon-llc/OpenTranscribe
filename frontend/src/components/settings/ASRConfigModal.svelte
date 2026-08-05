@@ -152,7 +152,7 @@
       dispatch('saved', result);
       handleClose();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to save ASR configuration'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.saveFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -176,7 +176,7 @@
       const result = await ASRSettingsApi.testConnection(params);
       testResult = { success: result.success, message: result.message };
     } catch (err: unknown) {
-      testResult = { success: false, message: getErrorMessage(err, 'Connection test failed') };
+      testResult = { success: false, message: getErrorMessage(err, $t('settings.asrProvider.testFailed')) };
     } finally {
       testing = false;
     }

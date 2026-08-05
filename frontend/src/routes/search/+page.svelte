@@ -262,7 +262,7 @@
       // and the loading flag, so leave both alone.
       if (isRequestCancelled(e)) return;
       console.error('Search failed:', e);
-      searchStore.setError(getErrorMessage(e, 'Search failed'));
+      searchStore.setError(getErrorMessage(e, $t('search.searchFailed')));
       searchStore.setLoading(false);
     } finally {
       if (searchController === controller) searchController = null;

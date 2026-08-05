@@ -1,5 +1,7 @@
+import { get } from 'svelte/store';
 import { isRequestCancelled } from '$lib/axios';
 import { toastStore } from '$stores/toast';
+import { t } from '$stores/locale';
 
 /**
  * Standardized API error handling. OPT-IN — use in new / refactored code; the existing
@@ -37,9 +39,13 @@ export function getErrorCode(error: unknown): string | undefined {
 /**
  * Extracts a human-readable message from an unknown error, preferring the FastAPI
  * `response.data.detail` shape, then `response.data.message`, then `error.message`,
- * then the fallback.
+ * then the fallback. The default fallback is resolved per call, so it follows the
+ * active locale rather than the one that was active when this module was imported.
  */
-export function getErrorMessage(error: unknown, fallback = 'Something went wrong'): string {
+export function getErrorMessage(
+  error: unknown,
+  fallback = get(t)('common.somethingWentWrong')
+): string {
   const e = error as AxiosLikeError;
   const detail = e?.response?.data?.detail;
   if (typeof detail === 'string' && detail.trim()) return detail;

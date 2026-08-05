@@ -90,11 +90,15 @@
           // No summary exists yet
           summary = null;
         } else {
-          throw new Error(`Failed to load summary: ${getErrorMessage(summaryErr, 'Failed to load summary')}`);
+          throw new Error(
+            $t('summary.loadFailedDetail', {
+              error: getErrorMessage(summaryErr, $t('summary.loadFailed')),
+            })
+          );
         }
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to load summary';
+      error = err instanceof Error ? err.message : $t('summary.loadFailed');
       console.error('Error loading summary:', err);
     } finally {
       loading = false;

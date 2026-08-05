@@ -13,9 +13,18 @@
 #   - backend            : folder browser + connection test (read)
 #   - celery-download-worker : scan + import + delete-after-import (read/write)
 #   - celery-cpu-worker  : multi-part stitch + optional write-back (read/write)
+#   - celery-beat        : the FS-event observer (issue #294) — reads, plus a
+#                          short-lived probe file that verifies events actually
+#                          arrive on this mount before trusting inotify.
 
 services:
   backend:
+    volumes:
+      - ${WATCH_HOST_PATH:-./watch}:/watch
+    environment:
+      - WATCH_FOLDER_PATH=/watch
+
+  celery-beat:
     volumes:
       - ${WATCH_HOST_PATH:-./watch}:/watch
     environment:

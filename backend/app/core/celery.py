@@ -28,6 +28,7 @@ if not _SKIP_CELERY:
 # Imports must come after torch.load patch to prevent caching issues
 from celery import Celery  # noqa: E402
 from celery.schedules import crontab  # noqa: E402
+from celery.signals import beat_init  # noqa: E402
 from celery.signals import before_task_publish  # noqa: E402
 from celery.signals import setup_logging  # noqa: E402
 from celery.signals import task_postrun  # noqa: E402
@@ -329,6 +330,23 @@ def adopt_request_id(task=None, **kwargs):
     request_id = getattr(request, "request_id", None) if request is not None else None
     if request_id:
         set_request_id(request_id)
+
+
+# The watch-source FS-event layer needs a long-lived process, and beat is the
+# one service that is single-instance by design — running two would double every
+# scheduled task, so nobody scales it. Starting it here (and NOT on the workers)
+# gives exactly one observer set per deployment. It never raises: any failure
+# logs and leaves the every-minute `watch_source.scan_all` poll as the sole
+# mechanism, which is the pre-#294 behaviour.
+@beat_init.connect
+def start_watch_source_fs_events(**kwargs):
+    """Start the watchdog-based watch-source observer inside celery-beat."""
+    try:
+        from app.services.watch_sources.fs_events import start_supervisor
+
+        start_supervisor()
+    except Exception as e:  # noqa: BLE001 - beat must start regardless
+        logger.error(f"Watch-source FS-event supervisor could not be started: {e}")
 
 
 # Signal handlers for proper database connection management

@@ -23,7 +23,7 @@
   }
 
   function formatDateTime(isoString: string | null): string {
-    if (!isoString) return 'N/A';
+    if (!isoString) return $t('common.notAvailable');
     return new Date(isoString).toLocaleString();
   }
 
@@ -180,7 +180,7 @@
                       <span class="detail-label">{m.purpose || key}</span>
                       <span class="detail-sublabel">{m.description || ''}</span>
                     </div>
-                    <span class="detail-value model-name">{m.name || 'N/A'}</span>
+                    <span class="detail-value model-name">{m.name || $t('common.notAvailable')}</span>
                   </div>
                 {/each}
               </div>

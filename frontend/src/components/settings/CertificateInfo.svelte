@@ -6,7 +6,7 @@
   $: hasCertificate = certificate?.has_certificate || false;
 
   function formatDate(dateString?: string): string {
-    if (!dateString) return 'N/A';
+    if (!dateString) return $t('common.notAvailable');
     return new Date(dateString).toLocaleString();
   }
 
@@ -42,17 +42,17 @@
     <div class="cert-grid">
       <div class="cert-item">
         <span class="cert-label">{$t('settings.certificate.organization')}</span>
-        <span>{certificate.organization || 'N/A'}</span>
+        <span>{certificate.organization || $t('common.notAvailable')}</span>
       </div>
 
       <div class="cert-item">
         <span class="cert-label">{$t('settings.certificate.organizationalUnit')}</span>
-        <span>{certificate.organizational_unit || 'N/A'}</span>
+        <span>{certificate.organizational_unit || $t('common.notAvailable')}</span>
       </div>
 
       <div class="cert-item">
         <span class="cert-label">{$t('settings.certificate.serialNumber')}</span>
-        <span class="mono">{certificate.serial_number || 'N/A'}</span>
+        <span class="mono">{certificate.serial_number || $t('common.notAvailable')}</span>
       </div>
 
       <div class="cert-item">
@@ -67,17 +67,17 @@
 
       <div class="cert-item full-width">
         <span class="cert-label">{$t('settings.certificate.subjectDN')}</span>
-        <pre>{certificate.subject_dn || 'N/A'}</pre>
+        <pre>{certificate.subject_dn || $t('common.notAvailable')}</pre>
       </div>
 
       <div class="cert-item full-width">
         <span class="cert-label">{$t('settings.certificate.issuerDN')}</span>
-        <pre>{certificate.issuer_dn || 'N/A'}</pre>
+        <pre>{certificate.issuer_dn || $t('common.notAvailable')}</pre>
       </div>
 
       <div class="cert-item full-width">
         <span class="cert-label">{$t('settings.certificate.fingerprint')}</span>
-        <span class="mono fingerprint">{certificate.fingerprint || 'N/A'}</span>
+        <span class="mono fingerprint">{certificate.fingerprint || $t('common.notAvailable')}</span>
       </div>
     </div>
   </div>

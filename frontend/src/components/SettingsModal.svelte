@@ -115,17 +115,21 @@
     },
     speakers: { total: 0, avg_per_file: 0 },
     models: {
-      whisper: { name: 'N/A', description: 'N/A', purpose: 'N/A' },
-      diarization: { name: 'N/A', description: 'N/A', purpose: 'N/A' }
+      whisper: { name: $t('common.notAvailable'), description: $t('common.notAvailable'), purpose: $t('common.notAvailable') },
+      diarization: { name: $t('common.notAvailable'), description: $t('common.notAvailable'), purpose: $t('common.notAvailable') }
     },
     system: {
       cpu: { total_percent: '0%', per_cpu: [], logical_cores: 0, physical_cores: 0 },
       memory: { total: '0 B', available: '0 B', used: '0 B', percent: '0%' },
       disk: { total: '0 B', used: '0 B', free: '0 B', percent: '0%' },
+      // These stay the untranslated literal "N/A" on purpose: it is the backend's
+      // wire sentinel for an unreadable GPU metric (admin.py / tasks/utility.py) and
+      // SystemStatisticsPanel compares `utilization_percent !== 'N/A'` against it.
+      // The placeholder entry is `available: false`, so none of it ever renders.
       gpus: [{ available: false, name: 'N/A', memory_total: 'N/A', memory_used: 'N/A', memory_free: 'N/A', memory_percent: 'N/A', utilization_percent: 'N/A', temperature_celsius: null }],
-      uptime: 'Unknown',
-      platform: 'Unknown',
-      python_version: 'Unknown'
+      uptime: $t('common.unknown'),
+      platform: $t('common.unknown'),
+      python_version: $t('common.unknown')
     },
     throughput: { total_completed: 0, last_1h: 0, last_3h: 0, rate_1h: 0, rate_3h: 0 },
     eta: { remaining: 0, files_per_hour: 0, hours_remaining: null, est_completion: null },

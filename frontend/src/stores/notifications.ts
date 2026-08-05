@@ -18,38 +18,11 @@ export interface Notification {
   };
 }
 
-// Sample notifications for demonstration
-const sampleNotifications: Notification[] = [
-  {
-    id: 'notification-1',
-    title: 'Transcription Complete',
-    message: 'Your audio file has been successfully transcribed.',
-    type: 'success',
-    timestamp: new Date(Date.now() - 3600000), // 1 hour ago
-    read: false,
-    data: { file_id: '1' },
-  },
-  {
-    id: 'notification-2',
-    title: 'New Comment',
-    message: 'Someone commented on your transcript.',
-    type: 'info',
-    timestamp: new Date(Date.now() - 86400000), // 1 day ago
-    read: true,
-    data: { file_id: '2' },
-  },
-  {
-    id: 'notification-3',
-    title: 'System Update',
-    message: 'The application has been updated with new features.',
-    type: 'info',
-    timestamp: new Date(Date.now() - 172800000), // 2 days ago
-    read: true,
-  },
-];
-
-// Create a store for notifications
-export const notifications = writable<Notification[]>(sampleNotifications);
+// Seeded empty. This store previously shipped three hard-coded English demo
+// notifications ("Transcription Complete", "New Comment", "System Update") that
+// no locale could translate. Real entries are pushed by `addNotification`
+// (see $stores/downloads), which already localizes its title/message.
+export const notifications = writable<Notification[]>([]);
 
 // Helper to toggle notification panel
 export function toggleNotificationsPanel(): void {

@@ -619,6 +619,7 @@ function createWebSocketStore() {
               }
 
               // Synthesize message for admin tasks that don't have one
+              const translate = get(t);
               let currentStep = data.data.message || '';
               if (!currentStep && isAdminProgressType) {
                 if (data.type.startsWith('reindex')) {
@@ -626,44 +627,63 @@ function createWebSocketStore() {
                   const tot = data.data.total_files ?? data.data.stats?.total_files ?? 0;
                   currentStep =
                     status === 'completed'
-                      ? `Indexed ${idx} files`
-                      : `Indexed ${idx} of ${tot} files`;
+                      ? translate('notifications.progress.indexedComplete', { count: idx })
+                      : translate('notifications.progress.indexedProgress', {
+                          count: idx,
+                          total: tot,
+                        });
                 } else if (data.type.startsWith('migration')) {
                   const proc = data.data.processed_files ?? 0;
                   const tot = data.data.total_files ?? 0;
                   currentStep =
                     status === 'completed'
-                      ? `Processed ${proc} files`
-                      : `Processed ${proc} of ${tot} files`;
+                      ? translate('notifications.progress.processedComplete', { count: proc })
+                      : translate('notifications.progress.processedProgress', {
+                          count: proc,
+                          total: tot,
+                        });
                 } else if (data.type.startsWith('clustering')) {
                   const step = data.data.step ?? 0;
                   const tot = data.data.total_steps ?? 0;
                   currentStep =
-                    status === 'completed' ? 'Clustering complete' : `Step ${step} of ${tot}`;
+                    status === 'completed'
+                      ? translate('notifications.progress.clusteringComplete')
+                      : translate('notifications.progress.clusteringStep', { step, total: tot });
                 } else if (data.type.startsWith('attribute_migration')) {
                   const proc = data.data.processed_files ?? 0;
                   const tot = data.data.total_files ?? 0;
                   currentStep =
                     status === 'completed'
-                      ? `Processed ${proc} files`
-                      : `Processed ${proc} of ${tot} files`;
+                      ? translate('notifications.progress.processedComplete', { count: proc })
+                      : translate('notifications.progress.processedProgress', {
+                          count: proc,
+                          total: tot,
+                        });
                 } else if (data.type.startsWith('data_integrity')) {
                   const proc = data.data.processed_files ?? data.data.processed ?? 0;
                   const tot = data.data.total_files ?? data.data.total ?? 0;
                   currentStep =
                     status === 'completed'
-                      ? `Checked ${proc} files`
-                      : `Checked ${proc} of ${tot} files`;
+                      ? translate('notifications.progress.checkedComplete', { count: proc })
+                      : translate('notifications.progress.checkedProgress', {
+                          count: proc,
+                          total: tot,
+                        });
                 } else if (data.type.startsWith('embedding_consistency')) {
                   const proc = data.data.processed_files ?? 0;
                   const tot = data.data.total_files ?? 0;
                   currentStep =
                     status === 'completed'
-                      ? `Repaired ${data.data.repaired ?? 0} speakers`
-                      : `Repairing ${proc} of ${tot} files`;
+                      ? translate('notifications.progress.repairedComplete', {
+                          count: data.data.repaired ?? 0,
+                        })
+                      : translate('notifications.progress.repairingProgress', {
+                          count: proc,
+                          total: tot,
+                        });
                 }
               }
-              if (!currentStep) currentStep = 'Processing...';
+              if (!currentStep) currentStep = translate('notifications.progress.processing');
 
               // Normalize progress: admin tasks send 0.0-1.0, others send 0-100
               let rawProgress = data.data.progress || 0;
@@ -777,7 +797,7 @@ function createWebSocketStore() {
                 id: generateId('ws'),
                 type: data.type as NotificationType,
                 title: getNotificationTitle(data.type),
-                message: data.data.message || 'Gallery update',
+                message: data.data.message || get(t)('notifications.galleryUpdate'),
                 timestamp: new Date(),
                 read: false,
                 data: data.data,
@@ -800,7 +820,7 @@ function createWebSocketStore() {
                 message:
                   composeClientMessage(data.type, data.data) ||
                   data.data.message ||
-                  'No message provided',
+                  get(t)('notifications.noMessage'),
                 timestamp: new Date(),
                 read: false,
                 data: data.data,

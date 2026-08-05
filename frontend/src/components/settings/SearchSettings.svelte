@@ -148,7 +148,7 @@
       isReindexing = true;
       await loadStatus();
     } catch (e: unknown) {
-      toastStore.error(getErrorMessage(e, 'Failed to switch model'));
+      toastStore.error(getErrorMessage(e, $t('search.switchModelFailed')));
       selectedModelId = currentModelId;
     } finally {
       isSwitchingModel = false;
@@ -168,7 +168,7 @@
       await loadStatus();
       // Don't set isReindexing = false here - WebSocket 'reindex-complete' event handles that
     } catch (e: unknown) {
-      toastStore.error(getErrorMessage(e, 'Failed to start re-indexing'));
+      toastStore.error(getErrorMessage(e, $t('search.reindexStartFailed')));
       isReindexing = false; // Only reset on error
     }
   }
@@ -181,7 +181,7 @@
       await loadStatus();
       // Don't set isReindexing = false here - WebSocket 'reindex-complete' event handles that
     } catch (e: unknown) {
-      toastStore.error(getErrorMessage(e, 'Failed to start re-indexing'));
+      toastStore.error(getErrorMessage(e, $t('search.reindexStartFailed')));
       isReindexing = false; // Only reset on error
     }
   }
@@ -198,7 +198,7 @@
       }
       toastStore.info(res.data.message);
     } catch (e: unknown) {
-      toastStore.error(getErrorMessage(e, 'Failed to stop re-indexing'));
+      toastStore.error(getErrorMessage(e, $t('search.reindexStopFailed')));
       isStopping = false;
     }
   }

@@ -150,12 +150,13 @@ class TestConcurrentSessionEnforcementAC10:
         Verifies that the implementation uses SELECT FOR UPDATE or similar
         mechanism to prevent race conditions when checking/modifying sessions.
         """
-        # Read the auth module source to verify atomic locking
-        import inspect
+        # Read the auth package source to verify atomic locking. auth is a
+        # package, so inspect.getsource() on it would only see __init__.py.
+        from pathlib import Path
 
         from app.api.endpoints import auth
 
-        source = inspect.getsource(auth)
+        source = "\n".join(p.read_text() for p in sorted(Path(auth.__file__).parent.glob("*.py")))
 
         # Should use with_for_update() for atomic locking
         assert "with_for_update" in source, (

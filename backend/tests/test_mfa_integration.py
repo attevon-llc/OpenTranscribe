@@ -268,10 +268,16 @@ class TestMFALoginFlow:
         def mock_is_blacklisted(jti: str) -> bool:
             return jti in _blacklisted_jtis
 
+        # Patch where the helpers are defined: the verify endpoint resolves them
+        # through their own module, not through the package facade.
         with (
-            patch("app.api.endpoints.auth._blacklist_mfa_token", side_effect=mock_blacklist),
             patch(
-                "app.api.endpoints.auth._is_mfa_token_blacklisted", side_effect=mock_is_blacklisted
+                "app.api.endpoints.auth.mfa_tokens._blacklist_mfa_token",
+                side_effect=mock_blacklist,
+            ),
+            patch(
+                "app.api.endpoints.auth.mfa_tokens._is_mfa_token_blacklisted",
+                side_effect=mock_is_blacklisted,
             ),
         ):
             # First verify succeeds

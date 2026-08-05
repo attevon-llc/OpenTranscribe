@@ -41,7 +41,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 # Speaker clustering uses mathematical variable names (M, MT, Z) and complex algorithms
 "**/speaker_clustering_service.py" = ["N806", "C901"]
 # OpenSearch service has complex index rebuild/repair logic and best-effort cleanup
-"**/opensearch_service.py" = ["C901", "S110"]
+"**/opensearch_service/*.py" = ["C901", "S110"]
 # Embedding migration has best-effort index detection
 "**/speaker_embedding_migration.py" = ["S110"]
 # Migrations and alembic versions use string-based SQL construction

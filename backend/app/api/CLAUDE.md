@@ -11,9 +11,14 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   `include_router_with_consistency(router, prefix, tags, capability=...)`, which normalizes
   the prefix (trailing-slash parity for nginx) and optionally attaches a capability gate.
   `main.py` mounts `api_router` under `settings.API_PREFIX` (`/api`).
-- `endpoints/auth.py` — **also the dependency-injection module.** `get_current_user`,
+- `endpoints/auth/` — **also the dependency-injection module.** `get_current_user`,
   `get_current_active_user` (~31 call sites), `get_current_admin_user`,
-  `get_current_active_superuser`, `get_optional_current_user` live here — there is no `deps.py`.
+  `get_current_active_superuser`, `get_optional_current_user` are defined in
+  `endpoints/auth/dependencies.py` and re-exported from the package — there is no `deps.py`,
+  and `from app.api.endpoints.auth import get_current_active_user` still works. The rest of
+  the package is one module per flow (`login`, `registration`, `profile`, `keycloak`, `pki`,
+  `methods`, `mfa` + `mfa_tokens`, `sessions`), each owning its own `APIRouter` that
+  `__init__.py` includes in declaration order.
 - `deps_context.py` — tenant-aware DI: `get_current_context` → `RequestContext(user, org_id,
   org_role)`, `require_org_admin` (the **server-side** authority for org-admin actions — the
   frontend capability check is cosmetic), and `scope_to_context(query, model, ctx)`.

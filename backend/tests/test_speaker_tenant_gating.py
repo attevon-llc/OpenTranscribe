@@ -421,9 +421,15 @@ class TestClusteringOrgGate:
                 captured.append(body)
                 return {"hits": {"hits": []}}
 
-        monkeypatch.setattr("app.services.opensearch_service.opensearch_client", FakeClient())
+        # The package's own modules resolve these through the module that owns
+        # them, so patch there — patching the package facade only rebinds the
+        # re-export, not what ``clusters.find_matching_clusters`` reads.
         monkeypatch.setattr(
-            "app.services.opensearch_service.get_active_speaker_index", lambda: "speakers"
+            "app.services.opensearch_service.client.opensearch_client", FakeClient()
+        )
+        monkeypatch.setattr(
+            "app.services.opensearch_service.clusters.get_active_speaker_index",
+            lambda: "speakers",
         )
 
         find_matching_clusters([0.1] * 256, user_id=7, organization_id=42)
@@ -442,6 +448,8 @@ class TestClusteringOrgGate:
         """Org clusters carry organization_id on the centroid doc; personal /
         community docs have NO org field (byte-identical to pre-tenant docs)."""
         import app.services.opensearch_service as oss
+        from app.services.opensearch_service import client as oss_client
+        from app.services.opensearch_service import clusters as oss_clusters
 
         captured: list[dict] = []
 
@@ -450,9 +458,9 @@ class TestClusteringOrgGate:
                 captured.append(body)
                 return {"result": "created"}
 
-        monkeypatch.setattr(oss, "opensearch_client", FakeClient())
-        monkeypatch.setattr(oss, "get_active_speaker_index", lambda: "speakers")
-        monkeypatch.setattr(oss, "_indices_verified", True)
+        monkeypatch.setattr(oss_client, "opensearch_client", FakeClient())
+        monkeypatch.setattr(oss_clusters, "get_active_speaker_index", lambda: "speakers")
+        monkeypatch.setattr(oss_clusters, "_indices_verified", True)
 
         assert oss.store_cluster_embedding("uuid-org", 7, [0.1] * 256, organization_id=42)
         assert captured[-1]["organization_id"] == 42

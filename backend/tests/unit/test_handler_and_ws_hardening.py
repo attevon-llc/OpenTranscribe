@@ -173,11 +173,14 @@ def test_testing_shortcuts_are_inert_when_hardened(monkeypatch):
     Enforcement is at the USE site rather than a boot refusal, because the secrets-guard
     suite legitimately simulates production while conftest sets TESTING process-wide.
     """
-    import inspect
+    from pathlib import Path
 
-    from app.api.endpoints import auth as auth_module
+    from app.api.endpoints import auth as auth_package
 
-    source = inspect.getsource(auth_module)
+    # auth is a package, so scan every module in it rather than __init__ alone.
+    source = "\n".join(
+        p.read_text() for p in sorted(Path(auth_package.__file__).parent.glob("*.py"))
+    )
     testing_gates = source.count('os.environ.get("TESTING", "False").lower() == "true"')
     guarded = source.count("and not settings.is_hardened")
 

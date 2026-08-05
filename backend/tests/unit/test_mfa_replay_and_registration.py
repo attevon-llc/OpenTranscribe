@@ -106,11 +106,18 @@ def test_verify_totp_without_user_id_does_not_consume(fake_redis):
     assert fake_redis.keys == {}
 
 
+def _auth_package_source() -> str:
+    """Concatenated source of every module in the ``auth`` endpoint package."""
+    from pathlib import Path
+
+    from app.api.endpoints import auth as auth_package
+
+    return "\n".join(p.read_text() for p in sorted(Path(auth_package.__file__).parent.glob("*.py")))
+
+
 def test_every_auth_call_site_passes_user_id():
     """A call site that forgets user_id silently loses replay protection."""
-    from app.api.endpoints import auth as auth_module
-
-    source = inspect.getsource(auth_module)
+    source = _auth_package_source()
     calls = source.count("MFAService.verify_totp(")
     with_user = source.count("user_id=")
 
@@ -122,9 +129,7 @@ def test_every_auth_call_site_passes_user_id():
 
 
 def test_register_is_rate_limited():
-    from app.api.endpoints import auth as auth_module
-
-    source = inspect.getsource(auth_module)
+    source = _auth_package_source()
     register_at = source.index('@router.post("/register"')
     window = source[register_at : register_at + 400]
 

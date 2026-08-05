@@ -6,7 +6,7 @@ Multiple auth methods run **simultaneously**, selected per-user by `User.auth_ty
 `AUTH_TYPE` may be a single value or comma-separated (`local`, `ldap`, `keycloak`, `pki` —
 `constants.py:VALID_AUTH_TYPES`). Configure in the Admin UI (Settings → Authentication):
 **DB `auth_config` wins over `.env`, which wins over the coded default**
-(`services/auth_config_service.py`). Endpoints live in `api/endpoints/auth.py` +
+(`services/auth_config_service.py`). Endpoints live in the `api/endpoints/auth/` package +
 `auth_config.py`, not here.
 
 ## Key files
@@ -47,7 +47,8 @@ Multiple auth methods run **simultaneously**, selected per-user by `User.auth_ty
 ## Gotchas
 
 - **PKI/Keycloak users bypass MFA only when they used their native method.** If they fall
-  back to a local password, MFA still applies (`auth.py`, the `actual_auth_method` check).
+  back to a local password, MFA still applies (`api/endpoints/auth/login.py`, the
+  `actual_auth_method` check).
   `AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [pki, keycloak]`; LDAP never has a local password.
 - **Negative login tests MUST use a nonexistent account** — never a wrong password for
   `admin@example.com`. Lockout is progressive per-account and poisons the whole suite.

@@ -31,6 +31,10 @@
   import SummaryModal from '$components/SummaryModal.svelte';
   import TranscriptModal from '$components/TranscriptModal.svelte';
   import TxtExportOptionsModal from '$components/fileDetail/TxtExportOptionsModal.svelte';
+  import FileActionButtons from '$components/fileDetail/FileActionButtons.svelte';
+  import RedactionControls from '$components/fileDetail/RedactionControls.svelte';
+  import RedactionPendingPanel from '$components/fileDetail/RedactionPendingPanel.svelte';
+  import SpeakerProfileConfirmModal from '$components/fileDetail/SpeakerProfileConfirmModal.svelte';
   import { isLLMAvailable } from '$stores/llmStatus';
   import { authStore } from '$stores/auth';
   import { transcriptStore, processedTranscriptSegments, type SpeakerInfo } from '$stores/transcriptStore';
@@ -2021,81 +2025,18 @@
         <div class="video-header">
           <h4>{file?.content_type?.startsWith('audio/') ? $t('fileDetail.audio') : $t('fileDetail.video')}</h4>
           <!-- Action Buttons - right aligned above video -->
-          <div class="header-buttons">
-            <!-- View Full Transcript Button - LEFT of AI Summary -->
-            {#if file && file.transcript_segments && file.transcript_segments.length > 0 && file.status !== 'processing'}
-              <button
-                class="view-transcript-btn"
-                on:click={() => showTranscriptModal = true}
-                title={$t('fileDetail.viewTranscript')}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="transcript-icon">
-                  <path d="M4 2a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H4zm0 1h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
-                  <path d="M5 5h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z"/>
-                </svg>
-                {$t('fileDetail.transcript')}
-              </button>
-            {/if}
-          <!-- Debug: Summary button state: hasSummary={!!(file?.has_summary || file?.summary_opensearch_id)}, summaryGenerating={summaryGenerating}, generatingSummary={generatingSummary}, fileStatus={file?.status} -->
-          {#if file?.has_summary || file?.summary_opensearch_id}
-            <button
-              class="view-summary-btn"
-              on:click={handleShowSummary}
-              title={$t('fileDetail.viewSummaryTooltip')}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
-                <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
-              </svg>
-              {$t('fileDetail.summary')}
-            </button>
-          {:else if summaryGenerating || generatingSummary}
-            <!-- Show generating state even when no summary exists yet -->
-            <button
-              class="generate-summary-btn"
-              disabled
-              title={$t('fileDetail.aiSummaryGenerating')}
-            >
-              <Spinner size="small" color="white" />
-              <span>{$t('fileDetail.aiSummary')}</span>
-            </button>
-          {:else if file?.status === 'completed' && canEdit}
-            <button
-              class="generate-summary-btn"
-              on:click={handleGenerateSummary}
-              disabled={generatingSummary || summaryGenerating || !llmAvailable}
-              title={!llmAvailable ? $t('fileDetail.aiNotAvailable') :
-                     (generatingSummary || summaryGenerating) ? $t('fileDetail.aiSummaryGenerating') :
-                     $t('fileDetail.generateSummaryTooltip')}
-            >
-              {#if generatingSummary || summaryGenerating}
-                <div class="spinner-small"></div>
-                <span>{$t('fileDetail.aiSummary')}</span>
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
-                  <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
-                </svg>
-                {$t('fileDetail.generateSummary')}
-              {/if}
-            </button>
-          {/if}
-          <!-- Reprocess Button (opens SelectiveReprocessModal) - editors/owners only -->
-          {#if canEdit && file && (file.status === 'error' || file.status === 'completed' || file.status === 'failed')}
-            <button
-              class="reprocess-button-header"
-              on:click={() => showReprocessModal = true}
-              disabled={reprocessing}
-              title={reprocessing ? $t('fileDetail.reprocessingTooltip') : $t('fileDetail.reprocessTooltip')}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 4v6h-6"></path>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-              </svg>
-              {#if reprocessing}
-                <Spinner size="small" />
-              {/if}
-            </button>
-          {/if}
-          </div>
+          <FileActionButtons
+            {file}
+            {canEdit}
+            {llmAvailable}
+            {summaryGenerating}
+            {generatingSummary}
+            {reprocessing}
+            on:viewTranscript={() => (showTranscriptModal = true)}
+            on:showSummary={handleShowSummary}
+            on:generateSummary={handleGenerateSummary}
+            on:openReprocess={() => (showReprocessModal = true)}
+          />
         </div>
 
         <VideoPlayer
@@ -2160,13 +2101,7 @@
       <!-- Right column: Transcript -->
       {#if redactionPending}
         <section class="transcript-column">
-          <div class="redaction-pending">
-            <div class="redaction-pending-chip">
-              <span class="chip-dot"></span>
-              {$t('settings.contentRedaction.processingChip')}
-            </div>
-            <p class="redaction-pending-msg">{$t('settings.contentRedaction.processingMessage')}</p>
-          </div>
+          <RedactionPendingPanel />
         </section>
       {:else if file && file.transcript_segments}
         <section class="transcript-column">
@@ -2207,55 +2142,14 @@
         />
           <!-- Content-redaction controls: kept BELOW the transcript so the video and -->
           <!-- transcript columns stay top-aligned. -->
-          {#if showRedactionToggle}
-            <div class="redaction-footer">
-              <span class="redaction-status">
-                {showOriginal
-                  ? $t('settings.contentRedaction.showingOriginal')
-                  : $t('settings.contentRedaction.showingRedacted')}
-              </span>
-              <div class="redaction-bar-actions">
-                {#if canViewOriginal}
-                  <button
-                    type="button"
-                    class="redaction-link-btn"
-                    on:click={triggerRedaction}
-                    title={$t('settings.contentRedaction.rescanTooltip')}
-                  >
-                    {$t('settings.contentRedaction.rescan')}
-                  </button>
-                {/if}
-                <button
-                  type="button"
-                  class="redaction-link-btn"
-                  on:click={toggleShowOriginal}
-                  disabled={redactionToggleBusy}
-                  title={showOriginal
-                    ? $t('settings.contentRedaction.showRedactedTooltip')
-                    : $t('settings.contentRedaction.showOriginalTooltip')}
-                >
-                  {#if redactionToggleBusy}
-                    <Spinner size="small" />
-                  {/if}
-                  {showOriginal
-                    ? $t('settings.contentRedaction.showRedacted')
-                    : $t('settings.contentRedaction.showOriginal')}
-                </button>
-              </div>
-            </div>
-          {:else if canViewOriginal}
-            <div class="redaction-footer">
-              <span class="redaction-status">{$t('settings.contentRedaction.notRedacted')}</span>
-              <button
-                type="button"
-                class="redaction-link-btn"
-                on:click={triggerRedaction}
-                title={$t('settings.contentRedaction.rescanTooltip')}
-              >
-                {$t('settings.contentRedaction.runRedaction')}
-              </button>
-            </div>
-          {/if}
+          <RedactionControls
+            {showRedactionToggle}
+            {canViewOriginal}
+            {showOriginal}
+            {redactionToggleBusy}
+            on:rescan={triggerRedaction}
+            on:toggleOriginal={toggleShowOriginal}
+          />
         </section>
       {:else}
         <section class="transcript-column">
@@ -2318,48 +2212,13 @@
 
 <!-- Speaker Profile Confirmation Modal -->
 {#if showSpeakerProfileConfirmation}
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-overlay" on:wheel|stopPropagation on:touchmove|stopPropagation>
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 class="modal-title">{profileUpdateTitle}</h2>
-          <button
-            class="modal-close-btn"
-            on:click={handleProfileConfirmationCancel}
-            aria-label={$t('modal.closeDialog')}
-          >
-            ×
-          </button>
-        </div>
-
-        <div class="modal-body">
-          <p class="modal-message">{profileUpdateMessage}</p>
-        </div>
-
-        <div class="modal-footer">
-          <button
-            class="btn btn-primary"
-            on:click={() => handleProfileConfirmation('update_profile')}
-          >
-            {$t('speakerProfile.updateGlobally')}
-          </button>
-          <button
-            class="btn btn-secondary"
-            on:click={() => handleProfileConfirmation('create_new_profile')}
-          >
-            {$t('speakerProfile.createNew')}
-          </button>
-          <button
-            class="btn btn-cancel"
-            on:click={handleProfileConfirmationCancel}
-          >
-            {$t('common.cancel')}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <SpeakerProfileConfirmModal
+    title={profileUpdateTitle}
+    message={profileUpdateMessage}
+    on:updateProfile={() => handleProfileConfirmation('update_profile')}
+    on:createNewProfile={() => handleProfileConfirmation('create_new_profile')}
+    on:cancel={handleProfileConfirmationCancel}
+  />
 {/if}
 
 <!-- Summary Modal -->
@@ -2505,79 +2364,6 @@
     min-height: 32px;
   }
 
-  .header-buttons {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-
-  .view-transcript-btn {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.6rem 1rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    height: 40px;
-    white-space: nowrap;
-  }
-
-  .view-transcript-btn:hover {
-    background-color: var(--hover-bg);
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  }
-
-  .view-transcript-btn:active {
-    transform: scale(0.98);
-  }
-
-  .view-transcript-btn .transcript-icon {
-    flex-shrink: 0;
-    opacity: 0.8;
-  }
-
-  .reprocess-button-header {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.6rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.25rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    width: 40px;
-    height: 40px;
-  }
-
-  .reprocess-button-header:hover:not(:disabled) {
-    background-color: var(--hover-bg);
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  }
-
-  .reprocess-button-header:active {
-    transform: scale(0.98);
-  }
-
-  .reprocess-button-header:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   .video-column h4 {
     margin: 0;
     font-size: 18px;
@@ -2589,64 +2375,6 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-  }
-
-  .view-summary-btn {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.6rem 1rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    height: 40px;
-    white-space: nowrap;
-  }
-
-  .view-summary-btn:hover {
-    background-color: var(--hover-bg);
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  }
-
-  .view-summary-btn:active {
-    transform: scale(0.98);
-  }
-
-  .view-summary-btn .ai-icon {
-    flex-shrink: 0;
-    opacity: 0.8;
-  }
-
-  .generate-summary-btn {
-    background-color: var(--primary-color, #3b82f6);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .generate-summary-btn:hover:not(:disabled) {
-    background-color: var(--primary-color-dark, #2563eb);
-    transform: translateY(-1px);
-  }
-
-  .generate-summary-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .waveform-section {
@@ -2674,36 +2402,6 @@
       flex-wrap: wrap;
       gap: 0.5rem;
     }
-
-    .header-buttons {
-      width: 100%;
-      justify-content: flex-start;
-    }
-
-    .view-transcript-btn,
-    .view-summary-btn,
-    .generate-summary-btn {
-      font-size: 0.8rem;
-      padding: 0.4rem 0.6rem;
-      height: 36px;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .view-transcript-btn,
-    .view-summary-btn,
-    .generate-summary-btn {
-      font-size: 0.75rem;
-      padding: 0.35rem 0.5rem;
-      height: 32px;
-      gap: 0.25rem;
-    }
-
-    .reprocess-button-header {
-      width: 32px;
-      height: 32px;
-      padding: 0.4rem;
-    }
   }
 
   /* Transcript segment highlighting styles */
@@ -2725,253 +2423,4 @@
   }
 
   /* All Plyr styling is now handled in VideoPlayer.svelte */
-
-  /* Speaker Profile Confirmation Modal */
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1300;
-    padding: 1rem;
-    overflow: hidden;
-    overscroll-behavior: none;
-  }
-
-  .modal-dialog {
-    background: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    max-width: 500px;
-    width: 100%;
-    overflow: hidden;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    animation: slideIn 0.2s ease-out;
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-title {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--text-color);
-    line-height: 1.4;
-  }
-
-  .modal-close-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.5rem;
-    color: var(--text-secondary);
-    transition: color 0.2s ease;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-    line-height: 1;
-  }
-
-  .modal-close-btn:hover {
-    color: var(--text-color);
-    background: var(--button-hover);
-  }
-
-  .modal-body {
-    padding: 1.5rem;
-  }
-
-  .modal-message {
-    margin: 0;
-    color: var(--text-secondary);
-    line-height: 1.5;
-    font-size: 0.95rem;
-  }
-
-  /* Content redaction: transcript show-original toggle bar + export note */
-  .redaction-pending {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    padding: 3rem 1rem;
-    text-align: center;
-  }
-  .redaction-pending-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.9rem;
-    border-radius: 999px;
-    background: rgba(var(--primary-color-rgb), 0.12);
-    color: var(--primary-color);
-    font-size: 0.85rem;
-    font-weight: 600;
-  }
-  .redaction-pending-chip .chip-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--primary-color);
-    animation: redaction-pulse 1.2s ease-in-out infinite;
-  }
-  @keyframes redaction-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
-  }
-  .redaction-pending-msg {
-    color: var(--text-secondary);
-    font-size: 0.85rem;
-    max-width: 360px;
-  }
-
-  /* Compact redaction controls placed under the transcript (keeps columns top-aligned). */
-  .redaction-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.5rem 0.25rem 0;
-    margin-top: 0.5rem;
-    border-top: 1px solid var(--border-color);
-    flex-wrap: wrap;
-  }
-  .redaction-status {
-    font-size: 0.78rem;
-    color: var(--text-muted);
-  }
-  .redaction-bar-actions {
-    display: flex;
-    gap: 0.9rem;
-    align-items: center;
-  }
-  /* Small, unobtrusive link-style button. Hover shifts to the primary-hover color with
-     a subtle tinted background (consistent with the app) — no underline. */
-  .redaction-link-btn {
-    background: none;
-    border: none;
-    padding: 0.15rem 0.35rem;
-    border-radius: 4px;
-    font-size: 0.78rem;
-    font-weight: 500;
-    color: var(--primary-color);
-    cursor: pointer;
-    white-space: nowrap;
-    transition:
-      color 0.12s ease,
-      background-color 0.12s ease;
-  }
-  .redaction-link-btn:hover {
-    color: var(--primary-hover);
-    background-color: rgba(var(--primary-color-rgb), 0.1);
-  }
-  .redaction-link-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
-  .redaction-link-btn:disabled {
-    opacity: 0.6;
-    cursor: wait;
-  }
-  .modal-footer {
-    display: flex;
-    gap: 0.75rem;
-    padding: 1rem 1.5rem 1.5rem;
-    justify-content: flex-end;
-    border-top: 1px solid var(--border-color);
-    flex-wrap: wrap;
-  }
-
-  .btn {
-    padding: 0.6rem 1.2rem;
-    border: none;
-    border-radius: 10px;
-    font-size: 0.95rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    min-width: 120px;
-  }
-
-  .btn-primary {
-    background: #3b82f6;
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .btn-primary:hover {
-    background: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .btn-primary:active {
-    transform: translateY(0);
-  }
-
-  .btn-secondary {
-    background: var(--success-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
-  }
-
-  .btn-secondary:hover {
-    background: #059669; /* Darker green to match app pattern */
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
-  }
-
-  .btn-cancel {
-    background: var(--card-background);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    box-shadow: var(--card-shadow);
-  }
-
-  .btn-cancel:hover {
-    background: var(--button-hover);
-    border-color: var(--primary-color);
-    transform: translateY(-1px);
-  }
-
-  /* Responsive design */
-  @media (max-width: 480px) {
-    .modal-dialog {
-      margin: 1rem;
-      max-width: none;
-    }
-
-    .modal-footer {
-      flex-direction: column-reverse;
-    }
-
-    .btn {
-      width: 100%;
-    }
-  }
-
-  /* Dark mode adjustments */
-  :global([data-theme='dark']) .modal-overlay {
-    background: rgba(0, 0, 0, 0.7);
-  }
-
-  :global([data-theme='dark']) .modal-dialog {
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-  }
-
 </style>

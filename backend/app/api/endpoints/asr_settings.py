@@ -1048,10 +1048,10 @@ def restart_gpu_worker(
         try:
             celery_app.control.broadcast("shutdown")
         except Exception as exc:
-            logger.error("Failed to broadcast shutdown: %s", exc)
+            logger.exception("Failed to broadcast shutdown")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to signal worker restart: {exc}",
+                detail="Failed to signal worker restart.",
             ) from exc
         return {
             "status": "restart_signaled",
@@ -1061,10 +1061,12 @@ def restart_gpu_worker(
             "they may already be restarting.",
         }
 
-    # Check for active GPU tasks
+    # Check for active GPU tasks. Best-effort: this only produces an advisory
+    # count in the response, so a broker hiccup must not block the restart.
     try:
         active_result = inspector.active() or {}
     except Exception:
+        logger.exception("Failed to inspect active GPU tasks; reporting 0")
         active_result = {}
 
     active_gpu_tasks = 0
@@ -1076,10 +1078,10 @@ def restart_gpu_worker(
     try:
         celery_app.control.broadcast("shutdown", destination=gpu_workers)
     except Exception as exc:
-        logger.error("Failed to send shutdown to GPU workers: %s", exc)
+        logger.exception("Failed to send shutdown to GPU workers")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to signal worker restart: {exc}",
+            detail="Failed to signal worker restart.",
         ) from exc
 
     logger.info(

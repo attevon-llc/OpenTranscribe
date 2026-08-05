@@ -196,7 +196,7 @@ def list_tags(
 
         return tags_with_counts
     except Exception as e:
-        logger.error(f"Error in list_tags: {e}")
+        logger.exception(f"Error in list_tags: {e}")
         # If there's an error, return an empty list
         return []
 
@@ -226,7 +226,7 @@ def list_unused_tags(
 
         return unused_tags
     except Exception as e:
-        logger.error(f"Error in list_unused_tags: {e}")
+        logger.exception(f"Error in list_unused_tags: {e}")
         return []
 
 
@@ -269,7 +269,7 @@ def cleanup_unused_tags(
             "message": f"{count} unused tags deleted successfully",
         }
     except Exception as e:
-        logger.error(f"Error in cleanup_unused_tags: {e}")
+        logger.exception(f"Error in cleanup_unused_tags: {e}")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

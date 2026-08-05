@@ -387,7 +387,7 @@ def generate_waveform_for_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error triggering waveform generation for file {file_uuid}: {e}")
+        logger.exception(f"Error triggering waveform generation for file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start waveform generation: {str(e)}",
@@ -450,7 +450,7 @@ def generate_waveforms_for_files(
         }
 
     except Exception as e:
-        logger.error(f"Error triggering waveform generation: {e}")
+        logger.exception(f"Error triggering waveform generation: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start waveform generation: {str(e)}",
@@ -513,7 +513,7 @@ def get_waveform_status(
         }
 
     except Exception as e:
-        logger.error(f"Error getting waveform status: {e}")
+        logger.exception(f"Error getting waveform status: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get waveform status: {str(e)}",

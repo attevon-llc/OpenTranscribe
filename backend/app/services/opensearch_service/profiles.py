@@ -4,9 +4,14 @@ import datetime
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import NotFoundError
+
 from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v4
 from app.services.opensearch_service import client as _client
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
+from app.services.opensearch_service.client import OpenSearchUnavailableError
+from app.services.opensearch_service.client import _safe_index_exists
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.indices import ensure_indices_exist
 
@@ -293,17 +298,23 @@ def remove_profile_embedding(profile_uuid: str) -> bool:
         _client.opensearch_client.delete(index=get_speaker_index(), id=doc_id)
         logger.info(f"Removed profile {profile_uuid} embedding from main index")
         success = True
-    except Exception as e:
-        logger.warning(f"Error removing profile embedding from main index (may not exist): {e}")
+    except NotFoundError:
+        logger.debug(f"Profile {profile_uuid} not present in the main speaker index")
+    except CLUSTER_UNAVAILABLE_ERRORS as e:
+        logger.warning(f"Error removing profile {profile_uuid} embedding from main index: {e}")
 
-    # Also clean v4 staging index if it exists
+    # Also clean the v4 staging index. Best-effort by design: the staging index
+    # is rebuilt by the migration task, so a stale doc there is self-correcting
+    # and must not fail the caller's main-index delete.
     try:
         v4_index = get_speaker_index_v4()
-        if _client.opensearch_client.indices.exists(index=v4_index):
+        if _safe_index_exists(v4_index):
             _client.opensearch_client.delete(index=v4_index, id=doc_id)
             logger.debug(f"Removed profile {profile_uuid} from v4 staging index")
-    except Exception:  # nosec B110
-        pass  # Non-fatal
+    except NotFoundError:
+        logger.debug(f"Profile {profile_uuid} not present in the v4 staging index")
+    except (OpenSearchUnavailableError, *CLUSTER_UNAVAILABLE_ERRORS) as e:
+        logger.warning(f"Could not clean profile {profile_uuid} from the v4 staging index: {e}")
 
     return success
 

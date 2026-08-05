@@ -183,7 +183,7 @@ def list_speaker_profiles(
         # :65) must propagate unchanged — do not mask them as a generic 500.
         raise
     except Exception as e:
-        logger.error(f"Error listing speaker profiles: {e}")
+        logger.exception(f"Error listing speaker profiles: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -237,7 +237,7 @@ def create_speaker_profile(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating speaker profile: {e}")
+        logger.exception(f"Error creating speaker profile: {e}")
         db.rollback()
         raise ErrorHandler.internal_error() from e
 
@@ -298,7 +298,7 @@ def update_speaker_profile(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating speaker profile: {e}")
+        logger.exception(f"Error updating speaker profile: {e}")
         db.rollback()
         raise ErrorHandler.internal_error() from e
 
@@ -360,7 +360,7 @@ def assign_speaker_to_profile(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error assigning speaker to profile: {e}")
+        logger.exception(f"Error assigning speaker to profile: {e}")
         db.rollback()
         raise ErrorHandler.internal_error() from e
 
@@ -553,7 +553,7 @@ def get_speaker_profile_suggestions(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting speaker suggestions: {e}")
+        logger.exception(f"Error getting speaker suggestions: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -586,7 +586,7 @@ def get_speaker_profile_occurrences(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting speaker occurrences: {e}")
+        logger.exception(f"Error getting speaker occurrences: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -639,7 +639,7 @@ def delete_speaker_profile(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting speaker profile: {e}")
+        logger.exception(f"Error deleting speaker profile: {e}")
         db.rollback()
         raise ErrorHandler.internal_error() from e
 
@@ -714,7 +714,7 @@ async def upload_profile_avatar(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error uploading avatar: {e}")
+        logger.exception(f"Error uploading avatar: {e}")
         db.rollback()
         raise ErrorHandler.internal_error() from e
 
@@ -748,7 +748,7 @@ def delete_profile_avatar(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting avatar: {e}")
+        logger.exception(f"Error deleting avatar: {e}")
         db.rollback()
         raise ErrorHandler.internal_error() from e
 
@@ -841,7 +841,7 @@ def list_speaker_collections(
         return result
 
     except Exception as e:
-        logger.error(f"Error listing speaker collections: {e}")
+        logger.exception(f"Error listing speaker collections: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -894,6 +894,6 @@ def create_speaker_collection(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating speaker collection: {e}")
+        logger.exception(f"Error creating speaker collection: {e}")
         db.rollback()
         raise ErrorHandler.internal_error() from e

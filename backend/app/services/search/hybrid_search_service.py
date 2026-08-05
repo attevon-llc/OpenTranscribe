@@ -665,8 +665,17 @@ class HybridSearchService:
 
             with session_scope() as db:
                 cfg = resolve_effective_config(db, user_id)
-        except Exception as exc:  # noqa: BLE001 — never break search on redaction failure
-            logger.debug("Snippet redaction config unavailable: %s", exc)
+        except Exception:  # noqa: BLE001 — never break search on redaction failure
+            # FAIL CLOSED. Returning here rendered every snippet unmasked. The
+            # scope is narrow (profanity + custom wordlist only — this path
+            # never carries PII spans), but it is still a policy bypass, so drop
+            # the snippets rather than show unmasked ones. Results, counts and
+            # ranking are unaffected; only the preview text is withheld.
+            logger.exception("Snippet redaction config unavailable; withholding snippet text")
+            for hit in getattr(result, "results", []) or []:
+                for occ in getattr(hit, "occurrences", []) or []:
+                    if getattr(occ, "snippet", None):
+                        occ.snippet = "[redacted — masking unavailable]"
             return
 
         if not cfg.enabled:

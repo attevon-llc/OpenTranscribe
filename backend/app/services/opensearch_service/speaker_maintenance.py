@@ -3,10 +3,14 @@
 import datetime
 import logging
 
+from opensearchpy.exceptions import NotFoundError
+
 from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v3
 from app.core.constants import get_speaker_index_v4
 from app.services.opensearch_service import client as _client
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.client import _is_alias
 from app.services.opensearch_service.client import _safe_index_exists
 from app.services.opensearch_service.indices import ensure_indices_exist
@@ -123,7 +127,9 @@ def remove_speaker_embedding(speaker_uuid: str) -> bool:
 
     success = False
 
-    # Delete from all speaker indices (v3, v4, and alias target)
+    # Delete from all speaker indices (v3, v4, and alias target). Each index is
+    # independent: a speaker normally lives in only one of them, so "absent" is
+    # the common case and must not stop the loop.
     indices_to_clean = {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}
     for idx in indices_to_clean:
         try:
@@ -131,8 +137,13 @@ def remove_speaker_embedding(speaker_uuid: str) -> bool:
                 _client.opensearch_client.delete(index=idx, id=str(speaker_uuid))
                 logger.debug(f"Removed speaker {speaker_uuid} from {idx}")
                 success = True
-        except Exception:  # nosec B110
-            pass  # Non-fatal: speaker may not exist in this index
+        except NotFoundError:
+            logger.debug(f"Speaker {speaker_uuid} not present in {idx}")
+        except (OpenSearchUnavailableError, *CLUSTER_UNAVAILABLE_ERRORS) as e:
+            # A real failure to delete leaves an orphan voiceprint behind, so it
+            # is reported (the periodic consistency task reconciles it) but does
+            # not abort cleanup of the remaining indices.
+            logger.warning(f"Could not remove speaker {speaker_uuid} from {idx}: {e}")
 
     if success:
         logger.info(f"Removed speaker {speaker_uuid} from speaker indices")

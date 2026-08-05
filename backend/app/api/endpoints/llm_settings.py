@@ -697,7 +697,7 @@ async def test_llm_connection(
 
     except Exception as e:
         response_time = int((time.time() - start_time) * 1000)
-        logger.error(f"LLM connection test failed: {e}")
+        logger.exception(f"LLM connection test failed: {e}")
 
         return schemas.ConnectionTestResponse(
             success=False,
@@ -924,7 +924,7 @@ async def get_ollama_models(
             "message": f"Connection error: {str(e)}",
         }
     except Exception as e:
-        logger.error(f"Error fetching Ollama models from {base_url}: {e}")
+        logger.exception(f"Error fetching Ollama models from {base_url}: {e}")
         return {
             "success": False,
             "models": [],

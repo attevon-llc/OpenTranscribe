@@ -424,7 +424,7 @@ async def request_user_recovery(
                 result = recover_user_files_task.delay(current_user.id)
                 logger.info(f"User {current_user.id} requested file recovery, task ID: {result.id}")
             except Exception as e:
-                logger.error(f"Error in user recovery request: {e}")
+                logger.exception(f"Error in user recovery request: {e}")
 
         background_tasks.add_task(run_user_recovery)
 

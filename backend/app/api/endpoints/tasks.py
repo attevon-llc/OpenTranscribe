@@ -233,7 +233,7 @@ def list_tasks(
         )
 
     except Exception as e:
-        logger.error(f"Error in list_tasks: {e}")
+        logger.exception(f"Error in list_tasks: {e}")
         return PaginatedTaskResponse(
             items=[], total=0, page=1, page_size=page_size, total_pages=0, has_more=False
         )
@@ -375,7 +375,7 @@ def recover_all_stuck_tasks(
                                 f"new task ID: {task_id}"
                             )
                         except Exception as e:
-                            logger.error(f"Error retrying transcription: {e}")
+                            logger.exception(f"Error retrying transcription: {e}")
 
                     # Get UUID from the relationship
                     file_uuid = str(task.media_file.uuid) if task.media_file else None
@@ -417,7 +417,7 @@ def trigger_startup_recovery(
                 result = startup_recovery_task.delay()
                 logger.info(f"Manual startup recovery triggered: {result.id}")
             except Exception as e:
-                logger.error(f"Error in manual startup recovery: {e}")
+                logger.exception(f"Error in manual startup recovery: {e}")
 
         background_tasks.add_task(run_recovery)
 
@@ -453,7 +453,7 @@ def trigger_all_user_file_recovery(
                 result = recover_user_files_task.delay()  # No user_id means all users
                 logger.info(f"All user file recovery triggered: {result.id}")
             except Exception as e:
-                logger.error(f"Error in all user file recovery: {e}")
+                logger.exception(f"Error in all user file recovery: {e}")
 
         background_tasks.add_task(run_all_user_recovery)
 
@@ -492,7 +492,7 @@ def trigger_user_file_recovery(
                 result = recover_user_files_task.delay(user_id)
                 logger.info(f"User file recovery triggered for user {user_id}: {result.id}")
             except Exception as e:
-                logger.error(f"Error in user file recovery: {e}")
+                logger.exception(f"Error in user file recovery: {e}")
 
         background_tasks.add_task(run_user_recovery)
 
@@ -548,7 +548,7 @@ def recover_task(
                             f"Retrying transcription for file {file_uuid}, new task ID: {task_id}"
                         )
                     except Exception as e:
-                        logger.error(f"Error retrying transcription: {e}")
+                        logger.exception(f"Error retrying transcription: {e}")
 
                 background_tasks.add_task(retry_transcription)
 
@@ -705,7 +705,7 @@ def retry_file_processing(
                 task_id = dispatch_transcription_pipeline(file_uuid=file_uuid)
                 logger.info(f"Started new transcription for file {file_id}, task ID: {task_id}")
             except Exception as e:
-                logger.error(f"Error starting new transcription: {e}")
+                logger.exception(f"Error starting new transcription: {e}")
 
         background_tasks.add_task(start_new_transcription)
 

@@ -69,19 +69,25 @@ def build_full_transcript(transcript_segments, redaction_cfg=None) -> str:
     return "\n" + "\n".join(lines)
 
 
-def build_speaker_segments(transcript_segments, limit: int = 50) -> list[dict[str, Any]]:
+def build_speaker_segments(
+    transcript_segments, limit: int = 50, redaction_cfg=None
+) -> list[dict[str, Any]]:
     """Build speaker segments data for LLM analysis.
 
     Args:
         transcript_segments: List of TranscriptSegment ORM objects.
         limit: Maximum number of segments to include (default 50).
+        redaction_cfg: Effective redaction config. When enabled, segment text is
+            masked before it leaves for an external LLM provider
+            (``redact_before_llm``). This payload goes off-box exactly like
+            ``build_full_transcript``'s, so it needs the same masking.
     """
     return [
         {
             "speaker_label": segment.speaker.name if segment.speaker else "Unknown",
             "start_time": segment.start_time,
             "end_time": segment.end_time,
-            "text": segment.text[:200],
+            "text": _seg_text(segment, redaction_cfg)[:200],
         }
         for segment in transcript_segments[:limit]
     ]

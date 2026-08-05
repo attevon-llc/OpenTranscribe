@@ -114,7 +114,7 @@ async def get_system_stats(
                 "uptime": get_system_uptime(),
             }
         except Exception as e:
-            logger.error(f"Error getting system stats: {e}")
+            logger.exception(f"Error getting system stats: {e}")
             system_stats = {
                 "cpu": {
                     "total_percent": "Unknown",
@@ -224,7 +224,7 @@ async def get_protected_media_auth(current_user: User = Depends(get_current_user
     try:
         return get_protected_media_auth_config()
     except Exception as e:
-        logger.error(f"Error getting protected media auth config: {e}")
+        logger.exception(f"Error getting protected media auth config: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving protected media configuration",

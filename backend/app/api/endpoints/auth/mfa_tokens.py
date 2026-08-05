@@ -114,7 +114,7 @@ def _blacklist_mfa_token(jti: str, expires_seconds: int) -> bool:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to blacklist MFA token JTI: {e}")
+        logger.exception(f"Failed to blacklist MFA token JTI: {e}")
         if settings.MFA_REQUIRE_REDIS:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -149,7 +149,7 @@ def _is_mfa_token_blacklisted(jti: str) -> bool:
                 logger.warning("Redis not available for MFA token blacklist check")
                 return False
     except Exception as e:
-        logger.error(f"Failed to check MFA token blacklist: {e}")
+        logger.exception(f"Failed to check MFA token blacklist: {e}")
         # Fail-secure when Redis required (deny access), fail-open otherwise
         return bool(settings.MFA_REQUIRE_REDIS)
 

@@ -448,7 +448,7 @@ async def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestRespons
             message="LDAP library (ldap3) is not installed",
         )
     except Exception as e:
-        logger.error(f"LDAP connection test error: {e}")
+        logger.exception(f"LDAP connection test error: {e}")
         return AuthMethodTestResponse(
             success=False,
             message="LDAP connection failed due to an unexpected error. Check server logs for details.",
@@ -530,7 +530,7 @@ async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestRes
             message="Connection to Keycloak server timed out",
         )
     except Exception as e:
-        logger.error(f"Keycloak connection test error: {e}")
+        logger.exception(f"Keycloak connection test error: {e}")
         return AuthMethodTestResponse(
             success=False,
             message="Keycloak connection failed due to an unexpected error. Check server logs for details.",

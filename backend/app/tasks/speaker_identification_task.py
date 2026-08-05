@@ -335,8 +335,32 @@ def identify_speakers_llm_task(self, file_uuid: str):
                 update_task_status(db, task_id, "completed", progress=1.0, completed=True)
                 return {"status": "skipped", "message": "No speakers to identify"}
 
-            full_transcript = build_full_transcript(transcript_segments)
-            speaker_segments = build_speaker_segments(transcript_segments)
+            # Redact PII/profanity before the transcript leaves for the LLM
+            # provider, exactly as the summarization task does. This path used
+            # to pass no config at all, so `redact_before_llm` (and the admin
+            # `force_redact_before_llm` floor) had no effect on speaker
+            # identification. Fail closed if the policy cannot be resolved.
+            try:
+                from app.services.redaction.config import resolve_effective_config
+
+                _redact_cfg = resolve_effective_config(db, int(media_file.user_id))
+            except Exception as _redact_err:
+                logger.exception(
+                    "Could not resolve the redaction policy; aborting speaker identification "
+                    "rather than sending a possibly unredacted transcript to an external provider"
+                )
+                raise ValueError(
+                    "Redaction policy unavailable; speaker identification aborted to avoid "
+                    "sending unredacted content to an external provider"
+                ) from _redact_err
+
+            llm_redaction_cfg = (
+                _redact_cfg if (_redact_cfg.enabled and _redact_cfg.redact_before_llm) else None
+            )
+            full_transcript = build_full_transcript(transcript_segments, llm_redaction_cfg)
+            speaker_segments = build_speaker_segments(
+                transcript_segments, redaction_cfg=llm_redaction_cfg
+            )
             known_speakers = _get_known_speakers(db, int(media_file.user_id))
             metadata_context = _build_metadata_context(media_file)
             if metadata_context:

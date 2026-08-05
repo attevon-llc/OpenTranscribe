@@ -20,32 +20,6 @@ from .user_settings import _get_user_transcription_settings
 logger = logging.getLogger(__name__)
 
 
-_VALID_LOCAL_MODELS = frozenset(
-    {
-        "tiny",
-        "tiny.en",
-        "base",
-        "base.en",
-        "small",
-        "small.en",
-        "medium",
-        "medium.en",
-        "large-v1",
-        "large-v2",
-        "large-v3",
-        "large-v3-turbo",
-    }
-)
-
-
-class _ModelNotAvailableError(Exception):
-    """Raised when a requested model is not available on this worker."""
-
-    def __init__(self, model_name: str) -> None:
-        self.model_name = model_name
-        super().__init__(f"Model '{model_name}' not available on this worker")
-
-
 # Deprecation warning for legacy TRANSCRIPTION_ENGINE env var
 _engine = os.getenv("TRANSCRIPTION_ENGINE", "")
 if _engine and _engine.lower() != "native":
@@ -62,34 +36,6 @@ if _align:
         "Word-level timestamps are now provided natively by faster-whisper "
         "for all 100+ languages without a separate alignment model."
     )
-
-
-def _validate_model_override(model_name: str) -> str | None:
-    """Validate a per-task model override.
-
-    Returns:
-        'cpu' if model should run on CPU, 'gpu' if it matches the admin model,
-        or None if the model is rejected.
-    """
-    from app.transcription.config import TranscriptionConfig
-
-    if model_name not in _VALID_LOCAL_MODELS:
-        logger.warning("Unknown model '%s', rejecting override", model_name)
-        return None
-
-    if model_name in LIGHTWEIGHT_MODELS:
-        return "cpu"
-
-    if model_name == TranscriptionConfig._pinned_model_name:
-        return "gpu"
-
-    logger.warning(
-        "Model '%s' is valid but not loaded (admin model is '%s'). "
-        "Only lightweight models or the admin model are supported.",
-        model_name,
-        TranscriptionConfig._pinned_model_name,
-    )
-    return None
 
 
 def _resolve_language_settings(

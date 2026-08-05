@@ -85,7 +85,7 @@ def cancel_upload(
                 delete_file(str(db_file.storage_path))
                 logger.info(f"Deleted partial upload: {db_file.storage_path}")
             except Exception as e:
-                logger.error(f"Error deleting file {db_file.storage_path}: {e}")
+                logger.exception(f"Error deleting file {db_file.storage_path}: {e}")
                 # Continue with cleanup even if file deletion fails
 
         # Delete the database record
@@ -95,7 +95,7 @@ def cancel_upload(
 
     except Exception as e:
         db.rollback()
-        logger.error(f"Error cancelling upload {file_id}: {e}")
+        logger.exception(f"Error cancelling upload {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cancel upload",

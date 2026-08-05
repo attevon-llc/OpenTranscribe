@@ -102,7 +102,7 @@ def get_system_uptime():
         else:
             return f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
     except Exception as e:
-        logger.error(f"Error getting system uptime: {e}")
+        logger.exception(f"Error getting system uptime: {e}")
         return "Unknown"
 
 
@@ -120,7 +120,7 @@ def get_memory_usage():
             "percent": f"{memory.percent}%",
         }
     except Exception as e:
-        logger.error(f"Error getting memory usage: {e}")
+        logger.exception(f"Error getting memory usage: {e}")
         return {
             "total": "Unknown",
             "available": "Unknown",
@@ -149,7 +149,7 @@ def get_cpu_usage():
             "physical_cores": physical_cores,
         }
     except Exception as e:
-        logger.error(f"Error getting CPU usage: {e}")
+        logger.exception(f"Error getting CPU usage: {e}")
         return {
             "total_percent": "Unknown",
             "per_cpu": [],
@@ -176,7 +176,7 @@ def get_disk_usage():
             "percent": f"{disk.percent}%",
         }
     except Exception as e:
-        logger.error(f"Error getting disk usage: {e}")
+        logger.exception(f"Error getting disk usage: {e}")
         return {
             "total": "Unknown",
             "used": "Unknown",
@@ -271,7 +271,7 @@ def get_gpu_usage():
             }
         ]
     except Exception as e:
-        logger.error(f"Error getting GPU usage from Redis: {e}")
+        logger.exception(f"Error getting GPU usage from Redis: {e}")
         return [
             {
                 "available": False,
@@ -503,7 +503,7 @@ async def get_admin_stats(
         try:
             system_stats = await asyncio.to_thread(_collect_system_stats)
         except Exception as e:
-            logger.error(f"Error getting system stats: {e}")
+            logger.exception(f"Error getting system stats: {e}")
             system_stats = {
                 "cpu": {
                     "total_percent": "Unknown",
@@ -721,7 +721,7 @@ def delete_admin_user(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"User deletion failed, all changes rolled back: {e}")
+        logger.exception(f"User deletion failed, all changes rolled back: {e}")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1814,7 +1814,8 @@ async def get_gpu_profiles(
                 profiles.append(json.loads(raw))
         return profiles
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read GPU profiles: {e}") from e
+        logger.exception("Failed to read GPU profiles from Redis")
+        raise HTTPException(status_code=500, detail="Failed to read GPU profiles.") from e
 
 
 @router.post("/embedding-consistency/stop")

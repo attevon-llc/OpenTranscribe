@@ -38,6 +38,37 @@ class ConnectionManager:
         self.active_connections[user_id].append(websocket)
         logger.info(f"User {user_id} connected. Total connections: {len(self.active_connections)}")
 
+    async def drain(self, code: int = 1001) -> int:
+        """Close every open socket so shutdown does not hang to SIGKILL.
+
+        Nothing closed WebSockets on shutdown (issue #284 A1.21): the lifespan cancelled
+        its background tasks but left sockets open, so the process waited on them until
+        the orchestrator's grace period expired and SIGKILLed it — dropping every stream
+        mid-message instead of letting clients reconnect cleanly.
+
+        1001 ("going away") is the correct code here: it tells the client this endpoint
+        is shutting down normally, which the frontend's reconnect logic treats as a
+        retry rather than an error.
+
+        Args:
+            code: WebSocket close code to send.
+
+        Returns:
+            Number of sockets closed.
+        """
+        import contextlib
+
+        sockets = [ws for conns in self.active_connections.values() for ws in conns]
+        for ws in sockets:
+            # A socket already torn down by the peer raises here; that is a successful
+            # drain, not a failure.
+            with contextlib.suppress(Exception):
+                await ws.close(code=code)
+        self.active_connections.clear()
+        if sockets:
+            logger.info("Drained %d WebSocket connection(s) on shutdown", len(sockets))
+        return len(sockets)
+
     def disconnect(self, websocket: WebSocket, user_id: int):
         if user_id in self.active_connections:
             self.active_connections[user_id].remove(websocket)

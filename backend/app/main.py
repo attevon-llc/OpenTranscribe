@@ -138,6 +138,20 @@ def _validate_production_secrets():
         logger.info("Production security validation passed")
 
 
+async def _drain_websockets() -> None:
+    """Close live WebSockets on shutdown so the process doesn't hang to SIGKILL.
+
+    See ``ConnectionManager.drain`` (issue #284 A1.21). Never raises — a failure here
+    must not block shutdown.
+    """
+    try:
+        from app.api.websockets import manager
+
+        await manager.drain()
+    except Exception as e:  # noqa: BLE001 - never block shutdown on drain
+        logger.warning(f"WebSocket drain failed (non-fatal): {e}")
+
+
 async def _setup_minio():
     """Initialize MinIO bucket on startup.
 
@@ -655,6 +669,9 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("Shutting down application...")
+
+    await _drain_websockets()
+
     for task in [
         minio_task,
         recovery_task,

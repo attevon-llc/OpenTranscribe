@@ -453,6 +453,47 @@ def init_worker_process(**kwargs):
 
 
 @worker_ready.connect
+def warn_inert_max_tasks_per_child(**kwargs):
+    """Warn when --max-tasks-per-child is configured but cannot take effect.
+
+    ``--max-tasks-per-child`` is a PREFORK-pool feature: it recycles the child process
+    after N tasks. Under ``--pool=threads`` there are no child processes, so Celery
+    silently ignores it (issue #284 A1.7). The GPU workers default to threads —
+    deliberately, so model weights stay pinned in VRAM between tasks — which means an
+    operator lowering GPU_MAX_TASKS to bound a VRAM leak gets **no recycling at all**
+    and no indication of that.
+
+    We warn rather than switch pools: forcing prefork would reload the model on every
+    task and destroy the performance characteristic threads exists to provide. An
+    operator who genuinely needs recycling sets GPU_WORKER_POOL=prefork and accepts
+    that cost.
+    """
+    import os
+    import sys
+
+    argv = " ".join(sys.argv)
+    if "--pool=threads" not in argv and os.getenv("GPU_WORKER_POOL", "threads") != "threads":
+        return
+    if "--max-tasks-per-child" not in argv:
+        return
+
+    # A deliberately huge value means "never recycle" and is not a misconfiguration.
+    try:
+        configured = int(argv.split("--max-tasks-per-child=")[1].split()[0])
+    except (IndexError, ValueError):
+        return
+    if configured >= 10000:
+        return
+
+    logger.warning(
+        "--max-tasks-per-child=%d is set but this worker uses the threads pool, where "
+        "Celery IGNORES it — there is no worker recycling and no VRAM-leak guard. "
+        "Set GPU_WORKER_POOL=prefork if you need recycling (models reload per task).",
+        configured,
+    )
+
+
+@worker_ready.connect
 def preload_models(**kwargs):
     """Preload AI models at worker startup.
 

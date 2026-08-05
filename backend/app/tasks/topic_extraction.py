@@ -16,6 +16,7 @@ from app.core.constants import NLPPriority
 from app.db.session_utils import session_scope
 from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
+from app.services.redaction.llm_guard import resolve_llm_masking
 from app.services.topic_extraction_service import TopicExtractionService
 
 logger = logging.getLogger(__name__)
@@ -117,11 +118,20 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
                     message=message,
                 )
 
+            # Topic extraction posts the transcript to a third-party provider, so it
+            # honours redact_before_llm the same way summarization and speaker ID do.
+            try:
+                redaction_cfg = resolve_llm_masking(db, media_file)
+            except RedactionNotReadyError as not_ready:
+                defer_for_redaction(self, not_ready)
+                raise  # unreachable — defer_for_redaction always raises
+
             # Extract topics with progress callback
             suggestion = extraction_service.extract_topics(
                 media_file_id=file_id,
                 force_regenerate=force_regenerate,
                 progress_callback=notify_progress,
+                redaction_cfg=redaction_cfg,
             )
 
             if not suggestion:
@@ -218,11 +228,6 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
                 "collection_count": collection_count,
             }
 
-        except RedactionNotReadyError as not_ready:
-            # Detection spans aren't cached yet, so the transcript cannot be masked.
-            # Come back later rather than posting raw text to the provider.
-            defer_for_redaction(self, not_ready)
-            raise  # unreachable — defer_for_redaction always raises
         except Retry:
             # Celery signals deferral with an exception that subclasses Exception,
             # so the handler below would otherwise report it as a failure.

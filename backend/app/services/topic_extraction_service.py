@@ -194,6 +194,7 @@ IMPORTANT GUIDELINES:
         media_file_id: int,
         force_regenerate: bool = False,
         progress_callback: Callable[[str], None] | None = None,
+        redaction_cfg=None,
     ) -> TopicSuggestion | None:
         """
         Extract tag and collection suggestions from a transcript using LLM
@@ -202,6 +203,10 @@ IMPORTANT GUIDELINES:
             media_file_id: Media file ID
             force_regenerate: Force re-extraction even if exists
             progress_callback: Optional callback function for progress updates
+            redaction_cfg: Masking config from ``resolve_llm_masking``, or None when
+                the owner's policy does not require pre-LLM masking. Resolved by the
+                caller, not here: deciding what to do when spans are missing means
+                deferring a Celery task, which is not a service's concern.
 
         Returns:
             TopicSuggestion instance or None
@@ -230,7 +235,7 @@ IMPORTANT GUIDELINES:
             progress_callback("Reading transcript from database...")
 
         # Get transcript text
-        transcript = self._get_transcript_text(media_file)
+        transcript = self._get_transcript_text(media_file, redaction_cfg)
         if not transcript:
             logger.error(f"No transcript available for file {media_file_id}")
             return None
@@ -333,18 +338,16 @@ IMPORTANT GUIDELINES:
             self.db.rollback()
             return False
 
-    def _get_transcript_text(self, media_file: MediaFile) -> str | None:
+    def _get_transcript_text(self, media_file: MediaFile, redaction_cfg=None) -> str | None:
         """Extract transcript text from media file, masked per the owner's LLM policy.
 
-        Raises:
-            RedactionNotReadyError: Masking is required but detection spans are missing.
-                The caller defers rather than sending raw text to a provider.
+        Args:
+            media_file: File whose transcript to render.
+            redaction_cfg: Config from ``resolve_llm_masking``, or None when the
+                owner's policy does not require pre-LLM masking.
         """
         from app.models.media import TranscriptSegment
-        from app.services.redaction.llm_guard import resolve_llm_masking
         from app.utils.transcript_builders import mask_segment_text
-
-        redaction_cfg = resolve_llm_masking(self.db, media_file)
 
         segments = (
             self.db.query(TranscriptSegment)

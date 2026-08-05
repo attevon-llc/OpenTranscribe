@@ -13,6 +13,8 @@ raw transcript text to an external API.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
+from typing import cast
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -303,3 +305,47 @@ def test_dispatch_failure_still_defers():
         detect.delay.side_effect = RuntimeError("broker down")
         with pytest.raises(RuntimeError, match="retry-signal"):
             defer_for_redaction(task, exc)
+
+
+# --------------------------------------------------------------------------
+# Layering: services mask, tasks decide what to do when they can't
+# --------------------------------------------------------------------------
+
+
+def test_topic_extraction_service_does_not_resolve_policy_itself():
+    """``TopicExtractionService`` is constructed inside request handlers
+    (``api/endpoints/topics.py``), so it must not raise an error whose only
+    correct handler is a Celery retry. It masks with the config it is handed;
+    resolving — and deferring — belongs to the task.
+    """
+    import ast
+    import inspect
+
+    from app.services.topic_extraction_service import TopicExtractionService
+
+    # AST, not a substring scan — the docstring legitimately names the helper.
+    tree = ast.parse(inspect.getsource(TopicExtractionService))
+    called = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "resolve_llm_masking" not in called
+    assert "redaction_cfg" in inspect.signature(TopicExtractionService.extract_topics).parameters
+
+
+def test_topic_extraction_service_masks_with_the_supplied_config():
+    from app.services.topic_extraction_service import TopicExtractionService
+
+    db = MagicMock()
+    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = [_segment()]
+    service = TopicExtractionService(db)
+    media_file = cast(Any, SimpleNamespace(id=5, user_id=7))
+
+    with patch(
+        "app.services.redaction.service.RedactionService.mask_segment",
+        return_value=("my ssn is [PII]", []),
+    ):
+        text = service._get_transcript_text(media_file, _cfg())
+
+    assert text == "Dana: my ssn is [PII]"

@@ -369,7 +369,7 @@ See [NGINX Setup Guide](/docs/configuration/nginx-setup) for full documentation.
 
 ## Content Security Policy
 
-OpenTranscribe's production NGINX configuration includes a Content Security Policy header to mitigate cross-site scripting (XSS) and other injection attacks ([#124](https://github.com/davidamacey/OpenTranscribe/issues/124)). The CSP restricts script sources, style sources, connection targets, and frame ancestors. Key directives include:
+OpenTranscribe's production NGINX configuration includes a Content Security Policy header to mitigate cross-site scripting (XSS) and other injection attacks ([#124](https://github.com/attevon-llc/OpenTranscribe/issues/124)). The CSP restricts script sources, style sources, connection targets, and frame ancestors. Key directives include:
 
 - `default-src 'self'` -- baseline restriction to same-origin resources
 - `script-src 'self' 'unsafe-inline'` -- inline scripts required by Svelte hydration (nonce-based CSP is a planned improvement)
@@ -381,11 +381,11 @@ CSP is enforced in production via `frontend/nginx.conf`. Development mode (Vite 
 
 ## File Retention
 
-OpenTranscribe supports admin-configurable automatic file retention ([#134](https://github.com/davidamacey/OpenTranscribe/issues/134)). Admins can set a retention period (delete files older than N days) to support GDPR compliance and storage management. File deletion is audit-logged and controlled exclusively by super admins via Settings → Admin → File Retention.
+OpenTranscribe supports admin-configurable automatic file retention ([#134](https://github.com/attevon-llc/OpenTranscribe/issues/134)). Admins can set a retention period (delete files older than N days) to support GDPR compliance and storage management. File deletion is audit-logged and controlled exclusively by super admins via Settings → Admin → File Retention.
 
 ## URL Download Quality Settings
 
-URL downloads (YouTube, TikTok, and 1800+ platforms via yt-dlp) support configurable quality settings ([#122](https://github.com/davidamacey/OpenTranscribe/issues/122)):
+URL downloads (YouTube, TikTok, and 1800+ platforms via yt-dlp) support configurable quality settings ([#122](https://github.com/attevon-llc/OpenTranscribe/issues/122)):
 
 ```bash
 # These are user-level settings stored in the database, configurable via Settings UI.

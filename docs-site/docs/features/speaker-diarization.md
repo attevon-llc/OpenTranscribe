@@ -427,7 +427,7 @@ Word-level timestamps are generated natively during transcription via faster-whi
 
 ### Why Agglomerative Hierarchical Clustering (AHC)?
 
-PyAnnote's diarization pipeline uses sklearn's `AgglomerativeClustering` for grouping speaker embeddings. This was chosen over several alternatives after evaluating tradeoffs across accuracy, scalability, and operational characteristics ([#144](https://github.com/davidamacey/OpenTranscribe/issues/144)):
+PyAnnote's diarization pipeline uses sklearn's `AgglomerativeClustering` for grouping speaker embeddings. This was chosen over several alternatives after evaluating tradeoffs across accuracy, scalability, and operational characteristics ([#144](https://github.com/attevon-llc/OpenTranscribe/issues/144)):
 
 | Algorithm | K Required? | Handles Outliers? | Incremental? | Complexity | Verdict |
 |-----------|------------|-------------------|-------------|------------|---------|
@@ -468,7 +468,7 @@ The 512-dim pyannote/embedding model is retained in the `speakers_v3` index for 
 
 ### Gender Classification Model Selection
 
-Speaker attribute detection uses the `prithivMLmods/Wav2Vec2-Gender-Age-Classification` model ([#141](https://github.com/davidamacey/OpenTranscribe/issues/141)). This model was selected based on three criteria:
+Speaker attribute detection uses the `prithivMLmods/Wav2Vec2-Gender-Age-Classification` model ([#141](https://github.com/attevon-llc/OpenTranscribe/issues/141)). This model was selected based on three criteria:
 
 1. **Apache 2.0 licensing**: Unlike many voice classification models that use restrictive research-only licenses, this model's Apache 2.0 license permits commercial and production use without legal risk. This was a hard requirement for OpenTranscribe's open-source distribution.
 2. **Language independence**: The model analyzes acoustic features (pitch, formant frequencies, timbre) rather than linguistic content, so it works across all 100+ supported transcription languages without retraining.

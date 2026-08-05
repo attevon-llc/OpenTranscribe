@@ -1,0 +1,76 @@
+.container {
+  position: relative;
+  /* Infima spaces tables via the table's own margin, which now sits inside the
+     scroller — carry that spacing on the wrapper instead. */
+  margin-bottom: var(--ifm-spacing-vertical);
+  max-width: 100%;
+}
+
+.scroller {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  /* Momentum scrolling on iOS, and don't let a horizontal swipe inside the table
+     turn into a back-navigation gesture or scroll the page sideways. */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.scroller:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+/* Undo Infima's `display: block` so the element stays a real table for assistive
+   tech; the wrapper above now owns the scrolling. */
+.scroller > table {
+  display: table;
+  width: 100%;
+  margin: 0;
+  overflow: visible;
+}
+
+/* Edge fades hinting there is more content in that direction. Rendered on the
+   container (not the scroller) so they stay pinned while the content moves. */
+.container::before,
+.container::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 1;
+}
+
+.container::before {
+  left: 0;
+  background: linear-gradient(
+    to right,
+    var(--ot-bg),
+    rgba(0, 0, 0, 0)
+  );
+}
+
+.container::after {
+  right: 0;
+  background: linear-gradient(
+    to left,
+    var(--ot-bg),
+    rgba(0, 0, 0, 0)
+  );
+}
+
+.container[data-overflow-left]::before,
+.container[data-overflow-right]::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .container::before,
+  .container::after {
+    transition: none;
+  }
+}

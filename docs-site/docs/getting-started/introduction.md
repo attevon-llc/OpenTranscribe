@@ -103,7 +103,7 @@ OpenTranscribe is perfect for:
 
 ```bash
 # Install with one command
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 
 # Start the application
 cd opentranscribe

@@ -245,7 +245,7 @@ The 3-stage architecture was designed to solve several concrete problems with th
 
 2. **Fault isolation**: Each stage can fail independently without losing completed work. If OpenSearch indexing fails in Stage 3, the transcript and diarization from Stage 2 are already saved to the database. Only the failed stage needs to be retried.
 
-3. **Selective reprocessing** ([#143](https://github.com/davidamacey/OpenTranscribe/issues/143)): The stage separation enables re-running individual pipeline stages without repeating the full pipeline. Users can re-index search without re-transcribing, or regenerate an AI summary without touching the transcript. This avoids wasting GPU time re-transcribing a 2-hour file just to update its summary.
+3. **Selective reprocessing** ([#143](https://github.com/attevon-llc/OpenTranscribe/issues/143)): The stage separation enables re-running individual pipeline stages without repeating the full pipeline. Users can re-index search without re-transcribing, or regenerate an AI summary without touching the transcript. This avoids wasting GPU time re-transcribing a 2-hour file just to update its summary.
 
 4. **Retry granularity**: Celery retries apply per-stage. A transient GPU OOM error during transcription retries only Stage 2, not the entire pipeline. Postprocess tasks (search indexing, embedding extraction) have their own retry policies tuned for their failure modes.
 
@@ -275,7 +275,7 @@ flowchart TD
     Segments --> Postprocess[Postprocess Stage\nSearch indexing, analytics]
 ```
 
-In addition to local Whisper models, OpenTranscribe supports cloud ASR providers for API-lite deployments that don't require a GPU ([#150](https://github.com/davidamacey/OpenTranscribe/issues/150)):
+In addition to local Whisper models, OpenTranscribe supports cloud ASR providers for API-lite deployments that don't require a GPU ([#150](https://github.com/attevon-llc/OpenTranscribe/issues/150)):
 
 | Provider | Diarization | Translation | Notes |
 |----------|-------------|-------------|-------|

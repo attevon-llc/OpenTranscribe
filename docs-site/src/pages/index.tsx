@@ -105,16 +105,33 @@ function IconGithub() {
   );
 }
 
+// `currentColor` + a themed class rather than a hardcoded hex: #2563eb is the light
+// primary and drops to poor contrast against the dark background.
 function Check() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      className={styles.check}
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role="img"
+      aria-label="Supported">
       <polyline points="20 6 9 17 4 12" />
     </svg>
   );
 }
 
 function Dash() {
-  return <span style={{color: '#cbd5e1'}}>--</span>;
+  return (
+    <span className={styles.dash} role="img" aria-label="Not supported">
+      --
+    </span>
+  );
 }
 
 /* ===== DATA ===== */
@@ -164,11 +181,15 @@ const useCases = [
 /* ===== SECTIONS ===== */
 
 function Hero() {
+  const {siteConfig} = useDocusaurusContext();
+  const version = siteConfig.customFields?.version as string;
+  const githubRepo = siteConfig.customFields?.githubRepo as string;
+
   return (
     <header className={styles.heroBanner}>
       <div className={clsx('container', styles.heroContent)}>
         <div className={styles.heroBadges}>
-          <span className={styles.badge}>v0.4.0</span>
+          {version && <span className={styles.badge}>{`v${version}`}</span>}
           <span className={styles.badge}>AGPL-3.0</span>
           <span className={styles.badge}>Self-Hosted</span>
         </div>
@@ -193,7 +214,7 @@ function Hero() {
           <Link className={styles.primaryBtn} to="/docs/getting-started/quick-start">
             Get Started <IconArrowRight />
           </Link>
-          <Link className={styles.secondaryBtn} to="https://github.com/davidamacey/OpenTranscribe">
+          <Link className={styles.secondaryBtn} to={githubRepo}>
             <IconGithub /> GitHub
           </Link>
         </div>
@@ -202,7 +223,7 @@ function Hero() {
           <div>
             <div className={styles.installLabel}>Install with one command</div>
             <pre className={styles.installCommand}>
-              <code>curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash</code>
+              <code>curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash</code>
             </pre>
           </div>
         </div>

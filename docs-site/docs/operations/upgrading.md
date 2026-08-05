@@ -22,7 +22,7 @@ Before upgrading, complete these steps:
    # or check the UI footer / API response
    curl -s http://localhost:5174/api/health | python3 -m json.tool
    ```
-3. **Read the changelog** for the target version at [CHANGELOG.md](https://github.com/davidamacey/OpenTranscribe/blob/master/CHANGELOG.md)
+3. **Read the changelog** for the target version at [CHANGELOG.md](https://github.com/attevon-llc/OpenTranscribe/blob/master/CHANGELOG.md)
 4. **Check for breaking changes** -- major version bumps or migration notes
 5. **Test in staging first** if you have a staging environment
 
@@ -56,9 +56,10 @@ docker compose up -d --force-recreate
 To pin to a specific release instead of `latest`:
 
 ```bash
-# Pull specific version tags
-docker pull davidamacey/opentranscribe-frontend:v0.3.0
-docker pull davidamacey/opentranscribe-backend:v0.3.0
+# Pull specific version tags — substitute the release you want.
+# Available tags: https://github.com/attevon-llc/OpenTranscribe/releases
+docker pull davidamacey/opentranscribe-frontend:v0.4.1
+docker pull davidamacey/opentranscribe-backend:v0.4.1
 
 # Update image tags in docker-compose.prod.yml or .env, then restart
 docker compose up -d --force-recreate

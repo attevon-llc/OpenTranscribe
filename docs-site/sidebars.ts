@@ -22,6 +22,7 @@ const sidebars: SidebarsConfig = {
         'getting-started/introduction',
         'getting-started/quick-start',
         'getting-started/first-transcription',
+        'getting-started/screenshots',
       ],
     },
     {

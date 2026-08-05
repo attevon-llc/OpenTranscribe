@@ -5,7 +5,7 @@ sidebar_position: 4
 # Diarization Boundary Correction (Internals)
 
 This page documents the architecture of the diarization boundary-correction feature
-([issue #193](https://github.com/davidamacey/OpenTranscribe/issues/193)): the two
+([issue #193](https://github.com/attevon-llc/OpenTranscribe/issues/193)): the two
 post-processing stages, where they are wired into the pipeline, the configuration plumbing
 that keeps the engine database-free, and the metrics / benchmark / regression tooling.
 

@@ -185,7 +185,7 @@ If successful, GPU is accessible from WSL2.
 The one-liner installer automatically detects and configures GPU settings:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 The installer will:

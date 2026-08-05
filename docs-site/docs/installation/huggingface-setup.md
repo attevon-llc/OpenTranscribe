@@ -80,7 +80,7 @@ Accepting only one model agreement will result in errors. You must accept **BOTH
 If using the one-liner installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 The installer will prompt you:

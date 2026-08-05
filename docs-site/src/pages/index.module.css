@@ -131,13 +131,24 @@
   justify-content: center;
 }
 
+/* A flex item defaults to `min-width: auto`, so this column refused to shrink below
+   the width of the nowrap install one-liner (~774px) and `justify-content: center`
+   then pushed its left edge off-screen — scrolling the entire page sideways on a
+   phone. `min-width: 0` lets it shrink so the <pre> below can scroll on its own. */
+.quickInstall > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .installCommand {
   background: rgba(255, 255, 255, 0.04);
   border-radius: 6px;
   padding: 0.65rem 1.25rem;
   margin: 0;
-  max-width: 95%;
+  max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -208,7 +219,7 @@
   padding: 1.5rem;
   border-radius: 8px;
   border: 1px solid var(--ot-border);
-  background: var(--ifm-background-color);
+  background: var(--ot-bg);
   transition: border-color 0.15s ease;
   height: 100%;
 }
@@ -252,7 +263,7 @@
   padding: 1.25rem;
   border-radius: 8px;
   border: 1px solid var(--ot-border);
-  background: var(--ifm-background-color);
+  background: var(--ot-bg);
   text-align: center;
   transition: border-color 0.15s ease;
 }
@@ -343,7 +354,7 @@
   border-radius: 6px;
   margin-bottom: 0.4rem;
   font-size: 0.85rem;
-  background: var(--ifm-background-color);
+  background: var(--ot-bg);
   border: 1px solid var(--ot-border);
 }
 
@@ -360,19 +371,36 @@
   background: var(--ot-surface);
 }
 
+/* The scroll container. This must NOT be `display: flex` with `justify-content:
+   center` — once the table outgrows the viewport, centering pushes its left edge to a
+   negative offset that no amount of scrolling can reach, and the overflow escapes to
+   the document, scrolling the whole page sideways on phones. A plain block scroller
+   with an auto-margin table centers when it fits and scrolls cleanly when it doesn't. */
 .comparisonWrapper {
-  display: flex;
-  justify-content: center;
   overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--ot-border);
+  border-radius: 10px;
+}
+
+.comparisonWrapper:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
 }
 
 .comparisonTable {
+  /* Infima ships a global `table { display: block; overflow: auto }`, which would make
+     the table its own scroller nested inside .comparisonWrapper and strip its table
+     semantics for screen readers. Restore a real table and let the wrapper scroll. */
+  display: table;
+  overflow: visible;
   border-collapse: separate;
   border-spacing: 0;
-  border-radius: 10px;
-  overflow: hidden;
   font-size: 0.85rem;
-  border: 1px solid var(--ot-border);
+  margin: 0 auto;
 }
 
 .comparisonTable th,
@@ -383,11 +411,31 @@
   white-space: nowrap;
 }
 
-.comparisonTable th:first-child,
-.comparisonTable td:first-child {
+/* Pin the feature name while the 11 product columns scroll past it, so a cell on the
+   far right is still attributable to a row on a phone.
+   Scoped to `thead tr:first-child` and `tbody` deliberately: the "Feature" header
+   spans both header rows via rowSpan, so the *second* header row's first cell is
+   "Otter.ai" — a bare `th:first-child` would pin that on top of the feature column. */
+.comparisonTable thead tr:first-child th:first-child,
+.comparisonTable tbody td:first-child {
   text-align: left;
   font-weight: 500;
   white-space: normal;
+  position: sticky;
+  left: 0;
+  min-width: 8.5rem;
+  border-right: 1px solid var(--ot-border);
+}
+
+.comparisonTable tbody td:first-child {
+  /* Opaque, and above the cells sliding underneath it. */
+  background: var(--ot-bg);
+  z-index: 2;
+}
+
+.comparisonTable thead tr:first-child th:first-child {
+  background: var(--ot-surface-alt);
+  z-index: 3;
 }
 
 .comparisonTable thead th {
@@ -401,7 +449,7 @@
 }
 
 .comparisonTable tbody td {
-  background: var(--ifm-background-color);
+  background: var(--ot-bg);
   color: var(--ifm-font-color-base);
 }
 
@@ -431,6 +479,16 @@
 [data-theme='dark'] .comparisonTable thead .highlightCol {
   background: rgba(96, 165, 250, 0.12) !important;
   color: var(--ifm-color-primary);
+}
+
+/* Supported / not-supported markers. Both track the theme so the dash stays a quiet
+   placeholder and the check stays legible on either background. */
+.check {
+  color: var(--ifm-color-primary);
+}
+
+.dash {
+  color: var(--ot-dash);
 }
 
 .groupHeader {
@@ -503,5 +561,37 @@
 
   .ctaTitle {
     font-size: 1.4rem;
+  }
+
+  /* Trade cell padding for visible columns — the pinned feature column already
+     costs ~40% of a phone viewport. */
+  .comparisonTable {
+    font-size: 0.78rem;
+  }
+
+  .comparisonTable th,
+  .comparisonTable td {
+    padding: 0.5rem 0.5rem;
+  }
+
+  .comparisonTable thead th {
+    font-size: 0.7rem;
+    padding: 0.55rem 0.5rem;
+  }
+
+  .comparisonTable th:first-child,
+  .comparisonTable td:first-child {
+    min-width: 7.5rem;
+    max-width: 9rem;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .stats {
+    padding: 1.75rem 0;
+  }
+
+  .stat {
+    padding: 0.5rem;
   }
 }

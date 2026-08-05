@@ -12,7 +12,7 @@ Get OpenTranscribe up and running in less than 5 minutes with our one-line insta
 Run this single command on any platform (Linux, macOS, Windows WSL2):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 The installer will:
@@ -39,7 +39,7 @@ For speaker diarization to work, you'll need a **free HuggingFace token**. The i
 ### Step 1: Run the Installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 ### Step 2: Follow the Prompts
@@ -241,8 +241,8 @@ See [Troubleshooting Guide](../installation/troubleshooting.md) for more solutio
 If you encounter issues:
 
 1. Check the [FAQ](../faq.md)
-2. Search [GitHub Issues](https://github.com/davidamacey/OpenTranscribe/issues)
-3. Ask in [GitHub Discussions](https://github.com/davidamacey/OpenTranscribe/discussions)
+2. Search [GitHub Issues](https://github.com/attevon-llc/OpenTranscribe/issues)
+3. Ask in [GitHub Discussions](https://github.com/attevon-llc/OpenTranscribe/discussions)
 4. Read the [Installation Guide](../installation/docker-compose.md) for detailed setup
 
 ## Next Steps

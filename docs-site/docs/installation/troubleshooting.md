@@ -44,7 +44,7 @@ touch models/huggingface/test.txt && rm models/huggingface/test.txt
 :::tip Prevention
 The latest setup script automatically creates directories with correct permissions. For new installations, use the one-line installer:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 :::
 
@@ -678,8 +678,8 @@ du -sh models/
 Still having issues?
 
 - **Documentation**: Review all docs in this site
-- **GitHub Issues**: [Report bugs](https://github.com/davidamacey/OpenTranscribe/issues)
-- **Discussions**: [Ask questions](https://github.com/davidamacey/OpenTranscribe/discussions)
+- **GitHub Issues**: [Report bugs](https://github.com/attevon-llc/OpenTranscribe/issues)
+- **Discussions**: [Ask questions](https://github.com/attevon-llc/OpenTranscribe/discussions)
 - **Flower Dashboard**: http://localhost:5175/flower for task debugging
 - **Logs**: Include relevant logs when asking for help
 

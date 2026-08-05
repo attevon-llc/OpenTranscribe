@@ -291,7 +291,7 @@ Thank you to everyone who filed issues, tested pre-releases, and shared their us
 ## 📚 Full Details
 
 - **Full changelog**: [CHANGELOG.md](https://github.com/davidamacey/OpenTranscribe/blob/master/CHANGELOG.md)
-- **Blog post**: [The story behind v0.4.0](https://docs.opentranscribe.io/blog/v0.4.0-release)
+- **Blog post**: [The story behind v0.4.0](https://docs.opentranscribe.app/blog/v0.4.0-release)
 - **Commits since v0.3.3**: [v0.3.3...v0.4.0](https://github.com/davidamacey/OpenTranscribe/compare/v0.3.3...v0.4.0) (281 commits)
 - **Docker images**: `davidamacey/opentranscribe-backend:v0.4.0` and `davidamacey/opentranscribe-frontend:v0.4.0` on Docker Hub
 

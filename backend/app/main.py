@@ -7,6 +7,7 @@ from contextlib import suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 from app.api.router import api_router
@@ -149,12 +150,17 @@ async def _drain_websockets() -> None:
         logger.warning(f"WebSocket drain failed (non-fatal): {e}")
 
 
-async def _setup_minio():
+def _setup_minio():
     """Initialize the media bucket on startup.
 
     Creates the media bucket if it doesn't exist and ensures the bucket
     policy is private (no anonymous/public access). All file access goes
     through presigned URLs, so public read is unnecessary and a security risk.
+
+    Every call in here is a blocking object-storage round trip and the function never
+    awaited anything, so as an ``async def`` startup task it held the event loop for
+    the whole bucket bootstrap — with the API already accepting requests (issue #320).
+    The lifespan now dispatches it through ``run_in_threadpool``.
 
     Uses the shared storage client so ``STORAGE_BACKEND=s3`` bootstraps against
     the real bucket instead of a MinIO-shaped client built from raw env vars
@@ -453,7 +459,7 @@ def _managed_embedding_mode() -> bool:
     return settings.OPENSEARCH_EMBEDDING_MODE.strip().lower() == "managed"
 
 
-async def _adopt_managed_embedding_model(ml_service) -> None:
+def _adopt_managed_embedding_model(ml_service) -> None:
     """Use an embedding model the OpenSearch domain already hosts (issue #284 A1.13).
 
     The default "local" path mutates ML Commons cluster settings and registers a
@@ -462,6 +468,9 @@ async def _adopt_managed_embedding_model(ml_service) -> None:
     cluster-settings PUT and neural search never comes up. In "managed" mode the
     operator has already registered the model (typically a remote-model connector),
     and all we do is adopt its id and wire the ingest pipeline.
+
+    Synchronous: the model-id write and the ingest-pipeline PUT are both blocking
+    OpenSearch calls with nothing to await (issue #320). The caller offloads it.
 
     Args:
         ml_service: The ``MLModelService`` singleton.
@@ -516,7 +525,7 @@ async def _initialize_neural_search():
         ml_service = get_ml_model_service()
 
         if _managed_embedding_mode():
-            await _adopt_managed_embedding_model(ml_service)
+            await run_in_threadpool(_adopt_managed_embedding_model, ml_service)
             return
 
         # Configure ML Commons settings
@@ -712,7 +721,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Migration state cleanup failed (non-fatal): {e}")
 
     logger.info("Setting up MinIO and task recovery...")
-    minio_task = asyncio.create_task(_setup_minio())
+    minio_task = asyncio.create_task(run_in_threadpool(_setup_minio))
     recovery_task = asyncio.create_task(_run_startup_recovery())
     search_maintenance = asyncio.create_task(_run_search_maintenance())
     thumbnail_migration = asyncio.create_task(_run_thumbnail_migration())
@@ -798,6 +807,12 @@ app.add_middleware(ObservabilityMiddleware)
 # Maps domain-specific exceptions to appropriate HTTP status codes so that
 # any ``OpenTranscribeError`` raised in endpoint code is automatically
 # serialised as a structured JSON response.
+#
+# Deliberately `async def` even though it never awaits, which is the one shape the
+# issue #320 sweep leaves alone: the body is a dict lookup and a JSONResponse
+# construction, with no I/O to block the loop. Starlette does accept a plain `def`
+# handler, but it dispatches one through `run_in_threadpool`, so declaring it `def`
+# would buy a thread hop on every error response and free nothing.
 @app.exception_handler(OpenTranscribeError)
 async def handle_app_error(request, exc: OpenTranscribeError):
     status_map = {

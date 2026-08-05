@@ -28,6 +28,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
@@ -792,7 +793,12 @@ def download_stream(
         return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
     def _ready_frame() -> str | None:
-        """SSE frame if the download is ready or errored, else None to keep waiting."""
+        """SSE frame if the download is ready or errored, else None to keep waiting.
+
+        Blocking: ``_resolve_ready_download`` stats object storage and presigns. The
+        generator below runs on the event loop, so it must never call this directly —
+        every call goes through ``run_in_threadpool`` (issue #320).
+        """
         try:
             ready = _resolve_ready_download(db_file, mode)
         except HTTPException as e:
@@ -802,7 +808,7 @@ def download_stream(
     async def event_stream():
         # 1. Fast path — already available (covers reconnects after completion). Checked
         # BEFORE touching Redis so a ready download still works when Redis is down.
-        frame = _ready_frame()
+        frame = await run_in_threadpool(_ready_frame)
         if frame:
             yield frame
             return
@@ -824,13 +830,17 @@ def download_stream(
             # to hang until the client gives up. Subscribing first and re-checking
             # means the completion is either buffered on the subscription or visible
             # to this second check; it cannot fall between them.
-            frame = _ready_frame()
+            frame = await run_in_threadpool(_ready_frame)
             if frame:
                 yield frame
                 return
 
             # 3. Make sure the work is running, then stream its events.
-            _ensure_prepare_enqueued(db_file, user_id, mode)
+            #
+            # Threadpooled because it is a synchronous Redis SETNX plus a Celery
+            # dispatch (another blocking broker round trip) — running it inline
+            # stalled the loop for every other request (issue #320).
+            await run_in_threadpool(_ensure_prepare_enqueued, db_file, user_id, mode)
             yield sse("progress", {"message": "Preparing your download…", "progress": 0})
 
             while True:

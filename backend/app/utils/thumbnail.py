@@ -173,7 +173,7 @@ def generate_thumbnail_from_url(
         return None
 
 
-async def generate_and_upload_thumbnail(
+def generate_and_upload_thumbnail(
     user_id: int,
     media_file_id: int,
     video_path: str | Path,
@@ -183,65 +183,10 @@ async def generate_and_upload_thumbnail(
     """
     Generate a thumbnail from a video file and upload it to storage.
 
-    Args:
-        user_id: User ID for storage path
-        media_file_id: Media file ID for storage path
-        video_path: Path to the video file
-        timestamp: Time in seconds to extract the thumbnail
-        output_format: Output format - "webp" or "jpeg" (default: webp)
-
-    Returns:
-        The storage path of the uploaded thumbnail, or None if generation failed
-    """
-    try:
-        # Generate thumbnail
-        thumbnail_bytes = generate_thumbnail(
-            video_path, timestamp=timestamp, output_format=output_format
-        )
-
-        if not thumbnail_bytes or isinstance(thumbnail_bytes, str):
-            logger.error(f"Failed to generate thumbnail for file {media_file_id}")
-            return None
-
-        # Determine extension and content type based on format
-        ext = "webp" if output_format == "webp" else "jpg"
-        content_type = "image/webp" if output_format == "webp" else "image/jpeg"
-
-        # Generate storage path for thumbnail
-        filename = (
-            Path(video_path).stem
-            if isinstance(video_path, (str, Path))
-            else f"file_{media_file_id}"
-        )
-        storage_path = f"user_{user_id}/file_{media_file_id}/thumbnail_{filename}.{ext}"
-
-        # Upload thumbnail to storage
-        if os.environ.get("SKIP_S3", "False").lower() != "true":
-            upload_file(
-                file_content=io.BytesIO(thumbnail_bytes),
-                file_size=len(thumbnail_bytes),
-                object_name=storage_path,
-                content_type=content_type,
-            )
-        else:
-            logger.info("Skipping S3 upload for thumbnail in test environment")
-
-        return storage_path
-
-    except Exception as e:
-        logger.error(f"Error generating and uploading thumbnail: {str(e)}")
-        return None
-
-
-def generate_and_upload_thumbnail_sync(
-    user_id: int,
-    media_file_id: int,
-    video_path: str | Path,
-    timestamp: float = 1.0,
-    output_format: Literal["webp", "jpeg"] = THUMBNAIL_FORMAT,  # type: ignore[assignment]
-) -> str | None:
-    """
-    Generate a thumbnail from a video file and upload it to storage (synchronous version).
+    ffmpeg extraction and the object-storage PUT are both blocking, so this is a
+    plain function: an ``async def`` twin used to exist alongside it with a
+    byte-identical body and no ``await``, which meant awaiting it never yielded
+    and the whole ffmpeg run blocked the event loop (issue #320).
 
     Args:
         user_id: User ID for storage path

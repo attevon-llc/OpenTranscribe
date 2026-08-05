@@ -14,12 +14,15 @@ logger = logging.getLogger(__name__)
 # Hashing is now done client-side in the frontend
 
 
-async def check_duplicate_by_hash(
-    db_session, file_hash: str, user_id: int | None = None
-) -> str | None:
+def check_duplicate_by_hash(db_session, file_hash: str, user_id: int | None = None) -> str | None:
     """
     Check if a file with the same hash exists in the database.
     Only considers files that are not in failed states and have actually been uploaded.
+
+    Synchronous by design: the body is one blocking SQLAlchemy query. It used to be an
+    ``async def`` with no ``await``, so awaiting it from the upload handlers never
+    yielded and the query ran on the event loop (issue #320). Coroutine callers offload
+    it with ``run_in_threadpool``.
 
     Args:
         db_session: SQLAlchemy database session
@@ -125,7 +128,7 @@ def check_duplicate_by_imohash(db_session, imohash: str, exclude_file_id: int | 
     return query.first()
 
 
-async def cleanup_failed_duplicates(db_session, file_hash: str, user_id: int) -> int:
+def cleanup_failed_duplicates(db_session, file_hash: str, user_id: int) -> int:
     """
     Clean up any failed or incomplete files with the same hash.
     This includes:
@@ -133,6 +136,11 @@ async def cleanup_failed_duplicates(db_session, file_hash: str, user_id: int) ->
     - PENDING files that have no storage_path (incomplete uploads)
 
     This allows users to re-upload files that previously failed.
+
+    Synchronous by design: blocking SQLAlchemy plus one object-storage delete per
+    orphaned row. It used to be an ``async def`` with no ``await`` (issue #320), so the
+    whole loop — including every MinIO round trip — ran on the event loop. Coroutine
+    callers offload it with ``run_in_threadpool``.
 
     Args:
         db_session: SQLAlchemy database session

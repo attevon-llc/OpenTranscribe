@@ -496,7 +496,9 @@ async def process_file_upload(
     if client_file_hash and not existing_file_uuid:
         from app.utils.file_hash import check_duplicate_by_hash
 
-        duplicate_uuid = await check_duplicate_by_hash(db, client_file_hash, current_user.id)
+        duplicate_uuid = await run_in_threadpool(
+            check_duplicate_by_hash, db, client_file_hash, current_user.id
+        )
         if duplicate_uuid:
             logger.info(
                 f"Duplicate upload rejected for {file.filename} "

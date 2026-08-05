@@ -14,8 +14,14 @@ These tests encode that rule for the modules hardened in Phase 2 and issue #320:
    ``await`` / ``async for`` / ``async with``. Adding such a handler regresses the fix.
 2. ``test_hardened_handlers_are_sync`` pins the specific handlers by name via the
    mounted app, so a rename or a silent revert is caught at the routing layer.
-3. ``test_blocking_helpers_are_sync`` covers the two blocking helpers that are not
-   route handlers, so the AST guard cannot see them.
+3. ``test_blocking_helpers_are_sync`` covers the blocking helpers that are not route
+   handlers, so the AST guard cannot see them.
+4. ``test_sse_generators_do_not_call_blocking_helpers_inline`` covers the SSE async
+   generators. Making their *handlers* ``def`` does nothing for the generator body:
+   Starlette iterates that on the event loop for the whole life of the stream, so a
+   synchronous Redis/object-storage call in there blocks far longer than one request.
+5. ``test_download_stream_keeps_the_check_subscribe_recheck_order`` pins the #284 A1.22
+   lost-wakeup fix, which the offload above must not reorder.
 """
 
 from __future__ import annotations
@@ -48,6 +54,10 @@ import app.api.endpoints.tasks as tasks_endpoints
 import app.api.endpoints.topics as topics
 import app.api.endpoints.user_files as user_files
 import app.api.endpoints.user_settings as user_settings
+import app.api.websockets as websockets
+import app.main as app_main
+import app.utils.file_hash as file_hash
+import app.utils.thumbnail as thumbnail
 
 # Modules whose route handlers must never be awaitless coroutines.
 HARDENED_MODULES = [
@@ -237,7 +247,29 @@ BLOCKING_HELPERS = [
     # ``run_in_threadpool`` because ``test_auth_connection`` must stay a coroutine for
     # the genuinely-async Keycloak branch (issue #320).
     (auth_config, "_test_ldap_connection"),
+    # Issue #320 follow-ups — awaitless coroutines outside the endpoint layer.
+    # Blocking object storage, dispatched from the lifespan via run_in_threadpool.
+    (app_main, "_setup_minio"),
+    # Blocking OpenSearch (model-id write + ingest-pipeline PUT).
+    (app_main, "_adopt_managed_embedding_model"),
+    # Builds a lazily-connecting async pool and schedules a task; nothing to await.
+    (websockets, "setup_redis"),
+    # In-memory bookkeeping only, mirroring ConnectionManager.disconnect.
+    (websockets, "ConnectionManager.connect"),
+    # Blocking SQLAlchemy (+ object-storage deletes) on the upload request path.
+    (file_hash, "check_duplicate_by_hash"),
+    (file_hash, "cleanup_failed_duplicates"),
+    # ffmpeg + object-storage PUT; had a byte-identical `async def` twin until #320.
+    (thumbnail, "generate_and_upload_thumbnail"),
 ]
+
+
+def _resolve(module, dotted: str):
+    """Resolve a possibly dotted attribute path (``ConnectionManager.connect``)."""
+    target = module
+    for part in dotted.split("."):
+        target = getattr(target, part)
+    return target
 
 
 @pytest.mark.parametrize(
@@ -250,9 +282,106 @@ def test_blocking_helpers_are_sync(module, name: str) -> None:
 
     The AST guard only inspects route handlers, so these need pinning by name.
     """
-    helper = getattr(module, name)
+    helper = _resolve(module, name)
     assert not asyncio.iscoroutinefunction(helper), (
         f"{module.__name__}.{name} is a coroutine again; awaiting it never yields, so the "
         f"blocking call runs on the event loop. Keep it `def` and offload it with "
         f"`run_in_threadpool` (issue #320)."
+    )
+
+
+# ---------------------------------------------------------------------------
+# SSE async generators
+# ---------------------------------------------------------------------------
+
+# (module, handler, generator, names that must never be *called* inside the generator)
+SSE_GENERATORS = [
+    # ``_ready_frame`` stats object storage and presigns; ``_ensure_prepare_enqueued``
+    # is a synchronous Redis SETNX plus a Celery dispatch. Both go through
+    # ``run_in_threadpool`` (passed as a bare name, never called inline).
+    (
+        files_endpoints,
+        "download_stream",
+        "event_stream",
+        {"_ready_frame", "_ensure_prepare_enqueued"},
+    ),
+    # The result-cache read uses the async client; the synchronous ``get_redis()``
+    # singleton must not come back.
+    (subtitles, "bulk_export_stream", "event_stream", {"get_redis"}),
+]
+
+
+def _find_function(tree: ast.AST, name: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    """Return the first (async) function definition called ``name`` anywhere in ``tree``."""
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            return node
+    raise AssertionError(f"function {name!r} not found")
+
+
+def _generator_ast(module, handler: str, generator: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    tree = ast.parse(Path(module.__file__).read_text())
+    return _find_function(_find_function(tree, handler), generator)
+
+
+@pytest.mark.parametrize(
+    ("module", "handler", "generator", "blocking"),
+    SSE_GENERATORS,
+    ids=[f"{m.__name__.rsplit('.', 1)[-1]}.{h}" for m, h, _, _ in SSE_GENERATORS],
+)
+def test_sse_generators_do_not_call_blocking_helpers_inline(
+    module, handler: str, generator: str, blocking: set[str]
+) -> None:
+    """An SSE generator is iterated on the event loop for the life of the stream.
+
+    Converting the handler to ``def`` (PR #329) only moved the few lines that build
+    the generator object; a synchronous call *inside* it still stalls every other
+    request, and for far longer than one handler would.
+    """
+    offenders = [
+        f"{node.func.id}() at line {node.lineno}"
+        for node in ast.walk(_generator_ast(module, handler, generator))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in blocking
+    ]
+
+    assert not offenders, (
+        f"{module.__name__}.{handler}.{generator} calls blocking code inline: {offenders}. "
+        f"Use the async Redis client, or hand the callable to `run_in_threadpool` "
+        f"(issue #320)."
+    )
+
+
+def test_download_stream_keeps_the_check_subscribe_recheck_order() -> None:
+    """The readiness check must straddle the pub/sub subscribe (issue #284 A1.22).
+
+    Check-then-subscribe alone loses a completion published in the gap and the stream
+    hangs forever. Offloading the checks to the threadpool must not collapse the
+    second one back into the first.
+    """
+    tree = _generator_ast(files_endpoints, "download_stream", "event_stream")
+
+    checks = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "run_in_threadpool"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == "_ready_frame"
+    ]
+    subscribes = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "subscribe"
+    ]
+
+    assert len(checks) == 2, f"expected two readiness checks, found {checks}"
+    assert len(subscribes) == 1, f"expected one pubsub.subscribe, found {subscribes}"
+    assert checks[0] < subscribes[0] < checks[1], (
+        f"readiness checks at {checks} no longer straddle subscribe at {subscribes[0]}"
     )

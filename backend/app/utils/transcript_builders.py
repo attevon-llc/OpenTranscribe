@@ -27,8 +27,17 @@ def _seg_text(segment, redaction_cfg=None) -> str:
             text, segment.redactions or [], segment.words, redaction_cfg, set()
         )
         return masked
-    except Exception:  # noqa: BLE001
-        return text
+    except Exception:
+        # FAIL CLOSED. This previously returned the raw text, which is the exact
+        # outcome the function exists to prevent: redaction is enabled, so this
+        # string is about to be put in a prompt for an EXTERNAL LLM provider, and
+        # a masking failure would have sent the unredacted PII off-site.
+        # Dropping the segment loses context; leaking it is unrecoverable.
+        logger.exception(
+            "Redaction masking failed for a segment; withholding its text rather than "
+            "sending unmasked content to an external provider"
+        )
+        return "[redacted — masking unavailable]"
 
 
 def get_speaker_name(segment) -> str:

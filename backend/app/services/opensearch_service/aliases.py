@@ -5,7 +5,6 @@ The ``speakers`` alias points at a concrete versioned index (``speakers_v3``
 swap, and the cached lookup of whichever concrete index is currently active.
 """
 
-import contextlib
 import logging
 import time
 from typing import Any
@@ -14,6 +13,8 @@ from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v3
 from app.core.constants import get_speaker_index_v4
 from app.services.opensearch_service import client as _client
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.client import _get_alias_target
 from app.services.opensearch_service.client import _get_index_embedding_dimension
 from app.services.opensearch_service.client import _is_alias
@@ -28,14 +29,43 @@ _active_index_cache: tuple[str, float] | None = None
 _ACTIVE_INDEX_CACHE_TTL = 30.0  # seconds
 
 
+def _count_docs(index_name: str) -> int | None:
+    """Count documents in an index.
+
+    Args:
+        index_name: Index or alias to count.
+
+    Returns:
+        The document count, or **None** when the count could not be obtained.
+        None is deliberately distinct from 0: callers use a zero count to
+        authorise deleting an index, and an unanswered count must never be
+        read as "empty".
+    """
+    if not _client.opensearch_client:
+        return None
+    try:
+        return int(_client.opensearch_client.count(index=index_name)["count"])
+    except CLUSTER_UNAVAILABLE_ERRORS as e:
+        logger.warning(f"Could not count docs in '{index_name}': {e}")
+        return None
+
+
 def get_active_versioned_index() -> str:
     """Get the concrete versioned index name that the 'speakers' alias points to.
 
     Returns the alias target (e.g. 'speakers_v3' or 'speakers_v4'), or
-    falls back to get_speaker_index() if aliases haven't been set up yet.
+    falls back to get_speaker_index() if aliases haven't been set up yet or
+    OpenSearch is unreachable.
     """
     alias_name = get_speaker_index()
-    target = _get_alias_target(alias_name)
+    try:
+        target = _get_alias_target(alias_name)
+    except OpenSearchUnavailableError as e:
+        # Same fallback as "alias not set up", but no longer silent: callers
+        # index and search against the returned name, so a wrong answer here
+        # is worth an operator-visible log line.
+        logger.error(f"Could not resolve the speaker alias, falling back to '{alias_name}': {e}")
+        return alias_name
     if target:
         return target
     # Fallback: alias not set up yet (pre-migration state)
@@ -72,12 +102,29 @@ def migrate_to_alias_based_indices() -> dict[str, Any]:
 
     Returns dict with migration status details.
     """
+    if not _client.opensearch_client:
+        return {"status": "skipped", "reason": "no_client"}
+
+    try:
+        return _migrate_to_alias_based_indices()
+    except OpenSearchUnavailableError as e:
+        # Fail CLOSED. Every branch of the migration decides whether to create,
+        # alias, reindex or DELETE a live index, and it decides from index-
+        # existence and document-count answers. When the cluster cannot answer,
+        # those used to read as "nothing is there" — which routes straight into
+        # the delete branch. Aborting is always the safe move: the migration is
+        # idempotent and re-runs on the next startup.
+        logger.error(f"Speaker alias migration aborted — OpenSearch unavailable: {e}")
+        return {"status": "error", "reason": "opensearch_unavailable"}
+
+
+def _migrate_to_alias_based_indices() -> dict[str, Any]:
+    """Body of :func:`migrate_to_alias_based_indices`; see it for semantics."""
     from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V3
     from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
     from app.core.constants import get_speaker_index_v3_backup
 
-    if not _client.opensearch_client:
-        return {"status": "skipped", "reason": "no_client"}
+    assert _client.opensearch_client is not None  # noqa: S101 - checked by caller
 
     alias_name = get_speaker_index()  # "speakers"
     v3_index = get_speaker_index_v3()  # "speakers_v3"
@@ -91,11 +138,7 @@ def migrate_to_alias_based_indices() -> dict[str, Any]:
         return {"status": "already_migrated", "alias_target": target}
 
     # Check if 'speakers' exists as a concrete index
-    concrete_exists = False
-    with contextlib.suppress(Exception):
-        concrete_exists = _client.opensearch_client.indices.exists(index=alias_name)
-
-    if not concrete_exists:
+    if not _safe_index_exists(alias_name):
         # Fresh install OR the index was deleted. Check for versioned indices.
         v3_exists = _safe_index_exists(v3_index)
         v4_exists = _safe_index_exists(v4_index)
@@ -119,9 +162,7 @@ def migrate_to_alias_based_indices() -> dict[str, Any]:
 
     # 'speakers' is a concrete index — need to detect its dimension and rename
     dimension = _get_index_embedding_dimension(alias_name)
-    doc_count = 0
-    with contextlib.suppress(Exception):
-        doc_count = _client.opensearch_client.count(index=alias_name)["count"]
+    doc_count = _count_docs(alias_name)
 
     if dimension == PYANNOTE_EMBEDDING_DIMENSION_V3 or dimension == 512:
         target_index = v3_index
@@ -130,21 +171,43 @@ def migrate_to_alias_based_indices() -> dict[str, Any]:
         target_index = v4_index
         mode_label = "v4"
     elif doc_count == 0:
-        # Empty index with unknown dimension — delete and let ensure_indices_exist handle it
+        # Confirmed-empty index with unknown dimension — delete and let
+        # ensure_indices_exist recreate it. `doc_count is None` (count did not
+        # answer) must NOT reach here; see the guard below.
         _client.opensearch_client.indices.delete(index=alias_name)
         logger.info(f"Deleted empty concrete '{alias_name}' index (no dimension detected)")
         return {"status": "deleted_empty"}
+    elif doc_count is None:
+        # Unknown dimension AND unknown doc count: refuse to guess.
+        logger.error(
+            f"Refusing to migrate '{alias_name}': its embedding dimension and document "
+            "count are both unknown. Retrying on the next startup."
+        )
+        return {"status": "error", "reason": "indeterminate_index_state"}
     else:
         # Unknown dimension with data — default to v3 to be safe
         target_index = v3_index
         mode_label = "v3 (fallback)"
 
+    if doc_count is None:
+        logger.error(
+            f"Refusing to migrate '{alias_name}' → '{target_index}': its document count "
+            "is unknown, so the merge direction cannot be decided safely."
+        )
+        return {"status": "error", "reason": "indeterminate_doc_count"}
+
     # Check if the target versioned index already exists
     if _safe_index_exists(target_index):
-        # Both concrete 'speakers' and versioned index exist — check which has more data
-        target_count = 0
-        with contextlib.suppress(Exception):
-            target_count = _client.opensearch_client.count(index=target_index)["count"]
+        # Both concrete 'speakers' and the versioned index exist. Whichever has
+        # fewer docs gets deleted, so an unanswered count cannot be defaulted —
+        # either default destroys the wrong copy. Abort instead.
+        target_count = _count_docs(target_index)
+        if target_count is None:
+            logger.error(
+                f"Refusing to reconcile '{alias_name}' and '{target_index}': the document "
+                f"count for '{target_index}' is unknown, and the loser is deleted."
+            )
+            return {"status": "error", "reason": "indeterminate_doc_count"}
 
         if target_count >= doc_count:
             # Versioned index has more/equal data — just delete concrete and alias
@@ -204,7 +267,11 @@ def _reindex_and_alias(source_index: str, target_index: str, alias_name: str) ->
             target_config["settings"]["index"]["knn"] = True
 
         _client.opensearch_client.indices.create(index=target_index, body=target_config)
-    except Exception as e:
+    except (*CLUSTER_UNAVAILABLE_ERRORS, KeyError) as e:
+        # Best-effort: the target may already exist, or the source mapping may be
+        # unreadable. Falling through to a plain reindex is correct — and if the
+        # cluster is genuinely down, the unguarded reindex below raises anyway,
+        # before anything is deleted.
         logger.warning(f"Could not create target from source mapping: {e}. Trying plain reindex.")
 
     # Reindex data
@@ -306,20 +373,14 @@ def get_active_speaker_index() -> str:
 
     result = main_index
     try:
-        # If alias is set up, check if v4 staging has more data (pre-finalization)
-        main_count = 0
-        v4_count = 0
-
         # Count through alias (resolves to active versioned index)
-        with contextlib.suppress(Exception):
-            main_count = _client.opensearch_client.count(index=main_index)["count"]
+        main_count = _count_docs(main_index) or 0
 
         if _safe_index_exists(v4_index):
             # Only check v4 if it's NOT the alias target (i.e., during pre-finalization)
             alias_target = _get_alias_target(main_index)
             if alias_target != v4_index:
-                with contextlib.suppress(Exception):
-                    v4_count = _client.opensearch_client.count(index=v4_index)["count"]
+                v4_count = _count_docs(v4_index) or 0
 
                 if v4_count > main_count:
                     logger.debug(
@@ -330,8 +391,11 @@ def get_active_speaker_index() -> str:
                     )
                     result = v4_index
 
-    except Exception as e:
-        logger.debug("Error detecting active speaker index: %s", e)
+    except OpenSearchUnavailableError as e:
+        # Read path: keeping the alias is the correct degrade (it is what the
+        # v4 staging check exists to *refine*), but do not cache the guess.
+        logger.warning(f"Could not detect the active speaker index, using '{main_index}': {e}")
+        return main_index
 
     _active_index_cache = (result, now)
     return result

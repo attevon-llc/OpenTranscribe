@@ -40,10 +40,12 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "__init__.py" = ["F401"]
 # Speaker clustering uses mathematical variable names (M, MT, Z) and complex algorithms
 "**/speaker_clustering_service.py" = ["N806", "C901"]
-# OpenSearch service has complex index rebuild/repair logic and best-effort cleanup
-"**/opensearch_service/*.py" = ["C901", "S110"]
-# Embedding migration has best-effort index detection
-"**/speaker_embedding_migration.py" = ["S110"]
+# Long linear index-rebuild / bulk-scroll routines (rebuild_speaker_index,
+# iter_speaker_embeddings). Narrowed from the whole opensearch_service package
+# to these two files in #284 A3.3; S110 (try-except-pass) is no longer exempt
+# anywhere outside tests.
+"**/opensearch_service/repair.py" = ["C901"]
+"**/opensearch_service/speaker_read.py" = ["C901"]
 # Migrations and alembic versions use string-based SQL construction
 "**/migrations/**" = ["E501", "F401"]
 "**/alembic/**" = ["S608"]

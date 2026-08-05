@@ -252,7 +252,7 @@ def _try_authenticate_token(
         if (
             settings.TOKEN_REVOCATION_ENABLED
             and token_jti
-            and token_service.is_token_revoked(token_jti)
+            and token_service.is_token_revoked(token_jti, db=db, user_uuid=user_identifier)
         ):
             logger.warning("Rejected revoked token on WebSocket (jti=%s...)", token_jti[:8])
             return None

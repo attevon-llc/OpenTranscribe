@@ -29,11 +29,31 @@ from app.auth.session import InMemoryStore
 from app.auth.session import get_redis_client
 from app.core.config import settings
 from app.models.refresh_token import RefreshToken
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
 # Redis key prefix for revoked tokens (not a password)
 REVOKED_TOKEN_PREFIX = "revoked:jti:"  # noqa: S105 # nosec B105
+
+
+def _record_degradation(control: str, fallback: str) -> None:
+    """Count a security control running without its shared state store.
+
+    Imported lazily and never allowed to raise: metrics must not be able to break
+    an authentication path. Prometheus is optional in some deployments, and this
+    runs on the request path for every revocation check while Redis is down.
+    """
+    try:
+        from app.core.metrics import security_state_degraded_total
+
+        security_state_degraded_total.labels(control=control, fallback=fallback).inc()
+    except Exception:  # pragma: no cover - metrics must never break auth
+        # Swallowed on purpose, but never silently: PR #322 removed the blanket
+        # S110 exemption precisely because silent handlers hide real faults. A
+        # broken counter must not turn into a failed login, so this degrades to a
+        # log line instead of propagating.
+        logger.debug("Could not record security degradation metric", exc_info=True)
 
 
 class TokenService:
@@ -53,6 +73,18 @@ class TokenService:
     def __init__(self):
         """Initialize the token service."""
         self._store = None
+        self._degraded = False
+
+    @property
+    def degraded(self) -> bool:
+        """Whether the revocation blacklist is running without shared state.
+
+        True means Redis was unreachable and this process fell back to a
+        per-process store. The blacklist is then neither shared across replicas
+        nor durable across restarts, so it must not be trusted as the answer to
+        "is this token revoked?" — see :meth:`is_token_revoked`.
+        """
+        return self._degraded
 
     @property
     def store(self):
@@ -61,10 +93,20 @@ class TokenService:
             redis_client = get_redis_client()
             if redis_client:
                 self._store = redis_client
+                self._degraded = False
             else:
-                logger.warning(
-                    "Redis unavailable for token revocation. "
-                    "Using in-memory store (not recommended for production)."
+                self._degraded = True
+                # Not a warning. Without shared state, revocation stops working
+                # across replicas: a token revoked on one replica still passes on
+                # every other, so "log out all devices" and password-reset
+                # revocation silently mean nothing (issue #324). This used to log
+                # at warning level and scrolled past unnoticed.
+                _record_degradation("token_revocation", "database")
+                logger.critical(
+                    "Redis unavailable for token revocation — falling back to the "
+                    "database for refresh-token revocation checks. Revocation is "
+                    "NOT shared across replicas while this persists. Restore Redis; "
+                    "on AWS use ElastiCache with Multi-AZ and automatic failover."
                 )
                 self._store = InMemoryStore()
         return self._store
@@ -314,7 +356,7 @@ class TokenService:
                 return None, None
 
             # Check Redis blacklist first (fast path)
-            if self.is_token_revoked(jti):
+            if self.is_token_revoked(jti, db=db):
                 logger.warning(f"Token verification failed: JTI {jti[:8]}... is revoked")
                 return None, None
 
@@ -475,22 +517,139 @@ class TokenService:
             db.rollback()
             return 0
 
-    def is_token_revoked(self, jti: str) -> bool:
+    def is_token_revoked(
+        self,
+        jti: str,
+        db: Session | None = None,
+        user_uuid: str | None = None,
+    ) -> bool:
         """
         Check if a token JTI is on the revocation blacklist.
 
+        Redis is a **cache** here, not the system of record: ``refresh_token``
+        carries a durable ``revoked_at``. So when Redis is unreachable this does
+        NOT trust the per-process fallback store (which is empty on a fresh
+        process and unshared between replicas, i.e. it answers "not revoked" to
+        everything). It consults the database instead — authoritative, durable,
+        and shared by every replica — and denies when it cannot (issue #324).
+
         Args:
             jti: The JWT ID to check
+            db: Session used for the authoritative fallback. Without it, a
+                degraded check fails **closed**.
+            user_uuid: Subject of the token. Lets the fallback answer for
+                *access* tokens, which have no ``refresh_token`` row of their own.
 
         Returns:
-            True if revoked, False if valid
+            True if revoked (or if revocation cannot be verified), False if valid
         """
         if not settings.TOKEN_REVOCATION_ENABLED:
             return False
 
         key = f"{REVOKED_TOKEN_PREFIX}{jti}"
-        result = self.store.get(key)
+
+        # Touch `store` first: it sets `_degraded` on the first failed connect.
+        store = self.store
+        if self._degraded:
+            return self._is_revoked_without_redis(jti, db, user_uuid)
+
+        try:
+            result = store.get(key)
+        except Exception:
+            # Redis was reachable at startup and died since.
+            self._degraded = True
+            logger.critical(
+                "Redis lookup failed for token revocation (jti=%s...); falling back "
+                "to the database. Revocation is NOT shared across replicas while "
+                "this persists.",
+                jti[:8],
+            )
+            return self._is_revoked_without_redis(jti, db, user_uuid)
         return result is not None
+
+    def _is_revoked_without_redis(
+        self,
+        jti: str,
+        db: Session | None,
+        user_uuid: str | None,
+    ) -> bool:
+        """Answer "is this token revoked?" from the database instead of Redis.
+
+        Cache-aside: on cache failure, consult the system of record. Returning
+        the per-process store's answer instead would report "not revoked" for
+        everything, because that store is empty in a fresh process and is never
+        shared between replicas.
+
+        Two cases, because access tokens have no ``refresh_token`` row:
+
+        1. **The JTI is a refresh token.** ``revoked_at`` is authoritative.
+        2. **The JTI is an access token.** Nothing durable records it, so fall
+           back to the user: if every one of their refresh tokens is revoked,
+           their sessions were terminated (logout-all, password reset, admin
+           action) and this access token goes with them. That covers the reason
+           revocation is actually used. Access tokens are short-lived, so an
+           unrevoked-user access token is bounded by its own expiry anyway.
+
+        Without a session, or if the query itself fails, this **denies**. A
+        wrongly-denied request costs a re-authentication; a wrongly-allowed one
+        honours a token someone explicitly revoked.
+        """
+        if db is None:
+            _record_degradation("token_revocation", "deny")
+            logger.critical(
+                "Cannot verify revocation for jti=%s... — Redis is down and no database "
+                "session was supplied. Denying (fail closed).",
+                jti[:8],
+            )
+            return True
+
+        try:
+            row = db.query(RefreshToken).filter(RefreshToken.jti == jti).first()
+            if row is not None:
+                _record_degradation("token_revocation", "database")
+                return row.revoked_at is not None
+
+            if user_uuid is None:
+                _record_degradation("token_revocation", "deny")
+                return True
+
+            # Access token: no durable row of its own, so infer from the user's
+            # sessions — but only on POSITIVE evidence of revocation.
+            #
+            # "This user has no refresh tokens" is NOT such evidence. Some auth
+            # paths never mint one, so treating absence as revocation would lock
+            # those users out every time Redis blinked. Deny only when the user
+            # demonstrably had sessions and every one of them was revoked, which
+            # is what logout-all / password reset / admin termination produce.
+            # Otherwise allow, bounded by the access token's own short expiry.
+            has_any = (
+                db.query(RefreshToken)
+                .join(User, User.id == RefreshToken.user_id)
+                .filter(User.uuid == user_uuid)
+                .first()
+            )
+            _record_degradation("token_revocation", "database")
+            if has_any is None:
+                return False
+
+            live = (
+                db.query(RefreshToken)
+                .join(User, User.id == RefreshToken.user_id)
+                .filter(
+                    User.uuid == user_uuid,
+                    RefreshToken.revoked_at.is_(None),
+                    RefreshToken.expires_at > datetime.now(UTC),
+                )
+                .first()
+            )
+            return live is None
+        except Exception:
+            _record_degradation("token_revocation", "deny")
+            logger.critical(
+                "Database revocation fallback failed for jti=%s...; denying (fail closed).",
+                jti[:8],
+            )
+            return True
 
     def cleanup_expired_tokens(self, db: Session) -> int:
         """

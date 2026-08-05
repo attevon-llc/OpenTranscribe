@@ -152,7 +152,7 @@ def get_current_user(
         if (
             settings.TOKEN_REVOCATION_ENABLED
             and token_jti
-            and token_service.is_token_revoked(token_jti)
+            and token_service.is_token_revoked(token_jti, db=db, user_uuid=user_uuid_str)
         ):
             logger.warning(f"Rejected revoked token (jti={token_jti[:8]}...)")
             raise credentials_exception
@@ -304,7 +304,7 @@ def get_optional_current_user(
         if (
             settings.TOKEN_REVOCATION_ENABLED
             and token_jti
-            and token_service.is_token_revoked(token_jti)
+            and token_service.is_token_revoked(token_jti, db=db, user_uuid=user_uuid_str)
         ):
             return None
 

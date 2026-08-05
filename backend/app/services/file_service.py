@@ -177,7 +177,7 @@ class FileService:
         """
         # Verify user access
         self.get_file_by_id(file_id, user)
-        return add_tags_to_file(self.db, file_id, tag_names)
+        return add_tags_to_file(self.db, file_id, tag_names, user.id)
 
     def remove_file_tags(self, file_id: int, tag_names: list[str], user: User) -> bool:
         """

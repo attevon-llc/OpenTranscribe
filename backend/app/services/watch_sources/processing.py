@@ -223,7 +223,7 @@ def ingest_prepared_file(
     if source.collection_ids:
         add_file_to_collections(db, int(db_file.id), owner_id, source.collection_ids)
     if source.tag_names:
-        _add_tags(db, int(db_file.id), source.tag_names)
+        _add_tags(db, int(db_file.id), source.tag_names, owner_id)
 
     # 7. Finalize tracking row.
     row.status = "imported"
@@ -304,10 +304,11 @@ def import_single_file(
                 os.remove(temp_path)
 
 
-def _add_tags(db: Session, file_id: int, tag_names: list[str]) -> None:
+def _add_tags(db: Session, file_id: int, tag_names: list[str], user_id: int) -> None:
+    """Apply a watch source's tags to an imported file, owned by ``user_id``."""
     from app.api.endpoints.files.prepare_upload import add_tags_to_file
 
-    add_tags_to_file(db, file_id, tag_names)
+    add_tags_to_file(db, file_id, tag_names, user_id)
 
 
 def _notify_file_created(user_id: int, media_file: MediaFile) -> None:

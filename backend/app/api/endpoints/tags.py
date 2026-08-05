@@ -8,8 +8,11 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 from sqlalchemy import func
+from sqlalchemy import or_
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
@@ -17,7 +20,6 @@ from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.db.base import get_db
 from app.models.media import FileTag
-from app.models.media import MediaFile
 from app.models.media import Tag
 from app.models.user import User
 from app.schemas.media import Tag as TagSchema
@@ -27,12 +29,52 @@ from app.schemas.media import TagWithCount
 logger = logging.getLogger(__name__)
 
 
-def _get_or_create_tag(db: Session, name: str, source: str = TAG_SOURCE_MANUAL) -> Tag:
-    """Atomically get or create a tag, handling concurrent race conditions.
+def _owned_or_system(user_id: int) -> ColumnElement[bool]:
+    """Tags the user may write against: their own, plus the system vocabulary."""
+    return or_(Tag.user_id == user_id, Tag.user_id.is_(None))
 
-    Uses try-insert-then-select to avoid TOCTOU race on the unique name constraint.
+
+def _visible_to(db: Session, user_id: int, organization_id: Any) -> ColumnElement[bool]:
+    """Predicate for the tags ``user_id`` is allowed to see.
+
+    A tag is visible when it is a system tag (``user_id IS NULL``), owned by the
+    caller, or attached to a file the caller can access.
+    ``get_accessible_file_ids_subquery`` already covers files shared directly and
+    via groups and applies the org tenant gate, so sharing needs no extra rule
+    here — do not add a parallel one.
     """
-    tag = db.query(Tag).filter(Tag.name == name).first()
+    from app.services.permission_service import PermissionService
+
+    accessible_files = PermissionService.get_accessible_file_ids_subquery(
+        db, user_id, organization_id=organization_id
+    )
+    attached_to_accessible = select(FileTag.tag_id).where(
+        FileTag.media_file_id.in_(select(accessible_files))
+    )
+    return or_(_owned_or_system(user_id), Tag.id.in_(attached_to_accessible))
+
+
+def _get_or_create_tag(
+    db: Session, name: str, user_id: int, source: str = TAG_SOURCE_MANUAL
+) -> Tag:
+    """Atomically get or create a tag owned by ``user_id``.
+
+    An existing tag of the caller's is reused first, then a same-named system
+    tag (so applying a seeded default attaches the shared row rather than
+    forking a private duplicate). Only when neither exists is a new tag created,
+    owned by ``user_id`` — never ownerless, or it would become visible to
+    everyone.
+
+    Uses try-insert-then-select to avoid a TOCTOU race on ``uq_tag_user_name``.
+    """
+    # ORDER BY user_id is ASC NULLS LAST in Postgres, so an owned row always
+    # wins over the same-named system row.
+    tag = (
+        db.query(Tag)
+        .filter(Tag.name == name, _owned_or_system(user_id))
+        .order_by(Tag.user_id)
+        .first()
+    )
     if tag:
         return tag  # type: ignore[no-any-return]
 
@@ -40,13 +82,18 @@ def _get_or_create_tag(db: Session, name: str, source: str = TAG_SOURCE_MANUAL) 
         import re
 
         normalized = re.sub(r"\s+", " ", re.sub(r"[-_]+", " ", name.lower().strip()))
-        tag = Tag(name=name, source=source, normalized_name=normalized)
+        tag = Tag(name=name, user_id=user_id, source=source, normalized_name=normalized)
         db.add(tag)
         db.flush()  # Flush to trigger unique constraint check within the transaction
         return tag  # type: ignore[no-any-return]
     except IntegrityError:
         db.rollback()
-        tag = db.query(Tag).filter(Tag.name == name).first()
+        tag = (
+            db.query(Tag)
+            .filter(Tag.name == name, _owned_or_system(user_id))
+            .order_by(Tag.user_id)
+            .first()
+        )
         if tag:
             return tag  # type: ignore[no-any-return]
         raise  # Re-raise if somehow still not found
@@ -62,11 +109,20 @@ def create_tag(
     current_user: User = Depends(get_current_active_user),
 ):
     """
-    Create a new tag
+    Create a new tag owned by the current user.
     """
-    tag = _get_or_create_tag(db, tag_data.name)
+    tag = _get_or_create_tag(db, tag_data.name, current_user.id)
     db.commit()
     db.refresh(tag)
+
+    # The new tag joins the caller's read-through tag list; bust the cache.
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_tags(current_user.id)
+    except Exception as e:
+        logger.debug(f"Cache invalidation failed (non-critical): {e}")
+
     return tag
 
 
@@ -77,7 +133,11 @@ def list_tags(
     ctx: RequestContext = Depends(get_current_context),
 ):
     """
-    List all available tags for the current user with usage counts, sorted by most used.
+    List the tags visible to the current user with usage counts, sorted by most used.
+
+    Visible = system tags (``user_id IS NULL``) + the caller's own tags + tags
+    attached to a file the caller can access. Usage counts only count accessible
+    files, so a shared tag never reveals how often its owner uses it.
 
     Read-through cached in Redis (``cache:tags:{user_id}``) behind
     ``READ_CACHE_ENABLED``. The endpoint takes no parameters, so a single
@@ -101,20 +161,22 @@ def list_tags(
             return cached
 
     try:
-        from sqlalchemy import select
-
         from app.services.permission_service import PermissionService
 
-        # Get tags with usage counts for files accessible by this user
-        # (owned + shared, tenant-gated via ctx.org_id)
+        # Accessible files (owned + shared directly/via groups, tenant-gated via
+        # ctx.org_id). The predicate lives in the JOIN, not the WHERE, so a
+        # visible tag with no accessible files still comes back with count 0
+        # instead of being filtered out by the NULL comparison.
         accessible_sq = PermissionService.get_accessible_file_ids_subquery(
             db, current_user.id, organization_id=ctx.org_id
         )
         tag_counts = (
             db.query(Tag, func.count(FileTag.id).label("usage_count"))
-            .outerjoin(FileTag)
-            .outerjoin(MediaFile)
-            .filter((MediaFile.id.in_(select(accessible_sq))) | (MediaFile.id.is_(None)))
+            .outerjoin(
+                FileTag,
+                (FileTag.tag_id == Tag.id) & (FileTag.media_file_id.in_(select(accessible_sq))),
+            )
+            .filter(_visible_to(db, current_user.id, ctx.org_id))
             .group_by(Tag.id)
             .order_by(func.count(FileTag.id).desc(), Tag.name)
             .all()
@@ -144,15 +206,23 @@ def list_unused_tags(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
 ):
     """
-    List unused tags that are not associated with any files
+    List the caller's unused tags — those not attached to any file.
+
+    Scoped to tags the caller owns plus the system vocabulary. Before
+    ``v374_add_tag_user_id`` this returned every unattached tag in the
+    deployment to any authenticated user, disclosing other accounts' tag names.
+    The "attached to an accessible file" arm of the visibility rule is vacuous
+    here by definition, so it is deliberately omitted.
     """
     try:
-        # Find all tags that are not used in any files
-        # We use a subquery to find tag IDs that are in use
-        used_tag_ids = db.query(FileTag.tag_id).distinct().subquery()
+        used_tag_ids = select(FileTag.tag_id).where(FileTag.tag_id.is_not(None))
 
-        # Then find all tags not in that list
-        unused_tags = db.query(Tag).filter(~Tag.id.in_(used_tag_ids)).all()  # type: ignore[arg-type]
+        unused_tags = (
+            db.query(Tag)
+            .filter(~Tag.id.in_(used_tag_ids), _owned_or_system(current_user.id))
+            .order_by(Tag.name)
+            .all()
+        )
 
         return unused_tags
     except Exception as e:
@@ -165,8 +235,13 @@ def cleanup_unused_tags(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
 ):
     """
-    Delete all unused tags to clean up the database
+    Delete unused user-owned tags to clean up the database
     (Admin users only)
+
+    Deployment-wide by design — this is an admin maintenance op, not a per-user
+    action. System tags (``user_id IS NULL``) are exempt: they are the shared
+    vocabulary every user's picker shows, and being unattached is their normal
+    state, so sweeping them would empty the picker for everyone.
     """
     # Only allow admin users to perform this operation
     if not current_user.is_admin:
@@ -176,11 +251,9 @@ def cleanup_unused_tags(
         )
 
     try:
-        # Find all tags that are not used in any files
-        used_tag_ids = db.query(FileTag.tag_id).distinct().subquery()
+        used_tag_ids = select(FileTag.tag_id).where(FileTag.tag_id.is_not(None))
 
-        # Delete all tags not in use
-        delete_query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids))  # type: ignore[arg-type]
+        delete_query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids), Tag.user_id.is_not(None))
 
         # Get the count for the response
         count = delete_query.count()
@@ -235,9 +308,12 @@ async def add_tag_to_file(
     # Convert to proper TagBase object
     tag_base = TagBase(name=tag_data["name"])
 
-    # Atomically get or create the tag (race-condition safe)
-    # Note: ownership already verified by get_file_by_uuid_with_permission above
-    tag = _get_or_create_tag(db, tag_base.name)
+    # Atomically get or create the tag (race-condition safe). The tag belongs to
+    # the caller, not the file owner: tagging a file shared with you adds the
+    # word to YOUR vocabulary, and the owner still sees it because the tag is
+    # now attached to a file they can access.
+    # Note: file access already verified by get_file_by_uuid_with_permission above
+    tag = _get_or_create_tag(db, tag_base.name, current_user.id)
     logger.info(f"Using tag: {tag.id}:{tag.name} for file_id={file_id}")
 
     # Check if file already has this tag
@@ -251,12 +327,14 @@ async def add_tag_to_file(
         db.add(file_tag)
         db.commit()
 
-        # Invalidate caches
+        # Invalidate caches for the caller AND the file owner — on a shared file
+        # they are different users and both listings changed.
         try:
             from app.services.redis_cache_service import redis_cache
 
             redis_cache.invalidate_tags(current_user.id)
             redis_cache.invalidate_user_files(current_user.id)
+            redis_cache.invalidate_tags_for_file(db, file_id)
         except Exception as e:
             logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
@@ -282,8 +360,15 @@ def remove_tag_from_file(
     )
     file_id = media_file.id
 
-    # Find the tag
-    tag = db.query(Tag).filter(Tag.name == tag_name).first()
+    # Resolve the tag through the file's own attachments. Names are only unique
+    # per owner now, so a bare `Tag.name == tag_name` lookup could pick another
+    # user's identically-named tag and silently detach nothing.
+    tag = (
+        db.query(Tag)
+        .join(FileTag, FileTag.tag_id == Tag.id)
+        .filter(FileTag.media_file_id == file_id, Tag.name == tag_name)
+        .first()
+    )
     if not tag:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
 
@@ -296,12 +381,14 @@ def remove_tag_from_file(
         db.delete(file_tag)
         db.commit()
 
-        # Invalidate caches
+        # Invalidate caches for the caller AND the file owner — on a shared file
+        # they are different users and both listings changed.
         try:
             from app.services.redis_cache_service import redis_cache
 
             redis_cache.invalidate_tags(current_user.id)
             redis_cache.invalidate_user_files(current_user.id)
+            redis_cache.invalidate_tags_for_file(db, file_id)
         except Exception as e:
             logger.debug(f"Cache invalidation failed (non-critical): {e}")
 

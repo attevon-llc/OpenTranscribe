@@ -121,14 +121,20 @@ def _admin_exists(db: Session) -> bool:
 
 
 def _ensure_default_tags(db: Session) -> None:
-    """Create default tags if they don't exist."""
+    """Create the system tag vocabulary if it doesn't exist.
+
+    These are *system* tags: ``user_id IS NULL`` makes them visible to every
+    account, which is the one case where an ownerless tag is intentional. The
+    lookup must carry the same predicate — a user's own "Meeting" must not
+    satisfy the seeder and leave the shared row missing.
+    """
     default_tags = ["Important", "Meeting", "Interview", "Personal"]
 
     for tag_name in default_tags:
-        tag = db.query(Tag).filter(Tag.name == tag_name).first()
+        tag = db.query(Tag).filter(Tag.name == tag_name, Tag.user_id.is_(None)).first()
         if not tag:
             try:
-                tag = Tag(name=tag_name)
+                tag = Tag(name=tag_name, user_id=None)
                 db.add(tag)
                 db.flush()
                 logger.info(f"Created default tag: {tag_name}")

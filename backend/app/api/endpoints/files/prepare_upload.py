@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -123,12 +124,20 @@ def add_file_to_collections(
     db.flush()
 
 
-def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> None:
+def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: int) -> None:
     """Add tags to a media file, creating tags if they don't exist.
+
+    ``user_id`` owns any tag this creates. Background importers (watch sources,
+    yt-dlp playlists) must pass the **file owner**, never leave it unset — an
+    ownerless tag is a system tag and would be published to every account.
+    A same-named system tag is reused rather than forked, so applying a seeded
+    default still attaches the shared row.
 
     Uses SAVEPOINTs for race-condition safety without corrupting the
     enclosing transaction.
     """
+    owned_or_system = or_(Tag.user_id == user_id, Tag.user_id.is_(None))
+
     for name in tag_names:
         name = name.strip()[:50]
         if not name:
@@ -136,16 +145,27 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> None:
 
         normalized = AutoLabelService.normalize_name(name)
 
-        tag = db.query(Tag).filter(Tag.name == name).first()
+        # ORDER BY user_id is ASC NULLS LAST, so an owned row beats the system row.
+        tag = db.query(Tag).filter(Tag.name == name, owned_or_system).order_by(Tag.user_id).first()
         if not tag:
             try:
                 nested = db.begin_nested()
-                tag = Tag(name=name, source=TAG_SOURCE_MANUAL, normalized_name=normalized)
+                tag = Tag(
+                    name=name,
+                    user_id=user_id,
+                    source=TAG_SOURCE_MANUAL,
+                    normalized_name=normalized,
+                )
                 db.add(tag)
                 db.flush()
             except IntegrityError:
                 nested.rollback()
-                tag = db.query(Tag).filter(Tag.name == name).first()
+                tag = (
+                    db.query(Tag)
+                    .filter(Tag.name == name, owned_or_system)
+                    .order_by(Tag.user_id)
+                    .first()
+                )
                 if not tag:
                     continue
 
@@ -257,7 +277,7 @@ async def prepare_upload(
 
         # Apply tags if specified
         if request.tag_names:
-            add_tags_to_file(db, db_file.id, request.tag_names)
+            add_tags_to_file(db, db_file.id, request.tag_names, current_user.id)
 
         # Commit all assignments (batch, collections, tags)
         db.commit()

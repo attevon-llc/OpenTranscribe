@@ -15,6 +15,7 @@ from app.core.constants import SENTENCE_TRANSFORMER_DIMENSION
 from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v3
 from app.core.constants import get_speaker_index_v4
+from app.core.opensearch_auth import opensearch_connection_kwargs
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -65,12 +66,7 @@ if not settings.OPENSEARCH_ENABLED:
 else:
     try:
         opensearch_client = OpenSearch(
-            hosts=[{"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}],
-            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-            use_ssl=settings.OPENSEARCH_USE_TLS,
-            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
-            ssl_show_warn=False,
-            connection_class=RequestsHttpConnection,
+            **opensearch_connection_kwargs(connection_class=RequestsHttpConnection)
         )
         logger.info("OpenSearch client initialized successfully")
     except (ConnectionError, ValueError) as e:
@@ -96,12 +92,7 @@ def get_opensearch_client() -> "OpenSearch | None":
 
     try:
         opensearch_client = OpenSearch(
-            hosts=[{"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}],
-            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-            use_ssl=settings.OPENSEARCH_USE_TLS,
-            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
-            ssl_show_warn=False,
-            connection_class=RequestsHttpConnection,
+            **opensearch_connection_kwargs(connection_class=RequestsHttpConnection)
         )
         logger.info("OpenSearch client lazily initialized successfully")
         return opensearch_client

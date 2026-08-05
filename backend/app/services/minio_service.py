@@ -6,23 +6,22 @@ from typing import BinaryIO
 from urllib.parse import quote
 
 import urllib3
-from minio import Minio
 from minio.error import S3Error
 
 from app.core.config import settings
+from app.services import storage_backend
+from app.services.storage_backend import clamp_presigned_expiry
+from app.services.storage_backend import rewrite_public_host
 
 logger = logging.getLogger(__name__)
 
 # Disable urllib3 warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Initialize the MinIO client
-minio_client = Minio(
-    f"{settings.MINIO_HOST}:{settings.MINIO_PORT}",
-    access_key=settings.MINIO_ROOT_USER,
-    secret_key=settings.MINIO_ROOT_PASSWORD,
-    secure=settings.MINIO_SECURE,
-)
+# The storage client. STORAGE_BACKEND selects bundled MinIO (default, unchanged)
+# or native AWS S3; both are minio-py clients so every call site below is shared.
+# See app/services/storage_backend.py for the backend differences.
+minio_client = storage_backend.build_storage_client()
 
 
 def ensure_bucket_exists():
@@ -113,21 +112,21 @@ def download_file_to_path(object_name: str, file_path: str) -> None:
     minio_client.fget_object(settings.MEDIA_BUCKET_NAME, object_name, file_path)
 
 
-def get_file_url(object_name: str, expires: int = 86400) -> str:
+def get_file_url(object_name: str, expires: int = 0) -> str:
     """
-    Get a presigned URL for a file in MinIO
+    Get a browser-reachable presigned URL for a file in object storage.
 
     Args:
-        object_name: Object name in MinIO
-        expires: URL expiration time in seconds (default: 24 hours)
+        object_name: Object key.
+        expires: URL lifetime in seconds. Clamped to ``PRESIGNED_URL_MAX_SECONDS``
+            (6 h default); 0 or invalid means "use the ceiling". The old 24 h
+            default could not survive an IAM-role STS session (issue #284 A1.12).
 
     Returns:
         Presigned URL that directly accesses the media file
     """
     try:
-        # Ensure expires is a positive integer
-        if not isinstance(expires, int) or expires <= 0:
-            expires = 86400  # Default to 24 hours
+        expires = clamp_presigned_expiry(expires)
 
         # Debug logging
         logger = logging.getLogger(__name__)
@@ -156,28 +155,16 @@ def get_file_url(object_name: str, expires: int = 86400) -> str:
         if not url or not url.startswith("http"):
             raise ValueError(f"Invalid URL generated: {url}")
 
-        # Replace the internal minio URL with the externally accessible URL
-        # This is required because MinIO generates URLs with its internal hostname
-        minio_internal = f"http://{settings.MINIO_HOST}:{settings.MINIO_PORT}"
-
-        if minio_internal in url:
-            # Determine the public URL for MinIO
-            if settings.MINIO_PUBLIC_URL:
-                # Explicit public URL configured (k8s, custom setups)
-                public_base = settings.MINIO_PUBLIC_URL.rstrip("/")
-            else:
-                # Default: Use /s3 path which nginx proxies to MinIO API (port 9000)
-                # Note: /minio/ goes to console (9001), /s3/ goes to API (9000)
-                # The browser resolves /s3 relative to current origin
-                public_base = "/s3"
-
-            url = url.replace(minio_internal, public_base)
-            logger.info(f"Replaced {minio_internal} with {public_base} in presigned URL")
+        # Point the URL at the browser-facing endpoint. MinIO signs with its internal
+        # hostname, so it must be rewritten (to MINIO_PUBLIC_URL/STORAGE_PUBLIC_URL, or
+        # the /s3 proxy path by default); native S3 already signs a public host and is
+        # returned untouched.
+        url = rewrite_public_host(str(url))
 
         # Log the generated URL (truncated for security)
         logger.info(f"Generated presigned URL: {url[:50]}...")
 
-        return url  # type: ignore[no-any-return]
+        return url
     except Exception as e:
         # Catch all exceptions, not just S3Error
         logger.error(f"Error in get_file_url: {e}, type(expires)={type(expires)}")
@@ -339,15 +326,16 @@ def get_presigned_download_url(
     Adds S3 ``response-content-disposition`` / ``response-content-type`` overrides
     so the browser saves the object under ``download_filename`` with the right MIME,
     regardless of the underlying object key. The internal MinIO host is rewritten to
-    the browser-facing endpoint (``MINIO_PUBLIC_URL`` or the ``/s3`` proxy path) so
-    the same URL works in dev (Vite proxy) and prod (nginx).
+    the browser-facing endpoint (``STORAGE_PUBLIC_URL``/``MINIO_PUBLIC_URL`` or the
+    ``/s3`` proxy path) so the same URL works in dev (Vite proxy) and prod (nginx);
+    a native-S3 URL is already public and is returned unchanged.
 
     Args:
         object_name: Object key.
         bucket_name: Bucket holding the object (defaults to the media bucket).
         download_filename: Filename the browser should save as (Content-Disposition).
         content_type: MIME type to report.
-        expires: URL lifetime in seconds.
+        expires: URL lifetime in seconds (clamped to ``PRESIGNED_URL_MAX_SECONDS``).
 
     Returns:
         A presigned, browser-reachable download URL.
@@ -367,15 +355,15 @@ def get_presigned_download_url(
     url = minio_client.presigned_get_object(
         bucket_name=bucket,
         object_name=object_name,
-        expires=datetime.timedelta(seconds=max(60, int(expires))),
+        expires=datetime.timedelta(seconds=clamp_presigned_expiry(expires)),
         response_headers=response_headers or None,
     )
-    return _rewrite_minio_host(str(url))
+    return rewrite_public_host(str(url))
 
 
 def get_internal_presigned_url(object_name: str, expires: int = 3600) -> str:
     """Get a presigned URL for server-to-server access (no hostname rewriting)."""
-    delta = datetime.timedelta(seconds=expires)
+    delta = datetime.timedelta(seconds=clamp_presigned_expiry(expires))
     return str(
         minio_client.presigned_get_object(
             bucket_name=settings.MEDIA_BUCKET_NAME,
@@ -402,41 +390,34 @@ def get_internal_presigned_url(object_name: str, expires: int = 3600) -> str:
 PRESIGNED_PUT_PART_SIZE = 64 * 1024 * 1024
 
 
-def _rewrite_minio_host(url: str) -> str:
-    """Replace MinIO's internal hostname with the browser-accessible host.
-
-    Mirrors the rewriting logic used by ``get_file_url`` for GET URLs so
-    browsers can follow the presigned URL.
-    """
-    minio_internal = f"http://{settings.MINIO_HOST}:{settings.MINIO_PORT}"
-    if minio_internal not in url:
-        return url
-    public_base = settings.MINIO_PUBLIC_URL.rstrip("/") if settings.MINIO_PUBLIC_URL else "/s3"
-    return url.replace(minio_internal, public_base)
-
-
 def presigned_put_url(
     object_name: str,
     expires: int = 4 * 3600,
     *,
     rewrite_host: bool = True,
 ) -> str:
-    """Generate a presigned PUT URL for direct browser → MinIO upload.
+    """Generate a presigned PUT URL for direct browser → object-storage upload.
 
     Args:
         object_name: Target object path in ``MEDIA_BUCKET_NAME``.
         expires: URL expiration in seconds. Defaults to 4 hours — enough for
-            very large uploads on slow connections.
-        rewrite_host: If True (the default) the internal MinIO hostname is
-            rewritten to the browser-facing URL via ``_rewrite_minio_host``.
-            Set False for server-to-server callers that can reach MinIO
-            directly.
+            very large uploads on slow connections. Clamped to
+            ``PRESIGNED_URL_MAX_SECONDS``.
+        rewrite_host: If True (the default) the internal storage hostname is
+            rewritten to the browser-facing URL via
+            ``storage_backend.rewrite_public_host``. Set False for
+            server-to-server callers that can reach storage directly.
 
     Returns:
         A signed URL the browser can PUT bytes to with no further auth.
+
+    Note:
+        The caller is responsible for checking ``storage_backend.supports_single_put``
+        first: AWS S3 rejects a single PUT over 5 GiB, so an oversized object must
+        take the API-mediated (multipart) upload path instead.
     """
     ensure_bucket_exists()
-    delta = datetime.timedelta(seconds=max(60, int(expires)))
+    delta = datetime.timedelta(seconds=clamp_presigned_expiry(expires))
     url = str(
         minio_client.presigned_put_object(
             bucket_name=settings.MEDIA_BUCKET_NAME,
@@ -445,7 +426,7 @@ def presigned_put_url(
         )
     )
     if rewrite_host:
-        url = _rewrite_minio_host(url)
+        url = rewrite_public_host(url)
     return url
 
 
@@ -569,24 +550,20 @@ class MinIOService:
             raise Exception(f"Error downloading file: {e}") from e
 
     def get_presigned_url(self, bucket_name: str, object_name: str, expires: int = 3600):
-        """Get a presigned URL for object access."""
+        """Get a browser-reachable presigned URL for object access.
+
+        Uses the same host-rewrite and expiry clamp as the module-level helpers.
+        It previously hardcoded ``http://minio:9000`` → ``localhost:5178`` (or an
+        undocumented ``EXTERNAL_MINIO_URL``), which only worked for one deployment
+        shape and pinned the URL to MinIO (issue #284 A1.12).
+        """
         try:
             url = self.client.presigned_get_object(
                 bucket_name=bucket_name,
                 object_name=object_name,
-                expires=datetime.timedelta(seconds=expires),
+                expires=datetime.timedelta(seconds=clamp_presigned_expiry(expires)),
             )
-            # Fix hostname for external access
-            if url.startswith("http://minio:9000"):
-                from app.core.config import settings
-
-                if not settings.is_hardened:
-                    url = url.replace("http://minio:9000", "http://localhost:5178")
-                else:
-                    # For production, use environment variable for external MinIO URL
-                    external_url = os.getenv("EXTERNAL_MINIO_URL", "http://localhost:5178")
-                    url = url.replace("http://minio:9000", external_url)
-            return url
+            return rewrite_public_host(str(url))
         except Exception as e:
             raise Exception(f"Error getting presigned URL: {e}") from e
 

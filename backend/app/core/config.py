@@ -353,6 +353,36 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "false").lower() == "true"
     MEDIA_BUCKET_NAME: str = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
 
+    # ===== Object-storage backend (issue #284 A1.11) =====
+    # "minio" (default) keeps the bundled MinIO container exactly as it was: the
+    # endpoint is MINIO_HOST:MINIO_PORT, credentials are the static root user/password,
+    # and presigned URLs are rewritten onto the /s3 proxy path. "s3" points the same
+    # client at real AWS S3 — regional endpoint, SigV4 with the configured region,
+    # virtual-host addressing (minio-py switches automatically for AWS hosts), and
+    # credentials from the IAM-role chain. Everything below is inert while this is
+    # "minio", so a self-hosted install needs none of it.
+    STORAGE_BACKEND: str = os.getenv("STORAGE_BACKEND", "minio")  # minio | s3
+    # Explicit S3 endpoint. Leave empty on AWS to derive https://s3.<region>.amazonaws.com;
+    # set it for another S3-compatible provider (e.g. https://s3.wasabisys.com).
+    S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", "")
+    # SigV4 signing region. Wrong region = every request 400s with AuthorizationHeaderMalformed.
+    # Falls back to AWS_REGION so a container that already sets the standard AWS var works.
+    S3_REGION: str = os.getenv("S3_REGION", os.getenv("AWS_REGION", "us-east-1"))
+    # True (default) resolves credentials through the AWS provider chain — env vars,
+    # EKS/IRSA web-identity token, ECS task role, EC2 instance metadata — so no static
+    # keys are needed and rotation is automatic. Set false to sign with the static
+    # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY pair instead.
+    S3_USE_IAM_ROLE: bool = os.getenv("S3_USE_IAM_ROLE", "true").lower() == "true"
+    # Apply a browser-PUT CORS policy to the media bucket at startup. MinIO already
+    # answers any origin, so this only matters on S3, where a missing CORS config makes
+    # every direct browser upload fail preflight. OFF by default: overwriting a bucket's
+    # CORS configuration is destructive and the bucket may be shared.
+    S3_CONFIGURE_BUCKET_CORS: bool = (
+        os.getenv("S3_CONFIGURE_BUCKET_CORS", "false").lower() == "true"
+    )
+    # Origins allowed to PUT directly to the bucket. Empty = reuse CORS_ORIGINS.
+    S3_CORS_ALLOWED_ORIGINS: str = os.getenv("S3_CORS_ALLOWED_ORIGINS", "")
+
     # Presigned URL expiration settings.
     # Video/audio URLs default to 6 hours: a single presigned URL must outlive a long
     # viewing/labeling session of a multi-hour file (a 5-minute URL 403s mid-playback when
@@ -371,6 +401,18 @@ class Settings(BaseSettings):
     # Public URL for presigned URLs (how browsers access MinIO)
     # Dev: http://localhost:5178 | Prod/nginx: https://yourdomain.com/minio or https://minio.yourdomain.com
     MINIO_PUBLIC_URL: str = os.getenv("MINIO_PUBLIC_URL", "")
+    # Backend-agnostic alias for MINIO_PUBLIC_URL (issue #284 A1.12). Presigned URLs were
+    # pinned to the internal MinIO host and rewritten onto a hardcoded /s3 path; this is
+    # the one knob that decides the browser-facing origin whatever the backend is. Empty
+    # falls back to MINIO_PUBLIC_URL, then to /s3 on the minio backend (today's default)
+    # and to no rewrite at all on s3, where the signed URL already names a reachable host.
+    STORAGE_PUBLIC_URL: str = os.getenv("STORAGE_PUBLIC_URL", "")
+    # Hard ceiling on every presigned URL this app mints (issue #284 A1.12). Six hours is
+    # the practical cap under an IAM role: a presigned URL dies with the credentials that
+    # signed it, and STS session credentials (IMDS/IRSA/ECS) top out at 1–12 h with 6 h a
+    # safe common denominator — so a 24 h URL would 403 long before it "expires".
+    # Requests above the ceiling are clamped and logged, never rejected.
+    PRESIGNED_URL_MAX_SECONDS: int = _int_env("PRESIGNED_URL_MAX_SECONDS", 21600)
 
     # Redis settings (for Celery)
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
@@ -392,6 +434,15 @@ class Settings(BaseSettings):
     OPENSEARCH_PASSWORD: str = os.getenv("OPENSEARCH_PASSWORD", "admin")
     OPENSEARCH_USE_TLS: bool = os.getenv("OPENSEARCH_USE_TLS", "false").lower() == "true"
     OPENSEARCH_VERIFY_CERTS: bool = os.getenv("OPENSEARCH_VERIFY_CERTS", "false").lower() == "true"
+    # How to authenticate to OpenSearch (issue #284 A1.13). "basic" (default) sends the
+    # OPENSEARCH_USER/OPENSEARCH_PASSWORD pair the bundled container expects. "sigv4"
+    # signs every request with AWS SigV4 from the IAM-role chain, which is the only
+    # accepted auth on an Amazon OpenSearch Service domain locked to an IAM policy.
+    OPENSEARCH_AUTH: str = os.getenv("OPENSEARCH_AUTH", "basic")  # basic | sigv4
+    # Signing region and service for OPENSEARCH_AUTH=sigv4. "es" is a managed domain;
+    # "aoss" is OpenSearch Serverless (a different signing service name).
+    OPENSEARCH_AWS_REGION: str = os.getenv("OPENSEARCH_AWS_REGION", "")  # empty -> AWS_REGION
+    OPENSEARCH_AWS_SERVICE: str = os.getenv("OPENSEARCH_AWS_SERVICE", "es")  # es | aoss
     OPENSEARCH_TRANSCRIPT_INDEX: str = "transcripts"
     OPENSEARCH_SPEAKER_INDEX: str = "speakers"
     OPENSEARCH_SUMMARY_INDEX: str = "transcript_summaries"
@@ -459,6 +510,17 @@ class Settings(BaseSettings):
     OPENSEARCH_NEURAL_PIPELINE: str = os.getenv(
         "OPENSEARCH_NEURAL_PIPELINE", "transcript-neural-ingest"
     )
+    # Where the embedding model comes from (issue #284 A1.13).
+    #   "local"   (default) — today's behaviour: we mutate ML Commons cluster settings,
+    #             download OPENSEARCH_NEURAL_MODEL, and register/deploy it in the cluster.
+    #   "managed" — the domain already hosts the model (a remote-model connector, or one
+    #             an operator registered by hand). We touch no cluster settings and
+    #             download nothing; OPENSEARCH_NEURAL_MODEL_ID names the model to use.
+    # A managed OpenSearch domain rejects the "local" path outright: registering a model
+    # from a file:// or arbitrary https:// URL needs cluster settings AWS does not expose.
+    OPENSEARCH_EMBEDDING_MODE: str = os.getenv("OPENSEARCH_EMBEDDING_MODE", "local")
+    # Pre-registered ML Commons model id, used when OPENSEARCH_EMBEDDING_MODE=managed.
+    OPENSEARCH_NEURAL_MODEL_ID: str = os.getenv("OPENSEARCH_NEURAL_MODEL_ID", "")
 
     # Celery settings
     CELERY_BROKER_URL: str = REDIS_URL

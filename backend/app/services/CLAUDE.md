@@ -23,12 +23,42 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
 - **Redaction** — `redaction/` (**own CLAUDE.md**). **Watch sources** — `watch_sources/`
   (**own CLAUDE.md**).
 - **Media in/out** — `media_download_service.py` (yt-dlp), `media_mirror_*.py`,
-  `protected_media_providers.py` + `protected_media_plugins/`, `minio_service.py`,
-  `subtitle_service.py`, `formatting_service.py`.
+  `protected_media_providers.py` + `protected_media_plugins/`, `minio_service.py` +
+  `storage_backend.py` (**see below**), `subtitle_service.py`, `formatting_service.py`.
 - **Ops** — backup/recovery, cleanup, migration lock+progress, task detection/filtering/recovery,
   system settings, usage, GDPR erasure.
 
 `README.md` in this directory is the older long-form tour; it drifts — trust the code.
+
+## Object storage: `storage_backend.py` + `minio_service.py`
+
+`minio_service` is the API (upload/download/presign/lifecycle, ~60 call sites plus the
+`minio_client` singleton). `storage_backend` is the *policy* layer underneath it and owns
+every difference between the two backends (issue #284 A1.11/A1.12):
+
+| | `STORAGE_BACKEND=minio` (default) | `STORAGE_BACKEND=s3` |
+|---|---|---|
+| Endpoint | `MINIO_HOST:MINIO_PORT` | `S3_ENDPOINT_URL`, else `s3.<S3_REGION>.amazonaws.com` |
+| Credentials | static `MINIO_ROOT_*` | AWS chain (env → IRSA → ECS → IMDS) unless `S3_USE_IAM_ROLE=false` |
+| Addressing | path-style | virtual-host (minio-py switches on AWS hostnames) |
+| Presigned host | rewritten to `STORAGE_PUBLIC_URL`/`MINIO_PUBLIC_URL`, else `/s3` | **not rewritten** |
+| Single-PUT ceiling | 5 TiB | 5 GiB (`supports_single_put`) |
+| Bucket CORS | implicit | opt-in `S3_CONFIGURE_BUCKET_CORS` (boto3 — minio-py has no CORS API) |
+
+- **One SDK for both.** The client is always `minio.Minio`; minio-py is a generic S3 SDK,
+  so switching backends changes construction, not the 60 call sites. boto3 appears in
+  exactly one place — `ensure_bucket_cors`.
+- **`clamp_presigned_expiry` gates every presigned URL** (`PRESIGNED_URL_MAX_SECONDS`,
+  6 h). A presigned URL cannot outlive the credentials that signed it, and IAM-role STS
+  sessions expire well inside 24 h, so a longer URL just starts 403-ing. `get_file_url`'s
+  old 24 h default arg is gone.
+- **>5 GiB uploads on `s3` skip the presigned path.** `files/prepare_upload.py` checks
+  `supports_single_put` before minting a URL; the browser then falls back to
+  `POST /files`, which spools to disk and writes multipart (64 MiB parts). Browser-side
+  presigned *multipart* is not implemented — that is the remaining native-S3 gap.
+- Don't reintroduce a second host-rewrite. `MinIOService.get_presigned_url` used to
+  hardcode `http://minio:9000` → `localhost:5178`/`EXTERNAL_MINIO_URL`; it now shares
+  `rewrite_public_host` like everything else.
 
 ## LLM features (optional)
 

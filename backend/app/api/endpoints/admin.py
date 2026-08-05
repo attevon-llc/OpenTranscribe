@@ -1602,18 +1602,9 @@ def export_audit_logs(
     try:
         from opensearchpy import OpenSearch
 
-        client = OpenSearch(
-            hosts=[
-                {
-                    "host": settings.OPENSEARCH_HOST,
-                    "port": int(settings.OPENSEARCH_PORT),
-                }
-            ],
-            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-            use_ssl=settings.OPENSEARCH_USE_TLS,
-            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
-            ssl_show_warn=False,
-        )
+        from app.core.opensearch_auth import opensearch_connection_kwargs
+
+        client = OpenSearch(**opensearch_connection_kwargs())
 
         # Build query
         must_clauses = []

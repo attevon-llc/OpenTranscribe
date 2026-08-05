@@ -16,6 +16,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
@@ -59,7 +60,7 @@ def get_current_super_admin_user(
 
 
 @router.get("", response_model=dict[str, list[AuthConfigResponse]])
-async def get_all_configs(
+def get_all_configs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
 ) -> dict[str, list[AuthConfigResponse]]:
@@ -113,7 +114,7 @@ async def get_all_configs(
 
 
 @router.get("/status", response_model=AuthConfigStatusResponse)
-async def get_auth_status(
+def get_auth_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
 ) -> AuthConfigStatusResponse:
@@ -130,7 +131,7 @@ async def get_auth_status(
 
 
 @router.get("/{category}", response_model=dict[str, Any])
-async def get_config_by_category(
+def get_config_by_category(
     category: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
@@ -171,7 +172,7 @@ async def get_config_by_category(
 
 
 @router.put("/{category}", response_model=dict[str, Any])
-async def update_config_category(
+def update_config_category(
     category: str,
     config: dict[str, Any],
     request: Request,
@@ -266,7 +267,9 @@ async def test_auth_connection(
     logger.info(f"Auth connection test for '{category}' by super admin {current_user.email}")
 
     if category == "ldap":
-        return await _test_ldap_connection(config)
+        # ldap3 is blocking; keep it off the event loop (issue #320).
+        ldap_result: AuthMethodTestResponse = await run_in_threadpool(_test_ldap_connection, config)
+        return ldap_result
     elif category == "keycloak":
         return await _test_keycloak_connection(config)
     else:
@@ -277,7 +280,7 @@ async def test_auth_connection(
 
 
 @router.get("/audit/{category}", response_model=list[AuthConfigAuditResponse])
-async def get_audit_log(
+def get_audit_log(
     category: str,
     limit: int = 100,
     offset: int = 0,
@@ -324,7 +327,7 @@ async def get_audit_log(
 
 
 @router.post("/migrate")
-async def migrate_from_env(
+def migrate_from_env(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
@@ -358,8 +361,11 @@ async def migrate_from_env(
         ) from e
 
 
-async def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
+def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
     """Test LDAP connection with provided configuration.
+
+    Synchronous: ``ldap3`` binds are blocking with a 10 s connect timeout, so the
+    caller must run this off the event loop (issue #320).
 
     Args:
         config: LDAP configuration to test

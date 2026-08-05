@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/status")
-async def get_combined_migration_status(
+def get_combined_migration_status(
     current_user: User = Depends(get_current_active_superuser),
 ):
     """Get the current combined speaker migration status."""
@@ -46,7 +46,7 @@ async def get_combined_migration_status(
 
 
 @router.post("/start")
-async def start_combined_migration(
+def start_combined_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
@@ -77,7 +77,7 @@ async def start_combined_migration(
 
 
 @router.post("/stop")
-async def stop_combined_migration(
+def stop_combined_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
@@ -151,7 +151,7 @@ async def stop_combined_migration(
 
 
 @router.delete("/progress")
-async def clear_combined_progress(
+def clear_combined_progress(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):

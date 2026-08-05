@@ -29,7 +29,7 @@ router = APIRouter()
 
 
 @router.get("/capabilities")
-async def get_system_capabilities(request: Request) -> dict[str, Any]:
+def get_system_capabilities(request: Request) -> dict[str, Any]:
     """Edition + capability map driving server-side feature gating.
 
     The frontend calls this once at bootstrap and renders only the surfaces
@@ -92,9 +92,7 @@ def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 @router.get("/stats", response_model=dict[str, Any])
-async def get_system_stats(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
-):
+def get_system_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Get system statistics accessible to all authenticated users.
 
@@ -215,7 +213,7 @@ async def get_system_stats(
 
 
 @router.get("/config/protected-media-auth", response_model=list[dict[str, Any]])
-async def get_protected_media_auth(current_user: User = Depends(get_current_user)):
+def get_protected_media_auth(current_user: User = Depends(get_current_user)):
     """Return public auth configuration for protected media providers.
 
     Used by the frontend to decide when to prompt for username/password

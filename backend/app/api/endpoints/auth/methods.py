@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 @router.get("/methods")
-async def get_auth_methods(db: Session = Depends(get_db)):
+def get_auth_methods(db: Session = Depends(get_db)):
     """
     Get available authentication methods.
 
@@ -78,7 +78,7 @@ async def get_auth_methods(db: Session = Depends(get_db)):
 
 
 @router.get("/banner", response_model=LoginBannerResponse)
-async def get_login_banner():
+def get_login_banner():
     """
     PUBLIC endpoint - returns banner text without authentication.
     Called before login to display classification banner.
@@ -101,7 +101,7 @@ async def get_login_banner():
 
 
 @router.post("/banner/acknowledge")
-async def acknowledge_banner(
+def acknowledge_banner(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

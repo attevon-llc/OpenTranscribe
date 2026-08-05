@@ -755,7 +755,7 @@ def _download_event_frame(data: dict, mode: str) -> tuple[str | None, bool]:
 
 
 @router.get("/{file_uuid}/download-stream")
-async def download_stream(
+def download_stream(
     file_uuid: str,
     mode: str = Query(
         ..., description="video_subtitles|video_original|audio_mp3|audio_wav|audio_original"

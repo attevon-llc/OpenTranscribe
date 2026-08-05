@@ -165,7 +165,7 @@ async def trigger_summarization(
 
 
 @router.get("/{file_uuid}/summary", response_model=SummaryResponse)
-async def get_file_summary(
+def get_file_summary(
     file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -195,7 +195,7 @@ async def get_file_summary(
     try:
         # Try to get structured summary from OpenSearch
         summary_service = OpenSearchSummaryService()
-        opensearch_result = await summary_service.get_summary_by_file_id(file_id, current_user.id)
+        opensearch_result = summary_service.get_summary_by_file_id(file_id, current_user.id)
 
         if opensearch_result and opensearch_result.get("summary_data"):
             # Return flexible summary structure - no field normalization needed
@@ -239,7 +239,7 @@ async def get_file_summary(
 
 
 @router.post("/search", response_model=SummarySearchResponse)
-async def search_summaries(
+def search_summaries(
     search_request: SummarySearchRequest,
     current_user: User = Depends(get_current_active_user),
 ):
@@ -278,7 +278,7 @@ async def search_summaries(
         }
 
         # Execute search
-        results = await summary_service.search_summaries(
+        results = summary_service.search_summaries(
             query=search_params,
             user_id=current_user.id,
             size=search_request.size,
@@ -385,7 +385,7 @@ async def identify_speakers(
 
 
 @router.delete("/{file_uuid}/summary")
-async def delete_summary(
+def delete_summary(
     file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -417,7 +417,7 @@ async def delete_summary(
 
         # Delete from OpenSearch if document ID exists
         if hasattr(media_file, "summary_opensearch_id") and media_file.summary_opensearch_id:
-            opensearch_deleted = await summary_service.delete_summary(
+            opensearch_deleted = summary_service.delete_summary(
                 str(media_file.summary_opensearch_id)
             )
             if opensearch_deleted:

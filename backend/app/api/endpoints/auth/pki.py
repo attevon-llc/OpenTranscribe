@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/pki/authenticate", response_model=Token)
-async def pki_login(request: Request, db: Session = Depends(get_db)):
+def pki_login(request: Request, db: Session = Depends(get_db)):
     """
     Authenticate via X.509 client certificate.
 

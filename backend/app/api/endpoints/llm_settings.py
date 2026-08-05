@@ -624,7 +624,7 @@ def delete_all_user_configurations(
 
 
 @router.post("/test", response_model=schemas.ConnectionTestResponse)
-async def test_llm_connection(
+def test_llm_connection(
     *,
     test_request: schemas.ConnectionTestRequest,
     db: Session = Depends(get_db),
@@ -708,7 +708,7 @@ async def test_llm_connection(
 
 
 @router.post("/test-current", response_model=schemas.ConnectionTestResponse)
-async def test_active_configuration(
+def test_active_configuration(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -769,7 +769,7 @@ async def test_active_configuration(
         base_url=str(user_config.base_url) if user_config.base_url else None,
     )
 
-    result = await test_llm_connection(test_request=test_request, current_user=current_user)
+    result = test_llm_connection(test_request=test_request, current_user=current_user)
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -784,7 +784,7 @@ async def test_active_configuration(
 
 
 @router.post("/test-config/{config_uuid}", response_model=schemas.ConnectionTestResponse)
-async def test_specific_configuration(
+def test_specific_configuration(
     config_uuid: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
@@ -816,7 +816,7 @@ async def test_specific_configuration(
         base_url=str(user_config.base_url) if user_config.base_url else None,
     )
 
-    result = await test_llm_connection(test_request=test_request, current_user=current_user)
+    result = test_llm_connection(test_request=test_request, current_user=current_user)
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -831,7 +831,7 @@ async def test_specific_configuration(
 
 
 @router.get("/config/{config_uuid}/api-key")
-async def get_config_api_key(
+def get_config_api_key(
     config_uuid: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),

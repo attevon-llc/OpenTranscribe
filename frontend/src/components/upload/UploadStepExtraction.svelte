@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { formatFileSize, calculateCompressionRatio, estimateAudioSize } from '$lib/utils/metadataMapper';
+  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
 
   export let file: File | null = null;
   export let choice: 'extract' | 'full' = 'extract';
@@ -35,8 +36,11 @@
           <circle cx="18" cy="16" r="3"></circle>
         </svg>
       </div>
+      <!-- The locale string carries a <strong>, so this has to be {@html}. i18next
+           runs with interpolation.escapeValue=false, so the interpolated value is
+           NOT escaped for us — sanitize the rendered result. -->
       <p class="info-message">
-        {@html $t('extraction.videoSizeMessage', { size: formatFileSize(file.size) })}
+        {@html sanitizeHighlightHtml($t('extraction.videoSizeMessage', { size: formatFileSize(file.size) }))}
       </p>
     </div>
 

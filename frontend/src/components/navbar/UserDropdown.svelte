@@ -61,8 +61,10 @@
     // Dynamically construct Flower URL from current location
     const url = getFlowerUrl();
 
-    // Open Flower in a new tab with the correct URL
-    window.open(url, '_blank');
+    // Open Flower in a new tab with the correct URL. 'noopener' — unlike
+    // <a target="_blank">, window.open() gets no implicit noopener, so the new
+    // tab would otherwise keep a live window.opener handle back into the SPA.
+    window.open(url, '_blank', 'noopener');
     showDropdown = false;
     dispatch('itemSelected');
   }

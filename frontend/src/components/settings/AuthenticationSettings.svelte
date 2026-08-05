@@ -112,25 +112,25 @@
         <div class="config-method">
           <h4>{$t('settings.authentication.method.ldap')}</h4>
           <code>LDAP_ENABLED=true</code>
-          <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/LDAP_AUTH.md" target="_blank">LDAP_AUTH.md</a></p>
+          <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/LDAP_AUTH.md" target="_blank" rel="noopener noreferrer">LDAP_AUTH.md</a></p>
         </div>
 
         <div class="config-method">
           <h4>{$t('settings.authentication.method.keycloak')}</h4>
           <code>KEYCLOAK_ENABLED=true</code>
-          <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/KEYCLOAK_SETUP.md" target="_blank">KEYCLOAK_SETUP.md</a></p>
+          <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/KEYCLOAK_SETUP.md" target="_blank" rel="noopener noreferrer">KEYCLOAK_SETUP.md</a></p>
         </div>
 
         <div class="config-method">
           <h4>{$t('settings.authentication.method.pki')}</h4>
           <code>PKI_ENABLED=true</code>
-          <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/PKI_SETUP.md" target="_blank">PKI_SETUP.md</a></p>
+          <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/PKI_SETUP.md" target="_blank" rel="noopener noreferrer">PKI_SETUP.md</a></p>
         </div>
 
         <div class="config-method">
           <h4>{$t('settings.authentication.method.mfa')}</h4>
           <code>MFA_ENABLED=true</code>
-          <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/example_env.txt" target="_blank">example_env.txt</a></p>
+          <p>See <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/example_env.txt" target="_blank" rel="noopener noreferrer">example_env.txt</a></p>
         </div>
       </div>
 

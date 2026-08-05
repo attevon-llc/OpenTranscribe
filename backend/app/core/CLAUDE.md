@@ -35,6 +35,13 @@ should import `app.api` or `app.services` at module scope.
 - `capabilities.py` — server-driven feature gating; `require_capability()` dependency,
   `set_capability_resolver()` for the cloud edition, plus the audience taxonomy.
 - `settings_cache.py` — in-process TTL cache in front of `SystemSettings` reads.
+- `opensearch_auth.py` — `opensearch_connection_kwargs()`, the single builder for every
+  `OpenSearch(...)` client (search plane ×2, audit writer + reader, admin audit export).
+  `OPENSEARCH_AUTH=basic` (default) reproduces the previous inline kwargs exactly;
+  `sigv4` signs with the AWS credential chain for a managed domain and **forces
+  `RequestsHttpConnection`** — `AWSV4SignerAuth` is a `requests` AuthBase, so under
+  opensearch-py's default urllib3 transport it is silently ignored and every request
+  goes out unsigned (a blanket 403). Don't build a client inline again.
 - `security.py` — password hashing (FIPS-aware PBKDF2 iteration counts), `create_access_token`,
   `verify_token`. `auth_settings.py` layers DB config over `.env` for auth.
 - `metrics.py`, `db_metrics.py`, `celery_metrics.py`, `backup_metrics.py`, `route_template.py` —

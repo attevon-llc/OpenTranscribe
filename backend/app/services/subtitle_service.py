@@ -5,6 +5,7 @@ Supports overlapping speech display where multiple speakers talk simultaneously.
 """
 
 import io
+import logging
 import re
 import textwrap
 import zipfile
@@ -21,6 +22,8 @@ from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.utils.time_format import format_srt_timestamp
 from app.utils.time_format import format_timestamp_simple
+
+logger = logging.getLogger(__name__)
 
 
 class SubtitleService:
@@ -129,13 +132,11 @@ class SubtitleService:
         """
         if redaction_cfg is None or not getattr(redaction_cfg, "enabled", False):
             return
-        import contextlib
 
         from app.services.redaction.service import RedactionService
 
         for seg in segments:
-            # Never break export rendering if masking a single segment fails.
-            with contextlib.suppress(Exception):
+            try:
                 masked, _ = RedactionService.mask_segment(
                     str(seg.text or ""),
                     seg.redactions or [],
@@ -143,7 +144,19 @@ class SubtitleService:
                     redaction_cfg,
                     reveal_categories or set(),
                 )
-                seg.text = masked
+            except Exception:
+                # FAIL CLOSED. The assignment used to sit inside a
+                # `contextlib.suppress(Exception)`, so a masking failure left
+                # `seg.text` as the raw DB text and every downstream formatter
+                # wrote it into the exported subtitle file. Redaction is enabled
+                # here by definition, so substitute a placeholder: a rendering
+                # gap is recoverable, an exported unmasked file is not.
+                logger.exception(
+                    "Redaction masking failed for a segment; withholding its text from the export"
+                )
+                seg.text = "[redacted — masking unavailable]"
+                continue
+            seg.text = masked
 
     @staticmethod
     def _format_overlap_for_subtitle(

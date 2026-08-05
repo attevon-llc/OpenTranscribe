@@ -439,14 +439,26 @@ def _resolve_redaction_for_request(
 
     The owner (and admins, audited) may set ``redact=false`` to reveal NON-forced
     categories; admin-forced categories stay masked. Non-owners never reveal.
+
+    Raises:
+        HTTPException: 503 when the redaction policy cannot be resolved.
     """
     try:
         from app.services.redaction.config import resolve_effective_config
 
         cfg = resolve_effective_config(db, current_user.id)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Failed to resolve redaction config: {e}")
-        return None, set()
+    except Exception as e:
+        # FAIL CLOSED. Returning (None, set()) told every downstream reader that
+        # redaction was off: `_apply_redaction` short-circuits on a None config
+        # and returned every segment raw, `_redaction_pending` stopped withholding
+        # transcripts mid-detection, and no `transcript.view_unredacted` audit
+        # event fired because `reveal` was empty — an unredacted read with no
+        # compliance trail, including admin-forced categories. Refuse the read.
+        logger.exception("Failed to resolve redaction config; refusing the transcript read")
+        raise HTTPException(
+            status_code=503,
+            detail="Redaction policy is temporarily unavailable; transcript withheld.",
+        ) from e
 
     can_reveal = bool(db_file.user_id == current_user.id) or bool(is_admin)
     reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)

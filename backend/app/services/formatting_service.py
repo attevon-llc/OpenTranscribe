@@ -344,8 +344,18 @@ class FormattingService:
                 segment_dict["toxicity"] = segment.toxicity
             else:
                 segment_dict["toxicity"] = None
-        except Exception as e:  # noqa: BLE001 — never break transcript rendering
-            logger.warning(f"Redaction masking failed for a segment: {e}")
+        except Exception:  # noqa: BLE001 — never break transcript rendering
+            # FAIL CLOSED. `segment_dict["text"]` still holds the raw DB text at
+            # this point (it is only overwritten once mask_segment returns), so
+            # the old handler shipped the unredacted segment — including
+            # admin-forced categories — straight to the client. Same bug class as
+            # utils/transcript_builders._seg_text. Withhold the text instead;
+            # rendering keeps working, which is what this handler is here for.
+            logger.exception(
+                "Redaction masking failed for a segment; withholding its text rather than "
+                "returning unmasked content"
+            )
+            segment_dict["text"] = "[redacted — masking unavailable]"
             segment_dict["redactions"] = None
             segment_dict["toxicity"] = None
 

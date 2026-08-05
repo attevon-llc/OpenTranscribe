@@ -532,15 +532,28 @@ def summarize_transcript_task(
 
             # Redact PII/profanity before sending to the LLM provider when the
             # owner's (or admin-forced) policy requires it (don't leak to third parties).
-            redaction_cfg = None
             try:
                 from app.services.redaction.config import resolve_effective_config
 
                 _cfg = resolve_effective_config(db, int(media_file.user_id))
-                if _cfg.enabled and _cfg.redact_before_llm:
-                    redaction_cfg = _cfg
-            except Exception as _redact_err:  # noqa: BLE001
-                logger.debug(f"Redaction config for LLM unavailable: {_redact_err}")
+            except Exception as _redact_err:
+                # FAIL CLOSED. Leaving redaction_cfg as None made `_seg_text`
+                # take its "redaction disabled" early return, so the full
+                # unredacted transcript was posted to an EXTERNAL LLM provider —
+                # defeating both `redact_before_llm` and the admin
+                # `force_redact_before_llm` floor, and it was logged at debug so
+                # the leak was silent. We cannot prove redaction is unnecessary,
+                # so we do not send the transcript off-box at all.
+                logger.exception(
+                    "Could not resolve the redaction policy; aborting summarization rather "
+                    "than sending a possibly unredacted transcript to an external provider"
+                )
+                raise ValueError(
+                    "Redaction policy unavailable; summarization aborted to avoid "
+                    "sending unredacted content to an external provider"
+                ) from _redact_err
+
+            redaction_cfg = _cfg if (_cfg.enabled and _cfg.redact_before_llm) else None
 
             full_transcript, speaker_stats = build_transcript_and_stats(
                 transcript_segments, redaction_cfg

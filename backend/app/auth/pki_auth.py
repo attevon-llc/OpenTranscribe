@@ -495,9 +495,13 @@ def _verify_signature_by_key_type(
         )
         return True
 
+    # FAIL CLOSED. A key type we cannot verify with is not a verified signature.
+    # Returning True here declared an unauthenticated OCSP response authentic;
+    # the caller then accepted its GOOD status as proof of non-revocation.
+    # The supported place to accept an inconclusive revocation check is
+    # PKI_REVOCATION_SOFT_FAIL, not a silent success deep inside verification.
     logger.warning(f"Unsupported public key type for OCSP verification: {type(public_key)}")
-    # Allow verification to proceed as soft-fail for unknown key types
-    return True
+    return False
 
 
 def _verify_ocsp_signature(
@@ -535,14 +539,17 @@ def _verify_ocsp_signature(
         # Determine the hash algorithm from the signature algorithm OID
         hash_algorithm = _get_hash_algorithm_for_sig_oid(sig_alg_oid)
         if hash_algorithm is None:
+            # FAIL CLOSED — see _verify_signature_by_key_type.
             logger.warning(
                 f"Unsupported OCSP signature algorithm {sig_alg_oid} for serial {serial_str}"
             )
-            # Allow verification to proceed as soft-fail for unknown algorithms
-            return True
+            return False
 
         # Verify the signature based on key type
-        _verify_signature_by_key_type(public_key, signature, tbs_data, hash_algorithm, serial_str)
+        if not _verify_signature_by_key_type(
+            public_key, signature, tbs_data, hash_algorithm, serial_str
+        ):
+            return False
 
         logger.debug(f"OCSP response signature verified for serial {serial_str}")
         return True
@@ -550,11 +557,21 @@ def _verify_ocsp_signature(
     except InvalidSignature:
         logger.warning(f"OCSP response signature verification failed for serial {serial_str}")
         return False
-    except Exception as e:
-        logger.warning(f"Could not verify OCSP response signature for serial {serial_str}: {e}")
-        # Soft-fail: allow verification to proceed if we encounter unexpected errors
-        # This handles edge cases like unusual signature algorithms
-        return True
+    except Exception:
+        # FAIL CLOSED. This used to return True ("soft-fail"), which told the
+        # caller an *unverified* OCSP response was authentic. OCSP is fetched
+        # over plain HTTP, so a forged GOOD response — or any malformed one that
+        # made this block raise — was accepted as proof of non-revocation and
+        # cached for PKI_CRL_CACHE_SECONDS. Because a False (= not revoked) OCSP
+        # result returns immediately from _check_revocation, that also skipped
+        # the CRL cross-check and defeated PKI_REVOCATION_SOFT_FAIL=false.
+        # Returning False makes the OCSP check inconclusive, which is what the
+        # CRL fallback and the soft-fail setting exist to handle.
+        logger.exception(
+            f"Could not verify OCSP response signature for serial {serial_str}; "
+            "treating the response as unverified"
+        )
+        return False
 
 
 def _get_ocsp_url(cert: x509.Certificate) -> str | None:
@@ -843,16 +860,22 @@ def _parse_and_verify_crl(
             # Fall back to PEM format
             crl = x509.load_pem_x509_crl(crl_data, default_backend())
 
-        # Verify CRL signature before trusting its contents
-        if issuer_cert:
-            if not _verify_crl_signature(crl, issuer_cert):
-                logger.warning(f"CRL signature verification failed for {crl_url}")
-                return None
-        else:
-            logger.warning(
-                f"No issuer certificate available for CRL signature verification "
-                f"({crl_url}) - proceeding without verification"
+        # Verify CRL signature before trusting its contents. FAIL CLOSED when we
+        # cannot: a CRL is downloaded over the network and drives an
+        # authentication decision, so an unverifiable one must be treated as no
+        # CRL at all (-> inconclusive -> PKI_REVOCATION_SOFT_FAIL decides).
+        # `validate_pki_settings` already requires PKI_CA_CERT_PATH whenever
+        # PKI_VERIFY_REVOCATION is on, so a missing issuer here means the CA file
+        # is unreadable — an operator problem, not a reason to trust the CRL.
+        if issuer_cert is None:
+            logger.error(
+                f"No issuer certificate available to verify the CRL from {crl_url}; "
+                "refusing to trust it"
             )
+            return None
+        if not _verify_crl_signature(crl, issuer_cert):
+            logger.warning(f"CRL signature verification failed for {crl_url}")
+            return None
 
         return crl
     except Exception as e:

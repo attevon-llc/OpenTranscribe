@@ -32,14 +32,25 @@ def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
 
     Honors the admin forced-export lock: when ``export_locked`` is set, the original
     can never be exported regardless of the ``redact`` flag.
+
+    Raises:
+        HTTPException: 503 when the redaction policy cannot be resolved.
     """
     try:
         from app.services.redaction.config import resolve_effective_config
 
         cfg = resolve_effective_config(db, current_user.id)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Failed to resolve redaction config for subtitles: {e}")
-        return None, set()
+    except Exception as e:
+        # FAIL CLOSED. Returning None skipped the `export_locked` branch three
+        # lines below and handed SubtitleService a None config, whose masking
+        # step early-returns — so the user downloaded a fully unredacted
+        # SRT/VTT/TXT even under the admin `force_export_redacted` floor.
+        # An export is unrecoverable once written to disk; refuse it instead.
+        logger.exception("Failed to resolve redaction config; refusing the subtitle export")
+        raise HTTPException(
+            status_code=503,
+            detail="Redaction policy is temporarily unavailable; export withheld.",
+        ) from e
 
     if getattr(cfg, "export_locked", False):
         return cfg, set()  # forced — never reveal on export

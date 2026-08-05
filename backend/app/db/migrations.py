@@ -623,10 +623,23 @@ def run_migrations() -> None:
 
     engine = create_engine(settings.DATABASE_URL)
 
-    # Acquire advisory lock to prevent concurrent migration runs
-    with engine.connect() as conn:
-        conn.execute(text("SELECT pg_advisory_lock(42)"))
-        conn.commit()
+    # Acquire the advisory lock on a DEDICATED connection held open for the whole
+    # upgrade (issue #284 A1.4).
+    #
+    # pg_advisory_lock is SESSION-scoped. The previous code took it on a pooled
+    # connection, returned that connection to the pool, then called engine.dispose()
+    # below — closing the session and silently dropping the lock BEFORE
+    # command.upgrade() ever ran. Concurrent replicas could therefore race Alembic.
+    # The matching unlock in the finally used a *fresh* connection, which is a no-op
+    # for the same reason: a session cannot release a lock it does not hold.
+    #
+    # A separate engine is used so the engine.dispose() further down (which exists to
+    # free pooled connections before Alembic opens its own) cannot close this one.
+    lock_engine = create_engine(settings.DATABASE_URL)
+    lock_conn = lock_engine.connect()
+    lock_conn.execute(text("SELECT pg_advisory_lock(42)"))
+    lock_conn.commit()
+    logger.info("Acquired migration advisory lock")
 
     try:
         # Ensure alembic_version column is wide enough for long revision IDs
@@ -681,11 +694,14 @@ def run_migrations() -> None:
 
         logger.info("Database migrations complete")
     finally:
-        # Release advisory lock - use a fresh engine since the previous one may be disposed
-        unlock_engine = create_engine(settings.DATABASE_URL)
+        # Release from the SAME session that took it — advisory locks are
+        # session-scoped, so unlocking from anywhere else does nothing.
         try:
-            with unlock_engine.connect() as conn:
-                conn.execute(text("SELECT pg_advisory_unlock(42)"))
-                conn.commit()
+            lock_conn.execute(text("SELECT pg_advisory_unlock(42)"))
+            lock_conn.commit()
+            logger.info("Released migration advisory lock")
+        except Exception as exc:  # noqa: BLE001 - closing the session releases it anyway
+            logger.warning("Advisory unlock failed (%s); closing the session releases it", exc)
         finally:
-            unlock_engine.dispose()
+            lock_conn.close()
+            lock_engine.dispose()

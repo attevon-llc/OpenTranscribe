@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
     acks_late=True,
     reject_on_worker_lost=True,
 )
+@with_task_lock("system_startup_recovery", timeout=900)
 def startup_recovery_task(self):
     """
     Recovery task to run on system startup to handle files/tasks interrupted by
@@ -38,6 +39,11 @@ def startup_recovery_task(self):
     1. Files stuck in PROCESSING state with no active tasks
     2. Tasks that were in progress when system went down
     3. Files that should be retried after system recovery
+
+    Guarded by ``with_task_lock`` (issue #284 A1.15): every API replica dispatches this
+    on startup, so on a rollout N replicas each re-dispatched recovery for the SAME
+    stuck files — re-queueing the same GPU transcription several times over. The lock
+    makes it run once per rollout regardless of replica count.
 
     Returns:
         Dictionary with summary of recovery actions

@@ -1,6 +1,7 @@
 # Skip heavy AI imports during testing - speeds up test startup significantly
 import logging
 import os
+import ssl
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,27 @@ from app.core.constants import CeleryQueues  # noqa: E402
 CELERY_QUEUES = tuple(Queue(q) for q in CeleryQueues.ALL)
 
 # Initialize Celery
+# kombu refuses to connect over `rediss://` unless an SSL context is supplied — it does
+# NOT fall back to a default. config.py builds a rediss:// URL whenever REDIS_USE_TLS is
+# set, so without this every worker dies at startup on a TLS Redis (issue #284 A1.17).
+# CERT_REQUIRED (the default) verifies the server certificate; set
+# CELERY_REDIS_SSL_CERT_REQS=optional|none only for a self-signed broker you control.
+_REDIS_SSL_MODES = {
+    "required": ssl.CERT_REQUIRED,
+    "optional": ssl.CERT_OPTIONAL,
+    "none": ssl.CERT_NONE,
+}
+_redis_uses_tls = str(settings.CELERY_BROKER_URL).startswith("rediss://")
+_redis_ssl_options = (
+    {
+        "ssl_cert_reqs": _REDIS_SSL_MODES.get(
+            os.getenv("CELERY_REDIS_SSL_CERT_REQS", "required").lower(), ssl.CERT_REQUIRED
+        )
+    }
+    if _redis_uses_tls
+    else None
+)
+
 celery_app = Celery(
     "transcribe_app",
     broker=settings.CELERY_BROKER_URL,
@@ -100,13 +122,19 @@ celery_app = Celery(
 
 # Configure Celery
 celery_app.conf.update(
+    broker_use_ssl=_redis_ssl_options,
+    redis_backend_use_ssl=_redis_ssl_options,
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
     task_track_started=True,
-    worker_prefetch_multiplier=1,  # One task at a time for GPU tasks
+    # GPU-safe default: one task at a time. Short-task queues (cpu/nlp/download/
+    # utility) override this per-worker with --prefetch-multiplier, since a global 1
+    # makes every worker round-trip the broker between tasks (issue #284 A1.8).
+    # Keep the GPU worker at 1 — it must never hold a second task it cannot start.
+    worker_prefetch_multiplier=1,
     worker_send_task_events=True,  # Enable real-time task events for Flower
     task_send_sent_event=True,  # Fire event when task is dispatched to queue
     result_expires=86400,  # Expire results after 24h (prevent Redis bloat)
@@ -125,6 +153,22 @@ celery_app.conf.update(
     broker_transport_options={
         "priority_steps": list(range(10)),
         "queue_order_strategy": "priority",
+        # visibility_timeout MUST exceed the longest task (issue #284 A1.1).
+        #
+        # With Redis as the broker, an un-acked message is redelivered to another
+        # worker once this elapses. The transcription tasks are acks_late=True, so a
+        # run that outlives it is handed to a SECOND worker while the first is still
+        # going — the same file transcribed twice, on the GPU, concurrently.
+        #
+        # Nothing set this before, so the kombu default of 3600s applied: ANY
+        # transcription over one hour was silently duplicated. A 4-hour media limit
+        # makes that reachable with an ordinary file, not just a pathological one.
+        #
+        # 21600 (6h) covers the longest supported job with headroom. Do NOT set it
+        # absurdly high "to be safe": crash recovery keys off DB status
+        # (tasks/recovery.py), not off redelivery, so an inflated value only delays
+        # requeueing after a genuine worker loss.
+        "visibility_timeout": int(os.getenv("CELERY_VISIBILITY_TIMEOUT", "21600")),
     },
     task_routes={
         # GPU Queue - GPU-intensive AI tasks (concurrency=1, requires GPU)
@@ -525,12 +569,19 @@ def _validate_task_routes():
 
 @task_postrun.connect
 def close_session_after_task(**kwargs):
-    """Close DB connections and clear the per-task request_id correlation."""
-    from app.db.base import engine
+    """Clear the per-task request_id correlation.
+
+    Deliberately does NOT call ``engine.dispose()`` (issue #284 A1.6). Disposing on
+    every ``task_postrun`` tears down the whole connection pool after each task, so
+    every task paid a fresh Postgres TCP + TLS + auth handshake and pooling did nothing.
+    The post-fork dispose in ``worker_process_init`` is what actually matters — it stops
+    a forked child inheriting the parent's sockets — and that is still in place.
+
+    Sessions are closed by their own context managers (``session_scope`` /
+    ``SessionLocal`` teardown), not here, so nothing leaks by removing this.
+    """
     from app.middleware.audit import set_request_id
 
     # Clear the request_id adopted in task_prerun so it can't leak into the next
     # task that reuses this thread/process (threads pool reuses workers).
     set_request_id("")
-
-    engine.dispose()

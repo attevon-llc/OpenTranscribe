@@ -11,9 +11,12 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
 ## Where things live
 
 - **Search / retrieval** — `search/` (transcript chunks + hybrid/neural; **has its own
-  CLAUDE.md** with the critical `cosinesimil` score gotcha), `opensearch_service.py` (the
-  speaker/voiceprint kNN plane + file docs), `opensearch_summary_service.py`,
-  `opensearch_snapshot.py`, `similarity_service.py`.
+  CLAUDE.md** with the critical `cosinesimil` score gotcha), `opensearch_service/` (the
+  speaker/voiceprint kNN plane + file docs; a package since #284 A3.5 — `client` owns the
+  singleton, `aliases`/`indices`/`repair` the index plane, `speaker_*` the documents, and
+  `matching`/`profiles`/`clusters` the kNN reads. Its `__init__` re-exports every name the
+  old flat module exported), `opensearch_summary_service.py`, `opensearch_snapshot.py`,
+  `similarity_service.py`.
 - **Speakers** — `speaker_*_service.py`, `profile_embedding_service.py`,
   `smart_speaker_suggestion_service.py`, `optimized_embedding_service.py`,
   `embedding_mode_service.py`, `metadata_speaker_extractor.py`.

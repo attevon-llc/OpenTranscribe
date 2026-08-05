@@ -3,8 +3,9 @@
 ## ⚠️ Cosine scores: OpenSearch `cosinesimil` is NOT raw cosine
 
 Every kNN field in this app maps `"space_type": "cosinesimil"` with `engine: lucene`
-(`indexing_service.py:122` for the chunks index; `opensearch_service.py:683/930/1122` for the
-speaker indices). Lucene's `cosinesimil` returns **`(1 + cosine) / 2`**, range 0–1.
+(`indexing_service.py:122` for the chunks index; `opensearch_service/repair.py` +
+`opensearch_service/indices.py` for the speaker indices). Lucene's `cosinesimil` returns
+**`(1 + cosine) / 2`**, range 0–1.
 
 ```python
 raw_cosine = 2.0 * hit["_score"] - 1.0
@@ -14,9 +15,10 @@ raw_cosine = 2.0 * hit["_score"] - 1.0
 instead of failing loudly. Any new kNN read must convert. The 11 existing conversion sites (all
 in the sibling speaker/voiceprint plane, none in this package):
 
-- `../opensearch_service.py` — `_extract_speaker_match` :1880 · `batch_find_matching_speakers`
-  :2069 · `msearch_profile_knn_batch` :2661 · `find_matching_clusters` :2961 ·
-  `msearch_speaker_similarities` :3056 · `find_matching_profiles` :3523
+- `../opensearch_service/matching.py` — `_extract_speaker_match` ·
+  `batch_find_matching_speakers` · `msearch_speaker_similarities`
+- `../opensearch_service/profiles.py` — `msearch_profile_knn_batch` · `find_matching_profiles`
+- `../opensearch_service/clusters.py` — `find_matching_clusters`
 - `../speaker_matching_service.py` — `find_unlabeled_speaker_matches` :333 · `_process_match_hit` :1317
 - `../profile_embedding_service.py:276` · `../smart_speaker_suggestion_service.py:178` ·
   `../similarity_service.py:197`
@@ -27,8 +29,8 @@ output is a rank-fusion score, not a similarity. Don't treat `relevance_score` a
 ## Purpose
 
 The transcript-chunk search plane: chunk → index → query. The **speaker/voiceprint** plane is
-separate and lives in `../opensearch_service.py` (alias `speakers` → `speakers_v3` 512d /
-`speakers_v4` 256d; see `core/constants.py:get_speaker_index*`).
+separate and lives in the `../opensearch_service/` package (alias `speakers` → `speakers_v3`
+512d / `speakers_v4` 256d; see `core/constants.py:get_speaker_index*`).
 
 ## Key files
 

@@ -1,21 +1,24 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   import { t } from '$stores/locale';
+  import type { Tag } from '$lib/types/tag';
   import TagsEditor from './TagsEditor.svelte';
 
   export let file: any = null;
   export let isTagsExpanded: boolean = false;
   export let aiTagSuggestions: Array<{name: string, confidence: number, rationale?: string}> = [];
 
+  const dispatch = createEventDispatcher<{ tagsUpdated: { tags: Tag[] } }>();
+
   function toggleTags() {
     isTagsExpanded = !isTagsExpanded;
   }
 
-  function handleTagsUpdated(event: any) {
-    // Re-emit the event to parent component
-    if (file) {
-      file.tags = event.detail.tags;
-    }
+  // The file-detail page owns `file`; forward the editor's update instead of
+  // mutating the prop, so the page can update its state and `reactiveFile`.
+  function forwardTagsUpdated(event: CustomEvent<{ tags: Tag[] }>) {
+    dispatch('tagsUpdated', event.detail);
   }
 </script>
 
@@ -52,7 +55,7 @@
           fileId={String(file.uuid)}
           tags={file.tags || []}
           aiSuggestions={aiTagSuggestions}
-          on:tagsUpdated={handleTagsUpdated}
+          on:tagsUpdated={forwardTagsUpdated}
         />
       {:else}
         <p>{$t('tags.loadingTags')}</p>

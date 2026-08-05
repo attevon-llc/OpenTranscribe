@@ -112,6 +112,26 @@ def _validate_production_secrets():
             "Presigned URLs will be served over an insecure connection in production."
         )
 
+    # TESTING=true makes get_current_user FABRICATE a user from the token's UUID when
+    # the DB lookup fails (endpoints/auth.py). Outside the test suite that is an
+    # authentication bypass, so refuse to boot rather than trust it (issue #284 A0.8).
+    if is_production and os.environ.get("TESTING", "False").lower() == "true":
+        logger.critical(
+            "TESTING=true outside a test environment! This enables a mock-user "
+            "authentication fallback. Refusing to start."
+        )
+        raise ValueError("TESTING must not be set in a production environment")
+
+    # A wildcard origin combined with allow_credentials=True lets any site read
+    # authenticated responses. Browsers reject that pairing, but the misconfiguration
+    # should surface at boot rather than as confusing CORS failures (issue #284 A0.8).
+    if is_production and "*" in settings.CORS_ORIGINS:
+        logger.critical(
+            "CORS_ORIGINS contains '*' while credentials are allowed. "
+            "Set explicit origins. Refusing to start."
+        )
+        raise ValueError("Wildcard CORS_ORIGINS is not permitted with credentialed requests")
+
     if is_production:
         logger.info("Production security validation passed")
 

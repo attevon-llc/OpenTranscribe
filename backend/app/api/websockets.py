@@ -12,6 +12,8 @@ from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy.orm import Session
 
+from app.auth.token_service import token_service
+
 from ..core.config import settings
 from ..core.security import verify_token
 from ..db.base import get_db
@@ -200,7 +202,22 @@ def _try_authenticate_token(
         user_identifier = payload.get("sub")  # UUID string
         if not user_identifier:
             return None
+
+        # Mirror the HTTP path's checks (endpoints/auth.py) — this branch used to skip
+        # BOTH, so a revoked token or a deactivated account still opened a socket and
+        # kept receiving that user's events (issue #284 A0.7).
+        token_jti = payload.get("jti")
+        if (
+            settings.TOKEN_REVOCATION_ENABLED
+            and token_jti
+            and token_service.is_token_revoked(token_jti)
+        ):
+            logger.warning("Rejected revoked token on WebSocket (jti=%s...)", token_jti[:8])
+            return None
+
         user = db.query(User).filter(User.uuid == user_identifier).first()
+        if user is None or not user.is_active:
+            return None
         return user  # type: ignore[no-any-return]
     except Exception as e:
         logger.error(f"WebSocket token authentication error: {str(e)}")

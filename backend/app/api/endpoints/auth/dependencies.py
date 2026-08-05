@@ -191,6 +191,16 @@ def get_current_user(
         request.state.user_id = user.id
         request.state.org_id = getattr(user, "external_org_id", None)
         return user  # type: ignore[no-any-return]
+    except HTTPException:
+        # FAIL CLOSED. `credentials_exception` (401, unknown user) and the 400
+        # "Inactive user" raised above are *authorization decisions*, not
+        # infrastructure errors — but they are HTTPExceptions, so the broad
+        # handler below caught them and, under TESTING, replaced the denial with
+        # a FABRICATED authenticated user. That made "unknown user" and
+        # "deactivated user" both resolve to a valid session. Re-raise instead:
+        # the mock-user shortcut now only covers what it was written for, an
+        # unavailable database.
+        raise
     except Exception as e:
         # Handle database connection errors or other issues
         logger.error(f"Error retrieving user: {e}")

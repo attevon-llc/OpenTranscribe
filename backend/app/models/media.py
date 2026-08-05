@@ -8,10 +8,12 @@ from sqlalchemy import DateTime
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import Float
 from sqlalchemy import ForeignKey
+from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
@@ -529,17 +531,49 @@ class Comment(Base):
 
 
 class Tag(Base):
+    """A tag, owned by one user or shared as system vocabulary.
+
+    ``user_id`` is NULL for **system tags** (the seeded ``Important`` /
+    ``Meeting`` / ``Interview`` / ``Personal`` set, visible to everyone) and set
+    for a user's private tags. Uniqueness is therefore per owner, not global —
+    ``name`` alone can match several rows, so never look a tag up by name
+    without an owner predicate or a join through ``file_tag`` (migration
+    ``v374_add_tag_user_id``).
+    """
+
     __tablename__ = "tag"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
-    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id"), nullable=True, index=True
+    )
     source: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )  # "manual" | "auto_ai" | "ai_accepted"
     normalized_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    # Two partial unique indexes rather than one composite UNIQUE: Postgres
+    # treats NULLs as distinct, so UNIQUE(user_id, name) alone would allow
+    # duplicate system tags and break the idempotent seeder.
+    __table_args__ = (
+        Index(
+            "uq_tag_user_name",
+            "user_id",
+            "name",
+            unique=True,
+            postgresql_where=text("user_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_tag_system_name",
+            "name",
+            unique=True,
+            postgresql_where=text("user_id IS NULL"),
+        ),
+    )
 
 
 class FileTag(Base):

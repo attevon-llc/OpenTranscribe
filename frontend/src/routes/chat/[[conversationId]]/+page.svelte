@@ -53,9 +53,18 @@
 
   // Route → store. Opening a different conversation (including via back/forward)
   // loads it; landing on bare /chat resets to a fresh thread.
+  //
+  // The self-created check is what keeps the FIRST answer of a new chat alive:
+  // sending on /chat creates the conversation and navigates to /chat/{uuid},
+  // which lands here mid-stream. Reloading at that moment would clear the
+  // optimistic messages the stream is writing into — and the assistant row does
+  // not exist server-side until the stream finishes, so the reload would show a
+  // lone question and every delta would land nowhere.
   $: if (data.conversationId && data.conversationId !== lastLoadedId) {
     lastLoadedId = data.conversationId;
-    chatStore.openConversation(data.conversationId);
+    if (!chatStore.consumeSelfCreated(data.conversationId)) {
+      chatStore.openConversation(data.conversationId);
+    }
   } else if (!data.conversationId && lastLoadedId !== null) {
     lastLoadedId = null;
     chatStore.newConversation();

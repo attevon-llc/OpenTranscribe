@@ -79,6 +79,11 @@ function createChatStore() {
   // Stream bookkeeping — deliberately outside the store.
   let controller: AbortController | null = null;
   let pendingContext: string[] | null = null;
+  // Conversations this store created itself. The route syncs `conversationId`
+  // from the URL and normally reloads on change, but when WE navigate after
+  // lazily creating a conversation, that reload would wipe the optimistic
+  // messages and the in-flight stream's target — losing the entire first answer.
+  const selfCreated = new Set<string>();
 
   function setStatus(next: StreamStatus): void {
     update((state) =>
@@ -212,9 +217,17 @@ function createChatStore() {
         setStatus('done');
         update((s) => ({
           ...s,
-          messages: s.messages.map((m) =>
-            m.uuid === s.streamingMessageId ? { ...m, pending: false, status: 'complete' } : m
-          ),
+          messages: s.messages.map((m) => {
+            if (m.uuid !== s.streamingMessageId) return m;
+            // The server always sends `done`, even after an `error` frame. Only
+            // clear the pending flag in that case — rewriting status to
+            // 'complete' would erase the error text AND the Retry button,
+            // leaving a blank bubble with no explanation.
+            if (m.status === 'error' || m.status === 'cancelled') {
+              return { ...m, pending: false };
+            }
+            return { ...m, pending: false, status: 'complete' };
+          }),
           // The server names a conversation from its first question.
           conversations: event.title
             ? s.conversations.map((c) =>
@@ -314,6 +327,16 @@ function createChatStore() {
     async searchConversations(query: string): Promise<void> {
       update((s) => ({ ...s, conversationsQuery: query, conversationsOffset: 0 }));
       await loadConversations(true);
+    },
+
+    /**
+     * Whether this store just created the given conversation.
+     *
+     * Consumed once by the route so a later genuine navigation to the same
+     * conversation still reloads it from the server.
+     */
+    consumeSelfCreated(uuid: string): boolean {
+      return selfCreated.delete(uuid);
     },
 
     /** Reset to a blank composer without creating a server row yet. */
@@ -419,6 +442,7 @@ function createChatStore() {
             settings: { use_context: state.useContext },
           });
           conversationUuid = created.uuid;
+          selfCreated.add(created.uuid);
           update((s) => ({
             ...s,
             activeConversationId: created.uuid,
@@ -576,6 +600,7 @@ function createChatStore() {
       controller?.abort();
       controller = null;
       pendingContext = null;
+      selfCreated.clear();
       set({ ...initialState, scope: emptyScope() });
     },
   };

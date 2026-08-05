@@ -19,6 +19,7 @@ replace the base rules or turn off the redaction posture.
 from __future__ import annotations
 
 import logging
+import re
 
 from app.services.chat.redactor import MaskedChunk
 
@@ -54,25 +55,36 @@ _MAX_SYSTEM_PROMPT_CHARS = 2000
 _CHARS_PER_TOKEN = 4
 
 
+# Matches an excerpt tag opener in any casing, with optional whitespace, e.g.
+# "<excerpt", "</excerpt", "< / EXCERPT". Used to defuse breakout attempts.
+_EXCERPT_TAG_RE = re.compile(r"<\s*/?\s*excerpt", re.IGNORECASE)
+
+
 def _sanitize_chunk_text(text: str) -> str:
-    """Neutralize attempts to break out of the excerpt wrapper."""
-    # Case-insensitively defuse any closing-tag lookalike in transcript content.
-    lowered = text.lower()
-    if "</excerpt" in lowered or "<excerpt" in lowered:
-        out = []
-        i = 0
-        while i < len(text):
-            if lowered.startswith("</excerpt", i):
-                out.append("<\\/excerpt")
-                i += len("</excerpt")
-            elif lowered.startswith("<excerpt", i):
-                out.append("<\\excerpt")
-                i += len("<excerpt")
-            else:
-                out.append(text[i])
-                i += 1
-        return "".join(out)
-    return text
+    """Neutralize attempts to break out of the excerpt wrapper.
+
+    Regex-based ON PURPOSE. An earlier version walked the string comparing
+    against ``text.lower()`` — which desynchronizes for characters whose
+    lowercase form is LONGER than the original (Turkish "İ" lowercases to two
+    codepoints). Past a handful of those, the offsets drift far enough that a
+    real ``</excerpt>`` slips through intact while unrelated characters get
+    clobbered. Never index one string with another string's offsets.
+    """
+    return _EXCERPT_TAG_RE.sub(lambda m: "<\\" + m.group(0)[1:], text)
+
+
+def _sanitize_attribute(value: str) -> str:
+    """Make a metadata value safe to interpolate into an excerpt tag attribute.
+
+    File titles and speaker names are arbitrary user strings, and in a shared or
+    org deployment the person who set them is not necessarily the person
+    chatting. A title containing a quote plus a closing tag would otherwise end
+    the wrapper early and inject instructions above the transcript body.
+    """
+    cleaned = _EXCERPT_TAG_RE.sub("", value or "")
+    for ch in ('"', "<", ">", "\n", "\r"):
+        cleaned = cleaned.replace(ch, " ")
+    return " ".join(cleaned.split())[:120]
 
 
 def _clock(seconds: float) -> str:
@@ -149,10 +161,11 @@ def format_excerpts(chunks: list[MaskedChunk], *, budget_chars: int) -> tuple[st
         content = _sanitize_chunk_text(chunk.content).strip()
         if not content:
             continue
-        speaker = chunk.speaker or "Unknown speaker"
-        title = chunk.title or "Untitled recording"
-        # Attributes are OUR metadata, not model output — safe to interpolate,
-        # but the transcript body is only ever concatenated.
+        speaker = _sanitize_attribute(chunk.speaker or "") or "Unknown speaker"
+        title = _sanitize_attribute(chunk.title or "") or "Untitled recording"
+        # Attribute VALUES are sanitized above: they are user-controlled strings
+        # (file titles, speaker names), not trusted metadata. The transcript body
+        # is only ever concatenated, never interpolated.
         header = (
             f'<excerpt id="{index}" recording="{title}" '
             f'speaker="{speaker}" time="{_clock(chunk.start_time)}">\n'

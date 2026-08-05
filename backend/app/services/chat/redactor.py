@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from app.core import constants as C  # noqa: N812
 from app.services.search.chunk_retrieval import ChunkHit
 
 logger = logging.getLogger(__name__)
@@ -63,11 +64,29 @@ class MaskedChunk:
 def _mask_from_segments(db: Session, chunk: ChunkHit, cfg) -> str | None:
     """Rebuild a chunk's text from its segments, masked via cached spans.
 
-    Returns None when the chunk can't be reconstructed (no overlapping segments),
-    so the caller can fall back rather than silently sending unmasked text.
+    Returns None whenever the cached-span path cannot be trusted, so the caller
+    falls back to inline detection rather than sending unmasked text.
+
+    **The redaction_status gate is the important part.** Cached spans only exist
+    once detection has finished for the file. Without this check the function
+    would happily "mask" a file whose ``redactions`` are still NULL — masking
+    nothing and returning the raw text, which the caller would then treat as
+    safe. Chat is exactly the surface where you ask about recordings you never
+    opened, so unscanned files are the common case, not the edge case.
+
+    Deliberately does NOT use ``transcript_builders._seg_text``: that helper
+    swallows masking errors and returns the ORIGINAL text, which is the opposite
+    of what this path needs. Exceptions propagate to the caller's fail-closed
+    handler instead.
     """
+    from app.models.media import MediaFile
     from app.models.media import TranscriptSegment
-    from app.utils.transcript_builders import _seg_text
+    from app.services.redaction.service import RedactionService
+
+    status = db.query(MediaFile.redaction_status).filter(MediaFile.id == chunk.file_id).scalar()
+    if status != C.REDACTION_STATUS_DONE:
+        # Detection hasn't run (or didn't finish) — there are no spans to apply.
+        return None
 
     end_time = chunk.end_time if chunk.end_time is not None else chunk.start_time
     segments = (
@@ -83,7 +102,17 @@ def _mask_from_segments(db: Session, chunk: ChunkHit, cfg) -> str | None:
     if not segments:
         return None
 
-    return " ".join(_seg_text(segment, cfg) for segment in segments).strip() or None
+    masked_parts = []
+    for segment in segments:
+        text = str(segment.text or "")
+        if not text:
+            continue
+        masked, _applied = RedactionService.mask_segment(
+            text, segment.redactions or [], segment.words, cfg, set()
+        )
+        masked_parts.append(masked)
+
+    return " ".join(masked_parts).strip() or None
 
 
 def _mask_inline(text: str, cfg) -> str:
@@ -135,7 +164,14 @@ def mask_chunks(db: Session, chunks: list[ChunkHit], user_id: int) -> list[Maske
     masked: list[MaskedChunk] = []
     inline_fallbacks = 0
     for chunk in chunks:
-        text = _mask_from_segments(db, chunk, cfg)
+        try:
+            text = _mask_from_segments(db, chunk, cfg)
+        except Exception:  # noqa: BLE001
+            logger.exception("Cached-span masking failed for chunk; withholding content")
+            # Fail CLOSED — an unmaskable chunk contributes nothing.
+            masked.append(MaskedChunk(source=chunk, content="", was_masked=True))
+            continue
+
         if text is None:
             inline_fallbacks += 1
             text = _mask_inline(chunk.content, cfg)

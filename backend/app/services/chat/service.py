@@ -23,6 +23,7 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
+import anyio
 from starlette.concurrency import iterate_in_threadpool
 from starlette.concurrency import run_in_threadpool
 
@@ -80,6 +81,9 @@ class ChatTurn:
         self.error_code: str | None = None
         self.offered_citations: list[dict] = []
         self.metadata: dict[str, Any] = {}
+        # Filled in by _finalize_turn so the trailing frames can read them.
+        self.total_tokens = 0
+        self.title: str | None = None
 
     @property
     def answer(self) -> str:
@@ -150,6 +154,91 @@ def _prepare_context(
     return masked, meta
 
 
+async def _finalize_turn(
+    *,
+    turn: ChatTurn,
+    llm,
+    messages: list[dict[str, str]],
+    masked_count: int,
+    conversation_id: int,
+    conversation_uuid: str,
+    assistant_message_uuid: str,
+    user_id: int,
+    organization_id: int | None,
+    is_first_exchange: bool,
+    question: str,
+    started: float,
+) -> None:
+    """Persist, meter and audit one turn. Safe to call during teardown.
+
+    Called from the streaming generator's ``finally`` so a cancelled or
+    disconnected stream still records what it produced. Every step is
+    individually contained: a failure here must never propagate into the
+    teardown path and mask the original exception.
+    """
+    # Token fallback for providers that report nothing (notably "custom"
+    # OpenAI-clones, which can't be sent stream_options.include_usage).
+    if turn.prompt_tokens is None and turn.completion_tokens is None:
+        try:
+            turn.prompt_tokens = llm.estimate_tokens("".join(m["content"] for m in messages))
+            turn.completion_tokens = llm.estimate_tokens(turn.answer)
+            turn.tokens_estimated = True
+        except Exception:  # noqa: BLE001
+            logger.exception("Token estimation failed")
+
+    turn.total_tokens = (turn.prompt_tokens or 0) + (turn.completion_tokens or 0)
+    turn.metadata.setdefault("timings_ms", {})["total"] = int((time.monotonic() - started) * 1000)
+    used_citations = citations_mod.extract_used_citations(turn.answer, turn.offered_citations)
+
+    try:
+        turn.title = await run_in_threadpool(
+            _persist_reply,
+            conversation_id,
+            assistant_message_uuid,
+            turn,
+            used_citations,
+            turn.total_tokens,
+            llm,
+            is_first_exchange,
+            question,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to persist chat reply %s", assistant_message_uuid)
+
+    limits.clear_cancel(assistant_message_uuid)
+
+    try:
+        fire_message_complete(
+            ChatCompletionContext(
+                conversation_uuid=conversation_uuid,
+                message_uuid=assistant_message_uuid,
+                user_id=user_id,
+                organization_id=organization_id,
+                provider=str(llm.config.provider.value),
+                model=str(llm.config.model),
+                prompt_tokens=turn.prompt_tokens or 0,
+                completion_tokens=turn.completion_tokens or 0,
+                total_tokens=turn.total_tokens,
+                tokens_estimated=turn.tokens_estimated,
+                retrieved_chunks=masked_count,
+                success=not turn.error,
+            )
+        )
+    except Exception:  # noqa: BLE001 — hooks are contained by contract
+        logger.exception("Chat completion hook raised past its guard")
+
+    _audit_message(
+        user_id=user_id,
+        organization_id=organization_id,
+        conversation_uuid=conversation_uuid,
+        message_uuid=assistant_message_uuid,
+        llm=llm,
+        turn=turn,
+        chunk_count=masked_count,
+        total_tokens=turn.total_tokens,
+    )
+
+
 class ChatService:
     """Streams one assistant reply and persists both sides of the exchange."""
 
@@ -215,6 +304,7 @@ class ChatService:
 
         masked: list[MaskedChunk] = []
         messages: list[dict[str, str]] = []
+        reached_end = False
         try:
             if use_context:
                 # Query rewriting is a separate LLM round trip, so it is worth
@@ -304,85 +394,61 @@ class ChatService:
             turn.error = str(exc)
             turn.error_code = "provider_error"
             yield sse("error", {"code": "provider_error", "message": "Generation failed."})
+        else:
+            reached_end = True
         finally:
             cancel_event.set()
 
-        # Token fallback for providers that report nothing (notably "custom"
-        # OpenAI-clones, which can't be sent stream_options.include_usage).
-        if turn.prompt_tokens is None and turn.completion_tokens is None:
-            turn.prompt_tokens = llm.estimate_tokens("".join(m["content"] for m in messages))
-            turn.completion_tokens = llm.estimate_tokens(turn.answer)
-            turn.tokens_estimated = True
+            # Persistence, metering and audit MUST run here, not after the try.
+            #
+            # A client disconnect (closed tab, navigation, or the Stop button —
+            # which aborts the fetch before its cancel POST lands) makes Starlette
+            # cancel this task, delivering GeneratorExit/CancelledError at a
+            # `yield`. Both are BaseException, so `except Exception` above does not
+            # catch them and any code placed AFTER the try block would simply never
+            # run — silently losing the partial answer, skipping the cloud metering
+            # hook (letting a user consume provider tokens unbilled by aborting
+            # just before completion), and dropping the audit record.
+            #
+            # The cancel scope is shielded so the DB write survives the very
+            # cancellation that triggered it. It contains no `yield`, which is what
+            # makes awaiting here legal during generator teardown.
+            if not reached_end and not turn.error:
+                # Torn down mid-stream: record it as the cancellation it is.
+                turn.finish_reason = "cancelled"
 
-        used_citations = citations_mod.extract_used_citations(turn.answer, turn.offered_citations)
-        total_tokens = (turn.prompt_tokens or 0) + (turn.completion_tokens or 0)
-        turn.metadata.setdefault("timings_ms", {})["total"] = int(
-            (time.monotonic() - started) * 1000
-        )
+            with anyio.CancelScope(shield=True):
+                await _finalize_turn(
+                    turn=turn,
+                    llm=llm,
+                    messages=messages,
+                    masked_count=len(masked),
+                    conversation_id=conversation_id,
+                    conversation_uuid=conversation_uuid,
+                    assistant_message_uuid=assistant_message_uuid,
+                    user_id=user_id,
+                    organization_id=organization_id,
+                    is_first_exchange=is_first_exchange,
+                    question=question,
+                    started=started,
+                )
 
-        title = None
-        try:
-            title = await run_in_threadpool(
-                _persist_reply,
-                conversation_id,
-                assistant_message_uuid,
-                turn,
-                used_citations,
-                total_tokens,
-                llm,
-                is_first_exchange,
-                question,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to persist chat reply %s", assistant_message_uuid)
-
-        limits.clear_cancel(assistant_message_uuid)
-
+        # Only reachable on a normal (non-cancelled) exit — there is no client
+        # left to receive these frames otherwise.
         if not turn.error:
             yield sse(
                 "usage",
                 {
                     "prompt_tokens": turn.prompt_tokens or 0,
                     "completion_tokens": turn.completion_tokens or 0,
-                    "total_tokens": total_tokens,
+                    "total_tokens": turn.total_tokens,
                     "estimated": turn.tokens_estimated,
                 },
             )
 
-        try:
-            fire_message_complete(
-                ChatCompletionContext(
-                    conversation_uuid=conversation_uuid,
-                    message_uuid=assistant_message_uuid,
-                    user_id=user_id,
-                    organization_id=organization_id,
-                    provider=str(llm.config.provider.value),
-                    model=str(llm.config.model),
-                    prompt_tokens=turn.prompt_tokens or 0,
-                    completion_tokens=turn.completion_tokens or 0,
-                    total_tokens=total_tokens,
-                    tokens_estimated=turn.tokens_estimated,
-                    retrieved_chunks=len(masked),
-                    success=not turn.error,
-                )
-            )
-        except Exception:  # noqa: BLE001 — hooks are contained by contract
-            logger.exception("Chat completion hook raised past its guard")
-
-        _audit_message(
-            user_id=user_id,
-            organization_id=organization_id,
-            conversation_uuid=conversation_uuid,
-            message_uuid=assistant_message_uuid,
-            llm=llm,
-            turn=turn,
-            chunk_count=len(masked),
-            total_tokens=total_tokens,
-        )
-
         done_payload: dict[str, Any] = {"finish_reason": turn.finish_reason or "stop"}
-        if title:
-            done_payload["title"] = title
+        if turn.title:
+            done_payload["title"] = turn.title
         yield sse("done", done_payload)
 
 

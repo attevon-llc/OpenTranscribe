@@ -103,7 +103,17 @@ async function readStream(
   if (!reader) throw new Error('Streaming is not supported by this browser.');
 
   const decoder = new TextDecoder();
-  const parser = createSseParser(onEvent);
+
+  // Every stream must end with a `done` or `error` frame. Anything else — the
+  // inactivity watchdog firing, a proxy idle-close, a worker restart — exits the
+  // read loop CLEANLY (reader.cancel() resolves the pending read with
+  // {done:true}), so without this flag the caller would see a successful return
+  // and leave the composer stuck showing "Stop" forever.
+  let sawTerminal = false;
+  const parser = createSseParser((event) => {
+    if (event.type === 'done' || event.type === 'error') sawTerminal = true;
+    onEvent(event);
+  });
 
   let watchdog: ReturnType<typeof setTimeout> | undefined;
   const resetWatchdog = () => {
@@ -127,6 +137,17 @@ async function readStream(
     }
     parser.push(decoder.decode());
     parser.end();
+
+    if (!sawTerminal) {
+      if (signal.aborted) {
+        // Stop was pressed and the cancel raced the body teardown; surface it as
+        // an abort so the caller keeps the partial answer.
+        const aborted = new Error('Stream aborted');
+        aborted.name = 'AbortError';
+        throw aborted;
+      }
+      throw new Error('Stream ended without a completion frame');
+    }
   } finally {
     if (watchdog) clearTimeout(watchdog);
     signal.removeEventListener('abort', onAbort);

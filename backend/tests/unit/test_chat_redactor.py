@@ -56,30 +56,124 @@ def test_redaction_disabled_entirely_passes_content_through():
     assert masked[0].was_masked is False
 
 
+def _db_with(status, segments):
+    """A db mock that answers the status probe and the segment query distinctly."""
+    db = MagicMock()
+    status_q = MagicMock()
+    status_q.filter.return_value.scalar.return_value = status
+    seg_q = MagicMock()
+    seg_q.filter.return_value.order_by.return_value.all.return_value = segments
+    db.query.side_effect = [status_q, seg_q]
+    return db
+
+
 def test_policy_on_rebuilds_text_from_cached_segment_spans():
     """Primary path: cached spans make masking sub-millisecond, no detectors run."""
-    db = MagicMock()
-    segment = SimpleNamespace(text="my number is 555-1234", redactions=[], words=None)
-    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = [segment]
+    segment = SimpleNamespace(
+        text="my number is 555-1234",
+        redactions=[{"char_start": 13, "char_end": 21, "category": "pii", "entity_type": "PHONE"}],
+        words=None,
+    )
+    db = _db_with("done", [segment])
 
     with (
         patch(
             "app.services.redaction.config.resolve_effective_config",
             return_value=_cfg(enabled=True, redact_before_llm=True),
         ),
-        patch("app.utils.transcript_builders._seg_text", return_value="my number is [PHONE]"),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            return_value=("my number is [PHONE]", []),
+        ) as mask_segment,
     ):
         masked = mask_chunks(db, [_chunk()], user_id=1)
 
     assert masked[0].content == "my number is [PHONE]"
     assert masked[0].was_masked is True
     assert "555-1234" not in masked[0].content
+    # The REAL masker ran against the cached spans — not a stubbed helper.
+    assert mask_segment.call_args[0][1] == segment.redactions
+
+
+def test_uncached_spans_do_not_pass_as_masked():
+    """Regression: the fail-OPEN that shipped in the first implementation.
+
+    A file whose redaction detection never ran has ``redactions`` NULL. The old
+    code still took the "cached spans" branch, applied nothing, and returned the
+    RAW text while marking it masked. Chat is exactly where you query files you
+    never opened, so this was the common case.
+    """
+    segment = SimpleNamespace(text="my number is 555-1234", redactions=None, words=None)
+    db = _db_with(None, [segment])  # redaction_status not 'done'
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            return_value=([], None),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            return_value=("my number is [PHONE]", []),
+        ),
+    ):
+        masked = mask_chunks(db, [_chunk()], user_id=1)
+
+    # Must have gone down the inline-detection path, not returned raw text.
+    assert "555-1234" not in masked[0].content
+
+
+def test_incomplete_detection_status_forces_the_inline_path():
+    """Any status other than 'done' means the cached spans cannot be trusted."""
+    segment = SimpleNamespace(text="secret 555-1234", redactions=[], words=None)
+
+    for status in (None, "pending", "processing", "failed"):
+        db = _db_with(status, [segment])
+        with (
+            patch(
+                "app.services.redaction.config.resolve_effective_config",
+                return_value=_cfg(enabled=True, redact_before_llm=True),
+            ),
+            patch(
+                "app.services.redaction.service.RedactionService.detect_segment_spans",
+                return_value=([], None),
+            ) as detect,
+            patch(
+                "app.services.redaction.service.RedactionService.mask_segment",
+                return_value=("[MASKED]", []),
+            ),
+        ):
+            mask_chunks(db, [_chunk()], user_id=1)
+        assert detect.called, f"status={status!r} should force inline detection"
+
+
+def test_masking_error_on_the_cached_path_fails_closed():
+    """An exception mid-mask must withhold the chunk, not leak the original."""
+    segment = SimpleNamespace(text="my number is 555-1234", redactions=[], words=None)
+    db = _db_with("done", [segment])
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            side_effect=RuntimeError("masker exploded"),
+        ),
+    ):
+        masked = mask_chunks(db, [_chunk()], user_id=1)
+
+    assert masked[0].content == ""
+    assert masked[0].was_masked is True
 
 
 def test_falls_back_to_inline_masking_when_segments_are_missing():
     """Files whose detection hasn't finished still get masked, just more slowly."""
-    db = MagicMock()
-    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+    db = _db_with("done", [])
 
     with (
         patch(
@@ -103,8 +197,7 @@ def test_falls_back_to_inline_masking_when_segments_are_missing():
 
 def test_inline_masking_failure_drops_content_rather_than_leaking_it():
     """Fail CLOSED: an unmaskable chunk contributes nothing to the prompt."""
-    db = MagicMock()
-    db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+    db = _db_with("done", [])
 
     with (
         patch(

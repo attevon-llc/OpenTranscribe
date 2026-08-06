@@ -62,6 +62,13 @@ Request/response shaping and validation only; logic lives in `app/services`. 25 
 - **Some schemas are dead documentation** — the endpoint hand-builds a dict instead: all of `search.py`
   bar `SetEmbeddingModelSchema` (`api/endpoints/search.py` declares no `response_model` at all),
   `CustomVocabularyResponse`, `UserASRSettingsResponse`, `ASRSettingsList`, `SpeakerClusterResponse`.
+- **There is exactly one tag shape (#326).** `media.py:Tag` (`uuid`/`name`/`source`) is what
+  `/api/tags` (as `TagWithCount`), `POST /api/tags`, `POST /api/tags/files/{uuid}/tags` **and**
+  `MediaFileDetail.tags` all serve. `MediaFileDetail.tags` was `list[str]` until #326 — don't
+  reintroduce a name-only projection; `source` is the AI-vs-manual signal and names are unique
+  only per owner since `v374_add_tag_user_id`. `MediaFile` (the **list** schema) has no `tags`
+  field at all, and adding one costs a per-row query. Note the OpenSearch index is a separate
+  contract: search hits still carry `tags` as a `keyword` array of names.
 - **`ConnectionTestResponse` is defined twice** (`llm_settings.py:152`, `watch_source.py:293`) and
   `__init__.py` exports only the LLM one — the package-level import silently yields the wrong shape.
 - `sharing.py:24 Share.shared_by` is typed `UserBrief` but `UUIDBaseSchema` maps `shared_by` to a bare

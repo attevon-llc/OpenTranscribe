@@ -25,27 +25,6 @@
     .filter(tag => tag.source === 'auto_ai')
     .map(tag => tag.name);
 
-  // Ensure tags are always in the correct format
-  $: {
-    if (Array.isArray(tags)) {
-      // Handle case where backend returns tag names as strings instead of objects
-      tags = tags.map((tag: Tag | string): Tag => {
-        if (typeof tag === 'string') {
-          // Convert string tag to object format with a temporary UUID
-          return { uuid: `temp-${tag}`, name: tag };
-        } else if (tag && typeof tag === 'object') {
-          // Ensure tag object has required properties - preserve uuid and source
-          return {
-            uuid: tag.uuid !== undefined ? tag.uuid : `temp-${tag.name}`,
-            name: tag.name || '',
-            source: tag.source || undefined
-          };
-        }
-        return tag;
-      });
-    }
-  }
-
   let allTags: Tag[] = [];
   let newTagInput = '';
   let loading = false;

@@ -3,13 +3,17 @@
  *
  * `TagsSection` used to carry a handler commented "Re-emit the event to parent
  * component" that never called `dispatch` — it mutated the `file` prop and
- * stopped. The file-detail page listens for `tagsUpdated` to update its own
- * state and `reactiveFile`, so tag edits never propagated. These tests pin the
- * forwarding: the editor's `tagsUpdated` must reach the page unchanged, and the
- * section must not mutate the page-owned `file` object.
+ * stopped. The file-detail page listens for `tagsUpdated` to assign `file.tags`,
+ * which is what re-renders the section, so tag edits never propagated. These
+ * tests pin the forwarding: the editor's `tagsUpdated` must reach the page
+ * unchanged, and the section must not mutate the page-owned `file` object.
+ *
+ * The tag payload is `Tag[]` on the wire now (#326) — `MediaFileDetail.tags`
+ * carries objects, not bare names — so the fixture uses tag objects.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import type { MediaFileDetail } from '$lib/types/media';
 import TagsSection from './TagsSection.svelte';
 
 const axiosMock = vi.hoisted(() => ({
@@ -20,9 +24,12 @@ const axiosMock = vi.hoisted(() => ({
 
 vi.mock('$lib/axios', () => ({ default: axiosMock }));
 
-function fileWithTags() {
+function fileWithTags(): MediaFileDetail {
   return {
     uuid: 'file-uuid-1',
+    filename: 'alpha.mp4',
+    status: 'completed',
+    upload_time: '2026-01-01T00:00:00Z',
     tags: [{ uuid: 'tag-uuid-1', name: 'alpha' }],
   };
 }

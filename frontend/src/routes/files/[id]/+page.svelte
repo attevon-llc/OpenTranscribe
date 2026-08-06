@@ -3,8 +3,9 @@
   import type { Segment, Speaker } from '$lib/types/speaker';
   import type { Collection } from '$lib/types/collection';
   import type { Comment } from '$lib/types/comment';
+  import type { Tag } from '$lib/types/tag';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
-  import { writable, get } from 'svelte/store';
+  import { get } from 'svelte/store';
   import axiosInstance from '$lib/axios';
   import { formatDuration } from '$lib/utils/formatting';
   import { loadTxtPrefs, saveTxtPrefs } from '$lib/export/txtExportPrefs';
@@ -188,9 +189,6 @@
   let bulkSaveInProgress = false;
   let bulkSaveDecisions = new Map();
 
-  // Reactive store for file updates
-  const reactiveFile = writable(null);
-
 
   /**
    * Fetches file details from the API
@@ -239,7 +237,6 @@
 
         // Update file object
         file = { ...file };
-        reactiveFile.set(file);
 
         // Process the new transcript data
         processTranscriptData();
@@ -283,7 +280,6 @@
             redactionActive = true;
           }
         }
-        reactiveFile.set(file);
 
         // Track pagination metadata
         totalSegments = response.data.total_segments || 0;
@@ -357,7 +353,6 @@
             redactionActive = true;
           }
         }
-        reactiveFile.set(file);
         processTranscriptData();
       }
     } catch (error) {
@@ -417,7 +412,6 @@
           ...response.data.transcript_segments
         ];
         file = { ...file }; // Trigger reactivity
-        reactiveFile.set(file);
 
         // Update pagination state
         totalSegments = response.data.total_segments || totalSegments;
@@ -469,7 +463,6 @@
           ...response.data.transcript_segments
         ];
         file = { ...file };
-        reactiveFile.set(file);
         totalSegments = response.data.total_segments || totalSegments;
 
         if (file?.uuid && file.transcript_segments && speakerList) {
@@ -816,7 +809,6 @@
         // Update file data (includes analytics and transcript segments)
         file = response.data;
         collections = response.data.collections || [];
-        reactiveFile.set(file);
 
         // Process transcript data from the refreshed response
         processTranscriptData();
@@ -858,7 +850,6 @@
       if (response.data && typeof response.data === 'object') {
         // Update analytics from refreshed response
         file.analytics = response.data.analytics;
-        reactiveFile.set(file);
       }
     } catch (error) {
       console.error('Error refreshing analytics after speaker change:', error);
@@ -1008,7 +999,6 @@
       // Update file data
       file.transcript_segments = transcriptData.map(segment => ({ ...segment }));
       file = { ...file }; // Trigger reactivity
-      reactiveFile.set(file);
     }
 
     // Update subtitles in the video player with new speaker names
@@ -1119,7 +1109,6 @@
               ...file,
               transcript_segments: updatedSegments
             };
-            reactiveFile.set(file);
 
 
             // Clear cached processed videos so downloads will use updated transcript
@@ -1532,7 +1521,6 @@
 
       file.transcript_segments = [...transcriptData];
       file = { ...file };
-      reactiveFile.set(file);
     }
 
     // Update subtitles and clear cache (async, don't block)
@@ -1574,10 +1562,11 @@
     }
   }
 
-  function handleTagsUpdated(event: any) {
+  // `file.tags` is the update path: assigning a member of the reactive `file`
+  // invalidates it, which re-renders TagsSection with the new tag objects.
+  function handleTagsUpdated(event: CustomEvent<{ tags: Tag[] }>) {
     if (file) {
       file.tags = event.detail.tags;
-      reactiveFile.set(file);
     }
   }
 
@@ -1591,7 +1580,6 @@
     if (file) {
       file.collections = updatedCollections;
       file = { ...file }; // Trigger reactivity
-      reactiveFile.set(file);
     }
   }
 
@@ -1884,7 +1872,6 @@
               getRedactionStatus: () => redactionStatus,
               getVideoPlayerComponent: () => videoPlayerComponent,
               setFile: (f) => (file = f),
-              setReactiveFile: (f) => reactiveFile.set(f),
               setCurrentProcessingStep: (s) => (currentProcessingStep = s),
               setSummaryGenerating: (v) => (summaryGenerating = v),
               setGeneratingSummary: (v) => (generatingSummary = v),

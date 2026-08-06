@@ -140,6 +140,7 @@ This release also incorporates the substantial pipeline work that landed since v
 
 ### Changed
 
+- **Removed the write-only `reactiveFile` store from the file-detail page (issue #338)**: `frontend/src/routes/files/[id]/+page.svelte` declared `const reactiveFile = writable(null)` — a page-local `const`, never exported — and wrote to it 13 times. Nothing subscribed: no `$reactiveFile`, no `.subscribe()`, no importer. A store with no subscribers does nothing on `.set()`, so all 13 calls were inert, and they actively misled review (a reader sees `reactiveFile.set(file)` after a mutation and concludes the UI will refresh). The real update path is the page's own `file` assignment/invalidation propagating to its children — which is what `frontend/src/components/fileDetail/CLAUDE.md` already documented as the pattern. The store, its 13 writes, the `setReactiveFile` member of `FileNotificationContext`, its 3 call sites in `$lib/fileDetail/notificationHandler.ts`, and the doc comment that described it as the websocket integration point are all gone. `setFile` is untouched — it performs the real `file = ...` assignment and is load-bearing.
 - **Backend code-quality overhaul (maintainability, no behavior change)**: a sweep of the FastAPI backend with characterization tests as the regression net. **SQLAlchemy 2.0 typed models** — all 26 model files converted from legacy `Column()` to `Mapped[]`/`mapped_column()`, which let mypy see real column types and drop ~165 errors, and made 257 defensive `int(current_user.id)`-style casts provably redundant (removed); a `pg_dump` before/after diff proved zero schema change. **Blocking I/O off the event loop** — 17 `async` handlers that made synchronous MinIO/OpenSearch calls were either converted to `def` (FastAPI threadpools them) or wrapped in `run_in_threadpool`. **Endpoint dedup** — a message-parameterized `require_resource_owner` helper consolidated 17 copy-pasted ownership checks, a shared `paginate()` helper and an `ErrorHandler.internal_error()` replaced repeated boilerplate, all behavior-preserving and snapshot-gated. **Comprehensive endpoint test coverage** — characterization suites for all 39 previously-untested endpoint modules (~720 new tests across auth, files, speakers, settings, collaboration, and system/admin), with a byte-exact ownership-contract spec; coverage floor ratcheted 35 → 37 %. Celery task DB sessions standardized on `session_scope()`. **UUIDv7 generation** — all primary `uuid` columns now mint time-ordered RFC 9562 v7 identifiers (better index locality than random uuid4) via a small dependency-free generator; backward-compatible (existing rows coexist), with a defensive idempotent migration (`v368`) that converts any legacy `varchar(36)` uuid column to native `uuid` so older deployments upgrade without breaking.
 - **In-place storage recovery / re-ingestion**: a new `python -m app.scripts.reingest_minio` registers media objects that exist in MinIO but have no database row — pointing each `MediaFile` at the existing object key (zero copy/duplication) and dispatching the standard pipeline — plus rate-limited yt-dlp metadata-only recovery for orphaned YouTube thumbnails. Built for disaster recovery where media survives but the database is lost.
 - **Fresh / isolated deployments**: `./opentr.sh start dev --fresh <name>` runs a fully isolated stack (own compose project + volumes, NAS overlay never loaded) for safe experimentation; explicit `--nas`/`--no-nas` directives replace the silent auto-load; `.opentranscribe-live-data` marker files and a `data-paths` subcommand guard live bind-mounts against accidental cleanup.
@@ -277,6 +278,65 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Screenshots & Visual Guide published** (`getting-started/screenshots`): a 15-section visual walkthrough covering login through upload, processing, transcripts, speaker management, AI features, collections, bulk operations, and administration. The page existed but was disabled behind an underscore prefix and was unreachable — its image component was defined as `export const Img = ({src}) => <Img src={useBaseUrl(src)} />`, which rendered itself and recursed until the stack blew, and its 51 captions were indented inside their JSX wrapper so MDX parsed them as markdown paragraphs, emitting `<p>` inside `<p>` (invalid HTML, React hydration failure on every viewport). Both are fixed, images are lazy-loaded with async decoding (51 full-size screenshots on one page), and its four dead category-index links (`/docs/user-guide`, `/docs/installation`, `/docs/configuration`, and `/docs/api`, which never existed) now point at real pages. This surfaces 50 screenshots that were on disk but referenced by no published page.
 - **Removed the superseded `_intro.mdx` orphan**: same self-referential image component, imported by nothing, excluded from the build, and factually stale (claimed OpenSearch 3.3.1 against the shipped 3.4, and a 7-language UI against the current 8 locales). Its content is covered by the published `getting-started/introduction`.
 
+### Breaking Changes
+
+#### API — `GET /api/files/{uuid}` returns tag objects instead of tag names (issue #326)
+
+`MediaFileDetail.tags` was `list[str]` — the serializer selected `Tag.name` and nothing else — while
+`GET /api/tags`, `POST /api/tags`, and `POST /api/tags/files/{uuid}/tags` all returned `Tag`
+objects. Three surfaces, two shapes. The file-detail payload now carries the **same object** the tag
+endpoints serve, so there is one definition of a tag on the API.
+
+**Before** (`GET /api/files/{uuid}`):
+
+```json
+{
+  "uuid": "019ec90a-1b2c-7def-8000-000000000001",
+  "filename": "quarterly-review.mp4",
+  "tags": ["Important", "Meeting"]
+}
+```
+
+**After** (`GET /api/files/{uuid}`):
+
+```json
+{
+  "uuid": "019ec90a-1b2c-7def-8000-000000000001",
+  "filename": "quarterly-review.mp4",
+  "tags": [
+    { "uuid": "019ec90a-3f41-7aaa-8000-0000000000a1", "name": "Important", "source": "manual" },
+    { "uuid": "019ec90a-3f41-7aaa-8000-0000000000a2", "name": "Meeting", "source": "auto_ai" }
+  ]
+}
+```
+
+`uuid` (string, UUID) and `name` (string) are always present; `source` is nullable and is `"manual"`
+for a user-applied tag, `"auto_ai"` for one applied by the auto-labeling LLM.
+
+**Why**: `source` is the only thing that distinguishes an AI-applied tag from a manual one, so
+dropping it meant the file-detail page could not badge AI tags after a reload without a second
+request; and `uuid` matters now that `v374_add_tag_user_id` makes tag names unique only **per
+owner**, so a name is no longer a stable identifier for a tag row.
+
+**Scope — exactly one endpoint changed.** `GET /api/files` (the gallery/list endpoint) has **no
+`tags` field at all**, before or after; its response schema `MediaFile` never carried one, and none
+was added here (the list serializer would need a per-row tag query). `GET /api/tags`, `POST
+/api/tags`, `GET /api/tags/unused`, `POST /api/tags/files/{uuid}/tags`, and `DELETE
+/api/tags/files/{uuid}/tags/{tag_name}` are all unchanged — they already returned objects, and the
+delete route is still keyed by tag **name**.
+
+**Not changed**: routes (no route added, removed, or re-pathed), permissions, and tag visibility.
+The serializer returns exactly the tags attached to the file, as it did before; `endpoints/tags.py`
+already made every tag on an accessible file fully visible to that caller via the
+"attached to a file in the accessible-files subquery" arm of `_visible_to`, so the extra fields
+disclose nothing `GET /api/tags` did not already return to the same user. The OpenSearch search
+index still stores tags as a `keyword` array of names, so `tags` on a **search hit** is still
+`string[]`.
+
+**Frontend**: this deletes the shim that made the mismatch survivable — `TagsEditor` no longer
+coerces incoming strings into objects with fabricated `temp-<name>` uuids, and `TagsSection` is
+typed `MediaFileDetail` instead of `any`.
+
 ### Upgrade Notes
 
 - **Redaction runs that hit a detector failure are now marked `failed`, and are NOT retried automatically**: previously such a run was recorded as `done` with empty spans, so a transcript that was never fully scanned looked permanently clean. It is now recorded honestly as `failed`, with the failed detector names logged at `ERROR`. Two consequences worth knowing:
@@ -287,6 +347,7 @@ This release also incorporates the substantial pipeline work that landed since v
 - **ACTION REQUIRED — production admin login changes**: the `admin@example.com` / `password` super-admin is no longer seeded outside development. Existing accounts are untouched and you keep signing in as before. On a **new** production deployment, either set `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD`, or grep the backend startup log for `GENERATED password` to retrieve the one-time generated credential and change it after first login.
 - **Breaking — removed media endpoints**: external consumers of `GET /api/files/{uuid}/video`, `/simple-video`, `/content`, `/download`, and `/download-with-token` must migrate to `GET /api/files/{uuid}/stream-url` (playback) and `POST /api/files/{uuid}/prepare-download` (downloads).
 - **Breaking — bulk export endpoint**: `POST /api/files/bulk-export` (sync streamed ZIP) is replaced by `POST /api/files/bulk-export/prepare` + the SSE `GET /api/files/bulk-export-stream`.
+- **Breaking — file-detail `tags` payload (issue #326)**: **if your script reads `tags` from `GET /api/files/{uuid}` as strings, read `tag.name` instead** — e.g. `file.tags.map(t => t.name)` in JS, `[t["name"] for t in file["tags"]]` in Python. `"Important" in file["tags"]` and `", ".join(file["tags"])` are the two patterns that break. There is no migration and no server-side action: this is a response-shape change only, routes/permissions/tag-visibility are unchanged, and `GET /api/files` (list) still sends no `tags` field. Full before/after JSON in Breaking Changes above.
 - **Breaking — file fingerprints regenerated**: the server-side `imohash` fingerprint now uses the real `imohash` package (murmur3 over sampled windows + size) instead of the previous hand-rolled blake2b stand-in, so **every existing `media_file.imohash` value changes**. A one-time recompute runs automatically on first startup after upgrade (`asyncio` task gated by the `imohash_package_recompute_complete` system-settings flag, same pattern as the thumbnail/embedding migrations) and overwrites all rows via fast ranged reads — no manual action required. Cross-pipeline dedup (watch sources, re-upload detection) is unreliable for not-yet-recomputed rows until it finishes; an admin "Recompute File Fingerprints" button is available to re-trigger it.
 - **New required service**: deployments must run the new `celery-redaction` worker — redaction detection runs once per transcript regardless of user settings. It is included in the standard compose overlays; no action is needed when using `./opentr.sh`.
 - **Breaking (unreleased-master only) — v367 schema rewritten**: the cloud-seams migration was rewritten in place to be vendor-neutral (`external_id`/`external_org_id`; billing columns removed from core). No tagged release shipped the old shape; deployments tracking unreleased master (or commercial pins) are repaired automatically by the new `v371` migration, which renames the legacy columns idempotently on startup — no manual action required.

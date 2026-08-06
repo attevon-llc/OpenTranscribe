@@ -15,8 +15,8 @@ export type TranslateFn = (key: string, options?: Record<string, unknown>) => st
  * switch lived inline in `onMount`.
  *
  * CRITICAL: `setFile` must perform the real `file = ...` assignment in the page
- * (not a no-op clone) so reactivity fires; `setReactiveFile` must call
- * `reactiveFile.set(...)` exactly as the inline code did.
+ * (not a no-op clone) so reactivity fires — that assignment is the only thing
+ * that propagates an update to the child components.
  */
 export interface FileNotificationContext {
   // --- current-file identity & state reads ---
@@ -28,7 +28,6 @@ export interface FileNotificationContext {
 
   // --- file object mutation (must do the real `file = ...` assignment) ---
   setFile: (f: any) => void;
-  setReactiveFile: (f: any) => void;
 
   // --- flag setters ---
   setCurrentProcessingStep: (s: string) => void;
@@ -88,7 +87,6 @@ export function handleFileNotification(
             t('fileDetail.processingDefault')
         );
         ctx.setFile({ ...file }); // Trigger reactivity
-        ctx.setReactiveFile(ctx.getFile());
       }
     } else if (
       notificationStatus === 'completed' ||
@@ -116,7 +114,6 @@ export function handleFileNotification(
         }
 
         ctx.setFile({ ...file }); // Trigger reactivity
-        ctx.setReactiveFile(ctx.getFile());
       }
 
       // Clear processing step and refresh transcript data after completion
@@ -200,7 +197,6 @@ export function handleFileNotification(
 
           // Force reactivity update by creating new object reference
           ctx.setFile({ ...file });
-          ctx.setReactiveFile(ctx.getFile());
         }
       } else if (status === 'failed' || status === 'error') {
         // Summary failed - stop spinners and show error

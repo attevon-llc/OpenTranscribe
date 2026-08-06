@@ -1,9 +1,10 @@
 /**
  * Canonical tag shape, mirroring `backend/app/schemas/media.py:Tag`.
  *
- * Import via `$lib/types/tag`. Note `MediaFile.tags` is a `string[]` (the
- * backend flattens tags to names on the file payload) — this object shape is
- * what the `/tags` endpoints and the tag editor/filter surfaces return.
+ * Import via `$lib/types/tag`. This is the **only** tag shape on the API:
+ * `/tags`, `POST /tags/files/{uuid}/tags` and `MediaFileDetail.tags` all serve
+ * it (#326). The gallery list endpoint `GET /files` sends no tags at all, which
+ * is why `MediaFile` has no `tags` field — only `MediaFileDetail` does.
  */
 export interface Tag {
   uuid: string;

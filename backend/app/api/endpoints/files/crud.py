@@ -24,6 +24,7 @@ from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate
+from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
@@ -103,11 +104,34 @@ def get_media_file_by_id(
     return db_file  # type: ignore[no-any-return]
 
 
-def get_file_tags(db: Session, file_id: int) -> list[str]:
-    """Get tags for a media file."""
+def get_file_tags(db: Session, file_id: int) -> list[TagSchema]:
+    """Get the tags attached to a media file as full tag objects.
+
+    Returns the same ``{uuid, name, source}`` shape ``/api/tags`` serves, so the
+    file-detail payload and the tag endpoints agree on one definition of a tag.
+
+    Visibility is unchanged from the previous name-only serializer: this returns
+    every tag attached to ``file_id``, and the caller has already been gated on
+    the file itself. ``endpoints/tags.py:_visible_to`` makes a tag visible when it
+    is attached to a file in the caller's accessible-files subquery, so any tag
+    reachable here is one ``GET /api/tags`` would already return in full to the
+    same caller. Widening the fields therefore discloses nothing new.
+
+    Args:
+        db: Database session.
+        file_id: Internal media file ID.
+
+    Returns:
+        Tag schemas for the file, or an empty list if the query fails.
+    """
     try:
-        tags = db.query(Tag.name).join(FileTag).filter(FileTag.media_file_id == file_id).all()
-        return [tag[0] for tag in tags]
+        tags = (
+            db.query(Tag)
+            .join(FileTag, FileTag.tag_id == Tag.id)
+            .filter(FileTag.media_file_id == file_id)
+            .all()
+        )
+        return [TagSchema.model_validate(tag) for tag in tags]
     except Exception as tag_error:
         logger.exception(f"Error getting tags: {tag_error}")
         db.rollback()
@@ -524,7 +548,7 @@ def _redaction_pending(db: Session, cfg: Any, db_file: MediaFile) -> bool:
 
 def _build_media_file_response(
     db_file: MediaFile,
-    tags: list[str],
+    tags: list[TagSchema],
     collections: list[dict[Any, Any]],
     speakers: list[Speaker],
     analytics: Analytics | None,
@@ -541,7 +565,7 @@ def _build_media_file_response(
 
     Args:
         db_file: MediaFile object
-        tags: List of tag names
+        tags: Tag objects attached to the file ({uuid, name, source})
         collections: List of collection dictionaries
         speakers: List of speakers
         analytics: Analytics object or None

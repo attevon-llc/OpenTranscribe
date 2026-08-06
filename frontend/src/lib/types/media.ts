@@ -1,6 +1,7 @@
 /**
  * Shared media file types used across gallery components.
  */
+import type { Tag } from '$lib/types/tag';
 
 /**
  * Every value of the backend `FileStatus` enum (`backend/app/core/enums.py`).
@@ -29,7 +30,6 @@ export interface MediaFile {
   duration?: number;
   file_size?: number;
   content_type?: string;
-  tags?: string[];
   summary?: string;
   file_hash?: string;
   thumbnail_url?: string;
@@ -94,6 +94,11 @@ export interface MediaFile {
  * can't silently start depending on a field the list endpoint never sends.
  */
 export interface MediaFileDetail extends MediaFile {
+  /**
+   * Full tag objects, the same shape `/api/tags` returns (#326). `GET /files`
+   * sends no tags, so this deliberately lives here and not on `MediaFile`.
+   */
+  tags?: Tag[];
   transcript_segments?: unknown[];
   grouped_segments?: GroupedTranscriptSegment[];
   total_segments?: number;

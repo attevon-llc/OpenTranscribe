@@ -320,13 +320,38 @@ class AuthConfigService:
 
         value: str | None = config.config_value  # type: ignore[assignment]
         if config.is_sensitive and decrypt and value:
+            # Undecryptable means UNSET, never "hand back the ciphertext".
+            #
+            # This used to return the stored ciphertext on failure, and returned it
+            # silently when decrypt_api_key merely returned falsy without raising
+            # (issue #324). Callers use these values as real credentials — an LDAP
+            # bind password, an OIDC client secret — so ciphertext is at best a
+            # baffling auth failure and at worst an encrypted blob shipped to an
+            # external IdP or rendered in the admin UI.
+            #
+            # Returning None makes the sole caller (`_get_effective`, which tests
+            # `if db_value is not None`) fall through to the env value and then the
+            # coded default: a known source instead of garbage.
             try:
                 decrypted = decrypt_api_key(value)
-                if decrypted:
-                    value = decrypted
-            except Exception as e:
-                logger.warning(f"Failed to decrypt config value for {key}: {e}")
-                # Return encrypted value if decryption fails
+            except Exception:
+                logger.exception(
+                    "Failed to decrypt sensitive auth config %s; treating it as unset. "
+                    "Check ENCRYPTION_KEY — a rotated or lost key makes stored secrets "
+                    "unrecoverable and they must be re-entered.",
+                    key,
+                )
+                return None
+
+            if not decrypted:
+                logger.error(
+                    "Decrypting sensitive auth config %s produced an empty value; "
+                    "treating it as unset rather than returning the stored ciphertext.",
+                    key,
+                )
+                return None
+
+            value = decrypted
 
         return value
 
@@ -380,8 +405,24 @@ class AuthConfigService:
             if config.is_sensitive and decrypt and value:
                 try:
                     decrypted = decrypt_api_key(value)  # type: ignore[call-overload]
+                    if not decrypted:
+                        logger.error(
+                            "Decrypting sensitive auth config %s produced an empty value; "
+                            "masking it. Check ENCRYPTION_KEY.",
+                            config.config_key,
+                        )
+                    # Masked, not the ciphertext. This surface feeds the admin UI, so
+                    # the placeholder is deliberate — but it must never be usable as a
+                    # credential, and the failure must be visible (issue #324): both
+                    # branches previously masked in silence.
                     value = decrypted or "***ENCRYPTED***"  # type: ignore[assignment]
                 except Exception:
+                    logger.exception(
+                        "Failed to decrypt sensitive auth config %s; masking it. "
+                        "Check ENCRYPTION_KEY — a rotated or lost key makes stored "
+                        "secrets unrecoverable and they must be re-entered.",
+                        config.config_key,
+                    )
                     value = "***ENCRYPTED***"  # type: ignore[assignment]
 
             # Convert to appropriate type

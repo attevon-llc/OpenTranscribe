@@ -63,6 +63,11 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   first, then a same-named system row. Tag names are only unique **per owner**, so
   `remove_tag_from_file` resolves the tag by joining `FileTag` for that file, never by name.
 - `GET /api/auth/session` must **never 401** (200 for anonymous); it is the SPA's session probe.
+- **Both SSE streams go check → subscribe → re-check.** `download_stream` (`files/__init__.py`)
+  and `bulk_export_stream` (`files/subtitles.py`) read their readiness signal, subscribe to the
+  pub/sub channel, then read it **again**. A single check-then-subscribe loses a worker
+  completion published in the gap and the stream waits on `get_message` forever (#284 A1.22,
+  #334). `test_handler_blocking_io.py` AST-pins the ordering for both.
 - The WS endpoint `accept()`s *before* authenticating (cookie, else a 10 s first-message
   `authenticate` frame), then closes with 4001/4002/4003 — not HTTP status codes.
 - Never touch `websockets.manager` from sync code; publish with

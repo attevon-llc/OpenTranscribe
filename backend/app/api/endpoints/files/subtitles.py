@@ -273,8 +273,9 @@ def bulk_export_stream(
     """Server-Sent Events stream for an async bulk export.
 
     Events: ``progress`` (status text), ``ready`` (``{url, filename, exported, skipped}``),
-    ``error`` (``{message}``). On connect the reconnect-safe result cache is checked first,
-    so a dropped EventSource still delivers once the worker has finished — no polling.
+    ``error`` (``{message}``). The reconnect-safe result cache is read both before and
+    after subscribing, so a dropped EventSource — or a job that finishes inside the
+    subscribe window (issue #334) — still delivers without polling.
     """
     import asyncio
     import contextlib
@@ -298,16 +299,36 @@ def bulk_export_stream(
         client = aioredis.from_url(
             settings.REDIS_URL, health_check_interval=30, socket_keepalive=True
         )
+
+        async def ready_frame() -> str | None:
+            """SSE ``ready`` frame if the worker already cached a result, else None."""
+            cached = await client.get(f"bulk_export_result:{job}")
+            return sse("ready", _json.loads(cached)) if cached else None
+
         try:
             # 1. Already finished? deliver immediately (covers reconnects after completion).
-            cached = await client.get(f"bulk_export_result:{job}")
-            if cached:
-                yield sse("ready", _json.loads(cached))
+            frame = await ready_frame()
+            if frame:
+                yield frame
                 return
 
             pubsub = client.pubsub()
             await pubsub.subscribe(bulk_export_channel(job))
             try:
+                # 2. RE-CHECK after subscribing (issue #334, mirroring #284 A1.22).
+                #
+                # A single check-then-subscribe has a lost-wakeup race: a worker that
+                # finishes in the gap writes the result key and publishes to an empty
+                # channel, and this stream then waits on `get_message` forever for an
+                # event that already happened — the export appears to hang while the
+                # ZIP sits ready in object storage. Re-reading after subscribing means
+                # the completion is either buffered on the subscription or visible to
+                # this second read; it cannot fall between them.
+                frame = await ready_frame()
+                if frame:
+                    yield frame
+                    return
+
                 yield sse("progress", {"message": "Preparing export…", "progress": 0})
                 while True:
                     try:

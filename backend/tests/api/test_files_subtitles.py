@@ -1,23 +1,29 @@
 """Characterization tests for ``files/subtitles.py``.
 
-Covers subtitle export (SRT/VTT/TXT), validation, supported-formats, and the
-async bulk-export prepare endpoint wired under ``/api/files``.
+Covers subtitle export (SRT/VTT/TXT), validation, supported-formats, the async
+bulk-export prepare endpoint, and the bulk-export SSE stream wired under
+``/api/files``.
 
 Rows are created on the savepoint-isolated ``db_session`` (rolled back at
 teardown) with fabricated transcript segments where a real transcript is needed,
 so dev data is never touched. Celery dispatch is no-op'd by the autouse conftest
 fixture, so the bulk-export prepare path asserts the queued-job envelope, not
-worker side effects.
+worker side effects. The SSE test drives the generator against a stub async Redis
+client — no broker, no worker, and nothing written to the dev stack's Redis.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
 
 from fastapi import status
 
+from app.api.endpoints.files import subtitles
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.models.user import User
 
 
 def _make_file(db_session, owner, *, file_status: str = "completed", **overrides) -> MediaFile:
@@ -279,3 +285,95 @@ def test_bulk_export_unauthorized(client):
         json={"file_uuids": [str(uuid.uuid4())], "subtitle_format": "srt"},
     )
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# ---------------------------------------------------------------------------
+# GET /api/files/bulk-export-stream  (SSE)
+# ---------------------------------------------------------------------------
+
+
+class _RaceyPubSub:
+    """Pub/sub stub that lets the worker finish exactly during ``subscribe``.
+
+    ``get_message`` never returns a message: the worker's ``completed`` publish
+    landed while nobody was subscribed, so it is gone for good. That is the lost
+    wakeup of issue #334 — the only remaining signal is the result cache.
+    """
+
+    def __init__(self, on_subscribe):
+        self._on_subscribe = on_subscribe
+        self.channel: str | None = None
+
+    async def subscribe(self, channel):
+        self.channel = channel
+        self._on_subscribe()
+
+    async def get_message(self, **_kwargs):
+        return None
+
+    async def unsubscribe(self, _channel):
+        return None
+
+    async def close(self):
+        return None
+
+
+class _RaceyRedis:
+    """Async Redis stub whose result key appears only once ``subscribe`` was called."""
+
+    def __init__(self, result):
+        self._result = result
+        self._finished = False
+        self.gets: list[str] = []
+        self._pubsub = _RaceyPubSub(self._worker_finishes)
+
+    def _worker_finishes(self):
+        self._finished = True
+
+    async def get(self, key):
+        self.gets.append(key)
+        return json.dumps(self._result) if self._finished else None
+
+    def pubsub(self):
+        return self._pubsub
+
+    async def close(self):
+        return None
+
+
+async def _first_frame(response):
+    """Return the first SSE frame emitted by a StreamingResponse."""
+    async for frame in response.body_iterator:
+        return frame
+    raise AssertionError("the stream closed without emitting a frame")
+
+
+def test_bulk_export_stream_recovers_a_completion_during_subscribe(monkeypatch):
+    """A job finishing in the check→subscribe gap must still deliver ``ready`` (#334).
+
+    The stub completes the job at the moment ``pubsub.subscribe`` is called and
+    publishes to nobody, exactly like a fast worker. With only the pre-subscribe
+    cache read the stream emits ``progress`` and then waits on ``get_message``
+    forever; the post-subscribe re-check is what turns it back into ``ready``.
+    """
+    result = {
+        "url": "https://storage.test/bulk/job-334.zip",
+        "filename": "transcripts_srt.zip",
+        "exported": 2,
+        "skipped": 0,
+    }
+    fake_redis = _RaceyRedis(result)
+    monkeypatch.setattr("redis.asyncio.from_url", lambda *args, **kwargs: fake_redis)
+
+    response = subtitles.bulk_export_stream(job="job-334", current_user=User())
+    frame = asyncio.run(_first_frame(response))
+
+    assert frame.startswith("event: ready"), (
+        f"expected the cached result, got {frame!r} — the completion published during "
+        "the subscribe window was lost, so the stream would hang until the client gave up"
+    )
+    assert json.loads(frame.split("data: ", 1)[1]) == result
+    assert fake_redis.gets == ["bulk_export_result:job-334"] * 2, (
+        "the result cache must be read before AND after subscribing"
+    )
+    assert fake_redis.pubsub().channel == "download_events:bulk:job-334"

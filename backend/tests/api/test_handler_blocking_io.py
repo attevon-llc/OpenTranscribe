@@ -20,8 +20,9 @@ These tests encode that rule for the modules hardened in Phase 2 and issue #320:
    generators. Making their *handlers* ``def`` does nothing for the generator body:
    Starlette iterates that on the event loop for the whole life of the stream, so a
    synchronous Redis/object-storage call in there blocks far longer than one request.
-5. ``test_download_stream_keeps_the_check_subscribe_recheck_order`` pins the #284 A1.22
-   lost-wakeup fix, which the offload above must not reorder.
+5. ``test_sse_streams_keep_the_check_subscribe_recheck_order`` pins the lost-wakeup
+   fixes (#284 A1.22 for ``download_stream``, #334 for ``bulk_export_stream``), which
+   the offload above must not reorder.
 """
 
 from __future__ import annotations
@@ -353,16 +354,9 @@ def test_sse_generators_do_not_call_blocking_helpers_inline(
     )
 
 
-def test_download_stream_keeps_the_check_subscribe_recheck_order() -> None:
-    """The readiness check must straddle the pub/sub subscribe (issue #284 A1.22).
-
-    Check-then-subscribe alone loses a completion published in the gap and the stream
-    hangs forever. Offloading the checks to the threadpool must not collapse the
-    second one back into the first.
-    """
-    tree = _generator_ast(files_endpoints, "download_stream", "event_stream")
-
-    checks = [
+def _threadpooled_ready_frame_lines(tree: ast.AST) -> list[int]:
+    """Lines of ``run_in_threadpool(_ready_frame)`` — download_stream's readiness check."""
+    return [
         node.lineno
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
@@ -372,6 +366,44 @@ def test_download_stream_keeps_the_check_subscribe_recheck_order() -> None:
         and isinstance(node.args[0], ast.Name)
         and node.args[0].id == "_ready_frame"
     ]
+
+
+def _awaited_ready_frame_lines(tree: ast.AST) -> list[int]:
+    """Lines of ``ready_frame()`` — bulk_export_stream's async result-cache read."""
+    return [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "ready_frame"
+    ]
+
+
+# (module, handler, generator, locator for that stream's readiness checks)
+READINESS_STRADDLE = [
+    (files_endpoints, "download_stream", "event_stream", _threadpooled_ready_frame_lines),
+    (subtitles, "bulk_export_stream", "event_stream", _awaited_ready_frame_lines),
+]
+
+
+@pytest.mark.parametrize(
+    ("module", "handler", "generator", "find_checks"),
+    READINESS_STRADDLE,
+    ids=[h for _, h, _, _ in READINESS_STRADDLE],
+)
+def test_sse_streams_keep_the_check_subscribe_recheck_order(
+    module, handler: str, generator: str, find_checks
+) -> None:
+    """Each SSE stream's readiness check must straddle its pub/sub subscribe.
+
+    Check-then-subscribe alone loses a completion published in the gap and the stream
+    hangs forever — #284 A1.22 for ``download_stream``, #334 for ``bulk_export_stream``
+    (where the ZIP sat ready in object storage while the browser waited). Neither the
+    threadpool offload nor a later refactor may collapse the second check into the first.
+    """
+    tree = _generator_ast(module, handler, generator)
+
+    checks = find_checks(tree)
     subscribes = [
         node.lineno
         for node in ast.walk(tree)
@@ -380,8 +412,8 @@ def test_download_stream_keeps_the_check_subscribe_recheck_order() -> None:
         and node.func.attr == "subscribe"
     ]
 
-    assert len(checks) == 2, f"expected two readiness checks, found {checks}"
-    assert len(subscribes) == 1, f"expected one pubsub.subscribe, found {subscribes}"
+    assert len(checks) == 2, f"{handler}: expected two readiness checks, found {checks}"
+    assert len(subscribes) == 1, f"{handler}: expected one pubsub.subscribe, found {subscribes}"
     assert checks[0] < subscribes[0] < checks[1], (
-        f"readiness checks at {checks} no longer straddle subscribe at {subscribes[0]}"
+        f"{handler}: readiness checks at {checks} no longer straddle subscribe at {subscribes[0]}"
     )

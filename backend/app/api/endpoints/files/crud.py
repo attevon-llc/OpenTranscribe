@@ -348,18 +348,29 @@ def _resolve_segment_speaker_name(speaker: Speaker | None) -> str:
     return str(speaker.display_name or speaker.name or "Unknown speaker")
 
 
-def _build_grouped_segments(formatted_segments: list[Any]) -> list[Any]:
-    """Group formatted transcript segments exactly like the frontend.
+def _build_grouped_segments(formatted_segments: list[Any], index_offset: int = 0) -> list[Any]:
+    """Build the authoritative display grouping for a page of transcript segments.
 
-    Replicates ``groupedTranscriptSegments`` in ``TranscriptDisplay.svelte``:
-    consecutive segments sharing a non-null ``overlap_group_id`` are collapsed into a
+    Consecutive segments sharing a non-null ``overlap_group_id`` are collapsed into a
     single overlap group **only when the run has more than one member**; every other
     segment becomes its own single-member group. Group ``start_time``/``end_time`` are
-    the min/max across the group's segments, and ``start_segment_index`` is the index
-    of the group's first segment in the flat list.
+    the min/max across the group's segments.
+
+    Groups reference their segments by UUID (``segment_uuids``) rather than embedding
+    copies — see ``GroupedTranscriptSegment`` for why (issue #352).
+
+    ``overlap_group_id`` is set on **every** group that has one, including single-member
+    groups. A group whose overlap run straddles a pagination boundary arrives as two
+    groups sharing that id, and the client stitches them back together by it; without
+    the id on the single-member branch the tail of a split run would be unstitchable.
 
     Args:
         formatted_segments: Formatted ``TranscriptSegment`` schema objects, in order.
+        index_offset: Absolute index of ``formatted_segments[0]`` in the full
+            transcript. Pass the request's ``segment_offset`` so
+            ``start_segment_index`` stays global across pagination — the SPA's
+            reading-progress bar divides it by the total segment count, so page-local
+            indices make progress jump backwards.
 
     Returns:
         List of ``GroupedTranscriptSegment`` schema objects.
@@ -388,21 +399,23 @@ def _build_grouped_segments(formatted_segments: list[Any]) -> list[Any]:
                         overlap_group_id=overlap_group_id,
                         start_time=min(s.start_time for s in overlap_segments),
                         end_time=max(s.end_time for s in overlap_segments),
-                        start_segment_index=i,
-                        segments=overlap_segments,
+                        start_segment_index=index_offset + i,
+                        segment_uuids=[s.uuid for s in overlap_segments],
                     )
                 )
                 i = j
                 continue
 
-            # Single segment carrying an overlap flag: treat as a regular group.
+            # Single segment carrying an overlap flag: renders as a regular group, but
+            # keep the id so a run split across a page boundary can be stitched.
             groups.append(
                 GroupedTranscriptSegment(
                     is_overlap_group=False,
+                    overlap_group_id=overlap_group_id,
                     start_time=segment.start_time,
                     end_time=segment.end_time,
-                    start_segment_index=i,
-                    segments=[segment],
+                    start_segment_index=index_offset + i,
+                    segment_uuids=[segment.uuid],
                 )
             )
             i += 1
@@ -412,8 +425,8 @@ def _build_grouped_segments(formatted_segments: list[Any]) -> list[Any]:
                     is_overlap_group=False,
                     start_time=segment.start_time,
                     end_time=segment.end_time,
-                    start_segment_index=i,
-                    segments=[segment],
+                    start_segment_index=index_offset + i,
+                    segment_uuids=[segment.uuid],
                 )
             )
             i += 1
@@ -622,7 +635,9 @@ def _build_media_file_response(
     response.transcript_segments = formatted_segments  # type: ignore[assignment]
 
     # Pre-grouped view (overlap groups kept together) for the frontend to render directly.
-    response.grouped_segments = _build_grouped_segments(formatted_segments)  # type: ignore[assignment]
+    response.grouped_segments = _build_grouped_segments(  # type: ignore[assignment]
+        formatted_segments, index_offset=segment_offset
+    )
 
     # Add pagination metadata
     response.total_segments = total_segments

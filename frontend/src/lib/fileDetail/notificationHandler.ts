@@ -220,23 +220,10 @@ export function handleFileNotification(
     } // Close the else block for file ID matching
   }
 
-  // Handle speaker update notifications (for real-time voice suggestion refresh)
-  if (latestNotification.type === 'speaker_updated') {
-    ctx.loadSpeakers();
-  }
-
-  // Handle speaker background processing complete notification
-  if (latestNotification.type === 'speaker_processing_complete') {
-    ctx.loadSpeakers();
-    // Show toast if labels were auto-applied to other speakers
-    const autoAppliedCount = latestNotification.data?.auto_applied_count || 0;
-    const suggestedCount = latestNotification.data?.suggested_count || 0;
-    if (autoAppliedCount > 0) {
-      ctx.toastInfo(t('speakerProfile.autoAppliedToOthers', { count: autoAppliedCount }));
-    } else if (suggestedCount > 0) {
-      ctx.toastInfo(t('speakerProfile.suggestionsCreated', { count: suggestedCount }));
-    }
-  }
+  // `speaker_updated` and `speaker_processing_complete` are handled by window listeners in
+  // the page, not here: `stores/websocket.ts` dispatches them as CustomEvents and returns
+  // before the notification reaches the store, so branches for them in this function can
+  // never run. Two of them lived here and silently did nothing.
 
   // Handle topic extraction status updates (AI suggestions for tags/collections)
   if (latestNotification.type === 'topic_extraction_status') {

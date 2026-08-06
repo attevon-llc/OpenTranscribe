@@ -68,15 +68,22 @@
     document.body.appendChild(portalContainer);
   });
 
+  // The menu is built imperatively into a body portal, so it does not re-render with the
+  // component. Without this, an open menu keeps showing the speaker names and the checked
+  // row from the moment it was opened — stale the instant a rename lands.
+  $: if (isOpen && (speakers || segment)) {
+    renderPortal();
+  }
+
   // Cleanup on destroy
   onDestroy(() => {
     if (isOpen) {
       unlockScroll();
     }
-    if (portalContainer) {
-      document.body.removeChild(portalContainer);
-      portalContainer = null;
-    }
+    // `remove()` rather than `document.body.removeChild()`: the node may already be
+    // detached (navigation tears the body down), and removeChild throws on a non-child.
+    portalContainer?.remove();
+    portalContainer = null;
     document.removeEventListener('click', handleGlobalClick, true);
     window.removeEventListener('resize', closeDropdown);
   });

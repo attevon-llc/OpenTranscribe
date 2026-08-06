@@ -39,6 +39,16 @@ Presentational children extracted from the file-detail route `src/routes/files/[
 
 ## Gotchas
 
+- **`transcript_segments` is the SINGLE representation of segment data — never reintroduce a
+  second copy (#352).** `file.grouped_segments` is the backend's display grouping and carries
+  only `segment_uuids`; `TranscriptDisplay.mapBackendGroup` is the one place those references
+  are resolved. Groups used to embed full segment copies, so the page held two objects per
+  segment and every optimistic write patched only the flat one — renaming a speaker or editing
+  a segment saved to the database and then rendered nothing until a full page reload. **Mutate
+  segments only through `$lib/fileDetail/segmentSync`** (`renameSpeakersInFile`,
+  `patchSegmentInFile`, `appendSegmentPage`), never with a bare loop over `transcript_segments`.
+  Note `transcriptStore` is a _separate_ flat store feeding `TranscriptModal` — keep calling
+  `transcriptStore.updateSpeakerName` alongside the helper.
 - **Prop-drilling is the settled pattern — don't add a store for page state (#338).** The page
   used to also write a `reactiveFile` writable on every mutation; nothing ever subscribed to it,
   so all 13 `.set()` calls were inert while reading as if they refreshed the UI. It has been

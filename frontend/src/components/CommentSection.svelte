@@ -1,5 +1,5 @@
 <script>
-  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+  import { onMount, createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   // Use the shared axios instance so auth token is always sent
   import axiosInstance from '../lib/axios';
@@ -40,29 +40,16 @@
   // Event dispatcher
   const dispatch = createEventDispatcher();
 
-  // Event listener for getComments events from parent components
-  function handleGetCommentsEvent() {
-    // Send comments data back through the event
-    dispatch('getComments', { comments: comments });
-  }
+  // Tell the page how many comments exist, so the export flow doesn't have to refetch them
+  // just to decide whether to offer the "include comments" option.
+  //
+  // This replaces a `getComments` DOM-event bridge that listened on
+  // `.comments-section-wrapper` — an element that exists nowhere in the app, so the data
+  // was never actually reachable and the export path fetched it again.
+  $: dispatch('commentsChanged', { count: comments.length });
 
-  // Add event listener when component is mounted
   onMount(() => {
     fetchComments();
-
-    // Listen for getComments events
-    const commentsWrapper = document.querySelector('.comments-section-wrapper');
-    if (commentsWrapper) {
-      commentsWrapper.addEventListener('getComments', /** @type {EventListener} */ (handleGetCommentsEvent));
-    }
-  });
-
-  // Remove event listener when component is destroyed
-  onDestroy(() => {
-    const commentsWrapper = document.querySelector('.comments-section-wrapper');
-    if (commentsWrapper) {
-      commentsWrapper.removeEventListener('getComments', /** @type {EventListener} */ (handleGetCommentsEvent));
-    }
   });
 
   async function fetchComments() {

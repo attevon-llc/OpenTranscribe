@@ -128,10 +128,18 @@ export interface MediaFileDetail extends MediaFile {
 }
 
 /**
- * Backend-shaped overlap-grouped transcript segment (snake_case), guaranteed
- * present on the file-detail payload as `grouped_segments`. Mirrors the Pydantic
- * `GroupedTranscriptSegment` schema. The frontend prefers this over recomputing
- * the grouping client-side; see `TranscriptDisplay.svelte`.
+ * Backend-shaped overlap-grouped transcript segment (snake_case), present on both
+ * the file-detail payload and `GET /files/{uuid}/segments` as `grouped_segments`.
+ * Mirrors the Pydantic `GroupedTranscriptSegment` schema. The backend owns grouping;
+ * the frontend never recomputes it.
+ *
+ * Groups reference their segments by UUID — **never** embed copies. `transcript_segments`
+ * is the single representation of segment data; a second copy inside groups meant every
+ * optimistic update patched only one of them and the transcript rendered stale (#352).
+ * `TranscriptDisplay.mapBackendGroup` is the one place that resolves these references.
+ *
+ * `start_segment_index` is global across pagination, and `overlap_group_id` is set on
+ * single-member groups too so a run split across a page boundary can be stitched.
  */
 export interface GroupedTranscriptSegment {
   is_overlap_group: boolean;
@@ -139,7 +147,7 @@ export interface GroupedTranscriptSegment {
   start_time: number;
   end_time: number;
   start_segment_index: number;
-  segments: any[];
+  segment_uuids: string[];
 }
 
 /**

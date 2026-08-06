@@ -1,12 +1,17 @@
-# Keycloak and PKI development environment (standalone)
+# Keycloak and PKI development environment.
 #
-# Usage:
-#   Keycloak only:  docker compose -f docker-compose.keycloak.yml up -d keycloak
-#   With PKI:       docker compose -f docker-compose.keycloak.yml --profile pki up -d
-#   Stop all:       docker compose -f docker-compose.keycloak.yml --profile pki down
+# Load it WITH the stack so it joins the same compose project (and therefore the
+# same network). `./opentr.sh` is the only supported entry point:
+#   ./opentr.sh start dev --with-keycloak-test
+#   ./opentr.sh start dev --fresh t1 --port-offset 100 --with-keycloak-test
 #
-# Keycloak admin console: http://localhost:8180
+# Step CA is profile-gated: add `--profile pki` to include it.
+#
+# Keycloak admin console: http://localhost:${KEYCLOAK_PORT:-8180}
 # Default credentials: admin / admin
+#
+# Neither service declares a container_name, so the compose project namespaces
+# them automatically; containers reach them by SERVICE name (keycloak, step-ca).
 
 services:
   keycloak:
@@ -21,14 +26,21 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
+      # Required for the healthcheck below. Since Keycloak 25 the health
+      # endpoints live on the separate management port (9000) and are only
+      # served when this is set — without it /health/ready is a 404 on 8080 and
+      # nothing listens on 9000, so `up --wait` fails on a Keycloak that is
+      # actually working fine.
+      KC_HEALTH_ENABLED: "true"
     ports:
-      - "${KEYCLOAK_PORT:-8180}:8080"
+      # Loopback-only, matching the base file's convention: this is a dev IdP
+      # whose admin credentials default to admin/admin.
+      - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
     volumes:
       - keycloak_data:/opt/keycloak/data
-    networks:
-      - default
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080;echo -e \"GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n\" >&3;grep -q '200 OK' <&3"]
+      # Probes the MANAGEMENT port (9000), not 8080 — see KC_HEALTH_ENABLED above.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000;echo -e \"GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n\" >&3;grep -q '200 OK' <&3"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -47,19 +59,11 @@ services:
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
       DOCKER_STEPCA_INIT_PROVISIONER_NAME: admin
     ports:
-      - "${STEP_CA_PORT:-9000}:9000"
+      # Loopback-only: a dev CA that will issue certs to anyone who asks.
+      - "127.0.0.1:${STEP_CA_PORT:-9000}:9000"
     volumes:
       - step_ca_data:/home/step
-    networks:
-      - default
 
 volumes:
   keycloak_data:
   step_ca_data:
-
-# Join the stack's default bridge network (project-name agnostic — works for any
-# clone whose compose project isn't literally "transcribe-app").
-networks:
-  default:
-    name: ${COMPOSE_PROJECT_NAME:-opentranscribe}_default
-    external: true

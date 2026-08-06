@@ -20,8 +20,10 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.user import User
+from app.schemas.media import TranscriptSegmentsPage
 from app.services.speaker_status_service import SpeakerStatusService
 
+from .crud import _build_grouped_segments
 from .crud import _format_transcript_segments
 from .crud import _get_transcript_segments
 from .crud import _redaction_pending
@@ -31,11 +33,19 @@ from .crud import get_media_file_by_uuid
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Upper bound on one page. `handleLoadUpTo` in the SPA asks for however many segments
+# stand between the loaded tail and a jump target, so an unbounded limit lets a
+# jump-to-end on a 50k-segment file request the whole transcript in one call. The SPA
+# pages in a loop instead.
+MAX_SEGMENT_PAGE_SIZE = 2000
 
-@router.get("/{file_uuid}/segments")
+
+@router.get("/{file_uuid}/segments", response_model=TranscriptSegmentsPage)
 def get_file_segments(
     file_uuid: UUID,
-    segment_limit: int = Query(500, ge=1, description="Number of segments to return"),
+    segment_limit: int = Query(
+        500, ge=1, le=MAX_SEGMENT_PAGE_SIZE, description="Number of segments to return"
+    ),
     segment_offset: int = Query(0, ge=0, description="Offset for pagination"),
     redact: bool = Query(True, description="Apply content redaction (owner/admin may disable)"),
     db: Session = Depends(get_db),
@@ -44,9 +54,14 @@ def get_file_segments(
 ) -> dict[str, Any]:
     """Get paginated transcript segments for a file.
 
-    Lightweight endpoint for "load more" transcript pagination.
-    Returns only segments and total count — no tags, collections,
+    Lightweight endpoint for "load more" transcript pagination. Returns segments, the
+    display grouping that references them, and the total count — no tags, collections,
     speakers list, analytics, or other file metadata.
+
+    ``grouped_segments`` is what the SPA renders, so omitting it here meant paginated
+    segments were fetched but never displayed (issue #352). Grouping is O(n) over
+    already-materialized objects and adds no query, so the endpoint keeps its
+    two-query profile.
     """
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
@@ -61,6 +76,7 @@ def get_file_segments(
     if _redaction_pending(db, redaction_cfg, db_file):
         return {
             "transcript_segments": [],
+            "grouped_segments": [],
             "total_segments": 0,
             "redaction_pending": True,
             "redaction_status": str(db_file.redaction_status) if db_file.redaction_status else None,
@@ -86,5 +102,8 @@ def get_file_segments(
 
     return {
         "transcript_segments": formatted_segments,
+        "grouped_segments": _build_grouped_segments(
+            formatted_segments, index_offset=segment_offset
+        ),
         "total_segments": total_segments,
     }

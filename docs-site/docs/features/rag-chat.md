@@ -71,6 +71,76 @@ The footer of the picker estimates how much of the model's context window your
 selection would occupy, and warns before you pick more than the model can
 usefully handle.
 
+## What the assistant actually sees
+
+Understanding this is the difference between a vague answer and a good one.
+
+The model never reads your whole library, or even a whole recording. Transcripts
+are split into **speaker turns** — one stretch of one person talking — and the
+assistant is shown only the handful of turns that best match your question.
+
+A turn becomes one excerpt, with three adjustments:
+
+- A long turn is split at about **200 words**, with a **40-word overlap** so a
+  sentence spanning the split still reads whole in both halves.
+- A very short turn (under 20 words — "Right.", "Can you repeat that?") is folded
+  into the previous excerpt from the same speaker, so a back-channel never
+  becomes a standalone result.
+- Every excerpt keeps its speaker, start time and recording, which is what makes
+  citations land on the exact moment.
+
+For each question, retrieval pulls a pool of candidates, reranks them, and keeps
+roughly **12 excerpts, at most 4 from any one recording**. That per-recording cap
+is why a two-hour monologue can't crowd out the other four meetings you selected.
+
+The practical consequence: **the assistant sees passages, not the whole story.**
+It answers well when the answer lives in a few specific moments, and poorly when
+it requires reading everything end to end.
+
+:::tip This is why "summarise this recording" is the wrong question for chat
+A summary needs the *whole* transcript; chat retrieves fragments. Use the
+built-in **summary** feature for that — it reads the entire transcript — and use
+chat for questions that point at specific moments.
+:::
+
+## Getting better answers
+
+**Name things the way they were said.** Retrieval matches your words against the
+words in the transcript. "What did we decide about the renewal?" beats "what was
+the outcome" — the first shares vocabulary with the passage you want.
+
+**Ask one thing at a time.** A question with three parts retrieves a blend that
+serves none of them well. Ask, then follow up — follow-ups are rewritten into
+standalone queries automatically, so "and what did she say about the timeline?"
+works.
+
+**Narrow the scope before you narrow the wording.** Selecting the four relevant
+recordings helps more than any rephrasing. Combine with the **Speakers** filter
+when you care about one person.
+
+**Quote a distinctive phrase when you know it.** Switch **Retrieval mode** to
+*Exact words* for product codes, ticket numbers, or names the model may never
+have seen — vector search is good at meaning and weak at rare literal strings.
+
+**If an answer looks thin, check the sources.** The source cards show exactly
+what the assistant was given. Thin or off-target cards mean the retrieval missed,
+not that the model was lazy — re-scope or rephrase rather than arguing with it.
+
+### Chatting efficiently
+
+Each message sends the retrieved excerpts *plus* recent conversation history, so
+cost and latency scale with how much context is in play, not with how much you
+typed. To keep it fast:
+
+- **Scope tightly.** Fewer recordings means fewer, better excerpts.
+- **Start a new chat when the topic changes.** Long threads carry history
+  forward; a fresh chat drops the baggage. It also keeps conversations findable.
+- **Turn off *Use my transcripts*** for questions that aren't about your
+  recordings — no retrieval happens, so nothing is sent but your question.
+
+Administrators can tune the excerpt counts themselves under **Settings → Chat &
+RAG** (see [Administration](#administration)).
+
 ## Citations
 
 Every answer that uses your transcripts cites them with numbered markers like
@@ -170,13 +240,20 @@ itself with a warning and chat continues to work.
 Your question
   → rewritten into a standalone query (if it is a follow-up)
   → hybrid search over transcript chunks (keyword + meaning, RRF-fused)
+  → ~48 candidates
   → reranked by a cross-encoder for relevance
   → sampled across files so no single recording dominates
+  → ~12 excerpts, max 4 per recording
   → re-masked under your redaction policy
-  → sent to your model with citation instructions
+  → sent to your model with citation instructions, plus recent history
   → streamed back token by token
 ```
 
 Transcripts are indexed as **speaker-turn chunks**, so a retrieved passage is a
 coherent stretch of one person talking rather than an arbitrary word window —
-which is what makes speaker attribution in answers reliable.
+which is what makes speaker attribution in answers reliable. See
+[What the assistant actually sees](#what-the-assistant-actually-sees) for how a
+turn becomes an excerpt, and why that shapes the questions chat answers well.
+
+Every number above is an administrator default, tunable per deployment under
+**Settings → Chat & RAG**.

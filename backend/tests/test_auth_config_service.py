@@ -79,8 +79,18 @@ class TestAuthConfigServiceGetConfig:
         result = AuthConfigService.get_config(mock_db, "sensitive_key", decrypt=False)
         assert result == "encrypted_value"
 
-    def test_get_config_decryption_failure_returns_encrypted(self, mock_db):
-        """Test that decryption failure returns encrypted value."""
+    def test_get_config_decryption_failure_returns_none(self, mock_db):
+        """A value that cannot be decrypted is UNSET, never the raw ciphertext.
+
+        This test previously asserted the opposite — that the ciphertext is handed
+        back — which pinned a fail-open as intended behaviour (issue #324). Callers
+        use these values as real credentials (LDAP bind password, OIDC client
+        secret), so ciphertext is at best a baffling auth failure and at worst an
+        encrypted blob shipped to an external IdP or rendered in the admin UI.
+
+        Returning None makes `_get_effective` fall through to the env value and then
+        the coded default — a known source instead of garbage.
+        """
         mock_config = MagicMock(spec=AuthConfig)
         mock_config.config_value = "encrypted_value"
         mock_config.is_sensitive = True
@@ -89,8 +99,24 @@ class TestAuthConfigServiceGetConfig:
         with patch("app.services.auth_config_service.decrypt_api_key") as mock_decrypt:
             mock_decrypt.side_effect = Exception("Decryption failed")
             result = AuthConfigService.get_config(mock_db, "sensitive_key")
-            # Should return the encrypted value on failure
-            assert result == "encrypted_value"
+            assert result is None, "must not hand back the ciphertext"
+
+    def test_get_config_empty_decryption_returns_none(self, mock_db):
+        """A decrypt that returns falsy without raising is also UNSET.
+
+        The quieter half of the same bug: the old code only logged in the `except`
+        branch, so a `decrypt_api_key` that returned None or "" left `value` as the
+        ciphertext and said nothing at all.
+        """
+        mock_config = MagicMock(spec=AuthConfig)
+        mock_config.config_value = "encrypted_value"
+        mock_config.is_sensitive = True
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_config
+
+        with patch("app.services.auth_config_service.decrypt_api_key") as mock_decrypt:
+            mock_decrypt.return_value = None
+            result = AuthConfigService.get_config(mock_db, "sensitive_key")
+            assert result is None, "must not silently fall back to the ciphertext"
 
 
 class TestAuthConfigServiceSetConfig:

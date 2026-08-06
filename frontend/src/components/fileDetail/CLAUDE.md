@@ -39,6 +39,13 @@ Presentational children extracted from the file-detail route `src/routes/files/[
 
 ## Gotchas
 
+- **Prop-drilling is the settled pattern — don't add a store for page state (#338).** The page
+  used to also write a `reactiveFile` writable on every mutation; nothing ever subscribed to it,
+  so all 13 `.set()` calls were inert while reading as if they refreshed the UI. It has been
+  deleted. The update path is the page's own `file` assignment (`file = {...file}`, or a member
+  assignment like `file.tags = …`) invalidating the variable, which re-renders the children
+  through their props. `notificationHandler.setFile` exists for exactly that reason and must keep
+  doing the real assignment.
 - The file-detail E2E (`backend/tests/e2e/test_file_detail_transcript.py`) guards the page's
   transcript/export/speaker-editor surfaces — keep those working when adding children here.
 - This is a coordinator route: it legitimately keeps a large `<script>` (data loading, WebSocket

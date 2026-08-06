@@ -181,6 +181,46 @@ The migration runs through the Admin UI:
 Embedding migration can take significant time depending on the number of speakers and media files. Plan accordingly and run during a maintenance window.
 :::
 
+### Breaking API Changes
+
+These only affect you if you call the OpenTranscribe REST API directly — from a script,
+an integration, or another service. The web UI ships with each release and is always in sync.
+
+The authoritative, always-current schema is the deployment's own OpenAPI document at
+`/api/openapi.json` (browsable at `/api/docs`). Check it against your client after any upgrade.
+
+#### `GET /api/files/{uuid}` — `tags` is now an array of objects
+
+`tags` on the **file-detail** response used to be an array of tag name strings. It is now an array
+of tag objects, matching what `GET /api/tags` has always returned:
+
+```json
+// Before
+"tags": ["Important", "Meeting"]
+
+// After
+"tags": [
+  { "uuid": "019ec90a-3f41-7aaa-8000-0000000000a1", "name": "Important", "source": "manual" },
+  { "uuid": "019ec90a-3f41-7aaa-8000-0000000000a2", "name": "Meeting",   "source": "auto_ai" }
+]
+```
+
+**If you were reading `tags` as strings, read `tag.name` instead** — `file.tags.map(t => t.name)`
+in JavaScript, `[t["name"] for t in file["tags"]]` in Python. The two patterns that break are
+`", ".join(file["tags"])` and `"Important" in file["tags"]`.
+
+`uuid` and `name` are always present. `source` is nullable: `"manual"` for a tag a user applied,
+`"auto_ai"` for one applied by auto-labeling, `null` for tags predating the field.
+
+What did **not** change:
+
+- `GET /api/files` (the list endpoint) has **no** `tags` field, before or after.
+- `GET /api/tags`, `POST /api/tags`, `GET /api/tags/unused`,
+  `POST /api/tags/files/{uuid}/tags` and `DELETE /api/tags/files/{uuid}/tags/{tag_name}` are
+  unchanged — they already returned objects, and the delete route is still keyed by tag **name**.
+- Search results still carry `tags` as plain strings (the search index stores tag names).
+- No routes, permissions, or tag-visibility rules changed. No database migration is involved.
+
 ### Other Major Upgrade Considerations
 
 - **OpenSearch version changes**: May require reindexing all data

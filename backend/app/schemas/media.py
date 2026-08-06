@@ -502,7 +502,27 @@ class MediaFileDetail(MediaFile):
     # Pre-grouped view of transcript_segments (overlap groups kept together).
     # Mirrors the frontend grouping so it can render groups without recomputing.
     grouped_segments: list[GroupedTranscriptSegment] = []
-    tags: list[str] = []
+    # Full tag objects (uuid + name + source), the same shape `/api/tags` returns.
+    # Names alone lost `source`, so the detail page could not badge AI-applied tags
+    # without a second lookup. BREAKING wire change (issue #326) — see CHANGELOG.
+    tags: list["Tag"] = Field(
+        default=[],
+        description=(
+            "Tags attached to this file, as full tag objects — the same shape "
+            "`GET /api/tags` returns. BREAKING (issue #326): this was an array of tag "
+            "*name strings*; clients reading `tags` as strings must now read `tag.name`. "
+            "Note `GET /api/files` (list) carries no `tags` field at all."
+        ),
+        json_schema_extra={
+            "example": [
+                {
+                    "uuid": "019ec90a-3f41-7aaa-8000-0000000000a1",
+                    "name": "Important",
+                    "source": "manual",
+                }
+            ]
+        },
+    )
     collections: list["Collection"] = []
     analytics: Optional["Analytics"] = None
     speakers: list[Speaker] = []
@@ -546,9 +566,21 @@ class TagBase(BaseModel):
 
 
 class Tag(TagBase, UUIDBaseSchema):
-    """Tag with UUID as public identifier"""
+    """Tag with UUID as public identifier.
 
-    source: str | None = None
+    The single tag shape on the API: served by ``GET /api/tags`` (as
+    ``TagWithCount``), ``POST /api/tags``, ``POST /api/tags/files/{uuid}/tags``,
+    and — since issue #326 — ``MediaFileDetail.tags``. Tag names are unique only
+    per owner (``v374_add_tag_user_id``), so ``uuid`` is the stable identifier.
+    """
+
+    source: str | None = Field(
+        default=None,
+        description=(
+            "How the tag was applied: 'manual' for a user action, 'auto_ai' for the "
+            "auto-labeling LLM. Null on tags created before this field existed."
+        ),
+    )
 
 
 class TagWithCount(Tag):

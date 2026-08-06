@@ -383,11 +383,38 @@ The base `docker-compose.yml` automatically starts Redis with `--requirepass` wh
 
 ### Persistence
 
-Redis is configured with a named volume (`redis_data`) for persistence. The default persistence strategy (RDB snapshots) is sufficient for OpenTranscribe's use case -- Redis stores Celery task state and cached GPU stats, not primary data.
+Redis is configured with a named volume (`redis_data`) for persistence. The default persistence strategy (RDB snapshots) is sufficient for OpenTranscribe's use case -- Redis stores Celery task state, cached GPU stats, and the shared security state described below, not primary data.
+
+### Redis also carries security state -- plan for its loss
+
+Beyond the Celery broker, Redis holds the **shared state that several security controls depend on**:
+
+- the token revocation blacklist (JTIs invalidated by logout-all, password reset, or admin session termination)
+- account lockout counters
+- MFA single-use token (replay) protection
+- authentication rate limiting
+
+That state is *shared across replicas*. If Redis becomes unreachable, each container falls back to its own process memory, which is empty on start and never shared -- so on a multi-replica deployment a session revoked on one replica would still be honoured by every other.
+
+OpenTranscribe handles this rather than degrading silently:
+
+- **Token revocation falls back to the database.** `refresh_token.revoked_at` is durable and shared by every replica, so revocation keeps working and nobody is logged out during a Redis outage.
+- **Where no durable record exists**, the control fails closed or tightens rather than loosening.
+- **Degradation is logged at `CRITICAL`** and increments the Prometheus counter `security_state_degraded_total{control,fallback}`.
+
+**Alert on `security_state_degraded_total`.** A non-zero rate means a security control is running without its shared state store. There is deliberately no configuration flag to disable this behaviour -- an off-switch on a security control tends to get flipped during exactly the incident it guards against.
+
+:::warning Run Redis highly available in production
+On AWS, use **ElastiCache for Redis with Multi-AZ and automatic failover** rather than a single Redis container. Failover then takes seconds instead of leaving the cluster in the degraded state above for the length of an outage.
+
+Note that Redis is also the Celery broker, so a Redis outage stops transcription regardless -- highly available Redis protects throughput and security posture together.
+:::
 
 ### Network Isolation
 
 In production, **do not expose the Redis port to the host.** Remove or comment out the `REDIS_PORT` mapping in `.env` so Redis is only accessible within the Docker network.
+
+When using a managed Redis (ElastiCache or equivalent), enable **encryption in transit** and point `REDIS_URL` at the `rediss://` scheme -- the Celery configuration detects it and enables TLS for both the broker and the result backend.
 
 ---
 

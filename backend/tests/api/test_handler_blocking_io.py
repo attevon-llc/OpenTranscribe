@@ -258,7 +258,7 @@ BLOCKING_HELPERS = [
     # In-memory bookkeeping only, mirroring ConnectionManager.disconnect.
     (websockets, "ConnectionManager.connect"),
     # Blocking SQLAlchemy (+ object-storage deletes) on the upload request path.
-    (file_hash, "check_duplicate_by_hash"),
+    (file_hash, "check_duplicate_by_fingerprint"),
     (file_hash, "cleanup_failed_duplicates"),
     # ffmpeg + object-storage PUT; had a byte-identical `async def` twin until #320.
     (thumbnail, "generate_and_upload_thumbnail"),

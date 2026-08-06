@@ -27,7 +27,7 @@ import { get } from 'svelte/store';
 // VIDEO files — the largest inputs the app accepts (15 GB limit) — and the previous
 // main-thread `file.arrayBuffer()` + `crypto.subtle.digest` buffered the whole file
 // into memory and blocked the event loop for its duration (issue #302).
-import { hashFileSHA256 } from '$lib/services/sha256Hasher';
+import { fingerprintFile } from '$lib/services/fileFingerprint';
 import { t } from '../../stores/locale';
 import { generateId } from '$lib/utils/ids';
 
@@ -398,7 +398,10 @@ class AudioExtractionService {
         throw new Error(get(t)('extraction.errorFfmpegNotInitialized'));
       }
 
-      // Calculate original file hash for duplicate detection
+      // Fingerprint the SOURCE VIDEO (not the extracted audio, which ffmpeg does
+      // not produce byte-identically twice) so re-extracting the same video is
+      // caught as a duplicate. Bounded 48 KiB read — video is the largest input
+      // the app takes (15 GB) and whole-file hashing here is what broke in #342.
       this.emitProgress(
         {
           stage: 'metadata',
@@ -409,7 +412,7 @@ class AudioExtractionService {
         fileName
       );
 
-      const originalFileHash = await hashFileSHA256(file);
+      const originalFingerprint = await fingerprintFile(file);
 
       // Extract metadata first
       const metadata = await this.extractMetadata(file);
@@ -492,7 +495,7 @@ class AudioExtractionService {
         originalFileSize: file.size,
         originalFileType: file.type,
         originalLastModified: file.lastModified,
-        originalFileHash: originalFileHash,
+        originalFingerprint,
         extractedAudioSize: audioBlob.size,
         extractedFileName: file.name.replace(/\.[^.]+$/, `.${finalConfig.outputFormat}`),
         extractedFileType: audioBlob.type,

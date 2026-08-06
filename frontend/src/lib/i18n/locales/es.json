@@ -2246,6 +2246,8 @@
   "transcriptSearch.searching": "Buscando...",
   "upload.active": "activo",
   "upload.calculatingHash": "Calculando hash del archivo...",
+  "upload.dedupSkipped": "Comprobación de duplicados omitida para {{name}}: no se pudo leer el archivo. Se subirá de todos modos.",
+  "upload.dedupSkippedBadge": "Comprobación de duplicados omitida",
   "upload.cancelUpload": "Cancelar carga",
   "upload.clear": "Limpiar",
   "upload.clearCompletedTooltip": "Limpiar subidas completadas",

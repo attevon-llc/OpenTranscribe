@@ -62,7 +62,9 @@ class CompleteUploadRequest(BaseModel):
 
     file_id: str = Field(..., description="UUID of the MediaFile from /prepare")
     task_id: str | None = Field(None, description="Application task_id from /prepare response")
-    file_hash: str | None = Field(None, description="Client-computed SHA-256")
+    file_hash: str | None = Field(
+        None, description="Client-computed content fingerprint (imohash); see PrepareUploadRequest"
+    )
     file_size: int | None = Field(None, description="Client-observed size in bytes")
     upload_id: str | None = Field(None, description="Multipart upload_id from /prepare")
     parts: list[UploadedPart] | None = Field(

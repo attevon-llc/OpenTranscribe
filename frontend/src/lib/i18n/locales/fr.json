@@ -2246,6 +2246,8 @@
   "transcriptSearch.searching": "Recherche...",
   "upload.active": "actif",
   "upload.calculatingHash": "Calcul du hash du fichier...",
+  "upload.dedupSkipped": "Vérification des doublons ignorée pour {{name}} — le fichier n’a pas pu être lu. Envoi quand même.",
+  "upload.dedupSkippedBadge": "Vérification des doublons ignorée",
   "upload.cancelUpload": "Annuler le téléchargement",
   "upload.clear": "Effacer",
   "upload.clearCompletedTooltip": "Effacer les téléversements terminés",

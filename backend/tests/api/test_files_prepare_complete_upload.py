@@ -36,7 +36,7 @@ def _prepare_payload(**overrides) -> dict:
     return payload
 
 
-def _seed_existing_file(db_session, owner, file_hash: str) -> MediaFile:
+def _seed_existing_file(db_session, owner, file_hash: str | None) -> MediaFile:
     """Persist a completed, fully-uploaded file with ``file_hash`` so the
     duplicate-by-hash branch in /prepare can find it (it requires a real
     storage_path and a non-failed status)."""
@@ -150,6 +150,59 @@ def test_prepare_unknown_hash_not_duplicate(client, user_token_headers):
     assert response.status_code == status.HTTP_200_OK
     body = response.json()
     assert body["is_duplicate"] == 0
+
+
+def test_prepare_duplicate_matches_server_computed_imohash(
+    client, user_token_headers, normal_user, db_session
+):
+    """The gate also matches ``MediaFile.imohash``, not just ``file_hash``.
+
+    Since issue #342 the browser sends the *same* constant-time imohash the server
+    computes from the stored object, so the whole existing library — every row
+    populated by ``/complete``, URL import, watch sources or the recompute backfill —
+    is reachable by the pre-upload check even though those rows carry a legacy
+    SHA-256 (or nothing) in ``file_hash``. Without this branch the algorithm switch
+    would silently stop deduplicating everything uploaded before it.
+    """
+    fingerprint = uuid.uuid4().hex[:32]
+    existing = _seed_existing_file(db_session, normal_user, file_hash=None)
+    existing.imohash = fingerprint
+    db_session.commit()
+
+    response = client.post(
+        "/api/files/prepare",
+        headers=user_token_headers,
+        json=_prepare_payload(filename="copy.wav", file_hash=fingerprint),
+    )
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["is_duplicate"] == 1
+    assert body["file_id"] == str(existing.uuid)
+
+
+def test_prepare_duplicate_does_not_leak_another_users_file(
+    client, user_token_headers, other_user, db_session
+):
+    """A fingerprint owned by a different user is not a duplicate for this one.
+
+    The gate hands the caller the matching file's UUID, so an unscoped lookup would
+    both disclose that another tenant holds the content and point the caller at a
+    row they cannot read.
+    """
+    fingerprint = uuid.uuid4().hex[:32]
+    foreign = _seed_existing_file(db_session, other_user, file_hash=fingerprint)
+    foreign.imohash = fingerprint
+    db_session.commit()
+
+    response = client.post(
+        "/api/files/prepare",
+        headers=user_token_headers,
+        json=_prepare_payload(filename="copy.wav", file_hash=fingerprint),
+    )
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["is_duplicate"] == 0
+    assert body["file_id"] != str(foreign.uuid)
 
 
 @pytest.mark.skipif(not S3_LIVE, reason="presigned PUT URL requires MinIO (SKIP_S3=False)")

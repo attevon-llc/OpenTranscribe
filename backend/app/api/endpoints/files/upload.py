@@ -425,11 +425,17 @@ async def _continue_read_after_first_chunk(
 
 def _update_file_hash(db_file: MediaFile, client_file_hash: str | None, filename: str) -> None:
     """
-    Update file hash on the database record.
+    Record the client-declared content fingerprint on the database record.
+
+    Client-declared and therefore untrusted: the authoritative fingerprint is
+    ``MediaFile.imohash``, recomputed server-side from the stored object. This
+    column exists so a *future* upload can be short-circuited before its bytes
+    move, and so client-extracted audio can carry its source video's fingerprint
+    (see ``utils/file_hash``).
 
     Args:
         db_file: MediaFile database record
-        client_file_hash: Optional file hash from client
+        client_file_hash: Optional content fingerprint from client
         filename: Original filename for logging
     """
     if client_file_hash:
@@ -494,10 +500,10 @@ async def process_file_upload(
     # check for a matching file and 409 out before reading bytes.
     # prepare_upload already does this check for the presigned flow.
     if client_file_hash and not existing_file_uuid:
-        from app.utils.file_hash import check_duplicate_by_hash
+        from app.utils.file_hash import check_duplicate_by_fingerprint
 
         duplicate_uuid = await run_in_threadpool(
-            check_duplicate_by_hash, db, client_file_hash, current_user.id
+            check_duplicate_by_fingerprint, db, client_file_hash, current_user.id
         )
         if duplicate_uuid:
             logger.info(

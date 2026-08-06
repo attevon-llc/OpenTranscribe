@@ -72,6 +72,14 @@
           {#if upload.estimatedTime}
             <span class="upload-time">{upload.estimatedTime} {$t('upload.remaining')}</span>
           {/if}
+          {#if upload.dedupSkipped}
+            <!-- The fingerprint failed, so this upload was never checked against
+                 the library. Say so — a silently-skipped duplicate check is the
+                 bug this replaced (issue #342). -->
+            <span class="upload-dedup-skipped" title={$t('upload.dedupSkippedBadge')}>
+              ⚠ {$t('upload.dedupSkippedBadge')}
+            </span>
+          {/if}
         </div>
       </div>
     </div>
@@ -189,6 +197,15 @@
     font-size: 10px;
   }
 
+  .upload-dedup-skipped {
+    font-weight: 500;
+    color: #b45309;
+    background: rgba(245, 158, 11, 0.12);
+    border-radius: 4px;
+    padding: 1px 6px;
+    white-space: nowrap;
+  }
+
   .upload-actions {
     display: flex;
     gap: 4px;
@@ -271,6 +288,11 @@
 
   :global(.dark) .upload-meta {
     color: var(--text-secondary);
+  }
+
+  :global(.dark) .upload-dedup-skipped {
+    color: #fcd34d;
+    background: rgba(245, 158, 11, 0.18);
   }
 
   :global(.dark) .action-btn {

@@ -54,7 +54,12 @@ so keep heavy imports lazy.
 
 ## Gotchas
 
-- `MediaFile.imohash` (via `services/imohash_service.py`) is a sampled fingerprint, **not**
-  collision-resistant — never use it for security-sensitive equality. `file_hash.py` (SHA-256)
-  is the real hash, and its primary computation happens client-side.
+- **Both dedup columns now hold the same *kind* of value, and neither is collision-resistant.**
+  `MediaFile.imohash` (via `services/imohash_service.py`) is the server-computed sampled
+  fingerprint; `MediaFile.file_hash` is the *client-declared* one, and since issue #342 the
+  browser computes it with the same imohash algorithm rather than SHA-256 — whole-file SHA-256
+  threw `NotReadableError` above ~4 GB and the swallowed error silently disabled duplicate
+  detection on the largest uploads. `file_hash.py:check_duplicate_by_fingerprint` matches
+  **either** column, so rows predating the change (SHA-256 in `file_hash`, imohash in `imohash`)
+  keep deduplicating. Never use either for security-sensitive equality.
 - `encryption.py` transparently decrypts legacy Fernet ciphertext — don't assume a single format.

@@ -375,7 +375,7 @@ def test_delete_file_malformed_uuid_404(client, user_token_headers):
 
 
 # ---------------------------------------------------------------------------
-# Duplicate detection (check_duplicate_by_hash branches via /prepare)
+# Duplicate detection (check_duplicate_by_fingerprint branches via /prepare)
 # These live with prepare/complete tests; the crud-level hash field is asserted
 # here to lock the dedup column contract used by the duplicate-detection branch.
 # ---------------------------------------------------------------------------
@@ -385,7 +385,7 @@ def test_file_hash_persisted_for_dedup(client, user_token_headers, normal_user, 
     """A row created with a file_hash exposes it so dedup-by-hash can find it.
 
     This is the data contract the duplicate-detection branch depends on
-    (``check_duplicate_by_hash`` filters on ``MediaFile.file_hash`` +
+    (``check_duplicate_by_fingerprint`` filters on ``MediaFile.file_hash`` +
     a real ``storage_path`` + a non-failed status).
     """
     digest = uuid.uuid4().hex

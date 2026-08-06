@@ -99,9 +99,11 @@ class MediaFile(Base):
     redaction_model_version: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # Detector model version that produced the cached spans (for upgrade re-index)
-    file_hash: Mapped[str | None] = mapped_column(
-        String, nullable=True, index=True
-    )  # SHA-256 hash for duplicate detection
+    # Client-declared content fingerprint of the source the user selected — the
+    # file itself for a plain upload, the SOURCE VIDEO for client-extracted audio.
+    # imohash (32 hex) since issue #342; SHA-256 (64 hex) on rows predating it.
+    # Compared by exact equality only, so the two vintages never collide.
+    file_hash: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     # Constant-time content fingerprint (first/middle/last byte samples + size).
     # Complements file_hash for server-side dedup + artifact cache keys. Not
     # collision-resistant; do NOT use for security-sensitive equality checks.

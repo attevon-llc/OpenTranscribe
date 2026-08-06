@@ -75,7 +75,7 @@ export interface ExtractedAudioMetadata {
   originalFileSize: number;
   originalFileType: string;
   originalLastModified: number; // Unix timestamp from File.lastModified
-  originalFileHash: string; // SHA-256 hash of original video for duplicate detection
+  originalFingerprint: string; // imohash of the original video, for duplicate detection
 
   // Extracted audio file information
   extractedAudioSize: number;

@@ -1434,6 +1434,8 @@
   "upload.uploadFailed": "アップロード失敗：{{name}} - {{error}}",
   "upload.stalled": "アップロードが停止しました: {{seconds}} 秒間データが転送されませんでした。接続を確認してください。",
   "upload.calculatingHash": "ファイルハッシュを計算中...",
+  "upload.dedupSkipped": "{{name}} の重複チェックをスキップしました。ファイルを読み取れませんでした。このままアップロードします。",
+  "upload.dedupSkippedBadge": "重複チェックをスキップしました",
   "upload.uploadPausedBrowserClosed": "Upload paused. Open the app to resume.",
   "fileDetail.unknownFile": "不明なファイル",
   "fileDetail.enterDisplayName": "表示名を入力",

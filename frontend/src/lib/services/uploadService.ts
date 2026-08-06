@@ -6,7 +6,7 @@ import { t } from '$stores/locale';
 import axios, { type AxiosProgressEvent, type CancelTokenSource } from 'axios';
 import type { ExtractedAudioMetadata } from '$lib/types/audioExtraction';
 import { generateId } from '$lib/utils/ids';
-import { hashFileSHA256 } from '$lib/services/sha256Hasher';
+import { fingerprintFile } from '$lib/services/fileFingerprint';
 import {
   createStallWatchdog,
   DEFAULT_STALL_TIMEOUT_MS,
@@ -39,6 +39,12 @@ export interface UploadItem {
   startTime?: number;
   estimatedTime?: string;
   isDuplicate?: boolean;
+  /**
+   * The content fingerprint could not be computed, so this upload was NOT
+   * checked against the library. Rendered by `UploadProgress.svelte` — a
+   * degraded duplicate check has to be visible, not swallowed (issue #342).
+   */
+  dedupSkipped?: boolean;
   cancelToken?: CancelTokenSource;
   // Extraction metadata (for extracted-audio type)
   extractionMetadata?: ExtractedAudioMetadata;
@@ -66,7 +72,7 @@ export interface UploadItem {
 interface MultipartSession {
   fileId: string;
   taskId: string;
-  fileHash: string | null;
+  fingerprint: string | null;
   plan: MultipartPlan;
 }
 
@@ -494,7 +500,7 @@ class UploadService {
       {
         file_id: session.fileId,
         task_id: session.taskId,
-        file_hash: session.fileHash,
+        file_hash: session.fingerprint,
         file_size: file.size,
         upload_id: session.plan.upload_id,
         parts,
@@ -551,6 +557,35 @@ class UploadService {
     });
   }
 
+  /**
+   * Fingerprint a source, reporting rather than swallowing a failure.
+   *
+   * The fingerprint is optional — an upload without one still succeeds — but a
+   * missing one means this file was never checked against the library. That used
+   * to happen silently on every file above ~4 GB (`file.arrayBuffer()` threw
+   * `NotReadableError` and the `catch` was empty), so the largest uploads, where
+   * a duplicate costs the most GPU time, were the only ones never deduplicated.
+   * Reading 48 KiB should not fail, but if it does the user is told and the item
+   * carries `dedupSkipped` for the queue UI.
+   *
+   * @returns The fingerprint, or null if it could not be computed.
+   */
+  private async fingerprintOrWarn(
+    uploadId: string,
+    source: File | Blob,
+    name: string
+  ): Promise<string | null> {
+    try {
+      return await fingerprintFile(source);
+    } catch (err: unknown) {
+      this.updateUpload(uploadId, { dedupSkipped: true });
+      this.emit('progress', uploadId, { dedupSkipped: true });
+      console.warn(`[upload] duplicate check skipped for "${name}":`, err);
+      toastStore.warning(get(t)('upload.dedupSkipped', { name }));
+      return null;
+    }
+  }
+
   private async uploadFile(uploadId: string, file: File | Blob): Promise<UploadResult> {
     const upload = this.uploads.get(uploadId)!;
 
@@ -565,20 +600,19 @@ class UploadService {
       if (resumed) return resumed;
     }
 
-    // Calculate file hash for duplicate detection (SHA-256 via Web Worker).
-    let fileHash: string | null = null;
+    // Content fingerprint for duplicate detection — the same constant-time
+    // imohash the backend computes, so a match here means the same thing it
+    // means server-side. Reads 48 KiB whatever the file size. Recordings are
+    // generated in this browser and cannot duplicate anything, so they skip it.
+    let fingerprint: string | null = null;
     const clientHashStartMs = Date.now();
     if (file instanceof File) {
-      try {
-        this.updateUpload(uploadId, {
-          status: 'preparing',
-          progress: 0,
-          estimatedTime: get(t)('upload.calculatingHash'),
-        });
-        fileHash = await hashFileSHA256(file);
-      } catch {
-        // File hash calculation is optional, continue without it
-      }
+      this.updateUpload(uploadId, {
+        status: 'preparing',
+        progress: 0,
+        estimatedTime: get(t)('upload.calculatingHash'),
+      });
+      fingerprint = await this.fingerprintOrWarn(uploadId, file, upload.name);
     }
     const clientHashEndMs = Date.now();
 
@@ -589,7 +623,7 @@ class UploadService {
       filename: upload.name,
       file_size: file.size,
       content_type: file instanceof File ? file.type : 'audio/webm',
-      file_hash: fileHash,
+      file_hash: fingerprint,
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
       upload_batch_id: upload.uploadBatchId || undefined,
@@ -625,7 +659,7 @@ class UploadService {
       return await this.runMultipart(
         uploadId,
         file,
-        { fileId, taskId, fileHash, plan: multipartPlan as MultipartPlan },
+        { fileId, taskId, fingerprint, plan: multipartPlan as MultipartPlan },
         cancelToken,
         false
       );
@@ -654,7 +688,7 @@ class UploadService {
         await axiosInstance.post('/files/complete', {
           file_id: fileId,
           task_id: taskId,
-          file_hash: fileHash,
+          file_hash: fingerprint,
           file_size: file.size,
           client_hash_start_ms: clientHashStartMs,
           client_hash_end_ms: clientHashEndMs,
@@ -684,7 +718,7 @@ class UploadService {
     const headers: Record<string, string> = {
       'Content-Type': 'multipart/form-data',
       'X-File-ID': fileId,
-      'X-File-Hash': fileHash || '',
+      'X-File-Hash': fingerprint || '',
     };
 
     if (upload.minSpeakers !== null && upload.minSpeakers !== undefined) {
@@ -722,8 +756,10 @@ class UploadService {
     const cancelToken = axios.CancelToken.source();
     this.updateUpload(uploadId, { cancelToken });
 
-    // Use original video file hash from extraction metadata for duplicate detection
-    const originalFileHash = extractionMetadata?.originalFileHash || null;
+    // Dedupe on the SOURCE VIDEO's fingerprint, carried over from extraction:
+    // ffmpeg does not produce the same audio bytes twice, so fingerprinting the
+    // blob we are about to upload would never match a previous extraction.
+    const sourceFingerprint = extractionMetadata?.originalFingerprint || null;
     const contentType = audioBlob.type || 'audio/webm';
 
     // Step 1: Prepare — presigned direct-to-MinIO first (same ingress path as
@@ -733,7 +769,7 @@ class UploadService {
       filename: upload.name,
       file_size: audioBlob.size,
       content_type: contentType,
-      file_hash: originalFileHash,
+      file_hash: sourceFingerprint,
       extracted_from_video: extractionMetadata?.videoMetadata || null,
       collection_ids: upload.collectionIds || undefined,
       tag_names: upload.tagNames || undefined,
@@ -780,7 +816,7 @@ class UploadService {
         await axiosInstance.post('/files/complete', {
           file_id: fileId,
           task_id: taskId,
-          file_hash: originalFileHash,
+          file_hash: sourceFingerprint,
           file_size: audioBlob.size,
           client_put_start_ms: clientPutStartMs,
           client_put_end_ms: clientPutEndMs,
@@ -809,7 +845,7 @@ class UploadService {
         headers: {
           'Content-Type': 'multipart/form-data',
           'X-File-ID': fileId,
-          'X-File-Hash': originalFileHash || '',
+          'X-File-Hash': sourceFingerprint || '',
         },
         maxContentLength: Infinity,
         maxBodyLength: Infinity,

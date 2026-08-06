@@ -1424,6 +1424,8 @@
   "upload.uploadFailed": "Загрузка не удалась: {{name}} - {{error}}",
   "upload.stalled": "Загрузка остановлена: данные не передавались {{seconds}} секунд. Проверьте подключение.",
   "upload.calculatingHash": "Вычисление хеша файла...",
+  "upload.dedupSkipped": "Проверка дубликатов для {{name}} пропущена — не удалось прочитать файл. Загрузка продолжится.",
+  "upload.dedupSkippedBadge": "Проверка дубликатов пропущена",
   "upload.uploadPausedBrowserClosed": "Загрузка приостановлена. Откройте приложение для продолжения.",
   "fileDetail.unknownFile": "Неизвестный файл",
   "fileDetail.enterDisplayName": "Введите отображаемое имя",

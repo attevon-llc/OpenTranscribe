@@ -38,6 +38,7 @@ class RedactionService:
         run_profanity: bool = True,
         run_pii: bool = True,
         run_toxicity: bool = True,
+        failures: list[str] | None = None,
     ) -> tuple[list[dict], dict | None]:
         """Run cached detectors for one segment. Returns (span_dicts, toxicity_scores).
 
@@ -45,6 +46,13 @@ class RedactionService:
         Toxicity is a per-segment score dict (no char span). For bulk detection the
         caller sets ``run_toxicity=False`` and batches toxicity separately (faster).
         ``run_*`` flags are gated by per-language detector support.
+
+        Args:
+            failures: Optional sink. A detector that raises appends its name here so
+                the caller can tell "found nothing" apart from "could not look".
+                Detection is cached once and never re-run, so a swallowed failure
+                would otherwise be indistinguishable from a clean result forever
+                (issue #324).
         """
         spans: list[RedactionSpan] = []
         # Profanity (curated, user-independent → safe to cache).
@@ -58,6 +66,8 @@ class RedactionService:
                 spans.extend(pii_presidio.detect_pii(text, words, det_cfg))
             except Exception as exc:  # noqa: BLE001
                 logger.warning("PII detection skipped for a segment: %s", exc)
+                if failures is not None:
+                    failures.append("pii")
         # Toxicity score (per-segment).
         toxicity: dict | None = None
         if run_toxicity:
@@ -113,6 +123,13 @@ class RedactionService:
             .all()
         )
 
+        # Detectors that RAISED, as opposed to ones deliberately skipped for the
+        # transcript's language. Detection is cached once and never re-run, so a
+        # swallowed failure would be cached as "nothing found" permanently — a
+        # transcript full of PII would look clean forever (issue #324). Anything
+        # in here means the cached result is not trustworthy.
+        detector_failures: list[str] = []
+
         llm_spans_by_idx: dict[int, list] = {}
         if run_llm:
             try:
@@ -125,6 +142,7 @@ class RedactionService:
                 }
             except Exception as exc:  # noqa: BLE001
                 logger.warning("LLM redaction detection failed for file %s: %s", file_id, exc)
+                detector_failures.append("llm")
 
         # Serialize GPU inference (no-op on CPU) so concurrent files never stack model
         # activations on one GPU — peak VRAM stays bounded to a single inference.
@@ -144,7 +162,8 @@ class RedactionService:
                             [str(s.text or "") for s in segments], media.language
                         )
                     except Exception as exc:  # noqa: BLE001
-                        logger.debug("Batch toxicity skipped for file %s: %s", file_id, exc)
+                        logger.warning("Batch toxicity failed for file %s: %s", file_id, exc)
+                        detector_failures.append("toxicity")
 
                 for idx, seg in enumerate(segments):
                     span_dicts, _ = RedactionService.detect_segment_spans(
@@ -154,12 +173,34 @@ class RedactionService:
                         run_profanity=run_profanity,
                         run_pii=run_pii,
                         run_toxicity=False,
+                        failures=detector_failures,
                     )
                     if idx in llm_spans_by_idx:
                         span_dicts = span_dicts + llm_spans_by_idx[idx]
                     pii_count += sum(1 for s in span_dicts if s.get("category") == "pii")
                     seg.redactions = span_dicts or None  # type: ignore[assignment]
                     seg.toxicity = tox_scores[idx]  # type: ignore[assignment]
+            if detector_failures:
+                # Do NOT cache a degraded pass as DONE. Detection runs once and is
+                # never re-run, so marking this complete would permanently record
+                # "no PII found" for a transcript nobody actually finished scanning
+                # (issue #324). FAILED keeps the file eligible for re-detection.
+                #
+                # The spans that DID succeed are committed — they are real findings
+                # and dropping them would be strictly worse — but the status makes
+                # clear the result is partial.
+                failed = sorted(set(detector_failures))
+                media.redaction_status = C.REDACTION_STATUS_FAILED  # type: ignore[assignment]
+                db.commit()
+                logger.error(
+                    "Redaction detection for file %s completed with failed detectors %s; "
+                    "marking FAILED so it is re-run rather than caching an incomplete "
+                    "result as clean. Partial spans found so far were kept.",
+                    file_id,
+                    failed,
+                )
+                return {"status": "failed", "reason": "detector_failure", "detectors": failed}
+
             media.redaction_status = C.REDACTION_STATUS_DONE  # type: ignore[assignment]
             media.redaction_model_version = C.REDACTION_MODEL_VERSION  # type: ignore[assignment]
             db.commit()

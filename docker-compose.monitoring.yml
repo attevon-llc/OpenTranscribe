@@ -9,9 +9,16 @@
 #   GRAFANA_PASSWORD admin password for Grafana      (default admin — CHANGE IN PRODUCTION)
 #   POSTGRES_*       reused (from .env) to provision Grafana's read-only PostgreSQL datasource
 #
+# Both host ports are bound to 127.0.0.1 only, matching the base file's
+# convention for everything that isn't the app itself: Prometheus has no auth at
+# all (and runs with --web.enable-lifecycle) and Grafana's fallback password is
+# `admin`. Expose either one through a reverse proxy with real auth if it needs
+# to be reachable off-host — do not move the binding to 0.0.0.0.
+#
 # Both services join the stack's default bridge network automatically (same
 # compose project), so Prometheus reaches the backend at backend:8080 and
-# Grafana reaches postgres at postgres:5432 — no extra network config needed.
+# Grafana reaches prometheus:9090 / postgres:5432 by SERVICE name. Those names
+# are stable even when `--fresh` re-pins container_name (issue #347).
 #
 # This overlay is intentionally generic so the cloud repo (which pins this
 # repo as a submodule) can append it as an extra `-f` file unchanged.
@@ -37,7 +44,8 @@ services:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     ports:
-      - "${PROMETHEUS_PORT:-5186}:9090"
+      # Loopback-only — unauthenticated admin API. See the header note.
+      - "127.0.0.1:${PROMETHEUS_PORT:-5186}:9090"
 
   grafana:
     container_name: opentranscribe-grafana
@@ -65,7 +73,8 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     ports:
-      - "${GRAFANA_PORT:-5185}:3000"
+      # Loopback-only — default admin password. See the header note.
+      - "127.0.0.1:${GRAFANA_PORT:-5185}:3000"
     depends_on:
       - prometheus
 

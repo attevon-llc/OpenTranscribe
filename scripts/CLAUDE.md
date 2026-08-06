@@ -34,24 +34,59 @@ this file is for.
 Root `CLAUDE.md` points here for the mechanics. `.fresh/` is gitignored and fully regenerated.
 
 - `.fresh/<name>.yml` — the ONLY generated compose overlay. It re-pins every hard-coded
-  `container_name` to `otfresh-<name>-*` (`FRESH_NAMED_SERVICES` in `opentr.sh`).
+  `container_name` to `otfresh-<name>-*` (`FRESH_NAMED_SERVICES` in `opentr.sh`, plus the aux
+  services below when their flag is passed).
 - `.fresh/<name>.offset` — the recorded `--port-offset` (plain integer, absent = 0). Read on re-up,
   `status --fresh`, and `fresh-list`; deleted by `fresh-destroy` and by `--port-offset 0`.
+- `.fresh/<name>.aux` — the aux overlay files the deployment was started with, one per line.
+  `fresh_compose_chain()` replays them so `stop`/`status`/`fresh-destroy` address the same chain the
+  deployment was created with. **Required, not cosmetic:** without it the generated overlay re-pins a
+  `container_name` for a service compose can no longer see and the whole chain is rejected.
 - **`--port-offset` is env-var driven, never an overlay.** `fresh_apply_port_offset()` exports the
-  `*_PORT` variables the base compose files already interpolate (`FRESH_PORT_VARS`: FRONTEND 5173,
+  `*_PORT` variables the compose files already interpolate (`FRESH_PORT_VARS`: FRONTEND 5173,
   BACKEND 5174, FLOWER 5175, POSTGRES 5176, REDIS 5177, MINIO 5178, MINIO_CONSOLE 5179, OPENSEARCH
-  5180, OPENSEARCH_ADMIN 5181, DOCS 5183; plus KEYCLOAK 8180 / STEP_CA 9000 with
-  `--with-keycloak-test`). **Never reintroduce a generated `-ports.yml`:** compose *appends* port
-  lists across files, so a second `ports:` entry publishes the base port too and the "isolated"
-  stack collides with the main one (issue #343). A shell env var beats `.env` for interpolation, and
-  a value already set in `.env` is the base the offset is applied to.
-- Adding a published port to `docker-compose.yml` / `docker-compose.override.yml`? Add its variable
-  to `FRESH_PORT_VARS` in the same commit, or `--port-offset` silently leaves that one service on
-  the main stack's port.
+  5180, OPENSEARCH_ADMIN 5181, DOCS 5183). **Never reintroduce a generated `-ports.yml`:** compose
+  *appends* port lists across files, so a second `ports:` entry publishes the base port too and the
+  "isolated" stack collides with the main one (issue #343). A shell env var beats `.env` for
+  interpolation, and a value already set in `.env` is the base the offset is applied to.
+- Adding a published port to any compose file `--fresh` can load? Add its variable to the matching
+  `FRESH_*_PORT_VARS` array in the same commit, or `--port-offset` silently leaves that one service
+  on the main stack's port.
 - The pre-flight bind check runs at **every** offset (not just 0) and refuses to start if any
   resolved port is taken, so a bad offset fails before `compose up`.
-- `--with-ldap-test` / `--with-smb-test` / `--with-monitoring` hard-code container names (and
-  ldap/smb their ports): NOT isolated by `--fresh`, NOT moved by `--port-offset`; the script warns.
+
+### Aux test overlays under `--fresh` (issue #347)
+
+`--with-ldap-test` / `--with-smb-test` / `--with-monitoring` / `--with-keycloak-test` are fully
+isolated: ports via `FRESH_{LDAP,SMB,MONITORING,KEYCLOAK}_PORT_VARS`, container names via
+`FRESH_{LDAP,SMB,MONITORING}_SERVICES` fed into the generated overlay, volumes via the project name.
+
+- **`LDAP_TEST_PORT` / `LDAP_TEST_UI_PORT`, never `LDAP_PORT`.** `LDAP_PORT` is the *application's*
+  LDAP client port (`.env` ships `LDAP_PORT=636`); offsetting it would repoint the app's LDAP config.
+- **Renaming a container is only safe because in-network DNS uses the SERVICE name.** Compose
+  aliases each service name on the network (`backend`, `prometheus`, `postgres`, `smb-test`), which
+  is what Prometheus' scrape target, Grafana's datasource URL and the SMB docs all use. LLDAP is the
+  exception — it is documented/configured as `ldap://lldap-test`, the *container* name — so
+  `docker-compose.ldap-test.yml` pins `lldap-test` as an explicit network **alias**. Never drop that
+  alias, and grep before renaming anything else.
+- The ldap/smb/keycloak overlays used to declare the default network `external: true` under the name
+  `${COMPOSE_PROJECT_NAME:-opentranscribe}_default`. Compose defaults the project name to the
+  **directory**, not `opentranscribe`, so that name never existed and `up` died with "network …
+  declared as external, but could not be found". They now use the project's implicit default
+  network, like the monitoring overlay always has. The cost: they can no longer be run standalone
+  with a bare `docker compose -f docker-compose.ldap-test.yml up` — load them through `./opentr.sh`.
+- Every aux overlay publishes on **`127.0.0.1` only**. They are throwaway services with published
+  credentials (LLDAP admin_password + hard-coded JWT secret, Samba testuser/testpass, Grafana
+  admin/admin, Keycloak admin/admin, unauthenticated Prometheus with `--web.enable-lifecycle`).
+  Do not move them to `0.0.0.0`; front them with a proxy instead.
+- Keycloak needs `KC_HEALTH_ENABLED: "true"` for its healthcheck. Since Keycloak 25 the health
+  endpoints moved to the **management port 9000** and are only served when that flag is set — probe
+  `/health/ready` on 8080 and you get a 404 forever, so `up --wait` fails on a Keycloak that works.
+- `--with-watch` / `--with-backup` are the remaining un-isolatable overlays and the reason the
+  combined-flag warning still exists: they bind **live host directories**, which a fresh stack then
+  shares with the main one. Nothing in `opentr.sh` can namespace a path the operator asked for.
+- `setup-watch-source-test-data.sh` resolves containers through `OT_CONTAINER_PREFIX`
+  (default `opentranscribe`) — pass `OT_CONTAINER_PREFIX=otfresh-<name>` to seed a fresh deployment.
 
 ## docker-build-push.sh
 

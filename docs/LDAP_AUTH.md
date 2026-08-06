@@ -374,7 +374,7 @@ For development and testing, use the built-in LLDAP test container:
 1. Log in as super_admin (admin@example.com / password)
 2. Go to Settings → Authentication → LDAP/Active Directory
 3. Configure:
-   - Server: `lldap-test` (container name)
+   - Server: `lldap-test` (network alias — stays valid even when `--fresh` renames the container)
    - Port: `3890`
    - Use SSL: `false`
    - Bind DN: `uid=admin,ou=people,dc=example,dc=com`

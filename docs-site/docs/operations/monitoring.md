@@ -58,6 +58,10 @@ This loads `docker-compose.monitoring.yml` and brings up:
 
 Both containers run `no-new-privileges`, `restart: unless-stopped`, with read-only config mounts and named data volumes. Grafana anonymous access and self-signup are disabled. Override the host ports with `PROMETHEUS_PORT` / `GRAFANA_PORT` and the password with `GRAFANA_PASSWORD` in `.env`.
 
+Both host ports are published on **`127.0.0.1` only**, matching how the base compose file treats everything that isn't the app itself. Prometheus has no authentication at all (and runs with `--web.enable-lifecycle`), and Grafana's fallback password is `admin`, so neither belongs on `0.0.0.0`. To reach them from another machine, put them behind a reverse proxy that does authentication — don't change the binding.
+
+Under `./opentr.sh start dev --fresh <name> --port-offset N --with-monitoring`, the containers become `otfresh-<name>-prometheus` / `-grafana` and both ports are offset by `N`, so a throwaway stack gets its own monitoring instead of colliding with the main one.
+
 Omit the flag and the stack runs completely unchanged — the overlay adds nothing to the base services.
 
 Verify after start: Prometheus → **Status → Targets** shows `opentranscribe-backend` UP; Grafana → **Dashboards → OpenTranscribe** lists both dashboards and renders data after you click around the app.

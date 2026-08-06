@@ -69,7 +69,8 @@ show_help() {
   echo "  --no-nas             - Suppress the auto-loaded NAS overlay (use Docker named volumes)"
   echo "  --fresh [name]       - Isolated dev deployment: own project + named volumes, NAS"
   echo "                         overlay NEVER loaded, real data untouched (dev mode only)"
-  echo "  --port-offset N      - With --fresh: offset every published port by N (run side-by-side)"
+  echo "  --port-offset N      - With --fresh: offset every published port by N (run side-by-side;"
+  echo "                         remembered per deployment — pass --port-offset 0 to reset)"
   echo "  --seed-benchmark     - With --fresh: upload small benchmark media once healthy"
   echo "  --dry-run            - Print the compose files + command that WOULD run; start nothing"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
@@ -356,43 +357,102 @@ fresh_generate_overlay() {
       echo "    container_name: ${proj}-${svc}"
     done
   } > "$file"
+  # Pre-#343 deployments also generated a <name>-ports.yml overlay that added a
+  # SECOND `ports:` list; compose appends those, so the base port stayed bound.
+  # Ports are env-var driven now — drop the stale file so nothing picks it up.
+  rm -f "${FRESH_OVERLAY_DIR}/${name}-ports.yml"
   echo "$file"
 }
 
-# Apply a published-port offset to COMPOSE_FILES via a generated overlay so a
-# fresh stack can run side-by-side with the main stack. Echoes the overlay path.
-# offset is added to every default host port; container ports are unchanged.
-fresh_generate_port_overlay() {
+# Every host port a fresh dev stack publishes, as "VAR=default" pairs. VAR is the
+# variable the base compose files already interpolate into their single `ports:`
+# entry; default is the value baked into that entry.
+#
+# --port-offset works by EXPORTING these variables (value + offset) so compose
+# substitutes the moved port into the existing mapping. It must never emit a
+# second `ports:` list in an overlay: compose APPENDS port lists when merging
+# files, so an overlay-based offset republished the offset port *in addition to*
+# the base one and collided with the main stack anyway (issue #343). The env-var
+# route also preserves the `127.0.0.1:` loopback binding the base file puts on
+# every infra port — an overlay list replaced that with a 0.0.0.0 bind.
+#
+# Source of truth: `ports:` entries in docker-compose.yml + docker-compose.override.yml.
+FRESH_PORT_VARS=(
+  "FRONTEND_PORT=5173"          # frontend (dev override) → :5173
+  "BACKEND_PORT=5174"           # backend                 → :8080
+  "FLOWER_PORT=5175"            # flower                  → :5555
+  "POSTGRES_PORT=5176"          # postgres                → :5432
+  "REDIS_PORT=5177"             # redis                   → :6379
+  "MINIO_PORT=5178"             # minio API               → :9000
+  "MINIO_CONSOLE_PORT=5179"     # minio console           → :9001
+  "OPENSEARCH_PORT=5180"        # opensearch API          → :9200
+  "OPENSEARCH_ADMIN_PORT=5181"  # opensearch admin        → :9600
+  "DOCS_PORT=5183"              # docs (dev override)     → :8080
+)
+
+# Published only when --with-keycloak-test is passed (the keycloak overlay is the
+# one aux overlay without a hard-coded container_name, so it CAN live inside a
+# fresh project). Appended to the list above on demand.
+FRESH_KEYCLOAK_PORT_VARS=(
+  "KEYCLOAK_PORT=8180"          # keycloak → :8080
+  "STEP_CA_PORT=9000"           # step-ca  → :9000
+)
+
+# Resolve and export the host ports a fresh stack publishes, offset by $1.
+# Remaining args are "VAR=default" pairs. A value already in the environment
+# (i.e. set in .env) is the base the offset applies to, so an operator's custom
+# port layout is preserved. Sets FRESH_RESOLVED_PORTS ("VAR:port" entries) for
+# the pre-flight bind check and the startup banner.
+FRESH_RESOLVED_PORTS=()
+fresh_apply_port_offset() {
+  local offset="$1"
+  shift
+  FRESH_RESOLVED_PORTS=()
+  local entry var base current
+  for entry in "$@"; do
+    var="${entry%%=*}"
+    base="${entry#*=}"
+    current="${!var:-}"
+    [[ "$current" =~ ^[0-9]+$ ]] || current="$base"
+    export "${var}=$((current + offset))"
+    FRESH_RESOLVED_PORTS+=("${var}:$((current + offset))")
+  done
+}
+
+# Human-readable one-liner of the resolved ports, e.g. "frontend=5273 backend=5274".
+fresh_port_summary() {
+  local entry out=""
+  for entry in "${FRESH_RESOLVED_PORTS[@]}"; do
+    out="${out} $(echo "${entry%%:*}" | sed 's/_PORT$//' | tr '[:upper:]' '[:lower:]')=${entry#*:}"
+  done
+  echo "$out"
+}
+
+# File recording a deployment's port offset so `stop`, `status`, `fresh-list` and
+# a later re-up all address the same ports without repeating --port-offset.
+fresh_offset_file() {
+  echo "${FRESH_OVERLAY_DIR}/${1}.offset"
+}
+
+# Echo a deployment's recorded port offset (0 when none recorded).
+fresh_read_offset() {
+  local file value=""
+  file="$(fresh_offset_file "$1")"
+  [ -f "$file" ] && value="$(tr -dc '0-9' < "$file")"
+  echo "${value:-0}"
+}
+
+# Record (or clear, when 0) a deployment's port offset.
+fresh_write_offset() {
   local name="$1"
   local offset="$2"
   mkdir -p "$FRESH_OVERLAY_DIR"
-  local file="${FRESH_OVERLAY_DIR}/${name}-ports.yml"
-  {
-    echo "# AUTO-GENERATED by opentr.sh — port offset +${offset} for fresh '${name}'."
-    echo "services:"
-    echo "  postgres:"
-    echo "    ports: [\"$((5176 + offset)):5432\"]"
-    echo "  redis:"
-    echo "    ports: [\"$((5177 + offset)):6379\"]"
-    echo "  minio:"
-    echo "    ports: [\"$((5178 + offset)):9000\", \"$((5179 + offset)):9001\"]"
-    echo "  opensearch:"
-    echo "    ports: [\"$((5180 + offset)):9200\", \"$((5181 + offset)):9600\"]"
-    echo "  backend:"
-    echo "    ports: [\"$((5174 + offset)):8080\"]"
-    echo "  flower:"
-    echo "    ports: [\"$((5175 + offset)):5555\"]"
-    echo "  frontend:"
-    echo "    ports: [\"$((5173 + offset)):5173\"]"
-    echo "  docs:"
-    echo "    ports: [\"$((5183 + offset)):8080\"]"
-  } > "$file"
-  echo "$file"
+  if [ "$offset" -eq 0 ]; then
+    rm -f "$(fresh_offset_file "$name")"
+  else
+    echo "$offset" > "$(fresh_offset_file "$name")"
+  fi
 }
-
-# The default published host ports the dev stack binds. Used to refuse a fresh
-# start when the main stack is already up (zero offset).
-FRESH_DEFAULT_PORTS=(5173 5174 5175 5176 5177 5178 5179 5180 5181)
 
 # Return 0 if a TCP port is already bound on localhost, 1 otherwise.
 fresh_port_in_use() {
@@ -468,6 +528,7 @@ print_data_paths() {
   if [ -d "$FRESH_OVERLAY_DIR" ] && ls "${FRESH_OVERLAY_DIR}"/*.yml >/dev/null 2>&1; then
     local f n
     for f in "${FRESH_OVERLAY_DIR}"/*.yml; do
+      # *-ports.yml is a stale pre-#343 artifact, not a deployment (see #343).
       case "$f" in *-ports.yml) continue;; esac
       n="$(basename "$f" .yml)"
       echo "   otfresh-${n} → named volumes otfresh-${n}_{postgres,minio,opensearch,redis}_data"
@@ -485,7 +546,6 @@ fresh_compose_chain() {
   local chain="-f docker-compose.yml -f docker-compose.override.yml"
   [ -f "docker-compose.gpu.yml" ] && chain="$chain -f docker-compose.gpu.yml"
   [ -f "${FRESH_OVERLAY_DIR}/${name}.yml" ] && chain="$chain -f ${FRESH_OVERLAY_DIR}/${name}.yml"
-  [ -f "${FRESH_OVERLAY_DIR}/${name}-ports.yml" ] && chain="$chain -f ${FRESH_OVERLAY_DIR}/${name}-ports.yml"
   echo "$chain"
 }
 
@@ -511,7 +571,13 @@ fresh_status() {
   proj="$(fresh_project_name "$name")"
   local chain
   chain="$(fresh_compose_chain "$name")"
-  echo "📊 Fresh deployment '${name}' (project ${proj}):"
+  local offset
+  offset="$(fresh_read_offset "$name")"
+  if [ "$offset" -ne 0 ]; then
+    echo "📊 Fresh deployment '${name}' (project ${proj}, port offset +${offset}):"
+  else
+    echo "📊 Fresh deployment '${name}' (project ${proj}, standard dev ports):"
+  fi
   # shellcheck disable=SC2086
   COMPOSE_PROJECT_NAME="$proj" docker compose $chain ps 2>/dev/null || true
 }
@@ -521,13 +587,20 @@ fresh_status() {
 fresh_list() {
   echo "🧪 Fresh deployments:"
   if [ -d "$FRESH_OVERLAY_DIR" ] && ls "${FRESH_OVERLAY_DIR}"/*.yml >/dev/null 2>&1; then
-    local f n proj running
+    local f n proj running offset ports
     for f in "${FRESH_OVERLAY_DIR}"/*.yml; do
+      # *-ports.yml is a stale pre-#343 artifact, not a deployment (see #343).
       case "$f" in *-ports.yml) continue;; esac
       n="$(basename "$f" .yml)"
       proj="$(fresh_project_name "$n")"
       running="$(docker ps --filter "name=^${proj}-" --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')"
-      echo "  • ${n}  (project ${proj}, ${running} container(s) running)"
+      offset="$(fresh_read_offset "$n")"
+      if [ "$offset" -ne 0 ]; then
+        ports="port offset +${offset} → frontend $((${FRONTEND_PORT:-5173} + offset)), backend $((${BACKEND_PORT:-5174} + offset))"
+      else
+        ports="standard dev ports"
+      fi
+      echo "  • ${n}  (project ${proj}, ${running} container(s) running, ${ports})"
     done
   else
     echo "  (none — create with ./opentr.sh start dev --fresh <name>)"
@@ -564,8 +637,11 @@ fresh_destroy() {
   if [ -n "$containers" ]; then echo "$containers" | sed 's/^/     - /'; else echo "     (none)"; fi
   echo "   Named volumes to remove:"
   if [ -n "$vols" ]; then echo "$vols" | sed 's/^/     - /'; else echo "     (none)"; fi
-  echo "   Generated overlays to remove:"
-  ls "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null | sed 's/^/     - /' || true
+  echo "   Generated files to remove:"
+  # <name>.yml = container_name overlay, <name>.offset = recorded --port-offset,
+  # <name>-ports.yml = stale pre-#343 port overlay (see #343).
+  ls "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}.offset" \
+     "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null | sed 's/^/     - /' || true
   echo ""
   echo "   This touches ONLY this isolated project — no bind paths, no other stack."
   printf "   Proceed? (y/N) "
@@ -581,8 +657,9 @@ fresh_destroy() {
   if [ -n "$vols" ]; then
     echo "$vols" | xargs -r docker volume rm 2>/dev/null || true
   fi
-  rm -f "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null || true
-  echo "✅ Fresh deployment '${name}' destroyed (containers + volumes + overlays)."
+  rm -f "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}.offset" \
+        "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null || true
+  echo "✅ Fresh deployment '${name}' destroyed (containers + volumes + generated files)."
 }
 
 # Function to start the environment
@@ -649,6 +726,11 @@ start_app() {
         ;;
       --port-offset)
         shift
+        # A missing value would abort on `set -u`; fail with something readable.
+        if [ $# -eq 0 ] || [ "${1#-}" != "$1" ]; then
+          echo "❌ --port-offset requires a value (e.g. --port-offset 100)"
+          exit 1
+        fi
         PORT_OFFSET="$1"
         shift
         ;;
@@ -708,7 +790,6 @@ start_app() {
   # collisions resolved via a generated overlay. Real data is never touched.
   FRESH_PROJECT=""
   FRESH_OVERLAY=""
-  FRESH_PORT_OVERLAY=""
   if [ -n "$FRESH_FLAG" ]; then
     if [ "$ENVIRONMENT" != "dev" ]; then
       echo "❌ --fresh is only supported in dev mode (./opentr.sh start dev --fresh [name])"
@@ -717,55 +798,84 @@ start_app() {
     FRESH_NAME="$(fresh_sanitize_name "$FRESH_NAME")"
     FRESH_PROJECT="$(fresh_project_name "$FRESH_NAME")"
 
-    # Resolve port offset (default 0 → standard dev ports so conftest works).
-    local _offset="${PORT_OFFSET:-0}"
-    if ! [[ "$_offset" =~ ^[0-9]+$ ]]; then
-      echo "❌ --port-offset must be a non-negative integer (got '$_offset')"
-      exit 1
+    # Resolve port offset. Explicit --port-offset wins and is recorded; otherwise
+    # reuse this deployment's recorded offset so a re-up lands on the same ports.
+    # Default 0 → standard dev ports so conftest/e2e work unchanged.
+    local _offset
+    if [ -n "$PORT_OFFSET" ]; then
+      _offset="$PORT_OFFSET"
+      if ! [[ "$_offset" =~ ^[0-9]+$ ]]; then
+        echo "❌ --port-offset must be a non-negative integer (got '$_offset')"
+        exit 1
+      fi
+    else
+      _offset="$(fresh_read_offset "$FRESH_NAME")"
+      [ "$_offset" -ne 0 ] && echo "ℹ️  Reusing recorded port offset +${_offset} for '${FRESH_NAME}' (pass --port-offset 0 to reset)."
     fi
 
-    # Refuse to start on standard ports if ANOTHER stack already holds them.
-    # Exception: when THIS SAME fresh project is what's bound to them, proceed —
+    # Export the *_PORT variables the base compose files interpolate, offset by
+    # $_offset. This moves the SINGLE existing `ports:` entry — see FRESH_PORT_VARS
+    # for why an overlay must not be used (issue #343).
+    local _port_vars=("${FRESH_PORT_VARS[@]}")
+    if [ -n "$WITH_KEYCLOAK_TEST_FLAG" ]; then
+      _port_vars+=("${FRESH_KEYCLOAK_PORT_VARS[@]}")
+    fi
+    fresh_apply_port_offset "$_offset" "${_port_vars[@]}"
+
+    # Refuse to start when a port this stack needs is already bound. At offset 0
+    # that is normally the main stack; at a non-zero offset it is a poorly chosen
+    # offset. Exception: when THIS SAME fresh project holds them, proceed —
     # `compose up -d` just recreates changed services (e.g. after a .env edit).
-    if [ "$_offset" -eq 0 ]; then
-      local _busy=""
-      local _p
-      for _p in "${FRESH_DEFAULT_PORTS[@]}"; do
-        if fresh_port_in_use "$_p"; then _busy="$_busy $_p"; fi
-      done
-      if [ -n "$_busy" ]; then
-        local _holder
-        _holder="$(docker ps --filter "label=com.docker.compose.project=${FRESH_PROJECT}" --format '{{.Names}}' 2>/dev/null | head -1)"
-        if [ -n "$_holder" ]; then
-          echo "ℹ️  Standard ports are held by this same fresh deployment (${FRESH_PROJECT}) — re-upping in place."
-        else
-          echo "❌ Cannot start fresh deployment on the standard dev ports — already bound:${_busy}"
-          echo "   The main stack appears to be running. Either stop it, or run side-by-side:"
-          echo "   ./opentr.sh start dev --fresh ${FRESH_NAME} --port-offset 100"
-          exit 1
-        fi
+    local _busy=""
+    local _entry
+    for _entry in "${FRESH_RESOLVED_PORTS[@]}"; do
+      if fresh_port_in_use "${_entry#*:}"; then _busy="$_busy ${_entry#*:}"; fi
+    done
+    if [ -n "$_busy" ]; then
+      local _holder
+      _holder="$(docker ps --filter "label=com.docker.compose.project=${FRESH_PROJECT}" --format '{{.Names}}' 2>/dev/null | head -1)"
+      if [ -n "$_holder" ]; then
+        echo "ℹ️  Those ports are held by this same fresh deployment (${FRESH_PROJECT}) — re-upping in place."
+      elif [ "$_offset" -eq 0 ]; then
+        echo "❌ Cannot start fresh deployment on the standard dev ports — already bound:${_busy}"
+        echo "   The main stack appears to be running. Either stop it, or run side-by-side:"
+        echo "   ./opentr.sh start dev --fresh ${FRESH_NAME} --port-offset 100"
+        exit 1
+      else
+        echo "❌ Cannot start fresh deployment '${FRESH_NAME}' with --port-offset ${_offset} — already bound:${_busy}"
+        echo "   Something else holds those ports. Pick a different --port-offset."
+        exit 1
       fi
     fi
 
-    FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME")"
-    if [ "$_offset" -ne 0 ]; then
-      FRESH_PORT_OVERLAY="$(fresh_generate_port_overlay "$FRESH_NAME" "$_offset")"
+    # Aux test overlays hard-code both their container names and (ldap/smb) their
+    # host ports, so --fresh cannot isolate them and --port-offset cannot move them.
+    if [ -n "$WITH_LDAP_TEST_FLAG" ] || [ -n "$WITH_SMB_TEST_FLAG" ] || [ -n "$WITH_MONITORING_FLAG" ]; then
+      echo "⚠️  --with-ldap-test / --with-smb-test / --with-monitoring use fixed container names"
+      echo "   and (ldap/smb) fixed host ports — those containers are NOT isolated by --fresh"
+      echo "   and are NOT moved by --port-offset. They will collide with the main stack's."
     fi
+
+    fresh_write_offset "$FRESH_NAME" "$_offset"
+    FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME")"
     export COMPOSE_PROJECT_NAME="$FRESH_PROJECT"
 
     echo ""
     echo "🧪 FRESH DEPLOYMENT '${FRESH_NAME}': isolated project + volumes; NAS overlay IGNORED; real data untouched."
     echo "   Project: ${FRESH_PROJECT}  (containers: ${FRESH_PROJECT}-*)"
     if [ "$_offset" -ne 0 ]; then
-      echo "   Port offset: +${_offset} (e.g. backend on $((5174 + _offset)), frontend on $((5173 + _offset)))"
+      echo "   Port offset: +${_offset} (recorded in $(fresh_offset_file "$FRESH_NAME"))"
     else
-      echo "   Ports: standard dev ports (5173-5181)"
+      echo "   Port offset: none — standard dev ports"
     fi
+    echo "   Published ports:$(fresh_port_summary)"
     echo ""
 
     # Force NAS off in fresh mode regardless of .env.
     NO_NAS_FLAG="--no-nas"
     NAS_FLAG=""
+  elif [ -n "$PORT_OFFSET" ]; then
+    echo "⚠️  --port-offset is only honored in fresh mode (--fresh); ignoring."
   fi
 
   # PKI requires production mode (nginx with mTLS)
@@ -1087,10 +1197,10 @@ start_app() {
     fi
   fi
 
-  # Fresh-mode overlays go LAST so their container_name + port re-pinning wins.
-  if [ -n "$FRESH_FLAG" ]; then
-    [ -n "$FRESH_OVERLAY" ] && COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_OVERLAY"
-    [ -n "$FRESH_PORT_OVERLAY" ] && COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_PORT_OVERLAY"
+  # Fresh-mode overlay goes LAST so its container_name re-pinning wins. Ports are
+  # NOT overlaid — they come from the exported *_PORT vars (see FRESH_PORT_VARS).
+  if [ -n "$FRESH_FLAG" ] && [ -n "$FRESH_OVERLAY" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_OVERLAY"
   fi
 
   # Dry-run: print exactly what WOULD run and exit without touching Docker.
@@ -1174,8 +1284,8 @@ start_app() {
     if [ -z "$FRESH_FLAG" ]; then
       echo "⚠️  --seed-benchmark is only honored in fresh mode (--fresh); skipping."
     elif [ -f "scripts/seed-fresh-deployment.sh" ]; then
-      local _seed_offset="${PORT_OFFSET:-0}"
-      local _seed_backend_port=$((5174 + _seed_offset))
+      # BACKEND_PORT was exported with the offset already applied.
+      local _seed_backend_port="${BACKEND_PORT:-5174}"
       echo ""
       echo "🌱 Seeding benchmark media into fresh deployment '${FRESH_NAME}' (backend :${_seed_backend_port})..."
       BACKEND_URL="http://localhost:${_seed_backend_port}" \

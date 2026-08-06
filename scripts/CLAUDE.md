@@ -29,6 +29,30 @@ this file is for.
 - `common.sh` is sourced **only by `opentr.sh`** (docker checks, model-cache chown, OpenSearch model
   bootstrap). `offline-common.sh` is sourced only by the two offline/Windows builders.
 
+## Fresh deployments (`opentr.sh --fresh`, state in `.fresh/`)
+
+Root `CLAUDE.md` points here for the mechanics. `.fresh/` is gitignored and fully regenerated.
+
+- `.fresh/<name>.yml` — the ONLY generated compose overlay. It re-pins every hard-coded
+  `container_name` to `otfresh-<name>-*` (`FRESH_NAMED_SERVICES` in `opentr.sh`).
+- `.fresh/<name>.offset` — the recorded `--port-offset` (plain integer, absent = 0). Read on re-up,
+  `status --fresh`, and `fresh-list`; deleted by `fresh-destroy` and by `--port-offset 0`.
+- **`--port-offset` is env-var driven, never an overlay.** `fresh_apply_port_offset()` exports the
+  `*_PORT` variables the base compose files already interpolate (`FRESH_PORT_VARS`: FRONTEND 5173,
+  BACKEND 5174, FLOWER 5175, POSTGRES 5176, REDIS 5177, MINIO 5178, MINIO_CONSOLE 5179, OPENSEARCH
+  5180, OPENSEARCH_ADMIN 5181, DOCS 5183; plus KEYCLOAK 8180 / STEP_CA 9000 with
+  `--with-keycloak-test`). **Never reintroduce a generated `-ports.yml`:** compose *appends* port
+  lists across files, so a second `ports:` entry publishes the base port too and the "isolated"
+  stack collides with the main one (issue #343). A shell env var beats `.env` for interpolation, and
+  a value already set in `.env` is the base the offset is applied to.
+- Adding a published port to `docker-compose.yml` / `docker-compose.override.yml`? Add its variable
+  to `FRESH_PORT_VARS` in the same commit, or `--port-offset` silently leaves that one service on
+  the main stack's port.
+- The pre-flight bind check runs at **every** offset (not just 0) and refuses to start if any
+  resolved port is taken, so a bad offset fails before `compose up`.
+- `--with-ldap-test` / `--with-smb-test` / `--with-monitoring` hard-code container names (and
+  ldap/smb their ports): NOT isolated by `--fresh`, NOT moved by `--port-offset`; the script warns.
+
 ## docker-build-push.sh
 
 - **ALWAYS `USE_REMOTE_BUILDER=true`.** It defaults to `false` and `PLATFORMS` defaults to

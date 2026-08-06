@@ -22,6 +22,9 @@ a second one in a component. (`AudioExtractionService` is also exported as a cla
 - `uploadService.ts` — the upload queue singleton: max 3 concurrent, 3 retries with exponential
   backoff, persisted to `localStorage['upload_queue']`. Tries a **presigned PUT
   straight to MinIO, then silently falls back** to the legacy multipart `POST /files`.
+- `multipartUploader.ts` — `uploadInParts()`: executes the presigned **multipart** plan the
+  backend returns for large objects (issue #327). A per-upload factory, not a singleton, like
+  `stallWatchdog`. See gotchas.
 - `stallWatchdog.ts` — `createStallWatchdog()`: the timeout control for file bodies. See gotchas.
 - `audioExtractionService.ts` — in-browser video→audio via FFmpeg.wasm (`-c:a copy`, no re-encode),
   core loaded from `frontend/static/ffmpeg/` (gitignored, ~31 MB — fetched by the
@@ -67,6 +70,18 @@ a second one in a component. (`AudioExtractionService` is also exported as a cla
 - The presigned→legacy fallback swallows the error with no log; a broken presign looks like a slow
   upload. `configService` likewise swallows its fetch error and marks itself loaded, so "config
   failed" is indistinguishable from "no protected hosts".
+- **The multipart path deliberately has no legacy fallback.** It is chosen for objects too large
+  to push through the API container, so falling back would do the exact thing it exists to avoid —
+  and a mid-transfer failure is _resumable_, which re-sending from zero is not. `uploadService`
+  parks a `MultipartSession` on the `UploadItem` for the whole transfer; the queue's normal retry
+  then resumes from the parts the bucket already holds instead of re-hashing and re-preparing.
+  The session is in-memory only (a `File` cannot be persisted), so resume covers retries within
+  the session, not a page reload. A 404/409 from `/files/multipart/parts` means the upload is
+  gone server-side and is the one case that restarts from `/prepare`.
+- **Giving up on a multipart upload must abort it** — object storage bills for the parts of an
+  incomplete upload. `cancelUpload`, the out-of-retries branch, and `reset()` (logout, before the
+  cookie goes away) all fire `DELETE /files/{fileId}`. `part_size`, `part_count` and the batch
+  size are all backend decisions; `multipartUploader` only executes them.
 - Persistence only restores `url`-type uploads — File/Blob sources can't survive a reload (by design).
 - `audioExtractionService` is a **deliberate** exception to the thin-frontend rule (it avoids uploading
   multi-GB video), like `$lib/export/`. Don't extend the precedent to business logic.

@@ -176,15 +176,28 @@ def test_prepare_presigned_returns_upload_url(client, user_token_headers):
     assert body["task_id"]
 
 
-def test_prepare_withholds_presigned_url_above_the_s3_single_put_limit(
+def _abort(body: dict) -> None:
+    """Release the multipart upload /prepare just created.
+
+    Storage bills for the parts of an incomplete upload, and these tests run
+    against the live dev MinIO — leaving one behind would be leaving litter in
+    real storage.
+    """
+    from app.services.multipart_upload import abort_upload
+
+    abort_upload(body["storage_path"], body["multipart"]["upload_id"])
+
+
+@pytest.mark.skipif(not S3_LIVE, reason="creating a multipart upload requires MinIO")
+def test_prepare_uses_multipart_above_the_s3_single_put_limit(
     client, user_token_headers, monkeypatch
 ):
     """On native S3 a >5 GiB object cannot be uploaded with one PUT (issue #284 A1.11).
 
-    S3 answers ``EntityTooLarge`` only after the browser has streamed the whole body,
-    so /prepare withholds the URL instead. The client then falls back to POST /files,
-    which spools to disk and writes through minio-py's multipart uploader. No storage
-    round-trip happens here: the point is that no presigned URL is minted.
+    S3 answers ``EntityTooLarge`` only after the browser has streamed the whole body.
+    /prepare used to withhold the URL and let the client fall back to ``POST /files``,
+    pushing the whole body through the API container; since #327 it hands out a
+    presigned *multipart* plan instead.
     """
     from app.core.config import settings as app_settings
 
@@ -204,12 +217,19 @@ def test_prepare_withholds_presigned_url_above_the_s3_single_put_limit(
     body = response.json()
     assert body["is_duplicate"] == 0
     assert "upload_url" not in body
-    assert "upload_method" not in body
+    assert body["upload_method"] == "MULTIPART"
+    assert body["multipart"]["part_count"] == 96  # 6 GiB / 64 MiB
+    assert body["multipart"]["upload_id"]
+    _abort(body)
 
 
-@pytest.mark.skipif(not S3_LIVE, reason="presigned PUT URL requires MinIO (SKIP_S3=False)")
-def test_prepare_still_presigns_large_files_on_minio(client, user_token_headers):
-    """MinIO's single-PUT ceiling is 5 TiB, so the S3 guard must not fire on it."""
+@pytest.mark.skipif(not S3_LIVE, reason="creating a multipart upload requires MinIO")
+def test_prepare_uses_multipart_for_large_files_on_minio(client, user_token_headers):
+    """MinIO's 5 TiB single-PUT ceiling means multipart here is about resume, not size.
+
+    A 6 GiB single PUT that dies at 90% restarts at zero; the same upload in 64 MiB
+    parts loses one part.
+    """
     response = client.post(
         "/api/files/prepare",
         headers=user_token_headers,
@@ -221,7 +241,29 @@ def test_prepare_still_presigns_large_files_on_minio(client, user_token_headers)
         ),
     )
     assert response.status_code == status.HTTP_200_OK
-    assert response.json()["upload_method"] == "PUT"
+    body = response.json()
+    assert body["upload_method"] == "MULTIPART"
+    assert body["http_flow"] == "presigned-multipart"
+    _abort(body)
+
+
+@pytest.mark.skipif(not S3_LIVE, reason="presigned PUT URL requires MinIO (SKIP_S3=False)")
+def test_prepare_keeps_the_single_put_path_below_the_threshold(client, user_token_headers):
+    """Small uploads must not get more complicated: one PUT, no plan to execute."""
+    response = client.post(
+        "/api/files/prepare",
+        headers=user_token_headers,
+        json=_prepare_payload(
+            filename="small.mp4",
+            file_size=32 * 1024**2,
+            content_type="video/mp4",
+            use_presigned=True,
+        ),
+    )
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["upload_method"] == "PUT"
+    assert "multipart" not in body
 
 
 # ---------------------------------------------------------------------------

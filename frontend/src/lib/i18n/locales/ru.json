@@ -3980,6 +3980,7 @@
   "notifications.noMessage": "Сообщение отсутствует",
   "upload.statusUploading": "Загрузка...",
   "upload.statusUploadingExtracted": "Загрузка извлечённого аудио...",
+  "upload.resuming": "Возобновление загрузки...",
   "upload.cancelledByUser": "Отменено пользователем",
   "upload.cancelled": "Загрузка отменена",
   "upload.youtubeVideo": "Видео с YouTube",

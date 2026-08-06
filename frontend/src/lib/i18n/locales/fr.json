@@ -3980,6 +3980,7 @@
   "notifications.noMessage": "Aucun message fourni",
   "upload.statusUploading": "Téléversement...",
   "upload.statusUploadingExtracted": "Téléversement de l'audio extrait...",
+  "upload.resuming": "Reprise du téléversement...",
   "upload.cancelledByUser": "Annulé par l'utilisateur",
   "upload.cancelled": "Téléversement annulé",
   "upload.youtubeVideo": "Vidéo YouTube",

@@ -81,6 +81,13 @@ def cancel_upload(
     try:
         # Delete the file from storage if it was partially uploaded
         if db_file.storage_path:
+            # A cancelled browser-side multipart upload leaves its parts in the
+            # bucket, and S3/MinIO bill for them until the upload is aborted —
+            # deleting the (nonexistent) final object would not touch them.
+            # The upload_id is client state, so the uploads are found by key.
+            from app.services.multipart_upload import abort_uploads_for_object
+
+            abort_uploads_for_object(str(db_file.storage_path))
             try:
                 delete_file(str(db_file.storage_path))
                 logger.info(f"Deleted partial upload: {db_file.storage_path}")

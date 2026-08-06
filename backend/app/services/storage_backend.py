@@ -44,6 +44,16 @@ MINIO_SINGLE_PUT_MAX_BYTES = 5 * 1024**4
 #: Presigned URLs shorter than this are pointless and usually a caller bug.
 MIN_PRESIGNED_SECONDS = 60
 
+#: S3 multipart limits, identical on MinIO: every part except the last must be at
+#: least 5 MiB, and one upload may not exceed 10 000 parts.
+MULTIPART_MIN_PART_BYTES = 5 * 1024**2
+MULTIPART_MAX_PARTS = 10000
+
+#: Default part size for browser-side multipart. Matches the server-side
+#: ``PRESIGNED_PUT_PART_SIZE``: 64 MiB is ~160 parts for a 10 GB file, where the
+#: 5 MiB minimum would need 2 000.
+MULTIPART_PART_BYTES = 64 * 1024**2
+
 # Clamp warnings are logged once per requested value — a hot read path would
 # otherwise emit one line per presigned URL.
 _clamp_warned: set[int] = set()
@@ -235,6 +245,56 @@ def supports_single_put(size_bytes: int | None) -> bool:
         return int(size_bytes) <= single_put_max_bytes()
     except (TypeError, ValueError):
         return True
+
+
+def multipart_threshold_bytes() -> int:
+    """Object size at or above which the browser uploads in parts.
+
+    Never above the backend's single-PUT ceiling: on native S3 an object over
+    5 GiB has no single-PUT option at all, so the threshold collapses to that
+    ceiling however ``MULTIPART_THRESHOLD_MB`` is configured.
+    """
+    configured = max(1, settings.MULTIPART_THRESHOLD_MB) * 1024**2
+    return min(configured, single_put_max_bytes())
+
+
+def use_multipart_upload(size_bytes: int | None) -> bool:
+    """Whether an object of *size_bytes* should be uploaded as presigned parts.
+
+    Two reasons to say yes, and the first is not optional: above
+    :func:`single_put_max_bytes` a single PUT is simply rejected. Below it,
+    multipart still buys resume — a part that fails is one part re-sent, not the
+    whole object — which is why the threshold sits well under the ceiling.
+
+    An unknown size takes the single-PUT path; ``/files/complete`` re-checks the
+    size the backend actually observed.
+    """
+    if size_bytes is None:
+        return False
+    try:
+        return int(size_bytes) >= multipart_threshold_bytes()
+    except (TypeError, ValueError):
+        return False
+
+
+def multipart_part_size(size_bytes: int) -> int:
+    """Part size to split *size_bytes* into, honouring the 10 000-part cap.
+
+    Returns :data:`MULTIPART_PART_BYTES` for anything up to 640 GB (far past the
+    15 GB application ceiling) and grows it only when the default would exceed
+    the part-count limit, rounding up to a whole MiB so parts stay aligned.
+    """
+    size = max(1, int(size_bytes))
+    part = MULTIPART_PART_BYTES
+    if -(-size // part) > MULTIPART_MAX_PARTS:
+        needed = -(-size // MULTIPART_MAX_PARTS)
+        part = -(-needed // (1024**2)) * 1024**2
+    return max(MULTIPART_MIN_PART_BYTES, part)
+
+
+def multipart_part_count(size_bytes: int, part_size: int) -> int:
+    """Number of parts *size_bytes* splits into at *part_size* (at least one)."""
+    return max(1, -(-max(1, int(size_bytes)) // max(1, int(part_size))))
 
 
 def cors_allowed_origins() -> list[str]:

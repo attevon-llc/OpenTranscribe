@@ -12,6 +12,7 @@ import {
   DEFAULT_STALL_TIMEOUT_MS,
   type StallWatchdog,
 } from '$lib/services/stallWatchdog';
+import { uploadInParts, type MultipartPlan, type PutPart } from '$lib/services/multipartUploader';
 
 // Upload item types
 export type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
@@ -51,6 +52,22 @@ export interface UploadItem {
   tagNames?: string[];
   // Batch grouping
   uploadBatchId?: string;
+  // Live multipart upload, kept so a retry resumes instead of restarting
+  multipart?: MultipartSession;
+}
+
+/**
+ * Everything needed to pick an interrupted multipart upload back up.
+ *
+ * Survives on the in-memory `UploadItem` only: the File it refers to cannot be
+ * persisted (see `loadPersistedUploads`), so resume covers retries within the
+ * session — which is where a 10 GB upload actually dies — not a page reload.
+ */
+interface MultipartSession {
+  fileId: string;
+  taskId: string;
+  fileHash: string | null;
+  plan: MultipartPlan;
 }
 
 // Upload configuration constants
@@ -333,6 +350,12 @@ class UploadService {
           RETRY_BASE_DELAY_MS * Math.pow(2, upload.retryCount)
         );
       } else {
+        // Out of retries: release the parts of an unfinished multipart upload
+        // rather than leaving the user paying for gigabytes nothing will claim.
+        if (upload.multipart) {
+          this.abortMultipart(upload.multipart.fileId);
+          this.updateUpload(uploadId, { multipart: undefined });
+        }
         toastStore.error(
           get(t)('upload.uploadFailed', {
             name: upload.name,
@@ -394,12 +417,153 @@ class UploadService {
     };
   }
 
+  /**
+   * Send one multipart part body under the shared stall watchdog.
+   *
+   * Resolves with the part's ETag, or null when the header is unreadable — a
+   * bucket that does not expose `ETag` cross-origin. `/files/complete` then
+   * reads the authoritative part list back from storage instead.
+   */
+  private makePutPart(cancelToken: CancelTokenSource): PutPart {
+    return (url, body, onProgress) =>
+      this.sendBody(async (watchdog) => {
+        const response = await axios.put(url, body, {
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+          cancelToken: cancelToken.token,
+          signal: watchdog.signal,
+          onUploadProgress: (progressEvent: AxiosProgressEvent) => {
+            watchdog.notifyProgress(progressEvent.loaded, progressEvent.total);
+            onProgress(progressEvent.loaded);
+          },
+        });
+        const etag = response.headers?.etag ?? response.headers?.ETag;
+        return etag ? String(etag).replace(/"/g, '') : null;
+      });
+  }
+
+  /** Percentage + ETA from a running byte count (the multipart equivalent of `makeProgressHandler`). */
+  private reportBytes(uploadId: string, loaded: number, total: number, startedAt: number) {
+    if (!total) return;
+    const progress = Math.min(Math.round((loaded * 100) / total), 99);
+    this.updateUpload(uploadId, { progress });
+    this.emit('progress', uploadId, { progress });
+    const elapsed = Date.now() - startedAt;
+    if (elapsed > 0 && loaded > 0) {
+      const remaining = ((total - loaded) * elapsed) / loaded;
+      this.updateUpload(uploadId, { estimatedTime: this.formatTimeRemaining(remaining) });
+    }
+  }
+
+  /**
+   * Run a presigned multipart upload to completion.
+   *
+   * The session is parked on the `UploadItem` for the whole transfer so a queue
+   * retry resumes it; it is cleared only once `/files/complete` has assembled
+   * the object.
+   */
+  private async runMultipart(
+    uploadId: string,
+    file: File | Blob,
+    session: MultipartSession,
+    cancelToken: CancelTokenSource,
+    resume: boolean
+  ): Promise<UploadResult> {
+    const upload = this.uploads.get(uploadId)!;
+    this.updateUpload(uploadId, {
+      status: 'uploading',
+      fileId: session.fileId,
+      multipart: session,
+      estimatedTime: get(t)(resume ? 'upload.resuming' : 'upload.statusUploading'),
+    });
+
+    const clientPutStartMs = Date.now();
+    const { parts } = await uploadInParts({
+      fileId: session.fileId,
+      body: file,
+      plan: session.plan,
+      resume,
+      putPart: this.makePutPart(cancelToken),
+      onProgress: (loadedBytes) =>
+        this.reportBytes(uploadId, loadedBytes, file.size, clientPutStartMs),
+    });
+    const clientPutEndMs = Date.now();
+
+    await axiosInstance.post(
+      '/files/complete',
+      {
+        file_id: session.fileId,
+        task_id: session.taskId,
+        file_hash: session.fileHash,
+        file_size: file.size,
+        upload_id: session.plan.upload_id,
+        parts,
+        client_put_start_ms: clientPutStartMs,
+        client_put_end_ms: clientPutEndMs,
+        min_speakers: upload.minSpeakers ?? null,
+        max_speakers: upload.maxSpeakers ?? null,
+        num_speakers: upload.numSpeakers ?? null,
+      },
+      // Assembling hundreds of parts is more than the 60 s default allows for.
+      { timeout: CONTROL_REQUEST_TIMEOUT_MS }
+    );
+
+    this.updateUpload(uploadId, { multipart: undefined });
+    return { uuid: session.fileId, isDuplicate: false };
+  }
+
+  /**
+   * Resume a parked multipart session, or report that it is gone.
+   *
+   * Returns null when the backend no longer knows the upload (404/409), which
+   * means starting over from `/prepare` is the only option. Any other failure
+   * is rethrown so the queue retries the resume rather than re-sending
+   * gigabytes that are already in the bucket.
+   */
+  private async resumeMultipart(
+    uploadId: string,
+    file: File | Blob,
+    session: MultipartSession,
+    cancelToken: CancelTokenSource
+  ): Promise<UploadResult | null> {
+    try {
+      return await this.runMultipart(uploadId, file, session, cancelToken, true);
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 404 || status === 409) {
+        this.updateUpload(uploadId, { multipart: undefined });
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Discard a multipart upload the client has given up on.
+   *
+   * Object storage bills for the parts of an incomplete upload until it is
+   * aborted, and they do not show up in a normal object listing. Fire-and-forget:
+   * the bucket's abort-incomplete lifecycle rule is the backstop.
+   */
+  private abortMultipart(fileId: string) {
+    axiosInstance.delete(`/files/${fileId}`).catch(() => {
+      /* best-effort */
+    });
+  }
+
   private async uploadFile(uploadId: string, file: File | Blob): Promise<UploadResult> {
     const upload = this.uploads.get(uploadId)!;
 
     // Create cancel token
     const cancelToken = axios.CancelToken.source();
     this.updateUpload(uploadId, { cancelToken });
+
+    // A parked session means a previous attempt died mid-transfer. Pick up the
+    // parts already in the bucket instead of re-hashing and re-sending them.
+    if (upload.multipart) {
+      const resumed = await this.resumeMultipart(uploadId, file, upload.multipart, cancelToken);
+      if (resumed) return resumed;
+    }
 
     // Calculate file hash for duplicate detection (SHA-256 via Web Worker).
     let fileHash: string | null = null;
@@ -438,6 +602,7 @@ class UploadService {
       task_id: taskId,
       upload_url: uploadUrl,
       upload_method: uploadMethod,
+      multipart: multipartPlan,
     } = prepareResponse.data;
 
     if (is_duplicate) {
@@ -450,6 +615,21 @@ class UploadService {
       progress: 0,
       estimatedTime: get(t)('upload.statusUploading'),
     });
+
+    // --- Presigned multipart flow ----------------------------------------
+    // Chosen by the backend for objects large enough to need resume, or too
+    // large for one PUT. No fallback to the legacy POST: the whole point is to
+    // keep multi-GB bodies out of the API container, and a failure here is
+    // resumable on retry, which re-sending the object from zero is not.
+    if (uploadMethod === 'MULTIPART' && multipartPlan && taskId) {
+      return await this.runMultipart(
+        uploadId,
+        file,
+        { fileId, taskId, fileHash, plan: multipartPlan as MultipartPlan },
+        cancelToken,
+        false
+      );
+    }
 
     const progressHandler = this.makeProgressHandler(uploadId, upload);
 
@@ -703,9 +883,14 @@ class UploadService {
       upload.cancelToken.cancel('Upload cancelled by user');
     }
 
+    if (upload.multipart) {
+      this.abortMultipart(upload.multipart.fileId);
+    }
+
     this.updateUpload(uploadId, {
       status: 'cancelled',
       error: get(t)('upload.cancelledByUser'),
+      multipart: undefined,
     });
 
     // Remove from active uploads and queue
@@ -751,13 +936,17 @@ class UploadService {
    */
   reset() {
     // Cancel any in-flight uploads
-    for (const [id, upload] of this.uploads.entries()) {
+    for (const [, upload] of this.uploads.entries()) {
       if (upload.cancelToken) {
         try {
           upload.cancelToken.cancel('User logged out');
         } catch {
           /* ignore */
         }
+      }
+      // Abort before the session cookie goes away — afterwards nothing can.
+      if (upload.multipart) {
+        this.abortMultipart(upload.multipart.fileId);
       }
     }
     this.uploads.clear();
@@ -867,9 +1056,11 @@ class UploadService {
         id,
         {
           ...upload,
-          // Don't persist source data or cancel tokens
+          // Don't persist source data, cancel tokens, or a multipart session:
+          // resuming one needs the File, which cannot survive a reload.
           source: upload.type === 'url' ? upload.source : null,
           cancelToken: undefined,
+          multipart: undefined,
         },
       ]);
       localStorage.setItem('upload_queue', JSON.stringify(uploadsData));

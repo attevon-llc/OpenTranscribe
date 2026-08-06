@@ -130,7 +130,7 @@ def test_upload_duplicate_hash_409(client, user_token_headers, normal_user, db_s
     409 with the structured duplicate detail — before any bytes are stored.
 
     The prior file is seeded on the savepoint session (real storage_path, a
-    non-failed status) so ``check_duplicate_by_hash`` finds it.
+    non-failed status) so ``check_duplicate_by_fingerprint`` finds it.
     """
     digest = uuid.uuid4().hex
     file_uuid = str(uuid.uuid4())

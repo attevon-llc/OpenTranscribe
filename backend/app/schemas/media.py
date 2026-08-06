@@ -134,7 +134,7 @@ class PrepareUploadRequest(BaseModel):
         filename: Name of the file to be uploaded
         file_size: Size of the file in bytes
         content_type: MIME type of the file
-        file_hash: SHA-256 hash of the file for duplicate detection
+        file_hash: Content fingerprint of the source, for duplicate detection
         extracted_from_video: Optional metadata from original video file (if audio was extracted client-side)
         min_speakers: Optional minimum number of speakers for diarization
         max_speakers: Optional maximum number of speakers for diarization
@@ -147,7 +147,15 @@ class PrepareUploadRequest(BaseModel):
     file_size: int = Field(..., description="Size of the file in bytes")
     content_type: str = Field(..., description="MIME type of the file")
     file_hash: str | None = Field(
-        None, description="SHA-256 hash of the file for duplicate detection"
+        None,
+        description=(
+            "Client-computed content fingerprint used for pre-upload duplicate "
+            "detection. The browser sends an imohash (32-char hex) — the same "
+            "constant-time fingerprint the server computes into MediaFile.imohash, "
+            "so a 15 GB file costs the same to fingerprint as a 1 MB one. For "
+            "client-extracted audio this is the fingerprint of the SOURCE VIDEO. "
+            "A legacy SHA-256 from an older client still matches historical rows."
+        ),
     )
     extracted_from_video: dict[str, Any] | None = Field(
         None, description="Metadata from original video file if audio was extracted client-side"

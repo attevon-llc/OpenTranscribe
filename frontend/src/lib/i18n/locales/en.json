@@ -1435,6 +1435,8 @@
   "upload.uploadFailed": "Upload failed: {{name}} - {{error}}",
   "upload.stalled": "Upload stalled — no data transferred for {{seconds}} seconds. Check your connection.",
   "upload.calculatingHash": "Calculating file hash...",
+  "upload.dedupSkipped": "Duplicate check skipped for {{name}} — the file could not be read. Uploading anyway.",
+  "upload.dedupSkippedBadge": "Duplicate check skipped",
   "upload.uploadPausedBrowserClosed": "Upload paused. Open the app to resume.",
   "fileDetail.unknownFile": "Unknown File",
   "fileDetail.enterDisplayName": "Enter display name",

@@ -63,3 +63,55 @@ def test_different_content_differs(tmp_path):
 
 def test_missing_path_returns_none():
     assert svc.compute_from_path("/nonexistent/file.bin") is None
+
+
+# ---------------------------------------------------------------------------
+# Cross-language contract with the browser (issue #342)
+# ---------------------------------------------------------------------------
+
+# The SPA computes the same imohash before uploading, so a duplicate can be caught
+# without moving any bytes (`frontend/src/lib/services/fileFingerprint.ts`). These
+# are the identical vectors asserted in `fileFingerprint.test.ts`; both files must
+# be updated together, and either going red means the browser and the server have
+# stopped agreeing on what "same file" means.
+_BROWSER_VECTORS = {
+    b"": "00000000000000000000000000000000",
+    b"abc": "03963f3f3fad78673ba2744126ca2d52",
+}
+
+
+def _pattern(n: int) -> bytes:
+    """`(i * 31 + 7) % 256` — the pattern the shared vectors are generated from."""
+    return bytes((i * 31 + 7) % 256 for i in range(n))
+
+
+def test_browser_fingerprint_vectors_are_reproducible():
+    """Pin the exact digests the browser implementation asserts."""
+    for data, expected in _BROWSER_VECTORS.items():
+        assert svc.compute_from_bytes(data) == expected
+
+    assert svc.compute_from_bytes(bytes(i % 256 for i in range(4096))) == (
+        "8020a803a564957a836898c60fbb77bb"
+    )
+    # Exactly at, and above, the sampling threshold.
+    assert svc.compute_from_bytes(_pattern(128 * 1024)) == "80800833394f6067f0a5e566b8d64210"
+    assert svc.compute_from_bytes(_pattern(200 * 1024)) == "80c00c33394f6067f0a5e566b8d64210"
+    assert svc.compute_from_bytes(_pattern(8 * 1024 * 1024)) == "80808004394f6067f0a5e566b8d64210"
+
+
+def test_multi_gigabyte_sizes_are_encoded_losslessly(tmp_path):
+    """Sizes past 2^32 must survive the varint prefix.
+
+    This is the range the whole change exists for: the browser's varint has to
+    avoid JavaScript's int32-coercing bitwise operators, and these two digests are
+    what `fileFingerprint.test.ts` checks its output against. Written as sparse
+    files so the assertion costs no disk.
+    """
+    for size, expected in (
+        (6442450944, "8080808018f5f56d948936e07fad6ae3"),
+        (5000000000, "80e497d012f5f56d948936e07fad6ae3"),
+    ):
+        sparse = tmp_path / f"sparse_{size}.bin"
+        with open(sparse, "wb") as fh:
+            fh.truncate(size)
+        assert svc.compute_from_path(str(sparse)) == expected

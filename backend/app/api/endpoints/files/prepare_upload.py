@@ -25,7 +25,7 @@ from app.models.upload_batch import UploadBatch
 from app.schemas.media import PrepareUploadRequest
 from app.services.auto_label_service import AutoLabelService
 from app.utils import benchmark_timing
-from app.utils.file_hash import check_duplicate_by_hash
+from app.utils.file_hash import check_duplicate_by_fingerprint
 from app.utils.file_hash import cleanup_failed_duplicates
 
 logger = logging.getLogger(__name__)
@@ -254,7 +254,7 @@ async def prepare_upload(
             )
 
             duplicate_id = await run_in_threadpool(
-                check_duplicate_by_hash, db, request.file_hash, current_user.id
+                check_duplicate_by_fingerprint, db, request.file_hash, current_user.id
             )
 
             if duplicate_id:
@@ -262,6 +262,14 @@ async def prepare_upload(
                     f"Duplicate file found for {request.filename} (Duplicate ID: {duplicate_id})"
                 )
                 return {"file_id": duplicate_id, "is_duplicate": 1}
+        else:
+            # No fingerprint means this upload was never checked against the
+            # library. That used to be the silent default for every file above
+            # ~4 GB (issue #342); it must leave a trace on both sides of the wire.
+            logger.warning(
+                f"No content fingerprint supplied for {request.filename} "
+                f"({request.file_size} bytes) - duplicate detection skipped"
+            )
 
         # Cloud-edition seam: enforce the tenant's per-tier max upload size
         # before minting a record / presigned URL. No-op in community.

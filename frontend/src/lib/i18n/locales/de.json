@@ -2246,6 +2246,8 @@
   "transcriptSearch.searching": "Suche läuft...",
   "upload.active": "aktiv",
   "upload.calculatingHash": "Datei-Hash wird berechnet...",
+  "upload.dedupSkipped": "Duplikatprüfung für {{name}} übersprungen – die Datei konnte nicht gelesen werden. Wird trotzdem hochgeladen.",
+  "upload.dedupSkippedBadge": "Duplikatprüfung übersprungen",
   "upload.cancelUpload": "Upload abbrechen",
   "upload.clear": "Löschen",
   "upload.clearCompletedTooltip": "Abgeschlossene Uploads löschen",

@@ -35,6 +35,10 @@ fresh mode, even when `.env` defines storage paths.**
 # With +100: backend on :5274, frontend on :5273, OpenSearch on :5280, etc.
 ./opentr.sh start dev --fresh test1 --port-offset 100
 
+# The offset is remembered per deployment, so a later re-up keeps the same
+# ports. Pass --port-offset 0 to move it back to the standard ports.
+./opentr.sh start dev --fresh test1
+
 # Upload a couple of small sample media files once the stack is healthy.
 ./opentr.sh start dev --fresh test1 --seed-benchmark
 ```
@@ -49,9 +53,9 @@ fresh mode, even when `.env` defines storage paths.**
 ```
 
 `fresh-destroy` is the **only** destructive fresh operation. It always shows
-exactly which containers, volumes, and generated overlay files it will remove,
-and prompts for confirmation (defaults to **No**). It never touches any bind
-path or any other stack.
+exactly which containers, volumes, and generated files it will remove, and
+prompts for confirmation (defaults to **No**). It never touches any bind path or
+any other stack.
 
 ### How container-name collisions are solved
 
@@ -59,9 +63,56 @@ The base `docker-compose.yml` hard-codes `container_name: opentranscribe-*` on
 every service. A compose project name alone does **not** override those (Docker
 container names are global), and compose cannot *unset* `container_name` via an
 overlay. So fresh mode generates a tiny overlay at `.fresh/<name>.yml` that
-explicitly re-pins every service to `otfresh-<name>-*`. With `--port-offset`, a
-second generated overlay `.fresh/<name>-ports.yml` republishes each port at its
-default + offset. Both files are gitignored and regenerated on demand.
+explicitly re-pins every service to `otfresh-<name>-*`. It is gitignored and
+regenerated on every start.
+
+### How `--port-offset` moves the ports
+
+Every published port in `docker-compose.yml` / `docker-compose.override.yml` is
+written as `"${SOME_PORT:-<default>}:<container port>"`. `--port-offset N`
+**exports those variables** with `N` added, so compose substitutes the moved
+port into the mapping that is already there:
+
+| Variable | Default | Service |
+|---|---|---|
+| `FRONTEND_PORT` | 5173 | frontend (dev override) |
+| `BACKEND_PORT` | 5174 | backend |
+| `FLOWER_PORT` | 5175 | flower |
+| `POSTGRES_PORT` | 5176 | postgres |
+| `REDIS_PORT` | 5177 | redis |
+| `MINIO_PORT` | 5178 | minio API |
+| `MINIO_CONSOLE_PORT` | 5179 | minio console |
+| `OPENSEARCH_PORT` | 5180 | opensearch API |
+| `OPENSEARCH_ADMIN_PORT` | 5181 | opensearch admin |
+| `DOCS_PORT` | 5183 | docs (dev override) |
+
+If `.env` already sets one of these, the offset is applied to *that* value, not
+to the default. `--with-keycloak-test` adds `KEYCLOAK_PORT` (8180) and
+`STEP_CA_PORT` (9000) to the same treatment.
+
+The offset is recorded in `.fresh/<name>.offset` so `status`, `fresh-list`, and a
+later re-up without the flag all address the same ports. `--port-offset 0`
+clears it.
+
+:::info Why not a generated ports overlay?
+Fresh mode used to write a second compose file that redeclared each service's
+`ports:` list. Compose **appends** port lists when merging files instead of
+replacing them, so the base mapping stayed published alongside the offset one —
+the "isolated" stack still bound the main stack's ports (issue #343). Setting
+the variables the base file already reads leaves exactly one mapping per port,
+and keeps the `127.0.0.1:`-only binding the base file puts on the infra ports.
+:::
+
+Before starting, `--port-offset` checks every resolved port and refuses to start
+if something else already holds one, rather than failing halfway through
+`compose up` with a bind error.
+
+:::warning Aux test overlays are not isolated
+`--with-ldap-test`, `--with-smb-test`, and `--with-monitoring` hard-code their
+container names (and ldap/smb their host ports), so `--fresh` cannot isolate
+them and `--port-offset` cannot move them. `opentr.sh` warns when you combine
+them.
+:::
 
 ## NAS overlay directives (non-fresh)
 

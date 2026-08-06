@@ -95,7 +95,7 @@ Run `./opentr.sh` with no arguments for full usage. The ones you'll reach for:
 ./opentr.sh start dev --dry-run              # print compose files + command, start nothing
 ```
 
-`--fresh` refuses to start on the standard ports if the main stack is up (it offers `--port-offset N`) and generates gitignored `.fresh/<name>*.yml` overlays that re-pin every service to `otfresh-<name>-*`. Details: `scripts/CLAUDE.md`.
+`--fresh` refuses to start when any port it needs is already bound (it offers `--port-offset N`) and generates a gitignored `.fresh/<name>.yml` overlay that re-pins every service to `otfresh-<name>-*`. `--port-offset` works by exporting the `*_PORT` vars the base compose files already read — never by overlaying a second `ports:` list, which compose would append (issue #343). The offset is remembered in `.fresh/<name>.offset`. Details: `scripts/CLAUDE.md`.
 
 **NAS overlay** (non-fresh `start`): auto-detected from `.env`, announced with a `💾 NAS overlay AUTO-LOADED` banner; `--no-nas` suppresses, `--nas` opts in explicitly. When active it writes a `.opentranscribe-live-data` marker into each bind dir — **if you see that marker, you are looking at live data; do not delete.** Full map: `docs-site/docs/operations/fresh-deployments.md`.
 

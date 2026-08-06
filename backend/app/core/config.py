@@ -413,6 +413,13 @@ class Settings(BaseSettings):
     # safe common denominator — so a 24 h URL would 403 long before it "expires".
     # Requests above the ceiling are clamped and logged, never rejected.
     PRESIGNED_URL_MAX_SECONDS: int = _int_env("PRESIGNED_URL_MAX_SECONDS", 21600)
+    # Object size (MB) at or above which the browser uploads via presigned multipart
+    # instead of one presigned PUT (issue #327). Above the backend's single-PUT ceiling
+    # multipart is mandatory — 5 GiB on native S3 — and this knob cannot raise the
+    # threshold past it. Below the ceiling multipart is what makes an interrupted upload
+    # resumable, so the default sits far under it. Raise it to keep more uploads on the
+    # single-PUT path; it can never disable multipart for objects that need it.
+    MULTIPART_THRESHOLD_MB: int = _int_env("MULTIPART_THRESHOLD_MB", 512)
 
     # Redis settings (for Celery)
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")

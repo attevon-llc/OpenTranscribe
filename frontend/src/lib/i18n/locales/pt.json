@@ -3980,6 +3980,7 @@
   "notifications.noMessage": "Nenhuma mensagem fornecida",
   "upload.statusUploading": "Enviando...",
   "upload.statusUploadingExtracted": "Enviando o áudio extraído...",
+  "upload.resuming": "Retomando o envio...",
   "upload.cancelledByUser": "Cancelado pelo usuário",
   "upload.cancelled": "Upload cancelado",
   "upload.youtubeVideo": "Vídeo do YouTube",

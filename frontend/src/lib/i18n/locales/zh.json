@@ -3980,6 +3980,7 @@
   "notifications.noMessage": "没有提供消息",
   "upload.statusUploading": "正在上传...",
   "upload.statusUploadingExtracted": "正在上传提取的音频...",
+  "upload.resuming": "正在恢复上传...",
   "upload.cancelledByUser": "已由用户取消",
   "upload.cancelled": "上传已取消",
   "upload.youtubeVideo": "YouTube 视频",

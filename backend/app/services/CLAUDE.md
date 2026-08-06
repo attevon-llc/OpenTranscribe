@@ -46,6 +46,7 @@ every difference between the two backends (issue #284 A1.11/A1.12):
 | Addressing | path-style | virtual-host (minio-py switches on AWS hostnames) |
 | Presigned host | rewritten to `STORAGE_PUBLIC_URL`/`MINIO_PUBLIC_URL`, else `/s3` | **not rewritten** |
 | Single-PUT ceiling | 5 TiB | 5 GiB (`supports_single_put`) |
+| Abandoned-multipart expiry | MinIO's own scan (24 h) | lifecycle rule (`ensure_abort_incomplete_lifecycle`) |
 | Bucket CORS | implicit | opt-in `S3_CONFIGURE_BUCKET_CORS` (boto3 — minio-py has no CORS API) |
 
 - **One SDK for both.** The client is always `minio.Minio`; minio-py is a generic S3 SDK,
@@ -55,10 +56,28 @@ every difference between the two backends (issue #284 A1.11/A1.12):
   6 h). A presigned URL cannot outlive the credentials that signed it, and IAM-role STS
   sessions expire well inside 24 h, so a longer URL just starts 403-ing. `get_file_url`'s
   old 24 h default arg is gone.
-- **>5 GiB uploads on `s3` skip the presigned path.** `files/prepare_upload.py` checks
-  `supports_single_put` before minting a URL; the browser then falls back to
-  `POST /files`, which spools to disk and writes multipart (64 MiB parts). Browser-side
-  presigned *multipart* is not implemented — that is the remaining native-S3 gap.
+- **Large uploads go browser-side multipart** (`multipart_upload.py`, issue #327).
+  `build_upload_plan` is the single decision point `/files/prepare` calls: multipart at or
+  above `multipart_threshold_bytes()` (`MULTIPART_THRESHOLD_MB`, 512 MB, clamped to the
+  single-PUT ceiling so >5 GiB on `s3` is *always* multipart), one presigned PUT below it,
+  `None` → the client falls back to `POST /files`. Part URLs are signed **8 at a time**
+  (`PART_URL_BATCH`), not once for the whole object: they take the same
+  `clamp_presigned_expiry` as everything else and a 15 GB upload can outlive a 6 h clamp.
+  `/files/multipart/parts` signs the next batch and, on resume, lists the parts storage
+  already holds. `/files/complete` assembles them (client ETags, else read back).
+- **Abandoned multipart uploads must be aborted** — S3 and MinIO both bill for the parts,
+  and they never appear in an object listing. `cancel_upload` (`DELETE /files/{uuid}`) calls
+  `abort_uploads_for_object`, which finds the uploads by key because the `upload_id` is
+  client state. `ensure_abort_incomplete_lifecycle` adds the storage-side backstop and is
+  **native-S3 only**: MinIO's ILM rejects an `AbortIncompleteMultipartUpload` rule
+  (`InvalidArgument`; it silently drops the action from a mixed rule) and does not need one —
+  it purges stale uploads itself via `api.stale_uploads_expiry` (24 h).
+- **minio-py's multipart primitives are underscore-prefixed** (`_create_multipart_upload`,
+  `_complete_multipart_upload`, `_abort_multipart_upload`, `_list_parts`,
+  `_list_multipart_uploads`). Driving them keeps the one-SDK rule above; boto3 would mean a
+  second client with its own copy of the endpoint/credential policy.
+  `tests/unit/test_multipart_upload.py` asserts they still exist so an SDK bump fails in CI.
+  Part *signing* is the public `get_presigned_url(..., extra_query_params=...)`.
 - Don't reintroduce a second host-rewrite. `MinIOService.get_presigned_url` used to
   hardcode `http://minio:9000` → `localhost:5178`/`EXTERNAL_MINIO_URL`; it now shares
   `rewrite_public_host` like everything else.

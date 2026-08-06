@@ -3980,6 +3980,7 @@
   "notifications.noMessage": "メッセージはありません",
   "upload.statusUploading": "アップロード中...",
   "upload.statusUploadingExtracted": "抽出した音声をアップロード中...",
+  "upload.resuming": "アップロードを再開しています...",
   "upload.cancelledByUser": "ユーザーによってキャンセルされました",
   "upload.cancelled": "アップロードをキャンセルしました",
   "upload.youtubeVideo": "YouTube 動画",

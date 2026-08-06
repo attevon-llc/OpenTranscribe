@@ -3980,6 +3980,7 @@
   "notifications.noMessage": "Keine Nachricht vorhanden",
   "upload.statusUploading": "Wird hochgeladen...",
   "upload.statusUploadingExtracted": "Extrahiertes Audio wird hochgeladen...",
+  "upload.resuming": "Upload wird fortgesetzt...",
   "upload.cancelledByUser": "Vom Benutzer abgebrochen",
   "upload.cancelled": "Upload abgebrochen",
   "upload.youtubeVideo": "YouTube-Video",

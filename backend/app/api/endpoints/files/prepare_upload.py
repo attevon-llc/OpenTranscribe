@@ -328,48 +328,42 @@ async def prepare_upload(
 
         response: dict[str, Any] = {"file_id": str(db_file.uuid), "is_duplicate": 0}
 
-        # Optional: emit a presigned PUT URL so the browser can upload bytes
-        # directly to MinIO. The caller follows up with POST /files/complete
-        # once the PUT succeeds. We mint the application task_id here so all
-        # HTTP-phase markers share the benchmark:{task_id} Redis hash with
-        # the downstream pipeline.
-        # AWS S3 rejects a single PUT above 5 GiB with EntityTooLarge — after the
-        # browser has already streamed the whole body. Withholding the URL makes the
-        # client fall back to POST /files, which spools to disk and writes through
-        # minio-py's multipart uploader (issue #284 A1.11). MinIO's single-PUT ceiling
-        # is 5 TiB, so this never fires on the default self-hosted backend.
-        from app.services.storage_backend import supports_single_put
+        # Optional: set the browser up to write bytes straight to object storage,
+        # bypassing the API container. The backend picks the transport — one
+        # presigned PUT, or a presigned multipart upload when the object is large
+        # enough to need resume (or too large for a single PUT: AWS rejects one
+        # above 5 GiB with EntityTooLarge, after the browser has already streamed
+        # the whole body). The client only executes the plan; see
+        # ``services/multipart_upload.build_upload_plan``. A None plan means
+        # neither transport is available, and the client falls back to POST /files.
+        #
+        # The application task_id is minted here so every HTTP-phase marker shares
+        # the benchmark:{task_id} Redis hash with the downstream pipeline.
+        if request.use_presigned:
+            from app.services.multipart_upload import build_upload_plan
 
-        can_presign = supports_single_put(request.file_size)
-        if request.use_presigned and not can_presign:
-            logger.info(
-                f"Skipping presigned PUT for {request.filename}: {request.file_size} bytes "
-                "exceeds the backend's single-PUT limit; using multipart upload via the API"
+            plan = await run_in_threadpool(
+                build_upload_plan, storage_path, request.content_type, request.file_size
             )
-
-        if request.use_presigned and can_presign:
-            from app.services.minio_service import presigned_put_url
-
-            task_id = str(uuid_lib.uuid4())
-            put_url = await run_in_threadpool(presigned_put_url, storage_path)
-            benchmark_timing.mark(task_id, "prepare_upload_end")
-            benchmark_timing.set_context(
-                task_id,
-                {
-                    "file_size_bytes": int(request.file_size or 0),
-                    "content_type": request.content_type or "",
-                    "http_flow": "presigned",
-                },
-            )
-            response.update(
-                {
-                    "task_id": task_id,
-                    "upload_url": put_url,
-                    "upload_method": "PUT",
-                    "http_flow": "presigned",
-                    "storage_path": storage_path,
-                }
-            )
+            if plan is None:
+                logger.info(
+                    f"No browser-direct upload plan for {request.filename} "
+                    f"({request.file_size} bytes); falling back to POST /files"
+                )
+            else:
+                task_id = str(uuid_lib.uuid4())
+                benchmark_timing.mark(task_id, "prepare_upload_end")
+                benchmark_timing.set_context(
+                    task_id,
+                    {
+                        "file_size_bytes": int(request.file_size or 0),
+                        "content_type": request.content_type or "",
+                        "http_flow": plan["http_flow"],
+                    },
+                )
+                response.update(plan)
+                response["task_id"] = task_id
+                response["storage_path"] = storage_path
 
         logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
         return response

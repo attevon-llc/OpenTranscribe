@@ -195,6 +195,15 @@ def _setup_minio():
         # origin already). Opt-in and best-effort; never blocks startup.
         storage_backend.ensure_bucket_cors(bucket_name)
 
+        # Backstop for browser-side multipart uploads the user never finished:
+        # the parts of an abandoned upload are billable and invisible in a normal
+        # object listing. S3 needs an explicit lifecycle rule; MinIO expires them
+        # itself and refuses the rule, so this is a no-op there. Either way the
+        # explicit abort on cancel/delete is the primary path.
+        from app.services.multipart_upload import ensure_abort_incomplete_lifecycle
+
+        ensure_abort_incomplete_lifecycle(bucket_name)
+
         if native_s3:
             return
 

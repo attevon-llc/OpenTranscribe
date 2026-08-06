@@ -268,6 +268,9 @@ class PasswordPolicy:
         # Check against the last N passwords
         history_to_check = password_history[: self.history_count]
 
+        checked = 0
+        unverifiable = 0
+
         for old_hash in history_to_check:
             if not old_hash:
                 continue
@@ -275,10 +278,32 @@ class PasswordPolicy:
                 if verify_func(plain_password, old_hash):
                     logger.warning("Password reuse detected in history check")
                     return False
-            except Exception as e:
-                # Log but don't fail if hash verification has issues
-                logger.debug(f"Error checking password history: {e}")
-                continue
+                checked += 1
+            except Exception:
+                # An entry we cannot verify is NOT evidence that the password is
+                # unused — we simply do not know. Keep going, but say so out loud:
+                # this used to log at debug, i.e. invisibly in production, so a
+                # history that had silently stopped being checked looked identical
+                # to one that passed (issue #324).
+                unverifiable += 1
+                logger.exception("Could not verify a password-history entry")
+
+        if unverifiable:
+            # Deliberately NOT fail-closed. Rejecting the new password would leave
+            # the user on their CURRENT password — a guaranteed reuse — which is
+            # worse than possibly permitting an old one. So allow the change and
+            # make the degradation alertable instead.
+            level = logger.critical if checked == 0 else logger.error
+            level(
+                "Password-history check was %s: %d of %d entries could not be "
+                "verified. The reuse control is %s. This usually means the stored "
+                "hashes were written under a different scheme (see FIPS_MODE / "
+                "FIPS_VERSION) and can no longer be verified.",
+                "completely blind" if checked == 0 else "degraded",
+                unverifiable,
+                unverifiable + checked,
+                "NOT being enforced" if checked == 0 else "partially enforced",
+            )
 
         return True
 

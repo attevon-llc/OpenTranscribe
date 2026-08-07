@@ -29,7 +29,13 @@ _CANCEL_KEY = "chat:cancel:{message_uuid}"
 # counter's expiry is refreshed on every acquire, so for an active user a leaked
 # slot never ages out and their usable concurrency degrades 2 -> 1 -> 0 with no
 # way back short of flushing the key by hand.
-_ACTIVE_TTL_SECONDS = 900
+# 5 minutes, not 15: this is the worst-case lockout when a slot does go stray
+# (a generator left suspended with no consumer, which teardown cannot reach).
+# With a default cap of 2, a 15-minute window meant two unlucky aborts locked a
+# user out of chat for a quarter of an hour. A turn is bounded by the
+# first-token watchdog plus generation and finishes well inside 5 minutes, so
+# nothing legitimate is pruned.
+_ACTIVE_TTL_SECONDS = 300
 _CANCEL_TTL_SECONDS = 600
 
 

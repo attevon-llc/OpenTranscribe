@@ -386,7 +386,10 @@ def test_conversation_appears_in_sidebar_and_can_be_deleted(
         )
         item.hover()
         item.locator('[data-testid="chat-delete"]').click()
-        item.locator('[data-testid="chat-delete-confirm"]').click()
+        # The confirm prompt REPLACES the row's title, so `item` — which is
+        # filtered by that title — no longer matches anything. Target the
+        # confirm button directly; only one row can be confirming at a time.
+        gallery_page.locator('[data-testid="chat-delete-confirm"]').click()
 
         expect(sidebar.get_by_text("E2E temporary conversation")).to_have_count(0, timeout=15_000)
     finally:

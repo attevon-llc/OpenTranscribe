@@ -10,6 +10,7 @@ and every remaining failure has to arrive as an SSE ``error`` frame instead.
 from __future__ import annotations
 
 import logging
+import threading
 import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
@@ -279,8 +280,25 @@ def _prepare_turn(
 
 def _streaming_response(kwargs: dict, user_id: int) -> StreamingResponse:
     """Wrap the turn generator so the concurrency slot is always released."""
-    # Popped, not forwarded: stream_reply does not take it.
     slot_id = kwargs.pop("_slot_id", None)
+    released = threading.Lock()
+    done = {"v": False}
+
+    def _release_once() -> None:
+        # Both the teardown hook and the finally below may fire; releasing by id
+        # is already idempotent, but the guard keeps the intent explicit.
+        with released:
+            if done["v"]:
+                return
+            done["v"] = True
+        limits.release_stream_slot(user_id, slot_id)
+
+    # Released from INSIDE stream_reply's shielded finally rather than only from
+    # the finally below: when Starlette tears this generator down on client
+    # disconnect (a closed tab, or the Stop button), the wrapper's finally does
+    # not reliably run, so every Stop leaked a slot until its 15-minute expiry.
+    # Two aborted generations then locked the user out of chat entirely.
+    kwargs["on_teardown"] = _release_once
 
     async def guarded():
         try:
@@ -290,7 +308,8 @@ def _streaming_response(kwargs: dict, user_id: int) -> StreamingResponse:
             logger.exception("Chat stream generator failed")
             yield sse("error", {"code": "provider_error", "message": "Generation failed."})
         finally:
-            limits.release_stream_slot(user_id, slot_id)
+            # Backstop for a failure before the hook could fire.
+            _release_once()
 
     return StreamingResponse(guarded(), media_type="text/event-stream", headers=STREAM_HEADERS)
 

@@ -335,6 +335,7 @@ class ChatService:
         max_tokens: int | None,
         top_p: float | None,
         llm,
+        on_teardown=None,
         assistant_message_uuid: str,
         user_message_uuid: str,
         is_first_exchange: bool,
@@ -357,6 +358,11 @@ class ChatService:
             temperature: Per-conversation override, or None for the config default.
             max_tokens: Per-conversation answer-length override, clamped below.
             top_p: Per-conversation nucleus-sampling override, omitted when None.
+            on_teardown: Called exactly once inside the shielded finally, however
+                the turn ends. Used to release the concurrency slot: a wrapping
+                generator's own ``finally`` does NOT reliably run when Starlette
+                tears this one down on client disconnect, so a slot released
+                there leaks on every Stop.
             llm: The caller's ``LLMService``.
             assistant_message_uuid: Pre-allocated id for the reply.
             user_message_uuid: Id of the already-persisted user message.
@@ -521,21 +527,32 @@ class ChatService:
                 turn.finish_reason = "cancelled"
 
             with anyio.CancelScope(shield=True):
-                await _finalize_turn(
-                    turn=turn,
-                    llm=llm,
-                    messages=messages,
-                    masked_count=len(masked),
-                    conversation_id=conversation_id,
-                    conversation_uuid=conversation_uuid,
-                    assistant_message_uuid=assistant_message_uuid,
-                    user_id=user_id,
-                    organization_id=organization_id,
-                    is_first_exchange=is_first_exchange,
-                    question=question,
-                    started=started,
-                    use_context=use_context,
-                )
+                try:
+                    await _finalize_turn(
+                        turn=turn,
+                        llm=llm,
+                        messages=messages,
+                        masked_count=len(masked),
+                        conversation_id=conversation_id,
+                        conversation_uuid=conversation_uuid,
+                        assistant_message_uuid=assistant_message_uuid,
+                        user_id=user_id,
+                        organization_id=organization_id,
+                        is_first_exchange=is_first_exchange,
+                        question=question,
+                        started=started,
+                        use_context=use_context,
+                    )
+                finally:
+                    # Its OWN finally: finalisation can raise (the conversation may
+                    # have been deleted underneath a disconnected stream), and a
+                    # release placed after it would then never run — leaking the
+                    # slot exactly in the case this hook exists to cover.
+                    if on_teardown is not None:
+                        try:
+                            on_teardown()
+                        except Exception:  # noqa: BLE001 — never mask the real outcome
+                            logger.exception("Chat stream teardown hook failed")
 
         # Only reachable on a normal (non-cancelled) exit — there is no client
         # left to receive these frames otherwise.

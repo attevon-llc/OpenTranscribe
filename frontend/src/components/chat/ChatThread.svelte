@@ -69,6 +69,7 @@
         streaming={message.uuid === streamingMessageId && status === 'streaming'}
         on:regenerate={() => dispatch('regenerate')}
         on:retry={() => dispatch('retry')}
+        on:edit
       />
     {/each}
 

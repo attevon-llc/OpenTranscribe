@@ -2,6 +2,11 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { OIDCConfig } from '$lib/api/authConfig';
+  import {
+    OIDC_PROVIDER_PRESETS,
+    findOIDCPreset,
+    oidcPresetFieldValues
+  } from '$lib/utils/oidcProviderPresets';
 
   export let config: Partial<OIDCConfig> = {};
 
@@ -61,6 +66,36 @@
   let testing = false;
   let saving = false;
   let showSecret = false;
+
+  /**
+   * Purely a UI convenience — not a saved setting. Selecting a preset writes
+   * into the same `oidc_roles_claim` / `oidc_scopes` / `oidc_discovery_url`
+   * fields an admin would otherwise type by hand, then the selection itself is
+   * discarded; nothing new is persisted.
+   */
+  let selectedPresetId = '';
+
+  $: selectedPreset = selectedPresetId ? findOIDCPreset(selectedPresetId) : undefined;
+
+  /**
+   * Reads the id off the event target rather than trusting `selectedPresetId` /
+   * `selectedPreset` to already be flushed: both are `bind:value` / `$:`-derived,
+   * and Svelte reruns reactive statements on its own schedule, not synchronously
+   * within the `change` handler that set them.
+   */
+  function applyPreset(event: Event) {
+    const presetId = (event.currentTarget as HTMLSelectElement).value;
+    selectedPresetId = presetId;
+    const preset = findOIDCPreset(presetId);
+    if (!preset) return;
+    const values = oidcPresetFieldValues(preset);
+    formData.oidc_roles_claim = values.oidc_roles_claim;
+    formData.oidc_scopes = values.oidc_scopes;
+    if (values.oidc_discovery_url !== undefined) {
+      formData.oidc_discovery_url = values.oidc_discovery_url;
+    }
+    handleChange();
+  }
 
   $: if (config) {
     formData = buildFormData(config);
@@ -132,6 +167,25 @@
 
   <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.serverConfiguration')}</h3>
+
+    <div class="form-group">
+      <label for="oidc_provider_preset">{$t('settings.oidc.providerPreset')}</label>
+      <select
+        id="oidc_provider_preset"
+        value={selectedPresetId}
+        on:change={applyPreset}
+        disabled={!formData.oidc_enabled}
+      >
+        <option value="">{$t('settings.oidc.presetChoose')}</option>
+        {#each OIDC_PROVIDER_PRESETS as preset (preset.id)}
+          <option value={preset.id}>{$t(preset.labelKey)}</option>
+        {/each}
+      </select>
+      <span class="help-text">{$t('settings.oidc.providerPresetHelp')}</span>
+      {#if selectedPreset?.noteKey}
+        <p class="admission-warning" role="status">{$t(selectedPreset.noteKey)}</p>
+      {/if}
+    </div>
 
     <div class="form-group">
       <label for="oidc_server_url">{$t('settings.oidc.serverUrlPublic')}</label>
@@ -562,7 +616,8 @@
 
   .form-group input[type="text"],
   .form-group input[type="password"],
-  .form-group input[type="number"] {
+  .form-group input[type="number"],
+  .form-group select {
     width: 100%;
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--color-border);
@@ -572,13 +627,15 @@
     font-size: 0.875rem;
   }
 
-  .form-group input:focus {
+  .form-group input:focus,
+  .form-group select:focus {
     outline: none;
     border-color: var(--color-primary);
     box-shadow: 0 0 0 2px var(--color-primary-alpha);
   }
 
-  .form-group input:disabled {
+  .form-group input:disabled,
+  .form-group select:disabled {
     background: var(--color-bg-tertiary);
     cursor: not-allowed;
   }

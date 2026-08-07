@@ -9,6 +9,7 @@ from .endpoints import asr_settings
 from .endpoints import auth
 from .endpoints import auth_config
 from .endpoints import backup_settings
+from .endpoints import chat
 from .endpoints import combined_speaker_migration
 from .endpoints import comments
 from .endpoints import custom_vocabulary
@@ -33,6 +34,7 @@ from .endpoints import tags
 from .endpoints import tasks
 from .endpoints import topics
 from .endpoints import transcript_segments
+from .endpoints import usage
 from .endpoints import user_files
 from .endpoints import user_settings
 from .endpoints import users
@@ -156,6 +158,16 @@ include_router_with_consistency(
 include_router_with_consistency(
     redaction_settings.user_router, prefix="/user-settings", tags=["redaction-settings"]
 )
+# RAG chat over the user's transcripts. Router-level capability gate: the whole
+# surface 404s when a deployment disables chat (community default: enabled).
+include_router_with_consistency(
+    chat.router,
+    prefix="/chat",
+    tags=["chat"],
+    capability="chat.rag",
+)
+include_router_with_consistency(chat.user_router, prefix="/user-settings", tags=["chat-settings"])
+include_router_with_consistency(chat.admin_router, prefix="/admin/chat-settings", tags=["admin"])
 include_router_with_consistency(
     redaction_settings.admin_router, prefix="/admin/redaction-policy", tags=["admin"]
 )
@@ -164,6 +176,7 @@ include_router_with_consistency(
     media_mirror_settings.router, prefix="/admin/backup/mirror", tags=["admin"]
 )
 include_router_with_consistency(topics.router, prefix="/files", tags=["topics"])
+include_router_with_consistency(usage.router, prefix="/usage", tags=["usage"])
 include_router_with_consistency(
     transcript_segments.router, prefix="/transcripts", tags=["transcript-segments"]
 )

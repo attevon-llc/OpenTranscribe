@@ -8,7 +8,9 @@ Designed specifically for Celery tasks - no asyncio conflicts.
 import json
 import logging
 import re
+import threading
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -20,6 +22,9 @@ from urllib3.util.retry import Retry
 
 from app.core.config import settings
 from app.core.constants import LLM_OUTPUT_LANGUAGES
+from app.services.llm_stream import LLMStreamEvent
+from app.services.llm_stream import apply_stream_payload
+from app.services.llm_stream import get_stream_parser
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +45,15 @@ class LLMProvider(StrEnum):
     OLLAMA = "ollama"
     ANTHROPIC = "anthropic"
     OPENROUTER = "openrouter"
+    BEDROCK = "bedrock"  # AWS-native; boto3 Converse API, credentials via the IAM chain
     CUSTOM = "custom"
     # Legacy - kept for backward compatibility
     CLAUDE = "claude"  # Deprecated: use ANTHROPIC instead
+
+
+# Providers reached through a vendor SDK rather than an HTTP endpoint we POST to.
+# They skip the endpoint-map validation and the shared requests.Session machinery.
+SDK_PROVIDERS = frozenset({LLMProvider.BEDROCK})
 
 
 @dataclass
@@ -81,6 +92,12 @@ class LLMService:
         # Derive response token budget from user's context window
         # For 121K context → 16384, for 8K → 4000 (floor)
         self.response_tokens = max(4000, min(16384, self.user_context_window // 4))
+        # Keep the config in sync. `_prepare_payload` sends `config.response_tokens` as
+        # max_tokens while callers (chat's prompt budget, summarization) reserve the
+        # DERIVED value above — before this assignment the dataclass default of 4000 was
+        # never overwritten, so on a large-context model the prompt reserved up to 16384
+        # tokens for an answer that was hard-capped at 4000. The two must agree.
+        self.config.response_tokens = self.response_tokens
 
         # Create session with retry strategy for reliability
         self.session = requests.Session()
@@ -129,7 +146,9 @@ class LLMService:
             LLMProvider.ANTHROPIC: "https://api.anthropic.com/v1/messages",
         }
 
-        if not self.endpoints.get(config.provider):
+        # SDK-based providers have no HTTP endpoint to validate — Bedrock is reached
+        # through boto3, which resolves the endpoint from the region itself.
+        if config.provider not in SDK_PROVIDERS and not self.endpoints.get(config.provider):
             raise ValueError(f"Invalid provider configuration for {config.provider}")
 
         # Log the resolved endpoint for debugging (helps diagnose connection issues like Issue #100)
@@ -255,6 +274,11 @@ class LLMService:
         # Reasoning models don't support temperature
         if not self._is_reasoning_model():
             payload["temperature"] = kwargs.get("temperature", self.config.temperature)
+            # Only when the caller asked for it. Sending a default would override
+            # whatever the provider or model already tunes to, and reasoning
+            # models reject it outright (handled by the branch above).
+            if kwargs.get("top_p") is not None:
+                payload["top_p"] = kwargs["top_p"]
         else:
             logger.info(
                 f"Reasoning model detected ({self.config.model}): "
@@ -445,6 +469,119 @@ class LLMService:
                 f"Unexpected error in LLM request to {self.config.provider}: {type(e).__name__}: {e}"
             )
             raise
+
+    def _iter_stream_lines(
+        self, response: requests.Response, cancel_event: threading.Event | None
+    ) -> Iterator[str]:
+        """Yield decoded response lines, stopping early when cancellation is requested."""
+        for line in response.iter_lines(decode_unicode=True):
+            if cancel_event is not None and cancel_event.is_set():
+                return
+            if line is None:
+                continue
+            yield str(line)
+
+    def chat_completion_stream(
+        self,
+        messages: list[dict[str, str]],
+        cancel_event: threading.Event | None = None,
+        **kwargs,
+    ) -> Iterator[LLMStreamEvent]:
+        """Stream a chat completion token-by-token from the configured provider.
+
+        The interactive counterpart to :meth:`chat_completion`. Payload construction is
+        shared with the non-streaming path (``_prepare_payload``), so model, temperature
+        and token settings can never drift between the two.
+
+        Failures are yielded as a single ``error`` event rather than raised: a streaming
+        HTTP response has already committed its status line by the time most provider
+        problems surface, so the caller relays the error in-band as an SSE frame.
+
+        Args:
+            messages: Chat messages in OpenAI format.
+            cancel_event: Set by the caller (client disconnect / stop button) to abort
+                the stream; the generator closes the connection and reports
+                ``finish_reason="cancelled"``.
+            **kwargs: Overrides forwarded to the payload builder (max_tokens,
+                temperature, ...).
+
+        Yields:
+            :class:`LLMStreamEvent` values, always terminated by exactly one ``done``
+            or ``error`` event.
+        """
+        # Bedrock is an SDK call, not an HTTP endpoint we POST to, so it branches out
+        # ahead of the URL lookup below (its entry in `endpoints` is None by design).
+        # The generator it returns is synchronous and honours the same cancel_event,
+        # so the caller's iterate_in_threadpool driver is unchanged.
+        if self.config.provider == LLMProvider.BEDROCK:
+            from app.services.llm_bedrock import stream_converse
+
+            yield from stream_converse(
+                model=self.config.model,
+                region=settings.BEDROCK_REGION,
+                messages=messages,
+                max_tokens=kwargs.get("max_tokens", self.config.response_tokens),
+                temperature=kwargs.get("temperature"),
+                top_p=kwargs.get("top_p"),
+                cancel_event=cancel_event,
+                attribution=kwargs.get("attribution"),
+            )
+            return
+
+        url = self.endpoints[self.config.provider]
+        if url is None:
+            yield LLMStreamEvent(
+                type="error", message=f"No endpoint configured for provider {self.config.provider}"
+            )
+            return
+
+        provider = self.config.provider.value
+        headers = self._get_headers()
+        payload = apply_stream_payload(self._prepare_payload(messages, **kwargs), provider)
+        parser = get_stream_parser(provider)
+
+        logger.info(
+            f"Starting LLM stream: {provider}/{self.config.model}, "
+            f"{len(messages)} messages, "
+            f"{sum(len(m.get('content', '')) for m in messages)} chars"
+        )
+
+        try:
+            # (connect, read) — a 120s idle gap means the provider stopped producing.
+            response = self.session.post(
+                url, json=payload, headers=headers, timeout=(10, 120), stream=True
+            )
+        except requests.exceptions.RequestException as e:
+            logger.error(f"LLM stream connection failed for {provider}: {type(e).__name__}")
+            yield LLMStreamEvent(type="error", message=f"Connection error: {e}")
+            return
+
+        try:
+            if response.status_code != 200:
+                detail = response.text[:500]
+                logger.error(f"LLM stream error ({response.status_code}): {detail}")
+                yield LLMStreamEvent(
+                    type="error",
+                    message=f"LLM API error ({response.status_code}): {detail}",
+                )
+                return
+
+            for event in parser(self._iter_stream_lines(response, cancel_event)):
+                if event.type == "done" and cancel_event is not None and cancel_event.is_set():
+                    yield LLMStreamEvent(type="done", finish_reason="cancelled")
+                    return
+                yield event
+                if event.type in ("done", "error"):
+                    return
+        except requests.exceptions.RequestException as e:
+            logger.error(f"LLM stream interrupted for {provider}: {type(e).__name__}: {e}")
+            yield LLMStreamEvent(type="error", message=f"Stream interrupted: {e}")
+        finally:
+            response.close()
+
+    def estimate_tokens(self, text: str) -> int:
+        """Public wrapper over the internal token heuristic (see :meth:`_estimate_tokens`)."""
+        return self._estimate_tokens(text)
 
     def _estimate_tokens(self, text: str) -> int:
         """
@@ -1540,6 +1677,67 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         # No fallback - users must explicitly configure LLM settings
         logger.info(f"No active LLM configuration found for user {user_id}")
         return None
+
+    @staticmethod
+    def create_from_config_id(user_id: int, config_id: int) -> Optional["LLMService"]:
+        """Create LLMService from ONE specific LLM configuration the user may use.
+
+        Used by RAG chat, where a conversation can pin a model different from the
+        user's active default. Shares the ownership check and key decryption with
+        :meth:`create_from_user_settings` so a per-conversation override can never
+        reach a configuration the caller isn't entitled to.
+
+        Args:
+            user_id: The caller (owner, or a user of a shared configuration).
+            config_id: ``user_llm_settings.id`` to load.
+
+        Returns:
+            A configured service, or None if the config is missing or not theirs.
+        """
+        from sqlalchemy import or_
+
+        from app.db.base import SessionLocal
+        from app.models.user_llm_settings import UserLLMSettings
+        from app.utils.encryption import decrypt_api_key
+
+        db = SessionLocal()
+        try:
+            user_settings = (
+                db.query(UserLLMSettings)
+                .filter(
+                    UserLLMSettings.id == config_id,
+                    or_(
+                        UserLLMSettings.user_id == user_id,
+                        UserLLMSettings.is_shared == True,  # noqa: E712
+                    ),
+                )
+                .first()
+            )
+            if not user_settings:
+                logger.warning(f"LLM config {config_id} not available to user {user_id}")
+                return None
+
+            api_key = None
+            if user_settings.api_key:
+                api_key = decrypt_api_key(str(user_settings.api_key))
+                if not api_key:
+                    logger.error(f"Failed to decrypt API key for LLM config {config_id}")
+                    return None
+
+            config = LLMConfig(
+                provider=LLMProvider(user_settings.provider),
+                model=str(user_settings.model_name),
+                api_key=api_key,
+                base_url=str(user_settings.base_url) if user_settings.base_url else None,
+                max_tokens=int(user_settings.max_tokens),
+                temperature=float(user_settings.temperature),
+            )
+            return LLMService(config)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Could not build LLMService from config {config_id}: {e}")
+            return None
+        finally:
+            db.close()
 
     @staticmethod
     def create_from_user_settings(user_id: int) -> Optional["LLMService"]:

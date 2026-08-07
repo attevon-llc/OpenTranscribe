@@ -25,6 +25,11 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 - `websockets.py` — `/ws`, the in-process `ConnectionManager`, and the Redis subscriber on the
   `websocket_notifications` channel.
 - `endpoints/metrics.py` — `/metrics`, mounted at **root** (no `/api`), unauthenticated by design.
+- `endpoints/chat/` — conversations, messages, export, projects, plus the user and admin
+  settings routers. **`projects.router` is included BEFORE `conversations.router`**: both live
+  under `/chat` and FastAPI matches in registration order, so `/chat/projects` would otherwise
+  be shadowed. The admin settings router requires `get_current_admin_user` on **both** GET and
+  PUT — the UI tab is cosmetic, that dependency is the authority.
 - `endpoints/files/` — the oversized files router split into a package (`upload`, `crud`,
   `filtering`, `streaming`, `subtitles`, `reprocess`, `url_processing`, `waveform`, …).
   `management.py` exports a second router mounted at the same `/files` prefix.

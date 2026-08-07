@@ -828,6 +828,34 @@ DEFAULT_REDACTION_TOXICITY_THRESHOLD = 0.5
 DEFAULT_REDACTION_REDACT_BEFORE_LLM = True
 DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED = True
 
+# Substituted for a segment whose masking raised. Never fall back to the original
+# text: under redact_before_llm the whole point is that unmaskable content must not
+# reach a third-party provider. See services/redaction/llm_guard.py.
+# =============================================================================
+# Amazon Bedrock
+# =============================================================================
+# Cross-region inference profiles are addressed by a geography-prefixed model ID.
+# The prefix is derived from the AWS region's leading segment so an operator only
+# has to set a bare model ID; a fully-qualified ID or profile ARN bypasses this.
+# `us-gov` is intentionally absent: GovCloud regions split as "us"/"gov"/"west" and
+# would otherwise pick up the commercial "us." prefix, so GovCloud deployments must
+# set BEDROCK_MODEL_NAME to an explicit `us-gov.`-prefixed ID.
+BEDROCK_GEO_PREFIX_BY_REGION = {
+    "us": "us.",
+    "eu": "eu.",
+    "ap": "apac.",
+    "ca": "us.",  # Canada routes into the US geography
+    "sa": "us.",  # South America likewise
+    "me": "eu.",  # Middle East routes into the EU geography
+    "af": "eu.",
+}
+
+REDACTION_LLM_FAILSAFE_TEXT = "[redacted — masking unavailable]"
+# How many times an LLM task may defer itself waiting for detection spans before
+# failing. 10 × 60s covers a slow CPU scan; past that something is wrong, and a
+# loud failure beats an unbounded retry loop.
+REDACTION_LLM_MAX_DEFERRALS = 10
+
 # PII detection confidence floor (Presidio/GLiNER scores below this are dropped).
 DEFAULT_REDACTION_PII_CONFIDENCE = 0.4
 
@@ -839,3 +867,52 @@ REDACTION_STATUS_PENDING = "pending"
 REDACTION_STATUS_PROCESSING = "processing"
 REDACTION_STATUS_DONE = "done"
 REDACTION_STATUS_FAILED = "failed"
+
+# =============================================================================
+# RAG chat (issue #52) — coded defaults for DB-backed SystemSettings.
+# Every knob below is editable in the admin UI under its `chat.*` settings key
+# with no restart; there are deliberately NO `.env` vars for chat.
+# =============================================================================
+
+# Retrieval shape. The candidate pool is what OpenSearch returns before
+# reranking; final_chunks is what actually reaches the prompt. Capping chunks
+# per file keeps one long recording from crowding out the rest of a multi-file
+# selection — the whole point of chatting across transcripts.
+DEFAULT_CHAT_RAG_CANDIDATE_POOL = 48  # chat.rag.candidate_pool
+DEFAULT_CHAT_RAG_FINAL_CHUNKS = 12  # chat.rag.final_chunks
+DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE = 4  # chat.rag.max_chunks_per_file
+
+# Cross-encoder reranking (CPU-only, lazily loaded in the backend container).
+DEFAULT_CHAT_RAG_RERANK_ENABLED = True  # chat.rag.rerank_enabled
+DEFAULT_CHAT_RAG_RERANK_MAX_PAIRS = 50  # chat.rag.rerank_max_pairs
+CHAT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+# Conversational query rewriting: expands pronouns/references ("what about her?")
+# into a standalone query before retrieval.
+DEFAULT_CHAT_RAG_QUERY_REWRITE_ENABLED = True  # chat.rag.query_rewrite_enabled
+
+# Retrieval caching. Tier 1 is an exact-query cache; tier 2 (opt-in) reuses
+# results for semantically near-identical questions.
+DEFAULT_CHAT_RAG_CACHE_TTL_SECONDS = 300  # chat.rag.cache_ttl_seconds
+DEFAULT_CHAT_RAG_SEMANTIC_CACHE_ENABLED = False  # chat.rag.semantic_cache_enabled
+DEFAULT_CHAT_RAG_SEMANTIC_CACHE_THRESHOLD = 0.97  # chat.rag.semantic_cache_threshold
+
+# Conversation shape and abuse controls.
+DEFAULT_CHAT_HISTORY_MAX_TURNS = 10  # chat.history_max_turns
+DEFAULT_CHAT_MESSAGES_PER_HOUR = 120  # chat.limits.messages_per_hour
+DEFAULT_CHAT_MAX_CONCURRENT_STREAMS = 2  # chat.limits.max_concurrent_streams
+DEFAULT_CHAT_RETENTION_DAYS = 0  # chat.retention_days (0 = keep forever)
+
+# A provider that accepts the request but never emits a first token would
+# otherwise hold the stream open until the read timeout.
+DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S = 90
+
+# Per-user preferences (UserSetting keys `chat.system_prompt`,
+# `chat.use_context_default`, `chat.default_search_mode`).
+DEFAULT_CHAT_SYSTEM_PROMPT = ""
+DEFAULT_CHAT_USE_CONTEXT = True
+DEFAULT_CHAT_SEARCH_MODE = "hybrid"
+
+# Resolved-scope ceiling: a selection resolving to more files than this is
+# rejected (HTTP 400) rather than silently truncated.
+CHAT_MAX_SCOPE_FILES = 500

@@ -750,13 +750,38 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL_NAME: str = os.getenv("OLLAMA_MODEL_NAME", "llama2:7b-chat")
 
-    ANTHROPIC_MODEL_NAME: str = os.getenv("ANTHROPIC_MODEL_NAME", "claude-3-haiku-20240307")
+    # Haiku 4.5 is the documented replacement for the deprecated claude-3-haiku-20240307.
+    # Deliberately still the Haiku tier: this default drives the batch enrichment tasks
+    # (summarization, topic extraction, speaker ID) where per-transcript cost matters more
+    # than frontier reasoning. Operators wanting a stronger model for chat set
+    # ANTHROPIC_MODEL_NAME, or pin one per-conversation in the chat UI.
+    ANTHROPIC_MODEL_NAME: str = os.getenv("ANTHROPIC_MODEL_NAME", "claude-haiku-4-5")
     ANTHROPIC_BASE_URL: str = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 
-    OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-3-haiku")
+    # NOTE the slug convention differs from Anthropic's first-party API: OpenRouter
+    # uses a dot ("claude-haiku-4.5"), the first-party ID uses dashes
+    # ("claude-haiku-4-5"). Mixing them yields a 404 from whichever side is wrong.
+    OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-haiku-4.5")
     OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+
+    # ===== Amazon Bedrock =====
+    # AWS-native LLM access via the Converse API. There is deliberately NO API-key
+    # setting: boto3 resolves credentials through the standard chain (instance role,
+    # task role, profile, environment), so a deployment on EC2/ECS/EKS needs no secret
+    # provisioned at all — which is most of the operational appeal over a raw API key.
+    # Region falls back to the AWS SDK's own variables so an already-configured host
+    # needs nothing extra.
+    BEDROCK_REGION: str = os.getenv(
+        "BEDROCK_REGION", os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", ""))
+    )
+    # Bare foundation-model ID; a geography prefix is applied at call time to select the
+    # cross-region inference profile (see llm_bedrock.resolve_model_id). Set a fully
+    # prefixed ID or a profile ARN here to bypass that and pin an exact profile.
+    BEDROCK_MODEL_NAME: str = os.getenv(
+        "BEDROCK_MODEL_NAME", "anthropic.claude-haiku-4-5-20251001-v1:0"
+    )
 
     # ===== ASR (Speech Recognition) Provider =====
     ASR_PROVIDER: str = os.getenv("ASR_PROVIDER", "local")

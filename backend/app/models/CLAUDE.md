@@ -27,6 +27,12 @@ authority. See `backend/app/db/CLAUDE.md`.
   Authorization reads `OrganizationMembership`, never the token's org claim alone.
 - `mixins.py` — `TimestampMixin` and `UUIDMixin`; UUIDMixin is currently unadopted (each model
   declares its own `uuid` column).
+- `chat.py` — `ChatProject`, `ChatConversation`, `ChatMessage`. `ChatConversation.project_id`
+  is **nullable** (NULL = ungrouped, which is every conversation created before `v376`) and its
+  FK is **ON DELETE SET NULL, not CASCADE** — deleting a project must leave its conversations
+  behind. The relationship therefore uses `passive_deletes=True` and deliberately NOT
+  `delete-orphan`. `ChatProject.default_scope` / `has_scope` mirror `ChatConversation.scope` so
+  the resolver reads either shape without a second code path.
 - `__init__.py` — the canonical import surface. A new model must be added here.
 
 ## Conventions / patterns

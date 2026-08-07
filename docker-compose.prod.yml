@@ -84,6 +84,8 @@ services:
     volumes:
       # Production: sentence-transformers model cache
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      # RAG chat loads a CPU cross-encoder here to rerank retrieval results.
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
 
   celery-beat:
     image: davidamacey/opentranscribe-backend:latest

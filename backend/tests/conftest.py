@@ -118,6 +118,11 @@ engine = create_engine(SQLALCHEMY_TEST_DATABASE_URL, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+# Shared fixture modules. Registered here rather than imported so they are
+# available to every suite without a per-file import.
+pytest_plugins = ["fixtures.mock_llm"]
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _skip_celery_dispatch():
     """No-op every Celery dispatch when SKIP_CELERY is set.

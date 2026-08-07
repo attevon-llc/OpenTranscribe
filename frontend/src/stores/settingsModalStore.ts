@@ -17,6 +17,7 @@ export type SettingsSection =
   | 'asr-provider'
   | 'custom-vocabulary'
   | 'content-redaction'
+  | 'chat'
   | 'engine-settings'
   // System sections (visible to all users)
   | 'system-statistics'
@@ -27,6 +28,7 @@ export type SettingsSection =
   // Admin sections
   | 'admin-users'
   | 'admin-task-health'
+  | 'chat-admin'
   | 'admin-settings'
   | 'redaction-policy'
   | 'embedding-migration'
@@ -65,6 +67,8 @@ const initialState: SettingsModalState = {
     'asr-provider': false,
     'custom-vocabulary': false,
     'content-redaction': false,
+    chat: false,
+    'chat-admin': false,
     'engine-settings': false,
     'system-statistics': false,
     billing: false,

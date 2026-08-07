@@ -61,6 +61,10 @@ already-downloaded data (TXT/SRT/VTT/CSV export).
 - `src/components/ui` — shared primitives (see its CLAUDE.md). `src/lib/utils` — pure helpers
   (time formatting lives ONLY in `formatting.ts`). `src/lib/api` — typed API clients.
   `src/stores` — Svelte stores. `src/routes` — pages.
+- `src/components/chat` — RAG chat surface (see its CLAUDE.md). Assistant output is the only
+  model-authored HTML in the app; it renders through `renderChatMarkdown`'s dedicated
+  DOMPurify profile, which blocks relative URLs so model text can never mint an
+  app-internal link. Never route it through `sanitizeHighlightHtml` instead.
 - `src/lib/cloud` — **managed-edition seam stub** (see its README). The commercial repo replaces
   this directory at image-build time. Core code imports only `$lib/cloud` (+ its `components/`),
   gates every call site with `isCloudEdition` from `$lib/edition`, and must never name the

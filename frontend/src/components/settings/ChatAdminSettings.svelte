@@ -117,6 +117,7 @@
           max="50"
           bind:value={settings.history_max_turns}
         />
+        <span class="hint">{$t('chat.adminSettings.historyMaxTurnsHint')}</span>
       </div>
     </div>
 
@@ -138,6 +139,7 @@
           max="500"
           bind:value={settings.rerank_max_pairs}
         />
+        <span class="hint">{$t('chat.adminSettings.rerankMaxPairsHint')}</span>
       </div>
     {/if}
 
@@ -159,6 +161,7 @@
           max="86400"
           bind:value={settings.cache_ttl_seconds}
         />
+        <span class="hint">{$t('chat.adminSettings.cacheTtlSecondsHint')}</span>
       </div>
 
       <div class="field">
@@ -174,6 +177,7 @@
           bind:value={settings.semantic_cache_threshold}
           disabled={!settings.semantic_cache_enabled}
         />
+        <span class="hint">{$t('chat.adminSettings.semanticCacheThresholdHint')}</span>
       </div>
     </div>
 
@@ -182,6 +186,7 @@
         <input type="checkbox" bind:checked={settings.semantic_cache_enabled} />
         <span>{$t('chat.adminSettings.semanticCacheEnabled')}</span>
       </label>
+      <span class="hint">{$t('chat.adminSettings.semanticCacheEnabledHint')}</span>
     </div>
 
     <div class="grid">
@@ -194,6 +199,7 @@
           max="10000"
           bind:value={settings.messages_per_hour}
         />
+        <span class="hint">{$t('chat.adminSettings.messagesPerHourHint')}</span>
       </div>
 
       <div class="field">
@@ -205,6 +211,7 @@
           max="20"
           bind:value={settings.max_concurrent_streams}
         />
+        <span class="hint">{$t('chat.adminSettings.maxConcurrentStreamsHint')}</span>
       </div>
 
       <div class="field">
@@ -277,6 +284,19 @@
     gap: 0.6rem;
     cursor: pointer;
     font-weight: 500;
+  }
+
+  /* form-elements.css sets `input { width: 100% }` with no type exemption, so an
+     unreset checkbox stretches to fill the row and pushes its label to the far
+     edge. Size it explicitly and stop it flexing. */
+  .checkbox-row input[type='checkbox'] {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    padding: 0;
+    accent-color: var(--primary-color);
+    cursor: pointer;
   }
 
   .checkbox-field {

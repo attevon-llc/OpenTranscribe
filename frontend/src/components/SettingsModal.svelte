@@ -35,8 +35,7 @@
   import ASRSettings from '$components/settings/ASRSettings.svelte';
   import EngineSettings from '$components/settings/EngineSettings.svelte';
   import ContentRedactionSettings from '$components/settings/ContentRedactionSettings.svelte';
-  import ChatSettings from '$components/settings/ChatSettings.svelte';
-  import ChatAdminSettings from '$components/settings/ChatAdminSettings.svelte';
+  import ChatSettingsPanel from '$components/settings/ChatSettingsPanel.svelte';
   import RedactionPolicySettings from '$components/settings/RedactionPolicySettings.svelte';
   import CustomVocabularySettings from '$components/settings/CustomVocabularySettings.svelte';
   import SystemStatisticsPanel from '$components/settings/SystemStatisticsPanel.svelte';
@@ -232,8 +231,8 @@
         { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' },
         { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list', cap: 'vocab.user' },
         { id: 'content-redaction' as SettingsSection, label: $t('settings.contentRedaction.title'), icon: 'eye-off', cap: 'redaction.user' },
+        // Admin platform tuning lives in this panel's Advanced tab, not a second row.
         { id: 'chat' as SettingsSection, label: $t('chat.settings.title'), icon: 'message', cap: 'chat.rag' },
-        ...(isAdmin ? [{ id: 'chat-admin' as SettingsSection, label: $t('chat.adminSettings.title'), icon: 'cpu', cap: 'chat.rag' }] : []),
         { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain', cap: 'llm.user_settings' },
         { id: 'organization-context' as SettingsSection, label: isCloudEdition ? $t('settings.orgContext.cloudTitle') : $t('settings.orgContext.title'), icon: 'briefcase' },
         { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
@@ -926,19 +925,17 @@
             </div>
           {/if}
 
-          <!-- Chat Section (per-user defaults) -->
-          {#if activeSection === 'chat'}
+          <!-- Chat: per-user defaults + (admin) platform tuning, as tabs.
+               'chat-admin' is kept as a section id so the settings search and any
+               existing deep link still resolve — it just opens the Advanced tab
+               of the same panel instead of a second sidebar entry. -->
+          {#if activeSection === 'chat' || activeSection === 'chat-admin'}
             <div class="content-section">
               <h3 class="section-title">{$t('chat.settings.title')}</h3>
-              <ChatSettings />
-            </div>
-          {/if}
-
-          <!-- Chat & RAG Section (platform tuning) -->
-          {#if activeSection === 'chat-admin' && isAdmin}
-            <div class="content-section">
-              <h3 class="section-title">{$t('chat.adminSettings.title')}</h3>
-              <ChatAdminSettings />
+              <ChatSettingsPanel
+                {isAdmin}
+                initialTab={activeSection === 'chat-admin' && isAdmin ? 'advanced' : 'general'}
+              />
             </div>
           {/if}
 

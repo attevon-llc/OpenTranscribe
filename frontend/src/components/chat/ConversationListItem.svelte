@@ -219,6 +219,19 @@
     cursor: pointer;
   }
 
+  /* The ROW (.conversation-item) owns the hover/selected highlight. Without this
+     reset, form-elements.css's `button:hover:not(:disabled)` — specificity
+     (0,2,1), which outranks the scoped .item-button rule — paints --button-hover
+     across only the title's width. Against the selected row's tint that reads as
+     two different colours meeting mid-row, worst in dark mode where
+     --button-hover is rgba(255,255,255,0.1) over a blue tint. */
+  .item-button:hover,
+  .item-button:focus {
+    background-color: transparent;
+    transform: none;
+    box-shadow: none;
+  }
+
   .item-title {
     display: block;
     overflow: hidden;
@@ -244,6 +257,12 @@
     justify-content: center;
     width: 24px;
     height: 24px;
+    /* form-elements.css styles every bare <button>. Its padding (0.6rem 1.2rem)
+       and box-shadow survive unless reset here: with box-sizing: border-box the
+       padding alone exceeds the 24px width, so the button stretches to ~38px and
+       squeezes the icon to zero, leaving a shadow-only rectangle. */
+    padding: 0;
+    box-shadow: none;
     border: none;
     border-radius: 5px;
     background: none;
@@ -252,8 +271,13 @@
   }
 
   .icon-btn:hover {
-    background-color: var(--card-background);
+    /* Translucent, not an opaque surface colour — these sit on top of the
+       selected row's tint, and an opaque swatch reads as a second colour.
+       transform/box-shadow are reset for the same reason as .item-button. */
+    background-color: rgba(var(--primary-color-rgb), 0.18);
     color: var(--text-color);
+    transform: none;
+    box-shadow: none;
   }
 
   .icon-btn.danger:hover {

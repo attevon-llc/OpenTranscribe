@@ -63,19 +63,24 @@
 
 <section class="settings-section" data-testid="chat-settings">
   <header>
-    <h2>{$t('chat.settings.title')}</h2>
+    <!-- SettingsModal already renders the section heading (.section-title); a
+         second <h2> here duplicated "Chat" on screen and in the a11y tree. -->
     <p class="section-description">{$t('chat.settings.description')}</p>
   </header>
 
   {#if !loading}
-    <div class="setting-row">
-      <label class="checkbox-row">
+    <div class="setting-row toggle-row">
+      <label class="toggle-label" for="chat-use-context">
+        {$t('chat.settings.useContextDefault')}
+      </label>
+      <label class="toggle-switch">
         <input
+          id="chat-use-context"
           type="checkbox"
           bind:checked={settings.use_context_default}
           data-testid="chat-settings-use-context"
         />
-        <span>{$t('chat.settings.useContextDefault')}</span>
+        <span class="toggle-slider"></span>
       </label>
     </div>
 
@@ -135,13 +140,6 @@
     gap: 1.25rem;
   }
 
-  h2 {
-    margin: 0 0 0.25rem;
-    font-size: 1.05rem;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
   .section-description {
     margin: 0;
     font-size: 0.85rem;
@@ -155,13 +153,71 @@
     gap: 0.4rem;
   }
 
-  .checkbox-row {
-    display: flex;
+  /* Toggle switch, matching DownloadSettings / ContentRedactionSettings. A bare
+     checkbox cannot be used here: form-elements.css sets `input { width: 100% }`
+     with no type exemption, which stretched the box to 733px and pushed its
+     label off to the right edge. The native input stays in the DOM (keyboard +
+     screen-reader) but is sized to zero and painted by .toggle-slider. */
+  .toggle-row {
+    flex-direction: row;
     align-items: center;
-    gap: 0.6rem;
-    font-size: 0.9rem;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .toggle-label {
+    font-size: 0.87rem;
+    font-weight: 500;
     color: var(--text-color);
     cursor: pointer;
+  }
+
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 1.5rem;
+    cursor: pointer;
+  }
+
+  .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle-slider {
+    position: absolute;
+    inset: 0;
+    background-color: var(--border-color, #d1d5db);
+    border-radius: 1.5rem;
+    transition: background-color 0.2s;
+  }
+
+  .toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 1.125rem;
+    width: 1.125rem;
+    left: 0.1875rem;
+    bottom: 0.1875rem;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+
+  .toggle-switch input:checked + .toggle-slider {
+    background-color: var(--primary-color);
+  }
+
+  .toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(1.25rem);
+  }
+
+  .toggle-switch input:focus-visible + .toggle-slider {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
   }
 
   .field-label {

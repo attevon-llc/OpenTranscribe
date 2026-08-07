@@ -241,6 +241,19 @@
     cursor: pointer;
   }
 
+  /* form-elements.css sets `input { width: 100% }` with no type exemption, so an
+     unreset checkbox stretches to fill the row and shoves its label off to the
+     right. Every other panel in the app resets this; the chat surface must too. */
+  .toggle-row input[type='checkbox'] {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    margin: 0.15rem 0 0;
+    padding: 0;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+  }
+
   .toggle-label {
     display: block;
     font-size: 0.87rem;

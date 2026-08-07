@@ -9,6 +9,7 @@
   import { isCloudEdition } from '$lib/edition';
   import ClassificationBanner from '$lib/components/ClassificationBanner.svelte';
   import LoginBanner from '$components/LoginBanner.svelte';
+  import MfaEnrollment from '$components/mfa/MfaEnrollment.svelte';
   import Spinner from '../../components/ui/Spinner.svelte';
 
   // Cloud edition: the hosted sign-in component mounts into this node; an
@@ -32,8 +33,10 @@
   let successMessage = "";
   let loginSuccess = false;
 
-  // MFA state
+  // MFA state. `mfaToken` is a short-lived half-token: memory only, never
+  // localStorage/sessionStorage, and cleared on every exit from the MFA steps.
   let mfaRequired = false;
+  let mfaEnrollmentRequired = false;
   let mfaToken = "";
   let mfaCode = "";
   let mfaLoading = false;
@@ -313,10 +316,16 @@
       // Call the login function from our auth store
       const result = await login(email.trim(), password);
 
-      // Check if MFA is required
+      // Two different MFA challenges can come back here. Enrolment wins when
+      // both flags are set: the account has no factor to verify yet, so the
+      // TOTP prompt would have nothing to check against.
       if (result.mfa_required && result.mfa_token) {
-        mfaRequired = true;
         mfaToken = result.mfa_token;
+        if (result.mfa_enrollment_required) {
+          mfaEnrollmentRequired = true;
+        } else {
+          mfaRequired = true;
+        }
         loading = false;
         return;
       }
@@ -439,6 +448,27 @@
     password = "";
   }
 
+  // Enrolment finished: /mfa/verify-setup already set the session cookies and
+  // the store is hydrated, so proceed exactly as after a normal login. Calling
+  // /auth/login again here would start a second challenge.
+  function handleEnrollmentComplete() {
+    mfaEnrollmentRequired = false;
+    mfaToken = "";
+    password = "";
+    loginSuccess = true;
+    import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
+    setTimeout(() => goto('/', { replaceState: true }), 600);
+  }
+
+  // Half-token spent/expired, or the user backed out — drop it and show the
+  // credential form so they can mint a fresh one. The component owns the toast.
+  function exitEnrollment() {
+    mfaEnrollmentRequired = false;
+    mfaToken = "";
+    password = "";
+    setTimeout(() => document.getElementById('password')?.focus(), 0);
+  }
+
   // Handle banner acknowledgment
   function handleBannerAcknowledge() {
     bannerAcknowledged = true;
@@ -504,8 +534,18 @@
       {/if}
       <div class="external-auth-mount" bind:this={externalSignInNode}></div>
     {:else}
+    <!-- Forced MFA enrolment: the deployment requires a second factor and this
+         account has none, so login returned an enrolment half-token instead of
+         a session. There is no way past this step. -->
+    {#if mfaEnrollmentRequired}
+      <MfaEnrollment
+        {mfaToken}
+        on:complete={handleEnrollmentComplete}
+        on:expired={exitEnrollment}
+        on:cancel={exitEnrollment}
+      />
     <!-- MFA Verification Form -->
-    {#if mfaRequired}
+    {:else if mfaRequired}
       <div class="mfa-form">
         <div class="mfa-icon">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

@@ -1,7 +1,10 @@
 """
 Keycloak/OIDC authentication module.
 
-Handles authentication via OpenID Connect with Keycloak.
+Handles authentication via OpenID Connect with Keycloak **or any conforming OIDC
+provider**. Endpoints come from the provider's discovery document when a discovery URL
+is configured, and from Keycloak's ``/realms/<realm>/protocol/openid-connect/...``
+layout otherwise (issue #353).
 Supports PKCE (RFC 7636) for OAuth 2.1 compliance.
 Configuration is loaded from database first, falling back to environment variables.
 """
@@ -11,6 +14,7 @@ import hashlib
 import logging
 import secrets
 from dataclasses import dataclass
+from typing import Any
 from typing import TypedDict
 from urllib.parse import urlencode
 
@@ -20,6 +24,9 @@ from jose import jwt
 
 from app.auth.constants import AUTH_TYPE_KEYCLOAK
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
+from app.auth.oidc_discovery import fetch_discovery_document
+from app.auth.oidc_discovery import fetch_jwks
+from app.auth.oidc_discovery import to_internal
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
@@ -27,6 +34,29 @@ from app.auth.roles import role_implies_superuser
 from app.core.config import settings as env_settings
 
 logger = logging.getLogger(__name__)
+
+#: Keycloak puts realm roles in ``realm_access.roles``. Other providers do not:
+#: Authentik uses a flat ``groups`` claim, Entra uses ``roles``. The dotted path is
+#: configurable so the admin-role mapping works anywhere.
+DEFAULT_ROLES_CLAIM = "realm_access.roles"
+
+#: Minimum scopes for an OIDC login. Providers that carry group membership in a
+#: dedicated scope (Authentik's ``goauthentik.io/api``-style scopes, Okta's ``groups``)
+#: need it appended here or the roles claim will be absent from the token.
+DEFAULT_OIDC_SCOPES = "openid email profile"
+
+
+def _env_first(*names: str, default: str = "") -> str:
+    """Return the first non-empty env setting among *names*.
+
+    Uses ``getattr`` so an alias that is not declared on ``Settings`` is simply skipped
+    rather than raising.
+    """
+    for name in names:
+        value = getattr(env_settings, name, "")
+        if value:
+            return str(value)
+    return default
 
 
 # PKCE Constants (RFC 7636)
@@ -58,8 +88,16 @@ class KeycloakConfig:
     timeout: int = 30
     use_pkce: bool = True
     verify_issuer: bool = True
-    verify_audience: bool = False
+    # Audience validation is what stops a token minted for another client of the same
+    # IdP being accepted here, so its default is the ON position — matching
+    # core/config.py:KEYCLOAK_VERIFY_AUDIENCE. A token-validation control must never
+    # default open.
+    verify_audience: bool = True
     audience: str = ""
+    discovery_url: str = ""
+    issuer: str = ""
+    roles_claim: str = DEFAULT_ROLES_CLAIM
+    scopes: str = DEFAULT_OIDC_SCOPES
 
     @classmethod
     def from_env(cls) -> "KeycloakConfig":
@@ -76,8 +114,12 @@ class KeycloakConfig:
             timeout=env_settings.KEYCLOAK_TIMEOUT,
             use_pkce=env_settings.KEYCLOAK_USE_PKCE,
             verify_issuer=getattr(env_settings, "KEYCLOAK_VERIFY_ISSUER", True),
-            verify_audience=getattr(env_settings, "KEYCLOAK_VERIFY_AUDIENCE", False),
+            verify_audience=getattr(env_settings, "KEYCLOAK_VERIFY_AUDIENCE", True),
             audience=getattr(env_settings, "KEYCLOAK_AUDIENCE", ""),
+            discovery_url=_env_first("KEYCLOAK_DISCOVERY_URL", "OIDC_DISCOVERY_URL"),
+            issuer=_env_first("KEYCLOAK_ISSUER", "OIDC_ISSUER"),
+            roles_claim=_env_first("KEYCLOAK_ROLES_CLAIM", default=DEFAULT_ROLES_CLAIM),
+            scopes=_env_first("KEYCLOAK_SCOPES", default=DEFAULT_OIDC_SCOPES),
         )
 
     @classmethod
@@ -138,10 +180,29 @@ class KeycloakConfig:
             ),
             verify_audience=_get_bool(
                 "keycloak_verify_audience",
-                getattr(env_settings, "KEYCLOAK_VERIFY_AUDIENCE", False),
+                getattr(env_settings, "KEYCLOAK_VERIFY_AUDIENCE", True),
             ),
             audience=str(
                 _get("keycloak_audience", getattr(env_settings, "KEYCLOAK_AUDIENCE", "")) or ""
+            ),
+            discovery_url=str(
+                _get(
+                    "keycloak_discovery_url",
+                    _env_first("KEYCLOAK_DISCOVERY_URL", "OIDC_DISCOVERY_URL"),
+                )
+                or ""
+            ),
+            issuer=str(_get("keycloak_issuer", _env_first("KEYCLOAK_ISSUER", "OIDC_ISSUER")) or ""),
+            roles_claim=str(
+                _get(
+                    "keycloak_roles_claim",
+                    _env_first("KEYCLOAK_ROLES_CLAIM", default=DEFAULT_ROLES_CLAIM),
+                )
+                or DEFAULT_ROLES_CLAIM
+            ),
+            scopes=str(
+                _get("keycloak_scopes", _env_first("KEYCLOAK_SCOPES", default=DEFAULT_OIDC_SCOPES))
+                or DEFAULT_OIDC_SCOPES
             ),
         )
 
@@ -224,7 +285,11 @@ def generate_pkce_pair() -> tuple[str, str]:
 
 
 def _get_keycloak_urls(cfg: KeycloakConfig, internal: bool = False) -> dict:
-    """Get Keycloak endpoint URLs.
+    """Build Keycloak's realm endpoint URLs — the no-discovery fallback.
+
+    Keycloak-only URL shape. It stays the default so every existing realm-based
+    deployment behaves exactly as before; providers with a different layout supply a
+    discovery URL instead (see :func:`resolve_endpoints`).
 
     Args:
         cfg: Keycloak configuration
@@ -234,16 +299,71 @@ def _get_keycloak_urls(cfg: KeycloakConfig, internal: bool = False) -> dict:
 
     base = f"{base_url}/realms/{cfg.realm}"
     return {
+        # The browser follows this one, so it is always the public server URL.
         "authorization": f"{cfg.server_url}/realms/{cfg.realm}/protocol/openid-connect/auth",
         "token": f"{base}/protocol/openid-connect/token",
         "userinfo": f"{base}/protocol/openid-connect/userinfo",
         "logout": f"{base}/protocol/openid-connect/logout",
         "certs": f"{base}/protocol/openid-connect/certs",
+        # Issuer is an identity, not a reachable endpoint — never the internal host.
+        "issuer": f"{cfg.server_url}/realms/{cfg.realm}",
     }
 
 
-def get_authorization_url(state: str, cfg: KeycloakConfig | None = None) -> tuple[str, str | None]:
-    """Generate the Keycloak authorization URL for OIDC login.
+def _endpoints_from_discovery(
+    cfg: KeycloakConfig, document: dict[str, Any], internal: bool
+) -> dict:
+    """Map an OIDC discovery document onto our endpoint names."""
+    endpoints = {
+        "authorization": str(document.get("authorization_endpoint") or ""),
+        "token": str(document.get("token_endpoint") or ""),
+        "userinfo": str(document.get("userinfo_endpoint") or ""),
+        "logout": str(document.get("end_session_endpoint") or ""),
+        "certs": str(document.get("jwks_uri") or ""),
+        "issuer": cfg.issuer or str(document.get("issuer") or ""),
+    }
+    if not internal or not cfg.internal_url:
+        return endpoints
+
+    # Same split as the realm builder: the authorization URL is browser-facing and the
+    # issuer is an identity string; everything else is a back-channel call that must
+    # resolve on the compose network.
+    return {
+        name: url
+        if name in ("authorization", "issuer")
+        else to_internal(url, cfg.server_url, cfg.internal_url)
+        for name, url in endpoints.items()
+    }
+
+
+async def resolve_endpoints(cfg: KeycloakConfig, internal: bool = False) -> dict:
+    """Resolve the provider's OIDC endpoints, preferring discovery metadata.
+
+    Args:
+        cfg: Keycloak/OIDC configuration.
+        internal: If True, back-channel endpoints use the internal (compose-network)
+            host. The authorization endpoint stays public either way.
+
+    Returns:
+        Dict with ``authorization``, ``token``, ``userinfo``, ``logout``, ``certs`` and
+        ``issuer``. Falls back to the realm-derived URLs when no discovery URL is set or
+        the document cannot be fetched.
+    """
+    if cfg.discovery_url:
+        document = await fetch_discovery_document(cfg.discovery_url, timeout=float(cfg.timeout))
+        if document:
+            return _endpoints_from_discovery(cfg, document, internal)
+        logger.warning(
+            "OIDC discovery failed for %s — falling back to realm-derived endpoints",
+            cfg.discovery_url,
+        )
+    return _get_keycloak_urls(cfg, internal=internal)
+
+
+async def get_authorization_url(
+    state: str, cfg: KeycloakConfig | None = None
+) -> tuple[str, str | None]:
+    """Generate the authorization URL for OIDC login.
 
     Supports PKCE (RFC 7636) for OAuth 2.1 compliance.
 
@@ -257,12 +377,12 @@ def get_authorization_url(state: str, cfg: KeycloakConfig | None = None) -> tupl
     if cfg is None:
         cfg = KeycloakConfig.from_env()
 
-    urls = _get_keycloak_urls(cfg)
+    urls = await resolve_endpoints(cfg)
     params = {
         "client_id": cfg.client_id,
         "redirect_uri": cfg.callback_url,
         "response_type": "code",
-        "scope": "openid email profile",
+        "scope": cfg.scopes or DEFAULT_OIDC_SCOPES,
         "state": state,
     }
 
@@ -293,7 +413,7 @@ async def exchange_code_for_tokens(
     if cfg is None:
         cfg = KeycloakConfig.from_env()
 
-    urls = _get_keycloak_urls(cfg, internal=True)
+    urls = await resolve_endpoints(cfg, internal=True)
 
     token_data = {
         "grant_type": "authorization_code",
@@ -329,21 +449,12 @@ async def exchange_code_for_tokens(
 
 
 async def get_keycloak_jwks(cfg: KeycloakConfig | None = None) -> dict | None:
-    """Fetch Keycloak public keys (JWKS)."""
+    """Fetch the provider's public keys (JWKS), served from the TTL cache."""
     if cfg is None:
         cfg = KeycloakConfig.from_env()
 
-    urls = _get_keycloak_urls(cfg, internal=True)
-
-    async with httpx.AsyncClient(timeout=cfg.timeout) as client:
-        try:
-            response = await client.get(urls["certs"])
-            response.raise_for_status()
-            jwks: dict = response.json()
-            return jwks
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to fetch Keycloak JWKS: {e}")
-            return None
+    urls = await resolve_endpoints(cfg, internal=True)
+    return await fetch_jwks(urls["certs"], timeout=float(cfg.timeout))
 
 
 async def call_keycloak_logout(
@@ -367,7 +478,13 @@ async def call_keycloak_logout(
     if cfg is None:
         cfg = KeycloakConfig.from_env()
 
-    urls = _get_keycloak_urls(cfg, internal=True)
+    urls = await resolve_endpoints(cfg, internal=True)
+    if not urls.get("logout"):
+        # A provider whose metadata omits end_session_endpoint has no back-channel
+        # logout; the local session is still cleared by the caller.
+        logger.info("Provider advertises no end-session endpoint — skipping federated logout")
+        return False
+
     logout_data = {
         "client_id": cfg.client_id,
         "client_secret": cfg.client_secret,
@@ -417,58 +534,140 @@ def _extract_certificate_claims(token_claims: dict) -> dict:
     }
 
 
-async def validate_token(
-    access_token: str, cfg: KeycloakConfig | None = None
-) -> KeycloakUserData | None:
-    """Validate Keycloak access token and extract user data.
+def _claim_by_path(claims: dict, path: str) -> Any:
+    """Read a dotted claim path (``realm_access.roles``, ``groups``, ``resource.a.b``)."""
+    node: Any = claims
+    for part in path.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return None
+        node = node[part]
+    return node
 
-    Args:
-        access_token: JWT access token from Keycloak
-        cfg: Keycloak configuration (if None, loads from env)
-    """
-    if cfg is None:
-        cfg = KeycloakConfig.from_env()
+
+def _normalize_roles(value: Any) -> list[str] | None:
+    """Coerce a roles/groups claim to a list of names, or None when absent."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value if isinstance(item, (str, int))]
+    return None
+
+
+def _decode_token(token: str, jwks: dict, cfg: KeycloakConfig, expected_issuer: str) -> dict | None:
+    """Verify *token* against the JWKS and return its claims, or None if invalid."""
+    jwt_options: dict[str, bool] = {}
+    decode_kwargs: dict[str, str] = {}
+
+    if cfg.verify_audience:
+        jwt_options["verify_aud"] = True
+        audience = cfg.audience or cfg.client_id
+        decode_kwargs["audience"] = audience
+        logger.debug(f"Validating token audience against: {audience}")
+    else:
+        jwt_options["verify_aud"] = False
+
+    if cfg.verify_issuer:
+        jwt_options["verify_iss"] = True
+        decode_kwargs["issuer"] = expected_issuer
+        logger.debug(f"Validating token issuer against: {expected_issuer}")
+    else:
+        jwt_options["verify_iss"] = False
 
     try:
-        jwks = await get_keycloak_jwks(cfg)
-        if not jwks:
-            logger.error("Failed to fetch Keycloak JWKS for token validation")
-            return None
-
-        logger.debug(f"JWKS fetched successfully, keys count: {len(jwks.get('keys', []))}")
-
-        jwt_options = {}
-        decode_kwargs = {}
-
-        if cfg.verify_audience:
-            jwt_options["verify_aud"] = True
-            audience = cfg.audience or cfg.client_id
-            decode_kwargs["audience"] = audience
-            logger.debug(f"Validating token audience against: {audience}")
-        else:
-            jwt_options["verify_aud"] = False
-
-        if cfg.verify_issuer:
-            jwt_options["verify_iss"] = True
-            expected_issuer = f"{cfg.server_url}/realms/{cfg.realm}"
-            decode_kwargs["issuer"] = expected_issuer
-            logger.debug(f"Validating token issuer against: {expected_issuer}")
-        else:
-            jwt_options["verify_iss"] = False
-
-        payload = jwt.decode(
-            access_token,
+        payload: dict = jwt.decode(
+            token,
             jwks,
             algorithms=["RS256"],
             options=jwt_options,
             **decode_kwargs,
         )
+        return payload
+    except JWTError as e:
+        logger.warning(f"Invalid OIDC token (JWTError): {e}")
+        return None
+
+
+async def _roles_from_userinfo(
+    access_token: str, cfg: KeycloakConfig, endpoints: dict
+) -> list[str]:
+    """Read the configured roles claim from the userinfo endpoint.
+
+    Several providers keep group membership out of the ID token unless a dedicated
+    scope was granted, and userinfo is the OIDC-defined place to look it up. Failure is
+    non-fatal: the user simply logs in without elevated roles.
+    """
+    url = endpoints.get("userinfo")
+    if not url or not access_token:
+        return []
+
+    try:
+        async with httpx.AsyncClient(timeout=float(cfg.timeout)) as client:
+            response = await client.get(url, headers={"Authorization": f"Bearer {access_token}"})
+            response.raise_for_status()
+            claims = response.json()
+    except httpx.HTTPError as e:
+        logger.warning(f"Failed to fetch userinfo for role mapping: {e}")
+        return []
+    except ValueError as e:
+        logger.warning(f"Malformed userinfo response: {e}")
+        return []
+
+    if not isinstance(claims, dict):
+        return []
+    return _normalize_roles(_claim_by_path(claims, cfg.roles_claim or DEFAULT_ROLES_CLAIM)) or []
+
+
+async def validate_token(
+    access_token: str,
+    cfg: KeycloakConfig | None = None,
+    id_token: str | None = None,
+) -> KeycloakUserData | None:
+    """Validate an OIDC token and extract user data.
+
+    The **ID token is validated first** when available: OIDC Core guarantees it is a
+    JWT audienced to our ``client_id``, whereas a JWT access token is a Keycloak
+    convenience that most providers do not offer (Authentik and Okta hand out opaque
+    access tokens, which no JWKS can verify). The access token remains the fallback so
+    existing Keycloak deployments are unaffected.
+
+    Args:
+        access_token: Access token from the token exchange.
+        cfg: Keycloak configuration (if None, loads from env).
+        id_token: ID token from the same exchange, preferred for validation.
+    """
+    if cfg is None:
+        cfg = KeycloakConfig.from_env()
+
+    try:
+        endpoints = await resolve_endpoints(cfg, internal=True)
+        jwks = await fetch_jwks(endpoints.get("certs", ""), timeout=float(cfg.timeout))
+        if not jwks:
+            logger.error("Failed to fetch JWKS for token validation")
+            return None
+
+        logger.debug(f"JWKS fetched successfully, keys count: {len(jwks.get('keys', []))}")
+
+        expected_issuer = endpoints.get("issuer") or f"{cfg.server_url}/realms/{cfg.realm}"
+
+        payload = None
+        for token in (id_token, access_token):
+            if not token:
+                continue
+            payload = _decode_token(token, jwks, cfg, expected_issuer)
+            if payload is not None:
+                break
+        if payload is None:
+            return None
 
         logger.info(
             f"Token decoded successfully for user: {payload.get('preferred_username', 'unknown')}"
         )
 
-        roles = payload.get("realm_access", {}).get("roles", [])
+        roles = _normalize_roles(_claim_by_path(payload, cfg.roles_claim or DEFAULT_ROLES_CLAIM))
+        if roles is None:
+            roles = await _roles_from_userinfo(access_token, cfg, endpoints)
         is_admin = cfg.admin_role in roles
 
         cert_claims = _extract_certificate_claims(payload)
@@ -502,11 +701,10 @@ async def validate_token(
             cert_valid_until=cert_claims["cert_valid_until"],
             cert_fingerprint=cert_claims["cert_fingerprint"],
         )
-    except JWTError as e:
-        logger.warning(f"Invalid Keycloak token (JWTError): {e}")
-        return None
     except Exception as e:
-        logger.error(f"Error validating Keycloak token: {type(e).__name__}: {e}")
+        # JWT signature/claim failures are handled in _decode_token; this catches the
+        # rest (network, malformed JWKS) so a login attempt can never 500.
+        logger.error(f"Error validating OIDC token: {type(e).__name__}: {e}")
         return None
 
 

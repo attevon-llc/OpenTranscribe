@@ -62,15 +62,25 @@
   /** @type {number} */
   let passwordMinLength = 12;
 
-  onMount(async () => {
-    try {
-      const { data } = await axiosInstance.get('/auth/password-policy');
-      if (typeof data?.min_length === 'number' && data.min_length > 0) {
-        passwordMinLength = data.min_length;
+  onMount(() => {
+    (async () => {
+      try {
+        const { data } = await axiosInstance.get('/auth/password-policy');
+        if (typeof data?.min_length === 'number' && data.min_length > 0) {
+          passwordMinLength = data.min_length;
+        }
+      } catch (err) {
+        console.warn('Could not load password policy; using default minimum', err);
       }
-    } catch (err) {
-      console.warn('Could not load password policy; using default minimum', err);
-    }
+    })();
+  });
+
+  // Reactive so a language switch re-renders the labels; a plain helper that
+  // reads $t internally would not re-run on locale change.
+  $: roleLabels = /** @type {Record<string, string>} */ ({
+    user: $t('userManagement.roleUser'),
+    admin: $t('userManagement.roleAdmin'),
+    super_admin: $t('userManagement.roleSuperAdmin')
   });
 
   // Password reset modal state
@@ -136,17 +146,6 @@
       return detail.map(d => d.msg || d).join('; ');
     }
     return String(detail);
-  }
-
-  /**
-   * Human label for a role value.
-   * @param {string} role
-   * @returns {string}
-   */
-  function roleLabel(role) {
-    if (role === 'super_admin') return $t('userManagement.roleSuperAdmin');
-    if (role === 'admin') return $t('userManagement.roleAdmin');
-    return $t('userManagement.roleUser');
   }
 
   /**
@@ -291,7 +290,7 @@
   async function updateUserRole(userId, role) {
     try {
       await AdminApi.changeUserRole(userId, role);
-      toastStore.success($t('userManagement.userRoleUpdated', { role: roleLabel(role) }));
+      toastStore.success($t('userManagement.userRoleUpdated', { role: roleLabels[role] || role }));
 
       // Refresh user list
       onRefresh();
@@ -588,7 +587,7 @@
                   <option value="super_admin">{$t('userManagement.roleSuperAdmin')}</option>
                 </select>
               {:else}
-                <span class="current-role">{roleLabel(currentUser.role)}</span>
+                <span class="current-role">{roleLabels[currentUser.role] || currentUser.role}</span>
               {/if}
             </td>
             <td>{formatDate(currentUser.created_at)}</td>

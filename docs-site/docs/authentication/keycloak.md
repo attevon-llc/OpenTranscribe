@@ -3,19 +3,37 @@ sidebar_label: Keycloak / OIDC
 sidebar_position: 3
 ---
 
-# Keycloak OIDC Authentication Setup
+# Keycloak / OIDC Authentication Setup
 
-This guide covers setting up Keycloak for OpenID Connect (OIDC) authentication with OpenTranscribe.
+This guide covers setting up Keycloak — or any other OpenID Connect provider — for authentication with OpenTranscribe.
 
 ## Overview
 
-Keycloak provides enterprise-grade identity and access management. OpenTranscribe integrates with Keycloak via OIDC, allowing:
+OpenTranscribe authenticates against an OIDC provider, allowing:
 - Single Sign-On (SSO) with your organization's identity provider
-- Role-based access control synchronized from Keycloak
+- Role-based access control synchronized from the provider
 - Support for LDAP/AD federation through Keycloak
 - Social login providers (Google, GitHub, etc.) via Keycloak
-- Full OIDC discovery support (endpoints auto-populated from provider metadata)
-- Federated logout — when a user's OpenTranscribe session ends, the logout is propagated to Keycloak
+- Federated logout — when a user's OpenTranscribe session ends, the logout is propagated to the provider (when it publishes an end-session endpoint)
+
+### How endpoints are resolved
+
+There are two modes, and which one you get depends on whether **Discovery URL** is set:
+
+| Discovery URL | Endpoints come from | Use for |
+|---|---|---|
+| empty (default) | Keycloak's realm layout: `<server>/realms/<realm>/protocol/openid-connect/{auth,token,userinfo,logout,certs}` | Keycloak |
+| set | the provider's `.well-known/openid-configuration` document (`authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, `jwks_uri`, `end_session_endpoint`, `issuer`) | Authentik, Authelia, Okta, Entra ID, Auth0, Zitadel, … |
+
+:::note Corrected in a later release
+Earlier versions of this page claimed "full OIDC discovery support (endpoints auto-populated from provider metadata)". That was not true: the realm URL template was the *only* code path, so any non-Keycloak provider returned 404 on the login redirect ([issue #353](https://github.com/attevon-llc/OpenTranscribe/issues/353)). Discovery is now actually implemented and is what the table above describes.
+:::
+
+The discovery document is cached in-process for 15 minutes, as is the JWKS. If discovery cannot be fetched, OpenTranscribe logs a warning and falls back to the realm URLs rather than failing the login outright — so an existing Keycloak deployment is never taken down by a metadata blip.
+
+**Internal URL still applies.** When set, back-channel calls (token exchange, JWKS, userinfo, logout) are re-pointed at the internal host while the authorization URL — the one the *browser* follows — stays on the public server URL. That holds for discovered endpoints too.
+
+**ID token first.** Tokens are validated by trying the ID token before the access token. OIDC guarantees the ID token is a JWT audienced to your client; a JWT access token is a Keycloak convenience that most providers do not offer (several issue opaque access tokens that no JWKS can verify).
 
 > **v0.4.0 Change**: Keycloak configuration is now managed via the Super Admin UI (Settings → Authentication → Keycloak/OIDC). Settings are stored encrypted (AES-256-GCM) in the database. Environment variables continue to work as an initial fallback but database config takes precedence.
 >
@@ -119,6 +137,55 @@ KEYCLOAK_ADMIN_ROLE=admin
 KEYCLOAK_TIMEOUT=30
 ```
 
+## Other OIDC providers (Authentik, Okta, Entra ID, …)
+
+Any provider that publishes a discovery document works. Two settings matter beyond the usual client ID/secret/callback:
+
+- **Discovery URL** — the provider's `.well-known/openid-configuration`. Setting it disables the Keycloak realm URL template entirely, so **Realm is ignored**.
+- **Roles Claim** — the dotted path to the claim carrying group/role names. Default `realm_access.roles` is *Keycloak-specific*; leaving it unchanged on another provider means the admin role never matches and every user lands as a plain user. If the claim is missing from the token, OpenTranscribe falls back to the userinfo endpoint before giving up.
+
+| Provider | Discovery URL | Roles Claim |
+|---|---|---|
+| Keycloak | *(leave empty — realm URLs are used)* | `realm_access.roles` |
+| Authentik | `https://auth.example.com/application/o/<provider-slug>/.well-known/openid-configuration` | `groups` |
+| Okta | `https://<org>.okta.com/.well-known/openid-configuration` | `groups` |
+| Entra ID | `https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration` | `roles` |
+
+### Worked example: Authentik
+
+1. In Authentik, create an **OAuth2/OpenID Provider** (confidential client, authorization code flow) and note its **slug**. Add an **Application** bound to that provider.
+2. Redirect URI: `https://yourdomain.com/login` — the OpenTranscribe **frontend login page**, not the backend API.
+3. Make sure the group membership is actually issued. Authentik ships a `groups` scope mapping; add it to the provider's **Scopes**, then request it (see **Scopes** below).
+4. In OpenTranscribe → **Settings → Authentication → Keycloak/OIDC**:
+
+   - **Enabled**: on
+   - **Discovery URL**: `https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration`
+   - **Server URL**: `https://auth.example.com` *(still used as the public base for the internal-URL swap)*
+   - **Realm**: *(ignored when a discovery URL is set)*
+   - **Client ID** / **Client Secret**: from the Authentik provider
+   - **Callback URL**: `https://yourdomain.com/login`
+   - **Roles Claim**: `groups`
+   - **Admin Role**: the Authentik **group name** that should map to OpenTranscribe admin, e.g. `opentranscribe-admins`
+   - **Scopes**: `openid email profile groups`
+
+Equivalent `.env` seed:
+
+```bash
+KEYCLOAK_ENABLED=true
+OIDC_DISCOVERY_URL=https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration
+KEYCLOAK_SERVER_URL=https://auth.example.com
+KEYCLOAK_CLIENT_ID=<authentik-client-id>
+KEYCLOAK_CLIENT_SECRET=<authentik-client-secret>
+KEYCLOAK_CALLBACK_URL=https://yourdomain.com/login
+KEYCLOAK_ROLES_CLAIM=groups
+KEYCLOAK_ADMIN_ROLE=opentranscribe-admins
+KEYCLOAK_SCOPES="openid email profile groups"
+```
+
+`OIDC_DISCOVERY_URL` and `OIDC_ISSUER` are accepted as aliases of `KEYCLOAK_DISCOVERY_URL` / `KEYCLOAK_ISSUER` — the settings block is named "Keycloak/OIDC" for historical reasons and is not Keycloak-only.
+
+> External identity providers can grant at most the `admin` role. `super_admin` is local-only, by design.
+
 ## Testing the Integration
 
 1. Open http://localhost:5173 (OpenTranscribe frontend)
@@ -143,7 +210,7 @@ KEYCLOAK_ADMIN_ROLE=admin
 
 1. **HTTPS Required**: Always use HTTPS in production
 2. **Client Secret**: Stored encrypted (AES-256-GCM) in database when configured via Admin UI
-3. **Token Validation**: Uses Keycloak's JWKS endpoint (auto-discovered via OIDC metadata)
+3. **Token Validation**: The ID token is verified against the provider's JWKS (from `jwks_uri` when a discovery URL is configured, otherwise the realm `certs` endpoint), with the access token as fallback. Keys are cached for 15 minutes rather than refetched per login
 4. **MFA**: Keycloak users bypass OpenTranscribe's local MFA — configure MFA in your Keycloak realm
 5. **Federated Logout**: Logout is propagated to Keycloak to terminate the SSO session
 
@@ -170,6 +237,15 @@ To use Keycloak with your existing Active Directory:
 - Verify client secret is correct
 - Check Keycloak logs: `docker compose logs keycloak`
 - Ensure callback URL matches exactly
+
+**Redirected to `/realms/<something>/protocol/openid-connect/auth` and the provider returns 404**
+- That is the Keycloak-only URL shape. Your provider is not Keycloak — set **Discovery URL** to its `.well-known/openid-configuration` and re-try
+- If the URL still looks like the realm form afterwards, discovery could not be fetched and OpenTranscribe fell back. Check the backend log for `OIDC discovery failed for …`, and verify the backend container itself can reach the URL (`./opentr.sh shell backend`, then `curl <discovery-url>`)
+
+**Users log in but nobody gets admin**
+- **Roles Claim** is still `realm_access.roles` (Keycloak-specific). Set it to your provider's claim — `groups` for Authentik/Okta, `roles` for Entra ID
+- **Admin Role** must match the group/role name exactly, case-sensitively
+- Make sure the claim is actually issued: add the group scope to the provider *and* list it in **Scopes**
 
 **Keycloak login page doesn't load**
 - Check that `KEYCLOAK_SERVER_URL` is accessible from your browser (not just the server)

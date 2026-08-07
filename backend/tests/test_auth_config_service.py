@@ -224,15 +224,37 @@ class TestAuthConfigServiceBulkUpdate:
         return db
 
     def test_bulk_update_category(self, mock_db):
-        """Test bulk updating a category."""
-        config = {"key1": "value1", "key2": "value2", "key3": True}
+        """Test bulk updating a category.
 
-        results = AuthConfigService.bulk_update_category(
-            db=mock_db, category="test", config_dict=config, user_id=1
+        Updated: this used to write ``{"key1": ..., "key2": ...}`` to a category
+        called ``"test"``, pinning the behaviour that any key in any category is
+        stored verbatim. Unknown keys are now a ValueError (400 at the HTTP edge),
+        so the payload has to be real keys in a real category.
+        """
+        config = {
+            "keycloak_realm": "opentranscribe",
+            "keycloak_admin_role": "admin",
+            "keycloak_use_pkce": True,
+        }
+
+        AuthConfigService.bulk_update_category(
+            db=mock_db, category="keycloak", config_dict=config, user_id=1
         )
 
         # Should have processed all non-sensitive keys
         assert mock_db.add.call_count >= 3  # At least 3 configs + 3 audits
+
+    def test_bulk_update_rejects_unknown_keys(self, mock_db):
+        """A typo'd key is refused instead of being stored and read by nothing."""
+        with pytest.raises(ValueError, match="keycloak_verify_audiance"):
+            AuthConfigService.bulk_update_category(
+                db=mock_db,
+                category="keycloak",
+                config_dict={"keycloak_verify_audiance": True},
+                user_id=1,
+            )
+
+        mock_db.add.assert_not_called()
 
     def test_bulk_update_skips_empty_sensitive(self, mock_db):
         """Test that empty sensitive values are skipped."""
@@ -249,20 +271,30 @@ class TestAuthConfigServiceBulkUpdate:
         # Due to the skip, we expect fewer calls
 
     def test_bulk_update_encrypts_sensitive_keys(self, mock_db):
-        """Test that sensitive keys are encrypted during bulk update."""
-        config = {
-            "ldap_bind_password": "secret123",
-            "keycloak_client_secret": "another_secret",
-        }
+        """Test that sensitive keys are encrypted during bulk update.
 
+        Updated: both secrets used to be submitted under ``category="ldap"``.
+        ``keycloak_client_secret`` belongs to ``keycloak`` and writing it through
+        the LDAP tab is now a ValueError, so each goes to its own category.
+        """
         with patch("app.services.auth_config_service.encrypt_api_key") as mock_encrypt:
             mock_encrypt.return_value = "encrypted"
+
             AuthConfigService.bulk_update_category(
-                db=mock_db, category="ldap", config_dict=config, user_id=1
+                db=mock_db,
+                category="ldap",
+                config_dict={"ldap_bind_password": "secret123"},
+                user_id=1,
+            )
+            AuthConfigService.bulk_update_category(
+                db=mock_db,
+                category="keycloak",
+                config_dict={"keycloak_client_secret": "another_secret"},
+                user_id=1,
             )
 
             # Both sensitive keys should have been encrypted
-            assert mock_encrypt.call_count >= 1
+            assert mock_encrypt.call_count == 2
 
 
 class TestAuthConfigServiceEffectiveConfig:

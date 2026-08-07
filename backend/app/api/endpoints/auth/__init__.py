@@ -17,7 +17,9 @@ Layout:
 - :mod:`profile` — ``/me``, ``/session``, ``/me/certificate``.
 - :mod:`keycloak` · :mod:`pki` — external IdP flows.
 - :mod:`methods` — ``/methods``, ``/banner``.
-- :mod:`mfa_tokens` — MFA token minting / single-use replay protection.
+- :mod:`mfa_tokens` — MFA half-token minting / scope + single-use replay protection.
+- :mod:`mfa_enrollment` — the enrolment dependency and post-second-factor session
+  issuance. Layered above ``mfa_tokens``; imports only ever run in that direction.
 - :mod:`mfa` — the MFA endpoints.
 - :mod:`sessions` — refresh rotation, logout, active sessions.
 - :mod:`flower` — the nginx ``auth_request`` gate for the Flower dashboard.
@@ -61,9 +63,15 @@ from app.api.endpoints.auth.mfa import get_mfa_status
 from app.api.endpoints.auth.mfa import setup_mfa
 from app.api.endpoints.auth.mfa import verify_mfa
 from app.api.endpoints.auth.mfa import verify_mfa_setup
+from app.api.endpoints.auth.mfa_enrollment import EnrollmentContext
+from app.api.endpoints.auth.mfa_enrollment import _complete_mfa_verification
+from app.api.endpoints.auth.mfa_enrollment import get_user_for_enrollment
+from app.api.endpoints.auth.mfa_enrollment import issue_session_response
+from app.api.endpoints.auth.mfa_tokens import MFA_SCOPE_ENROLL
+from app.api.endpoints.auth.mfa_tokens import MFA_SCOPE_VERIFY
 from app.api.endpoints.auth.mfa_tokens import MFA_TOKEN_BLACKLIST_PREFIX
 from app.api.endpoints.auth.mfa_tokens import _blacklist_mfa_token
-from app.api.endpoints.auth.mfa_tokens import _complete_mfa_verification
+from app.api.endpoints.auth.mfa_tokens import _claim_mfa_token
 from app.api.endpoints.auth.mfa_tokens import _create_mfa_token
 from app.api.endpoints.auth.mfa_tokens import _get_user_for_mfa
 from app.api.endpoints.auth.mfa_tokens import _is_mfa_enabled
@@ -109,7 +117,10 @@ router.include_router(_sessions_module.router)
 router.include_router(_flower_module.router)
 
 __all__ = [
+    "MFA_SCOPE_ENROLL",
+    "MFA_SCOPE_VERIFY",
     "MFA_TOKEN_BLACKLIST_PREFIX",
+    "EnrollmentContext",
     "PasswordResetConfirmBody",
     "PasswordResetRequestBody",
     "acknowledge_banner",
@@ -127,6 +138,8 @@ __all__ = [
     "get_optional_current_user",
     "get_password_policy",
     "get_user_certificate_info",
+    "get_user_for_enrollment",
+    "issue_session_response",
     "keycloak_callback",
     "keycloak_login",
     "login_for_access_token",

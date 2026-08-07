@@ -21,10 +21,24 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.auth_config import AuthConfig
 from app.models.auth_config import AuthConfigAudit
+from app.schemas.auth_config import CATEGORY_SCHEMAS
+from app.schemas.auth_config import CROSS_FIELD_KEYS
+from app.schemas.auth_config import coded_default
+from app.schemas.auth_config import validate_category_config
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 
 logger = logging.getLogger(__name__)
+
+#: Spellings accepted for a stored boolean. Anything else is a parse FAILURE, not
+#: a false: ``keycloak_verify_issuer`` and friends are security controls, and
+#: ``value.lower() in ("true", "1", "yes", "on")`` quietly turned a typo into
+#: "validation off".
+BOOL_TRUE_VALUES = frozenset({"true", "1", "yes", "on", "t", "y"})
+BOOL_FALSE_VALUES = frozenset({"false", "0", "no", "off", "f", "n"})
+
+#: Ceiling for a single audit-log page. ``?limit=10000000`` used to be honoured.
+MAX_AUDIT_LOG_LIMIT = 500
 
 #: Marker returned in place of a stored secret. It exists so the admin UI can show
 #: "a value is set" without receiving the value — but it must NEVER be written back
@@ -216,113 +230,17 @@ class AuthConfigService:
         "RATE_LIMIT_ENABLED": "rate_limit_enabled",
     }
 
-    # Config keys grouped by category
-    CONFIG_CATEGORIES = {
-        "local": [
-            "local_enabled",
-            "allow_registration",
-            "require_email_verification",
-            "password_min_length",
-            "password_require_uppercase",
-            "password_require_lowercase",
-            "password_require_numbers",
-            "password_require_special",
-            "password_max_age_days",
-            "password_history_count",
-            "mfa_enabled",
-            "mfa_required",
-            "mfa_issuer",
-            "max_login_attempts",
-            "lockout_duration_minutes",
-        ],
-        "ldap": [
-            "ldap_enabled",
-            "ldap_server",
-            "ldap_port",
-            "ldap_use_ssl",
-            "ldap_use_tls",
-            "ldap_bind_dn",
-            "ldap_bind_password",
-            "ldap_search_base",
-            "ldap_username_attr",
-            "ldap_email_attr",
-            "ldap_name_attr",
-            "ldap_user_search_filter",
-            "ldap_timeout",
-            "ldap_admin_users",
-            "ldap_admin_groups",
-            "ldap_user_groups",
-            "ldap_recursive_groups",
-            "ldap_group_attr",
-        ],
-        "keycloak": [
-            "keycloak_enabled",
-            "keycloak_server_url",
-            "keycloak_internal_url",
-            "keycloak_realm",
-            "keycloak_client_id",
-            "keycloak_client_secret",
-            "keycloak_callback_url",
-            "keycloak_admin_role",
-            "keycloak_timeout",
-            "keycloak_verify_audience",
-            "keycloak_audience",
-            "keycloak_use_pkce",
-            "keycloak_verify_issuer",
-        ],
-        "pki": [
-            "pki_enabled",
-            "pki_ca_cert_path",
-            "pki_verify_revocation",
-            "pki_cert_header",
-            "pki_cert_dn_header",
-            "pki_admin_dns",
-            "pki_ocsp_timeout_seconds",
-            "pki_crl_cache_seconds",
-            "pki_revocation_soft_fail",
-            "pki_trusted_proxies",
-            "pki_mode",
-            "pki_allow_password_fallback",
-        ],
-        "password_policy": [
-            "password_policy_enabled",
-            "password_min_length",
-            "password_require_uppercase",
-            "password_require_lowercase",
-            "password_require_digit",
-            "password_require_special",
-            "password_history_count",
-            "password_max_age_days",
-        ],
-        "mfa": [
-            "mfa_enabled",
-            "mfa_required",
-            "mfa_issuer_name",
-            "mfa_backup_code_count",
-            "mfa_token_expire_minutes",
-        ],
-        "session": [
-            "jwt_access_token_expire_minutes",
-            "jwt_refresh_token_expire_days",
-            "session_idle_timeout_minutes",
-            "session_absolute_timeout_minutes",
-            "max_concurrent_sessions",
-            "concurrent_session_policy",
-        ],
-        "banner": [
-            "login_banner_enabled",
-            "login_banner_text",
-            "login_banner_classification",
-        ],
-        "lockout": [
-            "account_lockout_threshold",
-            "account_lockout_duration_minutes",
-            "account_lockout_progressive",
-            "account_lockout_max_duration_minutes",
-            "account_lockout_enabled",
-            "rate_limit_auth_per_minute",
-            "rate_limit_enabled",
-        ],
+    #: Config keys grouped by category, derived from the per-category Pydantic
+    #: models in ``app/schemas/auth_config.py``.
+    #:
+    #: It was a hand-maintained literal that drifted from those models and listed
+    #: eight keys under TWO categories each (the password-policy and MFA keys the
+    #: admin UI's Local tab also renders). ``auth_config.config_key`` is globally
+    #: UNIQUE, so such a key kept whichever category wrote it first and then went
+    #: missing from the other tab's ``GET /{category}``. One source of truth means
+    #: the duplicate cannot come back: a key lives in exactly one model.
+    CONFIG_CATEGORIES: dict[str, list[str]] = {
+        category: list(model.model_fields) for category, model in CATEGORY_SCHEMAS.items()
     }
 
     @staticmethod
@@ -379,31 +297,66 @@ class AuthConfigService:
         return value
 
     @staticmethod
-    def _convert_value(value: str | None, data_type: str) -> Any:
-        """Convert string value to appropriate type.
+    def _convert_value(value: str | None, data_type: str, key: str | None = None) -> Any:
+        """Convert a stored string value to its declared type.
+
+        A value that does not parse falls back to *key*'s schema default, never to
+        the zero value. ``value.lower() in ("true", "1", "yes", "on")`` read every
+        malformed string as ``False``, so one bad character in
+        ``keycloak_verify_issuer``, ``keycloak_verify_audience`` or
+        ``ldap_use_ssl`` silently turned that security control OFF. Failing open
+        because a string did not parse is the bug; the declared default is a known,
+        safe source. Parse failures are logged so the bad row is fixable.
 
         Args:
-            value: String value from database
-            data_type: Target data type (string, bool, int, json)
+            value: String value from the database.
+            data_type: Target data type (string, bool, int, json).
+            key: Configuration key, used to look up the schema default. Without it
+                only the generic zero value is available.
 
         Returns:
-            Converted value
+            Converted value.
         """
         if value is None:
-            defaults = {"bool": False, "int": 0, "json": {}}
-            return defaults.get(data_type)
+            generic = {"bool": False, "int": 0, "json": {}}.get(data_type)
+            return coded_default(key, generic) if key else generic
 
         if data_type == "bool":
-            return value.lower() in ("true", "1", "yes", "on")
+            lowered = value.strip().lower()
+            if lowered in BOOL_TRUE_VALUES:
+                return True
+            if lowered in BOOL_FALSE_VALUES:
+                return False
+            fallback = coded_default(key, False) if key else False
+            logger.error(
+                "Auth config %s holds %r, which is not a boolean; using the coded default %r. "
+                "A security control must not be disabled just because a value failed to parse.",
+                key or "<unknown>",
+                value,
+                fallback,
+            )
+            return fallback
         elif data_type == "int":
             try:
                 return int(value)
             except (ValueError, TypeError):
-                return 0
+                fallback = coded_default(key, 0) if key else 0
+                logger.error(
+                    "Auth config %s holds %r, which is not an integer; using the coded default %r.",
+                    key or "<unknown>",
+                    value,
+                    fallback,
+                )
+                return fallback
         elif data_type == "json":
             try:
                 return json.loads(value)
             except (json.JSONDecodeError, TypeError):
+                logger.error(
+                    "Auth config %s holds %r, which is not valid JSON; using an empty object.",
+                    key or "<unknown>",
+                    value,
+                )
                 return {}
 
         return value
@@ -461,7 +414,11 @@ class AuthConfigService:
 
             # Convert to appropriate type
             data_type = config.data_type or "string"
-            result[config.config_key] = AuthConfigService._convert_value(value, data_type)  # type: ignore[index,arg-type]
+            result[config.config_key] = AuthConfigService._convert_value(  # type: ignore[index]
+                value,  # type: ignore[arg-type]
+                data_type,
+                config.config_key,  # type: ignore[arg-type]
+            )
 
         return result
 
@@ -520,6 +477,18 @@ class AuthConfigService:
             # Update existing
             config.config_value = encrypted_value  # type: ignore[assignment]
             config.data_type = data_type  # type: ignore[assignment]
+            # Heal a stale category. `config_key` is globally UNIQUE and this branch
+            # never rewrote `category`, so a key that used to be listed under two
+            # categories stayed pinned to whichever tab wrote it first — and then
+            # vanished from the other tab's GET, which filters by category.
+            if config.category != category:
+                logger.info(
+                    "Auth config '%s' moving from category '%s' to '%s'",
+                    key,
+                    config.category,
+                    category,
+                )
+                config.category = category  # type: ignore[assignment]
             config.updated_by = user_id  # type: ignore[assignment]
             config.updated_at = datetime.now(UTC)  # type: ignore[assignment]
             if description is not None:
@@ -619,6 +588,10 @@ class AuthConfigService:
     ) -> dict[str, AuthConfig]:
         """Update multiple configuration values for a category.
 
+        Every key is checked against the category's schema before anything is
+        written: unknown keys, unparseable values, out-of-range numbers and
+        rejected combinations all fail here rather than being stored verbatim.
+
         Args:
             db: Database session
             category: Configuration category
@@ -628,7 +601,17 @@ class AuthConfigService:
 
         Returns:
             Dictionary of updated AuthConfig objects
+
+        Raises:
+            ValueError: The payload is invalid. The HTTP layer turns this into a
+                400 naming the offending keys.
         """
+        config_dict = validate_category_config(
+            category,
+            config_dict,
+            current=AuthConfigService._cross_field_state(db, category, config_dict),
+        )
+
         results: dict[str, AuthConfig] = {}
 
         for key, value in config_dict.items():
@@ -657,6 +640,32 @@ class AuthConfigService:
         return results
 
     @staticmethod
+    def _cross_field_state(
+        db: Session | None, category: str, config_dict: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Load the currently effective values a category's joint rules need.
+
+        Only keys the payload does NOT carry are read; the payload wins for the
+        rest. Without this the joint rules would only ever see one half of the
+        pair and could be walked around by saving one field at a time.
+
+        Args:
+            db: Database session, or None when no DB is available.
+            category: Configuration category being written.
+            config_dict: The incoming payload.
+
+        Returns:
+            Currently effective values for the category's cross-field keys.
+        """
+        state: dict[str, Any] = {}
+        for key in CROSS_FIELD_KEYS.get(category, ()):
+            if key in config_dict:
+                continue
+            value = AuthConfigService.get_effective_config(db, key) if db is not None else None
+            state[key] = coded_default(key) if value is None else value
+        return state
+
+    @staticmethod
     def get_effective_config(db: Session, key: str) -> Any:
         """Get effective config value with precedence: Database > .env > default.
 
@@ -672,7 +681,7 @@ class AuthConfigService:
         if db_value is not None:
             # Convert to appropriate type
             data_type = AuthConfigService.DATA_TYPE_MAPPING.get(key, "string")
-            return AuthConfigService._convert_value(db_value, data_type)
+            return AuthConfigService._convert_value(db_value, data_type, key)
 
         # Fall back to environment/settings
         return getattr(settings, AuthConfigService.env_var_for(key), None)
@@ -707,21 +716,34 @@ class AuthConfigService:
             db: Database session
             category: Optional category filter
             config_key: Optional specific key filter
-            limit: Maximum number of entries to return
+            limit: Maximum number of entries to return (clamped to
+                ``MAX_AUDIT_LOG_LIMIT``)
             offset: Number of entries to skip
 
         Returns:
             List of audit log entries
+
+        Raises:
+            ValueError: *category* is not a known category. It used to fall through
+                ``CONFIG_CATEGORIES.get(category, [])`` to an EMPTY key list, which
+                skipped the filter entirely — so ``/audit/anything`` returned the
+                whole unfiltered audit log for every category at once.
         """
         query = db.query(AuthConfigAudit)
 
         if config_key:
             query = query.filter(AuthConfigAudit.config_key == config_key)
         elif category:
-            # Get all keys for this category
-            category_keys = AuthConfigService.CONFIG_CATEGORIES.get(category, [])
-            if category_keys:
-                query = query.filter(AuthConfigAudit.config_key.in_(category_keys))
+            category_keys = AuthConfigService.CONFIG_CATEGORIES.get(category)
+            if category_keys is None:
+                raise ValueError(
+                    f"Unknown configuration category '{category}'. "
+                    f"Must be one of: {', '.join(AuthConfigService.CONFIG_CATEGORIES)}"
+                )
+            query = query.filter(AuthConfigAudit.config_key.in_(category_keys))
+
+        limit = max(1, min(limit, MAX_AUDIT_LOG_LIMIT))
+        offset = max(0, offset)
 
         results: list[AuthConfigAudit] = (
             query.order_by(AuthConfigAudit.created_at.desc()).offset(offset).limit(limit).all()

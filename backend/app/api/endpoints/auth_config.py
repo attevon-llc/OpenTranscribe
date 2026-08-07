@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import Request
 from fastapi import status
 from fastapi.concurrency import run_in_threadpool
@@ -27,6 +28,7 @@ from app.schemas.auth_config import AuthConfigAuditResponse
 from app.schemas.auth_config import AuthConfigResponse
 from app.schemas.auth_config import AuthConfigStatusResponse
 from app.schemas.auth_config import AuthMethodTestResponse
+from app.services.auth_config_service import MAX_AUDIT_LOG_LIMIT
 from app.services.auth_config_service import AuthConfigService
 
 router = APIRouter()
@@ -38,6 +40,28 @@ logger = logging.getLogger(__name__)
 # in admin.py, each comparing against its own "super_admin" string literal rather
 # than roles.ROLE_SUPER_ADMIN — three copies of one authorization rule.
 get_current_super_admin_user = get_current_active_superuser
+
+
+#: The category allow-list, derived from the per-category schemas so it cannot
+#: drift. It used to be a literal list repeated in three route bodies, and the
+#: audit route — the one that leaks data when it is wrong — had no copy at all.
+VALID_CATEGORIES: tuple[str, ...] = tuple(AuthConfigService.CONFIG_CATEGORIES)
+
+
+def _require_valid_category(category: str) -> None:
+    """Reject a category outside the allow-list.
+
+    Args:
+        category: Category from the request path.
+
+    Raises:
+        HTTPException: 400 when the category is unknown.
+    """
+    if category not in VALID_CATEGORIES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid category. Must be one of: {', '.join(VALID_CATEGORIES)}",
+        )
 
 
 @router.get("", response_model=dict[str, list[AuthConfigResponse]])
@@ -57,20 +81,9 @@ def get_all_configs(
     """
     logger.info(f"Auth configs requested by super admin {current_user.email}")
 
-    categories = [
-        "local",
-        "ldap",
-        "keycloak",
-        "pki",
-        "password_policy",
-        "mfa",
-        "session",
-        "banner",
-        "lockout",
-    ]
     result: dict[str, list[AuthConfigResponse]] = {}
 
-    for category in categories:
+    for category in VALID_CATEGORIES:
         configs = db.query(AuthConfig).filter(AuthConfig.category == category).all()
         result[category] = []
 
@@ -133,23 +146,7 @@ def get_config_by_category(
     Raises:
         HTTPException: If category is not valid
     """
-    valid_categories = [
-        "local",
-        "ldap",
-        "keycloak",
-        "pki",
-        "password_policy",
-        "mfa",
-        "session",
-        "banner",
-        "lockout",
-    ]
-
-    if category not in valid_categories:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid category. Must be one of: {', '.join(valid_categories)}",
-        )
+    _require_valid_category(category)
 
     logger.info(f"Auth config category '{category}' requested by super admin {current_user.email}")
 
@@ -170,6 +167,11 @@ def update_config_category(
     Updates multiple configuration values for the specified category.
     All changes are logged to the audit table.
 
+    The body stays an open dict because each category has its own key set; it is
+    validated against that category's schema in ``bulk_update_category`` (unknown
+    keys, unparseable values, out-of-range numbers and rejected combinations all
+    become a 400). Nothing is written unless the whole payload validates.
+
     Args:
         category: Configuration category to update
         config: Dictionary of key-value pairs to update
@@ -179,25 +181,10 @@ def update_config_category(
         Success message and update count
 
     Raises:
-        HTTPException: If category is not valid or update fails
+        HTTPException: 400 if the category or payload is invalid, 500 if the
+            update itself fails
     """
-    valid_categories = [
-        "local",
-        "ldap",
-        "keycloak",
-        "pki",
-        "password_policy",
-        "mfa",
-        "session",
-        "banner",
-        "lockout",
-    ]
-
-    if category not in valid_categories:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid category. Must be one of: {', '.join(valid_categories)}",
-        )
+    _require_valid_category(category)
 
     logger.info(
         f"Auth config category '{category}' update by super admin {current_user.email}: "
@@ -219,6 +206,13 @@ def update_config_category(
             "updated_count": len(results),
             "updated_keys": list(results.keys()),
         }
+
+    except ValueError as e:
+        # A rejected payload is the caller's fault and its detail is safe to
+        # return: it names the offending keys so the admin can fix the request.
+        # Reaching the generic handler below would have turned it into a 500.
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
     except Exception as e:
         logger.error("Failed to update %s config: %s", category, e, exc_info=True)
@@ -268,8 +262,8 @@ async def test_auth_connection(
 @router.get("/audit/{category}", response_model=list[AuthConfigAuditResponse])
 def get_audit_log(
     category: str,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=MAX_AUDIT_LOG_LIMIT),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
 ) -> list[AuthConfigAuditResponse]:
@@ -285,7 +279,15 @@ def get_audit_log(
 
     Returns:
         List of audit log entries
+
+    Raises:
+        HTTPException: 400 if the category is not valid. This route had no
+            category check at all, and ``get_audit_log`` skipped its filter for an
+            unrecognised category — so ``/audit/anything`` returned the ENTIRE
+            audit log, every category, unfiltered.
     """
+    _require_valid_category(category)
+
     logger.info(
         f"Auth config audit log for '{category}' requested by super admin {current_user.email}"
     )

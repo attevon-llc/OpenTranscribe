@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from fastapi import status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -22,6 +23,8 @@ from app.auth.keycloak_auth import get_authorization_url
 from app.auth.keycloak_auth import sync_keycloak_user_to_db
 from app.auth.keycloak_auth import validate_token as validate_keycloak_token
 from app.auth.mfa import MFAService
+from app.auth.rate_limit import get_auth_rate_limit
+from app.auth.rate_limit import limiter
 from app.auth.session import OIDCStateStore
 from app.auth.token_service import token_service
 from app.core.config import settings
@@ -41,7 +44,8 @@ _OIDC_STATE_EXPIRY_SECONDS = 600
 
 
 @router.get("/keycloak/login")
-def keycloak_login(db: Session = Depends(get_db)):
+@limiter.limit(get_auth_rate_limit())
+async def keycloak_login(request: Request, db: Session = Depends(get_db)):
     """
     Initiate Keycloak OIDC login flow.
 
@@ -49,12 +53,16 @@ def keycloak_login(db: Session = Depends(get_db)):
     Supports PKCE (RFC 7636) for OAuth 2.1 compliance when enabled.
 
     Security:
+    - Rate limited per IP: the route is anonymous and writes an OIDC state per call
     - Uses Redis-backed state storage for distributed deployments
     - Enforces maximum state count to prevent state exhaustion attacks
     - States expire after 10 minutes and are single-use
     """
-    # Load Keycloak config from database (DB > .env > defaults)
-    kc_cfg = KeycloakConfig.from_db(db)
+    # This handler became async so the authorization endpoint can come from the
+    # provider's discovery document. Its blocking prologue (sync DB reads, and a Redis
+    # state-count scan inside store_state) therefore has to be pushed back off the event
+    # loop explicitly — as a sync handler FastAPI did that for us.
+    kc_cfg = await run_in_threadpool(KeycloakConfig.from_db, db)
     if not kc_cfg.enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -64,13 +72,13 @@ def keycloak_login(db: Session = Depends(get_db)):
     # Generate CSRF protection state
     state = secrets.token_urlsafe(32)
 
-    # Generate authorization URL (with PKCE if enabled)
-    authorization_url, code_verifier = get_authorization_url(state, cfg=kc_cfg)
+    authorization_url, code_verifier = await get_authorization_url(state, cfg=kc_cfg)
 
     # Store state with PKCE verifier in Redis-backed store
     # Returns False if state limit exceeded (prevents exhaustion attack)
     state_data = {"code_verifier": code_verifier} if code_verifier else {}
-    stored = _oidc_state_store.store_state(
+    stored = await run_in_threadpool(
+        _oidc_state_store.store_state,
         state=state,
         data=state_data,
         expires_seconds=_OIDC_STATE_EXPIRY_SECONDS,
@@ -92,6 +100,7 @@ def keycloak_login(db: Session = Depends(get_db)):
 
 
 @router.get("/keycloak/callback")
+@limiter.limit(get_auth_rate_limit())
 async def keycloak_callback(
     request: Request,
     code: str = Query(..., description="Authorization code from Keycloak"),
@@ -106,6 +115,9 @@ async def keycloak_callback(
     Supports PKCE (RFC 7636) for OAuth 2.1 compliance when enabled.
 
     Security:
+    - Rate limited per IP: this anonymous route drives an outbound token exchange
+      against the IdP plus a JIT user sync, i.e. an amplifier aimed at someone
+      else's identity provider if left unlimited
     - State is single-use (deleted after retrieval to prevent replay attacks)
     - Uses Redis-backed storage for distributed deployments
     """
@@ -154,10 +166,13 @@ async def keycloak_callback(
             detail="Failed to exchange authorization code",
         )
 
-    # Validate token and get user data
-    keycloak_data = await validate_keycloak_token(tokens.access_token, cfg=kc_cfg)
+    # Validate token and get user data. The ID token is preferred — it is the only one
+    # OIDC guarantees to be a verifiable JWT (issue #353).
+    keycloak_data = await validate_keycloak_token(
+        tokens.access_token, cfg=kc_cfg, id_token=tokens.id_token or None
+    )
     if not keycloak_data:
-        logger.error("Invalid access token received from Keycloak")
+        logger.error("Invalid token received from the OIDC provider")
         # Log Keycloak login failure
         audit_logger.log_login_failure(
             username="unknown",

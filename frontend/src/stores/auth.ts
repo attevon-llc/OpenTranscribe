@@ -247,6 +247,11 @@ export async function login(
   // silently matches nothing in the other seven locales.
   status?: number;
   mfa_required?: boolean;
+  // Set when the deployment requires MFA and this account has not enrolled yet.
+  // The server sends no access token and sets no cookies in that case — the only
+  // way forward is the enrolment flow. May be ABSENT on a plain MFA challenge,
+  // hence the strict `=== true` test below.
+  mfa_enrollment_required?: boolean;
   mfa_token?: string;
 }> {
   try {
@@ -262,11 +267,14 @@ export async function login(
       },
     });
 
-    // Check if MFA is required
+    // Check if MFA is required. Two distinct 200 bodies land here: a plain TOTP
+    // challenge, and a forced-enrolment challenge for an account that has never
+    // set up a second factor on an MFA-required deployment.
     if (response.status === 200 && response.data.mfa_required) {
       return {
         success: false,
         mfa_required: true,
+        mfa_enrollment_required: response.data.mfa_enrollment_required === true,
         mfa_token: response.data.mfa_token,
       };
     }
@@ -646,6 +654,139 @@ export async function verifyMFA(
     }
 
     return { success: false, message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Forced MFA enrolment
+//
+// When a deployment sets MFA as required and the account has no second factor,
+// /auth/login answers with an enrolment half-token instead of a session. That
+// token is NOT an access token: it carries an "mfa" type claim, authorizes only
+// /auth/mfa/setup and /auth/mfa/verify-setup, and is burned on the first
+// successful verify. Sending it anywhere else (notably /auth/mfa/verify) is a
+// 401 by design.
+//
+// It must be held in memory by the caller and never written to storage. There
+// is also no cookie yet, so these two calls authenticate with an explicit
+// Authorization header — `withCredentials` alone proves nothing here.
+// ---------------------------------------------------------------------------
+
+export interface MfaSetupData {
+  secret: string;
+  provisioning_uri: string;
+  qr_code_base64: string;
+}
+
+/**
+ * How the UI should react to a failed enrolment call.
+ *
+ * - `retry`       — wrong code (or an unclassified 4xx); the half-token is still
+ *                   good, let the user try again in place.
+ * - `expired`     — the half-token is spent or past its lifetime; only a fresh
+ *                   login can mint another one.
+ * - `restart`     — server state moved on (already enabled / setup not
+ *                   initiated); re-run /mfa/setup.
+ * - `unavailable` — this account can never enrol here (external IdP owns the
+ *                   second factor, or MFA is off system-wide). Not a retry.
+ */
+export type MfaEnrollmentErrorKind = 'retry' | 'expired' | 'restart' | 'unavailable';
+
+export interface MfaEnrollmentError {
+  kind: MfaEnrollmentErrorKind;
+  message: string;
+}
+
+function enrollmentAuthConfig(mfaToken: string) {
+  // An empty token means "use the ambient cookie session" — that is the path a
+  // voluntary enrolment from Settings would take.
+  return mfaToken ? { headers: { Authorization: `Bearer ${mfaToken}` } } : {};
+}
+
+function classifyEnrollmentError(rawError: unknown): MfaEnrollmentError {
+  const error = asAuthError(rawError);
+  const status = error.response?.status;
+  const detail = typeof error.response?.data?.detail === 'string' ? error.response.data.detail : '';
+
+  // 401 == the half-token was already claimed or has expired. (The axios
+  // response interceptor first attempts a cookie refresh, which cannot succeed
+  // during enrolment and rejects with its own 401 — either way we land here.)
+  if (status === 401) {
+    return { kind: 'expired', message: get(t)('auth.mfaEnroll.error.tokenExpired') };
+  }
+
+  if (status === 400) {
+    // The wire carries no error code, so the API's own English `detail` is the
+    // only signal separating "type the code again" from "this account can never
+    // enrol". Match narrowly and treat anything unrecognised as a retry — the
+    // safe default, since it leaves the user in the flow.
+    const lower = detail.toLowerCase();
+    if (
+      lower.includes('not available for your authentication type') ||
+      lower.includes('not enabled on this system')
+    ) {
+      return { kind: 'unavailable', message: get(t)('auth.mfaEnroll.error.unavailable') };
+    }
+    if (lower.includes('already enabled') || lower.includes('setup not initiated')) {
+      return { kind: 'restart', message: get(t)('auth.mfaEnroll.error.restart') };
+    }
+    return { kind: 'retry', message: get(t)('auth.mfaEnroll.error.invalidCode') };
+  }
+
+  return { kind: 'retry', message: detail || get(t)('auth.mfaEnroll.error.setupFailed') };
+}
+
+/**
+ * Begin (or re-render) TOTP enrolment. Safe to call repeatedly: /mfa/setup does
+ * not consume the half-token, so a page refresh mid-enrolment is recoverable.
+ */
+export async function setupMfaEnrollment(
+  mfaToken: string = ''
+): Promise<{ success: true; data: MfaSetupData } | { success: false; error: MfaEnrollmentError }> {
+  try {
+    const response = await axiosInstance.post(
+      '/auth/mfa/setup',
+      undefined,
+      enrollmentAuthConfig(mfaToken)
+    );
+    return { success: true, data: response.data };
+  } catch (rawError: unknown) {
+    console.error('auth.ts: MFA enrolment setup failed:', rawError);
+    return { success: false, error: classifyEnrollmentError(rawError) };
+  }
+}
+
+/**
+ * Complete enrolment with the first TOTP code.
+ *
+ * On success the response carries backup codes AND a real session (cookies are
+ * set), so the user is logged in — the caller must NOT hit /auth/login again.
+ * We hydrate the store here exactly as the other login paths do.
+ */
+export async function verifyMfaEnrollment(
+  code: string,
+  mfaToken: string = ''
+): Promise<
+  { success: true; backupCodes: string[] } | { success: false; error: MfaEnrollmentError }
+> {
+  try {
+    const response = await axiosInstance.post(
+      '/auth/mfa/verify-setup',
+      { code },
+      enrollmentAuthConfig(mfaToken)
+    );
+
+    // Clear ALL stale user state from any previous session
+    await clearUserState();
+
+    authStore.setToken('cookie');
+    await fetchUserInfo();
+    authStore.setReady(true);
+
+    return { success: true, backupCodes: response.data?.backup_codes ?? [] };
+  } catch (rawError: unknown) {
+    console.error('auth.ts: MFA enrolment verification failed:', rawError);
+    return { success: false, error: classifyEnrollmentError(rawError) };
   }
 }
 

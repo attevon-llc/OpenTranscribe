@@ -15,6 +15,57 @@
   let hasUnsavedChanges = false;
   let backendNotReady = false; // Backend is fully implemented
 
+  /**
+   * The Local tab renders one form, but its fields belong to FOUR backend
+   * categories. `PUT /admin/auth-config/{category}` validates against a
+   * per-category schema and 400s on unknown keys, so the whole form cannot be
+   * PUT to `local`.
+   *
+   * This is also a correctness fix, not just an accommodation:
+   * `password_require_digit`, `mfa_issuer_name` and the `account_lockout_*` pair
+   * were never in `local`, so sending them there filed them under a category
+   * their own tab could not read.
+   *
+   * Deliberately omitted: the legacy aliases `password_require_numbers`,
+   * `mfa_issuer`, `max_login_attempts` and `lockout_duration_minutes`. The
+   * `local` schema still accepts them, but nothing on the backend reads them.
+   */
+  const LOCAL_TAB_CATEGORY_KEYS: Record<string, string[]> = {
+    local: ['local_enabled', 'allow_registration'],
+    password_policy: [
+      'password_min_length',
+      'password_require_uppercase',
+      'password_require_lowercase',
+      'password_require_digit',
+      'password_require_special',
+      'password_max_age_days',
+      'password_history_count'
+    ],
+    mfa: ['mfa_enabled', 'mfa_required', 'mfa_issuer_name'],
+    lockout: ['account_lockout_threshold', 'account_lockout_duration_minutes']
+  };
+
+  /**
+   * Flatten the Local tab's four source categories into the single object the
+   * panel renders. Loading only `configs.local` would paint coded defaults over
+   * everything the other three categories have stored.
+   *
+   * Picking by key (rather than spreading whole categories) also keeps stale
+   * alias rows still sitting in `local` from reappearing in the form.
+   */
+  function collectLocalTabConfig(all: Record<string, any>): Record<string, any> {
+    const merged: Record<string, any> = {};
+    for (const [category, keys] of Object.entries(LOCAL_TAB_CATEGORY_KEYS)) {
+      const stored = all[category] || {};
+      for (const key of keys) {
+        if (stored[key] !== undefined) merged[key] = stored[key];
+      }
+    }
+    return merged;
+  }
+
+  $: localTabConfig = collectLocalTabConfig(configs);
+
   $: tabs = [
     { id: 'local', label: $t('settings.authentication.tab.local') },
     { id: 'ldap', label: $t('settings.authentication.tab.ldap') },
@@ -73,6 +124,49 @@
       console.error(`Failed to save ${category} config:`, error);
       toastStore.error($t('settings.authentication.configSaveFailed', { category }));
     }
+  }
+
+  /**
+   * Save the Local tab by fanning the form out to its four owning categories.
+   *
+   * Each category is an independent request, so a partial failure is real and is
+   * reported as such — claiming blanket success would leave the admin believing
+   * a setting landed when the server rejected it.
+   */
+  async function handleLocalSave(config: Record<string, any>) {
+    const targets = Object.entries(LOCAL_TAB_CATEGORY_KEYS)
+      .map(([category, keys]) => {
+        const payload: Record<string, any> = {};
+        for (const key of keys) {
+          if (config[key] !== undefined) payload[key] = config[key];
+        }
+        return { category, payload };
+      })
+      .filter((target) => Object.keys(target.payload).length > 0);
+
+    const results = await Promise.allSettled(
+      targets.map((target) => AuthConfigApi.updateCategory(target.category, target.payload))
+    );
+
+    const failed: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error(`Failed to save ${targets[index].category} config:`, result.reason);
+        failed.push(targets[index].category);
+      }
+    });
+
+    if (failed.length === 0) {
+      toastStore.success($t('settings.authentication.localConfigSaved'));
+      hasUnsavedChanges = false;
+    } else {
+      // Leave hasUnsavedChanges set: something in the form did not reach the server.
+      toastStore.error(
+        $t('settings.authentication.configSavePartialFailure', { categories: failed.join(', ') })
+      );
+    }
+
+    await loadConfigs();
   }
 
   async function handleTestConnection(category: string, config: Record<string, any>) {
@@ -157,8 +251,8 @@
       <div class="tab-content">
         {#if activeTab === 'local'}
           <LocalAuthSettings
-            config={configs.local || {}}
-            on:save={(e) => handleSave('local', e.detail)}
+            config={localTabConfig}
+            on:save={(e) => handleLocalSave(e.detail)}
             on:change={handleChange}
           />
         {:else if activeTab === 'ldap'}

@@ -107,7 +107,7 @@ def _tier_of(route) -> str:
         return TIER_USER
     # Forced MFA enrolment: accepts a normal session OR an enrolment-scoped
     # half-token, so it authenticates — just not via the standard dependency.
-    from app.api.endpoints.auth.mfa_tokens import get_user_for_enrollment
+    from app.api.endpoints.auth.mfa_enrollment import get_user_for_enrollment
 
     if get_user_for_enrollment in seen:
         return TIER_USER

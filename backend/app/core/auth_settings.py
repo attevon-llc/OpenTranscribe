@@ -252,6 +252,33 @@ class DynamicAuthSettings:
         """Check if PKCE should be used for Keycloak."""
         return self.get_bool("keycloak_use_pkce", True)
 
+    @property
+    def keycloak_discovery_url(self) -> str:
+        """OIDC ``.well-known/openid-configuration`` URL.
+
+        Set this for any provider that is not Keycloak. Empty keeps the legacy
+        realm-derived URL construction, which only Keycloak serves (issue #353).
+        """
+        return self.get_str("keycloak_discovery_url", "")
+
+    @property
+    def keycloak_issuer(self) -> str:
+        """Expected ``iss`` claim. Empty means "use the discovered/realm issuer"."""
+        return self.get_str("keycloak_issuer", "")
+
+    @property
+    def keycloak_roles_claim(self) -> str:
+        """Dotted path to the claim carrying role/group names.
+
+        Keycloak: ``realm_access.roles``. Authentik: ``groups``. Entra: ``roles``.
+        """
+        return self.get_str("keycloak_roles_claim", "realm_access.roles")
+
+    @property
+    def keycloak_scopes(self) -> str:
+        """Space-separated scopes requested at authorization time."""
+        return self.get_str("keycloak_scopes", "openid email profile")
+
     # PKI Settings Properties
     @property
     def pki_enabled(self) -> bool:

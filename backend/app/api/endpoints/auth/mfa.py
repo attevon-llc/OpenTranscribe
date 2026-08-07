@@ -12,16 +12,16 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_user
-from app.api.endpoints.auth.mfa_tokens import EnrollmentContext
+from app.api.endpoints.auth.mfa_enrollment import EnrollmentContext
+from app.api.endpoints.auth.mfa_enrollment import _complete_mfa_verification
+from app.api.endpoints.auth.mfa_enrollment import get_user_for_enrollment
+from app.api.endpoints.auth.mfa_enrollment import issue_session_response
 from app.api.endpoints.auth.mfa_tokens import _claim_mfa_token
-from app.api.endpoints.auth.mfa_tokens import _complete_mfa_verification
 from app.api.endpoints.auth.mfa_tokens import _get_user_for_mfa
 from app.api.endpoints.auth.mfa_tokens import _is_mfa_enabled
 from app.api.endpoints.auth.mfa_tokens import _is_mfa_required
 from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
 from app.api.endpoints.auth.mfa_tokens import _verify_mfa_code
-from app.api.endpoints.auth.mfa_tokens import get_user_for_enrollment
-from app.api.endpoints.auth.mfa_tokens import issue_session_response
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
@@ -71,6 +71,7 @@ def get_mfa_status(
 
 
 @router.post("/mfa/setup", response_model=MFASetupResponse)
+@limiter.limit(get_auth_rate_limit())
 def setup_mfa(
     request: Request,
     enrollment: EnrollmentContext = Depends(get_user_for_enrollment),
@@ -86,6 +87,9 @@ def setup_mfa(
     on an MFA_REQUIRED deployment). A *verify*-scoped half-token is refused: this
     endpoint overwrites the TOTP secret and wipes the backup codes, so honouring one
     would let a password-only attacker reset the second factor.
+
+    Rate limited: reachable pre-session, and every call generates a secret and renders
+    a QR code (CPU).
 
     Note: This endpoint is only available when MFA is enabled and the user
     is not using PKI or Keycloak authentication (which handle MFA separately).
@@ -164,6 +168,7 @@ def setup_mfa(
 
 
 @router.post("/mfa/verify-setup", response_model=MFAVerifySetupResponse)
+@limiter.limit(get_auth_rate_limit())
 def verify_mfa_setup(
     request: Request,
     request_body: MFAVerifySetupRequest,
@@ -180,6 +185,8 @@ def verify_mfa_setup(
     token is burned here — not at /mfa/setup, which the user may legitimately re-run to
     re-render the QR code — and the response additionally carries a real session, so the
     user lands logged in instead of being bounced back to the login form.
+
+    Rate limited: this is a 6-digit-code guessing surface, reachable pre-session.
     """
     current_user = enrollment.user
 

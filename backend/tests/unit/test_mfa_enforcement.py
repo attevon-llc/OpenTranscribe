@@ -33,6 +33,7 @@ from jose import jwt
 
 from app.api.endpoints.auth import login as login_module
 from app.api.endpoints.auth import mfa as mfa_module
+from app.api.endpoints.auth import mfa_enrollment as mfa_enrollment_module
 from app.api.endpoints.auth import mfa_tokens as mfa_tokens_module
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.mfa_tokens import MFA_SCOPE_ENROLL
@@ -299,7 +300,9 @@ class TestEnrollmentTokenScope:
         db = _FakeDB({User: _user()})
 
         with pytest.raises(HTTPException) as exc:
-            mfa_tokens_module.get_user_for_enrollment(request=None, token=_verify_token(), db=db)
+            mfa_enrollment_module.get_user_for_enrollment(
+                request=None, token=_verify_token(), db=db
+            )
 
         assert exc.value.status_code == 401
         assert exc.value.detail == "Invalid MFA token"
@@ -374,7 +377,9 @@ class TestEnrollmentTokenScope:
         db = _FakeDB({User: _user(is_active=False)})
 
         with pytest.raises(HTTPException) as exc:
-            mfa_tokens_module.get_user_for_enrollment(request=None, token=_enroll_token(), db=db)
+            mfa_enrollment_module.get_user_for_enrollment(
+                request=None, token=_enroll_token(), db=db
+            )
 
         assert exc.value.status_code == 401
         assert "Inactive" in exc.value.detail
@@ -384,7 +389,7 @@ class TestEnrollmentTokenScope:
         mfa_tokens_module._claim_mfa_token(_decode(token)["jti"], 300)
 
         with pytest.raises(HTTPException) as exc:
-            mfa_tokens_module.get_user_for_enrollment(
+            mfa_enrollment_module.get_user_for_enrollment(
                 request=None, token=token, db=_FakeDB({User: _user()})
             )
 
@@ -394,9 +399,11 @@ class TestEnrollmentTokenScope:
     def test_a_real_session_still_authorizes_enrollment(self, monkeypatch, fake_redis):
         """The voluntary path: a logged-in user adding MFA gets no jti to burn."""
         user = _user()
-        monkeypatch.setattr(mfa_tokens_module, "get_current_user", lambda request, token, db: user)
+        monkeypatch.setattr(
+            mfa_enrollment_module, "get_current_user", lambda request, token, db: user
+        )
 
-        ctx = mfa_tokens_module.get_user_for_enrollment(request=None, token=None, db=_FakeDB())
+        ctx = mfa_enrollment_module.get_user_for_enrollment(request=None, token=None, db=_FakeDB())
 
         assert ctx.user is user
         assert ctx.mfa_jti is None
@@ -413,7 +420,7 @@ class TestForcedEnrollmentFlow:
         monkeypatch.setattr(mfa_module.audit_logger, "log_mfa_event", lambda **kwargs: None)
         monkeypatch.setattr(settings, "MFA_BACKUP_CODE_COUNT", 2)
         monkeypatch.setattr(
-            mfa_tokens_module.token_service,
+            mfa_enrollment_module.token_service,
             "create_refresh_token",
             lambda **kwargs: ("refresh-token", None),
         )
@@ -423,8 +430,8 @@ class TestForcedEnrollmentFlow:
         monkeypatch.setattr(redis_module, "get_redis", lambda: fake_redis)
         return fake_redis
 
-    def _context(self, token: str, db) -> mfa_tokens_module.EnrollmentContext:
-        return mfa_tokens_module.get_user_for_enrollment(request=None, token=token, db=db)
+    def _context(self, token: str, db) -> mfa_enrollment_module.EnrollmentContext:
+        return mfa_enrollment_module.get_user_for_enrollment(request=None, token=token, db=db)
 
     def test_enrollment_token_reaches_mfa_setup(self, enrollment_env):
         db = _FakeDB({User: _user(), UserMFA: None})
@@ -533,7 +540,7 @@ class TestForcedEnrollmentFlow:
         """An already-logged-in user keeps their session; no second one is minted."""
         secret, user_mfa = self._pending_enrollment()
         db = _FakeDB({User: _user(), UserMFA: user_mfa})
-        ctx = mfa_tokens_module.EnrollmentContext(user=_user(), user_role="user")
+        ctx = mfa_enrollment_module.EnrollmentContext(user=_user(), user_role="user")
 
         response = _unwrap(mfa_module.verify_mfa_setup)(
             request=None,
@@ -701,15 +708,15 @@ class TestHalfTokenIsSingleUse:
         user = _user()
         user_mfa = SimpleNamespace(totp_enabled=True, last_verified_at=None)
         db = _FakeDB()
-        monkeypatch.setattr(mfa_tokens_module.audit_logger, "log_mfa_event", lambda **kw: None)
+        monkeypatch.setattr(mfa_enrollment_module.audit_logger, "log_mfa_event", lambda **kw: None)
         monkeypatch.setattr(
-            mfa_tokens_module.token_service,
+            mfa_enrollment_module.token_service,
             "create_refresh_token",
             lambda **kwargs: ("refresh-token", None),
         )
 
         def verify():
-            return mfa_tokens_module._complete_mfa_verification(
+            return mfa_enrollment_module._complete_mfa_verification(
                 db, user, user_mfa, USER_UUID, "user", "shared-jti", False, "10.0.0.1", "pytest"
             )
 
@@ -725,11 +732,11 @@ class TestHalfTokenIsSingleUse:
         """The claim must precede the DB write, or a losing racer still mutates state."""
         user_mfa = SimpleNamespace(totp_enabled=True, last_verified_at=None)
         db = _FakeDB()
-        monkeypatch.setattr(mfa_tokens_module.audit_logger, "log_mfa_event", lambda **kw: None)
+        monkeypatch.setattr(mfa_enrollment_module.audit_logger, "log_mfa_event", lambda **kw: None)
         mfa_tokens_module._claim_mfa_token("burned-jti", 300)
 
         with pytest.raises(HTTPException):
-            mfa_tokens_module._complete_mfa_verification(
+            mfa_enrollment_module._complete_mfa_verification(
                 db, _user(), user_mfa, USER_UUID, "user", "burned-jti", False, "10.0.0.1", "pytest"
             )
 

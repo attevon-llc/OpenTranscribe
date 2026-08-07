@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import uuid
-from contextvars import ContextVar
 from datetime import UTC
 from datetime import datetime
 from enum import StrEnum
@@ -17,8 +16,12 @@ from typing import Any
 
 from app.core.config import settings
 
-# Context variable for request ID (set by middleware)
-request_id_var: ContextVar[str] = ContextVar("request_id", default="")
+# Re-exported for the existing `from app.auth.audit import request_id_var` callers.
+# This is now the SAME object the middleware sets — it used to be a second
+# ContextVar that merely shared the display name "request_id", so it was always
+# empty here and every audit event invented a new uuid4 (see
+# app/core/request_context.py).
+from app.core.request_context import request_id_var
 
 
 class AuditEventType(StrEnum):

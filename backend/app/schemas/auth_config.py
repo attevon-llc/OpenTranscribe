@@ -109,17 +109,23 @@ class _CategoryConfig(BaseModel):
 class LocalAuthConfig(_CategoryConfig):
     """Local (password) identity-source configuration.
 
-    The password-policy and MFA keys the admin UI's Local tab also renders belong
-    to ``password_policy`` / ``mfa`` — see the uniqueness note above.
+    The password-policy, MFA and lockout keys the admin UI's Local tab also
+    renders belong to ``password_policy`` / ``mfa`` / ``lockout`` — see the
+    uniqueness note above. Four aliases of those keys used to be declared here
+    as well (``mfa_issuer``, ``password_require_numbers``, ``max_login_attempts``,
+    ``lockout_duration_minutes``); each was an orphan spelling of a real key
+    (``mfa_issuer_name``, ``password_require_digit``,
+    ``account_lockout_threshold``, ``account_lockout_duration_minutes``) that no
+    code ever read. The panel stopped sending them and the API kept accepting
+    them, so a save still returned 200. They are deleted rather than bridged:
+    two writable spellings of one control is how the two disagree.
+    ``AuthConfigService.RETIRED_KEYS`` keeps any row an older panel wrote from
+    being served back.
     """
 
     local_enabled: bool = True
     allow_registration: bool = True
     require_email_verification: bool = False
-    mfa_issuer: str = "OpenTranscribe"
-    password_require_numbers: bool = True
-    max_login_attempts: int = Field(default=5, ge=1, le=1000)
-    lockout_duration_minutes: int = Field(default=15, ge=1, le=10080)
 
 
 class LDAPConfig(_CategoryConfig):

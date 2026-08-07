@@ -22,13 +22,14 @@ from app.api.endpoints.auth.mfa_tokens import _is_mfa_enabled
 from app.api.endpoints.auth.mfa_tokens import _is_mfa_required
 from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
 from app.api.endpoints.auth.mfa_tokens import _verify_mfa_code
+from app.api.endpoints.auth.mfa_tokens import mfa_token_ttl_seconds
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.mfa import MFAService
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
-from app.core.config import settings
+from app.core.auth_settings import get_auth_settings
 from app.db.base import get_db
 from app.models.user import User
 from app.models.user_mfa import UserMFA
@@ -119,10 +120,14 @@ def setup_mfa(
     # Generate new TOTP secret
     totp_secret = MFAService.generate_totp_secret()
 
-    # Generate provisioning URI for authenticator apps (uses plaintext secret)
+    # Generate provisioning URI for authenticator apps (uses plaintext secret).
+    # The issuer is what the authenticator app displays next to the code, and it
+    # is admin-settable — pass the session-resolved value rather than letting the
+    # service fall back, so an issuer saved seconds ago is already in this QR.
     provisioning_uri = MFAService.get_provisioning_uri(
         secret=totp_secret,
         email=str(current_user.email),
+        issuer_name=get_auth_settings(db).mfa_issuer_name,
     )
 
     # Generate QR code
@@ -244,16 +249,17 @@ def verify_mfa_setup(
     # Claiming only after a *successful* code check keeps a mistyped code from costing
     # the user their enrolment token, while still making the token single-use: a second
     # /mfa/setup + replay of the same token cannot re-run enrolment.
-    if enrollment.mfa_jti and not _claim_mfa_token(
-        enrollment.mfa_jti, settings.MFA_TOKEN_EXPIRE_MINUTES * 60
-    ):
+    if enrollment.mfa_jti and not _claim_mfa_token(enrollment.mfa_jti, mfa_token_ttl_seconds()):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="MFA token has already been used",
         )
 
-    # Generate backup codes
-    backup_codes = MFAService.generate_backup_codes()
+    # How many codes is admin-settable; calling with no argument used the .env
+    # value and ignored it.
+    backup_codes = MFAService.generate_backup_codes(
+        count=get_auth_settings(db).mfa_backup_code_count
+    )
     hashed_backup_codes = MFAService.hash_backup_codes(backup_codes)
 
     # Enable MFA and store hashed backup codes

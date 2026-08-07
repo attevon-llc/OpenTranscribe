@@ -20,10 +20,10 @@ from ldap3.core.exceptions import LDAPBindError
 from ldap3.core.exceptions import LDAPException
 from sqlalchemy.exc import IntegrityError
 
+from app.auth.account_linking import assert_email_link_permitted
 from app.auth.constants import AUTH_TYPE_LDAP
 from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
-from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
@@ -33,6 +33,15 @@ logger = logging.getLogger(__name__)
 
 # Re-export for backwards compatibility
 LDAP_NO_PASSWORD = EXTERNAL_AUTH_NO_PASSWORD
+
+#: Whether an LDAP directory asserts that a user's ``mail`` value is a *verified*
+#: address. It does not, and nothing in LDAP or AD can: ``mail`` is an ordinary
+#: writable attribute with no verification semantics, and in a self-service directory
+#: the user owns it. The "source asserts the address verified" guard therefore fails
+#: closed for LDAP, so email-match linking is always refused. Accounts already carrying
+#: an ``ldap_uid`` are unaffected, and so is a new LDAP user whose address collides
+#: with no existing account.
+LDAP_ASSERTS_EMAIL_VERIFIED = False
 
 
 @dataclass(frozen=True)
@@ -608,13 +617,19 @@ def ldap_authenticate(username: str, password: str, db=None) -> LdapUserData | N
         _close_connection(bind_conn, "service")
 
 
-def _create_ldap_user(db, username: str, email: str, ldap_data: LdapUserData):
-    """Create a new user from LDAP data."""
+def _create_ldap_user(db, username: str, email: str, ldap_data: LdapUserData, *, is_admin: bool):
+    """Create a new user from LDAP data.
+
+    Args:
+        is_admin: The *effective* admin signal — the legacy ``admin_users`` /
+            ``admin_groups`` rule OR-ed with any ``group_mapping`` that grants
+            ``admin``. Computed by :func:`sync_ldap_user_to_db`.
+    """
     from app.models.user import User
 
     logger.info(f"Creating new user from LDAP: {username} ({email})")
     # External IdPs grant at most 'admin'; super_admin is local-only.
-    role = ROLE_ADMIN if ldap_data["is_admin"] else ROLE_USER
+    role = ROLE_ADMIN if is_admin else ROLE_USER
     user = User(
         email=email,
         full_name=ldap_data["full_name"] or email.split("@")[0],
@@ -642,7 +657,15 @@ def _create_ldap_user(db, username: str, email: str, ldap_data: LdapUserData):
 
 
 def _update_ldap_user(db, user, username: str, email: str, ldap_data: LdapUserData):
-    """Update an existing LDAP user's data."""
+    """Update an existing LDAP user's profile fields.
+
+    Privilege is deliberately NOT decided here. Promotion and demotion used to be
+    copy-pasted into this function, :func:`_convert_local_user_to_ldap` and both
+    Keycloak equivalents, each with its own super_admin guard and none of them
+    revoking sessions. It now lives in
+    ``services/idp_group_mapping_service.reconcile_user``, which
+    :func:`sync_ldap_user_to_db` calls for every login.
+    """
     logger.info(f"Updating existing LDAP user: {username} ({email})")
 
     if email and email != user.email:
@@ -654,19 +677,6 @@ def _update_ldap_user(db, user, username: str, email: str, ldap_data: LdapUserDa
     user.full_name = ldap_data["full_name"] or user.full_name
     user.ldap_uid = username
     user.auth_type = AUTH_TYPE_LDAP
-
-    if ldap_data["is_admin"]:
-        # External IdPs grant at most 'admin'; never demote a local super_admin.
-        if user.role not in ELEVATED_ROLES:
-            logger.info(f"Promoting LDAP user {username} to admin")
-            user.role = ROLE_ADMIN
-        user.is_superuser = role_implies_superuser(user.role)
-    elif user.role == ROLE_ADMIN:
-        logger.info(
-            f"Demoting LDAP user {username} from admin (removed from LDAP admin_users/admin_groups)"
-        )
-        user.role = ROLE_USER
-        user.is_superuser = role_implies_superuser(user.role)
 
     db.commit()
     return user
@@ -688,23 +698,10 @@ def _convert_local_user_to_ldap(db, user, username: str, email: str, ldap_data: 
     user.email = email
     user.full_name = ldap_data["full_name"] or user.full_name
 
-    if ldap_data["is_admin"]:
-        # External IdPs grant at most 'admin'; never demote a local super_admin.
-        # Setting role='admin' with is_superuser=True here used to violate the
-        # ck_user_superuser_matches_role CHECK constraint (v369) and 500 the commit
-        # below, locking every LDAP-admin local user out of conversion.
-        if user.role not in ELEVATED_ROLES:
-            logger.info(f"Promoting converted LDAP user {username} to admin")
-            user.role = ROLE_ADMIN
-        user.is_superuser = role_implies_superuser(user.role)
-    elif user.role == ROLE_ADMIN:
-        logger.info(
-            f"Demoting converted LDAP user {username} from admin "
-            "(not in LDAP admin_users/admin_groups)"
-        )
-        user.role = ROLE_USER
-        user.is_superuser = role_implies_superuser(user.role)
-
+    # Privilege is applied by reconcile_user after this returns — see
+    # _update_ldap_user's docstring. (Setting role='admin' with is_superuser=True
+    # here used to violate ck_user_superuser_matches_role (v369) and 500 the
+    # commit, locking every LDAP-admin local user out of conversion.)
     db.commit()
     return user
 
@@ -712,20 +709,60 @@ def _convert_local_user_to_ldap(db, user, username: str, email: str, ldap_data: 
 def sync_ldap_user_to_db(db, ldap_data: LdapUserData):
     """Create or update a user in the database from LDAP data.
 
-    Handles creating new users, updating existing LDAP users,
-    converting local users to LDAP, and race conditions.
+    Handles creating new users, updating existing LDAP users, converting local
+    users to LDAP, and race conditions — and then reconciles the account's group
+    memberships and privilege against the configured ``group_mapping`` rows
+    (``v376``). Before that, ``ldap_data["groups"]`` was collected on every login
+    and thrown away: ``is_admin`` was the only bit that survived, so a directory
+    group could never become an OpenTranscribe sharing group.
+
+    With no mappings configured this behaves exactly as it did before: the grant
+    set is empty, no membership changes, and the legacy ``admin_users`` /
+    ``admin_groups`` rule alone decides ``admin``.
+
+    Lookup is ``ldap_uid`` first, then email. The email fallback links a directory
+    identity to a **pre-existing** account, so it goes through
+    ``account_linking.assert_email_link_permitted`` — see that module for the rule,
+    why a refusal fails the login instead of creating a second account, and the
+    operator remedy.
+
+    Raises:
+        HTTPException: 401, when an email-matched link is refused. Deliberately the
+            same response ``_authenticate_ldap_user`` gives for a bad password, so a
+            refusal is not an oracle for "this address exists".
     """
+    from app.models.group import MAPPING_SOURCE_LDAP
     from app.models.user import User
+    from app.services.idp_group_mapping_service import reconcile_user
+    from app.services.idp_group_mapping_service import resolve_grants
 
     username = ldap_data["username"]
     email = ldap_data["email"]
+    groups = ldap_data.get("groups") or []
 
     user = db.query(User).filter(User.ldap_uid == username).first()
     if not user:
+        # The email fallback links a directory identity to a PRE-EXISTING account,
+        # so it is gated. An account already carrying this ``ldap_uid`` was linked
+        # deliberately at some earlier point and is not re-litigated.
         user = db.query(User).filter(User.email == email).first()
+        if user:
+            assert_email_link_permitted(
+                user,
+                provider=AUTH_TYPE_LDAP,
+                source_identifier=username,
+                email_verified=LDAP_ASSERTS_EMAIL_VERIFIED,
+                failure_detail="Incorrect username or password",
+                failure_headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    # Resolved before the row is written so a brand-new account is created at the
+    # right role instead of being created and then immediately promoted.
+    grants = resolve_grants(db, MAPPING_SOURCE_LDAP, groups)
+    is_admin = bool(ldap_data["is_admin"]) or grants.grants_admin
 
     if not user:
-        user = _create_ldap_user(db, username, email, ldap_data)
+        user = _create_ldap_user(db, username, email, ldap_data, is_admin=is_admin)
     elif user.auth_type == AUTH_TYPE_LOCAL:
         logger.warning(
             f"SECURITY: Converting local user {email} to LDAP auth. "
@@ -735,6 +772,15 @@ def sync_ldap_user_to_db(db, ldap_data: LdapUserData):
         user = _convert_local_user_to_ldap(db, user, username, email, ldap_data)
     else:
         user = _update_ldap_user(db, user, username, email, ldap_data)
+
+    reconcile_user(
+        db,
+        user,
+        MAPPING_SOURCE_LDAP,
+        groups,
+        legacy_admin=bool(ldap_data["is_admin"]),
+        reason="idp_login",
+    )
 
     db.refresh(user)
     return user
@@ -774,6 +820,25 @@ DIRECTORY_NOT_ENTITLED = "not_entitled"
 #: live entries, so presence alone would never notice an offboarded user.
 AD_UF_ACCOUNT_DISABLE = 0x0002
 _UAC_ATTR = "userAccountControl"
+
+
+@dataclass(frozen=True)
+class LdapProbe:
+    """One directory answer about one account.
+
+    ``groups`` and ``is_admin`` are what let the periodic sweep reconcile group
+    mappings and privilege, not just deprovision. ``is_admin`` is evaluated with
+    the same :func:`_is_ldap_admin` rule login uses — without it the sweep would
+    see "no admin signal" for every account promoted via ``admin_groups`` and
+    demote the entire admin population on its first pass.
+
+    Both are empty for any status other than :data:`DIRECTORY_PRESENT`: a user the
+    directory does not have, or has disabled, asserts no memberships.
+    """
+
+    status: str
+    groups: tuple[str, ...] = ()
+    is_admin: bool = False
 
 
 @contextmanager
@@ -828,7 +893,9 @@ def _is_ad_account_disabled(user_entry) -> bool:
         return False
 
 
-def probe_ldap_user(cfg: LdapConfig, bind_conn: Connection, ldap_uid: str, email: str = "") -> str:
+def probe_ldap_user(
+    cfg: LdapConfig, bind_conn: Connection, ldap_uid: str, email: str = ""
+) -> LdapProbe:
     """Ask the directory about one account, without authenticating as it.
 
     Args:
@@ -838,8 +905,9 @@ def probe_ldap_user(cfg: LdapConfig, bind_conn: Connection, ldap_uid: str, email
         email: The stored email, used for the same fallback search login uses.
 
     Returns:
-        One of ``DIRECTORY_PRESENT`` / ``DIRECTORY_ABSENT`` / ``DIRECTORY_DISABLED``
-        / ``DIRECTORY_NOT_ENTITLED``.
+        An :class:`LdapProbe` whose ``status`` is one of ``DIRECTORY_PRESENT`` /
+        ``DIRECTORY_ABSENT`` / ``DIRECTORY_DISABLED`` / ``DIRECTORY_NOT_ENTITLED``,
+        carrying the account's groups and admin signal when it is present.
 
     Raises:
         LdapDirectoryUnavailableError: The search itself failed. The account's state is
@@ -854,20 +922,26 @@ def probe_ldap_user(cfg: LdapConfig, bind_conn: Connection, ldap_uid: str, email
         raise LdapDirectoryUnavailableError(f"LDAP search failed: {type(e).__name__}: {e}") from e
 
     if not user_entry:
-        return DIRECTORY_ABSENT
+        return LdapProbe(DIRECTORY_ABSENT)
 
     if _is_ad_account_disabled(user_entry):
-        return DIRECTORY_DISABLED
+        return LdapProbe(DIRECTORY_DISABLED)
+
+    user_groups = _get_user_groups(cfg, user_entry)
 
     # Same entitlement rule login enforces, so the sweep can never disable an
     # account that would still be allowed to log in.
     try:
-        entitled = _check_group_access(
-            cfg, bind_conn, user_entry.entry_dn, _get_user_groups(cfg, user_entry), ldap_uid
-        )
+        entitled = _check_group_access(cfg, bind_conn, user_entry.entry_dn, user_groups, ldap_uid)
     except LDAPException as e:
         raise LdapDirectoryUnavailableError(
             f"LDAP group check failed: {type(e).__name__}: {e}"
         ) from e
 
-    return DIRECTORY_PRESENT if entitled else DIRECTORY_NOT_ENTITLED
+    if not entitled:
+        return LdapProbe(DIRECTORY_NOT_ENTITLED)
+
+    is_admin = _is_ldap_admin(
+        cfg, ldap_username, user_groups, bind_conn=bind_conn, user_dn=user_entry.entry_dn
+    )
+    return LdapProbe(DIRECTORY_PRESENT, tuple(user_groups), is_admin)

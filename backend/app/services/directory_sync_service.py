@@ -1,4 +1,4 @@
-"""Periodic directory reconciliation — deprovision accounts whose identity is gone.
+"""Periodic directory reconciliation — privileges, group membership, deprovisioning.
 
 Before this existed there was **no deprovisioning at all**. Sync ran only at login
 and only upward: it created and promoted accounts, and it could refuse a login, but
@@ -19,8 +19,21 @@ Four rules shape everything here:
 3. **Disable, never delete.** Deleting data because LDAP hiccupped is unrecoverable.
 4. **Bounded and opt-in** — dry-run and ``enabled=False`` by default, plus a per-run cap.
 
+Since ``v376`` the same pass also **reconciles what the account still has**, not
+only whether it still exists: for every account the directory reports present, it
+applies the configured ``group_mapping`` rows through
+``services/idp_group_mapping_service.reconcile_user`` — the same implementation
+login uses. That closes the other half of the drift. Login-time sync only ever
+reaches accounts that log in, so a user moved out of ``CN=Legal-Team`` in AD kept
+their in-app group (and, via ``admin_groups``, their admin role) until their next
+sign-in — potentially forever for an account nobody uses but everybody shares
+with. Group changes are not covered by ``max_disables_per_run``: that cap bounds
+account deactivation, and a membership change is recoverable by re-adding the row.
+
 Scope is LDAP only. OIDC/PKI have no "list users" primitive without provider-specific
-admin APIs, so they need a different mechanism entirely.
+admin APIs, so they need a different mechanism entirely — OIDC group mappings are
+therefore applied **at login only**, which is the one genuine capability difference
+between the two directory paths.
 """
 
 from __future__ import annotations
@@ -43,15 +56,19 @@ from app.auth.constants import AUTH_TYPE_LDAP
 from app.auth.ldap_auth import DIRECTORY_ABSENT
 from app.auth.ldap_auth import DIRECTORY_DISABLED
 from app.auth.ldap_auth import DIRECTORY_NOT_ENTITLED
+from app.auth.ldap_auth import DIRECTORY_PRESENT
 from app.auth.ldap_auth import LdapConfig
 from app.auth.ldap_auth import LdapDirectoryUnavailableError
+from app.auth.ldap_auth import LdapProbe
 from app.auth.ldap_auth import ldap_directory_session
 from app.auth.ldap_auth import probe_ldap_user
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core import constants as C  # noqa: N812
+from app.models.group import MAPPING_SOURCE_LDAP
 from app.models.user import User
 from app.services import system_settings_service as sss
 from app.services.account_security_service import revoke_all_sessions
+from app.services.idp_group_mapping_service import reconcile_user
 
 logger = logging.getLogger(__name__)
 
@@ -182,8 +199,11 @@ def candidate_users(db: Session) -> list[User]:
     )
 
 
-def probe_users(db: Session, users: list[User]) -> Iterator[tuple[User, str]]:
-    """Yield ``(user, directory_status)`` for each candidate, one bind for the pass.
+def probe_users(db: Session, users: list[User]) -> Iterator[tuple[User, LdapProbe]]:
+    """Yield ``(user, probe)`` for each candidate, one bind for the pass.
+
+    The probe carries the account's groups and admin signal as well as its status,
+    so reconciliation costs no extra directory round-trip.
 
     Raises:
         LdapDirectoryUnavailableError: The directory is unreachable, the service account
@@ -229,6 +249,40 @@ def _disable_user(db: Session, user: User, reason: str) -> int:
     return revoked
 
 
+def _reconcile(
+    db: Session, user: User, probe: LdapProbe, *, dry_run: bool
+) -> dict[str, Any] | None:
+    """Apply group mappings and privilege for one still-present account.
+
+    Returns the report entry when something changed (or would change under
+    ``dry_run``), otherwise ``None`` — a steady-state pass over a thousand accounts
+    should not produce a thousand no-op report lines.
+
+    A reconciliation failure for one account must not abort the pass: the
+    directory is fine, the accounts after this one still deserve to be checked,
+    and the alternative is one bad ``group_mapping`` row silently stopping
+    deprovisioning too.
+    """
+    try:
+        result = reconcile_user(
+            db,
+            user,
+            MAPPING_SOURCE_LDAP,
+            list(probe.groups),
+            legacy_admin=probe.is_admin,
+            reason="directory_sync",
+            dry_run=dry_run,
+        )
+    except Exception as exc:  # noqa: BLE001 - one bad account must not stop the sweep
+        db.rollback()
+        logger.error("Directory sync could not reconcile %s: %s", user.email, exc)
+        return {"user_uuid": str(user.uuid), "email": str(user.email), "error": str(exc)}
+
+    if not result.changed:
+        return None
+    return {"user_uuid": str(user.uuid), "email": str(user.email), **result.as_dict()}
+
+
 def sweep_ldap(db: Session, cfg: SweepConfig) -> dict[str, Any]:
     """Run one reconciliation pass and return a report dict.
 
@@ -247,6 +301,7 @@ def sweep_ldap(db: Session, cfg: SweepConfig) -> dict[str, Any]:
     started = datetime.now(UTC)
     candidates = candidate_users(db)
     actions: list[dict[str, Any]] = []
+    reconciliations: list[dict[str, Any]] = []
     checked = 0
     disabled = 0
     capped = False
@@ -254,10 +309,14 @@ def sweep_ldap(db: Session, cfg: SweepConfig) -> dict[str, Any]:
     error: str | None = None
 
     try:
-        for user, directory_status in probe_users(db, candidates):
+        for user, probe in probe_users(db, candidates):
             checked += 1
-            reason = ACTIONABLE_STATUSES.get(directory_status)
+            reason = ACTIONABLE_STATUSES.get(probe.status)
             if reason is None:
+                if probe.status == DIRECTORY_PRESENT:
+                    reconciled = _reconcile(db, user, probe, dry_run=cfg.dry_run)
+                    if reconciled is not None:
+                        reconciliations.append(reconciled)
                 continue
             if is_protected(user):
                 # Unreachable via candidate_users, but this is the guard that matters.
@@ -309,6 +368,8 @@ def sweep_ldap(db: Session, cfg: SweepConfig) -> dict[str, Any]:
         "capped": capped,
         "max_disables_per_run": cfg.max_disables,
         "actions": actions,
+        "reconciled": len(reconciliations),
+        "reconciliations": reconciliations,
         "started_at": started.isoformat(),
         "finished_at": datetime.now(UTC).isoformat(),
     }

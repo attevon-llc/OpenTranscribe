@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
+from typing import Any
+from typing import cast
 from uuid import UUID
 
 import pyotp
@@ -103,7 +105,16 @@ class _FakeRedis:
         return 1 if key in self.keys else 0
 
 
-def _user(**overrides):
+def _db(rows: dict | None = None) -> Any:
+    """A ``Session`` stand-in.
+
+    Typed ``Any`` so it can be handed to signatures declaring ``Session``
+    without a cast at every call site.
+    """
+    return _FakeDB(rows)
+
+
+def _user(**overrides: Any) -> Any:
     """A ``User`` stand-in with the attributes the auth paths read."""
     attrs = {
         "id": 1,
@@ -119,7 +130,7 @@ def _user(**overrides):
 
 
 def _body(response) -> dict:
-    return json.loads(response.body)
+    return cast(dict, json.loads(response.body))
 
 
 def _unwrap(func):
@@ -130,7 +141,9 @@ def _unwrap(func):
 
 
 def _decode(token: str) -> dict:
-    return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    return cast(
+        dict, jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    )
 
 
 @pytest.fixture
@@ -152,7 +165,7 @@ def mfa_required(monkeypatch):
 
 class TestEnrollmentIsEnforcedAtLogin:
     def test_unenrolled_user_gets_no_access_token(self, mfa_required):
-        db = _FakeDB({UserMFA: None})
+        db = _db({UserMFA: None})
 
         response = login_module._check_mfa_requirement(db, _user(), USER_UUID, "user")
 
@@ -164,7 +177,7 @@ class TestEnrollmentIsEnforcedAtLogin:
         assert "refresh_token" not in body
 
     def test_enrollment_challenge_carries_a_usable_half_token(self, mfa_required):
-        db = _FakeDB({UserMFA: None})
+        db = _db({UserMFA: None})
 
         body = _body(login_module._check_mfa_requirement(db, _user(), USER_UUID, "user"))
 
@@ -173,7 +186,7 @@ class TestEnrollmentIsEnforcedAtLogin:
         assert payload["jti"]
 
     def test_enrolled_user_is_challenged_to_verify_not_enroll(self, mfa_required):
-        db = _FakeDB({UserMFA: SimpleNamespace(totp_enabled=True)})
+        db = _db({UserMFA: SimpleNamespace(totp_enabled=True)})
 
         body = _body(login_module._check_mfa_requirement(db, _user(), USER_UUID, "user"))
 
@@ -186,15 +199,13 @@ class TestEnrollmentIsEnforcedAtLogin:
         monkeypatch.setattr(login_module, "_is_mfa_required", lambda db: False)
 
         assert (
-            login_module._check_mfa_requirement(
-                _FakeDB({UserMFA: None}), _user(), USER_UUID, "user"
-            )
+            login_module._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
             is None
         )
 
     def test_pki_user_on_native_auth_still_bypasses_local_mfa(self, mfa_required):
         """Smart card is already two-factor; requiring a local TOTP would lock them out."""
-        db = _FakeDB({UserMFA: None})
+        db = _db({UserMFA: None})
 
         assert (
             login_module._check_mfa_requirement(
@@ -204,7 +215,7 @@ class TestEnrollmentIsEnforcedAtLogin:
         )
 
     def test_pki_user_on_password_fallback_must_enroll(self, mfa_required):
-        db = _FakeDB({UserMFA: None})
+        db = _db({UserMFA: None})
 
         response = login_module._check_mfa_requirement(
             db, _user(auth_type="pki"), USER_UUID, "user", actual_auth_method="local"
@@ -217,7 +228,7 @@ class TestEnrollmentIsEnforcedAtLogin:
     ):
         """End to end through /token: the defect was a full session for an API client."""
         user = _user()
-        db = _FakeDB({User: user, UserMFA: None})
+        db = _db({User: user, UserMFA: None})
         monkeypatch.setattr(
             login_module, "_perform_authentication", lambda db, u, p: (True, USER_UUID, {}, "local")
         )
@@ -229,7 +240,7 @@ class TestEnrollmentIsEnforcedAtLogin:
         monkeypatch.setattr(settings, "MAX_CONCURRENT_SESSIONS", 0)
 
         response = _unwrap(login_module.login_for_access_token)(
-            request=None,
+            request=cast(Any, None),
             form_data=SimpleNamespace(username="person@example.com", password="pw"),
             db=db,
         )
@@ -243,23 +254,19 @@ class TestEnrollmentIsEnforcedAtLogin:
 class TestEnrollmentTokenIsNotAnAccessToken:
     def test_token_carries_the_mfa_type_claim(self, mfa_required):
         body = _body(
-            login_module._check_mfa_requirement(
-                _FakeDB({UserMFA: None}), _user(), USER_UUID, "user"
-            )
+            login_module._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
         )
 
         assert _decode(body["mfa_token"])["type"] == TOKEN_TYPE_MFA
 
     def test_token_is_rejected_by_get_current_user(self, mfa_required):
         body = _body(
-            login_module._check_mfa_requirement(
-                _FakeDB({UserMFA: None}), _user(), USER_UUID, "user"
-            )
+            login_module._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
         )
-        request = SimpleNamespace(state=SimpleNamespace(), cookies={}, headers={})
+        request: Any = SimpleNamespace(state=SimpleNamespace(), cookies={}, headers={})
 
         with pytest.raises(HTTPException) as exc:
-            get_current_user(request=request, token=body["mfa_token"], db=None)
+            get_current_user(request=request, token=body["mfa_token"], db=cast(Any, None))
 
         assert exc.value.status_code == 401
 
@@ -280,9 +287,7 @@ class TestEnrollmentTokenScope:
 
     def test_login_mints_an_enroll_scoped_token(self, mfa_required):
         body = _body(
-            login_module._check_mfa_requirement(
-                _FakeDB({UserMFA: None}), _user(), USER_UUID, "user"
-            )
+            login_module._check_mfa_requirement(_db({UserMFA: None}), _user(), USER_UUID, "user")
         )
 
         assert _decode(body["mfa_token"])["mfa_scope"] == MFA_SCOPE_ENROLL
@@ -290,18 +295,21 @@ class TestEnrollmentTokenScope:
     def test_login_mints_a_verify_scoped_token_for_an_enrolled_user(self, mfa_required):
         body = _body(
             login_module._check_mfa_requirement(
-                _FakeDB({UserMFA: SimpleNamespace(totp_enabled=True)}), _user(), USER_UUID, "user"
+                _db({UserMFA: SimpleNamespace(totp_enabled=True)}),
+                _user(),
+                USER_UUID,
+                "user",
             )
         )
 
         assert _decode(body["mfa_token"])["mfa_scope"] == MFA_SCOPE_VERIFY
 
     def test_verify_token_is_refused_at_enrollment(self, fake_redis):
-        db = _FakeDB({User: _user()})
+        db = _db({User: _user()})
 
         with pytest.raises(HTTPException) as exc:
             mfa_enrollment_module.get_user_for_enrollment(
-                request=None, token=_verify_token(), db=db
+                request=cast(Any, None), token=_verify_token(), db=db
             )
 
         assert exc.value.status_code == 401
@@ -309,7 +317,7 @@ class TestEnrollmentTokenScope:
 
     def test_enroll_token_is_refused_at_verification(self, fake_redis):
         """The mirror guard: an enrolment token must not complete a login."""
-        db = _FakeDB({User: _user(), UserMFA: SimpleNamespace(totp_enabled=True)})
+        db = _db({User: _user(), UserMFA: SimpleNamespace(totp_enabled=True)})
 
         with pytest.raises(HTTPException) as exc:
             mfa_tokens_module._get_user_for_mfa(db, _enroll_token())
@@ -366,19 +374,19 @@ class TestEnrollmentTokenScope:
         assert exc.value.status_code == 401
 
     def test_enroll_token_is_still_not_a_session(self, fake_redis):
-        request = SimpleNamespace(state=SimpleNamespace(), cookies={}, headers={})
+        request: Any = SimpleNamespace(state=SimpleNamespace(), cookies={}, headers={})
 
         with pytest.raises(HTTPException) as exc:
-            get_current_user(request=request, token=_enroll_token(), db=None)
+            get_current_user(request=request, token=_enroll_token(), db=cast(Any, None))
 
         assert exc.value.status_code == 401
 
     def test_inactive_user_cannot_enroll(self, fake_redis):
-        db = _FakeDB({User: _user(is_active=False)})
+        db = _db({User: _user(is_active=False)})
 
         with pytest.raises(HTTPException) as exc:
             mfa_enrollment_module.get_user_for_enrollment(
-                request=None, token=_enroll_token(), db=db
+                request=cast(Any, None), token=_enroll_token(), db=db
             )
 
         assert exc.value.status_code == 401
@@ -390,7 +398,7 @@ class TestEnrollmentTokenScope:
 
         with pytest.raises(HTTPException) as exc:
             mfa_enrollment_module.get_user_for_enrollment(
-                request=None, token=token, db=_FakeDB({User: _user()})
+                request=cast(Any, None), token=token, db=_db({User: _user()})
             )
 
         assert exc.value.status_code == 401
@@ -403,7 +411,9 @@ class TestEnrollmentTokenScope:
             mfa_enrollment_module, "get_current_user", lambda request, token, db: user
         )
 
-        ctx = mfa_enrollment_module.get_user_for_enrollment(request=None, token=None, db=_FakeDB())
+        ctx = mfa_enrollment_module.get_user_for_enrollment(
+            request=cast(Any, None), token=None, db=_db()
+        )
 
         assert ctx.user is user
         assert ctx.mfa_jti is None
@@ -431,13 +441,15 @@ class TestForcedEnrollmentFlow:
         return fake_redis
 
     def _context(self, token: str, db) -> mfa_enrollment_module.EnrollmentContext:
-        return mfa_enrollment_module.get_user_for_enrollment(request=None, token=token, db=db)
+        return mfa_enrollment_module.get_user_for_enrollment(
+            request=cast(Any, None), token=token, db=db
+        )
 
     def test_enrollment_token_reaches_mfa_setup(self, enrollment_env):
-        db = _FakeDB({User: _user(), UserMFA: None})
+        db = _db({User: _user(), UserMFA: None})
         ctx = self._context(_enroll_token(), db)
 
-        response = _unwrap(mfa_module.setup_mfa)(request=None, enrollment=ctx, db=db)
+        response = _unwrap(mfa_module.setup_mfa)(request=cast(Any, None), enrollment=ctx, db=db)
 
         assert response.secret
         assert response.provisioning_uri.startswith("otpauth://totp/")
@@ -445,10 +457,12 @@ class TestForcedEnrollmentFlow:
 
     def test_setup_does_not_burn_the_token(self, enrollment_env):
         """The user may re-open the QR page; only verify-setup spends the token."""
-        db = _FakeDB({User: _user(), UserMFA: None})
+        db = _db({User: _user(), UserMFA: None})
         token = _enroll_token()
 
-        _unwrap(mfa_module.setup_mfa)(request=None, enrollment=self._context(token, db), db=db)
+        _unwrap(mfa_module.setup_mfa)(
+            request=cast(Any, None), enrollment=self._context(token, db), db=db
+        )
 
         # Still resolvable → still unspent.
         assert self._context(token, db).mfa_jti == _decode(token)["jti"]
@@ -456,7 +470,7 @@ class TestForcedEnrollmentFlow:
     def _pending_enrollment(self):
         """A UserMFA row mid-setup: secret stored, not yet enabled."""
         secret = MFAService.generate_totp_secret()
-        user_mfa = SimpleNamespace(
+        user_mfa: Any = SimpleNamespace(
             user_id=1,
             totp_secret=MFAService.encrypt_totp_secret(secret),
             totp_enabled=False,
@@ -466,11 +480,11 @@ class TestForcedEnrollmentFlow:
 
     def test_verify_setup_enables_mfa_and_returns_a_session(self, enrollment_env):
         secret, user_mfa = self._pending_enrollment()
-        db = _FakeDB({User: _user(), UserMFA: user_mfa})
+        db = _db({User: _user(), UserMFA: user_mfa})
         ctx = self._context(_enroll_token(), db)
 
         response = _unwrap(mfa_module.verify_mfa_setup)(
-            request=None,
+            request=cast(Any, None),
             request_body=MFAVerifySetupRequest(code=pyotp.TOTP(secret).now()),
             enrollment=ctx,
             db=db,
@@ -486,10 +500,10 @@ class TestForcedEnrollmentFlow:
 
     def test_the_issued_token_is_a_real_access_token(self, enrollment_env):
         secret, user_mfa = self._pending_enrollment()
-        db = _FakeDB({User: _user(), UserMFA: user_mfa})
+        db = _db({User: _user(), UserMFA: user_mfa})
 
         response = _unwrap(mfa_module.verify_mfa_setup)(
-            request=None,
+            request=cast(Any, None),
             request_body=MFAVerifySetupRequest(code=pyotp.TOTP(secret).now()),
             enrollment=self._context(_enroll_token(), db),
             db=db,
@@ -502,11 +516,11 @@ class TestForcedEnrollmentFlow:
     def test_verify_setup_burns_the_enrollment_token(self, enrollment_env):
         """Replay after enrolment: a second /mfa/setup must not let the token run again."""
         secret, user_mfa = self._pending_enrollment()
-        db = _FakeDB({User: _user(), UserMFA: user_mfa})
+        db = _db({User: _user(), UserMFA: user_mfa})
         token = _enroll_token()
 
         _unwrap(mfa_module.verify_mfa_setup)(
-            request=None,
+            request=cast(Any, None),
             request_body=MFAVerifySetupRequest(code=pyotp.TOTP(secret).now()),
             enrollment=self._context(token, db),
             db=db,
@@ -521,12 +535,12 @@ class TestForcedEnrollmentFlow:
     def test_wrong_code_does_not_burn_the_token(self, enrollment_env):
         """A typo must not cost the user their only route out of the login screen."""
         _secret, user_mfa = self._pending_enrollment()
-        db = _FakeDB({User: _user(), UserMFA: user_mfa})
+        db = _db({User: _user(), UserMFA: user_mfa})
         token = _enroll_token()
 
         with pytest.raises(HTTPException) as exc:
             _unwrap(mfa_module.verify_mfa_setup)(
-                request=None,
+                request=cast(Any, None),
                 request_body=MFAVerifySetupRequest(code="000000"),
                 enrollment=self._context(token, db),
                 db=db,
@@ -539,11 +553,11 @@ class TestForcedEnrollmentFlow:
     def test_voluntary_enrollment_gets_no_tokens(self, enrollment_env, monkeypatch):
         """An already-logged-in user keeps their session; no second one is minted."""
         secret, user_mfa = self._pending_enrollment()
-        db = _FakeDB({User: _user(), UserMFA: user_mfa})
+        db = _db({User: _user(), UserMFA: user_mfa})
         ctx = mfa_enrollment_module.EnrollmentContext(user=_user(), user_role="user")
 
         response = _unwrap(mfa_module.verify_mfa_setup)(
-            request=None,
+            request=cast(Any, None),
             request_body=MFAVerifySetupRequest(code=pyotp.TOTP(secret).now()),
             enrollment=ctx,
             db=db,
@@ -563,13 +577,13 @@ class TestDisableConsumesBackupCode:
     def disable_setup(self, monkeypatch):
         codes = MFAService.generate_backup_codes(2)
         hashed = MFAService.hash_backup_codes(codes)
-        user_mfa = SimpleNamespace(
+        user_mfa: Any = SimpleNamespace(
             user_id=1,
             totp_secret="encrypted",
             totp_enabled=True,
             backup_codes=list(hashed),
         )
-        db = _FakeDB({UserMFA: user_mfa})
+        db = _db({UserMFA: user_mfa})
 
         monkeypatch.setattr(mfa_module, "_is_mfa_enabled", lambda db: True)
         monkeypatch.setattr(mfa_module, "_get_client_info", lambda request: ("10.0.0.1", "pytest"))
@@ -581,7 +595,7 @@ class TestDisableConsumesBackupCode:
 
     def _disable(self, code: str, db, user=None):
         return _unwrap(mfa_module.disable_mfa)(
-            request=None,
+            request=cast(Any, None),
             request_body=MFADisableRequest(code=code),
             current_user=user or _user(),
             db=db,
@@ -626,7 +640,7 @@ class TestDisableConsumesBackupCode:
 class TestInactiveUserCannotCompleteMFA:
     def test_deactivated_account_is_refused(self, fake_redis):
         token = mfa_tokens_module._create_mfa_token(USER_UUID, "user")
-        db = _FakeDB(
+        db = _db(
             {
                 User: _user(is_active=False),
                 UserMFA: SimpleNamespace(totp_enabled=True, totp_secret="encrypted"),
@@ -641,8 +655,8 @@ class TestInactiveUserCannotCompleteMFA:
 
     def test_active_account_still_passes(self, fake_redis):
         token = mfa_tokens_module._create_mfa_token(USER_UUID, "user")
-        user_mfa = SimpleNamespace(totp_enabled=True, totp_secret="encrypted")
-        db = _FakeDB({User: _user(), UserMFA: user_mfa})
+        user_mfa: Any = SimpleNamespace(totp_enabled=True, totp_secret="encrypted")
+        db = _db({User: _user(), UserMFA: user_mfa})
 
         resolved_user, resolved_mfa, uuid_str, role, jti = mfa_tokens_module._get_user_for_mfa(
             db, token
@@ -697,17 +711,20 @@ class TestHalfTokenIsSingleUse:
         monkeypatch.setattr(mfa_tokens_module, "get_redis_client", lambda: None)
         monkeypatch.setattr(settings, "MFA_REQUIRE_REDIS", False)
         monkeypatch.setattr(mfa_tokens_module, "_is_mfa_token_blacklisted", lambda jti: jti in used)
-        monkeypatch.setattr(
-            mfa_tokens_module, "_blacklist_mfa_token", lambda jti, ttl: bool(used.add(jti)) or True
-        )
+
+        def _record(jti: str, ttl: int) -> bool:
+            used.add(jti)
+            return True
+
+        monkeypatch.setattr(mfa_tokens_module, "_blacklist_mfa_token", _record)
 
         assert mfa_tokens_module._claim_mfa_token("jti-5", 300) is True
         assert mfa_tokens_module._claim_mfa_token("jti-5", 300) is False
 
     def test_concurrent_verification_yields_exactly_one_session(self, fake_redis, monkeypatch):
         user = _user()
-        user_mfa = SimpleNamespace(totp_enabled=True, last_verified_at=None)
-        db = _FakeDB()
+        user_mfa: Any = SimpleNamespace(totp_enabled=True, last_verified_at=None)
+        db = _db()
         monkeypatch.setattr(mfa_enrollment_module.audit_logger, "log_mfa_event", lambda **kw: None)
         monkeypatch.setattr(
             mfa_enrollment_module.token_service,
@@ -730,8 +747,8 @@ class TestHalfTokenIsSingleUse:
 
     def test_replay_is_refused_before_anything_is_written(self, fake_redis, monkeypatch):
         """The claim must precede the DB write, or a losing racer still mutates state."""
-        user_mfa = SimpleNamespace(totp_enabled=True, last_verified_at=None)
-        db = _FakeDB()
+        user_mfa: Any = SimpleNamespace(totp_enabled=True, last_verified_at=None)
+        db = _db()
         monkeypatch.setattr(mfa_enrollment_module.audit_logger, "log_mfa_event", lambda **kw: None)
         mfa_tokens_module._claim_mfa_token("burned-jti", 300)
 
@@ -745,6 +762,11 @@ class TestHalfTokenIsSingleUse:
 
 
 # ── the login audit records the method actually used ─────────────────────────────
+
+
+def _lockout_policy():
+    """The resolved (DB > .env) lockout policy the audit record must quote."""
+    return SimpleNamespace(account_lockout_threshold=5, account_lockout_duration_minutes=15)
 
 
 class TestAuditRecordsRealAuthMethod:
@@ -762,7 +784,16 @@ class TestAuditRecordsRealAuthMethod:
             login_module.audit_logger, "log_login_failure", lambda **kw: captured.update(kw)
         )
 
-        login_module._handle_lockout_check("person@example.com", False, "10.0.0.1", "pytest")
+        # Second argument is the canonical lockout bucket; for a submission that IS
+        # the account's email the two coincide.
+        login_module._handle_lockout_check(
+            "person@example.com",
+            "person@example.com",
+            False,
+            "10.0.0.1",
+            "pytest",
+            _lockout_policy(),
+        )
 
         assert captured["auth_method"] != "ldap"
         assert captured["auth_method"] == "unknown"
@@ -774,7 +805,13 @@ class TestAuditRecordsRealAuthMethod:
         )
 
         login_module._handle_lockout_check(
-            "person@example.com", False, "10.0.0.1", "pytest", auth_method="ldap"
+            "person@example.com",
+            "person@example.com",
+            False,
+            "10.0.0.1",
+            "pytest",
+            _lockout_policy(),
+            auth_method="ldap",
         )
 
         assert captured["auth_method"] == "ldap"
@@ -793,7 +830,7 @@ class TestAuditRecordsRealAuthMethod:
         )
 
         login_module._generate_login_tokens(
-            _FakeDB(),
+            _db(),
             _user(auth_type="pki"),
             USER_UUID,
             "user",
@@ -817,7 +854,7 @@ class TestInactiveAccountLogin:
         monkeypatch.setattr(login_module, "_authenticate_production_user", _inactive)
 
         success, uuid_str, data, method = login_module._perform_authentication(
-            _FakeDB(), "person@example.com", "pw"
+            _db(), "person@example.com", "pw"
         )
 
         assert success is False
@@ -831,7 +868,7 @@ class TestInactiveAccountLogin:
         monkeypatch.setattr(login_module, "_authenticate_production_user", _boom)
 
         with pytest.raises(HTTPException) as exc:
-            login_module._perform_authentication(_FakeDB(), "person@example.com", "pw")
+            login_module._perform_authentication(_db(), "person@example.com", "pw")
 
         assert exc.value.status_code == 503
 
@@ -867,21 +904,21 @@ class TestLockoutRecording:
 
     def _login(self, db):
         return _unwrap(login_module.login_for_access_token)(
-            request=None,
+            request=cast(Any, None),
             form_data=SimpleNamespace(username="person@example.com", password="pw"),
             db=db,
         )
 
     def test_failed_login_returns_the_uniform_401(self, recorded):
         with pytest.raises(HTTPException) as exc:
-            self._login(_FakeDB({User: None}))
+            self._login(_db({User: None}))
 
         assert exc.value.status_code == 401
         assert exc.value.detail == "Incorrect username or password"
 
     def test_failed_login_records_the_attempt(self, recorded):
         with pytest.raises(HTTPException):
-            self._login(_FakeDB({User: None}))
+            self._login(_db({User: None}))
 
         assert recorded == [
             {"identifier": "person@example.com", "success": False, "exempt_from_lockout": False}
@@ -889,7 +926,7 @@ class TestLockoutRecording:
 
     def test_super_admin_exemption_applies_to_failures(self, recorded):
         """The exemption was computed inside `if auth_success:`, so it never fired."""
-        db = _FakeDB({User: _user(role="super_admin", allow_local_fallback=True)})
+        db = _db({User: _user(role="super_admin", allow_local_fallback=True)})
 
         with pytest.raises(HTTPException):
             self._login(db)
@@ -897,7 +934,7 @@ class TestLockoutRecording:
         assert recorded[0]["exempt_from_lockout"] is True
 
     def test_ordinary_account_is_not_exempt(self, recorded):
-        db = _FakeDB({User: _user(role="admin", allow_local_fallback=True)})
+        db = _db({User: _user(role="admin", allow_local_fallback=True)})
 
         with pytest.raises(HTTPException):
             self._login(db)

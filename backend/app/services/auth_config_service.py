@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import Request
 from sqlalchemy.orm import Session
 
+from app.core.auth_settings import prime_process_auth_settings
 from app.core.config import settings
 from app.models.auth_config import AuthConfig
 from app.models.auth_config import AuthConfigAudit
@@ -75,16 +76,51 @@ class AuthConfigService:
     #: instead of implying the change is live. That column has existed since the
     #: table was created and was never written by anything.
     #:
-    #: Both members are read at **import time** by ``app/auth/cookies.py`` to
-    #: compute ``ACCESS_MAX_AGE`` / ``REFRESH_MAX_AGE``. Honouring a live change
-    #: for the token but not the cookie would end sessions early (cookie expires
-    #: first) or leave a dead cookie behind (token expires first). Everything else
-    #: in the session category is enforced against ``refresh_token`` rows at
-    #: request time and is genuinely live.
+    #: A visible "requires restart" badge is an acceptable outcome. A control that
+    #: saves with a success toast and enforces nothing is not — so a key belongs
+    #: here only when the value is genuinely frozen before any request runs, and
+    #: the reason is recorded next to it. ``tests/unit/test_auth_config_has_readers``
+    #: enforces the membership in both directions.
+    #:
+    #: * ``jwt_*`` — read at **import time** by ``app/auth/cookies.py`` to compute
+    #:   ``ACCESS_MAX_AGE`` / ``REFRESH_MAX_AGE``. Honouring a live change for the
+    #:   token but not the cookie would end sessions early (cookie expires first)
+    #:   or leave a dead cookie behind (token expires first). Everything else in
+    #:   the session category is enforced against ``refresh_token`` rows at
+    #:   request time and is genuinely live.
+    #: * ``rate_limit_enabled`` — ``auth/rate_limit.py`` builds the module-level
+    #:   ``Limiter(enabled=settings.RATE_LIMIT_ENABLED)`` at import.
+    #: * ``rate_limit_auth_per_minute`` — every auth endpoint is decorated
+    #:   ``@limiter.limit(get_auth_rate_limit())``, and a decorator argument is
+    #:   evaluated once, at import. slowapi accepts a *callable* limit, so making
+    #:   this live is a real refactor (drop the call parentheses at ~20 decorator
+    #:   sites and read the effective value inside ``get_auth_rate_limit``), not a
+    #:   bridge — until then the badge is the truthful answer.
     RESTART_REQUIRED_KEYS = frozenset(
         {
             "jwt_access_token_expire_minutes",
             "jwt_refresh_token_expire_days",
+            "rate_limit_enabled",
+            "rate_limit_auth_per_minute",
+        }
+    )
+
+    #: Keys the API once accepted that are now removed from the category schemas.
+    #: Each was an orphan alias of a real key — ``mfa_issuer`` for
+    #: ``mfa_issuer_name``, ``password_require_numbers`` for
+    #: ``password_require_digit``, ``max_login_attempts`` for
+    #: ``account_lockout_threshold``, ``lockout_duration_minutes`` for
+    #: ``account_lockout_duration_minutes`` — written by an older admin panel and
+    #: read by nothing. Writes are now rejected by ``validate_category_config``
+    #: (they are unknown keys); this set additionally keeps a stale row from being
+    #: served back by ``get_config_by_category``, which filters by category and
+    #: would otherwise still hand the ``local`` tab a control that does nothing.
+    RETIRED_KEYS = frozenset(
+        {
+            "mfa_issuer",
+            "password_require_numbers",
+            "max_login_attempts",
+            "lockout_duration_minutes",
         }
     )
 
@@ -146,13 +182,6 @@ class AuthConfigService:
         "account_lockout_enabled": "bool",
         "rate_limit_auth_per_minute": "int",
         "rate_limit_enabled": "bool",
-        # Local auth lockout (frontend naming)
-        "max_login_attempts": "int",
-        "lockout_duration_minutes": "int",
-        # Frontend MFA naming
-        "mfa_issuer": "string",
-        # Frontend password naming
-        "password_require_numbers": "bool",
     }
 
     #: Lazily-built reverse of ``ENV_TO_CONFIG_MAPPING`` (config key -> env var).
@@ -402,6 +431,11 @@ class AuthConfigService:
         result: dict[str, Any] = {}
 
         for config in configs:
+            if config.config_key in AuthConfigService.RETIRED_KEYS:
+                # A row an older panel wrote for a key that no longer exists.
+                # Serving it would re-render a control that changes nothing.
+                continue
+
             value = config.config_value  # type: ignore[assignment]
 
             # A sensitive value NEVER leaves this function in readable form when
@@ -557,6 +591,12 @@ class AuthConfigService:
         db.commit()
         db.refresh(config)
 
+        # Publish the new value to the enforcement points that hold no session —
+        # the password policy and the lockout counter read through the
+        # process-wide layer, and without this they would keep enforcing the
+        # previous value for up to a cache generation after a successful save.
+        prime_process_auth_settings(db, key)
+
         logger.info(
             f"Auth config '{key}' {change_type}d by user {user_id} "
             f"(category={category}, sensitive={is_sensitive})"
@@ -605,6 +645,10 @@ class AuthConfigService:
 
         db.delete(config)
         db.commit()
+
+        # The row is gone, so the effective value reverts to .env / the coded
+        # default. Re-resolve rather than leaving the deleted value cached.
+        prime_process_auth_settings(db, key)
 
         logger.info(f"Auth config '{key}' deleted by user {user_id}")
         return True

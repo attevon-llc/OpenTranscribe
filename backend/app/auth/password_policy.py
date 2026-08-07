@@ -7,8 +7,10 @@ Implements NIST SP 800-63B password requirements:
 - Password history tracking (prevent reuse of last N passwords)
 - Password expiration (max age before forced reset)
 
-All settings are configurable via environment variables and can be disabled
-for non-FedRAMP environments by setting PASSWORD_POLICY_ENABLED=false.
+Every setting is admin-editable at runtime (Settings -> Authentication ->
+Password Policy) and resolves DB ``auth_config`` > ``.env`` > coded default, the
+same rule as the rest of the auth plane. The policy can be turned off entirely
+for non-FedRAMP environments with ``password_policy_enabled``.
 """
 
 import logging
@@ -20,7 +22,7 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
-from app.core.config import settings
+from app.core.auth_settings import get_process_auth_settings
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +63,23 @@ class PasswordPolicy:
     This class validates passwords against configurable requirements and
     manages password history to prevent reuse.
 
-    Configuration (via environment variables):
-        PASSWORD_POLICY_ENABLED: Enable/disable policy enforcement (default: true)
-        PASSWORD_MIN_LENGTH: Minimum password length (default: 12)
-        PASSWORD_REQUIRE_UPPERCASE: Require uppercase letters (default: true)
-        PASSWORD_REQUIRE_LOWERCASE: Require lowercase letters (default: true)
-        PASSWORD_REQUIRE_DIGIT: Require numeric digits (default: true)
-        PASSWORD_REQUIRE_SPECIAL: Require special characters (default: true)
-        PASSWORD_HISTORY_COUNT: Number of previous passwords to check (default: 24)
-        PASSWORD_MAX_AGE_DAYS: Days before password expires (default: 60)
+    Every requirement below is a **property**, read through
+    ``get_process_auth_settings()`` at the moment it is checked, so it resolves
+    DB ``auth_config`` > ``.env`` > coded default. They used to be plain
+    attributes assigned from ``settings.*`` in ``__init__``, and the module-level
+    ``password_policy`` singleton is built at import — so all eight admin
+    controls were frozen at the value the process started with and saving any of
+    them changed nothing.
+
+    Properties rather than a ``reload()`` because the enforcement points are
+    reached without a session (``schemas/user.py`` validates inside a Pydantic
+    model) and because a second cached copy here would be a second thing to
+    invalidate; ``_ProcessAuthSettings`` already owns exactly one cache.
+
+    Configuration keys (category ``password_policy``):
+        password_policy_enabled, password_min_length, password_require_uppercase,
+        password_require_lowercase, password_require_digit,
+        password_require_special, password_history_count, password_max_age_days.
     """
 
     # Common password patterns to avoid (compiled for performance)
@@ -82,16 +92,45 @@ class PasswordPolicy:
         r"(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz){2,}",  # sequential letters
     ]
 
-    def __init__(self):
-        """Initialize password policy with current settings."""
-        self.enabled = settings.PASSWORD_POLICY_ENABLED
-        self.min_length = settings.PASSWORD_MIN_LENGTH
-        self.require_uppercase = settings.PASSWORD_REQUIRE_UPPERCASE
-        self.require_lowercase = settings.PASSWORD_REQUIRE_LOWERCASE
-        self.require_digit = settings.PASSWORD_REQUIRE_DIGIT
-        self.require_special = settings.PASSWORD_REQUIRE_SPECIAL
-        self.history_count = settings.PASSWORD_HISTORY_COUNT
-        self.max_age_days = settings.PASSWORD_MAX_AGE_DAYS
+    @property
+    def enabled(self) -> bool:
+        """Whether the policy is enforced at all."""
+        return get_process_auth_settings().password_policy_enabled
+
+    @property
+    def min_length(self) -> int:
+        """Minimum accepted password length."""
+        return get_process_auth_settings().password_min_length
+
+    @property
+    def require_uppercase(self) -> bool:
+        """Whether an upper-case letter is required."""
+        return get_process_auth_settings().password_require_uppercase
+
+    @property
+    def require_lowercase(self) -> bool:
+        """Whether a lower-case letter is required."""
+        return get_process_auth_settings().password_require_lowercase
+
+    @property
+    def require_digit(self) -> bool:
+        """Whether a digit is required."""
+        return get_process_auth_settings().password_require_digit
+
+    @property
+    def require_special(self) -> bool:
+        """Whether a special character is required."""
+        return get_process_auth_settings().password_require_special
+
+    @property
+    def history_count(self) -> int:
+        """How many previous passwords may not be reused. 0 disables the check."""
+        return get_process_auth_settings().password_history_count
+
+    @property
+    def max_age_days(self) -> int:
+        """Days before a password expires. 0 disables expiry."""
+        return get_process_auth_settings().password_max_age_days
 
     def _check_character_requirements(self, password: str) -> list[str]:
         """

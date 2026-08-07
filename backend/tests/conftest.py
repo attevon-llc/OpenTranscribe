@@ -142,6 +142,23 @@ def _skip_celery_dispatch():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _clear_process_auth_cache():
+    """Isolate the process-wide auth-config cache between tests.
+
+    ``app.core.auth_settings`` caches effective auth config for the whole
+    process, and under ``TESTING`` a cache generation never ages out (see
+    ``_process_cache_ttl``) — deliberately, so a value primed from the test's own
+    savepointed session survives the test. That makes clearing it here the thing
+    that keeps one test's ``account_lockout_threshold=3`` out of the next test.
+    """
+    from app.core.auth_settings import clear_process_auth_settings_cache
+
+    clear_process_auth_settings_cache()
+    yield
+    clear_process_auth_settings_cache()
+
+
 @pytest.fixture(scope="function")
 def db_session():
     """Fixture that provides a SQLAlchemy session for tests.

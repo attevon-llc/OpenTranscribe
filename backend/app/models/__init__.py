@@ -9,6 +9,7 @@ from .auth_config import AuthConfigAudit
 from .custom_vocabulary import CustomVocabulary
 from .email_notification_config import EmailNotificationConfig
 from .email_notification_config import WatchSourceEmail
+from .group import GroupMapping
 from .group import UserGroup
 from .group import UserGroupMember
 from .invitation import EmailVerificationToken
@@ -88,6 +89,7 @@ __all__ = [
     "AuthConfigAudit",
     "UserGroup",
     "UserGroupMember",
+    "GroupMapping",
     "CollectionShare",
     "UploadBatch",
     "FilePipelineTiming",

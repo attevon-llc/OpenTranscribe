@@ -27,7 +27,6 @@ from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.oidc_discovery import fetch_discovery_document
 from app.auth.oidc_discovery import fetch_jwks
 from app.auth.oidc_discovery import to_internal
-from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
@@ -708,8 +707,14 @@ async def validate_token(
         return None
 
 
-def _create_keycloak_user(db, keycloak_data: KeycloakUserData):
-    """Create a new user from Keycloak data."""
+def _create_keycloak_user(db, keycloak_data: KeycloakUserData, *, is_admin: bool):
+    """Create a new user from Keycloak data.
+
+    Args:
+        is_admin: The *effective* admin signal — the legacy ``keycloak_admin_role``
+            (or PKI admin DN) rule OR-ed with any ``group_mapping`` that grants
+            ``admin``. Computed by :func:`sync_keycloak_user_to_db`.
+    """
     from sqlalchemy.exc import IntegrityError
 
     from app.models.user import User
@@ -743,7 +748,7 @@ def _create_keycloak_user(db, keycloak_data: KeycloakUserData):
 
     cert_fingerprint = keycloak_data.get("cert_fingerprint")
     # External IdPs grant at most 'admin'; super_admin is local-only.
-    role = ROLE_ADMIN if keycloak_data["is_admin"] else ROLE_USER
+    role = ROLE_ADMIN if is_admin else ROLE_USER
     user = User(
         email=email,
         full_name=keycloak_data["full_name"] or keycloak_data["username"] or email.split("@")[0],
@@ -779,7 +784,13 @@ def _create_keycloak_user(db, keycloak_data: KeycloakUserData):
 
 
 def _update_keycloak_user(db, user, keycloak_data: KeycloakUserData):
-    """Update an existing user's Keycloak data and certificate metadata."""
+    """Update an existing user's Keycloak data and certificate metadata.
+
+    Privilege is deliberately NOT decided here — see the same note on
+    ``ldap_auth._update_ldap_user``. It is applied by
+    ``services/idp_group_mapping_service.reconcile_user``, which
+    :func:`sync_keycloak_user_to_db` calls for every login.
+    """
     keycloak_id = keycloak_data["keycloak_id"]
     email = keycloak_data["email"]
 
@@ -827,17 +838,6 @@ def _update_keycloak_user(db, user, keycloak_data: KeycloakUserData):
     if cert_fingerprint:
         user.pki_fingerprint_sha256 = cert_fingerprint.replace(":", "")
 
-    if keycloak_data["is_admin"]:
-        # External IdPs grant at most 'admin'; never demote a local super_admin.
-        if user.role not in ELEVATED_ROLES:
-            logger.info(f"Promoting Keycloak user {keycloak_id} to admin")
-            user.role = ROLE_ADMIN
-        user.is_superuser = role_implies_superuser(user.role)
-    elif user.role == ROLE_ADMIN:
-        logger.info(f"Demoting Keycloak user {keycloak_id} from admin")
-        user.role = ROLE_USER
-        user.is_superuser = role_implies_superuser(user.role)
-
     db.commit()
     return user
 
@@ -862,19 +862,7 @@ def _convert_local_user_to_keycloak(db, user, keycloak_data: KeycloakUserData):
     if keycloak_data["full_name"]:
         user.full_name = keycloak_data["full_name"]
 
-    if keycloak_data["is_admin"]:
-        # External IdPs grant at most 'admin'; never demote a local super_admin.
-        if user.role not in ELEVATED_ROLES:
-            logger.info(f"Promoting converted Keycloak user {keycloak_id} to admin")
-            user.role = ROLE_ADMIN
-        user.is_superuser = role_implies_superuser(user.role)
-    elif user.role == ROLE_ADMIN:
-        logger.info(
-            f"Demoting converted Keycloak user {keycloak_id} from admin (no admin role in Keycloak)"
-        )
-        user.role = ROLE_USER
-        user.is_superuser = role_implies_superuser(user.role)
-
+    # Privilege is applied by reconcile_user after this returns.
     db.commit()
     return user
 
@@ -882,21 +870,37 @@ def _convert_local_user_to_keycloak(db, user, keycloak_data: KeycloakUserData):
 def sync_keycloak_user_to_db(db, keycloak_data: KeycloakUserData):
     """Create or update a user in the database from Keycloak data.
 
-    Handles creating new users, updating existing Keycloak users,
-    converting local users to Keycloak, and race conditions.
+    Handles creating new users, updating existing Keycloak users, converting local
+    users to Keycloak, and race conditions — and then reconciles group membership
+    and privilege against the configured ``group_mapping`` rows (``v376``).
+    ``keycloak_data["roles"]`` is the full list read from the configurable roles
+    claim (``realm_access.roles`` by default, or the provider's ``groups`` claim);
+    until v376 only ``is_admin`` survived it.
+
+    With no mappings configured this behaves exactly as before: no membership
+    changes, and ``keycloak_admin_role`` alone decides ``admin``.
     """
     from app.auth.constants import AUTH_TYPE_LOCAL
+    from app.models.group import MAPPING_SOURCE_OIDC
     from app.models.user import User
+    from app.services.idp_group_mapping_service import reconcile_user
+    from app.services.idp_group_mapping_service import resolve_grants
 
     keycloak_id = keycloak_data["keycloak_id"]
     email = keycloak_data["email"]
+    roles = keycloak_data.get("roles") or []
 
     user = db.query(User).filter(User.keycloak_id == keycloak_id).first()
     if not user and email:
         user = db.query(User).filter(User.email == email).first()
 
+    # Resolved before the row is written so a brand-new account is created at the
+    # right role instead of being created and then immediately promoted.
+    grants = resolve_grants(db, MAPPING_SOURCE_OIDC, roles)
+    is_admin = bool(keycloak_data["is_admin"]) or grants.grants_admin
+
     if not user:
-        user = _create_keycloak_user(db, keycloak_data)
+        user = _create_keycloak_user(db, keycloak_data, is_admin=is_admin)
     elif user.auth_type == AUTH_TYPE_LOCAL:
         logger.warning(
             f"SECURITY: Converting local user {email} to Keycloak auth. "
@@ -906,6 +910,15 @@ def sync_keycloak_user_to_db(db, keycloak_data: KeycloakUserData):
         user = _convert_local_user_to_keycloak(db, user, keycloak_data)
     else:
         user = _update_keycloak_user(db, user, keycloak_data)
+
+    reconcile_user(
+        db,
+        user,
+        MAPPING_SOURCE_OIDC,
+        roles,
+        legacy_admin=bool(keycloak_data["is_admin"]),
+        reason="idp_login",
+    )
 
     db.refresh(user)
     return user

@@ -39,6 +39,7 @@ from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_admin_user
 from app.auth import password_policy as policy_module
 from app.auth.audit import AuditEventType
+from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
 from app.models.user import User
 
@@ -81,6 +82,9 @@ class _FakeDB:
 
     def rollback(self):
         self.rollbacks += 1
+
+    def refresh(self, _instance):
+        """No-op: these fakes hold their state in the object already."""
 
 
 def _user(**overrides: Any) -> Any:
@@ -151,11 +155,28 @@ def login_audited(monkeypatch) -> list[dict]:
     return events
 
 
+def _publish_policy(**values) -> None:
+    """Make the password policy see *values* without a database.
+
+    The policy's settings are properties resolved through
+    ``get_process_auth_settings()`` — DB ``auth_config`` > ``.env`` > coded
+    default — so that an admin saving one actually changes enforcement. They used
+    to be plain attributes read from ``settings.*`` once at import, which is why
+    these tests could assign to them directly and why all eight admin controls
+    were dead. Publishing the effective value is now the supported way to stand a
+    deployment's policy up in a test; the autouse ``_clear_process_auth_cache``
+    fixture in ``conftest`` tears it down again.
+    """
+    from app.core.auth_settings import publish_process_auth_setting
+
+    for key, value in values.items():
+        publish_process_auth_setting(key, value)
+
+
 @pytest.fixture
-def expiry_enforced(monkeypatch):
+def expiry_enforced():
     """A deployment that actually enforces the 60-day max password age."""
-    monkeypatch.setattr(policy_module.password_policy, "enabled", True)
-    monkeypatch.setattr(policy_module.password_policy, "max_age_days", 60)
+    _publish_policy(password_policy_enabled=True, password_max_age_days=60)
 
 
 # ── DEFECT 1: must_change_password is enforced, and confines the caller ──────────
@@ -246,7 +267,13 @@ class TestForcedPasswordChangeIsEnforced:
 
 class TestPasswordExpiryAtLogin:
     def _expire(self, db, user, method="local", audited_ip="10.0.0.1"):
-        login_module._apply_password_expiry(db, user, method, audited_ip, "pytest")
+        # The endpoint resolves the auth config once per request and hands it down, so
+        # the max age it reports is the one enforcement used. These fakes have no real
+        # Session, so the process-level resolver stands in — same DB > .env > default
+        # rule, and it reads exactly what ``_publish_policy`` published.
+        login_module._apply_password_expiry(
+            db, user, method, audited_ip, "pytest", get_process_auth_settings()
+        )
 
     def test_expired_password_sets_the_flag(self, expiry_enforced, login_audited):
         user = _user(password_changed_at=datetime.now(UTC) - timedelta(days=61))
@@ -283,8 +310,8 @@ class TestPasswordExpiryAtLogin:
 
         assert _code(exc) == ERROR_CODE_PASSWORD_CHANGE_REQUIRED
 
-    def test_policy_disabled_expires_nothing(self, monkeypatch, login_audited):
-        monkeypatch.setattr(policy_module.password_policy, "enabled", False)
+    def test_policy_disabled_expires_nothing(self, login_audited):
+        _publish_policy(password_policy_enabled=False)
         user = _user(password_changed_at=datetime.now(UTC) - timedelta(days=5000))
 
         self._expire(_FakeDB(), user)
@@ -299,7 +326,12 @@ class TestPasswordExpiryAtLogin:
         )
 
         login_module._apply_password_expiry(
-            cast(Any, _FakeDB()), user, auth_type, "10.0.0.1", "pytest"
+            cast(Any, _FakeDB()),
+            user,
+            auth_type,
+            "10.0.0.1",
+            "pytest",
+            get_process_auth_settings(),
         )
 
         assert user.must_change_password is False
@@ -365,8 +397,8 @@ class TestExpiryRuleHasOneImplementation:
         assert policy_module.is_password_expired(cutoff - timedelta(seconds=1)) is True
         assert policy_module.is_password_expired(cutoff + timedelta(minutes=1)) is False
 
-    def test_cutoff_is_none_when_expiry_is_disabled(self, monkeypatch):
-        monkeypatch.setattr(policy_module.password_policy, "enabled", False)
+    def test_cutoff_is_none_when_expiry_is_disabled(self):
+        _publish_policy(password_policy_enabled=False)
 
         assert policy_module.password_expiry_cutoff() is None
 
@@ -517,42 +549,93 @@ class TestSelfServiceChangeClearsTheHold:
 
     Three paths SET ``must_change_password`` — admin create, admin force-change,
     and password expiry at login — and for a while exactly one cleared it: the
-    emailed reset. A deployment with no mail transport therefore had no exit at
-    all. The user changed their password on the forced-change screen, got held
-    again on the very next request, and after ``PASSWORD_HISTORY_COUNT`` attempts
-    ran out of passwords they were allowed to reuse.
+    emailed reset. A deployment with no mail transport therefore had no exit. The
+    user changed their password on the forced-change screen, was held again on the
+    next request, and after ``PASSWORD_HISTORY_COUNT`` attempts ran out of
+    passwords they were allowed to reuse.
 
-    ``PUT /users/me`` is the route the gate deliberately leaves reachable, so it
-    is the route that has to clear the flag.
+    These drive the real endpoint. Asserting on its *source text* would pass on a
+    line that never executes and fail on a correct refactor.
     """
 
-    def test_the_self_service_route_is_the_one_that_clears_it(self):
-        import inspect
-
+    @pytest.fixture
+    def endpoint(self, monkeypatch):
+        """``PUT /users/me`` with its collaborators stubbed, but its logic intact."""
         from app.api.endpoints import users as users_module
 
-        source = inspect.getsource(users_module.update_current_user)
-        body = "\n".join(line for line in source.splitlines() if not line.strip().startswith("#"))
-        assert "must_change_password = False" in body, (
-            "PUT /users/me must clear must_change_password. Without it the forced-"
-            "change gate is a permanent lockout on any deployment without SMTP."
+        monkeypatch.setattr(users_module, "verify_password", lambda *a, **k: True)
+        monkeypatch.setattr(users_module, "get_password_hash", lambda pw: f"hash::{pw}")
+        monkeypatch.setattr(users_module, "enforce_password_policy", lambda *a, **k: None)
+        monkeypatch.setattr(users_module, "assert_password_auth_possible", lambda *a, **k: None)
+        monkeypatch.setattr(users_module, "check_password_against_history", lambda *a, **k: True)
+        monkeypatch.setattr(users_module, "add_password_to_history", lambda *a, **k: None)
+        monkeypatch.setattr(users_module, "audit_password_change", lambda *a, **k: None)
+        monkeypatch.setattr(users_module.audit_logger, "log", lambda **kw: None)
+        return users_module
+
+    @pytest.fixture
+    def calls(self, endpoint, monkeypatch) -> dict:
+        """Record the revoke/re-issue pair without performing either."""
+        order: list[str] = []
+
+        def _revoke(*_a, **_k) -> int:
+            order.append("revoke")
+            return 1
+
+        def _reissue(*_a, **_k) -> None:
+            order.append("reissue")
+
+        monkeypatch.setattr(endpoint, "revoke_all_sessions", _revoke)
+        monkeypatch.setattr(endpoint, "reissue_current_session", _reissue)
+        return {"order": order}
+
+    def _change_password(self, endpoint, user, calls):
+        from app.schemas.user import UserUpdate
+
+        return endpoint.update_current_user(
+            request=_request(),
+            response=cast(Any, SimpleNamespace(set_cookie=lambda **kw: None)),
+            user_update=UserUpdate(password="Correct-Horse-Battery-9", current_password="old"),
+            db=cast(Any, _FakeDB()),
+            current_user=user,
         )
 
-    def test_the_caller_keeps_a_session_after_changing_their_own_password(self):
+    def test_the_flag_is_actually_cleared(self, endpoint, calls):
+        """The behaviour, not the source line: a held user comes out unheld."""
+        user = _user(must_change_password=True, hashed_password="old-hash")
+
+        self._change_password(endpoint, user, calls)
+
+        assert user.must_change_password is False
+        assert user.hashed_password == "hash::Correct-Horse-Battery-9"
+
+    def test_the_caller_is_not_signed_out_of_the_flow_they_just_completed(self, endpoint, calls):
         """Revocation is total and includes THIS session, so it must be re-issued.
 
-        Otherwise the change succeeds, every cookie dies, and the user is bounced
-        to the login screen — indistinguishable from the change having failed.
+        Order matters: minting before revoking would revoke the new session too.
         """
-        import inspect
+        user = _user(must_change_password=True, hashed_password="old-hash")
 
-        from app.api.endpoints import users as users_module
+        self._change_password(endpoint, user, calls)
 
-        source = inspect.getsource(users_module.update_current_user)
-        assert "reissue_current_session" in source
-        assert source.index("revoke_all_sessions") < source.index("reissue_current_session"), (
-            "the new session must be minted AFTER the revocation, or it is revoked too"
+        assert calls["order"] == ["revoke", "reissue"]
+
+    def test_a_profile_edit_neither_revokes_nor_reissues(self, endpoint, calls):
+        """Only credential-grade changes pay that cost."""
+        from app.schemas.user import UserUpdate
+
+        user = _user(must_change_password=False, hashed_password="h", full_name="Old")
+
+        endpoint.update_current_user(
+            request=_request(),
+            response=cast(Any, SimpleNamespace(set_cookie=lambda **kw: None)),
+            user_update=UserUpdate(full_name="New"),
+            db=cast(Any, _FakeDB()),
+            current_user=user,
         )
+
+        assert calls["order"] == []
+        assert user.full_name == "New"
 
     def test_an_admin_setting_someone_elses_password_forces_a_change(self):
         """The admin now knows a working credential for another account."""

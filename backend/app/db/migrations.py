@@ -282,7 +282,34 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     )
     has_user_invitation = "user_invitation" in tables
 
+    # v376 guards: IdP group mapping. BOTH markers are required — the mapping
+    # table is useless without user_group_member.source (reconciliation could not
+    # tell a directory-derived membership from a hand-added one and would either
+    # never revoke or wipe manual work), so a DB carrying only one of them
+    # predates the revision and must still receive its DDL.
+    has_group_mapping = "group_mapping" in tables
+    has_membership_source = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user_group_member' AND column_name = 'source')"
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v376: directory groups drive in-app groups and privileges.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+    ):
+        return "v376_idp_group_mapping"
     # v375: user auth invariants (role NOT NULL + auth_type CHECK) and the
     # invitation / email-verification schema.
     if (

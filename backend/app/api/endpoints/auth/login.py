@@ -33,6 +33,7 @@ from app.auth.constants import AUTH_TYPE_KEYCLOAK
 from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.direct_auth import create_access_token as direct_create_token
+from app.auth.lockout import canonical_identifier
 from app.auth.lockout import check_and_record_attempt
 from app.auth.lockout import get_lockout_info
 from app.auth.password_policy import get_days_until_expiration
@@ -42,6 +43,7 @@ from app.auth.rate_limit import limiter
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.auth.utils import local_password_allowed
+from app.core.auth_settings import DynamicAuthSettings
 from app.core.auth_settings import get_auth_settings
 from app.core.config import settings
 from app.db.base import get_db
@@ -108,14 +110,14 @@ def _perform_authentication(
         raise
 
 
-def _is_exempt_from_lockout(db: Session, username: str, user_uuid_str: str) -> bool:
-    """Whether this login attempt targets a lockout-exempt account.
+def _resolve_lockout_account(db: Session, username: str, user_uuid_str: str) -> User | None:
+    """Resolve the account this login attempt targets, or ``None``.
 
-    Resolves the account from the attempt itself, so the exemption applies to failures
-    as well as successes (NIST AC-7 allows exempting emergency-access accounts, and a
-    super admin that can be locked out by an attacker is the outage that exemption
-    exists to prevent). Attempts are still recorded for audit — see
-    ``lockout._record_attempt_audit_only``.
+    Called **once per attempt, unconditionally**, and its result feeds both the
+    lockout-exemption decision and the lockout bucket key. Doing it once matters for
+    more than tidiness: the query is the only account-existence probe on the login
+    path, so running it on exactly one code path for hits and misses alike keeps the
+    server's timing profile independent of whether the account exists.
 
     Args:
         db: Database session
@@ -123,21 +125,33 @@ def _is_exempt_from_lockout(db: Session, username: str, user_uuid_str: str) -> b
         user_uuid_str: UUID of the authenticated user, empty when the attempt failed
 
     Returns:
-        bool: True only for a ``super_admin`` that has local fallback enabled.
+        The matching ``User`` row, or ``None`` when nothing matched (or the lookup
+        failed — a lookup failure must never break login).
     """
     try:
         if user_uuid_str:
-            user = db.query(User).filter(User.uuid == UUID(user_uuid_str)).first()
-        else:
-            user = (
-                db.query(User)
-                .filter((User.email == username) | (User.ldap_uid == username))
-                .first()
-            )
+            return db.query(User).filter(User.uuid == UUID(user_uuid_str)).first()
+        return db.query(User).filter((User.email == username) | (User.ldap_uid == username)).first()
     except Exception:  # noqa: BLE001 - a lookup failure must never break login
-        logger.debug("Could not resolve account for lockout exemption", exc_info=True)
-        return False
+        logger.debug("Could not resolve account for the login attempt", exc_info=True)
+        return None
 
+
+def _is_exempt_from_lockout(user: User | None) -> bool:
+    """Whether this login attempt targets a lockout-exempt account.
+
+    The account is resolved from the attempt itself (see ``_resolve_lockout_account``),
+    so the exemption applies to failures as well as successes (NIST AC-7 allows
+    exempting emergency-access accounts, and a super admin that can be locked out by an
+    attacker is the outage that exemption exists to prevent). Attempts are still
+    recorded for audit — see ``lockout._record_attempt_audit_only``.
+
+    Args:
+        user: The resolved account, or None when the identifier matched nothing.
+
+    Returns:
+        bool: True only for a ``super_admin`` that has local fallback enabled.
+    """
     if not user or not getattr(user, "allow_local_fallback", False):
         return False
     return bool(user.role == ROLE_SUPER_ADMIN)
@@ -145,19 +159,31 @@ def _is_exempt_from_lockout(db: Session, username: str, user_uuid_str: str) -> b
 
 def _handle_lockout_check(
     username: str,
+    lockout_identifier: str,
     auth_success: bool,
     client_ip: str,
     user_agent: str,
+    auth_settings: DynamicAuthSettings,
     exempt_from_lockout: bool = False,
     auth_method: str = "",
 ) -> tuple[bool, int | None]:
     """Handle lockout logic with atomic check-and-record.
 
     Args:
-        username: Username being authenticated
+        username: Username as submitted. Used only for the audit record — the audit
+            trail should show what the caller actually typed.
+        lockout_identifier: Canonical lockout bucket for the account this attempt
+            targets (``lockout.canonical_identifier``). Every alias of one account
+            shares this key, so the threshold counts attempts per account rather than
+            per spelling.
         auth_success: Whether authentication succeeded
         client_ip: Client IP address
         user_agent: Client user agent
+        auth_settings: The request's resolved auth config (DB > .env > default). The
+            audit record must state the policy that was **actually enforced**; reading
+            ``settings.ACCOUNT_LOCKOUT_*`` from .env here made the audit artefact
+            report one threshold while lockout applied another, and a compliance
+            record that misstates the control in force is worse than one that omits it.
         exempt_from_lockout: If True, record attempts for audit but never lock.
             Used for super admin accounts with allow_local_fallback.
         auth_method: How the caller actually authenticated. Empty on a failure where no
@@ -174,28 +200,28 @@ def _handle_lockout_check(
 
     # Atomic lockout check and record (prevents race conditions - CRITICAL-1 fix)
     lockout_result = check_and_record_attempt(
-        username, success=auth_success, exempt_from_lockout=exempt_from_lockout
+        lockout_identifier, success=auth_success, exempt_from_lockout=exempt_from_lockout
     )
     is_locked, unlock_datetime = lockout_result
     unlock_time: int | None = int(unlock_datetime.timestamp()) if unlock_datetime else None
 
     if is_locked:
         # Check if account was just locked (lockout event) vs already locked
-        lockout_info = get_lockout_info(username)
-        if lockout_info["failed_attempts"] >= settings.ACCOUNT_LOCKOUT_THRESHOLD:
+        lockout_info = get_lockout_info(lockout_identifier)
+        if lockout_info["failed_attempts"] >= auth_settings.account_lockout_threshold:
             # Account was just locked - log lockout event
             audit_logger.log_account_lockout(
                 username=username,
                 source_ip=client_ip,
                 user_agent=user_agent,
-                lockout_duration_minutes=settings.ACCOUNT_LOCKOUT_DURATION_MINUTES,
+                lockout_duration_minutes=auth_settings.account_lockout_duration_minutes,
                 failed_attempts=lockout_info["failed_attempts"],
             )
         return True, unlock_time
 
     if not auth_success:
         # Authentication failed but not locked (yet)
-        lockout_info = get_lockout_info(username)
+        lockout_info = get_lockout_info(lockout_identifier)
         audit_logger.log_login_failure(
             username=username,
             source_ip=client_ip,
@@ -241,6 +267,7 @@ def _apply_password_expiry(
     auth_method: str,
     client_ip: str,
     user_agent: str,
+    auth_settings: DynamicAuthSettings,
 ) -> None:
     """Flag an expired local password so the dependency gate forces a change.
 
@@ -261,6 +288,10 @@ def _apply_password_expiry(
         auth_method: The method actually used for this login ("local", "ldap", …)
         client_ip: Client IP address, for the audit record
         user_agent: Client user agent, for the audit record
+        auth_settings: The request's resolved auth config (DB > .env > default). The
+            max-age reported to the caller must be the one that was applied; reading
+            ``settings.PASSWORD_MAX_AGE_DAYS`` from .env told the user their password
+            expired after N days while the enforced policy used a different N.
     """
     if auth_method != AUTH_TYPE_LOCAL:
         # The credential just verified was not a local password.
@@ -306,7 +337,7 @@ def _apply_password_expiry(
         user_agent=user_agent,
         error_code="PASSWORD_EXPIRED",
         details={
-            "max_age_days": settings.PASSWORD_MAX_AGE_DAYS,
+            "max_age_days": auth_settings.password_max_age_days,
             "days_until_expiration": get_days_until_expiration(password_changed_at),
         },
     )
@@ -499,19 +530,37 @@ def login_for_access_token(
         # Get client info for audit logging
         client_ip, user_agent = _get_client_info(request)
 
-        # Determine if user is exempt from lockout (super admin with local fallback).
+        # ONE resolution of the auth config for the whole request. Every policy value
+        # this endpoint reports (lockout threshold/duration, password max age, session
+        # limits) must be the one that was ENFORCED — these used to read `settings.*`
+        # from .env while enforcement had moved to the DB-backed config, so the audit
+        # record and the user-facing response both described a policy nobody applied.
+        auth_settings = get_auth_settings(db)
+
+        # ONE account lookup serves both the exemption decision and the lockout key.
         # Resolved BEFORE the attempt is recorded and regardless of the outcome:
-        # computing it only on success made the exemption useless, since it is FAILED
+        # computing the exemption only on success made it useless, since it is FAILED
         # attempts that lock an account — and check_and_record_attempt short-circuits
         # for exempt callers, so it never cleared the counter on success either.
-        exempt_from_lockout = _is_exempt_from_lockout(db, username, user_uuid_str)
+        account = _resolve_lockout_account(db, username, user_uuid_str)
+        exempt_from_lockout = _is_exempt_from_lockout(account)
+
+        # Canonical bucket: every alias of one account (email, ldap_uid, case
+        # variations) counts against a single threshold. Keying on the submitted
+        # string gave a two-alias account two counters and doubled its effective
+        # lockout threshold.
+        lockout_identifier = canonical_identifier(
+            username, str(account.email) if account is not None else None
+        )
 
         # Handle lockout check and recording
         is_locked, _ = _handle_lockout_check(
             username,
+            lockout_identifier,
             auth_success,
             client_ip,
             user_agent,
+            auth_settings,
             exempt_from_lockout=exempt_from_lockout,
             auth_method=actual_auth_method,
         )
@@ -548,15 +597,17 @@ def login_for_access_token(
         # Password expiry (FedRAMP IA-5(1)). Evaluated before the MFA branch so the
         # flag is set even when the caller still owes a second factor — it is the
         # dependency gate, not this response, that confines them afterwards.
-        _apply_password_expiry(db, user_db, actual_auth_method, client_ip, user_agent)
+        _apply_password_expiry(
+            db, user_db, actual_auth_method, client_ip, user_agent, auth_settings
+        )
 
         # FedRAMP AC-10: Enforce concurrent session limit.
         # DB-backed (admin UI) over .env, like the rest of the auth config — these
         # read `settings.*` directly, so the Session tab's limit and policy were
-        # inert and only an .env edit plus a restart could change them.
-        session_settings = get_auth_settings(db)
-        max_concurrent_sessions = session_settings.max_concurrent_sessions
-        concurrent_session_policy = session_settings.concurrent_session_policy
+        # inert and only an .env edit plus a restart could change them. Reuses the
+        # resolution taken at the top of the request rather than taking a second one.
+        max_concurrent_sessions = auth_settings.max_concurrent_sessions
+        concurrent_session_policy = auth_settings.concurrent_session_policy
 
         if max_concurrent_sessions > 0:
             from app.models.refresh_token import RefreshToken
@@ -578,6 +629,23 @@ def login_for_access_token(
 
             if active_sessions >= max_concurrent_sessions:
                 if concurrent_session_policy == "reject":
+                    # AC-10 refusal is an event in its own right; it was previously
+                    # invisible to the audit log, so a user repeatedly blocked at the
+                    # session cap left no trace a reviewer could find.
+                    audit_logger.log(
+                        event_type=AuditEventType.AUTH_SESSION_LIMIT_EXCEEDED,
+                        user_id=user_db.id,
+                        username=str(user_db.email),
+                        outcome=AuditOutcome.FAILURE,
+                        source_ip=client_ip,
+                        user_agent=user_agent,
+                        error_code="CONCURRENT_SESSION_LIMIT",
+                        details={
+                            "policy": "reject",
+                            "max_concurrent_sessions": max_concurrent_sessions,
+                            "active_sessions": active_sessions,
+                        },
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                         detail=(
@@ -592,16 +660,24 @@ def login_for_access_token(
                     oldest_token.revoked_at = datetime.now(UTC)  # type: ignore[assignment]
                     db.commit()
 
+                    # AUTH_SESSION_LIMIT_EXCEEDED, not AUTH_SESSION_EXPIRED: this
+                    # session did not time out, it was evicted to make room. The
+                    # purpose-built event existed with zero emitters, so searching the
+                    # audit log for AC-10 enforcement returned nothing while eviction
+                    # noise was indistinguishable from ordinary session expiry.
                     audit_logger.log(
-                        event_type=AuditEventType.AUTH_SESSION_EXPIRED,
+                        event_type=AuditEventType.AUTH_SESSION_LIMIT_EXCEEDED,
                         user_id=user_db.id,
                         username=str(user_db.email),
                         outcome=AuditOutcome.SUCCESS,
                         source_ip=client_ip,
                         user_agent=user_agent,
+                        error_code="CONCURRENT_SESSION_LIMIT",
                         details={
                             "reason": "concurrent_session_limit",
                             "policy": "terminate_oldest",
+                            "max_concurrent_sessions": max_concurrent_sessions,
+                            "active_sessions": active_sessions,
                         },
                     )
 

@@ -23,8 +23,10 @@ import builtins
 import json
 import logging
 import threading
+import time
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from app.core.config import settings
 
@@ -152,25 +154,86 @@ class InMemoryStore:
             return set(json.loads(existing[0]))  # type: ignore[arg-type]
 
 
-# Singleton in-memory store for fallback
+# Singleton stores. Mirrors app/auth/lockout.py: the Redis client is cached rather
+# than rebuilt per call, and while it is down the fallback is re-probed on a timer
+# instead of latching for the process lifetime.
+_redis_client = None
 _in_memory_store: InMemoryStore | None = None
+_store_initialized = False
+_store_lock = threading.Lock()
+_last_redis_probe: float = 0.0
+
+
+def _record_degradation(control: str, fallback: str) -> None:
+    """Count a security control running without its shared state store.
+
+    Imported lazily and never allowed to raise: a broken metrics backend must not be
+    able to break the login flow. Same contract as
+    ``lockout._record_degradation`` / ``token_service._record_degradation``.
+
+    Args:
+        control: The security control that degraded.
+        fallback: What it used instead (``local`` = per-process approximation).
+    """
+    try:
+        from app.core.metrics import security_state_degraded_total
+
+        security_state_degraded_total.labels(control=control, fallback=fallback).inc()
+    except Exception:  # pragma: no cover - metrics must never break auth
+        logger.debug("Could not record security degradation metric", exc_info=True)
 
 
 def _get_store():
-    """Get the storage backend (Redis or in-memory fallback)."""
-    global _in_memory_store
+    """Get the storage backend (Redis, or the in-memory fallback while it is down).
 
-    redis_client = get_redis_client()
-    if redis_client:
-        return redis_client
+    Two problems this replaces, both on an **unauthenticated** endpoint:
 
-    # Fallback to in-memory
-    if _in_memory_store is None:
-        logger.warning(
-            "Using in-memory session storage. "
-            "Sessions will not persist across restarts and will not work in distributed deployments."
-        )
-        _in_memory_store = InMemoryStore()
+    * It called ``get_redis_client()`` on **every** access, and that function builds a
+      new client and issues a ``PING`` — a connection setup and a round trip per OIDC
+      login step, with the resulting pool immediately discarded.
+    * There was no memory of the outcome and no signal when it failed: the fallback
+      was chosen silently at ``warning`` level with no metric, so a deployment running
+      OIDC login state per-replica (states stored on one replica, redeemed on another —
+      i.e. logins that fail at random behind a load balancer) looked healthy.
+
+    The re-probe policy is ``lockout.REDIS_REPROBE_SECONDS``, imported rather than
+    re-declared so the two controls cannot drift apart.
+
+    Returns:
+        The Redis client when reachable, otherwise the shared ``InMemoryStore``.
+    """
+    global _redis_client, _in_memory_store, _store_initialized, _last_redis_probe
+
+    from app.auth.lockout import REDIS_REPROBE_SECONDS
+
+    with _store_lock:
+        if not _store_initialized:
+            _redis_client = get_redis_client()
+            if _redis_client is None:
+                logger.warning(
+                    "Using in-memory OIDC state storage. "
+                    "Login states will not be shared across replicas or survive a restart."
+                )
+                _in_memory_store = InMemoryStore()
+            _store_initialized = True
+            _last_redis_probe = time.monotonic()
+        elif _redis_client is None:
+            # On the fallback — retry Redis, but not on every call.
+            now = time.monotonic()
+            if now - _last_redis_probe >= REDIS_REPROBE_SECONDS:
+                _last_redis_probe = now
+                recovered = get_redis_client()
+                if recovered is not None:
+                    logger.info("Redis recovered — resuming shared OIDC state storage")
+                    _redis_client = recovered
+
+        if _redis_client is not None:
+            return _redis_client
+
+        if _in_memory_store is None:
+            _in_memory_store = InMemoryStore()
+
+    _record_degradation("oidc_state", "local")
     return _in_memory_store
 
 
@@ -200,7 +263,9 @@ class OIDCStateStore:
         Args:
             max_states: Maximum number of active states allowed (default: 10000)
         """
-        self._store = None
+        # Either a redis.Redis or an InMemoryStore — deliberately structural, since
+        # the fallback only implements the subset of the Redis API used here.
+        self._store: Any = None
         self._max_states = max_states if max_states is not None else self.MAX_STATES
 
     @property
@@ -242,8 +307,35 @@ class OIDCStateStore:
                 break
         return count
 
+    def _scan_keys(self, pattern: str, limit: int) -> list[str]:
+        """Collect at most ``limit`` keys matching ``pattern`` without ``KEYS``.
+
+        ``KEYS`` is O(total keyspace) and blocks the Redis event loop for the whole
+        scan. Redis here is also the Celery broker and the cache, so a blocking scan
+        driven from an unauthenticated endpoint stalls transcription dispatch and every
+        other client — a denial-of-service primitive, not just a slow query.
+
+        Args:
+            pattern: Redis glob pattern.
+            limit: Stop after this many keys.
+
+        Returns:
+            Up to ``limit`` matching keys.
+        """
+        scan_iter = getattr(self.store, "scan_iter", None)
+        if scan_iter is None:
+            # In-memory fallback: no SCAN, but the keyspace is this process's own.
+            return list(self.store.keys(pattern))[:limit]
+
+        collected: list[str] = []
+        for key in scan_iter(match=pattern, count=500):
+            collected.append(key if isinstance(key, str) else key.decode())
+            if len(collected) >= limit:
+                break
+        return collected
+
     def _cleanup_oldest_states(self, count: int = 100) -> int:
-        """Remove oldest states when limit is exceeded.
+        """Remove some states when the limit is exceeded.
 
         For Redis, states have TTL so this is less critical.
         For in-memory store, removes oldest entries.
@@ -254,10 +346,9 @@ class OIDCStateStore:
         Returns:
             Number of states actually removed
         """
-        keys = self.store.keys(f"{OIDC_STATE_PREFIX}*")
+        keys = self._scan_keys(f"{OIDC_STATE_PREFIX}*", count)
         removed = 0
-        # Remove oldest keys (first in list, assuming insertion order for in-memory)
-        for key in keys[:count]:
+        for key in keys:
             if self.store.delete(key):
                 removed += 1
         if removed > 0:

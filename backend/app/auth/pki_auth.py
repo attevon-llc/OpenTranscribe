@@ -1397,6 +1397,21 @@ def _extract_user_info_from_request(
 PKI_MODE_HEADER = "header"
 PKI_MODE_MUTUAL_TLS = "mutual_tls"
 
+#: Whether the address in ``PKIUserData["email"]`` is a *verified* address that may be
+#: used to take over a pre-existing account. It is not, and the reason is visible in
+#: ``_extract_user_info_from_request``: whenever a DN header is present — the deployed
+#: ``header`` mode, and even ``mutual_tls`` — the address is parsed out of that header
+#: string with ``_parse_dn_components``, so it is a value the proxy supplied, not one
+#: this process read out of a certificate. Nothing downstream records which of the two
+#: extraction paths produced it, so the guard fails closed for both. Accounts already
+#: carrying a ``pki_subject_dn`` are unaffected, and so is a new PKI user whose address
+#: collides with no existing account.
+#:
+#: Turning this into a genuine per-identity signal (rather than a constant) means
+#: carrying "this address came from the validated certificate's SAN" through
+#: ``PKIUserData`` — a deliberate change, not a default.
+PKI_ASSERTS_EMAIL_VERIFIED = False
+
 
 def pki_authenticate(
     request,
@@ -1750,6 +1765,12 @@ def sync_pki_user_to_db(db, pki_data: PKIUserData):
     - Admin role promotion and demotion based on PKI_ADMIN_DNS
     - Race conditions when multiple concurrent logins occur
 
+    Lookup is ``pki_subject_dn`` first, then email. The email fallback links a
+    certificate to a **pre-existing** account, so it goes through
+    ``account_linking.assert_email_link_permitted`` — see that module for the rule,
+    why a refusal fails the login instead of creating a second account, and the
+    operator remedy.
+
     Args:
         db: Database session
         pki_data: User data from certificate
@@ -1759,7 +1780,11 @@ def sync_pki_user_to_db(db, pki_data: PKIUserData):
 
     Raises:
         ValueError: If user cannot be created or found after race condition
+        HTTPException: 401, when an email-matched link is refused. Deliberately the
+            same response the PKI login endpoint returns for an invalid certificate,
+            so a refusal is not an oracle for "this address exists".
     """
+    from app.auth.account_linking import assert_email_link_permitted
     from app.auth.constants import AUTH_TYPE_LOCAL
     from app.models.user import User
 
@@ -1769,7 +1794,19 @@ def sync_pki_user_to_db(db, pki_data: PKIUserData):
     # Check if user exists by pki_subject_dn first (most specific)
     user = db.query(User).filter(User.pki_subject_dn == subject_dn).first()
     if not user and email:
+        # The email fallback links this certificate to a PRE-EXISTING account, so it
+        # is gated. An account already carrying this subject DN was linked
+        # deliberately at some earlier point and is not re-litigated.
         user = db.query(User).filter(User.email == email).first()
+        if user:
+            assert_email_link_permitted(
+                user,
+                provider=AUTH_TYPE_PKI,
+                source_identifier=subject_dn,
+                email_verified=PKI_ASSERTS_EMAIL_VERIFIED,
+                failure_detail="Invalid or missing client certificate",
+                failure_headers={"WWW-Authenticate": "Certificate"},
+            )
 
     if not user:
         user = _create_pki_user(db, pki_data)

@@ -22,6 +22,11 @@ The AST guard pins the *cause* rather than the symptom: every write to
 independent derivation (a literal, or an inlined ``role == 'super_admin'``).
 """
 
+# mypy: disable-error-code="arg-type"
+# These tests pass structural stand-ins to signatures that declare
+# Session/User/…Data. Suppressing arg-type for the file is the honest
+# statement of that; the alternative is casts at every call site, or widening
+# a production signature to suit a test.
 from __future__ import annotations
 
 import ast
@@ -71,10 +76,33 @@ class _FakeSession:
     def add(self, obj: object) -> None:  # pragma: no cover - conversions never add
         raise AssertionError("conversion helpers must not create rows")
 
+    # Since v376 the LDAP/OIDC conversions delegate privilege to
+    # ``idp_group_mapping_service.reconcile_user``, which reads the account's group
+    # memberships. There are none here — no ``group_mapping`` rows either — so the
+    # legacy admin signal alone must still produce the same end state.
+    def query(self, *args: object, **kwargs: object) -> _EmptyResult:
+        return _EmptyResult()
+
+    def delete(self, obj: object) -> None:  # pragma: no cover - nothing to remove
+        raise AssertionError("conversion must not delete rows in these fixtures")
+
+    def rollback(self) -> None:  # pragma: no cover - defensive
+        pass
+
+
+class _EmptyResult:
+    def filter(self, *args: object, **kwargs: object) -> _EmptyResult:
+        return self
+
+    def all(self) -> list:
+        return []
+
 
 def _local_user(role: str) -> SimpleNamespace:
     """A local-auth user row whose mirror is consistent to begin with."""
     return SimpleNamespace(
+        id=1,
+        uuid="019ec90a-0000-7000-8000-000000000001",
         email="person@example.com",
         full_name="Test Person",
         role=role,
@@ -130,12 +158,31 @@ def _pki_data(is_admin: bool) -> dict:
 
 
 def _convert_ldap(db, user, is_admin: bool):
+    """Conversion + reconciliation, in the order ``sync_ldap_user_to_db`` runs them.
+
+    Privilege used to be decided inside the conversion helper; since v376 it is
+    decided once, in ``idp_group_mapping_service.reconcile_user``, for both the
+    conversion and the update paths. The adapter follows the move so the tests keep
+    pinning the end state of a real login rather than of one internal helper.
+    """
+    from app.models.group import MAPPING_SOURCE_LDAP
+    from app.services.idp_group_mapping_service import reconcile_user
+
     data = _ldap_data(is_admin)
-    return ldap_auth._convert_local_user_to_ldap(db, user, data["username"], data["email"], data)
+    ldap_auth._convert_local_user_to_ldap(db, user, data["username"], data["email"], data)
+    reconcile_user(db, user, MAPPING_SOURCE_LDAP, data["groups"], legacy_admin=is_admin)
+    return user
 
 
 def _convert_keycloak(db, user, is_admin: bool):
-    return keycloak_auth._convert_local_user_to_keycloak(db, user, _keycloak_data(is_admin))
+    """Conversion + reconciliation — see :func:`_convert_ldap`."""
+    from app.models.group import MAPPING_SOURCE_OIDC
+    from app.services.idp_group_mapping_service import reconcile_user
+
+    data = _keycloak_data(is_admin)
+    keycloak_auth._convert_local_user_to_keycloak(db, user, data)
+    reconcile_user(db, user, MAPPING_SOURCE_OIDC, data["roles"], legacy_admin=is_admin)
+    return user
 
 
 def _convert_pki(db, user, is_admin: bool):
@@ -166,7 +213,9 @@ class TestLocalUserConversionKeepsInvariant:
 
         assert user.role == ROLE_ADMIN
         assert user.is_superuser is False
-        assert db.commits == 1
+        # >= 1: a role change is a second commit since v376 (reconcile_user commits
+        # after revoking sessions), and the fake re-checks the invariant on each.
+        assert db.commits >= 1
 
     def test_existing_super_admin_is_not_demoted(self, convert):
         """``super_admin`` is local-only: an IdP sync must not strip it."""
@@ -177,7 +226,9 @@ class TestLocalUserConversionKeepsInvariant:
 
         assert user.role == ROLE_SUPER_ADMIN
         assert user.is_superuser is True
-        assert db.commits == 1
+        # >= 1: a role change is a second commit since v376 (reconcile_user commits
+        # after revoking sessions), and the fake re-checks the invariant on each.
+        assert db.commits >= 1
 
     def test_non_idp_admin_is_demoted_to_user(self, convert):
         """A local 'admin' not granted admin by the IdP drops to 'user'."""

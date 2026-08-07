@@ -17,6 +17,11 @@ No real LDAP and no real DB: the directory probe and the candidate query are the
 seams, and both are module-level functions the tests replace.
 """
 
+# mypy: disable-error-code="arg-type"
+# These tests pass structural stand-ins to signatures that declare
+# Session/User/…Data. Suppressing arg-type for the file is the honest
+# statement of that; the alternative is casts at every call site, or widening
+# a production signature to suit a test.
 from __future__ import annotations
 
 import pytest
@@ -27,6 +32,7 @@ from app.auth.ldap_auth import DIRECTORY_NOT_ENTITLED
 from app.auth.ldap_auth import DIRECTORY_PRESENT
 from app.auth.ldap_auth import LdapConfig
 from app.auth.ldap_auth import LdapDirectoryUnavailableError
+from app.auth.ldap_auth import LdapProbe
 from app.auth.ldap_auth import probe_ldap_user
 from app.services import directory_sync_service as svc
 
@@ -49,14 +55,44 @@ class FakeUser:
         self.is_active = is_active
 
 
+class _EmptyQuery:
+    """Every ``query(...).filter(...).all()`` in the sweep resolves to nothing."""
+
+    def filter(self, *args, **kwargs):
+        return self
+
+    def all(self):
+        return []
+
+
 class FakeSession:
-    """A Session stand-in — the sweep only ever commits through it."""
+    """A Session stand-in.
+
+    The sweep commits through it, and since v376 also reads the account's existing
+    group memberships (there are none here, which is the point — a deployment with
+    no ``group_mapping`` rows must reconcile to no changes at all).
+    """
 
     def __init__(self):
         self.commits = 0
+        self.rollbacks = 0
+        self.added: list = []
+        self.deleted: list = []
 
     def commit(self):
         self.commits += 1
+
+    def rollback(self):
+        self.rollbacks += 1
+
+    def query(self, *args, **kwargs):
+        return _EmptyQuery()
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    def delete(self, obj):
+        self.deleted.append(obj)
 
 
 class RecordingAudit:
@@ -95,8 +131,9 @@ def audit(monkeypatch):
 def wire(monkeypatch, users, statuses):
     """Point the sweep at *users* and make the directory answer *statuses*.
 
-    ``statuses`` maps email -> directory status. A value that is an exception class
-    or instance is raised instead, standing in for an unreachable directory.
+    ``statuses`` maps email -> directory status (or a ready-made ``LdapProbe``).
+    A value that is an exception class or instance is raised instead, standing in
+    for an unreachable directory.
     """
     monkeypatch.setattr(svc, "candidate_users", lambda _db: list(users))
 
@@ -105,7 +142,7 @@ def wire(monkeypatch, users, statuses):
             answer = statuses.get(str(user.email), DIRECTORY_PRESENT)
             if isinstance(answer, BaseException):
                 raise answer
-            yield user, answer
+            yield user, answer if isinstance(answer, LdapProbe) else LdapProbe(answer)
 
     monkeypatch.setattr(svc, "probe_users", _probe)
 
@@ -338,30 +375,30 @@ CFG = LdapConfig(enabled=True, server="ldap.example.com", search_base="DC=exampl
 class TestProbeLdapUser:
     def test_missing_entry_is_absent(self, monkeypatch):
         monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", lambda *a, **k: None)
-        assert probe_ldap_user(CFG, object(), "gone") == DIRECTORY_ABSENT
+        assert probe_ldap_user(CFG, object(), "gone").status == DIRECTORY_ABSENT
 
     def test_ad_account_disable_bit_is_detected(self, monkeypatch):
         # 0x202 = NORMAL_ACCOUNT | ACCOUNTDISABLE — the usual offboarded-AD-user value.
         entry = FakeEntry({"userAccountControl": "514"})
         monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", lambda *a, **k: entry)
-        assert probe_ldap_user(CFG, object(), "u") == DIRECTORY_DISABLED
+        assert probe_ldap_user(CFG, object(), "u").status == DIRECTORY_DISABLED
 
     def test_enabled_account_is_present(self, monkeypatch):
         entry = FakeEntry({"userAccountControl": "512"})
         monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", lambda *a, **k: entry)
         monkeypatch.setattr("app.auth.ldap_auth._check_group_access", lambda *a, **k: True)
-        assert probe_ldap_user(CFG, object(), "u") == DIRECTORY_PRESENT
+        assert probe_ldap_user(CFG, object(), "u").status == DIRECTORY_PRESENT
 
     def test_server_without_useraccountcontrol_is_not_treated_as_disabled(self, monkeypatch):
         """A missing answer is not evidence. OpenLDAP/LLDAP never send this attribute."""
         monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", lambda *a, **k: FakeEntry({}))
         monkeypatch.setattr("app.auth.ldap_auth._check_group_access", lambda *a, **k: True)
-        assert probe_ldap_user(CFG, object(), "u") == DIRECTORY_PRESENT
+        assert probe_ldap_user(CFG, object(), "u").status == DIRECTORY_PRESENT
 
     def test_losing_required_group_membership_is_not_entitled(self, monkeypatch):
         monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", lambda *a, **k: FakeEntry({}))
         monkeypatch.setattr("app.auth.ldap_auth._check_group_access", lambda *a, **k: False)
-        assert probe_ldap_user(CFG, object(), "u") == DIRECTORY_NOT_ENTITLED
+        assert probe_ldap_user(CFG, object(), "u").status == DIRECTORY_NOT_ENTITLED
 
     def test_search_failure_raises_unavailable_rather_than_absent(self, monkeypatch):
         """The single most dangerous confusion in this feature."""

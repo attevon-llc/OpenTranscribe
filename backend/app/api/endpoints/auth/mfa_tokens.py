@@ -51,6 +51,21 @@ MFA_SCOPE_VERIFY = "verify"
 MFA_SCOPE_ENROLL = "enroll"
 
 
+def mfa_token_ttl_seconds() -> int:
+    """Effective lifetime of an MFA half-token, in seconds.
+
+    ``mfa_token_expire_minutes`` is admin-settable and every consumer read
+    ``settings.MFA_TOKEN_EXPIRE_MINUTES`` instead, so the saved value was never
+    used. This is the single resolver for both halves of the control: the ``exp``
+    claim on the minted token and the TTL of the single-use record that stops it
+    being replayed. Those two must not diverge — a blacklist entry that expires
+    before the token does re-opens the replay window the claim exists to close.
+    """
+    from app.core.auth_settings import get_process_auth_settings
+
+    return get_process_auth_settings().mfa_token_expire_minutes * 60
+
+
 def _user_can_setup_mfa(user: User) -> bool:
     """Check if user is eligible for local TOTP MFA setup.
 
@@ -109,6 +124,9 @@ def _blacklist_mfa_token(jti: str, expires_seconds: int) -> bool:
     Raises:
         HTTPException: 503 if Redis unavailable and MFA_REQUIRE_REDIS is True
     """
+    # Same floor as _claim_mfa_token: the record must outlive the token.
+    expires_seconds = max(expires_seconds, mfa_token_ttl_seconds())
+
     try:
         redis_client = get_redis_client()
         if redis_client:
@@ -161,6 +179,14 @@ def _claim_mfa_token(jti: str, expires_seconds: int) -> bool:
     Raises:
         HTTPException: 503 if Redis is unavailable and MFA_REQUIRE_REDIS is True
     """
+    # Never let the claim record expire before the token it burns. Callers compute
+    # ``expires_seconds`` themselves and one of them (``mfa_enrollment``) still
+    # derives it from ``settings.MFA_TOKEN_EXPIRE_MINUTES``; if an admin raises
+    # ``mfa_token_expire_minutes`` above the .env value, that caller's TTL would
+    # leave the token valid but no longer claimed — a replay window opened by a
+    # configuration change. Clamping here closes it for every caller at once.
+    expires_seconds = max(expires_seconds, mfa_token_ttl_seconds())
+
     key = f"{MFA_TOKEN_BLACKLIST_PREFIX}{jti}"
     try:
         redis_client = get_redis_client()
@@ -242,7 +268,7 @@ def _create_mfa_token(user_uuid_str: str, user_role: str, scope: str = MFA_SCOPE
     import uuid as uuid_mod
     from datetime import datetime
 
-    mfa_token_expires = timedelta(minutes=settings.MFA_TOKEN_EXPIRE_MINUTES)
+    mfa_token_expires = timedelta(seconds=mfa_token_ttl_seconds())
     now = datetime.now(UTC)
     expire = now + mfa_token_expires
 

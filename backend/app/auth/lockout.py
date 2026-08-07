@@ -23,6 +23,7 @@ from datetime import datetime
 from datetime import timedelta
 from typing import TypedDict
 
+from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
 
 
@@ -301,7 +302,7 @@ def _cas_write(
         Tuple of (written, current_value): ``current_value`` is the value that beat us
         when ``written`` is False.
     """
-    ttl = (settings.ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES + 1440) * 60
+    ttl = _record_ttl_seconds()
     written, current = script(
         keys=[key],
         args=[
@@ -312,6 +313,21 @@ def _cas_write(
         ],
     )
     return bool(int(written)), _decode_stored(current)
+
+
+def _record_ttl_seconds() -> int:
+    """How long a lockout record survives in the store.
+
+    The maximum lockout duration plus 24 h, so a record can never expire while
+    the account it locks is still locked — an expiring record silently unlocks
+    the account. Resolved live because ``account_lockout_max_duration_minutes``
+    is admin-editable: pinning the TTL at the value the process started with
+    would under-cover a lockout the admin has since made longer.
+
+    Returns:
+        Time-to-live in seconds.
+    """
+    return (get_process_auth_settings().account_lockout_max_duration_minutes + 1440) * 60
 
 
 def _lockout_key(identifier: str) -> str:
@@ -329,6 +345,45 @@ def _normalize_identifier(identifier: str) -> str:
         Lowercase identifier
     """
     return identifier.lower().strip()
+
+
+def canonical_identifier(submitted: str, account_email: str | None) -> str:
+    """Collapse every alias of one account onto a single lockout bucket.
+
+    Lockout was keyed on the **submitted string**, so an account reachable both as
+    ``person@example.com`` and as its ``ldap_uid`` had two independent counters and
+    an attacker got ``2 x ACCOUNT_LOCKOUT_THRESHOLD`` attempts against it. Keying on
+    the resolved account's email collapses those aliases onto one counter, which is
+    what NIST AC-7 counts: attempts *against an account*, not against a spelling.
+
+    Why the email and not the UUID: the admin unlock endpoint
+    (``api/endpoints/admin.py``) clears the lockout with ``unlock_account(user.email)``
+    and the periodic/inspection helpers surface identifiers to operators. Email keeps
+    one key space for writers and readers; a UUID key would silently orphan every
+    admin unlock.
+
+    Enumeration safety — the two properties that make the fallback safe:
+
+    * **Bucket names do not distinguish existence.** When no account resolves, the
+      bucket is the normalized submitted string. For the overwhelmingly common case
+      (the login form, where the submitted string *is* the email) the unknown-account
+      bucket is byte-identical to the one that account would have used had it
+      existed, so the choice of bucket reveals nothing. The alias case can only be
+      correlated by an attacker who already knows the account's email address.
+    * **No new timing signal.** The caller resolves the account **once,
+      unconditionally, on the same code path for a hit and a miss**
+      (``login._resolve_lockout_account``) — the very lookup the lockout-exemption
+      check already performed on every attempt. This function itself does no I/O.
+
+    Args:
+        submitted: The identifier as typed by the caller (email or LDAP uid).
+        account_email: Email of the account this attempt resolved to, or ``None``
+            when no account matched.
+
+    Returns:
+        The normalized lockout key for this attempt.
+    """
+    return _normalize_identifier(account_email or submitted)
 
 
 def _mask_identifier(identifier: str) -> str:
@@ -357,10 +412,11 @@ def _get_lockout_duration_minutes(lockout_count: int) -> int:
     Returns:
         Lockout duration in minutes
     """
-    base_duration = settings.ACCOUNT_LOCKOUT_DURATION_MINUTES
-    max_duration = settings.ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES
+    auth = get_process_auth_settings()
+    base_duration = auth.account_lockout_duration_minutes
+    max_duration = auth.account_lockout_max_duration_minutes
 
-    if not settings.ACCOUNT_LOCKOUT_PROGRESSIVE:
+    if not auth.account_lockout_progressive:
         return base_duration
 
     # lockout_count is the count before this lockout, so 0 = first lockout
@@ -398,8 +454,7 @@ def _save_record(record: LockoutRecord) -> None:
     """
     store = _get_store()
     key = _lockout_key(record.identifier)
-    # Set TTL to max lockout duration + 24 hours for cleanup
-    ttl = (settings.ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES + 1440) * 60
+    ttl = _record_ttl_seconds()
     store.set(key, json.dumps(record.to_dict()), ex=ttl)
 
 
@@ -453,7 +508,7 @@ def check_and_record_attempt(
         - is_locked: True if account is/becomes locked, False otherwise
         - unlock_time: When the lockout expires (None if not locked)
     """
-    if not settings.ACCOUNT_LOCKOUT_ENABLED:
+    if not get_process_auth_settings().account_lockout_enabled:
         return False, None
 
     if exempt_from_lockout:
@@ -528,7 +583,7 @@ def _check_lockout_threshold(
     Returns:
         Tuple of (is_locked, unlock_time)
     """
-    if record.failed_attempts < settings.ACCOUNT_LOCKOUT_THRESHOLD:
+    if record.failed_attempts < get_process_auth_settings().account_lockout_threshold:
         return False, None
 
     duration_minutes = _get_lockout_duration_minutes(record.lockout_count)
@@ -570,7 +625,8 @@ def _apply_failed_login(
 
     logger.info(
         f"Failed login attempt for {_mask_identifier(identifier)}: "
-        f"attempt {record.failed_attempts}/{settings.ACCOUNT_LOCKOUT_THRESHOLD}"
+        f"attempt {record.failed_attempts}/"
+        f"{get_process_auth_settings().account_lockout_threshold}"
     )
 
     return _check_lockout_threshold(record, now, identifier)
@@ -701,15 +757,16 @@ def _check_and_record_attempt_memory(
             if record.first_failed_attempt is None:
                 record.first_failed_attempt = now.isoformat()
 
+            threshold = get_process_auth_settings().account_lockout_threshold
             logger.info(
                 f"Failed login attempt for {_mask_identifier(identifier)}: "
-                f"attempt {record.failed_attempts}/{settings.ACCOUNT_LOCKOUT_THRESHOLD}"
+                f"attempt {record.failed_attempts}/{threshold}"
             )
 
             # Check if threshold reached
             is_locked = False
             unlock_time = None
-            if record.failed_attempts >= settings.ACCOUNT_LOCKOUT_THRESHOLD:
+            if record.failed_attempts >= threshold:
                 duration_minutes = _get_lockout_duration_minutes(record.lockout_count)
                 unlock_time = now + timedelta(minutes=duration_minutes)
                 record.set_locked_until(unlock_time)
@@ -769,7 +826,7 @@ def is_account_locked(identifier: str) -> tuple[bool, datetime | None]:
         - is_locked: True if account is locked, False otherwise
         - unlock_time: When the lockout expires (None if not locked)
     """
-    if not settings.ACCOUNT_LOCKOUT_ENABLED:
+    if not get_process_auth_settings().account_lockout_enabled:
         return False, None
 
     identifier = _normalize_identifier(identifier)
@@ -812,6 +869,7 @@ def get_lockout_info(identifier: str) -> LockoutInfo:
     """
     identifier = _normalize_identifier(identifier)
     now = datetime.now(UTC)
+    lockout_enabled = get_process_auth_settings().account_lockout_enabled
 
     record = _get_record(identifier)
     if not record:
@@ -824,13 +882,11 @@ def get_lockout_info(identifier: str) -> LockoutInfo:
             "first_failed_attempt": None,
             "last_failed_attempt": None,
             "admin_unlocked_at": None,
-            "lockout_enabled": settings.ACCOUNT_LOCKOUT_ENABLED,
+            "lockout_enabled": lockout_enabled,
         }
 
     locked_until_dt = record.get_locked_until_datetime()
-    is_locked = (
-        locked_until_dt is not None and now < locked_until_dt and settings.ACCOUNT_LOCKOUT_ENABLED
-    )
+    is_locked = locked_until_dt is not None and now < locked_until_dt and lockout_enabled
 
     return {
         "identifier": record.identifier,
@@ -841,7 +897,7 @@ def get_lockout_info(identifier: str) -> LockoutInfo:
         "first_failed_attempt": record.first_failed_attempt,
         "last_failed_attempt": record.last_failed_attempt,
         "admin_unlocked_at": record.admin_unlocked_at,
-        "lockout_enabled": settings.ACCOUNT_LOCKOUT_ENABLED,
+        "lockout_enabled": lockout_enabled,
     }
 
 
@@ -898,7 +954,7 @@ def cleanup_expired_lockouts() -> int:
     Returns:
         Number of records cleaned up
     """
-    if not settings.ACCOUNT_LOCKOUT_ENABLED:
+    if not get_process_auth_settings().account_lockout_enabled:
         return 0
 
     store = _get_store()
@@ -961,7 +1017,7 @@ def get_all_locked_accounts() -> list[LockoutInfo]:
     Returns:
         List of lockout info dictionaries for all locked accounts
     """
-    if not settings.ACCOUNT_LOCKOUT_ENABLED:
+    if not get_process_auth_settings().account_lockout_enabled:
         return []
 
     store = _get_store()

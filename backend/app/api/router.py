@@ -4,10 +4,12 @@ from fastapi import APIRouter
 
 from . import websockets
 from .endpoints import admin
+from .endpoints import admin_group_mappings
 from .endpoints import admin_timing
 from .endpoints import asr_settings
 from .endpoints import auth
 from .endpoints import auth_config
+from .endpoints import auth_email_delivery
 from .endpoints import backup_settings
 from .endpoints import combined_speaker_migration
 from .endpoints import comments
@@ -118,6 +120,24 @@ include_router_with_consistency(
     auth_config.router,
     prefix="/admin/auth-config",
     tags=["auth-config"],
+    capability="auth.config_ui",
+)
+# Same prefix, same capability: which mail config carries password resets and
+# invitations is auth configuration. It rides here rather than under
+# /watch-sources so it survives an edition that disables auto-import.
+include_router_with_consistency(
+    auth_email_delivery.router,
+    prefix="/admin/auth-config",
+    tags=["auth-config"],
+    capability="auth.config_ui",
+)
+# Which directory group becomes which in-app group — and which one hands out
+# admin — is authorization configuration, so it rides the auth-config capability
+# and the super_admin tier rather than the /groups (per-user sharing) router.
+include_router_with_consistency(
+    admin_group_mappings.router,
+    prefix="/admin/group-mappings",
+    tags=["group-mappings"],
     capability="auth.config_ui",
 )
 include_router_with_consistency(system.router, prefix="/system", tags=["system"])

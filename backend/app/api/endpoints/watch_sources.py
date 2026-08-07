@@ -51,6 +51,8 @@ from app.schemas.watch_source import WatchSourceResponse
 from app.schemas.watch_source import WatchSourcesList
 from app.schemas.watch_source import WatchSourceStats
 from app.schemas.watch_source import WatchSourceUpdate
+from app.services.auth_mail_config_service import IN_USE_MESSAGE
+from app.services.auth_mail_config_service import is_designated
 from app.utils.encryption import encrypt_api_key
 
 logger = logging.getLogger(__name__)
@@ -401,6 +403,11 @@ def update_email_config(
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
     payload = data.model_dump(exclude_unset=True)
+    # Disabling the designated auth mailer silently routes password resets to the
+    # env SMTP transport, which is unset in every stock deployment — so it stops
+    # them altogether, visible only as an ERROR log. Refuse and name the remedy.
+    if payload.get("is_enabled") is False and is_designated(db, str(cfg.uuid)):
+        raise HTTPException(status_code=409, detail=IN_USE_MESSAGE)
     secret_map = {
         "smtp_password": "encrypted_smtp_password",
         "m365_client_secret": "encrypted_m365_client_secret",
@@ -430,6 +437,9 @@ def delete_email_config(
     )
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
+    # Same reasoning as the disable guard, plus the row itself is unrecoverable.
+    if is_designated(db, str(cfg.uuid)):
+        raise HTTPException(status_code=409, detail=IN_USE_MESSAGE)
     db.delete(cfg)
     db.commit()
     return {"success": True}

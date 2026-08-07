@@ -19,6 +19,8 @@ quietly ship at the wrong tier.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 TIER_PUBLIC = "public"
@@ -38,6 +40,9 @@ SUPER_ADMIN_PREFIXES = (
     "/api/admin/backup",
     "/api/admin/media-mirror",
     "/api/admin/redaction-policy",
+    # A group mapping decides who a directory claim hands admin to — that is
+    # authorization configuration, not team management.
+    "/api/admin/group-mappings",
     "/api/watch-sources/settings",
     "/api/watch-sources/email-configs",
 )
@@ -98,7 +103,7 @@ def _tier_of(route) -> str:
     if dependant is None:
         return TIER_PUBLIC
 
-    seen = set()
+    seen: set[Any] = set()
     stack = [dependant]
     while stack:
         node = stack.pop()

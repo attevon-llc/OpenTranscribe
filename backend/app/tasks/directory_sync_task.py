@@ -1,4 +1,4 @@
-"""Celery tasks for periodic directory reconciliation (LDAP deprovisioning).
+"""Celery tasks for periodic directory reconciliation (LDAP groups, roles, deprovisioning).
 
 Two tasks, following the same DB-driven scheduling pattern as ``backup_tasks``:
 
@@ -7,8 +7,10 @@ Two tasks, following the same DB-driven scheduling pattern as ``backup_tasks``:
   ``directory_sync.last_run_at``, and dispatches the real sweep if so. Changing the
   schedule in the admin UI therefore takes effect with no beat restart.
 - ``directory.sync_run`` (cpu queue): one reconciliation pass — probe every active
-  LDAP account against the directory, disable the ones that are provably gone, and
-  revoke their sessions.
+  LDAP account against the directory, disable the ones that are provably gone and
+  revoke their sessions, and re-apply the configured ``group_mapping`` rows
+  (groups + privilege) to the ones still present. Both halves come from the same
+  probe, so adding group reconciliation cost no extra LDAP round-trips.
 
 Both are cheap and network-bound; they must never land on the GPU queue. The sweep
 runs under a Redis lock so a manual "Run now" landing on a scheduled window cannot

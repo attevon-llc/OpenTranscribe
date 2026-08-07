@@ -17,9 +17,14 @@ designation lives in the ``SystemSettings`` key ``email.auth_config_uuid``
 here — it is a property of the deployment, not of the provider, so encoding it as
 a column would mean a migration plus a "only one row may be true" invariant with
 no DB constraint able to express it. Resolution lives in
-``services/email_service.load_auth_mail_config``; deleting or disabling a
-designated row degrades auth mail to the ``SMTP_*`` env transport with an error
-log, never to a different config.
+``services/email_service.load_auth_mail_config``; the designation is written and
+validated in ``services/auth_mail_config_service`` and exposed at
+``PUT /api/admin/auth-config/email/designation``.
+
+The CRUD routes **refuse** (409) to delete or disable the designated row, since
+either would silently reroute password resets to the ``SMTP_*`` env transport —
+unset in every stock deployment. Should the row vanish another way, the read path
+degrades to that env transport with an error log, never to a different config.
 """
 
 import uuid as uuid_pkg

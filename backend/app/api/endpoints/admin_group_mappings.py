@@ -38,7 +38,7 @@ from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.db.base import get_db
 from app.models.group import MAPPING_SOURCE_LDAP
-from app.models.group import MEMBERSHIP_SOURCE_MANUAL
+from app.models.group import MEMBERSHIP_SOURCES_PROTECTED
 from app.models.group import GroupMapping
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
@@ -83,7 +83,10 @@ def _member_counts(db: Session, mappings: list[GroupMapping]) -> dict[int, int]:
         db.query(UserGroupMember.group_id, UserGroupMember.source)
         .filter(
             UserGroupMember.group_id.in_(group_ids),
-            UserGroupMember.source != MEMBERSHIP_SOURCE_MANUAL,
+            # Everything a directory pass owns. `manual` and `scim` are excluded
+            # because neither is derived from a mapping — see
+            # models/group.MEMBERSHIP_SOURCES_PROTECTED.
+            UserGroupMember.source.notin_(MEMBERSHIP_SOURCES_PROTECTED),
         )
         .all()
     )

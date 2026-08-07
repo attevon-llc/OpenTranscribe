@@ -95,6 +95,19 @@ export interface OIDCConfig {
   /** Optional issuer override; normally taken from the discovery document. */
   oidc_issuer: string;
   oidc_scopes: string;
+  /**
+   * Semicolon-delimited values read from `oidc_roles_claim` that a login must
+   * carry at least one of. **An empty list admits everyone** — that is what JIT
+   * provisioning did unconditionally before this existed, so empty is the
+   * upgrade-safe default rather than a lockout.
+   *
+   * Semicolons, not commas: a directory DN (`CN=Legal,OU=Groups,DC=example,DC=com`)
+   * contains commas, so a comma-delimited list would split one group into four
+   * values that match nothing.
+   */
+  oidc_allowed_groups: string;
+  /** Semicolon-delimited values that DENY access, evaluated before the allow-list. */
+  oidc_blocked_groups: string;
   oidc_timeout: number;
   oidc_verify_audience: boolean;
   oidc_audience: string;

@@ -104,7 +104,7 @@ All four methods can be active simultaneously. Users choose their preferred logi
 
 Auth configuration is stored encrypted (AES-256-GCM) in the database and managed via the Super Admin UI. See detailed setup guides:
 - [LDAP Authentication](LDAP_AUTH.md)
-- [Keycloak/OIDC Setup](KEYCLOAK_SETUP.md)
+- [OpenID Connect Setup](OIDC_SETUP.md)
 - [PKI/Certificate Authentication](PKI_SETUP.md)
 - [Auth Deployment Guide](AUTH_DEPLOYMENT_GUIDE.md)
 

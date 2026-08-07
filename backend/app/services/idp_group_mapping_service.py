@@ -6,8 +6,8 @@ until now discarded everything but ``is_admin``. This module is what consumes th
 a :class:`~app.models.group.GroupMapping` row binds one claim value to a
 ``UserGroup`` and/or a granted role, and :func:`reconcile_user` applies the result.
 
-Two callers share this one implementation — login (``auth/ldap_auth.py``,
-``auth/oidc/provisioning.py``) and the periodic sweep
+Three callers share this one implementation — login (``auth/ldap_auth.py``,
+``auth/oidc/provisioning.py``, ``auth/proxy/provisioning.py``) and the periodic sweep
 (``services/directory_sync_service.py``). There is deliberately no second copy: a
 login-only version would never revoke, and a sweep-only version would leave a
 freshly-promoted user waiting a day for their groups.
@@ -19,9 +19,14 @@ Invariants this module owns:
   (``v376``) refuses it at the database. A super_admin account is also never
   demoted here — it is the break-glass account for the directory that might be
   the thing that is broken.
-* **Hand-added memberships are untouchable.** Only rows whose ``source`` is a
-  directory are ever removed; a ``manual`` row survives every pass, and a mapping
-  that would duplicate one leaves it manual rather than claiming it.
+* **Hand-added and SCIM-written memberships are untouchable.** Only rows whose
+  ``source`` is a directory are ever removed (``MEMBERSHIP_SOURCES_PROTECTED``); a
+  ``manual`` or ``scim`` row survives every pass, and a mapping that would duplicate
+  one leaves it alone rather than claiming it.
+* **"Claim absent" and "claim empty" are different instructions.** ``reconcile_user``
+  takes ``reconcile_memberships`` / ``apply_role`` for the trusted-header path, whose
+  groups and role headers are both optional: reconciling against an absent header
+  would strip every membership it ever granted and demote every admin.
 * **A privilege change revokes sessions**, through
   ``services/account_security_service.revoke_all_sessions``, and is audited. The
   actor is the directory rather than a ``User``, which is why the audit event is
@@ -48,7 +53,7 @@ from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
 from app.models.group import MAPPING_SOURCE_LDAP
 from app.models.group import MAPPING_SOURCES
-from app.models.group import MEMBERSHIP_SOURCE_MANUAL
+from app.models.group import MEMBERSHIP_SOURCES_PROTECTED
 from app.models.group import GroupMapping
 from app.models.group import UserGroupMember
 from app.services.account_security_service import revoke_all_sessions
@@ -220,20 +225,23 @@ def _reconcile_memberships(
     A membership is **added** when a matched mapping names a group the user is not
     already in — as ``source=<directory>``, so the next pass owns it. It is
     **removed** when a directory-sourced row's group is no longer in the resolved
-    set, including when the mapping itself was deleted. A ``manual`` row is never
-    added over, never removed, and never converted: if an admin already put the
-    user in that group by hand, that decision outlives the directory.
+    set, including when the mapping itself was deleted. A ``manual`` or ``scim`` row
+    is never added over, never removed, and never converted: if an admin put the user
+    in that group by hand, or a provisioning system did it through SCIM, that
+    decision outlives a login-time claim list.
 
     Returns:
         ``(added_group_ids, removed_group_ids)``.
     """
     existing = db.query(UserGroupMember).filter(UserGroupMember.user_id == user.id).all()
-    manual_group_ids = {
-        int(m.group_id) for m in existing if str(m.source) == MEMBERSHIP_SOURCE_MANUAL
+    protected_group_ids = {
+        int(m.group_id) for m in existing if str(m.source) in MEMBERSHIP_SOURCES_PROTECTED
     }
-    derived = {int(m.group_id): m for m in existing if str(m.source) != MEMBERSHIP_SOURCE_MANUAL}
+    derived = {
+        int(m.group_id): m for m in existing if str(m.source) not in MEMBERSHIP_SOURCES_PROTECTED
+    }
 
-    to_add = sorted(group_ids - derived.keys() - manual_group_ids)
+    to_add = sorted(group_ids - derived.keys() - protected_group_ids)
     to_remove = sorted(gid for gid in derived if gid not in group_ids)
     if dry_run or not (to_add or to_remove):
         return to_add, to_remove
@@ -317,34 +325,55 @@ def reconcile_user(
     legacy_admin: bool = False,
     reason: str = "idp_login",
     dry_run: bool = False,
+    reconcile_memberships: bool = True,
+    apply_role: bool = True,
 ) -> ReconciliationResult:
     """Bring one account's groups and privilege in line with the directory.
 
     Args:
         db: Session owning the transaction.
         user: The account to reconcile (already created/updated by the caller).
-        source: ``ldap`` or ``oidc``.
+        source: ``ldap``, ``oidc`` or ``proxy``.
         claim_values: The group/role strings the IdP asserted for this login.
         legacy_admin: The pre-existing admin signal — ``ldap_admin_users`` /
             ``ldap_admin_groups`` for LDAP, ``oidc_admin_role`` (or a PKI admin
-            DN) for OIDC. OR-ed with the mapped grant, so a deployment that has not
-            created any mapping behaves exactly as it did before ``v376``.
+            DN) for OIDC, the capped role header for a proxy. OR-ed with the mapped
+            grant, so a deployment that has not created any mapping behaves exactly
+            as it did before ``v376``.
         reason: Actor string recorded in the audit event (``idp_login`` /
-            ``directory_sync``).
+            ``directory_sync`` / ``proxy_login``).
         dry_run: Compute the plan and change nothing.
+        reconcile_memberships: False when the source made **no group assertion at
+            all**. "Claim absent" and "claim empty" are different instructions:
+            absent means the source is not managing groups, and reconciling against
+            an empty list would strip every membership it ever granted. Only the
+            trusted-header path passes False today — LDAP and OIDC always carry a
+            list, even an empty one.
+        apply_role: False when the source asserts nothing about privilege, so an
+            existing ``admin`` is not demoted by a login that never mentioned roles.
+            The trusted-header path's role header is opt-in, which is why the flag
+            exists; ``super_admin`` is untouchable either way.
 
     Returns:
         A :class:`ReconciliationResult` describing what was (or would be) done.
     """
     grants = resolve_grants(db, source, claim_values)
-    added, removed = _reconcile_memberships(db, user, source, grants.group_ids, dry_run=dry_run)
-    before, after, revoked = _apply_role(
-        db,
-        user,
-        grants_admin=legacy_admin or grants.grants_admin,
-        source=source,
-        reason=reason,
-        dry_run=dry_run,
+    added, removed = (
+        _reconcile_memberships(db, user, source, grants.group_ids, dry_run=dry_run)
+        if reconcile_memberships
+        else ([], [])
+    )
+    before, after, revoked = (
+        _apply_role(
+            db,
+            user,
+            grants_admin=legacy_admin or grants.grants_admin,
+            source=source,
+            reason=reason,
+            dry_run=dry_run,
+        )
+        if apply_role
+        else (str(user.role), None, 0)
     )
     return ReconciliationResult(
         source=source,

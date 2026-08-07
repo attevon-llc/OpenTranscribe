@@ -833,6 +833,44 @@
             </button>
           </div>
         </div>
+      {:else if lifecyclePanel.code === 'account_pending_approval'}
+        <!-- Awaiting an administrator's decision (v379). The session is still
+             live — the hold clears the instant the queue is worked — but no route
+             is exempt from the gate, so this is a blocking screen rather than a
+             toast that would otherwise fire once per refused request, forever.
+             Logout must stay reachable or a pending user is stuck in the app with
+             no way out. -->
+        <div class="lifecycle-panel">
+          <h2>{$t('auth.pendingApproval.title')}</h2>
+          <p class="lifecycle-message">
+            {lifecyclePanel.message || $t('auth.pendingApproval.description')}
+          </p>
+          <p class="lifecycle-hint">{$t('auth.pendingApproval.hint')}</p>
+          <div class="mfa-options">
+            <button type="button" class="text-button" on:click={() => window.location.reload()}>
+              {$t('auth.pendingApproval.checkAgain')}
+            </button>
+            <button type="button" class="text-button cancel-button" on:click={logout}>
+              {$t('nav.logout')}
+            </button>
+          </div>
+        </div>
+      {:else if lifecyclePanel.code === 'account_rejected'}
+        <!-- Refused by an administrator. Unlike "pending" this bites whether or
+             not approval is still required, the session has already been torn
+             down, and there is nothing to wait for. Terminal by design. -->
+        <div class="lifecycle-panel">
+          <h2>{$t('auth.accountRejected.title')}</h2>
+          <p class="lifecycle-message">
+            {lifecyclePanel.message || $t('auth.accountRejected.description')}
+          </p>
+          <p class="lifecycle-hint">{$t('auth.accountRejected.contactAdmin')}</p>
+          <div class="mfa-options">
+            <button type="button" class="text-button" on:click={clearAccountLifecycle}>
+              {$t('auth.backToLogin')}
+            </button>
+          </div>
+        </div>
       {:else}
         <!-- Expired account: no self-service remedy exists, and the session has
              already been torn down. Terminal state by design. -->

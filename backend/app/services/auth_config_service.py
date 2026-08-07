@@ -69,6 +69,7 @@ class AuthConfigService:
     SENSITIVE_KEYS = {
         "ldap_bind_password",
         "oidc_client_secret",
+        "proxy_shared_secret",
     }
 
     #: Keys whose new value does NOT take effect until the process restarts.
@@ -130,6 +131,7 @@ class AuthConfigService:
         "local_enabled": "bool",
         "allow_registration": "bool",
         "require_email_verification": "bool",
+        "require_account_approval": "bool",
         # LDAP settings
         "ldap_enabled": "bool",
         "ldap_port": "int",
@@ -151,6 +153,9 @@ class AuthConfigService:
         "pki_revocation_soft_fail": "bool",
         "pki_allow_password_fallback": "bool",
         "pki_mode": "string",
+        # Trusted-header (reverse-proxy) settings
+        "proxy_enabled": "bool",
+        "proxy_jit_provisioning": "bool",
         # Password policy settings
         "password_policy_enabled": "bool",
         "password_min_length": "int",
@@ -194,6 +199,7 @@ class AuthConfigService:
         # read the env var and the DB key had no env counterpart to migrate from.
         "ALLOW_OPEN_REGISTRATION": "allow_registration",
         "LOCAL_AUTH_ENABLED": "local_enabled",
+        "REQUIRE_ACCOUNT_APPROVAL": "require_account_approval",
         # LDAP
         "LDAP_ENABLED": "ldap_enabled",
         "LDAP_SERVER": "ldap_server",
@@ -226,6 +232,8 @@ class AuthConfigService:
         "OIDC_ISSUER": "oidc_issuer",
         "OIDC_ROLES_CLAIM": "oidc_roles_claim",
         "OIDC_SCOPES": "oidc_scopes",
+        "OIDC_ALLOWED_GROUPS": "oidc_allowed_groups",
+        "OIDC_BLOCKED_GROUPS": "oidc_blocked_groups",
         "OIDC_REALM": "oidc_realm",
         "OIDC_CLIENT_ID": "oidc_client_id",
         "OIDC_CLIENT_SECRET": "oidc_client_secret",
@@ -247,6 +255,17 @@ class AuthConfigService:
         "PKI_CRL_CACHE_SECONDS": "pki_crl_cache_seconds",
         "PKI_REVOCATION_SOFT_FAIL": "pki_revocation_soft_fail",
         "PKI_TRUSTED_PROXIES": "pki_trusted_proxies",
+        # Trusted-header (reverse proxy)
+        "PROXY_ENABLED": "proxy_enabled",
+        "PROXY_TRUSTED_PROXIES": "proxy_trusted_proxies",
+        "PROXY_EMAIL_HEADER": "proxy_email_header",
+        "PROXY_NAME_HEADER": "proxy_name_header",
+        "PROXY_GROUPS_HEADER": "proxy_groups_header",
+        "PROXY_GROUPS_SEPARATOR": "proxy_groups_separator",
+        "PROXY_ROLE_HEADER": "proxy_role_header",
+        "PROXY_SHARED_SECRET": "proxy_shared_secret",
+        "PROXY_ALLOWED_DOMAINS": "proxy_allowed_domains",
+        "PROXY_JIT_PROVISIONING": "proxy_jit_provisioning",
         # Password policy
         "PASSWORD_POLICY_ENABLED": "password_policy_enabled",
         "PASSWORD_MIN_LENGTH": "password_min_length",
@@ -886,6 +905,7 @@ class AuthConfigService:
             "ldap_enabled": bool(AuthConfigService.get_effective_config(db, "ldap_enabled")),
             "oidc_enabled": bool(AuthConfigService.get_effective_config(db, "oidc_enabled")),
             "pki_enabled": bool(AuthConfigService.get_effective_config(db, "pki_enabled")),
+            "proxy_enabled": bool(AuthConfigService.get_effective_config(db, "proxy_enabled")),
             "mfa_enabled": bool(AuthConfigService.get_effective_config(db, "mfa_enabled")),
             "password_policy_enabled": bool(
                 AuthConfigService.get_effective_config(db, "password_policy_enabled")

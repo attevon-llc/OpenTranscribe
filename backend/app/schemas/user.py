@@ -157,6 +157,14 @@ class UserInDB(UserBase, UUIDBaseSchema):
     email_verified: bool = False
     email_verified_at: datetime | None = None
 
+    #: Administrator admission state (v379): ``pending`` / ``approved`` /
+    #: ``rejected``. Served on the ordinary user schema so the admin Users table
+    #: shows a held account without a second endpoint, and defaulted so an object
+    #: built without the column (tests, the ``get_current_user`` stand-in)
+    #: serialises rather than 500s.
+    approval_status: str = "approved"
+    approved_at: datetime | None = None
+
 
 class User(UserInDB):
     pass
@@ -295,6 +303,10 @@ class AuthMethodsResponse(BaseModel):
     methods: list[str]
     oidc_enabled: bool
     pki_enabled: bool
+    #: Trusted-header (reverse-proxy) sign-in. The SPA renders one button that POSTs
+    #: to ``/auth/proxy/authenticate``; there is nothing for it to collect, because
+    #: the proxy has already put the identity on the request.
+    proxy_enabled: bool = False
     ldap_enabled: bool
     #: Whether accounts holding a local password may sign in. The password form
     #: stays visible when LDAP is on, because LDAP authenticates through it too.

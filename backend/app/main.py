@@ -106,6 +106,32 @@ def _validate_production_secrets():
                 "(e.g., '127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')."
             )
 
+    # Same rule for trusted-header authentication, and for the same reason: a header
+    # nobody vouched for is an attacker-supplied string, and PROXY_ROLE_HEADER can
+    # turn one into an admin session. The runtime path fails closed as well
+    # (auth/header_trust.py refuses every assertion with an empty allowlist) — this
+    # guard is what makes the misconfiguration visible at boot rather than as a
+    # silent, total authentication outage.
+    #
+    # It reads .env only. A deployment that enables proxy auth *solely* in the admin
+    # UI is not visible here, because Settings is built before any database session
+    # exists; the runtime refusal is what covers that case, and the admin UI's own
+    # cross-field validation is where the warning belongs.
+    if settings.PROXY_ENABLED and not settings.PROXY_TRUSTED_PROXIES:
+        if is_production:
+            logger.critical(
+                "PROXY_ENABLED=true but PROXY_TRUSTED_PROXIES is empty! "
+                "Any client could inject identity headers. Refusing to start."
+            )
+            raise ValueError(
+                "PROXY_TRUSTED_PROXIES must be set when PROXY_ENABLED=true in production"
+            )
+        logger.warning(
+            "SECURITY WARNING: PROXY_ENABLED=true but PROXY_TRUSTED_PROXIES is empty. "
+            "Every header-sourced assertion will be REFUSED until you configure the "
+            "reverse proxy's addresses (e.g. '10.0.0.0/8,172.16.0.0/12')."
+        )
+
     # Check Redis password in production
     if is_production and not settings.REDIS_PASSWORD:
         logger.critical("REDIS_PASSWORD must be set in production!")
@@ -888,6 +914,17 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # typ
 from app.api.endpoints.metrics import router as metrics_router  # noqa: E402
 
 app.include_router(metrics_router)
+
+# SCIM 2.0 provisioning, mounted at ROOT rather than under API_PREFIX: RFC 7644 §3.1
+# fixes the base path, and every IdP connector appends "/Users" to whatever base URL
+# it is given. Its errors must be SCIM Error resources, not FastAPI's {"detail": ...},
+# or an administrator reading their connector log sees an opaque status code.
+from app.api.endpoints.scim import router as scim_router  # noqa: E402
+from app.api.endpoints.scim.errors import SCIMError  # noqa: E402
+from app.api.endpoints.scim.errors import scim_error_handler  # noqa: E402
+
+app.include_router(scim_router)
+app.add_exception_handler(SCIMError, scim_error_handler)
 
 
 # Health check endpoint

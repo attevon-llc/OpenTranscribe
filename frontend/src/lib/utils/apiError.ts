@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { isRequestCancelled } from '$lib/axios';
+import { readAccountLifecycle } from '$stores/auth';
 import { toastStore } from '$stores/toast';
 import { t } from '$stores/locale';
 
@@ -49,6 +50,11 @@ export function getErrorMessage(
   const e = error as AxiosLikeError;
   const detail = e?.response?.data?.detail;
   if (typeof detail === 'string' && detail.trim()) return detail;
+  // An account-lifecycle refusal carries an OBJECT detail (`{code, message}`).
+  // Without this the chain fell through to `error.message` and surfaced the raw,
+  // untranslated "Request failed with status code 403" instead of the reason.
+  const detailMessage = (detail as { message?: unknown } | null | undefined)?.message;
+  if (typeof detailMessage === 'string' && detailMessage.trim()) return detailMessage;
   const message = e?.response?.data?.message;
   if (typeof message === 'string' && message.trim()) return message;
   if (typeof e?.message === 'string' && e.message.trim()) return e.message;
@@ -58,6 +64,11 @@ export function getErrorMessage(
 /**
  * Standard catch handler: silently ignores cancelled requests (logout/navigation aborts),
  * otherwise surfaces a toast. Returns the resolved message so callers can also use it inline.
+ *
+ * Account-lifecycle refusals are ignored for the same reason as cancellations: the app is
+ * already handling them somewhere else. `$stores/auth` renders them as a **blocking screen**,
+ * and no route is exempt from the approval gate — so every in-flight request answers 403 and
+ * a toast per request would stack up in front of the very screen that explains the situation.
  */
 export function handleApiError(
   error: unknown,
@@ -66,6 +77,7 @@ export function handleApiError(
 ): string {
   const message = getErrorMessage(error, fallback);
   if (isRequestCancelled(error)) return message;
+  if (readAccountLifecycle(error)) return message;
   if (!opts.silent) toastStore.error(message);
   return message;
 }

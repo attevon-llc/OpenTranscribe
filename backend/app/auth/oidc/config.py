@@ -57,6 +57,12 @@ class OIDCConfig:
     issuer: str = ""
     roles_claim: str = DEFAULT_ROLES_CLAIM
     scopes: str = DEFAULT_OIDC_SCOPES
+    #: Admission control, evaluated against ``roles_claim`` — see
+    #: :mod:`app.auth.oidc.admission`. Both default empty, which is "admit
+    #: everyone": that is what JIT provisioning did before the check existed, so
+    #: an empty allow-list must not be read as "admit nobody" on upgrade.
+    allowed_groups: str = ""
+    blocked_groups: str = ""
 
     @classmethod
     def from_env(cls) -> "OIDCConfig":
@@ -79,6 +85,8 @@ class OIDCConfig:
             issuer=env_settings.OIDC_ISSUER,
             roles_claim=env_settings.OIDC_ROLES_CLAIM or DEFAULT_ROLES_CLAIM,
             scopes=env_settings.OIDC_SCOPES or DEFAULT_OIDC_SCOPES,
+            allowed_groups=env_settings.OIDC_ALLOWED_GROUPS,
+            blocked_groups=env_settings.OIDC_BLOCKED_GROUPS,
         )
 
     @classmethod
@@ -138,4 +146,6 @@ class OIDCConfig:
                 _get("oidc_scopes", env_settings.OIDC_SCOPES or DEFAULT_OIDC_SCOPES)
                 or DEFAULT_OIDC_SCOPES
             ),
+            allowed_groups=str(_get("oidc_allowed_groups", env_settings.OIDC_ALLOWED_GROUPS) or ""),
+            blocked_groups=str(_get("oidc_blocked_groups", env_settings.OIDC_BLOCKED_GROUPS) or ""),
         )

@@ -3,243 +3,205 @@ sidebar_label: LDAP / Active Directory
 sidebar_position: 2
 ---
 
-# LDAP/Active Directory Authentication
+# LDAP / Active Directory
 
-## Overview
+OpenTranscribe authenticates against LDAP or Active Directory alongside its other identity
+sources. A directory account is created on first successful login with `auth_type='ldap'`.
 
-OpenTranscribe supports hybrid authentication combining LDAP/Active Directory with local database users:
+Configure it at **Settings → Authentication → LDAP** (super_admin). Values are stored in the
+`auth_config` table with the bind password encrypted (AES-256-GCM) and take effect without a
+restart; the `LDAP_*` environment variables remain a bootstrap seed and fallback.
 
-- **LDAP users**: Auto-created on first login with role based on `LDAP_ADMIN_USERS`
-- **Local admin users**: Created manually via registration endpoint with database passwords
-- **Flexible auth**: System supports both email-based (local) and **username-based (LDAP)** login — users can log in with their sAMAccountName, uid, or any configured username attribute
-- **Priority**: Local users checked first when `auth_type='local'` in database
+## Configuration reference
 
-> **v0.4.0 Change**: LDAP configuration is now managed via the Super Admin UI (Settings → Authentication → LDAP/Active Directory). Settings are stored encrypted (AES-256-GCM) in the database. Environment variables (`LDAP_SERVER`, `LDAP_BASE_DN`, etc.) continue to work as an initial seed fallback but database configuration takes precedence once saved.
+| Field | Config key | Default |
+|---|---|---|
+| Enabled | `ldap_enabled` | `false` |
+| Server | `ldap_server` | — (`ldaps://ad.example.com`) |
+| Port | `ldap_port` | `636` |
+| Use SSL (LDAPS) | `ldap_use_ssl` | `true` |
+| Use StartTLS | `ldap_use_tls` | `false` |
+| Bind DN | `ldap_bind_dn` | — |
+| Bind password *(sensitive)* | `ldap_bind_password` | — |
+| Search base | `ldap_search_base` | — |
+| Username attribute | `ldap_username_attr` | `sAMAccountName` |
+| Email attribute | `ldap_email_attr` | `mail` |
+| Name attribute | `ldap_name_attr` | `cn` |
+| User search filter | `ldap_user_search_filter` | `({username_attr}={username})` |
+| Timeout (s) | `ldap_timeout` | `10` |
+| Admin usernames | `ldap_admin_users` | — |
+| Admin groups | `ldap_admin_groups` | — |
+| Required user groups | `ldap_user_groups` | — |
+| Recursive group lookup | `ldap_recursive_groups` | `false` |
+| Group attribute | `ldap_group_attr` | `memberOf` |
 
-## Configuration
+`{username_attr}` in the filter is replaced with `ldap_username_attr`, so the filter stays
+correct across directory types:
 
-### Primary Method: Super Admin UI (v0.4.0+)
+| Directory | `ldap_username_attr` | Resulting filter |
+|---|---|---|
+| Active Directory | `sAMAccountName` | `(sAMAccountName={username})` |
+| OpenLDAP | `uid` | `(uid={username})` |
+| Custom | `employeeId` | `(employeeId={username})` |
 
-Configure LDAP via the Admin UI for immediate, encrypted, restart-free configuration:
+Use **Test Connection** before saving.
 
-1. Log in as super_admin (`admin@example.com`)
-2. Navigate to Settings → Authentication → LDAP/Active Directory
-3. Click "Edit" and fill in all fields (see table in SUPER_ADMIN_GUIDE.md)
-4. Click "Test Connection" to verify before saving
-5. Click "Save Configuration"
+## Admission control and privilege
 
-Settings saved via the UI are encrypted with AES-256-GCM and take effect immediately.
+Two separate questions, two separate settings:
 
-### Environment Variables (Fallback / Initial Seed)
+- **`ldap_user_groups`** — a comma-separated list of group DNs. When set, a user must be a
+  member of at least one of them to sign in at all. Empty means "admit everyone the directory
+  authenticates". With `ldap_recursive_groups` on, nested-group membership counts too.
+- **`ldap_admin_users`** / **`ldap_admin_groups`** — who becomes `admin`.
 
-These variables are used only when no database configuration exists for LDAP. Once configuration is saved via the Admin UI, these env vars are ignored.
+Group DNs are compared case-insensitively, which is what LDAP itself does.
 
-Add the following to your `.env` file:
+`require_account_approval` (Authentication → Local) applies here too: with it on, a
+directory user provisioned for the first time lands `approval_status = pending` and needs an
+administrator to release them from the queue.
 
-```env
-# Enable LDAP authentication
-LDAP_ENABLED=true
+Beyond those, [IdP group mapping](./groups) turns any directory group into an in-app group
+and/or a role grant, applied at login *and* on the directory-sync sweep. An identity provider
+can grant at most `admin`; `super_admin` is local-only.
 
-# LDAP/AD Server
-LDAP_SERVER=ldaps://your-ad-server.domain.com
-LDAP_PORT=636
-LDAP_USE_SSL=true
-LDAP_USE_TLS=false
+## Login inputs
 
-# Service account for LDAP search (read-only user)
-LDAP_BIND_DN=CN=service-account,CN=Users,DC=domain,DC=com
-LDAP_BIND_PASSWORD=your-service-account-password
-
-# Search base and filter
-LDAP_SEARCH_BASE=DC=domain,DC=com
-LDAP_USERNAME_ATTR=sAMAccountName  # Username attribute (sAMAccountName, uid, etc.)
-LDAP_USER_SEARCH_FILTER=({username_attr}={username})  # Uses LDAP_USERNAME_ATTR
-
-# User attributes
-LDAP_EMAIL_ATTR=mail
-LDAP_NAME_ATTR=cn
-
-# Timeout (seconds)
-LDAP_TIMEOUT=10
-
-# Optional: Comma-separated list of AD usernames that should be admins
-LDAP_ADMIN_USERS=admin1,admin2,john.doe
-```
-
-### Configuration Details
-
-- **LDAP_SERVER**: Full LDAP URL (ldaps:// for secure LDAP)
-- **LDAP_PORT**: 389 for standard LDAP, 636 for LDAPS
-- **LDAP_USE_SSL**: Enable LDAPS (recommended for production)
-- **LDAP_USE_TLS**: Alternative to LDAPS (StartTLS)
-- **LDAP_BIND_DN**: Distinguished Name of service account (must have read access to user objects)
-- **LDAP_BIND_PASSWORD**: Password for service account (stored in .env)
-- **LDAP_SEARCH_BASE**: Base DN for user searches (e.g., DC=domain,DC=com)
-- **LDAP_USERNAME_ATTR**: Username attribute for user search (default: `sAMAccountName`)
-  - Active Directory: `sAMAccountName`
-  - OpenLDAP: `uid`
-- **LDAP_USER_SEARCH_FILTER**: Filter to find users by username
-  - Format: `({username_attr}={username})` where `{username_attr}` is replaced by `LDAP_USERNAME_ATTR`
-  - Active Directory: `(sAMAccountName={username})`
-  - OpenLDAP: `(uid={username})`
-- **LDAP_EMAIL_ATTR**: Attribute containing user email (mail, userPrincipalName, etc.)
-- **LDAP_NAME_ATTR**: Attribute containing full name (cn, displayName, etc.)
-- **LDAP_ADMIN_USERS**: List of AD usernames that should automatically be admins
-
-### Username Attribute Configuration
-
-The `LDAP_USERNAME_ATTR` setting provides flexibility for different directory services:
-
-**Active Directory (default):**
-```env
-LDAP_USERNAME_ATTR=sAMAccountName
-LDAP_USER_SEARCH_FILTER=(sAMAccountName={username})
-```
-
-**OpenLDAP:**
-```env
-LDAP_USERNAME_ATTR=uid
-LDAP_USER_SEARCH_FILTER=(uid={username})
-```
-
-**Custom Attribute:**
-```env
-LDAP_USERNAME_ATTR=employeeId
-LDAP_USER_SEARCH_FILTER=(employeeId={username})
-```
-
-The system automatically replaces `{username_attr}` in `LDAP_USER_SEARCH_FILTER` with the value of `LDAP_USERNAME_ATTR`, allowing consistent filter configuration across different directory services.
-
-## Authentication Flow
-
-### Hybrid Authentication Strategy
-
-The system uses a flexible authentication flow based on the user's `auth_type` in the database:
-
-#### 1. Local User (Database Password)
-
-```
-User exists in DB + auth_type = 'local'
-  → Try direct database authentication (bypasses ORM for reliability)
-  → If direct fails, try ORM authentication
-  → Success: Return JWT token
-  → Failure: Try LDAP (as fallback if user exists)
-```
-
-#### 2. LDAP User
-
-```
-LDAP Enabled OR user not found locally
-  → Bind to AD with service account
-  → Search for user by LDAP_USERNAME_ATTR (or email if username contains @)
-  → If not found by username, try search by email address
-  → Extract email, username, and cn attributes
-  → Bind as user to verify password
-  → Create/update user in database
-  → Return JWT token
-```
-
-#### 3. First-Time LDAP Login
-
-```
-User not in database
-  → Authenticate via LDAP
-  → Create user record:
-    - email: from AD
-    - full_name: from AD
-    - ldap_uid: sAMAccountName
-    - auth_type: 'ldap'
-    - role: 'admin' if in LDAP_ADMIN_USERS else 'user'
-  → Return JWT token
-```
-
-### Login Input Options
-
-Users can login with:
-- **Email address** (for local users, also supported for LDAP users)
-- **Username/sAMAccountName** (for LDAP users)
-
-The system automatically handles both formats:
+Users can sign in with either their directory username or their email address; the login form
+is the same one local accounts use, which is why turning off `local_enabled` does not hide it.
 
 ```bash
-# Local user login (email-based)
-curl -X POST http://localhost:5174/api/auth/token \
+# Directory username
+curl -X POST https://yourdomain.com/api/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=admin@example.com&password=local_password"
+  -d "username=john.doe&password=<directory-password>"
 
-# LDAP user login (username-based)
-curl -X POST http://localhost:5174/api/auth/token \
+# Email address
+curl -X POST https://yourdomain.com/api/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=john.doe&password=ad_password"
-
-# LDAP user login (email-based - extracts username before @)
-curl -X POST http://localhost:5174/api/auth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=john.doe@example.com&password=ad_password"
+  -d "username=john.doe@example.com&password=<directory-password>"
 ```
 
-## Security Features
+Account lockout is keyed on a **canonical identifier per account**, so a user reachable by both
+spellings has one lockout budget rather than two.
 
-### LDAP Injection Protection
+## Directory accounts never have a local password
 
-The system escapes special characters in LDAP filter values to prevent injection attacks:
+`auth_type='ldap'` is in the "no local fallback" set, and `allow_local_fallback` does **not**
+override it — the flag is rejected at write time for LDAP accounts. There is exactly one
+implementation of that rule, used by every authentication path.
 
-```python
-_escaped_username = _escape_ldap_filter(username)
-# Escapes: ( ) * \ NUL characters
-```
+Consequently LDAP users cannot change their password in OpenTranscribe; that happens in the
+directory. The admin password-reset endpoint will not plant a hash on a directory account either.
 
-### SSL/TLS
+## Account linking
 
-- **LDAPS** (LDAP over SSL) is recommended for production
-- Use port 636 with `LDAP_USE_SSL=true`
-- Ensure valid SSL certificate on AD server
-- Test connection: `openssl s_client -connect ad-server:636`
+When a directory login finds no account by `ldap_uid` but *does* find one by email address,
+that link is only made when the directory asserts the address is verified, and **never** for a
+`super_admin`. A refusal fails the login with the same generic error as a bad credential and is
+audited with `error_code ACCOUNT_LINK_REFUSED`. See
+[Account linking](./overview#account-linking) for the operator remedy.
 
-### Password Change Restrictions
+## Directory sync and deprovisioning
 
-- **LDAP users cannot change passwords** in OpenTranscribe — changes must be done in AD/LDAP
-- **Local users only** can change their password via the UI or API
+Before this existed, sync ran only at login and only upward: it created and promoted accounts
+and could refuse a login, but **nothing ever disabled one**. An account deleted or disabled in
+Active Directory kept a live OpenTranscribe row forever — and because refresh tokens rotate on
+every use, an actively-used session survived the user's termination indefinitely.
 
-## Deployment
+A periodic sweep now probes every active `auth_type='ldap'` account against the directory:
 
-### Development/Testing with LDAP Test Container
+- **Present** → reconcile [group mappings](./groups) and role.
+- **Absent / disabled / no longer in a required group** → set `is_active = false` **and revoke
+  every session**. Revocation is the half that actually closes the hole; disabling alone would
+  leave the refresh token rotating.
+
+Four rules shape it:
+
+1. **Fail closed on ambiguity, not on error.** "The directory says this user is gone" and "I
+   could not ask the directory" are different answers. Only the first one acts; the second
+   aborts the pass.
+2. **`super_admin` and `local` accounts are never touched** — the first is the break-glass
+   account, the second has no upstream identity.
+3. **Disable, never delete.**
+4. **Bounded and opt-in.**
+
+### Settings
+
+There are **no directory-sync environment variables** and no admin-panel screen yet. The sweep
+reads six `SystemSettings` rows; the directory connection itself reuses the LDAP auth config
+above.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `directory_sync.enabled` | `false` | Master switch |
+| `directory_sync.schedule` | `0 4 * * *` | Cron (UTC), daily at 04:00 — after backups |
+| `directory_sync.dry_run` | `true` | Report what *would* be disabled, change nothing |
+| `directory_sync.max_disables_per_run` | `10` | Blast radius per pass |
+| `directory_sync.last_run_at` | — | Written by the scheduler |
+| `directory_sync.last_result` | — | JSON report of the last pass |
+
+The defaults are deliberately timid: **an operator has to opt in twice**, once to run the sweep
+and once to let it act. A directory that answers "gone" for everybody — wrong search base,
+wrong group DN — is indistinguishable from mass offboarding, and `max_disables_per_run` is what
+stops one bad configuration from disabling the deployment in a single pass. Group-membership
+changes are *not* counted against that cap: it bounds deactivation, and a membership change is
+recoverable by re-adding the row.
+
+Celery beat runs `directory.sync_check_schedule` every 15 minutes on the CPU queue; when the
+cron is due it dispatches `directory.sync_run`. Changing the schedule needs no beat restart.
+A Redis lock prevents overlapping passes.
+
+**Recommended rollout**: enable with `dry_run=true`, read `directory_sync.last_result` for a
+few days, then set `dry_run=false`.
+
+### Scope
+
+LDAP only. OIDC and PKI have no "list users" primitive without provider-specific admin APIs, so
+OIDC group mappings are applied **at login only** — the one genuine capability difference
+between the two directory paths.
+
+## Development / testing
 
 ```bash
-# Start OpenTranscribe with LDAP test container
 ./opentr.sh start dev --with-ldap-test
 ```
 
-**Test Container Details:**
-- LDAP server: `localhost:3890`
-- Web UI: `http://localhost:17170`
-- Admin credentials: `admin` / `admin_password`
-- Base DN: `dc=example,dc=com`
+- LDAP server `localhost:3890`
+- Web UI `http://localhost:17170`
+- Admin `admin` / `admin_password`
+- Base DN `dc=example,dc=com`
 
-### Production Deployment with Active Directory
+## Security
 
-1. Log in as super_admin
-2. Go to Settings → Authentication → LDAP/Active Directory
-3. Configure with your AD settings and click "Test Connection"
-4. Click "Save Configuration" — changes take effect immediately
+- **Use LDAPS** (port 636, `ldap_use_ssl=true`) or StartTLS in production. Verify with
+  `openssl s_client -connect ad-server:636`.
+- Use a **read-only** service account for the bind DN.
+- Filter values are escaped against LDAP injection (`(`, `)`, `*`, `\`, NUL).
+- The bind password is encrypted at rest and **never returned by the API** — a sensitive key
+  comes back as `null` with an `is_set` flag, so saving the panel cannot overwrite the stored
+  secret with a placeholder.
 
 ## Troubleshooting
 
-### Common Errors
+| Symptom | Check |
+|---|---|
+| "Failed to bind to LDAP server" | Server, port, and service-account credentials |
+| "User not found in LDAP" | `ldap_search_base` and `ldap_user_search_filter` |
+| "User has no email attribute" | `ldap_email_attr` is populated for that account |
+| User authenticates but is refused | `ldap_user_groups` — they are not in a required group. Turn on `ldap_recursive_groups` if membership is nested |
+| Nobody becomes admin | `ldap_admin_users` / `ldap_admin_groups`, or use a [group mapping](./groups) and dry-run it with `POST /api/admin/group-mappings/test` |
+| Password change refused | Directory accounts have no local password; change it in AD/LDAP |
 
-1. **"Failed to bind to LDAP server"** — Check LDAP_SERVER, LDAP_PORT, and service account credentials
-2. **"User not found in LDAP"** — Verify LDAP_SEARCH_BASE and LDAP_USER_SEARCH_FILTER
-3. **"User has no email attribute"** — Verify LDAP_EMAIL_ATTR is populated in AD
-4. **"Authentication failed: user is LDAP type, cannot use password auth"** — User has `auth_type='ldap'`; use LDAP credentials, not local password
-5. **"Password change not allowed for LDAP users"** — Change password in AD/LDAP directory directly
+## Production checklist
 
-## Production Checklist
-
-- [ ] LDAPS enabled with valid SSL certificate
-- [ ] Read-only service account created
-- [ ] LDAP config saved via Super Admin UI (Settings → Authentication → LDAP/AD)
-- [ ] `LDAP_ADMIN_USERS` configured for admins
-- [ ] `LDAP_USERNAME_ATTR` configured correctly for your directory
-- [ ] Firewall allows outbound LDAP connections from backend container
-- [ ] Test authentication with real AD users (username-based and email-based)
-- [ ] Verify LDAP users cannot change passwords in UI or API
+- [ ] LDAPS (or StartTLS) with a valid certificate
+- [ ] Read-only bind account
+- [ ] Configuration saved through the admin UI, **Test Connection** green
+- [ ] `ldap_user_groups` set if the directory should also control *admission*
+- [ ] Admin privilege granted through `ldap_admin_groups` or a group mapping, verified with the
+      mapping test endpoint
+- [ ] Firewall allows outbound LDAP from the backend container
+- [ ] Directory sync enabled in dry-run, reviewed, then armed
+- [ ] `local_enabled` / `allow_registration` set to match "the directory owns identity" — see
+      [the identity-source model](./overview#the-identity-source-model)

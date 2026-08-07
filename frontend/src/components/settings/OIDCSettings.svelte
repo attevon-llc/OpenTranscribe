@@ -38,6 +38,8 @@
       oidc_roles_claim: source.oidc_roles_claim ?? 'realm_access.roles',
       oidc_issuer: source.oidc_issuer ?? '',
       oidc_scopes: source.oidc_scopes ?? 'openid email profile',
+      oidc_allowed_groups: source.oidc_allowed_groups ?? '',
+      oidc_blocked_groups: source.oidc_blocked_groups ?? '',
       oidc_timeout: source.oidc_timeout ?? 30,
       oidc_verify_audience: source.oidc_verify_audience ?? true,
       oidc_audience: source.oidc_audience ?? '',
@@ -71,6 +73,14 @@
 
   /** A discovery URL supersedes the realm-based endpoint construction. */
   $: discoveryActive = (formData.oidc_discovery_url ?? '').trim() !== '';
+
+  /**
+   * An empty allow-list admits **everyone** the provider authenticates. That is
+   * the entire safety story of this control, and it is the state a deployment
+   * ships in — so it is stated on screen permanently, not buried in help text
+   * nobody reads until the whole tenant has accounts.
+   */
+  $: allowListOpen = (formData.oidc_allowed_groups ?? '').trim() === '';
 
   /** Payload for save/test: everything in the form, plus the secret only if typed. */
   function buildPayload(): OIDCConfig {
@@ -344,6 +354,42 @@
   </div>
 
   <div class="section" class:disabled={!formData.oidc_enabled}>
+    <h3>{$t('settings.oidc.admissionControl')}</h3>
+    <p class="section-intro">{$t('settings.oidc.admissionControlHelp')}</p>
+
+    <div class="form-group">
+      <label for="oidc_allowed_groups">{$t('settings.oidc.allowedGroups')}</label>
+      <input
+        id="oidc_allowed_groups"
+        type="text"
+        bind:value={formData.oidc_allowed_groups}
+        on:input={handleChange}
+        placeholder="opentranscribe-users;CN=Staff,OU=Groups,DC=example,DC=com"
+        disabled={!formData.oidc_enabled}
+      />
+      <span class="help-text">{$t('settings.oidc.allowedGroupsHelp')}</span>
+      <span class="help-text">{$t('settings.oidc.groupsSemicolonHelp')}</span>
+      {#if allowListOpen}
+        <p class="admission-warning" role="status">{$t('settings.oidc.allowedGroupsEmptyWarning')}</p>
+      {/if}
+    </div>
+
+    <div class="form-group">
+      <label for="oidc_blocked_groups">{$t('settings.oidc.blockedGroups')}</label>
+      <input
+        id="oidc_blocked_groups"
+        type="text"
+        bind:value={formData.oidc_blocked_groups}
+        on:input={handleChange}
+        placeholder="contractors;CN=Vendors,OU=Groups,DC=example,DC=com"
+        disabled={!formData.oidc_enabled}
+      />
+      <span class="help-text">{$t('settings.oidc.blockedGroupsHelp')}</span>
+      <span class="help-text">{$t('settings.oidc.groupsSemicolonHelp')}</span>
+    </div>
+  </div>
+
+  <div class="section" class:disabled={!formData.oidc_enabled}>
     <h3>{$t('settings.oidc.advancedOptions')}</h3>
 
     <div class="form-group">
@@ -458,6 +504,24 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-text-secondary);
+  }
+
+  .section-intro {
+    margin: -0.5rem 0 1rem 0;
+    font-size: 0.8125rem;
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+  }
+
+  .admission-warning {
+    margin: 0.5rem 0 0 0;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    border-radius: 6px;
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--color-text);
+    font-size: 0.75rem;
+    line-height: 1.5;
   }
 
   .form-row {

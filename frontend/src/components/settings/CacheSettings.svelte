@@ -1,10 +1,18 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
-  import { settingsModalStore } from '../../stores/settingsModalStore';
+
+  /**
+   * This panel is rendered inside Retention, not as a settings section of its
+   * own. It used to flag its unsaved state under a `cache` section id that had
+   * no nav entry and no render block — a section that only existed in the
+   * store's type. The dirty state is now reported to Retention, which owns the
+   * section id actually shown in the sidebar.
+   */
+  const dispatch = createEventDispatcher<{ dirty: boolean }>();
 
   interface CacheConfig {
     retention_days: number;
@@ -29,9 +37,9 @@
   $: hasChanges = retentionDays !== origDays;
 
   onMount(loadConfig);
-  onDestroy(() => settingsModalStore.clearDirty('cache'));
+  onDestroy(() => dispatch('dirty', false));
 
-  $: settingsModalStore.setDirty('cache', hasChanges);
+  $: dispatch('dirty', hasChanges);
 
   function apply(cfg: CacheConfig) {
     retentionDays = cfg.retention_days;

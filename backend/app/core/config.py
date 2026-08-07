@@ -169,6 +169,17 @@ class Settings(BaseSettings):
     # external IdP owns identity, or when accounts should be admin-provisioned.
     ALLOW_OPEN_REGISTRATION: bool = os.getenv("ALLOW_OPEN_REGISTRATION", "true").lower() == "true"
 
+    # Whether a newly provisioned account must be approved by an administrator
+    # before it can use anything. Applies to self-registration AND to every
+    # just-in-time account an external IdP creates (app/auth/approval.py).
+    #
+    # Defaults FALSE so an upgrade changes nothing: with it off, accounts are
+    # created 'approved' exactly as before. DB-backed override: auth_config
+    # `require_account_approval` (Settings -> Authentication -> Local).
+    REQUIRE_ACCOUNT_APPROVAL: bool = (
+        os.getenv("REQUIRE_ACCOUNT_APPROVAL", "false").lower() == "true"
+    )
+
     # Whether accounts holding a local password may sign in at all. Turn this off
     # when an external IdP (LDAP / OIDC / PKI) is the authoritative identity source
     # and nobody should be able to authenticate against a password stored here.
@@ -713,6 +724,19 @@ class Settings(BaseSettings):
     OIDC_ROLES_CLAIM: str = oidc_env("OIDC_ROLES_CLAIM", "realm_access.roles")
     OIDC_SCOPES: str = oidc_env("OIDC_SCOPES", "openid email profile")
 
+    # ===== OIDC admission control =====
+    # Semicolon-delimited group/role values read from OIDC_ROLES_CLAIM, mirroring
+    # LDAP_USER_GROUPS. EMPTY ALLOW-LIST ADMITS EVERYONE — that is today's behaviour
+    # and the upgrade-safe default, not an oversight. Without it, pointing this at a
+    # corporate tenant gives every identity in the directory an account on first
+    # login (auth/oidc/admission.py). Blocked wins over allowed.
+    #
+    # Plain os.getenv, not oidc_env: these names are new, so there is no retired
+    # spelling to honour (core/legacy_auth_env.py owns that translation and its
+    # alias map is the closed list of variables that ever had one).
+    OIDC_ALLOWED_GROUPS: str = os.getenv("OIDC_ALLOWED_GROUPS", "")
+    OIDC_BLOCKED_GROUPS: str = os.getenv("OIDC_BLOCKED_GROUPS", "")
+
     # ===== MFA Settings (FedRAMP IA-2) =====
     # MFA is disabled by default for air-gapped deployments
     MFA_ENABLED: bool = os.getenv("MFA_ENABLED", "false").lower() == "true"
@@ -782,6 +806,31 @@ class Settings(BaseSettings):
     # Only accept PKI certificate headers from these IPs
     # Example: "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     PKI_TRUSTED_PROXIES: str = os.getenv("PKI_TRUSTED_PROXIES", "")
+
+    # ===== Trusted-header (reverse-proxy) Configuration =====
+    # An authenticating reverse proxy asserts the identity in a header. Everything
+    # here is also settable in the admin UI (category "proxy"), which wins; these are
+    # the .env fallbacks and, for PROXY_ENABLED/PROXY_TRUSTED_PROXIES, what the
+    # startup guard in main.py can see before a database session exists.
+    PROXY_ENABLED: bool = os.getenv("PROXY_ENABLED", "false").lower() == "true"
+    # Comma-separated IPs/CIDRs allowed to assert identity headers. EMPTY MEANS
+    # REFUSE EVERY ASSERTION — the fail-closed state the feature is built around.
+    PROXY_TRUSTED_PROXIES: str = os.getenv("PROXY_TRUSTED_PROXIES", "")
+    PROXY_EMAIL_HEADER: str = os.getenv("PROXY_EMAIL_HEADER", "X-Forwarded-Email")
+    PROXY_NAME_HEADER: str = os.getenv("PROXY_NAME_HEADER", "X-Forwarded-User")
+    # No default: a groups header drives in-app group membership, so reading one
+    # nobody configured would hand a proxy privilege it was never granted.
+    PROXY_GROUPS_HEADER: str = os.getenv("PROXY_GROUPS_HEADER", "")
+    PROXY_GROUPS_SEPARATOR: str = os.getenv("PROXY_GROUPS_SEPARATOR", ",")
+    # Opt-in, and capped at 'admin' by app/auth/proxy/assertion.py. Empty = off.
+    PROXY_ROLE_HEADER: str = os.getenv("PROXY_ROLE_HEADER", "")
+    # Optional defence in depth: a constant-time-compared value the proxy must send
+    # in X-OpenTranscribe-Proxy-Secret, so an allowlisted-but-misconfigured proxy is
+    # not by itself sufficient for takeover.
+    PROXY_SHARED_SECRET: str = os.getenv("PROXY_SHARED_SECRET", "")
+    # Comma-separated email domain allowlist. Empty admits every domain.
+    PROXY_ALLOWED_DOMAINS: str = os.getenv("PROXY_ALLOWED_DOMAINS", "")
+    PROXY_JIT_PROVISIONING: bool = os.getenv("PROXY_JIT_PROVISIONING", "true").lower() == "true"
 
     # Quick access defaults for common providers
     VLLM_BASE_URL: str = os.getenv("VLLM_BASE_URL", "http://localhost:8012/v1")

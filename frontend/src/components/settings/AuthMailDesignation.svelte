@@ -44,7 +44,7 @@
       designation = await AuthConfigApi.getAuthMailDesignation();
       selected = designation.config_uuid ?? '';
     } catch (err) {
-      toastStore.error(getErrorMessage(err, $t('settings.emailNotifications.authMail.loadFailed')));
+      toastStore.error(getErrorMessage(err, $t('settings.authentication.authMail.loadFailed')));
     } finally {
       loading = false;
     }
@@ -59,12 +59,12 @@
       selected = designation.config_uuid ?? '';
       toastStore.success(
         designation.config_name
-          ? $t('settings.emailNotifications.authMail.saved', { name: designation.config_name })
-          : $t('settings.emailNotifications.authMail.cleared')
+          ? $t('settings.authentication.authMail.saved', { name: designation.config_name })
+          : $t('settings.authentication.authMail.cleared')
       );
     } catch (err) {
       // The 400 body names what is wrong with the chosen config; show it verbatim.
-      toastStore.error(getErrorMessage(err, $t('settings.emailNotifications.authMail.saveFailed')));
+      toastStore.error(getErrorMessage(err, $t('settings.authentication.authMail.saveFailed')));
     } finally {
       saving = false;
     }
@@ -72,25 +72,25 @@
 </script>
 
 <div class="auth-mail">
-  <h5>{$t('settings.emailNotifications.authMail.heading')}</h5>
-  <p class="auth-mail-help">{$t('settings.emailNotifications.authMail.description')}</p>
+  <h5>{$t('settings.authentication.authMail.heading')}</h5>
+  <p class="auth-mail-help">{$t('settings.authentication.authMail.description')}</p>
 
   {#if !loading}
     <div class="auth-mail-row">
       <div class="form-group">
-        <label for="auth-mail-config">{$t('settings.emailNotifications.authMail.label')}</label>
+        <label for="auth-mail-config">{$t('settings.authentication.authMail.label')}</label>
         <select id="auth-mail-config" class="form-select" bind:value={selected} disabled={saving}>
-          <option value="">{$t('settings.emailNotifications.authMail.none')}</option>
+          <option value="">{$t('settings.authentication.authMail.none')}</option>
           {#each selectable as c (c.uuid)}
             <option value={c.uuid}>{c.name} ({c.provider.toUpperCase()})</option>
           {/each}
           {#if strandedUuid}
             <option value={strandedUuid}>
               {designation?.config_name
-                ? $t('settings.emailNotifications.authMail.disabledOption', {
+                ? $t('settings.authentication.authMail.disabledOption', {
                     name: designation.config_name,
                   })
-                : $t('settings.emailNotifications.authMail.missingOption', {
+                : $t('settings.authentication.authMail.missingOption', {
                     uuid: strandedUuid,
                   })}
             </option>
@@ -105,20 +105,20 @@
     {#if dangling}
       <p class="auth-mail-warning" role="alert">
         {designation?.status === 'disabled'
-          ? $t('settings.emailNotifications.authMail.danglingDisabled', {
+          ? $t('settings.authentication.authMail.danglingDisabled', {
               name: designation?.config_name ?? '',
             })
-          : $t('settings.emailNotifications.authMail.danglingMissing')}
+          : $t('settings.authentication.authMail.danglingMissing')}
       </p>
     {/if}
     {#if undeliverable}
       <p class="auth-mail-warning" role="alert">
-        {$t('settings.emailNotifications.authMail.noTransport')}
+        {$t('settings.authentication.authMail.noTransport')}
       </p>
     {/if}
     {#if designation?.resolves}
       <p class="auth-mail-active">
-        {$t('settings.emailNotifications.authMail.active', {
+        {$t('settings.authentication.authMail.active', {
           name: designation?.config_name ?? '',
         })}
       </p>

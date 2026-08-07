@@ -529,13 +529,17 @@ ACCOUNT_LOCKOUT_PROGRESSIVE=true
 
 ### Does OpenTranscribe support SSO?
 
-Yes! OpenTranscribe supports Single Sign-On via Keycloak/OIDC:
-- Integrate with your existing identity provider
-- Support for LDAP/AD federation through Keycloak
-- Social login (Google, GitHub, etc.) via Keycloak
-- Role synchronization from Keycloak
+Yes — via **any conforming OpenID Connect provider**, discovered from its
+`.well-known/openid-configuration`: Keycloak, Authentik, Authelia, Okta, Entra ID, Auth0,
+Zitadel, and so on.
 
-See the [Keycloak Setup Guide](./authentication/keycloak) for configuration.
+- Authorization-code flow with PKCE, ID-token-only validation
+- Group and role synchronization through a configurable roles claim
+- [Group mapping](./authentication/groups) from directory groups to in-app groups and roles
+- RP-initiated (federated) logout where the provider publishes an end-session endpoint
+
+See the [OIDC Setup Guide](./authentication/oidc) for configuration. Existing `KEYCLOAK_*`
+environment variables keep working permanently.
 
 ### Can I use CAC/PIV cards for authentication?
 

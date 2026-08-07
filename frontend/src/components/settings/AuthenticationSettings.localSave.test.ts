@@ -125,9 +125,13 @@ describe('Local auth tab — split save', () => {
     );
 
     // Each category receives exactly its own keys — the endpoint 400s on strays.
+    // `require_email_verification` / `require_account_approval` belong to `local`
+    // too — they are the other half of "who may get an account here".
     expect(Object.keys(payloadFor('local') ?? {}).sort()).toEqual([
       'allow_registration',
       'local_enabled',
+      'require_account_approval',
+      'require_email_verification',
     ]);
     expect(Object.keys(payloadFor('mfa') ?? {}).sort()).toEqual([
       'mfa_enabled',

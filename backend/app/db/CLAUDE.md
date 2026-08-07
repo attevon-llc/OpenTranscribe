@@ -33,10 +33,13 @@ Version context: `v367_add_cloud_seams`, `v369_superuser_role_invariant` (the
 `v375_harden_user_auth_invariants` (auth-type CHECK + invitations),
 `v376_idp_group_mapping`, `v377_rename_keycloak_config_to_oidc` (a **data-only**
 revision — no DDL, so its detection arm keys on the *absence* of the retired config-key
-prefix), head currently `v378_oidc_identity_columns` (`user.oidc_subject`,
+prefix), `v378_oidc_identity_columns` (`user.oidc_subject`,
 `user.oidc_refresh_token`, `refresh_token.oidc_id_token`, the `auth_type` value swap,
 and the removal of a duplicate CHECK that would otherwise have refused every OIDC
-login).
+login), head currently `v379_approval_state` (`user.approval_status` NOT NULL DEFAULT
+`'approved'` + `approved_at`/`approved_by` + `ck_user_approval_status_valid`; its
+detection arm requires **both** the column and the CHECK, because the enforcement
+helpers read the column fail-safe and it is the constraint that keeps that sound).
 
 ## Gotchas
 

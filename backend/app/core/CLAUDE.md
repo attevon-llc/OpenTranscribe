@@ -43,7 +43,26 @@ should import `app.api` or `app.services` at module scope.
   opensearch-py's default urllib3 transport it is silently ignored and every request
   goes out unsigned (a blanket 403). Don't build a client inline again.
 - `security.py` — password hashing (FIPS-aware PBKDF2 iteration counts), `create_access_token`,
-  `verify_token`. `auth_settings.py` layers DB config over `.env` for auth.
+  `verify_token`. `auth_settings.py` layers DB config over `.env` for auth —
+  `get_auth_settings(db)` returns a `DynamicAuthSettings` that resolves **DB > .env > coded
+  default**. Resolve it **once per request** and pass it down: a handler that resolves it for
+  enforcement but reads `settings.*` for the audit record documents a policy nobody applied.
+- `auth_settings.py`'s `proxy_*` properties are the layered readers for trusted-header auth;
+  the `.env` fallbacks (`PROXY_*` in `config.py`) exist mainly so `main.py`'s fail-closed
+  boot guard can see `PROXY_ENABLED`/`PROXY_TRUSTED_PROXIES` before a DB session exists.
+- `legacy_auth_env.py` — **input adapter, not a second implementation.** It translates the
+  historical `KEYCLOAK_*` environment names onto the canonical `OIDC_*` ones *before* `Settings`
+  is built, so nothing downstream (including `AuthConfigService.ENV_TO_CONFIG_MAPPING`) ever
+  sees the old spelling. The legacy name **wins** when both are set. No removal is planned —
+  renaming a user-owned `.env` is not something this project gets to do — but
+  `deprecated_oidc_env_names()` drives one startup log line. This is one of only two files under
+  `backend/app/` allowed to name the retired provider; `tests/unit/test_oidc_naming_invariant.py`
+  fails the build otherwise.
+- `request_context.py` — **the** per-request correlation `ContextVar`, in one place. There were
+  two objects both *named* `"request_id"` (`middleware/audit.py` set one, `auth/audit.py` read
+  the other); a `ContextVar`'s display name is documentation, not identity, so every audit event
+  fell back to a fresh random id and a multi-event flow could not be reconstructed. Stdlib-only,
+  so `middleware`, `auth`, `core` and the Celery hooks can all import it without a cycle.
 - `metrics.py`, `db_metrics.py`, `celery_metrics.py`, `backup_metrics.py`, `route_template.py` —
   Prometheus collectors on the default registry, plus the bounded route-label resolver.
 - `tenancy.py` — `UNSCOPED` sentinel + `OrgScope`; stdlib-only so any layer can import it.

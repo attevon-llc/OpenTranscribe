@@ -10,23 +10,24 @@ AUTH_TYPE_LOCAL = "local"
 AUTH_TYPE_LDAP = "ldap"
 AUTH_TYPE_OIDC = "oidc"
 AUTH_TYPE_PKI = "pki"
+# Trusted-header authentication: an authenticating reverse proxy asserts the identity
+# (app/auth/proxy/). The value was pre-authorised by v378's CHECK swap, so this phase
+# needed no second constraint change on a live "user" table.
+AUTH_TYPE_PROXY = "proxy"
 
 # All valid core auth types. Registry-based external providers (cloud edition)
 # define their own auth-type strings in the cloud layer and register via
 # app.auth.provider_registry — they are not enumerated here.
 #
-# The DB CHECK constraints (v378) deliberately allow one more value, 'proxy', which
-# no code produces yet: swapping a CHECK on a live "user" table is the kind of
-# operation worth doing once rather than twice, and Phase 5 of
-# plans/auth-complete-implementation.md adds trusted-header auth. This list stays at
-# what the application actually supports, so 'proxy' is not offered anywhere until
-# there is an implementation behind it. tests/unit/test_v378_migration_consistency.py
-# pins the subset relationship in that direction.
+# This list is what the application actually supports; the DB CHECK constraint
+# (v378) must always be a superset of it, which
+# tests/unit/test_v378_migration_consistency.py pins.
 VALID_AUTH_TYPES = [
     AUTH_TYPE_LOCAL,
     AUTH_TYPE_LDAP,
     AUTH_TYPE_OIDC,
     AUTH_TYPE_PKI,
+    AUTH_TYPE_PROXY,
 ]
 
 # Version of the cloud-extension seam surface (verifier registry, pipeline

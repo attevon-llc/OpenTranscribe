@@ -18,6 +18,7 @@ from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.approval import APPROVAL_APPROVED
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import role_implies_superuser
 from app.core.security import get_password_hash
@@ -100,6 +101,13 @@ def _ensure_admin_user(db: Session) -> None:
             # age is unknown, which is the one account that must never be locked
             # out by an expiry rule.
             password_changed_at=datetime.now(UTC),
+            # NEVER pending, whatever require_account_approval says. This is the
+            # break-glass account, and only a signed-in administrator can clear
+            # an approval queue — a deployment whose sole administrator is IN the
+            # queue is a deployment nobody can get into. Written explicitly rather
+            # than left to the column default so the guarantee is visible here.
+            approval_status=APPROVAL_APPROVED,
+            approved_at=datetime.now(UTC),
         )
         db.add(user)
         db.commit()

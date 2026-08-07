@@ -24,6 +24,11 @@ import pytest
 from sqlalchemy import inspect
 from sqlalchemy import text
 
+#: These suites perform schema DDL (dropping a column or constraint to recreate the
+#: pre-revision shape). Postgres takes an ACCESS EXCLUSIVE lock for that, so they must
+#: not run beside other database tests — `--dist loadgroup` keeps a group on one worker.
+pytestmark = pytest.mark.xdist_group("migration_ddl")
+
 REVISION = "v376_idp_group_mapping"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
 

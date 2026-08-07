@@ -126,6 +126,15 @@ class LocalAuthConfig(_CategoryConfig):
     local_enabled: bool = True
     allow_registration: bool = True
     require_email_verification: bool = False
+    #: Admin admission control for *newly provisioned* accounts, wherever they come
+    #: from: self-registration and every external-IdP JIT path. It lives in this
+    #: category because ``allow_registration`` is its nearest neighbour — the two
+    #: together are "who may get an account here" — not because it is local-only.
+    #:
+    #: False keeps the pre-existing behaviour (new accounts are usable
+    #: immediately), which is what makes turning it on an opt-in rather than an
+    #: upgrade that strands every pending signup.
+    require_account_approval: bool = False
 
 
 class LDAPConfig(_CategoryConfig):
@@ -181,6 +190,16 @@ class OIDCConfig(_CategoryConfig):
     #: Optional issuer override. Normally taken from the discovery document.
     oidc_issuer: str = ""
     oidc_scopes: str = "openid email profile"
+    #: Semicolon-delimited values read from ``oidc_roles_claim`` that a login must
+    #: carry at least one of. **Empty admits everyone** — that is what JIT
+    #: provisioning did unconditionally before this existed, so an empty list is
+    #: the upgrade-safe default rather than a lockout. LDAP has had the equivalent
+    #: (``ldap_user_groups``) since it shipped.
+    oidc_allowed_groups: str = ""
+    #: Values that DENY access outright, evaluated before the allow-list. "Blocked"
+    #: means refused, not "exempt from the allow-list": a deployment needs a way to
+    #: keep a contractor group out of a tenant it otherwise admits wholesale.
+    oidc_blocked_groups: str = ""
     oidc_timeout: int = Field(default=30, ge=1, le=300)
     #: True matches ``config.py:OIDC_VERIFY_AUDIENCE``. Both this and
     #: ``oidc_verify_issuer`` are token-validation controls: an unparseable value
@@ -228,6 +247,40 @@ class PKIConfig(_CategoryConfig):
     # nothing. `pki_auth.extract_display_name_from_gov_dn` parses both the DoD CAC
     # and the PIV CN formats for every certificate, unconditionally, and always
     # has. Their stored rows are deleted by the same revision.
+
+
+class ProxyAuthConfig(_CategoryConfig):
+    """Trusted-header (reverse-proxy) configuration — ``auth_type='proxy'``.
+
+    An authenticating proxy asserts the identity; this tab decides whether to
+    believe it. The two fields that carry the whole security story are
+    ``proxy_trusted_proxies`` (empty = refuse everything) and ``proxy_role_header``
+    (empty = the proxy grants no privilege at all).
+    """
+
+    proxy_enabled: bool = False
+    #: Comma-separated IPs/CIDRs. **Empty refuses every header-sourced assertion**,
+    #: and ``main.py`` refuses to boot hardened with ``proxy_enabled`` and no
+    #: allowlist — the same shape as the PKI guard. Open WebUI's equivalent trusts
+    #: the network and nothing else; this is the deliberate divergence.
+    proxy_trusted_proxies: str = ""
+    proxy_email_header: str = "X-Forwarded-Email"
+    proxy_name_header: str = "X-Forwarded-User"
+    #: No default. A groups header drives in-app group membership through the shared
+    #: IdP reconciler, so reading one nobody configured would let a proxy that
+    #: happens to forward ``X-Forwarded-Groups`` start granting groups silently.
+    proxy_groups_header: str = ""
+    proxy_groups_separator: str = ","
+    #: Opt-in, and capped at ``admin``: ``super_admin`` is unreachable through it,
+    #: consistent with every other external identity source here.
+    proxy_role_header: str = ""
+    #: Sensitive. Constant-time compared, so an allowlisted proxy that has been
+    #: misconfigured to pass client headers through is not by itself takeover.
+    proxy_shared_secret: str | None = None
+    #: Email-domain admission list. Empty admits everyone — the upgrade-safe reading
+    #: ``oidc_allowed_groups`` uses.
+    proxy_allowed_domains: str = ""
+    proxy_jit_provisioning: bool = True
 
 
 class PasswordPolicyConfig(_CategoryConfig):
@@ -313,6 +366,7 @@ CATEGORY_SCHEMAS: dict[str, type[_CategoryConfig]] = {
     "ldap": LDAPConfig,
     "oidc": OIDCConfig,
     "pki": PKIConfig,
+    "proxy": ProxyAuthConfig,
     "password_policy": PasswordPolicyConfig,
     "mfa": MFAConfig,
     "session": SessionConfig,
@@ -501,6 +555,7 @@ class AuthConfigStatusResponse(BaseModel):
     ldap_enabled: bool = False
     oidc_enabled: bool = False
     pki_enabled: bool = False
+    proxy_enabled: bool = False
     mfa_enabled: bool = False
     password_policy_enabled: bool = True
     login_banner_enabled: bool = False

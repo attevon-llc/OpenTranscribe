@@ -255,6 +255,11 @@
 
   // ---- Reactive change detection -------------------------------------------
 
+  // The nested cache panel has no section id of its own, so its unsaved state is
+  // folded in here — otherwise closing the modal would skip the confirmation
+  // prompt for a pending cache change.
+  let cacheDirty = false;
+
   $: {
     retentionEnabled;
     retentionDays;
@@ -267,7 +272,7 @@
       runTime !== origRunTime ||
       timezone !== origTimezone ||
       deleteErrorFiles !== origDeleteError;
-    settingsModalStore.setDirty('retention', hasChanges);
+    settingsModalStore.setDirty('retention', hasChanges || cacheDirty);
   }
 
   $: saveDisabled = saving || !hasChanges || (retentionEnabled && showEnableConfirm);
@@ -502,7 +507,7 @@
 
     <!-- Derived media cache (regenerable duplicates of originals) -->
     <hr class="section-divider" />
-    <CacheSettings />
+    <CacheSettings on:dirty={(e) => (cacheDirty = e.detail)} />
   {/if}
 </div>
 

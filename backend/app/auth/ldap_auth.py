@@ -625,6 +625,7 @@ def _create_ldap_user(db, username: str, email: str, ldap_data: LdapUserData, *,
             ``admin_groups`` rule OR-ed with any ``group_mapping`` that grants
             ``admin``. Computed by :func:`sync_ldap_user_to_db`.
     """
+    from app.auth.approval import initial_approval_status
     from app.models.user import User
 
     logger.info(f"Creating new user from LDAP: {username} ({email})")
@@ -639,6 +640,9 @@ def _create_ldap_user(db, username: str, email: str, ldap_data: LdapUserData, *,
         role=role,
         is_active=True,
         is_superuser=role_implies_superuser(role),
+        # Same rule as OIDC JIT: the directory authenticated them, it did not
+        # decide this deployment wants them. 'approved' unless the setting is on.
+        approval_status=initial_approval_status(db),
     )
     db.add(user)
 

@@ -314,6 +314,31 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'refresh_token' AND column_name = 'oidc_id_token')"
     )
 
+    # v379 guard: administrator approval of newly provisioned accounts. TWO markers.
+    # The column alone is not the revision: without ck_user_approval_status_valid an
+    # unrecognised value reads as neither pending nor rejected, so the gate in
+    # api/endpoints/auth/dependencies.py fails OPEN — which is precisely the state a
+    # database must not be stamped as already having.
+    has_user_approval_status = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'approval_status')"
+    )
+    has_approval_status_check = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_user_approval_status_valid')"
+    )
+
+    # v380 guards: SCIM tokens and the widened group-source CHECKs. TWO markers,
+    # because the revision does two things and a schema carrying only one of them is
+    # hand-edited: with the table but not the widened CHECK, every proxy login and
+    # every SCIM group write would fail on a CheckViolation, which is the sort of
+    # thing a re-run must be able to repair.
+    has_scim_token = "scim_token" in tables
+    has_proxy_group_source = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_group_mapping_source_valid' "
+        "AND pg_get_constraintdef(oid) LIKE '%proxy%')"
+    )
+
     # v377 guards: the auth-config data rename. This revision adds NO DDL, so there
     # is no column to probe — the fingerprint is the absence of the retired key
     # prefix in both config tables. A deployment that never configured OIDC has no
@@ -329,6 +354,52 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     )
 
     # Return the highest version stamp that matches (newest first)
+    # v380: SCIM provisioning tokens + 'proxy'/'scim' group sources.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+        and has_user_approval_status
+        and has_approval_status_check
+        and has_scim_token
+        and has_proxy_group_source
+    ):
+        return "v380_scim_tokens"
+    # v379: administrator approval state on user.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+        and has_user_approval_status
+        and has_approval_status_check
+    ):
+        return "v379_approval_state"
     # v378: OIDC identity columns and the auth_type value rename.
     if (
         has_cloud_seams

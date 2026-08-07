@@ -39,6 +39,7 @@ from .pipeline_timing import FilePipelineTiming
 from .prompt import SummaryPrompt
 from .prompt import UserSetting
 from .refresh_token import RefreshToken
+from .scim_token import SCIMToken
 from .sharing import CollectionShare
 from .topic import TopicSuggestion
 from .upload_batch import UploadBatch
@@ -79,6 +80,7 @@ __all__ = [
     "UserMediaSource",
     "CustomVocabulary",
     "TopicSuggestion",
+    "SCIMToken",
     "RefreshToken",
     "UserMFA",
     "PasswordHistory",

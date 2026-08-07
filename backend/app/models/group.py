@@ -26,19 +26,40 @@ if TYPE_CHECKING:
 
 #: Directory sources a :class:`GroupMapping` can key off. ``ldap`` claim values are
 #: group DNs as the server returns them; ``oidc`` values are whatever the configured
-#: roles claim emits (realm roles, Authentik/Okta groups, Entra app roles).
-#: The two are deliberately separate namespaces — a DN and a role name are not
-#: interchangeable, and their matching rules differ (see the mapping service).
+#: roles claim emits (realm roles, Authentik/Okta groups, Entra app roles); ``proxy``
+#: values are the names an authenticating reverse proxy puts in its groups header
+#: (``v380``). They are deliberately separate namespaces — a DN and a role name are
+#: not interchangeable, and their matching rules differ (see the mapping service).
 MAPPING_SOURCE_LDAP = "ldap"
 MAPPING_SOURCE_OIDC = "oidc"
-MAPPING_SOURCES = (MAPPING_SOURCE_LDAP, MAPPING_SOURCE_OIDC)
+MAPPING_SOURCE_PROXY = "proxy"
+MAPPING_SOURCES = (MAPPING_SOURCE_LDAP, MAPPING_SOURCE_OIDC, MAPPING_SOURCE_PROXY)
 
 #: ``user_group_member.source``. Every row that predates ``v376`` is ``manual`` and
 #: must stay that way: reconciliation removes only what a directory pass added, so
 #: this value is the difference between "revocation works" and "a sync wipes the
-#: teams somebody built by hand".
+#: teams somebody built by hand". ``scim`` marks a membership an identity provider
+#: wrote through ``/scim/v2/Groups`` (``v380``) and is protected for the same reason:
+#: the provisioning system that created it is the one that gets to take it away.
 MEMBERSHIP_SOURCE_MANUAL = "manual"
-MEMBERSHIP_SOURCES = (MEMBERSHIP_SOURCE_MANUAL, MAPPING_SOURCE_LDAP, MAPPING_SOURCE_OIDC)
+MEMBERSHIP_SOURCE_SCIM = "scim"
+MEMBERSHIP_SOURCES = (
+    MEMBERSHIP_SOURCE_MANUAL,
+    MEMBERSHIP_SOURCE_SCIM,
+    MAPPING_SOURCE_LDAP,
+    MAPPING_SOURCE_OIDC,
+    MAPPING_SOURCE_PROXY,
+)
+
+#: Membership sources a directory reconciliation pass must never touch. Everything
+#: else in :data:`MEMBERSHIP_SOURCES` is claim-derived and owned by the next pass.
+MEMBERSHIP_SOURCES_PROTECTED = (MEMBERSHIP_SOURCE_MANUAL, MEMBERSHIP_SOURCE_SCIM)
+
+#: The CHECK bodies, as SQL. Kept beside the tuples so the model and ``v380``'s
+#: constraint swap cannot drift — the consistency test compares the live constraint
+#: against these strings.
+MEMBERSHIP_SOURCES_SQL = ", ".join(f"'{s}'" for s in MEMBERSHIP_SOURCES)
+MAPPING_SOURCES_SQL = ", ".join(f"'{s}'" for s in MAPPING_SOURCES)
 
 
 class UserGroup(Base):
@@ -98,9 +119,10 @@ class UserGroupMember(Base):
     role: Mapped[str] = mapped_column(
         String(20), nullable=False, default="member"
     )  # "owner", "admin", "member"
-    #: Who put this row here. ``manual`` = a human added it through the groups UI and
-    #: no directory pass may ever remove it; ``ldap``/``oidc`` = a mapping produced it
-    #: and the next reconciliation owns its lifetime.
+    #: Who put this row here. ``manual`` (a human, through the groups UI) and ``scim``
+    #: (a provisioning system, through /scim/v2/Groups) are protected — no directory
+    #: pass may remove them. ``ldap``/``oidc``/``proxy`` mean a mapping produced the
+    #: row and the next reconciliation owns its lifetime.
     source: Mapped[str] = mapped_column(
         String(20), nullable=False, default=MEMBERSHIP_SOURCE_MANUAL, server_default="manual"
     )
@@ -111,7 +133,7 @@ class UserGroupMember(Base):
     __table_args__ = (
         UniqueConstraint("group_id", "user_id", name="_group_member_uc"),
         CheckConstraint(
-            "source IN ('manual', 'ldap', 'oidc')", name="ck_user_group_member_source_valid"
+            f"source IN ({MEMBERSHIP_SOURCES_SQL})", name="ck_user_group_member_source_valid"
         ),
     )
 
@@ -160,7 +182,7 @@ class GroupMapping(Base):
 
     __table_args__ = (
         UniqueConstraint("source", "claim_value", name="uq_group_mapping_source_claim"),
-        CheckConstraint("source IN ('ldap', 'oidc')", name="ck_group_mapping_source_valid"),
+        CheckConstraint(f"source IN ({MAPPING_SOURCES_SQL})", name="ck_group_mapping_source_valid"),
         CheckConstraint(
             "grants_role IS NULL OR grants_role IN ('user', 'admin')",
             name="ck_group_mapping_role_capped",

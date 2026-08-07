@@ -28,6 +28,147 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Tenant/privacy hardening follow-ups (issue #262, migration v372)**: audit events now carry a nullable `organization_id` stamped at write time where the writer has tenant context (takedown/release, GDPR erasures, unredacted-view, prompt share/clone), and the org-admin audit read scopes on it — org-stamped events (including `user_id`-NULL failed logins) plus legacy un-stamped events attributed via member ids; other orgs' stamped events are never visible. Background imports capture the org at CREATION time instead of guessing from memberships: `watch_source.organization_id` (backfilled by v372) stamps every watch import, and playlist/URL placeholders receive the originating request's org through task kwargs (`resolve_owner_org_id` demoted to a documented last-resort for storage recovery). Remaining collection sub-surfaces (get/update/delete, share list/create/update/revoke, collection-media add/remove/list) are tenant-gated via `ctx.org_id`; group-targeted shares of an org collection now require every group member to belong to that org; org-context media adds reject cross-scope files. `SpeakerProfile` rows created via the API inherit the request's (or the speaker's) org. Collection member counts and the paginated collection-media list exclude quarantined files for non-admins. User-triggered re-diarization fires the before-dispatch access seam with a zero-hours reservation so a suspended/canceled cloud org can no longer burn GPU (402; community no-op, `CLOUD_SEAM_VERSION` unchanged).
 - **Speaker-cluster tenant scope (issue #262, migration v373)**: cross-video speaker clusters are now tenant-scoped like the rest of the speaker plane. `speaker_cluster.organization_id` (NULL = personal) is stamped at creation from the member speakers' file org and mirrored onto the OpenSearch centroid doc, so org files join org clusters and personal files join personal clusters — previously org-file speakers could never join ANY cluster (isolation-safe but degraded to per-speaker singletons). `batch_recluster` now partitions the Phase-2 similarity graph per tenant scope, so a member's org and personal recordings of the same voice are never merged into one cluster. The one-off tenant backfill stamps existing cluster rows + docs from their member speakers' file orgs (all-same-org rule; legacy mixed-scope clusters stay NULL, are counted in the summary, and dissolve into per-scope clusters on the next re-cluster), replacing the earlier strip-all-org cluster repair. Community edition: org is NULL everywhere, one partition, no org field on any doc — behavior unchanged.
 
+#### Authentication & identity (issues #353, #354, #355; migrations `v375`–`v379`)
+
+- **Generic OpenID Connect — any conforming provider, not one vendor (issue #353)**: endpoints are
+  resolved from the provider's `.well-known/openid-configuration` when a **Discovery URL** is set,
+  and only fall back to the realm URL template (`<server>/realms/<realm>/protocol/openid-connect/…`)
+  when it is not. That template is one product's URL shape, and it was the *only* code path, so
+  Authentik, Authelia, Okta, Entra ID, Auth0 and Zitadel were all handed a 404 on the login
+  redirect. Discovery documents and JWKS are TTL-cached for 15 minutes (the JWKS was previously
+  refetched on **every** token validation), a document missing required endpoints is not cached so
+  a broken configuration is not pinned for the whole TTL, and a discovery failure degrades to the
+  realm URLs rather than taking a working deployment down. The **Roles Claim** is a configurable
+  dotted path (`realm_access.roles` by default, `groups` for Authentik/Okta, `roles` for Entra ID)
+  and falls back to the userinfo endpoint when the claim is absent from the token. The internal-URL
+  swap applies to discovered endpoints too.
+- **The OIDC surface is renamed `oidc_*`, and `KEYCLOAK_*` keeps working forever
+  (`v377`, `v378`)**: configuration keys, Pydantic schema, service, admin-panel tab, i18n across
+  all 8 locales, and the routes (`/api/auth/oidc/login`, `/api/auth/oidc/callback`) are all
+  provider-neutral. **No identity provider needs reconfiguring** — the registered redirect URI
+  points at the SPA's `/login` page, never at the backend routes. Stored database configuration is
+  renamed by `v377` carrying the ciphertext across unchanged (no decrypt/re-encrypt), and `v378`
+  renames `user.keycloak_id` → `user.oidc_subject` (named for what it is: a `sub` is unique per
+  *issuer*, not globally), `keycloak_refresh_token` → `oidc_refresh_token`, and the `auth_type`
+  value `keycloak` → `oidc`. `KEYCLOAK_*` environment variables are translated onto the canonical
+  `OIDC_*` names before settings are built — an input adapter, not a second implementation — with
+  the legacy spelling winning when both are set and a single deprecation line at startup. A unit
+  test fails the build if the retired noun appears under `backend/app/` outside a three-entry
+  allow-list, each carrying a written reason. `docs/KEYCLOAK_SETUP.md` → `docs/OIDC_SETUP.md`
+  (the old path is a redirect stub), and `docs-site/docs/authentication/keycloak.md` →
+  `oidc.md` likewise.
+- **The identity-source model (issue #354)** — `local_enabled`, `allow_registration`, per-user
+  `auth_type` + `allow_local_fallback`, and `pki_allow_password_fallback` as a deployment ceiling
+  over the per-user flag. Previously `/token` always accepted a local password, so an
+  LDAP- or OIDC-owned deployment could not actually turn local authentication off; the intended
+  auth method was advisory. The API also refuses the incoherent combination
+  (`allow_registration` on while `local_enabled` is off — self-registration mints local-password
+  accounts that could never sign in), and re-checks the *resulting* state so it cannot be
+  assembled one save at a time. **An active `super_admin` with a password path is exempt**: auth
+  configuration is super_admin-gated, so without the exemption a deployment that disabled local
+  login while its IdP was misconfigured would have no way back in.
+- **Admission control — "does this deployment want you", separately from "are you who you say"
+  (`v379`)**: `oidc_allowed_groups` / `oidc_blocked_groups` evaluated against the roles claim
+  (semicolon-delimited, because a directory group value is a DN and contains commas; blocked is
+  evaluated first and means *denied*), and `require_account_approval`, which lands a newly
+  provisioned account — self-registered **or** JIT-provisioned by any external IdP — in a
+  `pending` state with an admin queue at `GET`/`POST /api/admin/user-approvals`. An empty
+  allow-list admits everyone, so upgrading changes nothing until an operator sets one. Refusals
+  return the same generic 401 an unusable token gets, and are audited.
+- **IdP group mapping (`v376`)**: a `group_mapping` row binds one directory claim value —
+  an LDAP group DN or an OIDC role/group name — to an in-app `UserGroup`, to a role grant, or to
+  both. Both directory paths already carried the caller's full group list and discarded everything
+  but a single "is this an admin" bit. Applied at login for LDAP **and** OIDC, and on the periodic
+  LDAP sweep, through **one** implementation. `grants_role` is capped at `admin` in the wire
+  contract, in the service, and by a database CHECK constraint — **`super_admin` is unreachable
+  from any identity provider**, and a `super_admin` is never demoted by reconciliation either.
+  `user_group_member.source` marks directory-derived membership, so reconciliation removes only
+  what it added and a hand-added membership is never touched; the column defaults to `manual`, so
+  the default *is* the backfill. Super_admin API at `/api/admin/group-mappings`, including a
+  dry-run `POST /test` that resolves a claim list (or a real LDAP account) and reports matched vs
+  unmatched claims without writing anything. **No admin-panel screen yet — the API is the
+  interface.**
+- **Directory sync and deprovisioning (LDAP)**: there was previously **no deprovisioning at all**.
+  Sync ran only at login and only upward, so an account deleted or disabled in Active Directory
+  kept a live row forever — and because refresh tokens rotate on every use, an actively-used
+  session survived the user's termination indefinitely. A beat-driven pass now probes every active
+  LDAP account, reconciles groups and role for the ones still present, and disables **and revokes
+  the sessions of** the ones that are provably gone. Fail closed on *ambiguity*, not on error:
+  "the directory says gone" acts, "I could not ask the directory" aborts the pass. `super_admin`
+  and `local` accounts are never touched, it disables rather than deletes, and
+  `directory_sync.max_disables_per_run` bounds the blast radius — a directory answering "gone" for
+  everyone (wrong search base, wrong group DN) is indistinguishable from mass offboarding.
+  Defaults are deliberately timid (`enabled=false`, `dry_run=true`), so an operator opts in twice.
+  Six DB-backed `SystemSettings` rows, no new environment variables; **no endpoint and no admin
+  panel yet**.
+- **Admin invitations**: an admin names an address plus the target `role` and `auth_type`; the
+  invitee proves control of the address and chooses their own credential, or is handed to the IdP
+  for an external `auth_type`. This closes a real gap — disabling self-registration was only half
+  a feature, because `POST /api/admin/users` could not set `auth_type`, so every admin-created
+  account was `local` and could not authenticate at all on a deployment where local passwords are
+  off. Tokens are SHA-256 hashed at rest, single-use and expiring, and every rejection (unknown,
+  expired, revoked, already used, address already registered) returns one identical message.
+  Admin-created accounts can now set `auth_type` too, omitting the password field entirely for an
+  external type.
+- **Email verification**: `require_email_verification` was a declared auth-config key, rendered as
+  a switch, stored on save, and **read by nothing**. It now gates local password login (only —
+  an LDAP/OIDC/PKI address is asserted by the provider, and blocking those logins would
+  second-guess the IdP), with 24-hour tokens rate-limited to 3 issues per hour and
+  `/auth/verify-email` + `/auth/verify-email/resend` endpoints.
+- **Account lifecycle enforcement**: `must_change_password` and `account_expires_at` were both
+  written and never read — the admin "force change on next login" flag let the user sign in with
+  the admin-chosen password and never prompted, and a time-boxed contractor account stayed usable
+  forever. Both are enforced at the one dependency every user-facing route passes through, with
+  machine-readable `detail.code` values (`password_change_required`, `account_expired`,
+  `banner_acknowledgment_required`, `account_pending_approval`, `account_rejected`) so clients
+  branch on a contract rather than on English prose. Password expiry (`password_max_age_days`,
+  FedRAMP IA-5(1)) now feeds the same flag rather than inventing a second mechanism; an account
+  with no recorded `password_changed_at` is warned about rather than force-changed, because
+  nothing stamped that column on older accounts and forcing all of them would be a self-inflicted
+  outage.
+- **The login banner is enforced, not merely displayed (FedRAMP AC-8)**: `banner_acknowledged_at`
+  was written by the acknowledgment endpoint and read by nothing; the SPA approximated the control
+  with a `sessionStorage` flag that clears per tab, is trivially removed, and never reaches the
+  server. The consent AC-8 requires was therefore never a precondition for anything. It is now a
+  server-side gate — and **an acknowledgment expires when the banner text changes**, compared
+  against that config row's `updated_at`, because someone who accepted one classification notice
+  has not accepted a later, stricter one.
+- **Session controls that actually apply (`v375`)**: idle timeout, absolute timeout and the
+  concurrent-session limit + policy were read from `.env` while the admin UI wrote the database,
+  so the Session tab was inert. All three are DB-backed now and take effect without a restart. The
+  panel also offered `oldest`/`newest`/`all` for the concurrency policy, none of which the backend
+  compares against, so the AC-10 limit silently enforced nothing whichever option was chosen; the
+  vocabulary is now `terminate_oldest`/`reject` on both sides, and hitting the cap is audited
+  either way. `absolute_expires_at` is carried forward through rotation and never recomputed — it
+  is the only thing that caps a client that refreshes forever. Both timeout columns are nullable
+  and un-backfilled, so upgrading does not sign everyone out a second time. Users see and revoke
+  their own sessions in Settings → Profile; admins can list and revoke another account's.
+- **One session store, not two.** `auth/session.py` carried a Redis `SessionManager` implementing
+  the timeout half with **zero call sites**. It was deleted rather than wired up: two owners would
+  enforce against different session sets the moment Redis and Postgres diverged, and issue #324
+  already established that Redis is a cache here, not the system of record. A session is a
+  `refresh_token` row.
+- **Transactional auth email through the deployment's real mail configuration**: password resets,
+  invitations and verification links are delivered by a designated `EmailNotificationConfig` row
+  (super_admin; `PUT /api/admin/auth-config/email/designation`), falling back to the `SMTP_*`
+  environment transport when no row is designated. A designation naming a missing or disabled
+  configuration is rejected at **write** time, and deleting or disabling the designated row is
+  refused — the read path degrades quietly enough that a bad designation would surface only as
+  undelivered password resets.
+- **Auth-config audit is visible in the product**: `auth_config_audit.changed_by` is a NOT NULL
+  foreign key that was never serialised, so the answer to "who turned MFA off / changed the LDAP
+  bind password" sat in Postgres and was invisible. Settings → Authentication → **Audit** now
+  shows configuration changes with the account that made each one.
+- **Three privilege tiers, with a stated rule.** *Anything that changes how the deployment runs,
+  or stores infrastructure credentials, is `super_admin`; anything that manages users and their
+  content is `admin`.* Creating another `super_admin` is now a UI action (Settings → Users →
+  Role) rather than something reachable only through direct API access, it is audited, and the
+  last remaining `super_admin` cannot be demoted or deleted. A unit test walks the live dependency
+  tree and fails if a new route lands at the wrong tier or is accidentally public.
+- **Admin user management** gained lock/unlock (unlock is now the true inverse of lock: it clears
+  **both** the deactivation and any failed-login lockout), force-logout, MFA reset, per-account
+  session listing, and an `auth_type` column.
+
 #### Backend observability & monitoring
 
 - **Prometheus metrics**: new root-mounted `/metrics` endpoint (internal-network only; denied by nginx) exposing request-duration histograms by route template/method/status, request counters, in-flight gauge, **per-request DB-query-count histograms** (`db_queries_per_request` — surfaces N+1/duplicate queries per endpoint), DB query latency, cache hit/miss counters, priority-aware Celery queue-depth gauges, and product counters (`user_signups_total` by auth method, `files_uploaded_total` by source). No user IDs or raw paths in labels (cardinality-safe).
@@ -323,6 +464,38 @@ impact. Everything below is fixed in this release.
   cookies in place when Redis was down, and a failed federated logout was reported to the user as a
   clean sign-out; several authentication routes had no rate limit; audit records attributed every
   failed login to LDAP whenever LDAP was enabled, regardless of how the attempt was actually made.
+- **An external identity could take over an existing account by email coincidence.** Every
+  external path — LDAP, PKI, and the JIT seam — resolved a user by the provider's own identifier
+  and then fell back to matching on email address. The address is an *attribute of the external
+  source*, so anyone who could write it (a directory administrator, a self-service directory, or
+  anyone who could get a certificate issued) could point it at an existing account and inherit it,
+  including its content and its privileges. There is now **one** rule for all four paths: link on
+  an email match only when the source asserts the address is verified, and **never** link a
+  `super_admin`. A refusal fails the login rather than silently creating a duplicate account, and
+  returns the *same* generic error as a bad credential so it cannot be used to probe which
+  addresses exist. **See Upgrade Notes — this changes behaviour on providers that do not assert
+  `email_verified`.**
+- **OIDC token validation accepted the wrong credential on failure.** Validation tried the ID
+  token and, if it did not verify, **fell back to the access token**, accepting whichever one did.
+  That turns an ID token failing audience or issuer validation into a silent downgrade onto a
+  credential RFC 9068 §6 forbids the relying party from inspecting, whose `aud` means something
+  else entirely, and which several major providers issue as an opaque string no JWKS can verify at
+  all. Only the ID token authenticates now; a missing or invalid one is a hard 401, and `openid`
+  is forced into the requested scopes so a provider cannot be configured into issuing no ID token.
+  The access token is still used as a bearer credential against `userinfo`, which is what it is
+  for.
+- **OIDC had no admission control at all.** JIT provisioning created an account
+  **unconditionally**, and the only group-shaped setting (`oidc_admin_role`) *elevates* rather
+  than *admits* — so pointing the integration at a corporate realm provisioned every identity in
+  it. Allow/block group lists and an optional approval queue now gate provisioning, evaluated
+  before the account row is created and before any email-match link, and re-evaluated on every
+  login so a group removal locks the account out rather than only affecting new users. An empty
+  allow-list admits everyone, which is what preserves existing deployments on upgrade.
+- **The privilege ceiling on directory-driven grants is now enforced at three layers.** IdP group
+  mappings can grant at most `admin`; `super_admin` is refused by the wire contract, by the
+  service before anything is persisted, and by a database CHECK constraint. `super_admin` is
+  local-only by design — it is the break-glass account for exactly the identity provider that is
+  failing — and directory reconciliation never demotes one either.
 
 - **Security controls no longer weaken silently when Redis is unavailable (issue #284 A0/A1 follow-up, issue #324)**: Redis holds the state several controls depend on — the token-revocation blacklist, account-lockout counters, MFA single-use replay protection, and auth rate limiting — and that state is *shared across replicas*. When Redis was unreachable each process fell back to its own in-memory store, which is empty on start and never shared, so **a token revoked on one replica was still honoured by every other**: "log out all devices" and password-reset revocation quietly stopped meaning anything, on the exact control you reach for during an incident. It logged at `warning` and scrolled past. Redis here is a **cache**, not the system of record, so the degraded path now consults the system of record instead: `refresh_token.revoked_at` is durable and shared by every replica, so revocation keeps working and nobody is logged out during an outage. An access token (which has no durable row of its own) is denied only on **positive evidence** — the user demonstrably had sessions and every one was revoked — because "this user has no refresh tokens" is not evidence of revocation and denying on absence would lock out valid users whose auth path never mints one. With no database session, or if the fallback query itself fails, the check **denies**. Degradation now logs at `CRITICAL` and increments a new `security_state_degraded_total{control,fallback}` Prometheus counter — **alert on it**. Behaviour is identical for self-hosted single-node and cloud (the gate is `ENVIRONMENT`, which defaults to `production`; only a developer laptop keeps the in-memory convenience), and there is deliberately **no flag to disable it** — an off-switch on a security control gets flipped during exactly the incident it guards against.
 - **A password reset that could not revoke sessions reported success anyway (issue #324)**: `confirm_password_reset` called a helper that commits on success and calls `db.rollback()` on *any* error — and it ran **before** the caller's own commit, so a Redis outage or failed commit silently reverted the new password hash, the history row and the used-token markers, while the function still returned success. **The user was told their password had changed when it had not, and their existing sessions were left live** — the outcome FedRAMP AC-12 exists to prevent, arriving at the moment it matters most, since a reset is frequently triggered by a suspected compromise. Revocation now runs inside the caller's transaction and a failure aborts the whole reset with a real error. The two revocation entry points are split by contract so the mistake cannot recur: `revoke_all_user_tokens_in_transaction` (commits nothing, propagates) and `revoke_all_user_tokens` (best-effort, commits, documented as unsafe to call mid-transaction).
@@ -365,6 +538,27 @@ impact. Everything below is fixed in this release.
 
 ### Documentation
 
+- **Authentication documentation rewritten against the shipped behaviour.**
+  `docs-site/docs/authentication/` now carries `overview`, `ldap`, `oidc`, `pki` and a new
+  `groups` page (IdP group mapping), all wired into the sidebar — previously only `overview` was,
+  and the detail pages were unreachable from navigation. `keycloak.md` becomes a stub pointing at
+  `oidc.md` (Docusaurus has no client-redirects plugin here, so the stub *is* the redirect), and
+  `docs/KEYCLOAK_SETUP.md` is likewise a one-hop stub to the new `docs/OIDC_SETUP.md` because ~17
+  links across the repo — including `scripts/test-all-auth.sh` and the release blog post — point
+  at it. `docs-site/docs/features/authentication.md` and `docs-site/docs/user-guide/admin-panel.md`
+  were rewritten too: both still described `AUTH_TYPE` (a setting nothing ever read), a two-tier
+  privilege model, and a Keycloak-only SSO story. Surfaces that exist without an admin screen —
+  IdP group mappings, `require_email_verification`, directory sync — are documented as
+  API/settings-only rather than implied to have a panel.
+- **Superseded planning prose removed from `docs/`**: `ProjectPlan.md`,
+  `FORK_IMPLEMENTATION_PLAN.md`, `FORK_COMPARISON_vfilon.md`,
+  `FRONTEND_AUTH_IMPLEMENTATION_PLAN.md`, `RELEASE_PLAN_v0.4.0.md`,
+  `E2E_TEST_EXPANSION_PLAN.md`, `SPEAKER_PROFILE_FIX_PLAN.md`, `IMPLEMENTATION_AUDIT_REPORT.md`,
+  `DOCUMENTATION_IMPLEMENTATION_SUMMARY.md`, `DOCUMENTATION_STRATEGY.md`,
+  `DECEMBER_2025_INTEGRATION.md`, `OPTIMIZATION_ROADMAP.md` (superseded by
+  `GPU_PIPELINE_OPTIMIZATION_PLAN.md`) and a stray `run.txt`. Each was checked for inbound
+  references first; the only surviving mentions are inside historical CHANGELOG entries for
+  already-published releases, which are left alone as a matter of record.
 - **Homepage version badge single-sourced from `VERSION`**: the docs site hard-coded `v0.4.0` in `src/pages/index.tsx` and had drifted a release behind. `docusaurus.config.ts` now reads the repo-root `VERSION` file at build time and exposes it via `customFields`, so the badge can never disagree with what shipped. The Docker build context is `docs-site/`, which cannot reach `../VERSION`, so the value is threaded through as an `OT_VERSION` build arg (`opentr.sh` and both compose overlays pass the existing `APP_VERSION`); an unreadable or malformed version omits the badge rather than rendering a stale or `unknown` value. `VERSION` was added to the `deploy-docs` workflow's trigger paths so a release bump actually redeploys the site.
 - **Mobile layout fixes (phone / tablet)**: the homepage scrolled sideways on every phone viewport (~200 px of overflow on a 375 px screen). Two independent flexbox bugs caused it — the hero install command and the comparison table were both centered flex items whose default `min-width: auto` prevented them from shrinking, pushing their left edges off-screen where no scrolling could reach them. Both are now block-level scroll containers. Document-level horizontal overflow is 0 px at 375/393/412/768/1366/1440 px.
 - **Comparison table usability**: the 12-column homepage table now scrolls horizontally with the "Feature" column pinned via `position: sticky`, so a value in the rightmost column is still attributable to its row on a phone. Sticky cells were initially transparent because Infima leaves `--ifm-background-color` as `transparent` in light mode; a new opaque `--ot-bg` token backs anything that must occlude scrolling content.
@@ -388,6 +582,43 @@ no reason to read or replace.
 **If a plain `admin` administers those panels today, promote them to `super_admin`** (Settings →
 Users → Role) before upgrading, or move the work to an existing super_admin. Nothing else changes
 tier: user accounts, tasks, search and speaker maintenance stay at `admin`.
+
+#### An OIDC login no longer takes over a local account with the same email address
+
+Signing in through an identity provider used to adopt any existing account whose `email` matched,
+regardless of what the provider actually asserted about that address. It now does so only when the
+provider sets `email_verified: true`, and **never** for a `super_admin` account.
+
+**This closes the path on two common providers**: Authentik hardcodes `email_verified` to `false`,
+and Entra ID omits the claim entirely (absent is treated as unverified — the check fails closed).
+On those, an OIDC login that previously absorbed a pre-existing local account now fails with the
+same generic error as a bad credential, and is audited with `error_code ACCOUNT_LINK_REFUSED`.
+
+**Remedy — pick one, per account:**
+
+1. **Link it deliberately.** Set that account's `oidc_subject` (LDAP: `ldap_uid`; PKI:
+   `pki_subject_dn`) to the provider's identifier for the person. A subject match is never
+   re-litigated, so the login proceeds normally afterwards.
+2. **Change one of the two addresses**, so there is no coincidental match and the OIDC login
+   provisions its own account.
+
+Doing nothing leaves the person unable to sign in via OIDC while the duplicate address exists.
+There is no setting to restore the old behaviour: the address is an attribute the external
+directory controls, so "trust it unconditionally" is the account-takeover vector this closes.
+
+#### The OIDC surface is renamed — configuration keys, routes and the admin tab
+
+Config keys are `oidc_*`, the admin tab is **OIDC**, and the routes are `/api/auth/oidc/login`
+and `/api/auth/oidc/callback`. **No identity provider needs reconfiguring** (the registered
+redirect URI points at the SPA's `/login` page), and **every `KEYCLOAK_*` environment variable
+keeps working permanently** — the legacy spelling even wins when both are set. Stored database
+configuration is renamed automatically by migration `v377`.
+
+What does break: a script that writes `PUT /api/admin/auth-config/keycloak`, reads a
+`keycloak_*` key out of `GET /api/admin/auth-config`, or calls
+`/api/auth/keycloak/{login,callback}` directly. `GET /api/auth/methods` reports `"oidc"` in
+`methods`; its `keycloak_enabled` field is retained for **one minor release** so a cached SPA
+bundle keeps rendering the SSO button, and will be removed after that.
 
 #### `PKI_TRUSTED_PROXIES` is now required whenever PKI is enabled
 
@@ -480,6 +711,47 @@ typed `MediaFileDetail` instead of `any`.
   or hand the work to an existing super_admin. **Creating additional super_admins is now possible
   from the UI** — the role select previously offered only `user` and `admin`, so the tier could not
   be granted at all without direct API access.
+- **ACTION REQUIRED if you use OIDC with Authentik or Entra ID (or any provider that does not
+  assert `email_verified`): an OIDC login will no longer take over a pre-existing local account
+  with the same email address.** Authentik hardcodes `email_verified` to `false` and Entra ID
+  omits the claim, and an absent claim is treated as unverified, so on those providers the
+  takeover path is now closed. Affected users get the same generic login failure as a bad
+  credential (deliberately — a distinct message would tell an attacker which addresses exist);
+  look for `error_code ACCOUNT_LINK_REFUSED` in the audit log to identify them.
+  **Remedy, per account:** either link it deliberately — set that account's `oidc_subject` (or
+  `ldap_uid` / `pki_subject_dn`) to the provider's identifier for that person, after which the
+  match is on the subject and is never re-litigated — or change one of the two email addresses so
+  there is no coincidence and the login provisions its own account. There is no flag to restore
+  the old behaviour: the address is an attribute the external directory controls, and trusting it
+  unconditionally is an account-takeover path. `super_admin` accounts are **never** linked by
+  email, verified or not.
+- **The OIDC configuration surface is renamed, and existing setups keep working.** Your
+  `KEYCLOAK_*` environment variables need no change — ever — and stored database configuration is
+  renamed automatically by migration `v377`. **No identity-provider reconfiguration is needed**:
+  the registered redirect URI points at the SPA's `/login` page, not at the backend routes that
+  were renamed. Update only if you have a script that writes
+  `PUT /api/admin/auth-config/keycloak`, reads `keycloak_*` keys from the config API, or calls
+  `/api/auth/keycloak/*` — those become `oidc`. `GET /api/auth/methods` reports `"oidc"`; the
+  `keycloak_enabled` field is kept for one more minor release so a cached SPA bundle keeps
+  working.
+- **New auth settings are all opt-in and default to today's behaviour.** `oidc_allowed_groups`
+  empty = admit everyone (previously JIT provisioned every identity unconditionally);
+  `require_account_approval` false = accounts usable immediately; `directory_sync.enabled` false
+  with `dry_run` true; `pki_allow_password_fallback` true; `password_max_age_days` only forces a
+  change for accounts that actually have a recorded `password_changed_at`. **If you point OIDC at
+  a corporate realm, set `oidc_allowed_groups`** — otherwise every identity in that realm can
+  provision an account.
+- **Directory sync is worth arming deliberately.** Enable it with `directory_sync.dry_run=true`,
+  read `directory_sync.last_result` for a few days, and only then set `dry_run=false`. The pass
+  **disables accounts and revokes their sessions**; `directory_sync.max_disables_per_run`
+  (default 10) is what stops a wrong search base or group DN from disabling the deployment in one
+  run. There is no admin panel for it yet — it is six `SystemSettings` rows.
+- **Password resets, invitations and verification links need a working mail transport.**
+  Designate one email configuration to carry authentication mail (Settings → Watch Sources →
+  Email configurations, then the auth-mail designation), or leave it undesignated and configure
+  the `SMTP_*` environment transport. **A stock deployment has neither**, so invitations and
+  self-service password resets will not be delivered until you set one up. Reset links are no
+  longer written to the application log as a fallback.
 - **ACTION REQUIRED for PKI deployments: set `PKI_TRUSTED_PROXIES`.** Header-sourced PKI
   authentication is refused when no trusted proxy is allow-listed, where it was previously accepted
   with a warning. Hardened deployments already refused to start without it, so this affects
@@ -505,6 +777,20 @@ typed `MediaFileDetail` instead of `any`.
   `allow_registration`. Anything asserting `"local" in methods` should assert on the flag instead.
 - **Interactive API docs are withheld when hardened.** Set `ENABLE_API_DOCS=true` to restore
   `/api/docs`, `/api/redoc` and `/api/openapi.json` on a hardened deployment.
+- **Every session ends once more at the login-banner and session-timeout rollout.** If
+  `login_banner_enabled` is on, every user is asked to acknowledge the banner again the first time
+  they load the app after upgrading — the acknowledgment is now enforced server-side, and an
+  acknowledgment recorded before the wording last changed no longer counts. Session idle and
+  absolute timeouts do **not** retroactively invalidate anything: their columns are nullable and
+  un-backfilled, treated as "no cap recorded", and stamped on each session's first rotation.
+- **Migrations `v376_idp_group_mapping`, `v377_rename_keycloak_config_to_oidc`,
+  `v378_oidc_identity_columns` and `v379` apply automatically on backend startup** (dev) or via
+  `alembic upgrade head` (production). `v377` moves the stored auth-config keys and carries the
+  ciphertext across **unchanged** — no decrypt/re-encrypt, so `ENCRYPTION_KEY` is not needed for
+  the rename. `v378` is a **single transaction** on purpose: a half-applied state would either
+  lock out every OIDC user or exempt them from MFA enrolment. It also drops a duplicate
+  `auth_type` CHECK constraint that had been re-asserted by three earlier revisions — one rule,
+  one owner — and its consistency test pins that exactly one remains.
 - **Migration `v375_harden_user_auth_invariants` applies automatically on backend startup** (dev)
   or via `alembic upgrade head` (production). It makes `user.role` and `user.auth_type` NOT NULL and
   adds an `auth_type` CHECK. Rows carrying a NULL role are repaired to `user` with the superuser

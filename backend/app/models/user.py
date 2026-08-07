@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean
 from sqlalchemy import DateTime
+from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
@@ -133,6 +134,22 @@ class User(Base):
     banner_acknowledged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )  # Login banner ack
+
+    # Administrator admission of a newly provisioned account (v379). Distinct from
+    # is_active on purpose: deactivation revokes an account that was once usable,
+    # approval gates one that never has been. 'approved' is the column default, so
+    # every pre-existing row and every path that does not opt in is unaffected.
+    # See app/auth/approval.py.
+    approval_status: Mapped[str] = mapped_column(
+        String(20), default="approved", server_default="approved", nullable=False, index=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The administrator who decided. Self-referential FK with no relationship: the
+    # column is only ever read for display, and a relationship on "user" would be
+    # the third pair of FKs needing an explicit foreign_keys= on both sides.
+    approved_by: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Proof that THIS deployment sent mail to `email` and someone holding it came
     # back. Gates local login when the `require_email_verification` auth-config

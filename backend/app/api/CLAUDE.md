@@ -25,6 +25,9 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 - `websockets.py` — `/ws`, the in-process `ConnectionManager`, and the Redis subscriber on the
   `websocket_notifications` channel.
 - `endpoints/metrics.py` — `/metrics`, mounted at **root** (no `/api`), unauthenticated by design.
+- `endpoints/scim/` — SCIM 2.0, also mounted at **root** (`/scim/v2`, RFC 7644 §3.1 fixes the
+  base path). Bearer-token authenticated, not session-authenticated, and deliberately **not**
+  rate limited; its errors are SCIM Error resources via `main.py`'s `SCIMError` handler.
 - `endpoints/files/` — the oversized files router split into a package (`upload`, `crud`,
   `filtering`, `streaming`, `subtitles`, `reprocess`, `url_processing`, `waveform`, …).
   `management.py` exports a second router mounted at the same `/files` prefix.

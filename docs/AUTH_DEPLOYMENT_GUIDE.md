@@ -522,7 +522,7 @@ Systematically test each authentication method:
 
 - **PKI Detailed Setup:** `docs/PKI_SETUP.md`
 - **LDAP/AD Detailed Setup:** `docs/LDAP_AUTH.md`
-- **Keycloak Detailed Setup:** `docs/KEYCLOAK_SETUP.md`
+- **OIDC Detailed Setup:** `docs/OIDC_SETUP.md`
 - **Super Admin Guide:** `docs/SUPER_ADMIN_GUIDE.md`
 - **Security Policy:** `docs/SECURITY.md`
 - **FIPS Compliance:** `docs/FIPS_140_3_COMPLIANCE.md`

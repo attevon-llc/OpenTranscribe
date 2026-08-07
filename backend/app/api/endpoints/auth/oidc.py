@@ -275,8 +275,10 @@ async def oidc_callback(
             detail="Invalid access token",
         )
 
-    # Sync user to database
-    user = sync_oidc_user_to_db(db, oidc_data)
+    # Sync user to database. The already-resolved cfg is passed through so the
+    # admission check inside runs against the same configuration this flow was
+    # validated with, rather than re-reading it mid-login.
+    user = sync_oidc_user_to_db(db, oidc_data, cfg)
 
     # Store the encrypted provider refresh token for federated logout (issue #125)
     if tokens.refresh_token:

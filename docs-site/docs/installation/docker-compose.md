@@ -160,7 +160,7 @@ See [Environment Variables](../configuration/environment-variables.md) for all o
 OpenTranscribe supports multiple authentication methods. For enterprise deployments, you may want to configure:
 
 - **LDAP/Active Directory** - `LDAP_ENABLED=true`
-- **Keycloak/OIDC** - `KEYCLOAK_ENABLED=true`
+- **OpenID Connect** - `OIDC_ENABLED=true` (any conforming provider; `KEYCLOAK_*` names still work)
 - **PKI/X.509** - `PKI_ENABLED=true`
 
 See [Authentication Overview](../authentication/overview.md) for setup guides.

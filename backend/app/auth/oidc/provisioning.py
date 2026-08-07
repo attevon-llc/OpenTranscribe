@@ -66,6 +66,7 @@ def _create_oidc_user(db, oidc_data: OIDCUserData, *, is_admin: bool):
     """
     from sqlalchemy.exc import IntegrityError
 
+    from app.auth.approval import initial_approval_status
     from app.models.user import User
 
     subject = oidc_data["oidc_subject"]
@@ -93,6 +94,10 @@ def _create_oidc_user(db, oidc_data: OIDCUserData, *, is_admin: bool):
         role=role,
         is_active=True,
         is_superuser=role_implies_superuser(role),
+        # JIT provisioning is exactly the path administrator approval exists for:
+        # the IdP decided this person is who they say they are, not that this
+        # deployment wants them. 'approved' unless the setting is on.
+        approval_status=initial_approval_status(db),
     )
     db.add(user)
 
@@ -165,7 +170,7 @@ def _convert_local_user_to_oidc(db, user, oidc_data: OIDCUserData):
     return user
 
 
-def sync_oidc_user_to_db(db, oidc_data: OIDCUserData):
+def sync_oidc_user_to_db(db, oidc_data: OIDCUserData, cfg=None):
     """Create or update a user in the database from verified OIDC claims.
 
     Handles creating new users, updating existing OIDC users, converting local users
@@ -175,24 +180,49 @@ def sync_oidc_user_to_db(db, oidc_data: OIDCUserData):
     (``realm_access.roles`` by default, or the provider's ``groups`` claim); until
     v376 only ``is_admin`` survived it.
 
+    **Admission is decided first**, against ``oidc_allowed_groups`` /
+    ``oidc_blocked_groups`` (:mod:`app.auth.oidc.admission`). Before that check
+    existed, completing the OIDC flow was sufficient to get an account here — so a
+    deployment pointed at a corporate tenant provisioned every identity in it. The
+    check runs ahead of both the create and the link branches on purpose: creating
+    first would leave a row behind for a refused identity, and linking first would
+    hand one a foothold on somebody's existing account.
+
     Lookup is ``oidc_subject`` first, then email. The email fallback links this
     identity to a **pre-existing** account, so it goes through
     ``account_linking.assert_email_link_permitted`` — the same single rule LDAP and
     PKI use. See that module for why a refusal fails the login rather than creating a
     second account, and for the operator remedy.
 
-    With no mappings configured this behaves exactly as before: no membership
-    changes, and ``oidc_admin_role`` alone decides ``admin``.
+    With no mappings and no group lists configured this behaves exactly as before:
+    everyone is admitted, no membership changes, and ``oidc_admin_role`` alone
+    decides ``admin``.
+
+    Args:
+        db: Database session.
+        oidc_data: Claims from the verified ID token.
+        cfg: Resolved :class:`~app.auth.oidc.config.OIDCConfig`. Optional so the
+            signature stays additive for the cloud seam; resolved from the database
+            when omitted, which costs one extra read on a path that already does
+            several.
 
     Raises:
-        HTTPException: 401, when an email-matched link is refused.
+        HTTPException: 401, when admission is refused or an email-matched link is.
+            Both are the *same* response an unusable token gets — a distinct one
+            would be an account-existence oracle.
     """
     from app.auth.account_linking import assert_email_link_permitted
     from app.auth.constants import AUTH_TYPE_LOCAL
+    from app.auth.oidc.admission import assert_oidc_admission_permitted
+    from app.auth.oidc.config import OIDCConfig
     from app.models.group import MAPPING_SOURCE_OIDC
     from app.models.user import User
     from app.services.idp_group_mapping_service import reconcile_user
     from app.services.idp_group_mapping_service import resolve_grants
+
+    if cfg is None:
+        cfg = OIDCConfig.from_db(db)
+    assert_oidc_admission_permitted(oidc_data, cfg, failure_detail=LINK_REFUSED_DETAIL)
 
     subject = oidc_data["oidc_subject"]
     email = oidc_data["email"]

@@ -23,6 +23,11 @@ import pytest
 from sqlalchemy import inspect
 from sqlalchemy import text
 
+#: These suites perform schema DDL (dropping a column or constraint to recreate the
+#: pre-revision shape). Postgres takes an ACCESS EXCLUSIVE lock for that, so they must
+#: not run beside other database tests — `--dist loadgroup` keeps a group on one worker.
+pytestmark = pytest.mark.xdist_group("migration_ddl")
+
 REVISION = "v378_oidc_identity_columns"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
 
@@ -72,12 +77,17 @@ def test_v378_migration_is_vendor_neutral():
         assert vendor_noun not in source.lower()
 
 
-def test_detection_arm_returns_v378_on_current_schema(db_session):
-    from app.db.migrations import _detect_schema_version
+def test_detection_arm_returns_v378_or_later_on_current_schema(db_session):
+    """Position in the chain, not identity — see ``tests/unit/_migration_detection``.
+
+    ``== REVISION`` held only while v378 was head; ``v379_approval_state`` landing
+    turned it red for a schema that carries every one of v378's markers.
+    """
+    from tests.unit._migration_detection import assert_detected_at_or_after
 
     conn = db_session.connection()
     tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) == REVISION
+    assert_detected_at_or_after(conn, tables, REVISION)
 
 
 @pytest.mark.parametrize(
@@ -141,8 +151,9 @@ def test_the_check_accepts_oidc_and_refuses_the_old_value(db_session, table, con
     clause = _check_clause(conn, constraint)
     assert "'oidc'" in clause
     assert f"'{LEGACY_AUTH_TYPE}'" not in clause
-    # 'proxy' is pre-authorised so the next phase does not need a second CHECK swap
-    # on a live user table. Nothing produces it yet — see VALID_AUTH_TYPES.
+    # 'proxy' was pre-authorised here so trusted-header auth would not need a second
+    # CHECK swap on a live user table. It is implemented as of v380 (app/auth/proxy/),
+    # which is why VALID_AUTH_TYPES now carries it too — see the test below.
     assert "'proxy'" in clause
 
 
@@ -199,16 +210,20 @@ def test_the_application_constant_is_a_subset_of_the_check():
     """The database may be wider than the app; the app must never be wider than the DB.
 
     A value the code can write but the CHECK rejects is an IntegrityError at COMMIT,
-    i.e. a 500 on a login. The reverse — 'proxy' allowed by the constraint and absent
-    from the constant — is the deliberate arrangement documented in the revision.
+    i.e. a 500 on a login. The reverse is fine and was this revision's whole point:
+    'proxy' sat in the constraint one phase before ``app/auth/proxy/`` existed, so
+    trusted-header auth landed without a second constraint swap on a live table.
     """
+    from app.auth.constants import AUTH_TYPE_PROXY
     from app.auth.constants import VALID_AUTH_TYPES
 
     module = _revision_module()
     allowed = {part.strip().strip("'") for part in module.VALID_AUTH_TYPES_SQL.split(",")}
     assert set(VALID_AUTH_TYPES) <= allowed
-    assert "proxy" in allowed
-    assert "proxy" not in VALID_AUTH_TYPES
+    # Both directions now hold for 'proxy': the constraint allows it and the
+    # application produces it.
+    assert AUTH_TYPE_PROXY in allowed
+    assert AUTH_TYPE_PROXY in VALID_AUTH_TYPES
 
 
 def test_an_unknown_auth_type_is_still_rejected(db_session):

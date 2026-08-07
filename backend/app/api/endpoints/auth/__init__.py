@@ -18,7 +18,7 @@ Layout:
   replaces self-registration when an IdP owns identity.
 - :mod:`email_verification` — ``/verify-email``, ``/verify-email/resend``.
 - :mod:`profile` — ``/me``, ``/session``, ``/me/certificate``.
-- :mod:`oidc` · :mod:`pki` — external IdP flows.
+- :mod:`oidc` · :mod:`pki` · :mod:`proxy` — external identity flows.
 - :mod:`methods` — ``/methods``, ``/banner``.
 - :mod:`mfa_tokens` — MFA half-token minting / scope + single-use replay protection.
 - :mod:`mfa_enrollment` — the enrolment dependency and post-second-factor session
@@ -94,6 +94,7 @@ from app.api.endpoints.auth.pki import pki_login
 from app.api.endpoints.auth.profile import get_user_certificate_info
 from app.api.endpoints.auth.profile import read_users_me
 from app.api.endpoints.auth.profile import session_status
+from app.api.endpoints.auth.proxy import proxy_login
 from app.api.endpoints.auth.registration import PasswordResetConfirmBody
 from app.api.endpoints.auth.registration import PasswordResetRequestBody
 from app.api.endpoints.auth.registration import confirm_password_reset_endpoint
@@ -114,6 +115,7 @@ from . import mfa as _mfa_module
 from . import oidc as _oidc_module
 from . import pki as _pki_module
 from . import profile as _profile_module
+from . import proxy as _proxy_module
 from . import registration as _registration_module
 from . import sessions as _sessions_module
 
@@ -125,6 +127,7 @@ router.include_router(_email_verification_module.router)
 router.include_router(_profile_module.router)
 router.include_router(_oidc_module.router)
 router.include_router(_pki_module.router)
+router.include_router(_proxy_module.router)
 router.include_router(_methods_module.router)
 router.include_router(_mfa_module.router)
 router.include_router(_sessions_module.router)
@@ -165,6 +168,7 @@ __all__ = [
     "lookup_invitation_endpoint",
     "oauth2_scheme",
     "pki_login",
+    "proxy_login",
     "read_users_me",
     "refresh_access_token",
     "register",

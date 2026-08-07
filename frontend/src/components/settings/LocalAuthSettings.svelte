@@ -23,6 +23,11 @@
     return {
       local_enabled: getVal('local_enabled', true),
       allow_registration: getVal('allow_registration', true),
+      // Both default false, matching the backend: turning either on is an opt-in
+      // policy change, not something an upgrade should apply to a running
+      // deployment and strand everybody behind.
+      require_email_verification: getVal('require_email_verification', false),
+      require_account_approval: getVal('require_account_approval', false),
       // Password policy
       password_min_length: getVal('password_min_length', 12),
       password_require_uppercase: getVal('password_require_uppercase', true),
@@ -112,6 +117,44 @@
       <span>{$t('settings.localAuth.allowSelfRegistration')}</span>
     </label>
     <span class="help-text indented">{$t('settings.localAuth.selfRegistrationHelp')}</span>
+
+    <!-- Local-login specific: the gate lives in the password login path
+         (`assert_email_verified_for_local_login`), which is why it is dimmed with
+         the rest of this section when local passwords are off. -->
+    <label class="checkbox-label">
+      <input
+        type="checkbox"
+        bind:checked={formData.require_email_verification}
+        on:change={handleChange}
+        disabled={!formData.local_enabled}
+      />
+      <span>{$t('settings.localAuth.requireEmailVerification')}</span>
+    </label>
+    <span class="help-text indented">{$t('settings.localAuth.requireEmailVerificationHelp')}</span>
+  </div>
+
+  <!--
+    Deliberately NOT inside the registration section above: that block is dimmed
+    and `pointer-events: none` when local passwords are off, but approval applies
+    to EVERY newly provisioned account — self-registration and every external-IdP
+    JIT path alike. A deployment that authenticates only through OIDC still needs
+    this switch.
+  -->
+  <div class="section">
+    <h3>{$t('settings.localAuth.accountAdmission')}</h3>
+
+    <label class="checkbox-label">
+      <input
+        type="checkbox"
+        bind:checked={formData.require_account_approval}
+        on:change={handleChange}
+      />
+      <span>{$t('settings.localAuth.requireAccountApproval')}</span>
+    </label>
+    <span class="help-text indented">{$t('settings.localAuth.requireAccountApprovalHelp')}</span>
+    {#if formData.require_account_approval}
+      <p class="info-note">{$t('settings.localAuth.requireAccountApprovalQueueHint')}</p>
+    {/if}
   </div>
 
   <div class="section" class:disabled={!formData.local_enabled}>
@@ -355,6 +398,17 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-text-secondary);
+  }
+
+  .info-note {
+    margin: 0.5rem 0 0 1.5rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--color-info-border, rgba(var(--primary-color-rgb), 0.3));
+    border-radius: 6px;
+    background: var(--color-info-bg, rgba(var(--primary-color-rgb), 0.08));
+    color: var(--color-text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.5;
   }
 
   .policy-preview {

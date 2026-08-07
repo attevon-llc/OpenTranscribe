@@ -195,6 +195,20 @@ class DynamicAuthSettings:
         """
         return self.get_bool("allow_registration", settings.ALLOW_OPEN_REGISTRATION)
 
+    @property
+    def require_account_approval(self) -> bool:
+        """Whether a newly provisioned account starts ``pending`` admin approval.
+
+        Read at account-creation time only (``app/auth/approval.py``), by
+        self-registration and by every external-IdP JIT path. Turning it OFF does
+        not retroactively approve anyone — it stops *new* accounts being held —
+        but the enforcement gate stands down with it, so an operator who changes
+        their mind releases the queue rather than having to click through it. A
+        **rejected** account stays refused either way: that was a deliberate
+        per-account decision, not a policy setting.
+        """
+        return self.get_bool("require_account_approval", settings.REQUIRE_ACCOUNT_APPROVAL)
+
     # LDAP Settings Properties
     @property
     def ldap_enabled(self) -> bool:
@@ -349,6 +363,70 @@ class DynamicAuthSettings:
         fallback from accounts a super_admin had deliberately granted it to.
         """
         return self.get_bool("pki_allow_password_fallback", True)
+
+    # Trusted-header (reverse-proxy) Settings Properties
+    #
+    # Read by ``auth/proxy/config.py:ProxyConfig.from_db`` (per login) and by the
+    # per-request consistency check in ``api/endpoints/auth/dependencies.py``, which
+    # goes through the process-level layer because it holds no spare query budget.
+    @property
+    def proxy_enabled(self) -> bool:
+        """Whether an authenticating reverse proxy may assert identities here."""
+        return self.get_bool("proxy_enabled", settings.PROXY_ENABLED)
+
+    @property
+    def proxy_trusted_proxies(self) -> str:
+        """Comma-separated IPs/CIDRs permitted to assert identity headers.
+
+        **Empty refuses every header-sourced assertion.** Not "trust everyone", not
+        "warn and continue" — the same fail-closed rule ``PKI_TRUSTED_PROXIES`` has,
+        implemented once in ``auth/header_trust.py``.
+        """
+        return self.get_str("proxy_trusted_proxies", settings.PROXY_TRUSTED_PROXIES)
+
+    @property
+    def proxy_email_header(self) -> str:
+        """Header carrying the authenticated user's email address."""
+        return self.get_str("proxy_email_header", settings.PROXY_EMAIL_HEADER)
+
+    @property
+    def proxy_name_header(self) -> str:
+        """Header carrying a display name for a just-in-time created account."""
+        return self.get_str("proxy_name_header", settings.PROXY_NAME_HEADER)
+
+    @property
+    def proxy_groups_header(self) -> str:
+        """Header carrying group names. Empty means the proxy manages no groups."""
+        return self.get_str("proxy_groups_header", settings.PROXY_GROUPS_HEADER)
+
+    @property
+    def proxy_groups_separator(self) -> str:
+        """Separator inside the groups header — ``,`` unless the values are DNs."""
+        return self.get_str("proxy_groups_separator", settings.PROXY_GROUPS_SEPARATOR)
+
+    @property
+    def proxy_role_header(self) -> str:
+        """Header naming ``user``/``admin``. Empty = header-driven privilege is OFF.
+
+        Off by default deliberately: this is privilege granted over HTTP, and
+        ``super_admin`` is unreachable through it under any configuration.
+        """
+        return self.get_str("proxy_role_header", settings.PROXY_ROLE_HEADER)
+
+    @property
+    def proxy_shared_secret(self) -> str:
+        """Optional secret the proxy must present, compared in constant time."""
+        return self.get_str("proxy_shared_secret", settings.PROXY_SHARED_SECRET)
+
+    @property
+    def proxy_allowed_domains(self) -> str:
+        """Email-domain admission list. Empty admits every domain."""
+        return self.get_str("proxy_allowed_domains", settings.PROXY_ALLOWED_DOMAINS)
+
+    @property
+    def proxy_jit_provisioning(self) -> bool:
+        """Whether an unknown asserted identity may be created on the fly."""
+        return self.get_bool("proxy_jit_provisioning", settings.PROXY_JIT_PROVISIONING)
 
     # MFA Settings Properties
     @property

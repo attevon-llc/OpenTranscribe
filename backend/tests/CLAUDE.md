@@ -73,7 +73,8 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
   into the live dev cluster.
 - `--dist loadgroup`: tests sharing mutable global state need
   `pytestmark = pytest.mark.xdist_group("<name>")` (`test_auth_config_integration.py`,
-  `unit/test_media_mirror_service.py`) or they interleave across workers. User fixtures use
+  `unit/test_media_mirror_service.py`, `api/test_scim.py`, `api/test_proxy_auth_endpoint.py`)
+  or they interleave across workers. User fixtures use
   UUID-suffixed emails for the same reason.
 - E2E runs from the repo root against `backend/tests/e2e/`, so `e2e/pytest.ini` becomes the
   rootdir config — pyproject `addopts` (`-n auto`, `-m 'not integration'`) do **not** apply.

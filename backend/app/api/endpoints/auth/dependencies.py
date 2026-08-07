@@ -52,6 +52,18 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/token
 ERROR_CODE_PASSWORD_CHANGE_REQUIRED = "password_change_required"  # noqa: S105 # nosec B105
 ERROR_CODE_ACCOUNT_EXPIRED = "account_expired"
 ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED = "banner_acknowledgment_required"
+#: Account exists and its credential worked, but an administrator has not admitted
+#: it yet (``v379``; see ``app/auth/approval.py``). Its own code rather than a reuse
+#: of ``account_expired`` because the remedy is somebody else's action, not the
+#: user's, and the SPA has to say so.
+ERROR_CODE_ACCOUNT_PENDING_APPROVAL = "account_pending_approval"
+#: An administrator refused the account. Distinct from the code above because
+#: telling a rejected applicant they are "pending" is simply false, and because the
+#: two are enforced under different conditions — see :func:`_enforce_approval`.
+ERROR_CODE_ACCOUNT_REJECTED = "account_rejected"
+#: The trusted proxy is now asserting a different person than the one this session
+#: was minted for — see :func:`_enforce_proxy_identity_consistency`.
+ERROR_CODE_PROXY_IDENTITY_MISMATCH = "proxy_identity_mismatch"
 
 #: Routes that stay reachable while ``must_change_password`` is set: the endpoint
 #: that CLEARS the flag (``PUT /users/me`` — the self-service password change; its
@@ -162,6 +174,154 @@ def _enforce_account_expiry(user: User, request: Request | None) -> None:
                 f"This account expired on {expires_at.date().isoformat()}. "
                 "Contact an administrator to extend it."
             ),
+        },
+    )
+
+
+def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
+    """Refuse an account an administrator has not admitted (or has refused).
+
+    The two states are enforced under deliberately different conditions:
+
+    * ``pending`` only bites while ``require_account_approval`` is on. Turning the
+      setting off is the operator's escape hatch — it releases a queue they no
+      longer want to work through — and leaving pending accounts stranded after
+      the policy was withdrawn would make the control hard to reverse.
+    * ``rejected`` bites unconditionally. It is a decision about one account, like
+      deactivation, not a policy that can be switched off underneath it.
+
+    Unconditional in the other sense too: no route is exempt. Unlike a forced
+    password change there is nothing the user can do, so routing them anywhere
+    would only be routing them to a screen that cannot help.
+
+    Args:
+        user: The authenticated account.
+        request: Used for the audit record's client attribution.
+        db: Session used to resolve the setting (already open for this request).
+
+    Raises:
+        HTTPException: 403 with ``detail.code`` ``account_pending_approval`` or
+            ``account_rejected``.
+    """
+    from app.auth.approval import approval_required
+    from app.auth.approval import is_pending
+    from app.auth.approval import is_rejected
+
+    if is_rejected(user):
+        code, message = (
+            ERROR_CODE_ACCOUNT_REJECTED,
+            "This account was not approved. Contact an administrator.",
+        )
+    elif is_pending(user) and approval_required(db):
+        code, message = (
+            ERROR_CODE_ACCOUNT_PENDING_APPROVAL,
+            "This account is awaiting administrator approval.",
+        )
+    else:
+        return
+
+    # Audited, unlike the banner gate: this fires for individually flagged
+    # accounts rather than for every session of every user, so the volume is
+    # bounded — and "a refused account kept trying" is exactly what an operator
+    # reviewing an approval queue wants to see.
+    _audit_lifecycle_denial(
+        AuditEventType.AUTH_ACCOUNT_DISABLED,
+        user,
+        request,
+        error_code=code.upper(),
+        details={
+            "approval_status": str(getattr(user, "approval_status", "")),
+            "path": _route_path(request),
+        },
+    )
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={"code": code, "message": message},
+    )
+
+
+def _enforce_proxy_identity_consistency(user: User, request: Request | None, db: Session) -> None:
+    """Refuse — and revoke — when the proxy now asserts somebody else.
+
+    Trusted-header authentication consults the header once, at sign-in, and then
+    relies on an ordinary session. That is the right architecture (a per-request
+    identity derivation is a second authorization path to keep correct), but it has
+    one failure mode: signing out of the upstream identity provider and back in as a
+    different person leaves the previous app session live and usable. Open WebUI
+    shipped exactly that bug and retrofitted a per-request equality check in v0.6.14
+    (issue #14406); this is that check, written up front.
+
+    Three deliberate narrowings, each of which would otherwise be a denial of
+    service rather than a control:
+
+    * **Only accounts whose ``auth_type`` is ``proxy``.** A local ``super_admin``
+      break-glass session must not be terminated by a header it never used.
+    * **Only a header from a trusted peer.** Honouring an untrusted one would let
+      anyone who can reach the backend log out any proxy user at will.
+    * **Absence is not an assertion.** A request that did not traverse the proxy
+      carries no header, which is not the same as carrying a different identity.
+      Only a *present and different* address revokes.
+
+    Revocation rather than a bare 401 is the point: the session is now known to
+    belong to nobody, and leaving the refresh token rotating would let the previous
+    identity keep renewing it.
+
+    Args:
+        user: The authenticated account.
+        request: The incoming request; ``None`` (test stand-ins) short-circuits.
+        db: The request's session, used for the revocation.
+
+    Raises:
+        HTTPException: 401 with ``detail.code == proxy_identity_mismatch``.
+    """
+    from app.auth.constants import AUTH_TYPE_PROXY
+
+    if request is None or str(getattr(user, "auth_type", "")) != AUTH_TYPE_PROXY:
+        return
+
+    from app.core.auth_settings import get_process_auth_settings
+
+    # Process-level, not a per-request DB read: this runs on every authenticated
+    # request, and the layered cache is the same one the password policy and the
+    # lockout counter use.
+    proxy_settings = get_process_auth_settings()
+    if not proxy_settings.proxy_enabled:
+        return
+
+    asserted = request.headers.get(proxy_settings.proxy_email_header)
+    if not asserted:
+        return
+
+    from app.auth.header_trust import header_source_is_trusted
+    from app.auth.header_trust import parse_trusted_proxies
+
+    networks = parse_trusted_proxies(proxy_settings.proxy_trusted_proxies)
+    if not header_source_is_trusted(request, networks):
+        return
+
+    if asserted.strip().lower() == str(user.email).strip().lower():
+        return
+
+    from app.services.account_security_service import revoke_all_sessions
+
+    revoked = revoke_all_sessions(db, user, reason="proxy_identity_mismatch")
+    db.commit()
+    _audit_lifecycle_denial(
+        AuditEventType.AUTH_SESSION_TERMINATED,
+        user,
+        request,
+        error_code="PROXY_IDENTITY_MISMATCH",
+        details={
+            "asserted_identity": asserted.strip().lower(),
+            "sessions_revoked": revoked,
+            "path": _route_path(request),
+        },
+    )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={
+            "code": ERROR_CODE_PROXY_IDENTITY_MISMATCH,
+            "message": "Identity mismatch. Please sign in again.",
         },
     )
 
@@ -531,13 +691,20 @@ def get_current_active_user(
 
     Raises:
         HTTPException: 400 for a deactivated account; 403 with a machine-readable
-            ``detail.code`` for an expired account, an unacknowledged login
-            banner, or a required password change.
+            ``detail.code`` for an unapproved or rejected account, an expired
+            account, an unacknowledged login banner, or a required password change.
     """
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
 
-    # Expiry first: it has no self-service remedy, so being ALSO flagged for a
+    # Before every lifecycle gate: if this session no longer belongs to the person
+    # the proxy is asserting, none of the questions below are about the right user.
+    _enforce_proxy_identity_consistency(current_user, request, db)
+    # Approval first: an account that was never admitted has no business being
+    # asked to acknowledge a banner or change a password, and the answer to all
+    # three is the same screen ("wait for an administrator").
+    _enforce_approval(current_user, request, db)
+    # Expiry next: it has no self-service remedy, so being ALSO flagged for a
     # password change must not route the caller to a screen that cannot help.
     _enforce_account_expiry(current_user, request)
     # Then the banner: AC-8 wants consent recorded BEFORE access is granted, so

@@ -15,7 +15,12 @@ there is no server-side rendering of app data.
 - `speakers/+page.svelte` — speaker clusters/profiles/inbox (coordinator for `$components/speakers/*`).
 - `search/+page.svelte` (+ `+page.ts`, `ssr = false`) — hybrid search.
 - `file-status/+page.svelte` — processing/task dashboard (`$components/UserFileStatus.svelte`).
-- `login/`, `register/`, `forgot-password/`, `reset-password/` — auth pages.
+- `login/`, `register/`, `forgot-password/`, `reset-password/`, `accept-invite/`,
+  `verify-email/` — auth pages. `login/` also hosts the OIDC callback landing (the IdP's
+  registered redirect URI points **here**, never at `/api/auth/oidc/callback`), the login
+  banner, the MFA challenge and the forced-MFA-enrolment step.
+  `accept-invite/` redeems an admin invitation — for an external `auth_type` it collects no
+  password at all and hands the user to the identity provider.
 - `+layout.svelte` — app shell (navbar, theme, toasts, websocket wiring).
 - `+error.svelte` — error/404 boundary; renders `$page.status`/`$page.error`, friendly i18n copy.
 

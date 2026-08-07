@@ -13,6 +13,7 @@ from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.auth.approval import initial_approval_status
 from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
 from app.auth.constants import AUTH_TYPE_LOCAL
@@ -110,6 +111,7 @@ def register(
     password_hash = get_password_hash(user_in.password)
 
     # Create new user with local authentication
+    approval_status = initial_approval_status(db)
     db_user = User(
         email=user_in.email,
         full_name=user_in.full_name,
@@ -119,6 +121,11 @@ def register(
         is_active=True,
         is_superuser=False,
         password_changed_at=datetime.now(UTC),  # Track initial password time
+        # Held for an administrator when require_account_approval is on. The
+        # account is still CREATED — registration must not become an
+        # account-existence oracle by behaving differently — it simply cannot be
+        # used until somebody admits it.
+        approval_status=approval_status,
     )
 
     db.add(db_user)
@@ -143,7 +150,11 @@ def register(
         admin_username=str(db_user.email),
         source_ip=client_ip,
         user_agent=user_agent,
-        details={"registration_type": "self", "auth_type": AUTH_TYPE_LOCAL},
+        details={
+            "registration_type": "self",
+            "auth_type": AUTH_TYPE_LOCAL,
+            "approval_status": approval_status,
+        },
     )
 
     logger.info(

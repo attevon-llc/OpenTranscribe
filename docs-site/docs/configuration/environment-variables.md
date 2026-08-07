@@ -403,19 +403,24 @@ OpenTranscribe uses a **database-driven authentication system** with support for
 
 Authentication is configured via **Super Admin UI** (Settings → Authentication) and stored in the database with **AES-256-GCM encryption**:
 
-| Configuration Level | Source | Priority | Notes |
-|-------------------|--------|----------|-------|
-| Primary | Database (`auth_config` table) | ✅ Primary | Set via Super Admin UI |
-| Legacy/Override | Environment variables | Secondary | ENV vars override DB for legacy support |
+| Priority | Source | Notes |
+|---|---|---|
+| 1 (wins) | Database (`auth_config` table) | Set in Settings → Authentication; secrets AES-256-GCM encrypted; no restart needed |
+| 2 | Environment variable | Bootstrap seed and fallback — **not** an override |
+| 3 | Coded default | `backend/app/schemas/auth_config.py` |
 
 ### Multi-Method Authentication
 
-Multiple authentication methods can be enabled simultaneously. Users can authenticate via any enabled method:
+Multiple authentication methods can be enabled simultaneously; each account records which one
+owns it in `user.auth_type`. Which methods are *available* is decided per method by
+`local_enabled`, `ldap_enabled`, `oidc_enabled` and `pki_enabled` — see
+[the identity-source model](../authentication/overview.md#the-identity-source-model).
 
-```bash
-# Authentication Type (Indicator - set via Super Admin UI)
-AUTH_TYPE=local,ldap,keycloak  # Enabled methods (informational, read-only)
-```
+:::warning There is no `AUTH_TYPE` setting
+Earlier versions of this page documented `AUTH_TYPE=local,ldap,keycloak` as an informational
+indicator. No such setting exists and nothing ever read it. Remove it from your `.env`; it does
+nothing.
+:::
 
 ### LDAP/Active Directory Configuration
 
@@ -431,17 +436,30 @@ LDAP_SEARCH_BASE=DC=domain,DC=com
 LDAP_USERNAME_ATTR=sAMAccountName
 ```
 
-### Keycloak/OIDC Configuration
+### OpenID Connect Configuration
+
+Works with any conforming provider. Set `OIDC_DISCOVERY_URL` for anything other than Keycloak;
+it makes `OIDC_REALM` irrelevant. Full reference: [OIDC setup](../authentication/oidc.md).
 
 ```bash
-# Keycloak/OIDC (configured via Super Admin UI)
-# These ENV variables are for legacy/development use only
-KEYCLOAK_SERVER_URL=https://keycloak.yourdomain.com
-KEYCLOAK_REALM=opentranscribe
-KEYCLOAK_CLIENT_ID=opentranscribe-app
-KEYCLOAK_CLIENT_SECRET=your-client-secret
-KEYCLOAK_ADMIN_ROLE=admin
+# OpenID Connect (normally configured in Settings → Authentication → OIDC)
+# These ENV variables are a bootstrap seed / fallback
+OIDC_ENABLED=true
+OIDC_SERVER_URL=https://idp.yourdomain.com
+OIDC_DISCOVERY_URL=https://idp.yourdomain.com/.well-known/openid-configuration
+OIDC_REALM=opentranscribe          # ignored when OIDC_DISCOVERY_URL is set
+OIDC_CLIENT_ID=opentranscribe-app
+OIDC_CLIENT_SECRET=your-client-secret
+OIDC_CALLBACK_URL=https://yourdomain.com/login   # the FRONTEND login page
+OIDC_ROLES_CLAIM=groups            # realm_access.roles | groups | roles
+OIDC_ADMIN_ROLE=admin
 ```
+
+:::note `KEYCLOAK_*` still works
+Every one of these variables was previously named `KEYCLOAK_*`, and those names keep working
+permanently — the legacy spelling even wins when both are set. The canonical spelling is
+`OIDC_*`; the backend logs one deprecation line at startup naming any legacy variables it found.
+:::
 
 ### PKI/X.509 Certificate Configuration
 

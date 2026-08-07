@@ -25,6 +25,11 @@ import pytest
 from sqlalchemy import inspect
 from sqlalchemy import text
 
+#: These suites perform schema DDL (dropping a column or constraint to recreate the
+#: pre-revision shape). Postgres takes an ACCESS EXCLUSIVE lock for that, so they must
+#: not run beside other database tests — `--dist loadgroup` keeps a group on one worker.
+pytestmark = pytest.mark.xdist_group("migration_ddl")
+
 REVISION = "v375_harden_user_auth_invariants"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
 
@@ -103,14 +108,43 @@ def test_user_has_email_verification_columns(db_session):
 
 
 def test_existing_accounts_are_grandfathered_verified(db_session):
-    """Turning the setting on must not retroactively lock out the deployment."""
+    """Turning ``require_email_verification`` on must not lock out the deployment.
+
+    The grandfather UPDATE lives INSIDE the ADD COLUMN guard, so replaying the
+    revision against a database that already has the column is correctly a no-op —
+    an address an admin deliberately un-verified is never silently re-verified.
+    Exercising it therefore means recreating the pre-v375 shape: drop the columns,
+    then let the revision add them back.
+
+    The previous version of this test counted unverified rows in the live table,
+    so it went red the moment anybody registered — which proves nothing about the
+    migration and turns a shared database into a source of false failures.
+    """
     conn = db_session.connection()
-    unverified = conn.execute(
-        text('SELECT count(*) FROM "user" WHERE email_verified IS NOT TRUE')
-    ).scalar()
-    assert unverified == 0, (
-        "accounts that predate v375 must be marked verified by the migration's one-time backfill"
+    email = f"v375_grandfather_{uuid_pkg.uuid4().hex[:8]}@example.com"
+
+    conn.execute(
+        text(
+            'INSERT INTO "user" (email, hashed_password, is_active, is_superuser, '
+            "role, auth_type) VALUES (:e, 'x', true, false, 'user', 'local')"
+        ),
+        {"e": email},
     )
+
+    # Back to the shape the revision expects to find.
+    conn.execute(text('ALTER TABLE "user" DROP COLUMN IF EXISTS email_verified'))
+    conn.execute(text('ALTER TABLE "user" DROP COLUMN IF EXISTS email_verified_at'))
+
+    conn.execute(text(_revision_module().EMAIL_VERIFIED_COLUMNS_SQL))
+
+    verified = conn.execute(
+        text('SELECT email_verified FROM "user" WHERE email = :e'), {"e": email}
+    ).scalar()
+    assert verified is True, (
+        "an account that predates v375 must be grandfathered verified, or enabling "
+        "require_email_verification strands everyone who already had an account"
+    )
+    db_session.rollback()
 
 
 def test_invitation_auth_type_check_rejects_an_unknown_value(db_session):

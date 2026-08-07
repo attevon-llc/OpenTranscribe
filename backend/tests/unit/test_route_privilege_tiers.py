@@ -43,6 +43,9 @@ SUPER_ADMIN_PREFIXES = (
     # A group mapping decides who a directory claim hands admin to — that is
     # authorization configuration, not team management.
     "/api/admin/group-mappings",
+    # A SCIM token can create and disable accounts across the whole deployment. That
+    # is an infrastructure credential, in the same class as the LDAP bind password.
+    "/api/admin/scim-tokens",
     "/api/watch-sources/settings",
     "/api/watch-sources/email-configs",
 )
@@ -59,6 +62,11 @@ KNOWN_PUBLIC = {
     "/api/auth/oidc/login",
     "/api/auth/oidc/callback",
     "/api/auth/pki/authenticate",
+    # Trusted-header sign-in. Pre-authentication by definition, and the credential
+    # is the header an allowlisted reverse proxy put on the request — a session
+    # dependency here would make it unreachable. The trust check is
+    # auth/header_trust.py, which refuses every assertion when no allowlist is set.
+    "/api/auth/proxy/authenticate",
     "/api/auth/password-reset/request",
     "/api/auth/password-reset/confirm",
     # Redeeming an admin invitation IS the pre-session step that creates the
@@ -191,3 +199,37 @@ class TestNoAccidentallyPublicRoutes:
             "unauthenticated routes that are not on the reviewed public list: "
             f"{ungated} — add a dependency, or add to KNOWN_PUBLIC with justification"
         )
+
+
+class TestSCIMIsBearerTokenGated:
+    """``/scim/v2`` sits outside ``/api``, so the sweep above never sees it.
+
+    Its credential is a hashed, revocable bearer token rather than a session, so it
+    is invisible to ``_tier_of`` — which is exactly why it needs its own assertion
+    rather than an entry on ``KNOWN_PUBLIC``.
+    """
+
+    def test_every_scim_route_requires_the_scim_token_dependency(self, routes):
+        from app.api.endpoints.scim.auth import require_scim_token
+
+        scim_routes = [r for r in routes if r.path.startswith("/scim/")]
+        assert scim_routes, "no SCIM routes are mounted — the check below would be vacuous"
+
+        ungated = []
+        for route in scim_routes:
+            dependant = getattr(route, "dependant", None)
+            calls = set()
+            stack = [dependant] if dependant else []
+            while stack:
+                node = stack.pop()
+                if node.call is not None:
+                    calls.add(node.call)
+                stack.extend(node.dependencies)
+            if require_scim_token not in calls:
+                ungated.append(f"{sorted(route.methods)} {route.path}")
+        assert not ungated, f"SCIM routes without bearer-token authentication: {ungated}"
+
+    def test_scim_token_management_is_super_admin(self, routes):
+        token_routes = [r for r in routes if r.path.startswith("/api/admin/scim-tokens")]
+        assert token_routes
+        assert all(_tier_of(r) == TIER_SUPER_ADMIN for r in token_routes)

@@ -44,6 +44,7 @@ def get_auth_methods(request: Request, response: Response, db: Session = Depends
     ldap_enabled = auth_settings.get_bool("ldap_enabled", settings.LDAP_ENABLED)
     oidc_enabled = auth_settings.get_bool("oidc_enabled", settings.OIDC_ENABLED)
     pki_enabled = auth_settings.pki_enabled or settings.PKI_ENABLED
+    proxy_enabled = auth_settings.proxy_enabled
     local_enabled = auth_settings.local_enabled
     allow_registration = auth_settings.allow_registration
     mfa_enabled = auth_settings.mfa_enabled or settings.MFA_ENABLED
@@ -65,6 +66,11 @@ def get_auth_methods(request: Request, response: Response, db: Session = Depends
         methods.append("oidc")
     if pki_enabled:
         methods.append("pki")
+    # Advertised so the login page can offer "Continue with single sign-on", which
+    # POSTs to /auth/proxy/authenticate. The headers are already on the request by
+    # then — the proxy put them there — so there is nothing for the client to send.
+    if proxy_enabled:
+        methods.append("proxy")
 
     # Registry-based external providers (the cloud edition registers managed
     # IdPs; community registers none). Presence in the registry == enabled.
@@ -77,6 +83,7 @@ def get_auth_methods(request: Request, response: Response, db: Session = Depends
         methods=methods,
         oidc_enabled=oidc_enabled,
         pki_enabled=pki_enabled,
+        proxy_enabled=proxy_enabled,
         ldap_enabled=ldap_enabled,
         local_enabled=local_enabled,
         allow_registration=allow_registration,

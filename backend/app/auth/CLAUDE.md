@@ -1,17 +1,17 @@
-# app/auth — hybrid authentication (local · LDAP · OIDC · PKI)
+# app/auth — hybrid authentication (local · LDAP · OIDC · PKI · proxy)
 
 ## Purpose
 
 Multiple auth methods run **simultaneously**, selected per-user by `User.auth_type`
-(`local`, `ldap`, `oidc`, `pki` — `constants.py:VALID_AUTH_TYPES`, enforced by a DB CHECK,
-`v375`, value set swapped by `v378`). Configure in the Admin UI (Settings → Authentication):
+(`local`, `ldap`, `oidc`, `pki`, `proxy` — `constants.py:VALID_AUTH_TYPES`, enforced by a DB
+CHECK, `v375`, value set swapped by `v378`). Configure in the Admin UI (Settings → Authentication):
 **DB `auth_config` wins over `.env`, which wins over the coded default**
 (`services/auth_config_service.py`). Endpoints live in the `api/endpoints/auth/` package +
 `auth_config.py`, not here.
 
 > There is **no `AUTH_TYPE` setting**. It appears in older docs and is described there as
 > informational; nothing ever read it. What methods are *available* is decided per-method by
-> `local_enabled` / `ldap_enabled` / `oidc_enabled` / `pki_enabled`.
+> `local_enabled` / `ldap_enabled` / `oidc_enabled` / `pki_enabled` / `proxy_enabled`.
 
 ## The identity-source model (issue #354)
 
@@ -35,6 +35,98 @@ with a password / still self-register?":
   `get_auth_settings(db)`. It previously read `settings.ALLOW_OPEN_REGISTRATION` directly while
   the admin UI wrote the DB key, and `ALLOW_OPEN_REGISTRATION` was missing from
   `ENV_TO_CONFIG_MAPPING` — which is exactly why the toggle did nothing.
+
+## Admission control — who gets an account at all (`v379`)
+
+Authentication answers "are you who you say you are". Admission answers "does this deployment
+want you". They were the same question for OIDC, which is how JIT provisioning ended up
+minting an account for **every identity in a corporate tenant** on first login.
+
+| Control | Applies to | Empty/off means |
+|---|---|---|
+| `ldap_user_groups` → `ldap_auth._check_group_access` | LDAP | no group requirement |
+| `oidc_allowed_groups` / `oidc_blocked_groups` → `oidc/admission.py` | OIDC | admit everyone |
+| `require_account_approval` → `auth/approval.py` | self-registration **and** every JIT path | accounts are usable immediately |
+
+- **Semicolons delimit both group lists**, matching `ldap_auth._parse_group_list`: a group value
+  brokered from a directory is a DN and contains commas. Matching is case-insensitive exact.
+- **An empty allow-list admits everyone.** Reading it as "admit nobody" would lock out every
+  existing OIDC deployment on upgrade. Only a non-empty list restricts.
+- **Blocked means denied**, not "exempt from the allow-list", and is evaluated first.
+- The check runs at the **top of `sync_oidc_user_to_db`** — before the create branch and before
+  the email-match link. Creating first would leave a row behind for a refused identity;
+  linking first would hand one a foothold on an existing account. It re-runs on **every** login,
+  so removing someone from the group locks them out rather than only affecting new users.
+- Refusals return the **same generic 401** an unusable token gets
+  (`provisioning.LINK_REFUSED_DETAIL`) — a distinct message is an account-existence oracle. The
+  reason goes to the audit log as `AUTH_LOGIN_FAILURE` / `OIDC_ADMISSION_REFUSED`.
+- `approval_status` ∈ `pending`/`approved`/`rejected` is **not** `is_active`: deactivation
+  revokes an account that was once usable, approval gates one that never has been. Enforcement
+  is a lifecycle gate in `api/endpoints/auth/dependencies.py` (`detail.code ==
+  "account_pending_approval"` / `"account_rejected"`), not a second mechanism. Turning the
+  setting off releases pending accounts; **rejected stays rejected**, and rejection never
+  deletes the row. Admin queue: `GET/POST /api/admin/user-approvals` (**admin** tier — managing
+  users; the switch that creates the queue is auth config, hence super_admin).
+- **The bootstrap super_admin is never pending** (`initial_data._ensure_admin_user` writes it
+  explicitly). Only a signed-in administrator can clear the queue.
+
+## Trusted-header auth (`auth_type='proxy'`) — one trust check, two callers
+
+An authenticating reverse proxy (oauth2-proxy, Authelia, Cloudflare Access, an SSO gateway)
+asserts the identity in a header. `auth/header_trust.py` is **the** answer to "may this peer
+assert an identity?", and `pki_mode='header'` is now a specialisation of it — a proxy vouching
+for a subject DN instead of an email. `pki_auth`'s `_pki_*` names are bindings onto those
+functions; there is no second copy, and `test_proxy_header_auth.py` fails if one reappears.
+
+| Rule | Where |
+|---|---|
+| Empty allowlist **refuses every assertion** (not "warn and continue") | `header_trust.header_assertion_permitted` |
+| `main.py` refuses to boot hardened with `PROXY_ENABLED` and no allowlist | same shape as the PKI guard |
+| The **immediate peer** decides — never `X-Forwarded-For` | `header_trust.immediate_peer_ip` |
+| Optional shared secret, constant-time (`X-OpenTranscribe-Proxy-Secret`) | `header_trust.shared_secret_matches` |
+| Role header **opt-in and capped at `admin`** | `proxy/assertion._role_from_header` |
+| `proxy_allowed_domains`: empty admits everyone | `proxy/assertion.domain_admitted` |
+| Every refusal audited, including from an untrusted peer | `proxy/assertion._audit_refusal` |
+
+- **The header is read at sign-in only.** `POST /api/auth/proxy/authenticate` mints a normal
+  session (a `refresh_token` row), so idle/absolute timeout, the concurrent cap, the revocation
+  epoch and the sessions UI apply unchanged.
+- **Per-request consistency**: `dependencies._enforce_proxy_identity_consistency` **revokes**
+  (not just 401s) when a trusted peer asserts a different address than the session's user. Three
+  narrowings, each of which would otherwise be a DoS: only `auth_type='proxy'` accounts, only a
+  header from a trusted peer, and **absence is not an assertion**.
+- **Groups: absent ≠ empty.** An absent groups header means "I do not manage your groups" and
+  skips membership reconciliation entirely; an empty one reconciles to empty. That is
+  `reconcile_user(..., reconcile_memberships=...)`, and `apply_role=False` when neither a role
+  header nor a group assertion is present — so a deployment that never opted into header-driven
+  privilege cannot have an existing `admin` silently demoted by a login.
+- `PROXY_ASSERTS_EMAIL_VERIFIED = True`, unlike PKI's `False`. Here the address **is** the
+  assertion (there is no second identifier to bind on), so reading it as unverified would refuse
+  every pre-existing account forever. `account_linking`'s super_admin rule still applies
+  unconditionally.
+
+## SCIM 2.0 provisioning (`/scim/v2`, RFC 7643/7644)
+
+Mounted at **root**, not under `/api`: RFC 7644 §3.1 fixes the base path and every connector
+appends `/Users` to it. Bearer-token authenticated against a hashed `scim_token` row (`v380`)
+that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
+
+- Writes go through `services/scim_service.py` → `account_security_service` /
+  `idp_group_mapping_service`, never straight to the ORM. `active: false` and `DELETE` both
+  **disable and revoke sessions**; `DELETE` is a soft-disable, because a connector dropping
+  someone from its assignment scope must not erase their transcripts.
+- **No SCIM call writes a role**, and none may touch a `super_admin` (mirrors `directory_sync`
+  rule 2). Group membership is written `source='scim'`, which
+  `MEMBERSHIP_SOURCES_PROTECTED` shields from directory reconciliation and vice versa.
+- **Not rate limited, deliberately** — the credential is 256 random bits, an IdP bursts
+  hundreds of requests from a small egress pool, and a per-IP limit would throttle the tenant.
+  No handler there carries `@limiter.limit`, hence none declares `response: Response`.
+- **Supported filter**: exactly `<attribute> eq "<value>"` on `userName`/`externalId` (Users)
+  and `displayName` (Groups). Anything else is `400 invalidFilter` — a partial filter
+  implementation returns wrong answers a client acts on.
+- **The `PATCH` surface is closed and documented** in `api/endpoints/scim/patch_ops.py`, with
+  the unsupported half named there. Unsupported paths are `400 invalidPath`, never a 200 for a
+  change that did not happen.
 
 ## Privilege tiers
 
@@ -66,9 +158,18 @@ with a password / still self-register?":
   (`OIDCConfig`, DB > .env > default), `discovery.py` (`.well-known` + JWKS, TTL-cached),
   `endpoints.py` (discovery-or-realm resolution), `flow.py` (PKCE, authorization URL,
   token exchange, federated logout), `claims.py` (ID-token verification), `provisioning.py`
-  (JIT). It replaced a single ~900-line module named for one vendor.
+  (JIT), `admission.py` (group allow/deny — see above). It replaced a single ~900-line module
+  named for one vendor.
+- `header_trust.py` — the trusted-peer allowlist, the immediate-peer resolver, the
+  fail-closed refusal and the constant-time shared-secret compare. **Two callers: `proxy/`
+  and `pki_auth`.** Do not add a third implementation.
+- `proxy/` — trusted-header authentication, split by stage: `config.py` (`ProxyConfig`,
+  DB > .env > default), `assertion.py` (trust, secret, admission, role cap),
+  `provisioning.py` (JIT + reconciliation).
 - `account_linking.py` — **the single** "may this external identity take over an existing
   account?" rule, used by LDAP, PKI and OIDC alike. Do not add a fourth.
+- `approval.py` — the `approval_status` state machine and `initial_approval_status`, the one
+  function every account-creation path asks "does this start pending?".
 - `roles.py` — the authorization contract (read this first, it's 35 lines).
 - `token_service.py` — JWT issue/verify, `rotate_refresh_token`, `revoke_all_user_tokens`,
   Redis JTI revocation list + `refresh_token.revoked_at`, **and session lifetime**
@@ -226,6 +327,14 @@ someone else's product.
   `./opentr.sh start prod --build --with-pki`
   (mTLS at https://localhost:5182 — **prod-only, Vite can't do mTLS**). Client certs:
   `scripts/pki/test-certs/clients/*.p12`.
-- Setup docs: `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`,
-  `docs-site/docs/authentication/{overview,pki,ldap,keycloak}.md` (the docs-site page is
-  still named for the old provider — Phase 5 of `plans/oidc-conformance-plan.md`).
+- Setup docs: `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md` (the old
+  `docs/KEYCLOAK_SETUP.md` is a redirect stub — ~17 inbound links, including
+  `scripts/test-all-auth.sh`, so don't delete it), and
+  `docs-site/docs/authentication/{overview,ldap,oidc,pki,groups}.md`.
+  `docs-site/docs/authentication/keycloak.md` is likewise a stub pointing at `oidc.md`;
+  Docusaurus has no client-redirects plugin here, so the stub *is* the redirect.
+- **Surface that exists but has no admin UI** — say so when documenting it, don't imply a
+  panel: IdP group mappings (`/api/admin/group-mappings`, super_admin, no SPA consumer),
+  `require_email_verification` (enforced by `auth/email_verification.py`, no control in
+  `LocalAuthSettings.svelte`), and directory sync (six `SystemSettings` rows, no endpoint and
+  no panel — beat-driven only).

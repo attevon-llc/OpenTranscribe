@@ -30,6 +30,8 @@
    * @property {boolean} [allow_local_fallback]
    * @property {boolean} [email_verified]
    * @property {string|null} [email_verified_at]
+   * @property {'pending'|'approved'|'rejected'|string} [approval_status]
+   * @property {string|null} [approved_at]
    */
 
   /** @type {Array<User>} */
@@ -984,6 +986,14 @@
               {currentUser.full_name || $t('userManagement.notAvailable')}
               {#if currentUser.is_active === false}
                 <span class="status-badge inactive">{$t('userManagement.inactiveBadge')}</span>
+              {/if}
+              <!-- Admission state (v379). `approved` is the overwhelming majority
+                   and the backend's default, so only the two held states are
+                   badged — chipping every row "Approved" would be noise. -->
+              {#if currentUser.approval_status === 'pending'}
+                <span class="status-badge status-pending">{$t('userManagement.pendingBadge')}</span>
+              {:else if currentUser.approval_status === 'rejected'}
+                <span class="status-badge status-revoked">{$t('userManagement.rejectedBadge')}</span>
               {/if}
             </td>
             <td>

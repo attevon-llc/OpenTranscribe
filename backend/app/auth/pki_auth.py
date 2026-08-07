@@ -31,6 +31,13 @@ from cryptography.x509.oid import ExtensionOID
 
 from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
+from app.auth.header_trust import header_assertion_permitted
+from app.auth.header_trust import header_source_is_trusted
+from app.auth.header_trust import immediate_peer_ip as _get_pki_client_ip
+from app.auth.header_trust import (
+    ip_in_networks as _is_pki_trusted_proxy,  # noqa: F401  # re-export: the PKI suite's membership tests import this name
+)
+from app.auth.header_trust import parse_trusted_proxies
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
@@ -40,90 +47,17 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 # ===== Trusted Proxy Validation =====
+#
+# There is no PKI-specific trust machinery any more. `auth/header_trust.py` owns the
+# allowlist parser, the immediate-peer resolver and the fail-closed refusal, and
+# `auth/proxy/` — trusted-header authentication for an email rather than a subject DN
+# — calls exactly the same functions. The names below are bindings, kept because they
+# are what this module's own callers and its test suite refer to.
 
 
 def _parse_pki_trusted_proxies(trusted_proxies_str: str) -> list:
-    """
-    Parse trusted proxies configuration string into a list of IP networks.
-
-    Args:
-        trusted_proxies_str: Comma-separated list of IPs or CIDR ranges
-
-    Returns:
-        List of parsed IP networks
-    """
-    import ipaddress
-
-    if not trusted_proxies_str:
-        return []
-
-    networks = []
-    for proxy in trusted_proxies_str.split(","):
-        proxy = proxy.strip()
-        if not proxy:
-            continue
-        try:
-            # Try parsing as a network (CIDR notation)
-            if "/" in proxy:
-                networks.append(ipaddress.ip_network(proxy, strict=False))
-            else:
-                # Single IP - convert to /32 or /128 network
-                ip = ipaddress.ip_address(proxy)
-                if isinstance(ip, ipaddress.IPv4Address):
-                    networks.append(ipaddress.ip_network(f"{proxy}/32"))
-                else:
-                    networks.append(ipaddress.ip_network(f"{proxy}/128"))
-        except ValueError as e:
-            logger.warning(f"Invalid PKI trusted proxy address '{proxy}': {e}")
-    return networks
-
-
-def _is_pki_trusted_proxy(client_ip: str, trusted_networks: list) -> bool:
-    """
-    Check if an IP address is in the list of trusted proxy networks.
-
-    Args:
-        client_ip: IP address to check
-        trusted_networks: List of trusted IP networks
-
-    Returns:
-        True if the IP is trusted, False otherwise
-    """
-    import ipaddress
-
-    if not trusted_networks:
-        return False
-
-    try:
-        ip = ipaddress.ip_address(client_ip)
-        for network in trusted_networks:
-            if ip in network:
-                return True
-    except ValueError:
-        logger.warning(f"Invalid IP address format: {client_ip}")
-    return False
-
-
-def _get_pki_client_ip(request) -> str:
-    """
-    Get the immediate peer address of a request.
-
-    Deliberately NOT ``app/utils/client_ip.py:resolve_client_ip``. That resolver walks
-    ``X-Forwarded-For`` to find the *originating* client, which is the wrong end of the
-    chain here: the question this address answers is "did the host that physically
-    delivered these PKI headers terminate mTLS for us?", and only the socket peer can
-    answer it. Anything derived from a forwarded header is asserted by the same party
-    whose assertion we are trying to validate.
-
-    Args:
-        request: FastAPI Request object
-
-    Returns:
-        Immediate peer IP address, or "unknown" when the transport does not expose one
-    """
-    if hasattr(request, "client") and request.client:
-        return request.client.host or "unknown"
-    return "unknown"
+    """Parse ``PKI_TRUSTED_PROXIES`` into IP networks (see ``auth/header_trust``)."""
+    return parse_trusted_proxies(trusted_proxies_str, label="PKI trusted proxy")
 
 
 # Parse trusted proxies at module load time for efficiency
@@ -1219,9 +1153,10 @@ def _pki_header_source_is_trusted(request) -> bool:
     """
     Whether the peer that delivered this request may assert PKI headers.
 
-    There is exactly one rule, and no environment-dependent relaxation of it: the immediate
-    peer must be in the configured ``PKI_TRUSTED_PROXIES`` allowlist. An empty allowlist
-    trusts nobody.
+    One rule, shared with trusted-header (``proxy``) authentication and implemented
+    once in ``auth/header_trust.py``: the immediate peer must be in the configured
+    ``PKI_TRUSTED_PROXIES`` allowlist, and an empty allowlist trusts nobody. The
+    module global is read at call time so the value stays patchable in tests.
 
     Args:
         request: FastAPI Request object
@@ -1229,14 +1164,20 @@ def _pki_header_source_is_trusted(request) -> bool:
     Returns:
         True if the immediate peer is a configured trusted proxy
     """
-    if not _pki_trusted_proxy_networks:
-        return False
-    return _is_pki_trusted_proxy(_get_pki_client_ip(request), _pki_trusted_proxy_networks)
+    return header_source_is_trusted(request, _pki_trusted_proxy_networks)
 
 
 def _validate_pki_headers_source(request) -> bool | None:
     """
     Validate that PKI headers come from a trusted proxy.
+
+    PKI headers are only meaningful when a reverse proxy terminated mTLS and vouched
+    for them. An unvouched header set is just an attacker-supplied string, and a DN
+    listed in ``PKI_ADMIN_DNS`` would mint an admin session from it — so the
+    empty-allowlist case FAILS CLOSED, unconditionally. ``main.py`` already refuses to
+    start in a hardened environment with ``PKI_ENABLED`` and no allowlist; this is the
+    defence in depth behind that guard, so a relaxed developer stack cannot be spoofed
+    by accident either.
 
     Args:
         request: FastAPI Request object
@@ -1244,45 +1185,17 @@ def _validate_pki_headers_source(request) -> bool | None:
     Returns:
         True if valid/allowed, False if headers from untrusted source, None to continue
     """
-    client_ip = _get_pki_client_ip(request)
-    has_pki_headers = request.headers.get(settings.PKI_CERT_HEADER) or request.headers.get(
-        settings.PKI_CERT_DN_HEADER
+    has_pki_headers = bool(
+        request.headers.get(settings.PKI_CERT_HEADER)
+        or request.headers.get(settings.PKI_CERT_DN_HEADER)
     )
-
-    if _pki_header_source_is_trusted(request):
-        return True
-
-    if not has_pki_headers:
-        # Nothing was asserted, so there is nothing to refuse — let the request fall
-        # through to the other auth methods.
-        logger.debug(f"No PKI headers from IP {client_ip}, no trusted proxy validation needed")
-        return True
-
-    # PKI headers are only meaningful when a reverse proxy terminated mTLS and vouched for
-    # them. An unvouched header set is just an attacker-supplied string, and a DN listed in
-    # PKI_ADMIN_DNS would mint an admin session from it. The empty-allowlist case used to
-    # return True with only a warning — FAIL CLOSED instead, unconditionally. `main.py`
-    # already refuses to start in a hardened environment with PKI_ENABLED and no allowlist;
-    # this is the defence in depth behind that guard, so a relaxed developer stack cannot be
-    # spoofed by accident either.
-    if _pki_trusted_proxy_networks:
-        logger.warning(
-            f"PKI certificate headers received from untrusted immediate peer {client_ip} "
-            "(the socket peer, not necessarily the originating client). "
-            "This may indicate a header injection attempt. "
-            "Configure PKI_TRUSTED_PROXIES to include legitimate proxy IPs."
-        )
-    else:
-        logger.warning(
-            "SECURITY: PKI_TRUSTED_PROXIES not configured. "
-            "This would allow header injection attacks. "
-            "Configure PKI_TRUSTED_PROXIES with your reverse proxy IP addresses."
-        )
-    logger.error(
-        f"Refusing header-sourced PKI authentication from {client_ip}: "
-        "no configured trusted proxy can vouch for these headers."
+    return header_assertion_permitted(
+        request,
+        _pki_trusted_proxy_networks,
+        asserted=has_pki_headers,
+        method="PKI certificate",
+        setting_name="PKI_TRUSTED_PROXIES",
     )
-    return False
 
 
 def _handle_revocation_check(cert: x509.Certificate | None) -> bool | None:
@@ -1542,6 +1455,7 @@ def _create_pki_user(db, pki_data: PKIUserData):
     """
     from sqlalchemy.exc import IntegrityError
 
+    from app.auth.approval import initial_approval_status
     from app.models.user import User
 
     subject_dn = pki_data["subject_dn"]
@@ -1590,6 +1504,9 @@ def _create_pki_user(db, pki_data: PKIUserData):
         role=role,
         is_active=True,
         is_superuser=role_implies_superuser(role),
+        # Same rule as the LDAP and OIDC JIT paths: holding a certificate the CA
+        # issued is not the same as this deployment wanting an account here.
+        approval_status=initial_approval_status(db),
     )
     db.add(user)
 

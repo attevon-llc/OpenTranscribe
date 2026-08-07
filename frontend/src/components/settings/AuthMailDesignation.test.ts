@@ -86,7 +86,7 @@ describe('AuthMailDesignation', () => {
     );
 
     expect(select.value).toBe(ENABLED_UUID);
-    expect(screen.getByText('settings.emailNotifications.authMail.active')).toBeInTheDocument();
+    expect(screen.getByText('settings.authentication.authMail.active')).toBeInTheDocument();
   });
 
   it('offers only enabled configs, since the API rejects the rest', async () => {
@@ -121,7 +121,7 @@ describe('AuthMailDesignation', () => {
         config_uuid: ENABLED_UUID,
       })
     );
-    expect(toastStore.success).toHaveBeenCalledWith('settings.emailNotifications.authMail.saved');
+    expect(toastStore.success).toHaveBeenCalledWith('settings.authentication.authMail.saved');
   });
 
   it('clears the designation with an empty string, which means "use env SMTP"', async () => {
@@ -136,14 +136,14 @@ describe('AuthMailDesignation', () => {
         config_uuid: '',
       })
     );
-    expect(toastStore.success).toHaveBeenCalledWith('settings.emailNotifications.authMail.cleared');
+    expect(toastStore.success).toHaveBeenCalledWith('settings.authentication.authMail.cleared');
   });
 
   it('warns when the designated config was deleted, and does not read as "none"', async () => {
     const select = await renderPanel(designation({ config_uuid: GONE_UUID, status: 'missing' }));
 
     expect(
-      screen.getByText('settings.emailNotifications.authMail.danglingMissing')
+      screen.getByText('settings.authentication.authMail.danglingMissing')
     ).toBeInTheDocument();
     // Without the stranded option the select would fall back to the "not
     // designated" entry and hide the very problem being reported.
@@ -161,16 +161,14 @@ describe('AuthMailDesignation', () => {
     );
 
     expect(
-      screen.getByText('settings.emailNotifications.authMail.danglingDisabled')
+      screen.getByText('settings.authentication.authMail.danglingDisabled')
     ).toBeInTheDocument();
   });
 
   it('escalates when neither the designation nor env SMTP can deliver', async () => {
     await renderPanel(designation({ env_smtp_configured: false }));
 
-    expect(
-      screen.getByText('settings.emailNotifications.authMail.noTransport')
-    ).toBeInTheDocument();
+    expect(screen.getByText('settings.authentication.authMail.noTransport')).toBeInTheDocument();
   });
 
   it('stays quiet while a working designation is in place', async () => {
@@ -185,10 +183,10 @@ describe('AuthMailDesignation', () => {
     );
 
     expect(
-      screen.queryByText('settings.emailNotifications.authMail.noTransport')
+      screen.queryByText('settings.authentication.authMail.noTransport')
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByText('settings.emailNotifications.authMail.danglingMissing')
+      screen.queryByText('settings.authentication.authMail.danglingMissing')
     ).not.toBeInTheDocument();
   });
 

@@ -706,7 +706,7 @@ MFA_ENABLED=false
 MFA_ISSUER=OpenTranscribe
 ```
 
-See detailed setup guides: [LDAP](docs/LDAP_AUTH.md) | [Keycloak](docs/KEYCLOAK_SETUP.md) | [PKI](docs/PKI_SETUP.md)
+See detailed setup guides: [LDAP](docs/LDAP_AUTH.md) | [OIDC](docs/OIDC_SETUP.md) | [PKI](docs/PKI_SETUP.md)
 
 #### **AI Processing**
 ```bash
@@ -1159,7 +1159,7 @@ WHISPER_HYBRID_CPU_MODEL=small    # small (good accuracy) or base (faster, lower
 OpenTranscribe supports multiple authentication methods for enterprise and government deployments:
 - **Local Authentication**: Username/password with bcrypt hashing
 - **LDAP/Active Directory**: Enterprise directory integration - see [LDAP Authentication Guide](docs/LDAP_AUTH.md)
-- **OIDC/Keycloak**: OAuth 2.0 with PKCE for SSO - see [Keycloak Setup Guide](docs/KEYCLOAK_SETUP.md)
+- **OIDC**: OAuth 2.0 / OpenID Connect with PKCE for SSO against any conforming provider (Keycloak, Authentik, Authelia, Okta, Entra ID, Auth0, Zitadel) - see [OIDC Setup Guide](docs/OIDC_SETUP.md)
 - **PKI/X.509 Certificates**: CAC/PIV smart card support - see [PKI Setup Guide](docs/PKI_SETUP.md)
 
 ### **Multi-Factor Authentication**
@@ -1217,11 +1217,11 @@ The AGPL-3.0 license ensures that:
 - 📚 **Documentation**:
   - [Database Schema & Architecture](docs/database-schema.md) - ERD diagrams and system architecture
   - [Backend Documentation](docs/BACKEND_DOCUMENTATION.md)
-  - [Prompt Engineering Guide](docs/PROMPT_ENGINEERING_README.md) - Best practices for LLM prompts
+  - [Prompt Engineering Guide](docs/PROMPT_ENGINEERING_GUIDE.md) - Best practices for LLM prompts
   - [Scripts Documentation](scripts/README.md) - Docker build and deployment guide
 - 🔐 **Authentication Guides**:
   - [LDAP/Active Directory Setup](docs/LDAP_AUTH.md) - Enterprise directory integration
-  - [Keycloak/OIDC Setup](docs/KEYCLOAK_SETUP.md) - OAuth 2.0 SSO configuration
+  - [OpenID Connect Setup](docs/OIDC_SETUP.md) - OAuth 2.0 / OIDC SSO configuration
   - [PKI/X.509 Setup](docs/PKI_SETUP.md) - Certificate-based authentication (CAC/PIV)
 - 🛠️ **API Reference**: http://localhost:5174/docs (when running)
 - 🌺 **Task Monitor**: http://localhost:5175/flower (when running)

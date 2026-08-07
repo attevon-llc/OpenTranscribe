@@ -4,7 +4,9 @@ from fastapi import APIRouter
 
 from . import websockets
 from .endpoints import admin
+from .endpoints import admin_approvals
 from .endpoints import admin_group_mappings
+from .endpoints import admin_scim_tokens
 from .endpoints import admin_timing
 from .endpoints import asr_settings
 from .endpoints import auth
@@ -107,6 +109,12 @@ include_router_with_consistency(
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])
+# Working the approval queue is user management, so it sits at the admin tier next
+# to /admin/users — unlike the switch that creates the queue, which is deployment
+# configuration and lives under /admin/auth-config at the super_admin tier.
+include_router_with_consistency(
+    admin_approvals.router, prefix="/admin/user-approvals", tags=["admin"]
+)
 # Org-admin tenant administration (audit-log read + GDPR erasure). Gated by the
 # "organizations" capability: 404 in the community edition (no orgs), enabled by
 # the cloud capability resolver. require_org_admin further gates each route.
@@ -138,6 +146,16 @@ include_router_with_consistency(
     admin_group_mappings.router,
     prefix="/admin/group-mappings",
     tags=["group-mappings"],
+    capability="auth.config_ui",
+)
+# Issuing a credential that can create and disable accounts across the whole
+# deployment is infrastructure configuration, not user management — same tier as the
+# LDAP bind password. The SCIM surface those tokens authenticate lives at /scim/v2,
+# outside this router, because RFC 7644 fixes its base path (see main.py).
+include_router_with_consistency(
+    admin_scim_tokens.router,
+    prefix="/admin/scim-tokens",
+    tags=["scim-tokens"],
     capability="auth.config_ui",
 )
 include_router_with_consistency(system.router, prefix="/system", tags=["system"])

@@ -59,6 +59,15 @@ export interface User {
   // Email verification (v375). Surfaced in the admin user list.
   email_verified?: boolean;
   email_verified_at?: string | null;
+  /**
+   * Administrator admission state (v379): `pending` | `approved` | `rejected`.
+   * Served on the ordinary user schema (`UserInDB`), so the admin Users table can
+   * show a held account without a second request. Optional here because an older
+   * backend omits it; treat a missing value as `approved`, which is the backend's
+   * own default.
+   */
+  approval_status?: 'pending' | 'approved' | 'rejected' | string;
+  approved_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -160,13 +169,15 @@ export const token = derived(authStore, ($store) => $store.token);
 // ---------------------------------------------------------------------------
 // Account lifecycle (FedRAMP AC-2 / AC-8 / IA-5)
 //
-// `get_current_active_user` refuses three account states with a 403 whose
+// `get_current_active_user` refuses five account states with a 403 whose
 // `detail` is an OBJECT, not the usual string:
 //
 //   {"detail": {"code": "password_change_required",       "message": "…"}}
 //   {"detail": {"code": "account_expired",                "message": "…"}}
 //   {"detail": {"code": "banner_acknowledgment_required", "message": "…",
 //               "reason": "never_acknowledged" | "banner_text_changed"}}
+//   {"detail": {"code": "account_pending_approval",       "message": "…"}}
+//   {"detail": {"code": "account_rejected",               "message": "…"}}
 //
 // The `code` is the contract; the prose is not. Anything that string-matches the
 // message breaks the moment it is reworded or translated, and every other 403
@@ -177,12 +188,19 @@ export const token = derived(authStore, ($store) => $store.token);
 // The gates fire in the order expiry → banner → password change, so a caller
 // owing more than one clears them one 403 at a time; each remedy re-provokes the
 // next hold rather than trying to predict it.
+//
+// The approval pair (`v379`) has no in-app remedy at all — the decision is
+// somebody else's — and no route is exempt from it, so EVERY request answers 403.
+// That is exactly why these render as a blocking screen and never as a toast: a
+// toast would fire once per refused request, forever.
 // ---------------------------------------------------------------------------
 
 export type AccountLifecycleCode =
   | 'password_change_required'
   | 'account_expired'
-  | 'banner_acknowledgment_required';
+  | 'banner_acknowledgment_required'
+  | 'account_pending_approval'
+  | 'account_rejected';
 
 /**
  * Why the banner gate fired. `banner_text_changed` means the user DID accept a
@@ -203,6 +221,8 @@ const ACCOUNT_LIFECYCLE_CODES: readonly AccountLifecycleCode[] = [
   'password_change_required',
   'account_expired',
   'banner_acknowledgment_required',
+  'account_pending_approval',
+  'account_rejected',
 ];
 
 const BANNER_ACKNOWLEDGMENT_REASONS: readonly BannerAcknowledgmentReason[] = [
@@ -261,12 +281,18 @@ export function readAccountLifecycle(error: unknown): AccountLifecycleState | nu
 /**
  * Apply an account-lifecycle refusal, if this error is one.
  *
- * `account_expired` has no self-service remedy, so the session is torn down
- * immediately; the reason is re-published afterwards because `logout()` clears
- * user state. `password_change_required` keeps the session alive on purpose —
- * `PUT /users/me` is what clears the flag, and it needs that session. Same for
- * `banner_acknowledgment_required`: `POST /auth/banner/acknowledge` is the
- * remedy and it is authenticated.
+ * `account_expired` and `account_rejected` have no self-service remedy, so the
+ * session is torn down immediately; the reason is re-published afterwards because
+ * `logout()` clears user state. `password_change_required` keeps the session alive
+ * on purpose — `PUT /users/me` is what clears the flag, and it needs that session.
+ * Same for `banner_acknowledgment_required`: `POST /auth/banner/acknowledge` is
+ * the remedy and it is authenticated.
+ *
+ * `account_pending_approval` also keeps the session. Not because anything can be
+ * done with it — no route is exempt from that gate — but because the hold may
+ * clear the moment an administrator works the queue, and tearing the session down
+ * would turn "wait a minute and reload" into "sign in again". The blocking screen
+ * offers an explicit logout instead, so the user is never trapped.
  */
 export async function handleAccountLifecycleError(
   error: unknown
@@ -276,7 +302,7 @@ export async function handleAccountLifecycleError(
 
   accountLifecycle.set(state);
 
-  if (state.code === 'account_expired') {
+  if (state.code === 'account_expired' || state.code === 'account_rejected') {
     await logout();
     accountLifecycle.set(state);
   }

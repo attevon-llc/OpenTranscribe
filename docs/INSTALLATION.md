@@ -136,7 +136,7 @@ OpenTranscribe supports multiple authentication methods for different deployment
 |--------|----------|---------------|
 | **Local** | Default, standalone deployments | Built-in (bcrypt password hashing) |
 | **LDAP/AD** | Enterprise with Active Directory | [LDAP_AUTH.md](LDAP_AUTH.md) |
-| **OIDC/Keycloak** | SSO, OAuth 2.0 with PKCE | [KEYCLOAK_SETUP.md](KEYCLOAK_SETUP.md) |
+| **OIDC** | SSO, OAuth 2.0 / OpenID Connect with PKCE (any conforming provider) | [OIDC_SETUP.md](OIDC_SETUP.md) |
 | **PKI/X.509** | Government, CAC/PIV smart cards | [PKI_SETUP.md](PKI_SETUP.md) |
 
 ### Quick Configuration

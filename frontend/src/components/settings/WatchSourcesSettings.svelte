@@ -5,7 +5,6 @@
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import WatchSourceModal from './WatchSourceModal.svelte';
   import EmailConfigModal from './EmailConfigModal.svelte';
-  import AuthMailDesignation from './AuthMailDesignation.svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { user } from '$stores/auth';
@@ -81,7 +80,11 @@
     try {
       capabilities = await getCapabilities();
       await loadSources();
-      if (isAdmin) {
+      // Email configs and the global watch settings are super_admin endpoints
+      // (`get_current_active_superuser`). Fetching them as a plain admin only
+      // produced two swallowed 403s and a panel that looked empty rather than
+      // forbidden, so don't ask for them unless the tier is right.
+      if (isSuperAdmin) {
         emailConfigs = await getEmailConfigs().catch(() => []);
         globalSettings = await getGlobalSettings().catch(() => null);
       }
@@ -352,8 +355,8 @@
     </div>
   {/if}
 
-  {#if isAdmin}
-    <!-- Email notification configs -->
+  {#if isSuperAdmin}
+    <!-- Email notification configs (super_admin tier) -->
     <div class="section-head admin-section">
       <div class="email-heading">
         <h4>{$t('settings.emailNotifications.heading')}</h4>
@@ -410,15 +413,6 @@
           </div>
         {/each}
       </div>
-    {/if}
-
-    {#if isSuperAdmin}
-      <!-- Keyed on the list so a create/edit/delete refetch re-reads the
-           designation: deleting a config can turn an active designation into a
-           dangling one, and the warning must appear without a page reload. -->
-      {#key emailConfigs}
-        <AuthMailDesignation configs={emailConfigs} />
-      {/key}
     {/if}
 
     <!-- Global settings -->

@@ -7,6 +7,9 @@
   import LocalAuthSettings from './LocalAuthSettings.svelte';
   import SessionSettings from './SessionSettings.svelte';
   import AuthConfigAuditPanel from './AuthConfigAuditPanel.svelte';
+  import AuthMailDesignation from './AuthMailDesignation.svelte';
+  import GroupMappingSettings from './GroupMappingSettings.svelte';
+  import { getEmailConfigs, type EmailConfig } from '$lib/api/watchSourcesApi';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
 
@@ -32,7 +35,16 @@
    * `local` schema still accepts them, but nothing on the backend reads them.
    */
   const LOCAL_TAB_CATEGORY_KEYS: Record<string, string[]> = {
-    local: ['local_enabled', 'allow_registration'],
+    // `require_email_verification` and `require_account_approval` both live in
+    // `local` beside `allow_registration` — together the four are "who may get an
+    // account here". Both were enforced by the backend with no control anywhere in
+    // the product, so neither could be turned on.
+    local: [
+      'local_enabled',
+      'allow_registration',
+      'require_email_verification',
+      'require_account_approval'
+    ],
     password_policy: [
       'password_min_length',
       'password_require_uppercase',
@@ -72,16 +84,42 @@
     { id: 'ldap', label: $t('settings.authentication.tab.ldap') },
     { id: 'oidc', label: $t('settings.authentication.tab.oidc') },
     { id: 'pki', label: $t('settings.authentication.tab.pki') },
+    // Directory group → in-app group/role. `/admin/group-mappings` had five
+    // working endpoints and no consumer, so the feature existed only as an API.
+    { id: 'mappings', label: $t('settings.authentication.tab.mappings') },
     { id: 'session', label: $t('settings.authentication.tab.session') },
+    // Which mailbox sends password resets, invitations and verification links.
+    // It used to live only inside the Watch Sources panel, which is hidden when
+    // the `watch_sources` capability is off — leaving the setting unreachable on
+    // those editions even though its endpoint stayed live. It belongs here.
+    { id: 'mail', label: $t('settings.authentication.tab.mail') },
     // Reads auth_config_audit (Postgres) — a different source from the "Audit
     // Log" section, which streams security events out of OpenSearch and carries
     // no configuration changes.
     { id: 'audit', label: $t('settings.authentication.tab.audit') }
   ];
 
+  /**
+   * Email configurations for the auth-mail tab. Both this list and the
+   * designation endpoint are super_admin, the same tier as this whole panel,
+   * so no extra gating is needed here. A failed fetch yields an empty list —
+   * the designation panel then offers only "not designated", which is the
+   * honest state when no configuration can be read.
+   */
+  let emailConfigs: EmailConfig[] = [];
+  let emailConfigsLoaded = false;
+
+  async function loadEmailConfigs() {
+    emailConfigs = await getEmailConfigs().catch(() => []);
+    emailConfigsLoaded = true;
+  }
+
   onMount(async () => {
     await loadConfigs();
   });
+
+  // Fetched lazily: most visits to this panel never open the mail tab.
+  $: if (activeTab === 'mail' && !emailConfigsLoaded) loadEmailConfigs();
 
   // Transform array of config objects to key-value dictionary
   function transformConfigArray(configArray: any[]): Record<string, any> {
@@ -295,12 +333,22 @@
             on:save={(e) => handleSave('pki', e.detail)}
             on:change={handleChange}
           />
+        {:else if activeTab === 'mappings'}
+          <!-- Self-contained: it owns its own load/save against
+               /admin/group-mappings and does not share the auth-config payload. -->
+          <GroupMappingSettings />
         {:else if activeTab === 'session'}
           <SessionSettings
             config={configs.session || {}}
             on:save={(e) => handleSave('session', e.detail)}
             on:change={handleChange}
           />
+        {:else if activeTab === 'mail'}
+          {#if emailConfigsLoaded}
+            <AuthMailDesignation configs={emailConfigs} />
+          {:else}
+            <div class="loading">{$t('settings.authentication.loadingConfig')}</div>
+          {/if}
         {:else if activeTab === 'audit'}
           <AuthConfigAuditPanel />
         {/if}
@@ -327,14 +375,23 @@
     font-weight: 600;
   }
 
+  /*
+   * Eight tabs no longer fit at every width. They scroll horizontally rather
+   * than wrap each label onto three lines ("PKI/Certifica te", "OID C"), which is
+   * what shrink-to-fit produced once the Group mappings tab was added.
+   */
   .tabs {
     display: flex;
     gap: 0.5rem;
     border-bottom: 1px solid var(--color-border);
     margin-bottom: 1rem;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
     padding: 0.5rem 1rem;
     background: none;
     border: none;
@@ -454,17 +511,14 @@
   }
 
   @media (max-width: 768px) {
-    .tabs {
-      flex-wrap: wrap;
-    }
-
     .config-methods {
       grid-template-columns: 1fr;
     }
 
+    /* Still one scrolling row on mobile — wrapping eight tabs onto four lines
+       pushes the panel itself below the fold. */
     .tab {
       min-height: 44px;
-      flex: 1;
       text-align: center;
     }
   }

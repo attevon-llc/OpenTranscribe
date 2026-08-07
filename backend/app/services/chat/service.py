@@ -390,6 +390,10 @@ class ChatService:
             kwargs: dict[str, Any] = {}
             if temperature is not None:
                 kwargs["temperature"] = temperature
+            # A per-tenant answer ceiling, when one applies. Without this the request
+            # sends the LLM config's own derived value and the tier cap is advisory.
+            if settings.max_output_tokens is not None:
+                kwargs["max_tokens"] = settings.max_output_tokens
 
             first_token_deadline = time.monotonic() + C.DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S
             got_first_token = False

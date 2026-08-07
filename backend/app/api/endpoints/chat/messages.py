@@ -32,6 +32,7 @@ from app.api.endpoints.chat.common import get_owned_conversation
 from app.api.endpoints.chat.common import read_user_chat_settings
 from app.api.endpoints.chat.common import resolve_use_context
 from app.auth.rate_limit import limiter
+from app.core.tenant_limits import resolve_allowed_models
 from app.db.base import get_db
 from app.models.chat import ROLE_ASSISTANT
 from app.models.chat import ROLE_USER
@@ -51,6 +52,7 @@ from app.services.chat.hooks import fire_before_message
 from app.services.chat.prompting import build_system_prompt
 from app.services.chat.service import ChatService
 from app.services.chat.service import sse
+from app.services.chat.settings import apply_tenant_limits
 from app.services.chat.settings import get_chat_settings
 from app.services.llm_service import LLMService
 
@@ -143,7 +145,10 @@ def _prepare_turn(
     Raises:
         HTTPException: 400 (no LLM / oversized scope), 402 (quota), 429 (limits).
     """
-    chat_settings = get_chat_settings(db)
+    # Narrow the admin's settings by any per-tenant ceiling before anything reads
+    # them, so the rate-limit checks and the retrieval budget below both see the
+    # tightened values. A no-op in the community edition.
+    chat_settings = apply_tenant_limits(get_chat_settings(db), ctx.org_id)
     user_defaults = read_user_chat_settings(db, ctx.user.id)
 
     allowed, retry_after = limits.check_hourly_limit(ctx.user.id, chat_settings.messages_per_hour)
@@ -171,6 +176,18 @@ def _prepare_turn(
             raise HTTPException(
                 status_code=400,
                 detail="No LLM is configured. Add a provider in Settings → AI to use chat.",
+            )
+
+        # A tenant may be restricted to a subset of models. Enforced HERE rather than
+        # only in the UI: the per-conversation model is user-supplied
+        # (`conversation.llm_config_id`), so a client that skips the picker would
+        # otherwise pin any model it liked. An empty set means no model is permitted,
+        # which is how a suspended tenant is expressed.
+        allowed_models = resolve_allowed_models(ctx.org_id)
+        if allowed_models is not None and str(llm.config.model) not in allowed_models:
+            raise HTTPException(
+                status_code=403,
+                detail="That model is not available on your plan. Choose another in chat settings.",
             )
 
         conv_settings = conversation.settings or {}

@@ -11,6 +11,7 @@ import hashlib
 import logging
 from dataclasses import asdict
 from dataclasses import dataclass
+from dataclasses import replace
 
 from sqlalchemy.orm import Session
 
@@ -70,6 +71,9 @@ class ChatSettings:
     messages_per_hour: int = C.DEFAULT_CHAT_MESSAGES_PER_HOUR
     max_concurrent_streams: int = C.DEFAULT_CHAT_MAX_CONCURRENT_STREAMS
     retention_days: int = C.DEFAULT_CHAT_RETENTION_DAYS
+    #: Ceiling on the answer, sent to the provider as max_tokens. ``None`` means
+    #: "use whatever the LLM config derived", which is the community behaviour.
+    max_output_tokens: int | None = None
 
     @property
     def revision(self) -> str:
@@ -119,3 +123,38 @@ def get_chat_settings(db: Session) -> ChatSettings:
 
     values = {field: _coerce(field, stored.get(key)) for field, key in SETTING_KEYS.items()}
     return ChatSettings(**values)  # type: ignore[arg-type]
+
+
+def apply_tenant_limits(base: ChatSettings, organization_id: int | None) -> ChatSettings:
+    """Narrow resolved chat settings by any per-tenant ceiling.
+
+    A tenant limit can only ever **tighten** an admin's value, never widen it:
+    every dimension takes the ``min`` of the two. That direction is the whole point
+    — a cloud plan is a cap on what the deployment already permits, and a resolver
+    that could raise a limit would let a tenant escape the operator's own settings.
+
+    Returns ``base`` unchanged in the community edition, where the resolver is a
+    no-op returning ``None``.
+    """
+    from app.core.tenant_limits import resolve_chat_limits
+
+    limits = resolve_chat_limits(organization_id)
+    if limits is None:
+        return base
+
+    def _tighten(current: int, override: int | None) -> int:
+        return current if override is None else min(current, override)
+
+    return replace(
+        base,
+        messages_per_hour=_tighten(base.messages_per_hour, limits.messages_per_hour),
+        max_concurrent_streams=_tighten(base.max_concurrent_streams, limits.max_concurrent_streams),
+        # Retrieved excerpts dominate input tokens in a RAG chat, so capping chunks
+        # bounds cost at least as much as capping the answer does.
+        final_chunks=_tighten(base.final_chunks, limits.max_retrieved_chunks),
+        max_output_tokens=(
+            limits.max_output_tokens
+            if base.max_output_tokens is None
+            else _tighten(base.max_output_tokens, limits.max_output_tokens)
+        ),
+    )

@@ -44,6 +44,26 @@ class TenantUploadLimits:
     max_duration_seconds: int | None = None
 
 
+@dataclass(frozen=True)
+class TenantChatLimits:
+    """Per-tenant chat ceilings (any field ``None`` = no override for that dimension).
+
+    Deliberately generic vocabulary — no tier names, no prices, no currency. core
+    knows only that *some* caller may cap these dimensions; what a "starter" plan
+    is, and what it costs, stays in the cloud layer.
+
+    ``max_output_tokens`` and ``max_retrieved_chunks`` are the two levers that
+    actually bound the cost of a single message. Retrieved excerpts dominate input
+    tokens in a RAG chat — a user typing five words can still send thousands of
+    tokens — so capping chunks matters at least as much as capping the answer.
+    """
+
+    messages_per_hour: int | None = None
+    max_concurrent_streams: int | None = None
+    max_output_tokens: int | None = None
+    max_retrieved_chunks: int | None = None
+
+
 # Resolver signatures. ``organization_id`` is None for personal/no-org scope
 # (community edition is ALWAYS None here), in which case a community resolver
 # returns None and the global value applies.
@@ -59,6 +79,11 @@ UploadLimitsResolver = Callable[[int | None], TenantUploadLimits | None]
 # files were never candidates until the global age, and global files were
 # never candidates until the longest override's age.) Community: None.
 MinRetentionResolver = Callable[[], int | None]
+ChatLimitsResolver = Callable[[int | None], TenantChatLimits | None]
+# Returns the set of model identifiers a tenant may select, or ``None`` for "no
+# restriction". An EMPTY set is meaningful and distinct from None: it means the
+# tenant may use no model at all, which is how a suspended account is expressed.
+AllowedModelsResolver = Callable[[int | None], set[str] | None]
 
 
 def _community_retention_resolver(_org_id: int | None) -> int | None:
@@ -73,9 +98,19 @@ def _community_upload_limits_resolver(_org_id: int | None) -> TenantUploadLimits
     return None  # no override -> global ceiling applies
 
 
+def _community_chat_limits_resolver(_org_id: int | None) -> TenantChatLimits | None:
+    return None  # no override -> the admin's SystemSettings values apply
+
+
+def _community_allowed_models_resolver(_org_id: int | None) -> set[str] | None:
+    return None  # no restriction -> any configured model may be selected
+
+
 _retention_resolver: RetentionResolver = _community_retention_resolver
 _min_retention_resolver: MinRetentionResolver = _community_min_retention_resolver
 _upload_limits_resolver: UploadLimitsResolver = _community_upload_limits_resolver
+_chat_limits_resolver: ChatLimitsResolver = _community_chat_limits_resolver
+_allowed_models_resolver: AllowedModelsResolver = _community_allowed_models_resolver
 
 
 def set_retention_resolver(
@@ -102,12 +137,29 @@ def set_upload_limits_resolver(resolver: UploadLimitsResolver) -> None:
     _upload_limits_resolver = resolver
 
 
+def set_chat_limits_resolver(resolver: ChatLimitsResolver) -> None:
+    """Replace the chat-limits resolver (registered by the cloud layer)."""
+    global _chat_limits_resolver
+    logger.info("Chat-limits resolver overridden (cloud edition)")
+    _chat_limits_resolver = resolver
+
+
+def set_allowed_models_resolver(resolver: AllowedModelsResolver) -> None:
+    """Replace the allowed-models resolver (registered by the cloud layer)."""
+    global _allowed_models_resolver
+    logger.info("Allowed-models resolver overridden (cloud edition)")
+    _allowed_models_resolver = resolver
+
+
 def reset_resolvers() -> None:
     """Restore the community resolvers (primarily for tests)."""
     global _retention_resolver, _min_retention_resolver, _upload_limits_resolver
+    global _chat_limits_resolver, _allowed_models_resolver
     _retention_resolver = _community_retention_resolver
     _min_retention_resolver = _community_min_retention_resolver
     _upload_limits_resolver = _community_upload_limits_resolver
+    _chat_limits_resolver = _community_chat_limits_resolver
+    _allowed_models_resolver = _community_allowed_models_resolver
 
 
 def min_retention_override_days() -> int | None:
@@ -145,4 +197,38 @@ def resolve_upload_limits(organization_id: int | None) -> TenantUploadLimits | N
         return _upload_limits_resolver(organization_id)
     except Exception:
         logger.exception("upload-limits resolver failed; falling back to global ceiling")
+        return None
+
+
+def resolve_chat_limits(organization_id: int | None) -> TenantChatLimits | None:
+    """Per-org chat ceilings, or ``None`` to use the admin's global settings.
+
+    Best-effort in the same sense as the other resolvers: a misbehaving resolver
+    must not break chat. But note the asymmetry — falling back to "no override"
+    here is *permissive*, so a cloud deployment that needs a hard guarantee should
+    enforce it in its own before-message hook (which can fail the request), not
+    rely on this returning a ceiling.
+    """
+    try:
+        return _chat_limits_resolver(organization_id)
+    except Exception:
+        logger.exception("chat-limits resolver failed; falling back to global settings")
+        return None
+
+
+def resolve_allowed_models(organization_id: int | None) -> set[str] | None:
+    """Model identifiers this tenant may select, or ``None`` for no restriction.
+
+    An empty set means "no model permitted" and is deliberately distinct from
+    ``None``; a suspended tenant is expressed that way.
+
+    On resolver failure this returns ``None`` (no restriction) rather than an
+    empty set: a broken resolver should not lock every tenant out of the product.
+    A deployment that would rather fail closed enforces that in its before-message
+    hook, where a request can be rejected outright.
+    """
+    try:
+        return _allowed_models_resolver(organization_id)
+    except Exception:
+        logger.exception("allowed-models resolver failed; allowing any model")
         return None

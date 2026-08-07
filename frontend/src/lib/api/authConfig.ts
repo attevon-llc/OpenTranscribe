@@ -150,6 +150,25 @@ export const AUTH_CONFIG_CATEGORIES = [
 
 export type AuthConfigCategory = (typeof AUTH_CONFIG_CATEGORIES)[number];
 
+/**
+ * Resolution of the email config designated to carry auth mail. `active` is the
+ * only value that delivers; `missing`/`disabled` mean the designation is
+ * dangling and sends have silently fallen back to the env SMTP transport.
+ */
+export type AuthMailStatus = 'not_designated' | 'active' | 'missing' | 'disabled';
+
+/** Mirrors `backend/app/schemas/email_notification.py:AuthMailDesignationResponse`. */
+export interface AuthMailDesignation {
+  config_uuid: string | null;
+  config_name: string | null;
+  provider: string | null;
+  is_enabled: boolean | null;
+  resolves: boolean;
+  status: AuthMailStatus;
+  /** Whether `SMTP_HOST` is set, i.e. whether the fallback transport exists. */
+  env_smtp_configured: boolean;
+}
+
 export class AuthConfigApi {
   static async getAllConfigs(): Promise<Record<string, AuthConfigResponse[]>> {
     const response = await axiosInstance.get('/admin/auth-config');
@@ -194,6 +213,24 @@ export class AuthConfigApi {
         limit: Math.min(Math.max(Math.trunc(limit), 1), AUTH_CONFIG_AUDIT_MAX_LIMIT),
         offset: Math.max(Math.trunc(offset), 0),
       },
+    });
+    return response.data;
+  }
+
+  /** Which email config carries password resets, invitations and verification links. */
+  static async getAuthMailDesignation(): Promise<AuthMailDesignation> {
+    const response = await axiosInstance.get('/admin/auth-config/email/designation');
+    return response.data;
+  }
+
+  /**
+   * Designate the auth mailer, or clear it with an empty string to fall back to
+   * env SMTP. A UUID that names no config — or a disabled one — is rejected with
+   * a 400 rather than stored, so the caller surfaces the message as-is.
+   */
+  static async setAuthMailDesignation(configUuid: string): Promise<AuthMailDesignation> {
+    const response = await axiosInstance.put('/admin/auth-config/email/designation', {
+      config_uuid: configUuid,
     });
     return response.data;
   }

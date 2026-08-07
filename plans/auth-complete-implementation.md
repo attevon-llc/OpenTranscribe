@@ -25,16 +25,28 @@ stopping point.
 **I own every Alembic revision in this tranche.** Agents must not author one; they consume the
 columns. Three revisions, each a coherent transaction:
 
-| Revision | Contents |
-|---|---|
-| `v376_rename_keycloak_config_to_oidc` | `auth_config` + `auth_config_audit` data rename `keycloak_*` → `oidc_*`, category `keycloak` → `oidc`. Ciphertext carried across **unchanged** — no decrypt/re-encrypt. |
-| `v377_oidc_identity_columns` | `user.auth_type` `'keycloak'` → `'oidc'`; drop/re-add `ck_user_auth_type_valid` with `('local','ldap','oidc','pki','proxy')`; same for `ck_user_invitation_auth_type_valid`; `keycloak_id` → `oidc_subject`; `keycloak_refresh_token` → `oidc_refresh_token`; `refresh_token.oidc_id_token`. **Single transaction** — a half-applied state either locks out every OIDC user or exempts them from MFA. |
-| `v378_directory_groups_approval_scim` | `group_mapping` table; `user_group_member.source`; `user.approval_status` / `approved_at` / `approved_by`; `scim_token` table. |
+| Revision | Contents | State |
+|---|---|---|
+| `v376_idp_group_mapping` | `group_mapping` table (with the `super_admin` cap as a CHECK, and a partial case-insensitive unique index for LDAP DNs); `user_group_member.source` defaulting to `manual`, so the default **is** the backfill and every existing membership stays hand-managed. | **built** |
+| `v377_rename_keycloak_config_to_oidc` | `auth_config` + `auth_config_audit` data rename `keycloak_*` → `oidc_*`, category `keycloak` → `oidc`. Ciphertext carried across **unchanged** — no decrypt/re-encrypt. | planned |
+| `v378_oidc_identity_columns` | `user.auth_type` `'keycloak'` → `'oidc'`; drop/re-add `ck_user_auth_type_valid` with `('local','ldap','oidc','pki','proxy')`; same for `ck_user_invitation_auth_type_valid`; `keycloak_id` → `oidc_subject`; `keycloak_refresh_token` → `oidc_refresh_token`; `refresh_token.oidc_id_token`. **Single transaction** — a half-applied state either locks out every OIDC user or exempts them from MFA. | planned |
+| `v379_approval_and_scim` | `user.approval_status` / `approved_at` / `approved_by`; `scim_token` table. | planned |
+
+Numbering corrected after the fact: group mapping shipped as `v376` because it chains from the real head `v375`, and a later number could not chain to a revision that does not exist yet. The plan moved, not the code.
+
+**Ordering consequence to accept, not paper over:** group mapping landed *before* the `oidc_*` rename, so it edits `keycloak_auth.py` under the old names. The rename must therefore sweep it too, and the rename's test-enforced "`keycloak` appears in exactly two files" invariant is what guarantees nothing is missed.
 
 Each gets a detection arm at the TOP of `_detect_schema_version()` (`app/db/migrations.py`) and a
-consistency test modelled on `test_v375_migration_consistency.py`. **On rebase onto master after
-rag-chat merges, v375–v378 renumber to v376–v379** (rag-chat also defines v375) and the detection
-arms must be re-keyed.
+consistency test modelled on `test_v375_migration_consistency.py`. A revision that adds two markers
+must key its arm on **both** — half a revision must stamp lower, or the rest of the DDL never runs.
+
+**On rebase onto master after rag-chat merges, v375–v379 all renumber** (rag-chat also defines
+v375) and every detection arm must be re-keyed.
+
+**Operational rule for parallel work, learned the hard way:** never `git stash`, `git reset`, or
+`git checkout` in this worktree while other work is in flight. A stash is not scoped to one agent's
+files — it silently reverts everyone's uncommitted work. One agent did this mid-run; nothing was
+lost, but only by luck.
 
 ## Phases
 

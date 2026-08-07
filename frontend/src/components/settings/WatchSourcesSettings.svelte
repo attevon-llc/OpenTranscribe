@@ -5,6 +5,7 @@
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import WatchSourceModal from './WatchSourceModal.svelte';
   import EmailConfigModal from './EmailConfigModal.svelte';
+  import AuthMailDesignation from './AuthMailDesignation.svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { user } from '$stores/auth';
@@ -31,6 +32,9 @@
   } from '$lib/api/watchSourcesApi';
 
   $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
+  // Which config carries password resets and invitations is a deployment-wide
+  // credential decision, so it sits one tier above managing the configs.
+  $: isSuperAdmin = $user?.role === 'super_admin';
 
   let loading = true;
   let saving = false;
@@ -406,6 +410,15 @@
           </div>
         {/each}
       </div>
+    {/if}
+
+    {#if isSuperAdmin}
+      <!-- Keyed on the list so a create/edit/delete refetch re-reads the
+           designation: deleting a config can turn an active designation into a
+           dangling one, and the warning must appear without a page reload. -->
+      {#key emailConfigs}
+        <AuthMailDesignation configs={emailConfigs} />
+      {/key}
     {/if}
 
     <!-- Global settings -->

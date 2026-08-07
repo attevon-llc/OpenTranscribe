@@ -321,23 +321,25 @@ survive a plain restart).
    disabled), `exchange` (authenticated submission to on-prem Exchange).
    Secrets are AES-256-GCM encrypted at rest with `ENCRYPTION_KEY`.
 2. Use **Test Connection** to confirm auth and reachability.
-3. Designate that config as the deployment's auth mailer — this is the
-   `SystemSettings` key `email.auth_config_uuid`, holding the config's UUID:
-
-   ```sql
-   -- ./opentr.sh shell postgres, or use the admin API when the UI ships it
-   INSERT INTO system_settings (key, value, description)
-   VALUES ('email.auth_config_uuid', '<config-uuid>',
-           'EmailNotificationConfig that carries transactional auth mail')
-   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
-   ```
+3. In the same panel, under **Authentication email** (super_admin only), pick
+   that config in the dropdown and **Save**. It takes effect immediately — no
+   restart. The panel states what is designated and warns when the designation
+   is dangling.
 
    Nothing is auto-selected. Email configs are created for specific notification
    purposes, and sending password resets out of an unrelated mailbox would leak
    the deployment's auth mail through it — so the designation is always an
-   explicit super_admin act. If the designated config is deleted or disabled,
-   auth mail degrades to the env SMTP transport below (with an error log), never
-   to some other config.
+   explicit super_admin act, recorded in the `SystemSettings` key
+   `email.auth_config_uuid` and written to the audit log.
+
+   The API behind the control is `GET`/`PUT
+   /api/admin/auth-config/email/designation` (super_admin). A UUID that names no
+   config, or a disabled one, is refused with a 400 rather than stored; an empty
+   `config_uuid` clears the designation and falls back to env SMTP. Deleting or
+   disabling the designated config is refused with a 409 — clear or move the
+   designation first. Should the row disappear another way (direct SQL), auth
+   mail degrades to the env SMTP transport below with an error log, never to
+   some other config, and the panel reports the designation as dangling.
 
 **Fallback — env SMTP** (used only when nothing is designated):
 
@@ -398,6 +400,16 @@ delivered to v***@example.com. Designate an email config
   `No mail transport configured — ... was NOT delivered`.
 - The link is never printed to the log by design (it is a live single-use
   credential), so an empty log is not evidence the mail was sent.
+
+**Email: the panel says the designated configuration is missing or disabled**
+- The row was deleted or disabled outside the UI (the API refuses both with a
+  409). Auth mail has fallen back to env SMTP, which is unset by default — so
+  resets and invitations stop. Designate a working config, or clear the
+  designation and set `SMTP_HOST`.
+
+**Email: "This email configuration is designated to carry authentication email"**
+- You tried to delete or disable the auth mailer. Point the **Authentication
+  email** dropdown at another config (or clear it) first, then retry.
 
 **Email: reset links point at `localhost:5173`**
 - `FRONTEND_URL` is unset. Set it in `.env` and **recreate** the backend

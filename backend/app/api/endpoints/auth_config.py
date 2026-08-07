@@ -462,6 +462,31 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
         )
 
 
+def _roles_claim_advertised(configured_roles_claim: str, claims_supported: Any) -> str:
+    """Cross-reference the configured roles claim against the discovery document.
+
+    Best-effort only, and says so via ``"unknown"``: ``claims_supported`` is an
+    OPTIONAL discovery field (OIDC Discovery §3), several real providers omit it
+    entirely, and only the top-level segment of a dotted path (``realm_access`` of
+    ``realm_access.roles``) is a claim NAME — the rest is a JSON path into it,
+    which a claims list was never going to enumerate.
+
+    Args:
+        configured_roles_claim: The admin's configured dotted claim path.
+        claims_supported: The discovery document's ``claims_supported`` value, if
+            the provider sent one.
+
+    Returns:
+        ``"yes"``, ``"no"``, or ``"unknown"``.
+    """
+    if not isinstance(claims_supported, list) or not claims_supported:
+        return "unknown"
+    if not configured_roles_claim:
+        return "unknown"
+    top_level = configured_roles_claim.split(".", 1)[0]
+    return "yes" if top_level in claims_supported else "no"
+
+
 async def _test_oidc_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
     """Test the OIDC provider connection with the supplied configuration.
 
@@ -524,7 +549,7 @@ async def _test_oidc_connection(config: dict[str, Any]) -> AuthMethodTestRespons
                 oidc_config = response.json()
 
                 # Extract relevant endpoints for display
-                details = {
+                details: dict[str, Any] = {
                     "issuer": oidc_config.get("issuer"),
                     "authorization_endpoint": oidc_config.get("authorization_endpoint"),
                     "token_endpoint": oidc_config.get("token_endpoint"),
@@ -534,6 +559,20 @@ async def _test_oidc_connection(config: dict[str, Any]) -> AuthMethodTestRespons
                     ],  # Limit for readability
                     "supported_scopes": oidc_config.get("scopes_supported", [])[:10],
                 }
+
+                # P1.2: this is the only signal available before a real login has
+                # happened. `claims_supported` is OPTIONAL per Discovery §3 — a
+                # provider that omits it (Authentik does) leaves the check
+                # "unknown", not "not advertised", since silence isn't a claim.
+                claims_supported = oidc_config.get("claims_supported")
+                details["claims_supported"] = (
+                    claims_supported[:30] if isinstance(claims_supported, list) else None
+                )
+                configured_roles_claim = (config.get("oidc_roles_claim") or "").strip()
+                details["configured_roles_claim"] = configured_roles_claim or None
+                details["roles_claim_advertised"] = _roles_claim_advertised(
+                    configured_roles_claim, claims_supported
+                )
 
                 logger.info(f"OIDC connection test successful to {server_url}")
 

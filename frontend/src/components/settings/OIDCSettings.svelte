@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
-  import type { OIDCConfig } from '$lib/api/authConfig';
+  import type { OIDCConfig, AuthMethodTestResponse } from '$lib/api/authConfig';
   import {
     OIDC_PROVIDER_PRESETS,
     findOIDCPreset,
@@ -9,6 +9,14 @@
   } from '$lib/utils/oidcProviderPresets';
 
   export let config: Partial<OIDCConfig> = {};
+
+  /**
+   * P1.2: what Test Connection actually discovered from the provider's
+   * `.well-known/openid-configuration` — `claims_supported` and whether the
+   * configured roles claim is advertised. The parent owns this because a
+   * Svelte event has no return channel back to the dispatcher that fired it.
+   */
+  export let testResult: AuthMethodTestResponse | undefined = undefined;
 
   /**
    * Whether the backend reports a stored client secret (`is_set` on the sensitive
@@ -116,6 +124,12 @@
    * nobody reads until the whole tenant has accounts.
    */
   $: allowListOpen = (formData.oidc_allowed_groups ?? '').trim() === '';
+
+  /** Claim names (never values) the provider's discovery document advertised. */
+  $: discoveredClaims = (testResult?.success && testResult.details?.claims_supported) || undefined;
+  $: rolesClaimAdvertised = testResult?.success
+    ? (testResult.details?.roles_claim_advertised as string | undefined)
+    : undefined;
 
   /** Payload for save/test: everything in the form, plus the secret only if typed. */
   function buildPayload(): OIDCConfig {
@@ -473,6 +487,35 @@
     </div>
   </div>
 
+  {#if testResult?.success}
+    <div class="section discovered-claims">
+      <h3>{$t('settings.oidc.discoveredClaims')}</h3>
+      <p class="section-intro">{$t('settings.oidc.discoveredClaimsHelp')}</p>
+
+      {#if discoveredClaims}
+        <div class="claim-tags">
+          {#each discoveredClaims as claim (claim)}
+            <span class="claim-tag">{claim}</span>
+          {/each}
+        </div>
+      {:else}
+        <p class="help-text">{$t('settings.oidc.noClaimsSupported')}</p>
+      {/if}
+
+      {#if formData.oidc_roles_claim}
+        <p class="roles-claim-status" class:status-no={rolesClaimAdvertised === 'no'}>
+          {#if rolesClaimAdvertised === 'yes'}
+            {$t('settings.oidc.rolesClaimAdvertisedYes', { claim: formData.oidc_roles_claim })}
+          {:else if rolesClaimAdvertised === 'no'}
+            {$t('settings.oidc.rolesClaimAdvertisedNo', { claim: formData.oidc_roles_claim })}
+          {:else}
+            {$t('settings.oidc.rolesClaimAdvertisedUnknown', { claim: formData.oidc_roles_claim })}
+          {/if}
+        </p>
+      {/if}
+    </div>
+  {/if}
+
   <div class="actions">
     <button
       class="btn btn-secondary"
@@ -576,6 +619,39 @@
     color: var(--color-text);
     font-size: 0.75rem;
     line-height: 1.5;
+  }
+
+  .claim-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.5rem 0;
+  }
+
+  .claim-tag {
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    font-size: 0.75rem;
+    font-family: monospace;
+  }
+
+  .roles-claim-status {
+    margin: 0.5rem 0 0 0;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: var(--color-text);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+
+  .roles-claim-status.status-no {
+    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(245, 158, 11, 0.45);
   }
 
   .form-row {

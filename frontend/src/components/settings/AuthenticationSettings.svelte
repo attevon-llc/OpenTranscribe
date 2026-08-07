@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { AuthConfigApi } from '$lib/api/authConfig';
+  import { AuthConfigApi, type AuthMethodTestResponse } from '$lib/api/authConfig';
   import LDAPSettings from './LDAPSettings.svelte';
   import OIDCSettings from './OIDCSettings.svelte';
   import PKISettings from './PKISettings.svelte';
@@ -226,6 +226,15 @@
     await loadConfigs();
   }
 
+  /**
+   * P1.2: what the OIDC test actually discovered — `claims_supported` and
+   * whether the configured roles claim is advertised. Kept here (not inside
+   * `OIDCSettings`) because the panel only learns of the result through the
+   * `test` event it dispatches; a Svelte event has no return channel back to
+   * its own dispatcher, so the result has to come back down as a prop.
+   */
+  let oidcTestResult: AuthMethodTestResponse | undefined = undefined;
+
   async function handleTestConnection(category: string, config: Record<string, any>) {
     try {
       const result = await AuthConfigApi.testConnection(category, config);
@@ -233,6 +242,9 @@
         toastStore.success(result.message);
       } else {
         toastStore.error(result.message);
+      }
+      if (category === 'oidc') {
+        oidcTestResult = result;
       }
       return result;
     } catch (error) {
@@ -323,6 +335,7 @@
           <OIDCSettings
             config={configs.oidc || {}}
             secretIsSet={configs.oidc?.oidc_client_secret_is_set}
+            testResult={oidcTestResult}
             on:save={(e) => handleSave('oidc', e.detail)}
             on:test={(e) => handleTestConnection('oidc', e.detail)}
             on:change={handleChange}

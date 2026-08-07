@@ -314,6 +314,14 @@ async def oidc_callback(
         source_ip=client_ip,
         user_agent=user_agent,
         auth_method=AUTH_METHOD,
+        # P1.2: claim *names* only, never values — lets an admin see in the audit
+        # log that "groups" exists and "realm_access" does not, without this
+        # becoming a second place group/claim values leak to.
+        details={
+            "claim_keys": oidc_data["claim_keys"],
+            "roles_claim": cfg.roles_claim,
+            "roles_claim_source": oidc_data["roles_claim_source"],
+        },
     )
 
     # Every successful auth path stamps last_login_at — see pki.py for why.

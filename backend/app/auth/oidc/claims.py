@@ -74,6 +74,15 @@ class OIDCUserData(TypedDict):
     username: str
     is_admin: bool
     roles: list[str]
+    #: Top-level ID-token claim **names** only, never values — diagnostic surface
+    #: for "the roles claim is misconfigured and nobody notices until permissions
+    #: are wrong" (P1.2). An admin looking at the audit log after a first login
+    #: can see whether ``groups`` exists and ``realm_access`` does not, without
+    #: this becoming a second place group/claim values leak to.
+    claim_keys: list[str]
+    #: Where ``roles`` actually came from: the ID token itself, the userinfo
+    #: fallback (:func:`_roles_from_userinfo`), or neither.
+    roles_claim_source: str
     cert_dn: str | None
     cert_serial: str | None
     cert_issuer: str | None
@@ -244,9 +253,13 @@ async def validate_token(
             f"{payload.get('preferred_username', 'unknown')}"
         )
 
+        roles_claim_source = "id_token"
         roles = _normalize_roles(_claim_by_path(payload, cfg.roles_claim or DEFAULT_ROLES_CLAIM))
         if roles is None:
+            roles_claim_source = "userinfo"
             roles = await _roles_from_userinfo(access_token, cfg, endpoints)
+            if not roles:
+                roles_claim_source = "absent"
         is_admin = cfg.admin_role in roles
 
         cert_claims = _extract_certificate_claims(payload)
@@ -275,6 +288,8 @@ async def validate_token(
             username=payload.get("preferred_username", ""),
             is_admin=is_admin,
             roles=roles,
+            claim_keys=sorted(str(k) for k in payload),
+            roles_claim_source=roles_claim_source,
             cert_dn=cert_claims["cert_dn"],
             cert_serial=cert_claims["cert_serial"],
             cert_issuer=cert_claims["cert_issuer"],

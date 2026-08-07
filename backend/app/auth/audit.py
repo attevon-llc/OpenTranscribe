@@ -302,8 +302,17 @@ class AuditLogger:
         source_ip: str,
         user_agent: str,
         auth_method: str,
+        details: dict[str, Any] | None = None,
     ) -> None:
-        """Log a successful login."""
+        """Log a successful login.
+
+        Args:
+            details: Extra method-specific diagnostics merged alongside
+                ``auth_method`` — e.g. OIDC's ``claim_keys`` (P1.2), so an admin
+                can see what an IdP actually sent without this becoming a second
+                place claim *values* are logged. ``auth_method`` always wins the
+                key if a caller's dict happens to carry one.
+        """
         self.log(
             event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
             outcome=AuditOutcome.SUCCESS,
@@ -311,7 +320,7 @@ class AuditLogger:
             username=username,
             source_ip=source_ip,
             user_agent=user_agent,
-            details={"auth_method": auth_method},
+            details={**(details or {}), "auth_method": auth_method},
         )
 
     def log_login_failure(

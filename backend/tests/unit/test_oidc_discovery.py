@@ -522,3 +522,53 @@ class TestValidateTokenPrefersIdToken:
         fake_http.routes.clear()
         cfg = _cfg(verify_issuer=False)
         assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID")) is None
+
+
+class TestValidateTokenClaimDiagnostics:
+    """P1.2: claim *names* only, never values — see claims.py's OIDCUserData docstring."""
+
+    def _payload(self, **extra):
+        payload = {
+            "sub": "user-1",
+            "email": "user@example.com",
+            "name": "A User",
+            "preferred_username": "auser",
+        }
+        payload.update(extra)
+        return payload
+
+    def test_claim_keys_are_the_top_level_id_token_keys(self, stub_jwt):
+        stub_jwt({"ID": self._payload(groups=["ot-admins"], amr=["pwd"])})
+        cfg = _cfg(verify_issuer=False, roles_claim="groups")
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
+        assert data is not None
+        assert data["claim_keys"] == sorted(
+            ["sub", "email", "name", "preferred_username", "groups", "amr"]
+        )
+
+    def test_roles_claim_source_is_id_token_when_present_there(self, stub_jwt):
+        stub_jwt({"ID": self._payload(groups=["ot-admins"])})
+        cfg = _cfg(verify_issuer=False, roles_claim="groups")
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
+        assert data is not None
+        assert data["roles_claim_source"] == "id_token"
+
+    def test_roles_claim_source_is_userinfo_when_the_id_token_lacks_it(self, stub_jwt, fake_http):
+        stub_jwt({"ID": self._payload()})
+        userinfo = (
+            "https://keycloak.example.com/realms/opentranscribe/protocol/openid-connect/userinfo"
+        )
+        fake_http.routes[userinfo] = {"groups": ["ot-admins"]}
+        cfg = _cfg(verify_issuer=False, roles_claim="groups")
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
+        assert data is not None
+        assert data["roles_claim_source"] == "userinfo"
+
+    def test_roles_claim_source_is_absent_when_neither_has_it(self, stub_jwt, fake_http):
+        """The realm_access.roles/groups gap this whole task exists to surface."""
+        stub_jwt({"ID": self._payload()})
+        cfg = _cfg(verify_issuer=False, roles_claim="groups")
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
+        assert data is not None
+        assert data["roles_claim_source"] == "absent"
+        assert data["roles"] == []

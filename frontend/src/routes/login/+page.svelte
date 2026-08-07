@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithKeycloak, handleKeycloakCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, logout, type AuthMethods } from "$stores/auth";
+  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithKeycloak, handleKeycloakCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, acknowledgeBanner, logout, type AuthMethods } from "$stores/auth";
   import { resendEmailVerification } from '$lib/api/invitations';
   import { onMount, onDestroy } from 'svelte';
   import { toastStore } from '$stores/toast';
@@ -58,13 +58,45 @@
   let forcedConfirmPassword = "";
   let forcedChangeLoading = false;
 
-  // Banner state
-  let bannerAcknowledged = false;
-  let showBannerConsent = false;
+  // Login banner (FedRAMP AC-8).
+  //
+  // Consent is a SERVER record — `POST /auth/banner/acknowledge` — because
+  // `get_current_active_user` refuses every non-exempt route with
+  // `detail.code === "banner_acknowledgment_required"` until that timestamp
+  // exists and post-dates the current banner wording. The old
+  // `sessionStorage['banner_acknowledged']` flag never reached the server, so a
+  // deployment with the banner enabled was unusable after login.
+  //
+  // `bannerConsentPending` is in-memory ONLY, by design: it gates nothing but
+  // this page's own modal, and persisting it is what made the fake look real.
   let bannerEnabled = false;
   let bannerText = "";
   let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
-  let showLoginBanner = false;
+  let bannerConsentPending = false;
+  let bannerAckPending = false;
+  let bannerAckError = "";
+
+  // A banner hold means we are ALREADY signed in and the gate bounced us here,
+  // so acknowledging must hit the API rather than merely dismiss the modal.
+  $: bannerHold = $accountLifecycle?.code === 'banner_acknowledgment_required';
+  // `banner_text_changed`: the user did consent — to different wording. Saying so
+  // is the difference between "the notice was updated" and "this is broken".
+  $: bannerNoticeUpdated = $accountLifecycle?.reason === 'banner_text_changed';
+  // The banner hold has its own UI (the consent modal), so it must not fall
+  // through to the account-lifecycle panels below — which would show an expired
+  // account screen for a user whose account is perfectly fine.
+  $: lifecyclePanel = $accountLifecycle && !bannerHold ? $accountLifecycle : null;
+
+  // A hold can land after mount (the banner text changed under a live session),
+  // so re-arm the modal rather than assuming onMount saw it. The hold itself is
+  // proof the banner is enabled — better evidence than the /auth/methods probe,
+  // whose fail-closed default reports it OFF and would leave a held user staring
+  // at a sign-in form that no longer works. LoginBanner fetches the current
+  // wording from /auth/banner regardless of what we hold here.
+  $: if (bannerHold && !bannerConsentPending) {
+    bannerEnabled = true;
+    bannerConsentPending = true;
+  }
 
   // Authentication methods
   let authMethods: AuthMethods = {
@@ -156,24 +188,18 @@
       // Fetch available auth methods
       authMethods = await getAuthMethods();
 
-      // Check for banner settings
+      // Check for banner settings. The notice is shown on every visit: there is
+      // no client-side "already acknowledged" shortcut any more, because the only
+      // acknowledgment that counts is the one recorded server-side after sign-in.
       if (authMethods.login_banner_enabled) {
         bannerEnabled = true;
         bannerText = authMethods.login_banner_text || "";
         bannerClassification = (authMethods.login_banner_classification as typeof bannerClassification) || "UNCLASSIFIED";
-
-        // Check if user has previously acknowledged banner (session-based)
-        const acknowledged = sessionStorage.getItem('banner_acknowledged');
-        if (!acknowledged) {
-          showBannerConsent = true;
-          showLoginBanner = true;
-        } else {
-          bannerAcknowledged = true;
-        }
+        bannerConsentPending = true;
       }
 
       const emailInput = document.getElementById('email');
-      if (emailInput && !showBannerConsent) emailInput.focus();
+      if (emailInput && !bannerConsentPending) emailInput.focus();
 
       // Handle page visibility change (user returns via back button)
       handleVisibilityChange = () => {
@@ -357,6 +383,12 @@
       }
 
       if (result.success) {
+        // A session exists now, so the consent captured by the banner modal can
+        // finally be recorded. Ahead of the forced-password-change branch below
+        // because the server checks the banner FIRST — clearing the password
+        // hold without this one would just produce a banner 403 next.
+        await recordBannerConsent();
+
         // The account carries `must_change_password`: a session exists, but the
         // lifecycle gate refuses every route bar PUT /users/me until it clears.
         // Publishing the hold here shows the remedy immediately, instead of the
@@ -523,6 +555,7 @@
     pkiLoading = false;
 
     if (result.success) {
+      await recordBannerConsent();
       loginSuccess = true;
       setTimeout(() => goto('/', { replaceState: true }), 600);
     } else {
@@ -543,6 +576,7 @@
       const result = await verifyMFA(mfaToken, mfaCode.trim(), useBackupCode);
 
       if (result.success) {
+        await recordBannerConsent();
         loginSuccess = true;
         setTimeout(() => goto('/', { replaceState: true }), 600);
       } else {
@@ -570,10 +604,11 @@
   // Enrolment finished: /mfa/verify-setup already set the session cookies and
   // the store is hydrated, so proceed exactly as after a normal login. Calling
   // /auth/login again here would start a second challenge.
-  function handleEnrollmentComplete() {
+  async function handleEnrollmentComplete() {
     mfaEnrollmentRequired = false;
     mfaToken = "";
     password = "";
+    await recordBannerConsent();
     loginSuccess = true;
     import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
     setTimeout(() => goto('/', { replaceState: true }), 600);
@@ -588,22 +623,86 @@
     setTimeout(() => document.getElementById('password')?.focus(), 0);
   }
 
-  // Handle banner acknowledgment
-  function handleBannerAcknowledge() {
-    bannerAcknowledged = true;
-    showBannerConsent = false;
-    showLoginBanner = false;
-    sessionStorage.setItem('banner_acknowledged', 'true');
-    // Focus email field after acknowledgment
-    setTimeout(() => {
-      document.getElementById('email')?.focus();
-    }, 100);
+  /**
+   * Accept the login banner.
+   *
+   * Two situations reach this, and only one of them can talk to the API:
+   *
+   * - **Signed in** (a banner hold bounced us back here): the acknowledgment IS
+   *   the remedy, so it must reach `POST /auth/banner/acknowledge` before any
+   *   other route will answer. A failure is shown in place — dismissing the modal
+   *   would drop the user into an app where every request 403s.
+   * - **Anonymous**: there is no session to record against yet. The modal is the
+   *   AC-8 notice; the consent it captures is POSTed by `recordBannerConsent()`
+   *   the moment sign-in produces a session.
+   */
+  async function handleBannerAcknowledge() {
+    bannerAckError = "";
+
+    if (bannerHold) {
+      bannerAckPending = true;
+      const result = await acknowledgeBanner();
+      bannerAckPending = false;
+
+      if (!result.success) {
+        bannerAckError = result.message || $t('loginBanner.acknowledgeFailed');
+        return;
+      }
+
+      bannerConsentPending = false;
+      loginSuccess = true;
+      import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
+      setTimeout(() => goto('/', { replaceState: true }), 600);
+      return;
+    }
+
+    bannerConsentPending = false;
+    setTimeout(() => document.getElementById('email')?.focus(), 100);
   }
 
-  // Handle banner decline
-  function handleBannerDecline() {
-    // Close the window or redirect away
-    window.location.href = 'about:blank';
+  /**
+   * Refuse the banner.
+   *
+   * This used to be `window.location.href = 'about:blank'`, which modern
+   * browsers commonly block — leaving the user pinned to the banner with no
+   * feedback whatsoever. End the session and return to a clean sign-in page
+   * instead. The notice reappears because consent is a precondition for access,
+   * not a dismissible dialog.
+   */
+  async function handleBannerDecline() {
+    bannerAckError = "";
+    bannerAckPending = false;
+    email = "";
+    password = "";
+    emailNotVerified = false;
+    mfaRequired = false;
+    mfaEnrollmentRequired = false;
+    mfaToken = "";
+    mfaCode = "";
+
+    // Clears the hold, the cookies and every user store; also empties the toast
+    // queue, which is why the explanation below is raised afterwards.
+    await logout();
+
+    bannerConsentPending = bannerEnabled;
+    toastStore.info($t('loginBanner.mustAcknowledge'));
+  }
+
+  /**
+   * Record banner consent now that a session exists.
+   *
+   * Called from every path that produces one. Best-effort on purpose: if the
+   * write fails, the AC-8 gate refuses the next request, the lifecycle
+   * interceptor publishes the hold, and the user lands back here with the banner
+   * and a real error message — a strictly better outcome than blocking the
+   * sign-in on a transient failure.
+   */
+  async function recordBannerConsent() {
+    if (!bannerEnabled) return;
+    const result = await acknowledgeBanner();
+    if (!result.success) {
+      console.warn('Login.svelte: banner acknowledgment not recorded:', result.message);
+    }
   }
 </script>
 
@@ -612,8 +711,11 @@
   <ClassificationBanner
     classification={bannerClassification}
     bannerText={bannerText}
-    requireAcknowledgment={showBannerConsent}
+    requireAcknowledgment={bannerConsentPending}
     position="top"
+    pending={bannerAckPending}
+    errorMessage={bannerAckError}
+    noticeUpdated={bannerNoticeUpdated}
     on:acknowledge={handleBannerAcknowledge}
     on:decline={handleBannerDecline}
   />
@@ -628,8 +730,14 @@
     <p class="login-success-text">{$t('auth.signingIn')}</p>
   </div>
 {:else}
-{#if showLoginBanner && !bannerAcknowledged}
-  <LoginBanner onAcknowledge={handleBannerAcknowledge} />
+{#if bannerConsentPending}
+  <LoginBanner
+    pending={bannerAckPending}
+    errorMessage={bannerAckError}
+    noticeUpdated={bannerNoticeUpdated}
+    on:acknowledge={handleBannerAcknowledge}
+    on:decline={handleBannerDecline}
+  />
 {/if}
 
 <div class="auth-container" class:banner-offset={bannerEnabled}>
@@ -640,20 +748,22 @@
       </div>
       <!-- The lifecycle and unverified-address panels carry their own heading;
            "Sign in to your account" would misdescribe them. -->
-      {#if !$accountLifecycle && !emailNotVerified}
+      {#if !lifecyclePanel && !emailNotVerified}
         <h1>{$t('auth.login')}</h1>
         <p>{$t('auth.signInToAccount')}</p>
       {/if}
     </div>
-    {#if $accountLifecycle}
-      <!-- Account-lifecycle hold. Both states arrive as a 403 whose `detail` is
+    {#if lifecyclePanel}
+      <!-- Account-lifecycle hold. These states arrive as a 403 whose `detail` is
            an OBJECT carrying a machine-readable `code`; we branch on that code,
-           never on the prose, which is server-owned and rendered as-is. -->
-      {#if $accountLifecycle.code === 'password_change_required'}
+           never on the prose, which is server-owned and rendered as-is. The third
+           code, `banner_acknowledgment_required`, is handled by the consent modal
+           above and is excluded from `lifecyclePanel`. -->
+      {#if lifecyclePanel.code === 'password_change_required'}
         <div class="lifecycle-panel">
           <h2>{$t('auth.forcedChange.title')}</h2>
           <p class="lifecycle-message">
-            {$accountLifecycle.message || $t('auth.forcedChange.description')}
+            {lifecyclePanel.message || $t('auth.forcedChange.description')}
           </p>
 
           <form on:submit|preventDefault={handleForcedPasswordChange} class="auth-form">
@@ -729,7 +839,7 @@
         <div class="lifecycle-panel">
           <h2>{$t('auth.accountExpired.title')}</h2>
           <p class="lifecycle-message">
-            {$accountLifecycle.message || $t('auth.accountExpired.description')}
+            {lifecyclePanel.message || $t('auth.accountExpired.description')}
           </p>
           <p class="lifecycle-hint">{$t('auth.accountExpired.contactAdmin')}</p>
           <div class="mfa-options">

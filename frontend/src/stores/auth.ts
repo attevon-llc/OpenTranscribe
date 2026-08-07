@@ -152,32 +152,56 @@ export const authReady = derived(authStore, ($store) => $store.ready);
 export const token = derived(authStore, ($store) => $store.token);
 
 // ---------------------------------------------------------------------------
-// Account lifecycle (FedRAMP AC-2 / IA-5)
+// Account lifecycle (FedRAMP AC-2 / AC-8 / IA-5)
 //
-// `get_current_active_user` refuses two account states with a 403 whose `detail`
-// is an OBJECT, not the usual string:
+// `get_current_active_user` refuses three account states with a 403 whose
+// `detail` is an OBJECT, not the usual string:
 //
-//   {"detail": {"code": "password_change_required", "message": "…"}}
-//   {"detail": {"code": "account_expired",         "message": "…"}}
+//   {"detail": {"code": "password_change_required",       "message": "…"}}
+//   {"detail": {"code": "account_expired",                "message": "…"}}
+//   {"detail": {"code": "banner_acknowledgment_required", "message": "…",
+//               "reason": "never_acknowledged" | "banner_text_changed"}}
 //
 // The `code` is the contract; the prose is not. Anything that string-matches the
 // message breaks the moment it is reworded or translated, and every other 403
 // ("Not enough permissions") still carries a plain string and must keep its
 // ordinary error handling — hence the narrow classifier below rather than a
 // blanket "403 means locked out".
+//
+// The gates fire in the order expiry → banner → password change, so a caller
+// owing more than one clears them one 403 at a time; each remedy re-provokes the
+// next hold rather than trying to predict it.
 // ---------------------------------------------------------------------------
 
-export type AccountLifecycleCode = 'password_change_required' | 'account_expired';
+export type AccountLifecycleCode =
+  | 'password_change_required'
+  | 'account_expired'
+  | 'banner_acknowledgment_required';
+
+/**
+ * Why the banner gate fired. `banner_text_changed` means the user DID accept a
+ * banner — different wording — so the UI must say the notice was updated rather
+ * than present the refusal as a failure.
+ */
+export type BannerAcknowledgmentReason = 'never_acknowledged' | 'banner_text_changed';
 
 export interface AccountLifecycleState {
   code: AccountLifecycleCode;
   /** Server-supplied prose, rendered verbatim. May be empty. */
   message: string;
+  /** Only carried by `banner_acknowledgment_required`; absent otherwise. */
+  reason?: BannerAcknowledgmentReason;
 }
 
 const ACCOUNT_LIFECYCLE_CODES: readonly AccountLifecycleCode[] = [
   'password_change_required',
   'account_expired',
+  'banner_acknowledgment_required',
+];
+
+const BANNER_ACKNOWLEDGMENT_REASONS: readonly BannerAcknowledgmentReason[] = [
+  'never_acknowledged',
+  'banner_text_changed',
 ];
 
 /**
@@ -202,14 +226,30 @@ export function readAccountLifecycle(error: unknown): AccountLifecycleState | nu
   const detail = response?.data?.detail;
   if (detail === null || typeof detail !== 'object' || Array.isArray(detail)) return null;
 
-  const { code, message } = detail as { code?: unknown; message?: unknown };
+  const { code, message, reason } = detail as {
+    code?: unknown;
+    message?: unknown;
+    reason?: unknown;
+  };
   if (typeof code !== 'string') return null;
   if (!ACCOUNT_LIFECYCLE_CODES.includes(code as AccountLifecycleCode)) return null;
 
-  return {
+  const state: AccountLifecycleState = {
     code: code as AccountLifecycleCode,
     message: typeof message === 'string' ? message : '',
   };
+
+  // An unrecognised `reason` is dropped rather than passed through: the UI
+  // switches copy on it, and inventing a branch for an unknown value would show
+  // the user nothing at all.
+  if (
+    typeof reason === 'string' &&
+    BANNER_ACKNOWLEDGMENT_REASONS.includes(reason as BannerAcknowledgmentReason)
+  ) {
+    state.reason = reason as BannerAcknowledgmentReason;
+  }
+
+  return state;
 }
 
 /**
@@ -218,7 +258,9 @@ export function readAccountLifecycle(error: unknown): AccountLifecycleState | nu
  * `account_expired` has no self-service remedy, so the session is torn down
  * immediately; the reason is re-published afterwards because `logout()` clears
  * user state. `password_change_required` keeps the session alive on purpose —
- * `PUT /users/me` is what clears the flag, and it needs that session.
+ * `PUT /users/me` is what clears the flag, and it needs that session. Same for
+ * `banner_acknowledgment_required`: `POST /auth/banner/acknowledge` is the
+ * remedy and it is authenticated.
  */
 export async function handleAccountLifecycleError(
   error: unknown
@@ -239,6 +281,39 @@ export async function handleAccountLifecycleError(
 /** Drop the lifecycle hold (the flag cleared server-side, or the user signed out). */
 export function clearAccountLifecycle(): void {
   accountLifecycle.set(null);
+}
+
+/**
+ * Record consent to the login banner (`POST /auth/banner/acknowledge`).
+ *
+ * This is the ONLY thing that satisfies the AC-8 gate. The SPA used to fake it
+ * with a `sessionStorage` flag, which the server never saw — so on a deployment
+ * with the banner enabled every route answered 403 forever. The endpoint is one
+ * of the few exempt from the gate, so it is reachable while the hold is active.
+ *
+ * The call needs a session: the pre-login banner is a notice, and consent is
+ * recorded once the user is actually signed in.
+ *
+ * Only a banner hold is cleared on success. A caller who also owes a password
+ * change is still refused by the next gate, and dropping that hold here would
+ * hide the remedy screen for it.
+ */
+export async function acknowledgeBanner(): Promise<{ success: boolean; message?: string }> {
+  try {
+    await axiosInstance.post('/auth/banner/acknowledge');
+
+    if (get(accountLifecycle)?.code === 'banner_acknowledgment_required') {
+      clearAccountLifecycle();
+    }
+    return { success: true };
+  } catch (rawError: unknown) {
+    console.error('auth.ts: Banner acknowledgment failed:', rawError);
+    const detail = asAuthError(rawError).response?.data?.detail;
+    return {
+      success: false,
+      message: typeof detail === 'string' ? detail : get(t)('loginBanner.acknowledgeFailed'),
+    };
+  }
 }
 
 let lifecycleInterceptorId: number | null = null;
@@ -774,8 +849,7 @@ export async function loginWithPKI(): Promise<{
     if (error.response?.status === 401) {
       message = get(t)('auth.error.pkiCertificateMissing');
     } else if (error.response?.status === 400) {
-      message =
-        (error.response?.data?.detail as string) || get(t)('auth.error.pkiNotEnabled');
+      message = (error.response?.data?.detail as string) || get(t)('auth.error.pkiNotEnabled');
     }
 
     return { success: false, message };
@@ -820,8 +894,7 @@ export async function verifyMFA(
     if (error.response?.status === 401) {
       message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidCode');
     } else if (error.response?.status === 400) {
-      message =
-        (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidToken');
+      message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidToken');
     } else if (error.response?.status === 429) {
       message = get(t)('auth.error.mfaTooManyAttempts');
     }

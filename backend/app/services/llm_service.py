@@ -45,9 +45,15 @@ class LLMProvider(StrEnum):
     OLLAMA = "ollama"
     ANTHROPIC = "anthropic"
     OPENROUTER = "openrouter"
+    BEDROCK = "bedrock"  # AWS-native; boto3 Converse API, credentials via the IAM chain
     CUSTOM = "custom"
     # Legacy - kept for backward compatibility
     CLAUDE = "claude"  # Deprecated: use ANTHROPIC instead
+
+
+# Providers reached through a vendor SDK rather than an HTTP endpoint we POST to.
+# They skip the endpoint-map validation and the shared requests.Session machinery.
+SDK_PROVIDERS = frozenset({LLMProvider.BEDROCK})
 
 
 @dataclass
@@ -86,6 +92,12 @@ class LLMService:
         # Derive response token budget from user's context window
         # For 121K context → 16384, for 8K → 4000 (floor)
         self.response_tokens = max(4000, min(16384, self.user_context_window // 4))
+        # Keep the config in sync. `_prepare_payload` sends `config.response_tokens` as
+        # max_tokens while callers (chat's prompt budget, summarization) reserve the
+        # DERIVED value above — before this assignment the dataclass default of 4000 was
+        # never overwritten, so on a large-context model the prompt reserved up to 16384
+        # tokens for an answer that was hard-capped at 4000. The two must agree.
+        self.config.response_tokens = self.response_tokens
 
         # Create session with retry strategy for reliability
         self.session = requests.Session()
@@ -134,7 +146,9 @@ class LLMService:
             LLMProvider.ANTHROPIC: "https://api.anthropic.com/v1/messages",
         }
 
-        if not self.endpoints.get(config.provider):
+        # SDK-based providers have no HTTP endpoint to validate — Bedrock is reached
+        # through boto3, which resolves the endpoint from the region itself.
+        if config.provider not in SDK_PROVIDERS and not self.endpoints.get(config.provider):
             raise ValueError(f"Invalid provider configuration for {config.provider}")
 
         # Log the resolved endpoint for debugging (helps diagnose connection issues like Issue #100)
@@ -490,6 +504,24 @@ class LLMService:
             :class:`LLMStreamEvent` values, always terminated by exactly one ``done``
             or ``error`` event.
         """
+        # Bedrock is an SDK call, not an HTTP endpoint we POST to, so it branches out
+        # ahead of the URL lookup below (its entry in `endpoints` is None by design).
+        # The generator it returns is synchronous and honours the same cancel_event,
+        # so the caller's iterate_in_threadpool driver is unchanged.
+        if self.config.provider == LLMProvider.BEDROCK:
+            from app.services.llm_bedrock import stream_converse
+
+            yield from stream_converse(
+                model=self.config.model,
+                region=settings.BEDROCK_REGION,
+                messages=messages,
+                max_tokens=kwargs.get("max_tokens", self.config.response_tokens),
+                temperature=kwargs.get("temperature"),
+                cancel_event=cancel_event,
+                attribution=kwargs.get("attribution"),
+            )
+            return
+
         url = self.endpoints[self.config.provider]
         if url is None:
             yield LLMStreamEvent(

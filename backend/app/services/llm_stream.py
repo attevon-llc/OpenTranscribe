@@ -43,6 +43,12 @@ class LLMStreamEvent:
         text: Text fragment, for ``delta`` events.
         prompt_tokens: Input tokens reported by the provider, for ``usage``.
         completion_tokens: Output tokens reported by the provider, for ``usage``.
+        cache_read_tokens: Input tokens served from a prompt cache, for ``usage``.
+            Billed far below the uncached rate, so metering that ignores this
+            over-reports cost on any cache-enabled deployment.
+        cache_write_tokens: Input tokens written to a prompt cache, for ``usage``.
+            Billed *above* the uncached rate, so it must not be folded into
+            ``prompt_tokens`` either.
         finish_reason: Provider stop reason, for ``done``.
         message: Human-readable detail, for ``error``.
     """
@@ -51,6 +57,8 @@ class LLMStreamEvent:
     text: str = ""
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
     finish_reason: str | None = None
     message: str = ""
 

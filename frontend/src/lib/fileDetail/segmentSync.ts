@@ -153,42 +153,18 @@ export function patchSegmentInFile<T extends SegmentBearingFile>(
 }
 
 /**
- * Drop uuids already claimed by an earlier group, and drop groups left empty.
- *
- * A uuid appearing in two groups would render the same segment twice under the same
- * `{#each ... (segment.uuid)}` key, which Svelte rejects at runtime — that takes down the
- * whole transcript list, so this is a crash guard, not tidiness.
- */
-function dedupeGroups(groups: GroupedTranscriptSegment[]): GroupedTranscriptSegment[] {
-  const seen = new Set<string>();
-  const out: GroupedTranscriptSegment[] = [];
-
-  for (const group of groups) {
-    const original = group.segment_uuids || [];
-    const uuids = original.map(String).filter((uuid) => !seen.has(uuid));
-    if (!uuids.length) continue;
-    uuids.forEach((uuid) => seen.add(uuid));
-
-    out.push(
-      uuids.length === original.length
-        ? group
-        : {
-            ...group,
-            segment_uuids: uuids,
-            is_overlap_group: group.is_overlap_group && uuids.length > 1,
-          }
-    );
-  }
-
-  return out;
-}
-
-/**
  * Stitch an overlap run that straddles a pagination boundary.
  *
- * The backend groups each page independently, so a run spanning the boundary arrives as a
- * trailing group on page N and a leading group on page N+1 sharing one `overlap_group_id`.
- * Left unmerged they render as two groups with the same key.
+ * Each response is internally consistent — the backend consumes every segment exactly
+ * once, so no single payload repeats a uuid or an overlap id. The collision only appears
+ * when the client concatenates two of them: a run spanning the boundary arrives as a
+ * trailing group on page N and a leading group on page N+1 carrying the SAME
+ * `overlap_group_id`. Merging them here keeps that id unique in the combined list.
+ *
+ * Observed on the dev stack: file 019f2951 splits run 2e64ac0b at segment 500.
+ *
+ * Note this is a state-shape concern, not the crash guard — `TranscriptDisplay` enforces
+ * "one segment belongs to one group" at render time for every payload source.
  */
 function mergeGroupPages(
   existing: GroupedTranscriptSegment[],
@@ -238,8 +214,6 @@ export function appendSegmentPage<T extends SegmentBearingFile>(file: T, page: S
   return {
     ...file,
     transcript_segments: [...existingSegments, ...added],
-    grouped_segments: dedupeGroups(
-      mergeGroupPages(file.grouped_segments || [], page?.grouped_segments || [])
-    ),
+    grouped_segments: mergeGroupPages(file.grouped_segments || [], page?.grouped_segments || []),
   };
 }

@@ -41,7 +41,7 @@ function segment(uuid: string, index: number, speakerName: string) {
 function group(uuid: string, index: number) {
   return {
     is_overlap_group: false,
-    overlap_group_id: null,
+    overlap_group_id: null as string | null,
     start_time: index * 5,
     end_time: index * 5 + 5,
     start_segment_index: index,
@@ -118,6 +118,40 @@ describe('TranscriptDisplay', () => {
       el.getAttribute('data-seg-index')
     );
     expect(indices).toEqual(['0', '1', '2']);
+  });
+
+  it('survives two groups sharing one overlap id', () => {
+    // The backend groups each page independently, so an overlap run split across a page
+    // boundary yields two groups carrying the same `overlap_group_id`. Keying group rows
+    // by that id produced duplicate keys, which Svelte rejects at render time and takes
+    // the entire transcript list down with it. Rows are keyed by their first segment's
+    // uuid instead, so this renders.
+    //
+    // Observed on the dev stack: file 019f2951 has run 2e64ac0b split at segment 500.
+    const file = makeFile();
+    file.grouped_segments = [
+      { ...group('a', 0), is_overlap_group: true, overlap_group_id: 'shared-run' },
+      { ...group('b', 1), is_overlap_group: true, overlap_group_id: 'shared-run' },
+    ];
+
+    render(TranscriptDisplay, { props: { ...baseProps, file } });
+
+    expect(document.querySelectorAll('[data-segment-id]')).toHaveLength(2);
+    expect(screen.getByText('Segment 0')).toBeInTheDocument();
+    expect(screen.getByText('Segment 1')).toBeInTheDocument();
+  });
+
+  it('never renders one segment twice, even if a group repeats a uuid', () => {
+    const file = makeFile();
+    // A uuid in two groups would mount the same row twice under the same keyed each.
+    file.grouped_segments = [...file.grouped_segments, group('a', 2)];
+
+    render(TranscriptDisplay, { props: { ...baseProps, file } });
+
+    const ids = Array.from(document.querySelectorAll('[data-segment-id]')).map(
+      (el) => (el as HTMLElement).dataset.segmentId
+    );
+    expect(ids).toEqual([...new Set(ids)]);
   });
 
   it('skips groups whose segments have not been paginated in yet', () => {

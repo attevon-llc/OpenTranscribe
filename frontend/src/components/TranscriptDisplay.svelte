@@ -79,16 +79,30 @@
   // embed copies, which gave the page two objects per segment; every optimistic update
   // patched only the flat one, so renames and text edits rendered stale until a full
   // reload (#352). Resolving by uuid here makes that desync impossible.
-  function mapBackendGroup(group: GroupedTranscriptSegment): GroupedSegmentView {
+  //
+  // `claimed` enforces the invariant the render layer depends on: a segment belongs to
+  // exactly one group. The rows are a keyed each, so the same uuid reaching two groups is
+  // a duplicate key — Svelte throws and the whole transcript list fails to render, not
+  // just the offending row. Enforcing it here covers every payload source (initial load,
+  // refetch, redaction reload, pagination), which a guard on any single path would not.
+  function mapBackendGroup(
+    group: GroupedTranscriptSegment,
+    claimed: Set<string>
+  ): GroupedSegmentView {
     const segments: TranscriptSegment[] = [];
-    for (const uuid of group.segment_uuids || []) {
+    for (const raw of group.segment_uuids || []) {
+      const uuid = String(raw);
+      if (claimed.has(uuid)) continue;
       // A group can reference segments from a page that hasn't loaded yet; skip those
       // rather than rendering holes.
-      const segment = segmentsByUuid.get(String(uuid));
-      if (segment) segments.push(segment);
+      const segment = segmentsByUuid.get(uuid);
+      if (!segment) continue;
+      claimed.add(uuid);
+      segments.push(segment);
     }
     return {
-      isOverlapGroup: group.is_overlap_group ?? false,
+      // A run reduced to one member by the checks above is no longer an overlap cluster.
+      isOverlapGroup: (group.is_overlap_group ?? false) && segments.length > 1,
       overlapGroupId: group.overlap_group_id ?? undefined,
       startTime: group.start_time,
       endTime: group.end_time,
@@ -100,9 +114,12 @@
   // The backend owns grouping (fat backend, thin frontend) and both the detail and the
   // paginated segments endpoints return it. `TranscriptSegmentList` dereferences
   // `group.segments[0]`, so groups that resolved to nothing are dropped.
-  $: groupedTranscriptSegments = ((file?.grouped_segments || []) as GroupedTranscriptSegment[])
-    .map(mapBackendGroup)
-    .filter((group: GroupedSegmentView) => group.segments.length > 0);
+  $: groupedTranscriptSegments = (() => {
+    const claimed = new Set<string>();
+    return ((file?.grouped_segments || []) as GroupedTranscriptSegment[])
+      .map((group) => mapBackendGroup(group, claimed))
+      .filter((group: GroupedSegmentView) => group.segments.length > 0);
+  })();
 
   // Search functionality state
   let searchMatches: SearchMatch[] = [];

@@ -247,15 +247,14 @@ describe('appendSegmentPage', () => {
     expect(next.grouped_segments?.map((g) => g.start_segment_index)).toEqual([0, 1, 2]);
   });
 
-  it('is idempotent when the same page arrives twice', () => {
-    // Duplicate uuids would render one segment under two identical keys, which Svelte
-    // rejects at runtime and takes the whole transcript list down with it.
+  it('does not duplicate segments when the same page arrives twice', () => {
+    // `transcript_segments` feeds the transcript store, exports and search indexing, so a
+    // repeated append must not double up. (Repeated *groups* are harmless: TranscriptDisplay
+    // claims each segment for exactly one group at render time.)
     const once = appendSegmentPage(makeFile(), nextPage);
     const twice = appendSegmentPage(once, nextPage);
 
     expect(twice.transcript_segments?.map((s: any) => s.uuid)).toEqual(['seg-1', 'seg-2', 'seg-3']);
-    const allUuids = (twice.grouped_segments || []).flatMap((g) => g.segment_uuids);
-    expect(new Set(allUuids).size).toBe(allUuids.length);
   });
 
   it('stitches an overlap run split across the page boundary', () => {

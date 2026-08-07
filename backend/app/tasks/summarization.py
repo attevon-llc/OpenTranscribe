@@ -50,17 +50,15 @@ def _handle_no_llm_configured(
 
     logger.info("No LLM provider configured - skipping AI summary generation")
 
+    # The DB status is kept: the file detail page reads it to explain, in
+    # context, why there is no summary. The push notification is not — having
+    # no provider configured is a deployment choice rather than a task outcome,
+    # so flagging it per file buries real failures under noise the user cannot
+    # act on from a notification. A configured provider that errors or returns
+    # nothing still notifies, which is the case worth surfacing.
     media_file.summary_status = "not_configured"  # type: ignore[assignment]
     media_file.summary_data = None  # type: ignore[assignment]
     db.commit()
-
-    send_summary_notification(
-        int(media_file.user_id),
-        file_id,
-        "not_configured",
-        "AI summary not available - no LLM provider configured in settings",
-        0,
-    )
 
     update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 

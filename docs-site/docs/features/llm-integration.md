@@ -10,9 +10,10 @@ OpenTranscribe integrates with multiple Large Language Model (LLM) providers for
 
 - **vLLM**: Self-hosted, high-performance inference
 - **OpenAI**: GPT-4, GPT-4o, and compatible models
-- **Anthropic**: Claude 3.5, Claude 3, and Claude Opus 4.5 models
+- **Anthropic**: Claude models via the first-party API
 - **Ollama**: Local LLM server with many model options
 - **OpenRouter**: Access to multiple models through one API
+- **Amazon Bedrock**: AWS-native access to Claude, Nova, Llama and Mistral — **no API key required**
 
 ## Key Features
 
@@ -158,6 +159,60 @@ LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-xxxxx
 OPENAI_MODEL=gpt-4o
 ```
+
+### Amazon Bedrock
+
+The AWS-native option. Unlike every other provider, Bedrock needs **no API key**:
+boto3 resolves credentials through the standard AWS chain — instance role, task
+role, shared profile, or environment — so a deployment on EC2, ECS or EKS
+provisions no secret at all.
+
+```bash
+LLM_PROVIDER=bedrock
+BEDROCK_REGION=us-east-1              # falls back to AWS_REGION / AWS_DEFAULT_REGION
+BEDROCK_MODEL_NAME=anthropic.claude-haiku-4-5-20251001-v1:0
+```
+
+Required IAM permissions:
+
+| Action | Needed for |
+|---|---|
+| `bedrock:InvokeModelWithResponseStream` | Chat (streaming) |
+| `bedrock:InvokeModel` | Summaries, topics, speaker ID (non-streaming) |
+
+**Cross-region inference profiles are applied automatically.** A bare
+foundation-model ID only works where that model is provisioned in your exact
+region; OpenTranscribe prefixes it with the geography derived from
+`BEDROCK_REGION` (`us.`, `eu.`, `apac.`), which lets AWS route around a saturated
+home region — the difference between a throttle and a served request at peak.
+
+To pin an exact profile instead, set a fully-qualified ID or an ARN and it is used
+verbatim:
+
+```bash
+# Already prefixed — used as-is
+BEDROCK_MODEL_NAME=us.anthropic.claude-haiku-4-5-20251001-v1:0
+
+# An application inference profile (e.g. one carrying cost-allocation tags)
+BEDROCK_MODEL_NAME=arn:aws:bedrock:us-east-1:123456789012:inference-profile/my-profile
+```
+
+:::tip Verify the model ID against your account
+AWS rotates model IDs, and access is per-account. Run
+`aws bedrock list-inference-profiles --region <your-region>` to see exactly what
+you can invoke, rather than copying an ID from documentation.
+:::
+
+**Cost attribution.** Every request carries `requestMetadata` identifying the
+user, organization and conversation, so Bedrock's own invocation logs can be
+reconciled against OpenTranscribe's usage records.
+
+:::note Bedrock pricing is separate
+Bedrock is operated by AWS with its own rate card, not Anthropic's. OpenTranscribe
+therefore reports Bedrock usage in **tokens only** and does not estimate a dollar
+cost for it — a confident wrong number would be worse than none. See
+[AWS Bedrock pricing](https://aws.amazon.com/bedrock/pricing/).
+:::
 
 ### Anthropic
 

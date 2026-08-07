@@ -30,6 +30,26 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Abuse controls & audit**: 20/min per-IP, a configurable per-user hourly ceiling, and a concurrent-stream cap, all failing open on a Redis outage. Chat events (`chat.conversation.create/delete`, `chat.message.send`) join the audit trail with metadata only — **never message content**.
 - **LLM streaming** is new across the board: `LLMService.chat_completion_stream()` with parsers for OpenAI-style SSE, Anthropic events, and Ollama NDJSON, plus stop-generation, a first-token watchdog, and token accounting (estimated where a provider does not report usage).
 - **Optional retention**: `chat.retention_days` (default 0 = keep forever) with a daily beat sweep. Conversations join GDPR erasure in both the account and org-member paths.
+
+#### Amazon Bedrock provider
+
+- **New LLM provider: Amazon Bedrock**, via the unified **Converse / ConverseStream** API — one integration that reaches Claude, Nova, Llama and Mistral, rather than a per-vendor adapter. Set `BEDROCK_REGION` and `BEDROCK_MODEL_NAME`; there is deliberately **no API-key setting**, because boto3 resolves credentials through the standard AWS chain (instance role, task role, profile, environment), so an EC2/ECS/EKS deployment provisions no secret at all.
+- **Cross-region inference profiles** are handled for you: a bare foundation-model ID is prefixed with the geography derived from your region (`us.`, `eu.`, `apac.`), which lets AWS route around a saturated home region. An explicitly prefixed ID or a full inference-profile ARN is used verbatim, so you can pin an exact profile (for example one carrying cost-allocation tags).
+- **Tenant attribution**: each request carries `requestMetadata`, so Bedrock's own invocation logs can be reconciled against the usage records below rather than merely trusted.
+- Streaming, cancellation and error handling match every other provider. Bedrock reports throttling and server faults as *members of the event stream* rather than as raised exceptions — unhandled, those look like a silently truncated answer — so each is surfaced as a normal error.
+
+#### Usage tracking (all editions)
+
+- **New: see what you are using.** `GET /usage/me` returns totals and a per-model breakdown over a trailing window; `GET /usage/me/daily` returns the daily series behind a chart. This is a **core, open-source** feature — anyone paying an LLM bill has the same question a hosted tenant does.
+- One `usage_event` per assistant message, keyed on the message UUID so a retry cannot double-count. Usage is stored in **tokens, not currency** (provider-neutral, so a vendor price change does not invalidate stored history), and cost is derived at read time.
+- **Costs are labelled estimates, and unpriced is not free.** A model with no known rate reports tokens only and sets `cost_incomplete`, because a confident `$0.00` is a worse answer than an honest blank. Local runtimes (Ollama, vLLM) are reported as explicitly free — a distinct state. Amazon Bedrock is deliberately unpriced: it is AWS-operated with its own rate card, and pricing it from Anthropic's published rates would be confidently wrong.
+- **Prompt-cache tokens are tracked and priced separately** from ordinary input tokens throughout. Cache reads bill far below the uncached input rate and cache writes above it, so folding either into the input count would misprice every cache-enabled deployment.
+
+#### Per-tenant chat limits (cloud-edition seam)
+
+- Two new resolvers on `core.tenant_limits` — chat ceilings (messages/hour, concurrent streams, output tokens, retrieved chunks) and a model allowlist. Both default to community no-ops, so **the self-hosted edition is unchanged**: no limits, no model restriction.
+- A tenant limit can only ever **tighten** an operator's setting, never widen it. The model allowlist is enforced server-side, because the per-conversation model comes from a user-supplied setting.
+- New `chat.ungrounded` capability gates the *"use my transcripts: off"* toggle. Enabled everywhere by default — it has legitimate uses — and when disabled it **degrades to a grounded answer rather than rejecting the request**.
 - Migration `v374`; new capability key `chat.rag` (community default: on); 141 new i18n keys across all 8 locales.
 
 #### Open-core cloud seams & strict edition separation (PR #250)
@@ -241,6 +261,20 @@ This release also incorporates the substantial pipeline work that landed since v
 - **`docs/performance-whitepaper/` untracked** (main.tex + main.pdf): WIP pending human review; remains on disk and in `.gitignore`.
 
 ### Fixed
+
+#### Redact-before-LLM now fails closed on every path that reaches a provider
+
+- **`redact_before_llm` was inert on three of the four paths that send transcript text off-box.** Speaker identification passed no redaction config at all, `build_speaker_segments` sent raw `text[:200]`, and topic extraction sent raw text — so a user with the setting enabled still had unmasked transcript content posted to their provider. Summarization honoured the setting but swallowed config-resolution errors into "no policy".
+- **The dominant leak was structural, not a coding slip.** Redaction detection is dispatched from the *same* post-processing step that dispatches summarization, speaker ID and topic extraction, onto a *different* queue, with nothing ordering them. `mask_segment` called with an empty span list masks nothing and returns its input — so those tasks routinely "masked" a transcript whose spans were still NULL and sent it verbatim. The call site looked correct; only the file's `redaction_status` could reveal otherwise.
+- All four paths now resolve masking through a single guard (`services/redaction/llm_guard.py`) that gates on detection having completed, defers the task while a scan is in flight (dispatching one itself if the file was never scanned), and refuses to send when detection failed. `transcript_builders` fails closed — a masking error substitutes a placeholder, never the original text — and masks *before* truncating, so a 200-character window cannot slice a mask open.
+
+#### Chat answers were capped below the configured budget
+
+- `LLMConfig.response_tokens` was never assigned, so every request sent `max_tokens=4000` while callers — chat's prompt budget and summarization — reserved the *derived* value of up to 16,384. On a large-context model the prompt was under-filled by up to ~12k tokens of excerpts it had room for, and answers were capped lower than intended. The service now keeps the two in sync.
+
+#### Stale default models
+
+- The Anthropic default fell through to `claude-3-haiku-20240307` (deprecated) because no values file pins a model; it is now `claude-haiku-4-5`. `OPENROUTER_MODEL_NAME` likewise moves from `anthropic/claude-3-haiku` to `anthropic/claude-haiku-4.5` — note OpenRouter's slug uses a **dot** where the first-party ID uses dashes.
 
 #### Transcript and speaker curation now render a single source of segment data (issue #352, PR #356)
 

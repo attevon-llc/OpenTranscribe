@@ -561,7 +561,7 @@ def test_hourly_limit_returns_429_with_retry_after(client, auth_headers, stub_ll
 
 def test_concurrent_stream_cap_returns_429(client, auth_headers, stub_llm):
     conversation = _create(client, auth_headers)
-    with patch("app.services.chat.limits.acquire_stream_slot", return_value=False):
+    with patch("app.services.chat.limits.acquire_stream_slot", return_value=None):
         response = client.post(
             f"/api/chat/conversations/{conversation['uuid']}/messages",
             json={"content": "hi"},
@@ -576,7 +576,7 @@ def test_a_refused_send_releases_the_stream_slot(client, auth_headers):
     conversation = _create(client, auth_headers)
     with (
         patch("app.services.llm_service.LLMService.create_from_settings", return_value=None),
-        patch("app.services.chat.limits.acquire_stream_slot", return_value=True),
+        patch("app.services.chat.limits.acquire_stream_slot", return_value="slot-test"),
         patch("app.services.chat.limits.release_stream_slot") as release,
     ):
         client.post(

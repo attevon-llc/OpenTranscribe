@@ -125,6 +125,45 @@ def get_chat_settings(db: Session) -> ChatSettings:
     return ChatSettings(**values)  # type: ignore[arg-type]
 
 
+def apply_user_preferences(
+    base: ChatSettings,
+    *,
+    final_chunks: int | None = None,
+    rerank_enabled: bool | None = None,
+) -> ChatSettings:
+    """Narrow resolved chat settings by this user's own preferences.
+
+    Same direction of travel as :func:`apply_tenant_limits`, and for the same
+    reason: a preference may only ever **tighten** what the admin permits. A
+    user can ask for fewer excerpts (faster and cheaper, at some recall) or turn
+    reranking off for their own chats; they cannot raise either past the
+    platform value, or the admin's cost controls would be advisory.
+
+    Reranking is one-way on purpose: ``False`` disables it, ``True`` cannot
+    enable it when the admin has it off, because the model may simply not be
+    installed on that deployment.
+
+    Args:
+        base: Settings already narrowed by any tenant ceiling.
+        final_chunks: The user's preferred excerpt count, or None to inherit.
+        rerank_enabled: The user's reranking preference, or None to inherit.
+
+    Returns:
+        A copy of ``base`` with the preferences applied.
+    """
+    return replace(
+        base,
+        final_chunks=(
+            base.final_chunks if final_chunks is None else min(base.final_chunks, final_chunks)
+        ),
+        rerank_enabled=(
+            base.rerank_enabled
+            if rerank_enabled is None
+            else (base.rerank_enabled and rerank_enabled)
+        ),
+    )
+
+
 def apply_tenant_limits(base: ChatSettings, organization_id: int | None) -> ChatSettings:
     """Narrow resolved chat settings by any per-tenant ceiling.
 

@@ -244,17 +244,28 @@ class MessageCreate(BaseModel):
 
 
 class ChatUserSettings(BaseModel):
-    """Per-user chat defaults (``GET/PUT /user-settings/chat``)."""
+    """Per-user chat defaults (``GET/PUT /user-settings/chat``).
+
+    ``final_chunks`` and ``rerank_enabled`` are preferences that may only ever
+    TIGHTEN the admin's platform values — a user can make their own chats
+    cheaper and faster, never more expensive than the operator permits. ``None``
+    inherits. The clamp itself lives in ``apply_user_preferences``; the ceiling
+    is not knowable here.
+    """
 
     system_prompt: str = Field("", max_length=MAX_SYSTEM_PROMPT_CHARS)
     use_context_default: bool = True
     default_search_mode: SearchMode = "hybrid"
+    final_chunks: int | None = Field(default=None, ge=1, le=50)
+    rerank_enabled: bool | None = None
 
 
 class ChatUserSettingsUpdate(BaseModel):
     system_prompt: str | None = Field(default=None, max_length=MAX_SYSTEM_PROMPT_CHARS)
     use_context_default: bool | None = None
     default_search_mode: SearchMode | None = None
+    final_chunks: int | None = Field(default=None, ge=1, le=50)
+    rerank_enabled: bool | None = None
 
 
 class ContextEstimate(BaseModel):

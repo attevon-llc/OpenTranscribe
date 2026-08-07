@@ -54,6 +54,7 @@ from app.services.chat.prompting import build_system_prompt
 from app.services.chat.service import ChatService
 from app.services.chat.service import sse
 from app.services.chat.settings import apply_tenant_limits
+from app.services.chat.settings import apply_user_preferences
 from app.services.chat.settings import get_chat_settings
 from app.services.llm_service import LLMService
 
@@ -151,6 +152,13 @@ def _prepare_turn(
     # tightened values. A no-op in the community edition.
     chat_settings = apply_tenant_limits(get_chat_settings(db), ctx.org_id)
     user_defaults = read_user_chat_settings(db, ctx.user.id)
+    # Applied AFTER the tenant ceiling so a user preference narrows the already
+    # narrowed value and can never widen it back out.
+    chat_settings = apply_user_preferences(
+        chat_settings,
+        final_chunks=user_defaults.get("final_chunks"),
+        rerank_enabled=user_defaults.get("rerank_enabled"),
+    )
 
     allowed, retry_after = limits.check_hourly_limit(ctx.user.id, chat_settings.messages_per_hour)
     if not allowed:

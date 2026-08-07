@@ -21,6 +21,8 @@
     system_prompt: '',
     use_context_default: true,
     default_search_mode: 'hybrid',
+    final_chunks: null,
+    rerank_enabled: null,
   };
 
   let loading = true;
@@ -118,6 +120,51 @@
         </span>
       </div>
     </div>
+
+    <div class="setting-row">
+      <label class="field-label" for="chat-final-chunks">
+        {$t('chat.settings.excerpts')}
+      </label>
+      <input
+        id="chat-final-chunks"
+        type="number"
+        min="1"
+        max="50"
+        placeholder={$t('chat.settings.inherit')}
+        value={settings.final_chunks ?? ''}
+        on:change={(e) => {
+          const raw = (e.target as HTMLInputElement).value.trim();
+          settings = { ...settings, final_chunks: raw === '' ? null : Number(raw) };
+        }}
+        data-testid="chat-settings-final-chunks"
+      />
+      <span class="hint">{$t('chat.settings.excerptsHint')}</span>
+    </div>
+
+    <div class="setting-row toggle-row">
+      <label class="toggle-label" for="chat-rerank">
+        {$t('chat.settings.rerank')}
+      </label>
+      <label class="toggle-switch">
+        <input
+          id="chat-rerank"
+          type="checkbox"
+          checked={settings.rerank_enabled !== false}
+          on:change={(e) => {
+            // null (inherit) and true both show as on; only an explicit off is
+            // stored, because a preference can never enable what the admin
+            // disabled.
+            settings = {
+              ...settings,
+              rerank_enabled: (e.target as HTMLInputElement).checked ? null : false,
+            };
+          }}
+          data-testid="chat-settings-rerank"
+        />
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <span class="hint standalone-hint">{$t('chat.settings.rerankHint')}</span>
 
     <div class="actions">
       <button
@@ -268,6 +315,21 @@
     font-size: 0.75rem;
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
+  }
+
+  .standalone-hint {
+    margin-top: -0.75rem;
+  }
+
+  input[type='number'] {
+    width: 100%;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.88rem;
+    box-shadow: none;
   }
 
   .actions {

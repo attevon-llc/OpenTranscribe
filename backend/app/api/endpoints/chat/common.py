@@ -30,6 +30,10 @@ USER_SETTING_KEYS = {
     "system_prompt": "chat.system_prompt",
     "use_context_default": "chat.use_context_default",
     "default_search_mode": "chat.default_search_mode",
+    # RAG preferences. Clamped against the admin value at request time — stored
+    # here as a wish, enforced as a ceiling by apply_user_preferences.
+    "final_chunks": "chat.final_chunks",
+    "rerank_enabled": "chat.rerank_enabled",
 }
 
 
@@ -134,6 +138,17 @@ def read_user_chat_settings(db: Session, user_id: int) -> dict:
         ),
         "default_search_mode": stored.get(
             USER_SETTING_KEYS["default_search_mode"], C.DEFAULT_CHAT_SEARCH_MODE
+        ),
+        # None = inherit the admin value; both are ceilings, never floors.
+        "final_chunks": (
+            int(stored[USER_SETTING_KEYS["final_chunks"]])
+            if stored.get(USER_SETTING_KEYS["final_chunks"])
+            else None
+        ),
+        "rerank_enabled": (
+            stored[USER_SETTING_KEYS["rerank_enabled"]].lower() in ("true", "1", "yes", "on")
+            if stored.get(USER_SETTING_KEYS["rerank_enabled"]) is not None
+            else None
         ),
     }
 

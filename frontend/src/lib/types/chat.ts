@@ -143,6 +143,10 @@ export interface ChatUserSettings {
   system_prompt: string;
   use_context_default: boolean;
   default_search_mode: SearchMode;
+  /** Preferred excerpt count. null inherits; the server clamps to the admin value. */
+  final_chunks?: number | null;
+  /** null inherits. Can only turn reranking OFF, never on when the admin has it off. */
+  rerank_enabled?: boolean | null;
 }
 
 export interface ContextEstimate {

@@ -504,7 +504,11 @@ async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestRes
         # because an IdP on the LAN or the compose network is a legitimate
         # deployment; what this blocks is cloud instance metadata and friends.
         try:
-            assert_safe_outbound_url(well_known_url, allow_private=True)
+            assert_safe_outbound_url(
+                well_known_url,
+                purpose="OIDC discovery test-connection",
+                allow_private=True,
+            )
         except HTTPException:
             return AuthMethodTestResponse(
                 success=False,

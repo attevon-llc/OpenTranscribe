@@ -109,7 +109,8 @@ def clear_oidc_state_binding(response: Response) -> None:
 
 def get_oidc_state_binding(request: Request) -> str | None:
     """Read the binding secret presented by the browser at the callback."""
-    return request.cookies.get(OIDC_STATE_COOKIE)
+    binding: str | None = request.cookies.get(OIDC_STATE_COOKIE)
+    return binding
 
 
 def clear_auth_cookies(response: Response) -> None:

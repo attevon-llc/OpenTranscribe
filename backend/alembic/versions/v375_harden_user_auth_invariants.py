@@ -202,12 +202,14 @@ EMAIL_VERIFIED_COLUMNS_SQL = """
 #: Local accounts only: the column is meaningless for LDAP/OIDC/PKI identities,
 #: whose password lives with the provider, and stamping it would make the admin
 #: account-status report count them as expiring.
+#: (Not a credential. B105/S105 match on the ``PASSWORD`` prefix in the name;
+#: the value is DDL and ``password_changed_at`` is a timestamp column.)
 PASSWORD_CHANGED_AT_BACKFILL_SQL = """
     UPDATE "user"
        SET password_changed_at = now()
      WHERE password_changed_at IS NULL
        AND auth_type = 'local';
-"""
+"""  # noqa: S105 # nosec B105
 
 
 #: Session ownership moves to ``refresh_token``. Nullable and NOT backfilled —

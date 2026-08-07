@@ -54,7 +54,8 @@ def _cache_get(cache: TTLCache[str, dict[str, Any]], key: str) -> dict[str, Any]
     # The sync FastAPI threadpool and the Celery worker pool share one process, so
     # TTLCache (not thread-safe) must be guarded.
     with _lock:
-        return cache.get(key)
+        hit: dict[str, Any] | None = cache.get(key)
+    return hit
 
 
 def _cache_put(cache: TTLCache[str, dict[str, Any]], key: str, value: dict[str, Any]) -> None:

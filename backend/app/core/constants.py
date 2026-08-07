@@ -457,6 +457,27 @@ WATCH_FS_EVENTS_MODES = ("auto", "native", "polling", "off")
 # higher = cheaper on a large or network-mounted tree.
 DEFAULT_WATCH_FS_EVENTS_POLL_SECONDS = 15
 
+# Transactional auth email (password reset / invitation / verification / security
+# notice). The transport is DB-backed: a super_admin designates ONE of the shared
+# EmailNotificationConfig rows — the same admin-UI-managed, AES-256-GCM-encrypted
+# smtp/m365/exchange stack watch-source notifications use — and auth mail goes out
+# through it. The designation is a SystemSettings key rather than a column so it
+# needs no migration and no restart.
+#
+# Empty default = nothing is designated, and app/services/email_service.py falls
+# back to the SMTP_* env vars. It deliberately does NOT auto-pick a config: those
+# rows are created for specific notification purposes, and mailing password resets
+# out of an unrelated mailbox leaks the deployment's auth mail through it.
+AUTH_EMAIL_CONFIG_SETTING_KEY = "email.auth_config_uuid"
+DEFAULT_AUTH_EMAIL_CONFIG_UUID = ""
+
+# The coded default of settings.FRONTEND_URL, restated here because it is a value
+# to REJECT rather than to use: it is set in none of the 23 compose files, so a
+# deployment that configures mail but not FRONTEND_URL would mail every user a
+# credential link pointing at their own machine. email_service refuses to send
+# such a link once a real transport exists.
+DEFAULT_FRONTEND_URL = "http://localhost:5173"
+
 # Scheduled database backups (Feature C, issue: data-loss incident).
 # DB-backed via SystemSettings (admin-UI managed, no beat restart). Coded defaults
 # here are the single source of truth — there are NO backup .env vars. The ONLY

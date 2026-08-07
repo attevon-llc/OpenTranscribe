@@ -30,6 +30,7 @@ from app.core.auth_settings import get_auth_settings
 from app.core.config import settings
 from app.models.invitation import EmailVerificationToken
 from app.models.user import User
+from app.services.email_service import EmailDeliveryError
 from app.services.email_service import email_service
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,19 @@ def issue_verification_token(db: Session, user: User, ip_address: str = "") -> N
     db.commit()
 
     verify_url = f"{settings.FRONTEND_URL}/verify-email?token={raw_token}"
-    email_service.send_email_verification(str(user.email), verify_url, TOKEN_EXPIRY_HOURS)
+    # Absorbed, not propagated, for both callers: `resend_verification` answers
+    # identically for a known and an unknown address, so an escaping exception
+    # would be an account-existence oracle; and
+    # `assert_email_verified_for_local_login` must still raise its own 403,
+    # which tells the user what is wrong, rather than a 500 that does not.
+    try:
+        email_service.send_email_verification(str(user.email), verify_url, TOKEN_EXPIRY_HOURS)
+    except EmailDeliveryError:
+        logger.error(
+            "Email-verification link for user %s was generated but could not be delivered",
+            user.id,
+        )
+        return
     logger.info("Email-verification token issued for user %s", user.id)
 
 

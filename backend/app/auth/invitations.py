@@ -197,7 +197,11 @@ def accept_invitation(
         return None, f"auth_type={auth_type!r} accounts do not hold a local password."
 
     now = datetime.now(UTC)
-    password_hash = get_password_hash(password) if wants_password else EXTERNAL_AUTH_NO_PASSWORD
+    # Both guards above already make `wants_password` and a non-empty `password`
+    # equivalent; restating it here is what lets the type checker see it.
+    password_hash = (
+        get_password_hash(password) if wants_password and password else EXTERNAL_AUTH_NO_PASSWORD
+    )
     role = str(invitation.role)
     user = User(
         email=invitation.email,

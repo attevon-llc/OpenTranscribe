@@ -1,7 +1,6 @@
 import logging
 from datetime import UTC
 from datetime import datetime
-from types import SimpleNamespace
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -36,6 +35,7 @@ from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.schemas.user import UserSearchResult
 from app.schemas.user import UserUpdate
+from app.services.account_security_service import DeletedUser
 from app.services.account_security_service import assert_local_fallback_settable
 from app.services.account_security_service import assert_password_auth_possible
 from app.services.account_security_service import audit_account_status_change
@@ -489,7 +489,7 @@ def delete_user(
         _assert_not_last_super_admin(db, user, ROLE_USER)
 
     # Capture what the audit record needs before the row is gone.
-    deleted_snapshot = SimpleNamespace(uuid=user.uuid, email=user.email)
+    deleted_snapshot = DeletedUser.of(user)
 
     # Use the comprehensive cleanup from the admin endpoint to avoid orphaned records.
     from app.api.endpoints.admin import _delete_user_media_files

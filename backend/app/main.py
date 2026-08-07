@@ -15,6 +15,7 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError
+from app.core.exceptions import EmailDeliveryError
 from app.core.exceptions import LLMServiceError
 from app.core.exceptions import OpenTranscribeError
 from app.core.exceptions import SearchIndexError
@@ -852,6 +853,7 @@ async def handle_app_error(request, exc: OpenTranscribeError):
         StorageError: 503,
         SearchIndexError: 503,
         LLMServiceError: 502,
+        EmailDeliveryError: 503,
     }
     status = status_map.get(type(exc), 500)
     return JSONResponse(

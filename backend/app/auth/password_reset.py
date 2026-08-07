@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.password_reset import PasswordResetToken
 from app.models.user import User
+from app.services.email_service import EmailDeliveryError
 from app.services.email_service import email_service
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,15 @@ def request_password_reset(db: Session, email: str, ip_address: str) -> None:
     db.commit()
 
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={raw_token}"
-    email_service.send_password_reset(str(user.email), reset_url)
+    # Every early return above is silent, so a delivery failure must be silent
+    # too: this call is only reached for an address that exists, and letting the
+    # exception escape would turn a mail outage into an account-existence oracle
+    # (existing address -> 500, unknown address -> 200).
+    try:
+        email_service.send_password_reset(str(user.email), reset_url)
+    except EmailDeliveryError:
+        logger.error("Password reset for user %s was generated but could not be delivered", user.id)
+        return
     logger.info(f"Password reset token generated for user {user.id}")
 
 

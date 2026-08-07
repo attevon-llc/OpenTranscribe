@@ -24,6 +24,7 @@ see ``auth/token_service.py``).
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from fastapi import HTTPException
 from fastapi import status
@@ -164,7 +165,24 @@ def audit_account_status_change(
     )
 
 
-def audit_user_deleted(user: User, actor: User, client_ip: str, user_agent: str) -> None:
+@dataclass(frozen=True)
+class DeletedUser:
+    """What the audit record needs, captured before the row is deleted.
+
+    The event is emitted after the commit — deliberately, so a failed delete
+    leaves no record of a deletion that did not happen — by which point the ORM
+    object is expired and reading ``user.email`` would re-query a gone row.
+    """
+
+    uuid: str
+    email: str
+
+    @classmethod
+    def of(cls, user: User) -> DeletedUser:
+        return cls(uuid=str(user.uuid), email=str(user.email))
+
+
+def audit_user_deleted(user: DeletedUser, actor: User, client_ip: str, user_agent: str) -> None:
     """Record a user deletion. ``ADMIN_USER_DELETE`` had no emitter before this."""
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
@@ -173,7 +191,7 @@ def audit_user_deleted(user: User, actor: User, client_ip: str, user_agent: str)
         username=str(actor.email),
         source_ip=client_ip,
         user_agent=user_agent,
-        details={"target_user": str(user.uuid), "target_email": str(user.email)},
+        details={"target_user": user.uuid, "target_email": user.email},
     )
 
 

@@ -284,6 +284,91 @@ This mode disables the GPU worker requirement and is suitable for cloud-only tra
 
 **Super admin password fallback:** Even when PKI is the only enabled auth method, the super admin account can always log in with a password for emergency access and configuration management.
 
+## Transactional auth email (REQUIRED for password reset and invitations)
+
+Password reset, admin invitations, address verification, and account-security
+notices are all email. **Neither `SMTP_HOST` nor `FRONTEND_URL` is set in any of
+the compose files**, so a deployment that changes nothing has no working mail path
+and no usable link — configure both before enabling local accounts.
+
+### 1. Point `FRONTEND_URL` at the deployment
+
+```bash
+# .env — the public base URL users reach the SPA on
+FRONTEND_URL=https://transcribe.yourdomain.com
+```
+
+Every credential link is built from this value. It defaults to
+`http://localhost:5173`, which would mail every user a link to their own machine.
+The backend **refuses to send** a credential link still built from that default
+once a mail transport is configured, and logs the refusal at `CRITICAL`:
+
+```
+CRITICAL FRONTEND_URL is still http://localhost:5173, so '... - Password Reset
+Request' would carry a link to the recipient's own machine. Refusing to send.
+```
+
+Requires a container **recreate**, not `restart-backend` (env changes do not
+survive a plain restart).
+
+### 2. Choose a mail transport
+
+**Preferred — DB-backed provider config (admin UI, no restart, encrypted creds):**
+
+1. Settings → Watch Sources → **Email Configurations** → add a config.
+   Providers: `smtp` (STARTTLS or implicit SSL on 465), `m365` (Microsoft Graph
+   `sendMail` via client-credentials OAuth2, for tenants with SMTP basic auth
+   disabled), `exchange` (authenticated submission to on-prem Exchange).
+   Secrets are AES-256-GCM encrypted at rest with `ENCRYPTION_KEY`.
+2. Use **Test Connection** to confirm auth and reachability.
+3. Designate that config as the deployment's auth mailer — this is the
+   `SystemSettings` key `email.auth_config_uuid`, holding the config's UUID:
+
+   ```sql
+   -- ./opentr.sh shell postgres, or use the admin API when the UI ships it
+   INSERT INTO system_settings (key, value, description)
+   VALUES ('email.auth_config_uuid', '<config-uuid>',
+           'EmailNotificationConfig that carries transactional auth mail')
+   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+   ```
+
+   Nothing is auto-selected. Email configs are created for specific notification
+   purposes, and sending password resets out of an unrelated mailbox would leak
+   the deployment's auth mail through it — so the designation is always an
+   explicit super_admin act. If the designated config is deleted or disabled,
+   auth mail degrades to the env SMTP transport below (with an error log), never
+   to some other config.
+
+**Fallback — env SMTP** (used only when nothing is designated):
+
+```bash
+SMTP_HOST=smtp.yourdomain.com
+SMTP_PORT=587          # 587 = STARTTLS (honours SMTP_USE_TLS); 465 = implicit SSL
+SMTP_USER=svc-transcribe
+SMTP_PASSWORD=...
+SMTP_FROM=noreply@yourdomain.com
+SMTP_USE_TLS=true
+```
+
+### 3. Verify
+
+Request a reset for a known account and watch the backend log. Delivery is
+reported per message with the recipient **masked**; the link itself is never
+logged, because a reset URL is a single-use credential.
+
+```bash
+./opentr.sh logs backend | grep -i "Sent '\|Failed to send\|mail transport"
+```
+
+With no transport at all, a credential-bearing send fails rather than silently
+succeeding:
+
+```
+ERROR No mail transport configured — '... - Password Reset Request' was NOT
+delivered to v***@example.com. Designate an email config
+(email.auth_config_uuid) or set SMTP_HOST.
+```
+
 ## Troubleshooting
 
 ### Common Issues
@@ -306,6 +391,21 @@ This mode disables the GPU worker requirement and is suitable for cloud-only tra
 - Verify certificate is imported to correct keychain/store
 - Check browser settings allow client certificate prompts
 - macOS: Set private key to "Allow all applications to access"
+
+**Email: users never receive a password reset**
+- `SMTP_HOST` is empty and no email config is designated — see
+  "Transactional auth email" above. The backend logs
+  `No mail transport configured — ... was NOT delivered`.
+- The link is never printed to the log by design (it is a live single-use
+  credential), so an empty log is not evidence the mail was sent.
+
+**Email: reset links point at `localhost:5173`**
+- `FRONTEND_URL` is unset. Set it in `.env` and **recreate** the backend
+  container. The send is refused (CRITICAL log) rather than delivered.
+
+**Email: `SMTPServerDisconnected` / TLS handshake errors on port 465**
+- 465 is implicit SSL, negotiated before the greeting. Set `SMTP_PORT=465` and
+  the backend uses `SMTP_SSL` automatically; `SMTP_USE_TLS` does not apply there.
 
 **PKI: "Certificate verification failed"**
 - Ensure CA certificate is correctly configured in admin UI

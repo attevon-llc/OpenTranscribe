@@ -22,7 +22,7 @@ A reader here has to be one of:
 
 * a string literal in the **argument position** of a call whose callee name is a
   config accessor (``get`` / ``get_bool`` / ``get_int`` / ``get_str`` and the
-  ``_get*`` wrappers ``ldap_auth`` / ``keycloak_auth`` build, plus
+  ``_get*`` wrappers ``ldap_auth`` / ``oidc.config`` build, plus
   ``AuthConfigService.get_effective_config``), or
 * an attribute access ``<something>.<key>`` where ``<key>`` is a **property
   declared on ``DynamicAuthSettings``** — i.e. the layered accessor, not
@@ -56,7 +56,7 @@ _CONFIG_PLANE = {
 }
 
 #: Callee names that mean "resolve this config key through the layered accessor".
-#: ``_get*`` are the local wrappers ``ldap_auth``/``keycloak_auth`` define around
+#: ``_get*`` are the local wrappers ``ldap_auth``/``oidc.config`` define around
 #: ``DynamicAuthSettings.get``.
 _ACCESSOR_CALLS = frozenset(
     {

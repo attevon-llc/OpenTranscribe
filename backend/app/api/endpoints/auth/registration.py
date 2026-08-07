@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy.orm import Session
@@ -43,7 +44,9 @@ class PasswordResetConfirmBody(PydanticBaseModel):
 
 @router.post("/register", response_model=UserSchema)
 @limiter.limit(get_auth_rate_limit())
-def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
+def register(
+    request: Request, response: Response, user_in: UserCreate, db: Session = Depends(get_db)
+):
     """
     Register a new user.
 
@@ -169,6 +172,7 @@ def get_password_policy():
 @limiter.limit(get_auth_rate_limit())
 def request_password_reset_endpoint(
     request: Request,
+    response: Response,
     body: "PasswordResetRequestBody",
     db: Session = Depends(get_db),
 ):
@@ -189,6 +193,7 @@ def request_password_reset_endpoint(
 @limiter.limit(get_auth_rate_limit())
 def confirm_password_reset_endpoint(
     request: Request,
+    response: Response,
     body: "PasswordResetConfirmBody",
     db: Session = Depends(get_db),
 ):

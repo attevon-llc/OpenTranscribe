@@ -85,7 +85,7 @@ def test_cookie_authenticated_paths_are_not_exempt(path):
         "/api/auth/register",
         "/api/auth/password-reset/request",
         "/api/auth/password-reset/confirm",
-        "/api/auth/keycloak/callback",
+        "/api/auth/oidc/callback",
         "/api/auth/pki/authenticate",
         "/api/webhooks/anything",
         "/health",

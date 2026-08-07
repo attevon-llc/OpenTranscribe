@@ -27,7 +27,7 @@ class AuthConfig(Base):
     """Stores authentication configuration settings.
 
     This table holds all configurable authentication settings for the application,
-    including LDAP, Keycloak, PKI, MFA, password policy, and session configurations.
+    including LDAP, OIDC, PKI, MFA, password policy, and session configurations.
     Sensitive values (like passwords and secrets) are encrypted at rest.
     """
 
@@ -44,7 +44,7 @@ class AuthConfig(Base):
     is_sensitive: Mapped[bool | None] = mapped_column(Boolean, default=False)
     category: Mapped[str] = mapped_column(
         String(50), nullable=False, index=True
-    )  # ldap, keycloak, pki, local, mfa, password_policy, session
+    )  # ldap, oidc, pki, local, mfa, password_policy, session
     data_type: Mapped[str | None] = mapped_column(
         String(20), default="string"
     )  # string, int, bool, json

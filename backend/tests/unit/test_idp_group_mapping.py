@@ -1,7 +1,7 @@
 """IdP group mapping — resolution, reconciliation semantics, and the super_admin cap.
 
 Before ``v376`` both directory paths built the caller's full group list and then
-discarded it: ``LdapUserData.groups`` and ``KeycloakUserData.roles`` existed, and
+discarded it: ``LdapUserData.groups`` and ``OIDCUserData.roles`` existed, and
 only ``is_admin`` survived. ``UserGroup``/``UserGroupMember`` had **no auth code
 referencing them at all**, so a directory group could not become a sharing group.
 

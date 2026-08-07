@@ -882,7 +882,8 @@ def get_transcription_system_defaults(
     This endpoint is useful for showing users what the default values are
     before they customize their settings.
 
-    Note: This endpoint does not require authentication as it returns
+    Note: This endpoint DOES require authentication (see the dependency above).
+    An earlier docstring claimed otherwise; it returns
     only system configuration, not user-specific data.
 
     Returns:

@@ -11,38 +11,36 @@ vi.mock('$stores/locale', () => ({
   },
 }));
 
-import KeycloakSettings from './KeycloakSettings.svelte';
+import OIDCSettings from './OIDCSettings.svelte';
 
 /**
  * What `AuthenticationSettings` hands the panel for a configured provider.
- * `keycloak_client_secret` is `null`: the API never sends a secret's value.
+ * `oidc_client_secret` is `null`: the API never sends a secret's value.
  */
 function storedConfig(overrides: Record<string, unknown> = {}) {
   return {
-    keycloak_enabled: true,
-    keycloak_server_url: 'https://auth.example.com',
-    keycloak_discovery_url:
+    oidc_enabled: true,
+    oidc_server_url: 'https://auth.example.com',
+    oidc_discovery_url:
       'https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration',
-    keycloak_realm: 'opentranscribe',
-    keycloak_client_id: 'opentranscribe',
-    keycloak_client_secret: null,
-    keycloak_roles_claim: 'groups',
-    keycloak_issuer: 'https://auth.example.com/application/o/opentranscribe/',
-    keycloak_scopes: 'openid email profile offline_access',
+    oidc_realm: 'opentranscribe',
+    oidc_client_id: 'opentranscribe',
+    oidc_client_secret: null,
+    oidc_roles_claim: 'groups',
+    oidc_issuer: 'https://auth.example.com/application/o/opentranscribe/',
+    oidc_scopes: 'openid email profile offline_access',
     ...overrides,
   };
 }
 
 /** Render with a `save` listener attached, mirroring how the parent panel binds it. */
 function renderPanel(props: Record<string, unknown>, onSave = vi.fn()) {
-  render(KeycloakSettings, { props, events: { save: onSave } } as never);
+  render(OIDCSettings, { props, events: { save: onSave } } as never);
   return onSave;
 }
 
 function clickSave() {
-  return fireEvent.click(
-    screen.getByRole('button', { name: 'settings.keycloak.saveConfiguration' })
-  );
+  return fireEvent.click(screen.getByRole('button', { name: 'settings.oidc.saveConfiguration' }));
 }
 
 /** The payload the panel dispatched to its parent. */
@@ -58,100 +56,100 @@ async function saveAndCapture(props: Record<string, unknown>) {
   return savedPayload(onSave);
 }
 
-describe('Keycloak/OIDC panel — issue #353 discovery fields', () => {
+describe('OIDC panel — issue #353 discovery fields', () => {
   it('renders the four new fields with their stored values', () => {
     renderPanel({ config: storedConfig() });
 
-    expect(screen.getByLabelText('settings.keycloak.discoveryUrl')).toHaveValue(
+    expect(screen.getByLabelText('settings.oidc.discoveryUrl')).toHaveValue(
       'https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration'
     );
-    expect(screen.getByLabelText('settings.keycloak.rolesClaim')).toHaveValue('groups');
-    expect(screen.getByLabelText('settings.keycloak.scopes')).toHaveValue(
+    expect(screen.getByLabelText('settings.oidc.rolesClaim')).toHaveValue('groups');
+    expect(screen.getByLabelText('settings.oidc.scopes')).toHaveValue(
       'openid email profile offline_access'
     );
-    expect(screen.getByLabelText('settings.keycloak.issuer')).toHaveValue(
+    expect(screen.getByLabelText('settings.oidc.issuer')).toHaveValue(
       'https://auth.example.com/application/o/opentranscribe/'
     );
   });
 
   it('falls back to the backend defaults, not to empty strings', () => {
-    renderPanel({ config: { keycloak_enabled: true } });
+    renderPanel({ config: { oidc_enabled: true } });
 
-    expect(screen.getByLabelText('settings.keycloak.rolesClaim')).toHaveValue('realm_access.roles');
-    expect(screen.getByLabelText('settings.keycloak.scopes')).toHaveValue('openid email profile');
-    expect(screen.getByLabelText('settings.keycloak.discoveryUrl')).toHaveValue('');
+    expect(screen.getByLabelText('settings.oidc.rolesClaim')).toHaveValue('realm_access.roles');
+    expect(screen.getByLabelText('settings.oidc.scopes')).toHaveValue('openid email profile');
+    expect(screen.getByLabelText('settings.oidc.discoveryUrl')).toHaveValue('');
   });
 
   it('submits the four new keys so the backend fix is reachable', async () => {
     const payload = await saveAndCapture({ config: storedConfig() });
 
     expect(payload).toMatchObject({
-      keycloak_discovery_url:
+      oidc_discovery_url:
         'https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration',
-      keycloak_roles_claim: 'groups',
-      keycloak_issuer: 'https://auth.example.com/application/o/opentranscribe/',
-      keycloak_scopes: 'openid email profile offline_access',
+      oidc_roles_claim: 'groups',
+      oidc_issuer: 'https://auth.example.com/application/o/opentranscribe/',
+      oidc_scopes: 'openid email profile offline_access',
     });
   });
 
   it('flags the realm as superseded once a discovery URL is set', async () => {
-    renderPanel({ config: storedConfig({ keycloak_discovery_url: '' }) });
+    renderPanel({ config: storedConfig({ oidc_discovery_url: '' }) });
 
-    expect(screen.queryByText('settings.keycloak.realmSupersededHelp')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.oidc.realmSupersededHelp')).not.toBeInTheDocument();
 
-    await fireEvent.input(screen.getByLabelText('settings.keycloak.discoveryUrl'), {
+    await fireEvent.input(screen.getByLabelText('settings.oidc.discoveryUrl'), {
       target: { value: 'https://auth.example.com/.well-known/openid-configuration' },
     });
 
-    expect(screen.getByText('settings.keycloak.realmSupersededHelp')).toBeInTheDocument();
+    expect(screen.getByText('settings.oidc.realmSupersededHelp')).toBeInTheDocument();
     // Never disabled — the admin may be mid-edit.
-    expect(screen.getByLabelText('settings.keycloak.realm')).not.toBeDisabled();
+    expect(screen.getByLabelText('settings.oidc.realm')).not.toBeDisabled();
   });
 });
 
-describe('Keycloak/OIDC panel — client secret is never echoed back', () => {
+describe('OIDC panel — client secret is never echoed back', () => {
   it('renders empty with a keep-current hint when a secret is stored', () => {
     renderPanel({ config: storedConfig(), secretIsSet: true });
 
-    const field = screen.getByLabelText('settings.keycloak.clientSecret');
+    const field = screen.getByLabelText('settings.oidc.clientSecret');
     expect(field).toHaveValue('');
-    expect(field).toHaveAttribute('placeholder', 'settings.keycloak.clientSecretKeepPlaceholder');
-    expect(screen.getByText('settings.keycloak.clientSecretSetHelp')).toBeInTheDocument();
+    expect(field).toHaveAttribute('placeholder', 'settings.oidc.clientSecretKeepPlaceholder');
+    expect(screen.getByText('settings.oidc.clientSecretSetHelp')).toBeInTheDocument();
   });
 
   it('treats a null config_value as "a secret is stored" when is_set is unavailable', () => {
     // The parent's flattening currently drops `is_set`; null is the only signal left.
     renderPanel({ config: storedConfig() });
 
-    expect(screen.getByText('settings.keycloak.clientSecretSetHelp')).toBeInTheDocument();
+    expect(screen.getByText('settings.oidc.clientSecretSetHelp')).toBeInTheDocument();
   });
 
   it('omits the secret from the payload when the admin did not type one', async () => {
     const payload = await saveAndCapture({ config: storedConfig(), secretIsSet: true });
 
-    expect(payload).not.toHaveProperty('keycloak_client_secret');
+    expect(payload).not.toHaveProperty('oidc_client_secret');
   });
 
   it('sends the secret only when the admin actually types one', async () => {
     const onSave = renderPanel({ config: storedConfig(), secretIsSet: true });
 
-    await fireEvent.input(screen.getByLabelText('settings.keycloak.clientSecret'), {
+    await fireEvent.input(screen.getByLabelText('settings.oidc.clientSecret'), {
       target: { value: 'a-brand-new-secret' },
     });
     await clickSave();
 
     expect(savedPayload(onSave)).toMatchObject({
-      keycloak_client_secret: 'a-brand-new-secret',
+      oidc_client_secret: 'a-brand-new-secret',
     });
   });
 
   it('offers the plain enter-a-secret hint when nothing is stored', () => {
-    renderPanel({ config: { keycloak_enabled: true }, secretIsSet: false });
+    renderPanel({ config: { oidc_enabled: true }, secretIsSet: false });
 
-    expect(screen.getByText('settings.keycloak.clientSecretHelp')).toBeInTheDocument();
-    expect(screen.getByLabelText('settings.keycloak.clientSecret')).toHaveAttribute(
+    expect(screen.getByText('settings.oidc.clientSecretHelp')).toBeInTheDocument();
+    expect(screen.getByLabelText('settings.oidc.clientSecret')).toHaveAttribute(
       'placeholder',
-      'settings.keycloak.enterClientSecret'
+      'settings.oidc.enterClientSecret'
     );
   });
 });

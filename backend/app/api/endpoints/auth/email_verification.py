@@ -15,6 +15,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -38,6 +39,7 @@ _RESEND_MESSAGE = "If that address needs verification, a new link has been sent.
 @limiter.limit(get_auth_rate_limit())
 def verify_email_endpoint(
     request: Request,
+    response: Response,
     body: EmailVerificationRequest,
     db: Session = Depends(get_db),
 ):
@@ -56,6 +58,7 @@ def verify_email_endpoint(
 @limiter.limit(get_auth_rate_limit())
 def resend_verification_endpoint(
     request: Request,
+    response: Response,
     body: EmailVerificationResendRequest,
     db: Session = Depends(get_db),
 ):

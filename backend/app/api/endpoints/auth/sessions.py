@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from fastapi.responses import JSONResponse
 from jose import JWTError
@@ -21,11 +22,11 @@ from app.api.endpoints.auth.dependencies import oauth2_scheme
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_KEYCLOAK
+from app.auth.constants import AUTH_TYPE_OIDC
 from app.auth.direct_auth import create_access_token as direct_create_token
-from app.auth.keycloak_auth import KeycloakConfig
-from app.auth.keycloak_auth import call_keycloak_logout
 from app.auth.mfa import MFAService
+from app.auth.oidc import OIDCConfig
+from app.auth.oidc import call_federated_logout
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.token_service import token_service
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 @limiter.limit(get_auth_rate_limit())
 def refresh_access_token(
     request: Request,
+    response: Response,
     body: TokenRefreshRequest,
     db: Session = Depends(get_db),
 ):
@@ -174,12 +176,12 @@ async def logout(
 
     This endpoint revokes both the access token (via JTI blacklist) and
     any associated refresh token, effectively logging out the current session.
-    For Keycloak users, also terminates the federated Keycloak session.
+    For OIDC users, also terminates the federated identity-provider session.
 
     Security (FedRAMP AC-12):
     - Adds access token JTI to Redis blacklist
     - Revokes associated refresh token in database
-    - Terminates Keycloak SSO session (if applicable)
+    - Terminates the OIDC SSO session (if applicable)
     - Tokens cannot be reused after logout
 
     Args:
@@ -225,26 +227,24 @@ async def logout(
                 token_service.revoke_token(db, jti, expires_at)
                 logger.info(f"Logout: revoked access token (jti={jti[:8]}...)")
 
-            # Log logout event and handle Keycloak federated logout
+            # Log logout event and handle OIDC federated logout
             if user_uuid_str:
                 user_uuid = UUID(user_uuid_str)
                 user = db.query(User).filter(User.uuid == user_uuid).first()
                 if user:
                     federated_ok: bool | None = None
-                    # Keycloak federated logout (issue #125)
-                    if user.auth_type == AUTH_TYPE_KEYCLOAK and user.keycloak_refresh_token:
+                    # OIDC federated logout (issue #125)
+                    if user.auth_type == AUTH_TYPE_OIDC and user.oidc_refresh_token:
                         try:
-                            kc_cfg = KeycloakConfig.from_db(db)
-                            decrypted_rt = MFAService.decrypt_totp_secret(
-                                user.keycloak_refresh_token
-                            )
-                            federated_ok = await call_keycloak_logout(decrypted_rt, cfg=kc_cfg)
+                            oidc_cfg = OIDCConfig.from_db(db)
+                            decrypted_rt = MFAService.decrypt_totp_secret(user.oidc_refresh_token)
+                            federated_ok = await call_federated_logout(decrypted_rt, cfg=oidc_cfg)
                         except Exception as e:
-                            logger.warning(f"Keycloak federated logout failed: {e}")
+                            logger.warning(f"OIDC federated logout failed: {e}")
                             federated_ok = False
                         finally:
                             # Always clear stored token regardless of outcome
-                            user.keycloak_refresh_token = None
+                            user.oidc_refresh_token = None
                             db.commit()
 
                     # A failed federated logout leaves the IdP session alive while
@@ -290,12 +290,12 @@ async def logout_all_sessions(
 
     This endpoint revokes all refresh tokens for the current user,
     effectively logging them out from all devices/sessions.
-    For Keycloak users, also terminates the federated Keycloak session.
+    For OIDC users, also terminates the federated identity-provider session.
 
     Security (FedRAMP AC-12):
     - Revokes all user's refresh tokens
     - Adds all token JTIs to Redis blacklist
-    - Terminates Keycloak SSO session (if applicable)
+    - Terminates the OIDC SSO session (if applicable)
     - Useful for security events (password change, compromised account)
 
     Args:
@@ -308,17 +308,17 @@ async def logout_all_sessions(
     """
     count = token_service.revoke_all_user_tokens(db, current_user.id)
 
-    # Keycloak federated logout (issue #125)
-    if current_user.auth_type == AUTH_TYPE_KEYCLOAK and current_user.keycloak_refresh_token:
+    # OIDC federated logout (issue #125)
+    if current_user.auth_type == AUTH_TYPE_OIDC and current_user.oidc_refresh_token:
         try:
-            kc_cfg = KeycloakConfig.from_db(db)
-            decrypted_rt = MFAService.decrypt_totp_secret(current_user.keycloak_refresh_token)
-            await call_keycloak_logout(decrypted_rt, cfg=kc_cfg)
+            oidc_cfg = OIDCConfig.from_db(db)
+            decrypted_rt = MFAService.decrypt_totp_secret(current_user.oidc_refresh_token)
+            await call_federated_logout(decrypted_rt, cfg=oidc_cfg)
         except Exception as e:
-            logger.warning(f"Keycloak federated logout failed: {e}")
+            logger.warning(f"OIDC federated logout failed: {e}")
         finally:
             # Always clear stored token regardless of outcome
-            current_user.keycloak_refresh_token = None
+            current_user.oidc_refresh_token = None
             db.commit()
 
     # Log logout from all sessions

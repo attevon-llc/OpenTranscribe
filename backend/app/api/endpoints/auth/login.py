@@ -11,6 +11,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -29,8 +30,8 @@ from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
-from app.auth.constants import AUTH_TYPE_KEYCLOAK
 from app.auth.constants import AUTH_TYPE_LOCAL
+from app.auth.constants import AUTH_TYPE_OIDC
 from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import canonical_identifier
@@ -241,7 +242,7 @@ def record_successful_login(db: Session, user: User) -> None:
     """Stamp ``last_login_at`` for a caller that has just been given a session.
 
     **Every successful authentication path must call this** — local/LDAP login,
-    PKI, Keycloak, and MFA completion. Nothing wrote the column, so the admin UI
+    PKI, OIDC, and MFA completion. Nothing wrote the column, so the admin UI
     reported ``null`` for every user forever and no inactive-account control
     (FedRAMP AC-2(3), the usual 30/60/90-day disable) had any data to act on.
 
@@ -358,7 +359,7 @@ def _check_mfa_requirement(
         user: User model object
         user_uuid_str: User UUID string
         user_role: User's role
-        actual_auth_method: How the user actually authenticated. When a PKI/Keycloak
+        actual_auth_method: How the user actually authenticated. When a PKI/OIDC
             user authenticates via password fallback, actual_auth_method will be "local"
             and MFA should still apply.
 
@@ -370,12 +371,9 @@ def _check_mfa_requirement(
     if not _is_mfa_enabled(db):
         return None
 
-    # Skip MFA for PKI and Keycloak users ONLY if they authenticated via their native method.
+    # Skip MFA for PKI and OIDC users ONLY if they authenticated via their native method.
     # If they used local password fallback, MFA must still apply.
-    if (
-        user.auth_type in [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK]
-        and actual_auth_method != AUTH_TYPE_LOCAL
-    ):
+    if user.auth_type in [AUTH_TYPE_PKI, AUTH_TYPE_OIDC] and actual_auth_method != AUTH_TYPE_LOCAL:
         return None
 
     user_mfa = db.query(UserMFA).filter(UserMFA.user_id == user.id).first()
@@ -398,7 +396,7 @@ def _check_mfa_requirement(
         # a full, unrestricted session on an MFA_REQUIRED deployment.
         if not _user_can_setup_mfa(user) and actual_auth_method != AUTH_TYPE_LOCAL:
             # An external IdP owns this user's second factor and there is no local TOTP
-            # to enrol in — same reasoning as the PKI/Keycloak bypass above.
+            # to enrol in — same reasoning as the PKI/OIDC bypass above.
             return None
 
         # Same short-lived, single-use half-token as the verification branch, but scoped
@@ -469,7 +467,7 @@ def _generate_login_tokens(
         source_ip=client_ip,
         user_agent=user_agent,
         # The method actually used, not one inferred from LDAP_ENABLED + auth_type: a
-        # PKI/Keycloak user falling back to a local password was audited as "ldap".
+        # PKI/OIDC user falling back to a local password was audited as "ldap".
         auth_method=auth_method or str(user.auth_type),
     )
 
@@ -495,6 +493,7 @@ def _generate_login_tokens(
 @limiter.limit(get_auth_rate_limit())
 def login_for_access_token(
     request: Request,
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):

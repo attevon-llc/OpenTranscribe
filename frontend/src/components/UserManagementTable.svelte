@@ -132,7 +132,7 @@
   $: authTypeLabels = /** @type {Record<string, string>} */ ({
     local: $t('userManagement.authTypeLocal'),
     ldap: $t('userManagement.authTypeLdap'),
-    keycloak: $t('userManagement.authTypeKeycloak'),
+    oidc: $t('userManagement.authTypeOidc'),
     pki: $t('userManagement.authTypePki')
   });
 
@@ -917,7 +917,7 @@
       </div>
 
       {#if createNeedsPassword}
-        <!-- Only a local account holds a password. Sending one for ldap/keycloak/
+        <!-- Only a local account holds a password. Sending one for ldap/oidc/
              pki is a 422, not a silent no-op — the field is hidden rather than
              disabled so nothing stale is submitted. -->
         <div class="form-group">

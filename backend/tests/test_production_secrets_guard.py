@@ -24,7 +24,7 @@ def production_settings(monkeypatch):
     monkeypatch.setattr(settings, "ENCRYPTION_KEY", STRONG_ENCRYPTION)
     monkeypatch.setattr(settings, "REDIS_PASSWORD", "strong-redis-password")
     monkeypatch.setattr(settings, "DEBUG", False)
-    monkeypatch.setattr(settings, "KEYCLOAK_ENABLED", False)
+    monkeypatch.setattr(settings, "OIDC_ENABLED", False)
     monkeypatch.setattr(settings, "PKI_ENABLED", False)
     monkeypatch.setattr(settings, "MINIO_PUBLIC_URL", "")
     return monkeypatch

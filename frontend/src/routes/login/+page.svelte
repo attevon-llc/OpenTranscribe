@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithKeycloak, handleKeycloakCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, acknowledgeBanner, logout, type AuthMethods } from "$stores/auth";
+  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithOIDC, handleOIDCCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, acknowledgeBanner, logout, type AuthMethods } from "$stores/auth";
   import { resendEmailVerification } from '$lib/api/invitations';
   import { onMount, onDestroy } from 'svelte';
   import { toastStore } from '$stores/toast';
@@ -27,7 +27,7 @@
   let email = "";
   let password = "";
   let loading = false;
-  let keycloakLoading = false;
+  let oidcLoading = false;
   let pkiLoading = false;
   let formSubmitted = false;
   let showPassword = false;
@@ -101,7 +101,7 @@
   // Authentication methods
   let authMethods: AuthMethods = {
     methods: ["local"],
-    keycloak_enabled: false,
+    oidc_enabled: false,
     pki_enabled: false,
     ldap_enabled: false,
     local_enabled: true,
@@ -118,7 +118,7 @@
   // gated on `local_enabled` alone, or an LDAP-only deployment loses its only
   // way in.
   $: credentialFormEnabled = authMethods.local_enabled || authMethods.ldap_enabled;
-  $: ssoButtonsEnabled = authMethods.keycloak_enabled || authMethods.pki_enabled;
+  $: ssoButtonsEnabled = authMethods.oidc_enabled || authMethods.pki_enabled;
 
   // Validation
   let emailValid = true;
@@ -131,19 +131,19 @@
 
     (async () => {
       // Reset loading states on mount (handles browser back button)
-      keycloakLoading = false;
+      oidcLoading = false;
       pkiLoading = false;
       loading = false;
 
       // Cloud edition: the hosted IdP owns login, registration, and MFA. Mount
       // its sign-in component and hydrate our store when it reports a session.
-      // The community local-login / Keycloak-callback flow below is skipped.
+      // The community local-login / OIDC-callback flow below is skipped.
       if (isCloudEdition) {
         await setupExternalSignIn();
         return;
       }
 
-      // Check for Keycloak callback parameters
+      // Check for OIDC callback parameters
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       const state = urlParams.get('state');
@@ -153,7 +153,7 @@
         window.history.replaceState({}, document.title, window.location.pathname);
 
         // Check if we already processed this callback (prevents double toast)
-        const processedKey = `keycloak_callback_${state}`;
+        const processedKey = `oidc_callback_${state}`;
         if (sessionStorage.getItem(processedKey)) {
           // Already processed this callback, skip
           window.location.href = "/";
@@ -161,10 +161,10 @@
         }
         sessionStorage.setItem(processedKey, 'true');
 
-        // Handle Keycloak callback
-        keycloakLoading = true;
-        const result = await handleKeycloakCallback(code, state);
-        keycloakLoading = false;
+        // Handle the OIDC callback
+        oidcLoading = true;
+        const result = await handleOIDCCallback(code, state);
+        oidcLoading = false;
 
         if (result.success) {
           loginSuccess = true;
@@ -205,13 +205,13 @@
       handleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {
           // Reset loading states when page becomes visible again
-          keycloakLoading = false;
+          oidcLoading = false;
           pkiLoading = false;
         }
       };
 
       handlePageShow = () => {
-        keycloakLoading = false;
+        oidcLoading = false;
         pkiLoading = false;
       };
 
@@ -520,31 +520,31 @@
     await logout();
   }
 
-  // Handle Keycloak login with timeout
-  async function handleKeycloakLogin() {
-    keycloakLoading = true;
+  // Handle OIDC login with timeout
+  async function handleOIDCLogin() {
+    oidcLoading = true;
 
     try {
-      // Add timeout to prevent infinite spinner if Keycloak is down
+      // Add timeout to prevent infinite spinner if the provider is down
       const timeoutPromise = new Promise<{ success: false; message: string }>((_, reject) =>
         setTimeout(() => reject(new Error('Connection timeout')), 10000)
       );
 
       const result = await Promise.race([
-        loginWithKeycloak(),
+        loginWithOIDC(),
         timeoutPromise
       ]);
 
-      // If successful, user will be redirected to Keycloak
+      // If successful, the user is redirected to the identity provider
       // If failed, show error
       if (!result.success) {
-        keycloakLoading = false;
+        oidcLoading = false;
         toastStore.error(result.message || $t('auth.loginFailed'));
       }
-      // Note: keycloakLoading stays true during redirect to Keycloak
+      // Note: oidcLoading stays true during the redirect to the provider
     } catch (error) {
-      keycloakLoading = false;
-      toastStore.error($t('auth.error.keycloakUnreachable'));
+      oidcLoading = false;
+      toastStore.error($t('auth.error.oidcUnreachable'));
     }
   }
 
@@ -1103,21 +1103,21 @@
       {/if}
 
       <div class="external-auth-buttons">
-        {#if authMethods.keycloak_enabled}
+        {#if authMethods.oidc_enabled}
           <button
             type="button"
-            class="external-auth-button keycloak-button"
-            on:click={handleKeycloakLogin}
-            disabled={keycloakLoading || loading}
+            class="external-auth-button oidc-button"
+            on:click={handleOIDCLogin}
+            disabled={oidcLoading || loading}
           >
-            {#if keycloakLoading}
+            {#if oidcLoading}
               <Spinner size="small" color="white" />
             {:else}
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
               </svg>
             {/if}
-            <span>{$t('auth.loginWithKeycloak')}</span>
+            <span>{$t('auth.loginWithOidc')}</span>
           </button>
         {/if}
 
@@ -1448,11 +1448,11 @@
     flex-shrink: 0;
   }
 
-  .keycloak-button {
+  .oidc-button {
     border-color: #4d4d4d;
   }
 
-  .keycloak-button:hover:not(:disabled) {
+  .oidc-button:hover:not(:disabled) {
     border-color: #666;
     background-color: rgba(77, 77, 77, 0.05);
   }

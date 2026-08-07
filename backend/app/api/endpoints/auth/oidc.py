@@ -1,4 +1,9 @@
-"""Keycloak OIDC login and callback endpoints."""
+"""OIDC login and callback endpoints.
+
+Routes are ``/api/auth/oidc/{login,callback}``. The registered redirect URI points at
+the SPA's ``/login`` route, not at these paths, so renaming them from the old
+vendor-prefixed spelling needs no change at any identity provider.
+"""
 
 import hashlib
 import logging
@@ -10,6 +15,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
@@ -22,12 +28,12 @@ from app.auth.cookies import clear_oidc_state_binding
 from app.auth.cookies import get_oidc_state_binding
 from app.auth.cookies import set_oidc_state_binding
 from app.auth.direct_auth import create_access_token as direct_create_token
-from app.auth.keycloak_auth import KeycloakConfig
-from app.auth.keycloak_auth import exchange_code_for_tokens
-from app.auth.keycloak_auth import get_authorization_url
-from app.auth.keycloak_auth import sync_keycloak_user_to_db
-from app.auth.keycloak_auth import validate_token as validate_keycloak_token
 from app.auth.mfa import MFAService
+from app.auth.oidc import OIDCConfig
+from app.auth.oidc import exchange_code_for_tokens
+from app.auth.oidc import get_authorization_url
+from app.auth.oidc import sync_oidc_user_to_db
+from app.auth.oidc import validate_token as validate_oidc_token
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.session import OIDCStateStore
@@ -40,6 +46,8 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
+#: Audit ``auth_method`` for every event this module writes.
+AUTH_METHOD = "oidc"
 
 # Uses Redis for distributed deployments with automatic in-memory fallback
 _oidc_state_store = OIDCStateStore()
@@ -48,11 +56,11 @@ _oidc_state_store = OIDCStateStore()
 _OIDC_STATE_EXPIRY_SECONDS = 600
 
 
-@router.get("/keycloak/login")
+@router.get("/oidc/login")
 @limiter.limit(get_auth_rate_limit())
-async def keycloak_login(request: Request, db: Session = Depends(get_db)):
+async def oidc_login(request: Request, response: Response, db: Session = Depends(get_db)):
     """
-    Initiate Keycloak OIDC login flow.
+    Initiate the OIDC login flow.
 
     Returns an authorization URL that the frontend should redirect to.
     Supports PKCE (RFC 7636) for OAuth 2.1 compliance when enabled.
@@ -67,11 +75,11 @@ async def keycloak_login(request: Request, db: Session = Depends(get_db)):
     # provider's discovery document. Its blocking prologue (sync DB reads, and a Redis
     # state-count scan inside store_state) therefore has to be pushed back off the event
     # loop explicitly — as a sync handler FastAPI did that for us.
-    kc_cfg = await run_in_threadpool(KeycloakConfig.from_db, db)
-    if not kc_cfg.enabled:
+    cfg = await run_in_threadpool(OIDCConfig.from_db, db)
+    if not cfg.enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Keycloak authentication is not enabled",
+            detail="OIDC authentication is not enabled",
         )
 
     # Generate CSRF protection state
@@ -84,7 +92,7 @@ async def keycloak_login(request: Request, db: Session = Depends(get_db)):
     # into the attacker's account (login CSRF). The binding cookie closes it.
     state_binding = secrets.token_urlsafe(32)
 
-    authorization_url, code_verifier = await get_authorization_url(state, cfg=kc_cfg)
+    authorization_url, code_verifier = await get_authorization_url(state, cfg=cfg)
 
     # Store state with PKCE verifier in Redis-backed store
     # Returns False if state limit exceeded (prevents exhaustion attack)
@@ -106,9 +114,9 @@ async def keycloak_login(request: Request, db: Session = Depends(get_db)):
         )
 
     if code_verifier:
-        logger.info("Keycloak login initiated with PKCE, redirecting to authorization URL")
+        logger.info("OIDC login initiated with PKCE, redirecting to authorization URL")
     else:
-        logger.info("Keycloak login initiated, redirecting to authorization URL")
+        logger.info("OIDC login initiated, redirecting to authorization URL")
 
     response = JSONResponse(content={"authorization_url": authorization_url})
     set_oidc_state_binding(response, state_binding, _OIDC_STATE_EXPIRY_SECONDS)
@@ -124,19 +132,42 @@ def _hash_binding(secret: str) -> str:
     return hashlib.sha256(secret.encode()).hexdigest()
 
 
-@router.get("/keycloak/callback")
+def _store_session_id_token(db: Session, session_row, id_token: str) -> None:
+    """Persist the ID token on the session row it belongs to.
+
+    RP-initiated logout (OIDC RP-Initiated Logout 1.0) needs ``id_token_hint``, so the
+    token has to outlive the callback. It is kept **server-side on the
+    ``refresh_token`` row and encrypted at rest** — never handed to the browser. The
+    reference implementation everyone copies puts it in a cookie by default and its
+    own documentation calls that unsafe; a cookie makes the ID token, with its full
+    identity claim set, readable by anything that reaches the cookie jar and outlives
+    the session that justified keeping it. On this row it dies with the session:
+    rotation, revocation and the concurrent-session cap already delete these rows.
+
+    Failure is non-fatal — the login succeeds, and only federated logout degrades.
+    """
+    try:
+        session_row.oidc_id_token = MFAService.encrypt_totp_secret(id_token)
+        db.commit()
+    except Exception as e:  # pragma: no cover - defensive
+        db.rollback()
+        logger.warning(f"Failed to store the OIDC id_token on the session row: {e}")
+
+
+@router.get("/oidc/callback")
 @limiter.limit(get_auth_rate_limit())
-async def keycloak_callback(
+async def oidc_callback(
     request: Request,
-    code: str = Query(..., description="Authorization code from Keycloak"),
+    response: Response,
+    code: str = Query(..., description="Authorization code from the identity provider"),
     state: str = Query(..., description="State parameter for CSRF protection"),
     db: Session = Depends(get_db),
 ):
     """
-    Handle Keycloak OIDC callback.
+    Handle the OIDC callback.
 
-    Exchanges authorization code for tokens, validates them,
-    and creates/updates user in database.
+    Exchanges the authorization code for tokens, validates the ID token, and
+    creates/updates the user in the database.
     Supports PKCE (RFC 7636) for OAuth 2.1 compliance when enabled.
 
     Security:
@@ -148,12 +179,12 @@ async def keycloak_callback(
     """
     client_ip, user_agent = _get_client_info(request)
 
-    # Load Keycloak config from database (DB > .env > defaults)
-    kc_cfg = KeycloakConfig.from_db(db)
-    if not kc_cfg.enabled:
+    # Load OIDC config from database (DB > .env > defaults)
+    cfg = OIDCConfig.from_db(db)
+    if not cfg.enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Keycloak authentication is not enabled",
+            detail="OIDC authentication is not enabled",
         )
 
     # Retrieve and delete state (single-use, CSRF protection)
@@ -165,7 +196,7 @@ async def keycloak_callback(
             source_ip=client_ip,
             user_agent=user_agent,
             error_code="INVALID_STATE",
-            auth_method="keycloak",
+            auth_method=AUTH_METHOD,
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -185,7 +216,7 @@ async def keycloak_callback(
             source_ip=client_ip,
             user_agent=user_agent,
             error_code="MISSING_STATE_BINDING",
-            auth_method="keycloak",
+            auth_method=AUTH_METHOD,
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -198,7 +229,7 @@ async def keycloak_callback(
             source_ip=client_ip,
             user_agent=user_agent,
             error_code="STATE_BINDING_MISMATCH",
-            auth_method="keycloak",
+            auth_method=AUTH_METHOD,
         )
         # Same message as an unknown state: a mismatch must not be distinguishable.
         raise HTTPException(
@@ -210,7 +241,7 @@ async def keycloak_callback(
     code_verifier = state_data.get("code_verifier")
 
     # Exchange code for tokens (with PKCE verifier if available)
-    tokens = await exchange_code_for_tokens(code, code_verifier, cfg=kc_cfg)
+    tokens = await exchange_code_for_tokens(code, code_verifier, cfg=cfg)
     if not tokens:
         logger.error("Failed to exchange authorization code for tokens")
         audit_logger.log_login_failure(
@@ -218,27 +249,26 @@ async def keycloak_callback(
             source_ip=client_ip,
             user_agent=user_agent,
             error_code="TOKEN_EXCHANGE_FAILED",
-            auth_method="keycloak",
+            auth_method=AUTH_METHOD,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Failed to exchange authorization code",
         )
 
-    # Validate token and get user data. The ID token is preferred — it is the only one
-    # OIDC guarantees to be a verifiable JWT (issue #353).
-    keycloak_data = await validate_keycloak_token(
-        tokens.access_token, cfg=kc_cfg, id_token=tokens.id_token or None
+    # Only the ID token authenticates. A response without one, or with one that fails
+    # validation, is a hard 401 — there is deliberately no access-token fallback.
+    oidc_data = await validate_oidc_token(
+        tokens.access_token, cfg=cfg, id_token=tokens.id_token or None
     )
-    if not keycloak_data:
-        logger.error("Invalid token received from the OIDC provider")
-        # Log Keycloak login failure
+    if not oidc_data:
+        logger.error("Invalid or missing ID token received from the OIDC provider")
         audit_logger.log_login_failure(
             username="unknown",
             source_ip=client_ip,
             user_agent=user_agent,
             error_code="INVALID_TOKEN",
-            auth_method="keycloak",
+            auth_method=AUTH_METHOD,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -246,26 +276,25 @@ async def keycloak_callback(
         )
 
     # Sync user to database
-    user = sync_keycloak_user_to_db(db, keycloak_data)
+    user = sync_oidc_user_to_db(db, oidc_data)
 
-    # Store encrypted Keycloak refresh token for federated logout (issue #125)
+    # Store the encrypted provider refresh token for federated logout (issue #125)
     if tokens.refresh_token:
         try:
-            user.keycloak_refresh_token = MFAService.encrypt_totp_secret(tokens.refresh_token)
+            user.oidc_refresh_token = MFAService.encrypt_totp_secret(tokens.refresh_token)
             db.commit()
         except Exception as e:
-            logger.warning(f"Failed to store Keycloak refresh token: {e}")
+            logger.warning(f"Failed to store the OIDC refresh token: {e}")
             # Non-fatal — login still succeeds, federated logout just won't work
 
     if not user.is_active:
-        logger.warning(f"Keycloak user account is inactive: {keycloak_data['keycloak_id']}")
-        # Log Keycloak login failure for inactive user
+        logger.warning(f"OIDC user account is inactive: {oidc_data['oidc_subject']}")
         audit_logger.log_login_failure(
-            username=keycloak_data.get("email", "unknown"),
+            username=oidc_data.get("email", "unknown"),
             source_ip=client_ip,
             user_agent=user_agent,
             error_code="INACTIVE_USER",
-            auth_method="keycloak",
+            auth_method=AUTH_METHOD,
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -277,22 +306,21 @@ async def keycloak_callback(
     token_data = {"sub": str(user.uuid), "role": user.role}
     access_token = direct_create_token(data=token_data, expires_delta=access_token_expires)
 
-    # Log Keycloak login success
     audit_logger.log_login_success(
         user_id=user.id,
         username=user.email,
         source_ip=client_ip,
         user_agent=user_agent,
-        auth_method="keycloak",
+        auth_method=AUTH_METHOD,
     )
 
     # Every successful auth path stamps last_login_at — see pki.py for why.
     record_successful_login(db, user)
 
-    logger.info(f"Keycloak authentication successful for user: {user.email}")
+    logger.info(f"OIDC authentication successful for user: {user.email}")
 
-    # Generate refresh token for Keycloak users too
-    refresh_token, _ = token_service.create_refresh_token(
+    # Generate refresh token for OIDC users too
+    refresh_token, session_row = token_service.create_refresh_token(
         db=db,
         user_id=user.id,
         user_uuid=str(user.uuid),
@@ -300,6 +328,9 @@ async def keycloak_callback(
         user_agent=user_agent,
         ip_address=client_ip,
     )
+
+    if tokens.id_token:
+        _store_session_id_token(db, session_row, tokens.id_token)
 
     response = JSONResponse(
         content={

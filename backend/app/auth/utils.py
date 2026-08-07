@@ -26,7 +26,7 @@ def local_password_allowed(
     * ``local`` — always allowed; that is what the type means.
     * ``ldap`` (``AUTH_TYPES_NO_LOCAL_FALLBACK``) — never allowed. No local
       password is stored for these users, and the flag must not override that.
-    * ``pki`` / ``keycloak`` (``AUTH_TYPES_SUPPORT_LOCAL_FALLBACK``) — allowed
+    * ``pki`` / ``oidc`` (``AUTH_TYPES_SUPPORT_LOCAL_FALLBACK``) — allowed
       only with the per-user opt-in, which is a super_admin-only field.
     * anything else — refused, so an unrecognised ``auth_type`` fails closed.
 

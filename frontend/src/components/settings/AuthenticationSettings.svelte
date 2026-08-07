@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { AuthConfigApi } from '$lib/api/authConfig';
   import LDAPSettings from './LDAPSettings.svelte';
-  import KeycloakSettings from './KeycloakSettings.svelte';
+  import OIDCSettings from './OIDCSettings.svelte';
   import PKISettings from './PKISettings.svelte';
   import LocalAuthSettings from './LocalAuthSettings.svelte';
   import SessionSettings from './SessionSettings.svelte';
@@ -70,7 +70,7 @@
   $: tabs = [
     { id: 'local', label: $t('settings.authentication.tab.local') },
     { id: 'ldap', label: $t('settings.authentication.tab.ldap') },
-    { id: 'keycloak', label: $t('settings.authentication.tab.keycloak') },
+    { id: 'oidc', label: $t('settings.authentication.tab.oidc') },
     { id: 'pki', label: $t('settings.authentication.tab.pki') },
     { id: 'session', label: $t('settings.authentication.tab.session') },
     // Reads auth_config_audit (Postgres) — a different source from the "Audit
@@ -229,9 +229,9 @@
         </div>
 
         <div class="config-method">
-          <h4>{$t('settings.authentication.method.keycloak')}</h4>
-          <code>KEYCLOAK_ENABLED=true</code>
-          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/KEYCLOAK_SETUP.md" target="_blank" rel="noopener noreferrer">KEYCLOAK_SETUP.md</a></p>
+          <h4>{$t('settings.authentication.method.oidc')}</h4>
+          <code>OIDC_ENABLED=true</code>
+          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/OIDC_SETUP.md" target="_blank" rel="noopener noreferrer">OIDC_SETUP.md</a></p>
         </div>
 
         <div class="config-method">
@@ -281,12 +281,12 @@
             on:test={(e) => handleTestConnection('ldap', e.detail)}
             on:change={handleChange}
           />
-        {:else if activeTab === 'keycloak'}
-          <KeycloakSettings
-            config={configs.keycloak || {}}
-            secretIsSet={configs.keycloak?.keycloak_client_secret_is_set}
-            on:save={(e) => handleSave('keycloak', e.detail)}
-            on:test={(e) => handleTestConnection('keycloak', e.detail)}
+        {:else if activeTab === 'oidc'}
+          <OIDCSettings
+            config={configs.oidc || {}}
+            secretIsSet={configs.oidc?.oidc_client_secret_is_set}
+            on:save={(e) => handleSave('oidc', e.detail)}
+            on:test={(e) => handleTestConnection('oidc', e.detail)}
             on:change={handleChange}
           />
         {:else if activeTab === 'pki'}

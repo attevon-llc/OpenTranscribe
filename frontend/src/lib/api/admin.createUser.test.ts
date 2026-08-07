@@ -41,7 +41,7 @@ describe('AdminApi.createUser', () => {
     });
   });
 
-  it.each(['ldap', 'keycloak', 'pki'] as const)(
+  it.each(['ldap', 'oidc', 'pki'] as const)(
     'omits the password key entirely for auth_type=%s',
     async (authType) => {
       await AdminApi.createUser({

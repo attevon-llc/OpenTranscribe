@@ -12,6 +12,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from sqlalchemy import and_
 from sqlalchemy import false as sa_false
@@ -1221,6 +1222,7 @@ get_current_super_admin_user = get_current_active_superuser
 @limiter.limit(get_auth_rate_limit())
 def admin_reset_user_password(
     request: Request,
+    response: Response,
     user_uuid: str,
     request_body: AdminPasswordResetRequest,
     db: Session = Depends(get_db),

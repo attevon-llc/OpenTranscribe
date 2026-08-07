@@ -8,22 +8,37 @@ and ensure consistency across the codebase.
 # Authentication type constants
 AUTH_TYPE_LOCAL = "local"
 AUTH_TYPE_LDAP = "ldap"
-AUTH_TYPE_KEYCLOAK = "keycloak"
+AUTH_TYPE_OIDC = "oidc"
 AUTH_TYPE_PKI = "pki"
 
 # All valid core auth types. Registry-based external providers (cloud edition)
 # define their own auth-type strings in the cloud layer and register via
 # app.auth.provider_registry — they are not enumerated here.
+#
+# The DB CHECK constraints (v378) deliberately allow one more value, 'proxy', which
+# no code produces yet: swapping a CHECK on a live "user" table is the kind of
+# operation worth doing once rather than twice, and Phase 5 of
+# plans/auth-complete-implementation.md adds trusted-header auth. This list stays at
+# what the application actually supports, so 'proxy' is not offered anywhere until
+# there is an implementation behind it. tests/unit/test_v378_migration_consistency.py
+# pins the subset relationship in that direction.
 VALID_AUTH_TYPES = [
     AUTH_TYPE_LOCAL,
     AUTH_TYPE_LDAP,
-    AUTH_TYPE_KEYCLOAK,
+    AUTH_TYPE_OIDC,
     AUTH_TYPE_PKI,
 ]
 
 # Version of the cloud-extension seam surface (verifier registry, pipeline
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
+#
+# v3 (0.5.x): the OIDC surface was renamed provider-neutral (v377/v378). The user
+# identity columns became user.oidc_subject (the value is an OIDC `sub`, unique only
+# per ISSUER — the previous name asserted a global identifier) and
+# user.oidc_refresh_token, and the auth_type value became 'oidc'. The cardinality
+# mapping in auth/external_sync.py and every JIT provisioning path move with them,
+# so a cloud edition pinned at v2 must be updated before merge.
 #
 # v2 (0.5.0): vendor columns genericized (user.external_id/external_org_id,
 # organization.external_org_id; billing columns removed from core
@@ -34,10 +49,10 @@ VALID_AUTH_TYPES = [
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 2
+CLOUD_SEAM_VERSION = 3
 
 # Auth types that support local password fallback (have local password capability)
-AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK]
+AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]
 
 # Auth types that never support local password (no local password stored)
 AUTH_TYPES_NO_LOCAL_FALLBACK = [AUTH_TYPE_LDAP]

@@ -36,8 +36,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import app.auth.keycloak_auth as keycloak_auth
 import app.auth.ldap_auth as ldap_auth
+import app.auth.oidc.provisioning as oidc_provisioning
 import app.auth.pki_auth as pki_auth
 import app.initial_data as initial_data
 from app.auth.roles import ROLE_ADMIN
@@ -122,9 +122,10 @@ def _ldap_data(is_admin: bool) -> dict:
     }
 
 
-def _keycloak_data(is_admin: bool) -> dict:
+def _oidc_data(is_admin: bool) -> dict:
     return {
-        "keycloak_id": "kc-uuid-1234",
+        "oidc_subject": "sub-uuid-1234",
+        "email_verified": True,
         "email": "person@example.com",
         "full_name": "Test Person",
         "username": "tperson",
@@ -174,13 +175,13 @@ def _convert_ldap(db, user, is_admin: bool):
     return user
 
 
-def _convert_keycloak(db, user, is_admin: bool):
+def _convert_oidc(db, user, is_admin: bool):
     """Conversion + reconciliation — see :func:`_convert_ldap`."""
     from app.models.group import MAPPING_SOURCE_OIDC
     from app.services.idp_group_mapping_service import reconcile_user
 
-    data = _keycloak_data(is_admin)
-    keycloak_auth._convert_local_user_to_keycloak(db, user, data)
+    data = _oidc_data(is_admin)
+    oidc_provisioning._convert_local_user_to_oidc(db, user, data)
     reconcile_user(db, user, MAPPING_SOURCE_OIDC, data["roles"], legacy_admin=is_admin)
     return user
 
@@ -192,7 +193,7 @@ def _convert_pki(db, user, is_admin: bool):
 #: ``(provider label, conversion adapter)`` for every local -> external IdP conversion.
 CONVERSIONS = [
     pytest.param(_convert_ldap, id="ldap"),
-    pytest.param(_convert_keycloak, id="keycloak"),
+    pytest.param(_convert_oidc, id="oidc"),
     pytest.param(_convert_pki, id="pki"),
 ]
 
@@ -265,7 +266,7 @@ class TestLocalUserConversionKeepsInvariant:
 # ---------------------------------------------------------------------------
 
 #: Modules that write ``User.is_superuser`` and must use the shared derivation.
-DERIVATION_MODULES = [ldap_auth, keycloak_auth, pki_auth, initial_data]
+DERIVATION_MODULES = [ldap_auth, oidc_provisioning, pki_auth, initial_data]
 
 DERIVATION_HELPER = "role_implies_superuser"
 

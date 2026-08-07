@@ -16,9 +16,9 @@ import inspect
 
 import pytest
 
-from app.auth.constants import AUTH_TYPE_KEYCLOAK
 from app.auth.constants import AUTH_TYPE_LDAP
 from app.auth.constants import AUTH_TYPE_LOCAL
+from app.auth.constants import AUTH_TYPE_OIDC
 from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.utils import local_fallback_permitted_for
 from app.auth.utils import local_password_allowed
@@ -33,9 +33,9 @@ class TestLocalPasswordAllowed:
         """The regression: the flag must not override the LDAP hard-block."""
         allowed, reason = local_password_allowed(AUTH_TYPE_LDAP, flag)
         assert allowed is False
-        assert "never has a local password" in reason
+        assert "never has a local password" in (reason or "")
 
-    @pytest.mark.parametrize("auth_type", [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK])
+    @pytest.mark.parametrize("auth_type", [AUTH_TYPE_PKI, AUTH_TYPE_OIDC])
     def test_external_requires_opt_in(self, auth_type):
         assert local_password_allowed(auth_type, False)[0] is False
         assert local_password_allowed(auth_type, True)[0] is True
@@ -44,13 +44,13 @@ class TestLocalPasswordAllowed:
     def test_unknown_auth_type_fails_closed(self, auth_type):
         allowed, reason = local_password_allowed(auth_type, True)
         assert allowed is False
-        assert "unrecognised" in reason
+        assert "unrecognised" in (reason or "")
 
 
 class TestLocalFallbackPermittedFor:
-    """Write-side guard: the flag is only meaningful for pki/keycloak."""
+    """Write-side guard: the flag is only meaningful for pki/oidc."""
 
-    @pytest.mark.parametrize("auth_type", [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK])
+    @pytest.mark.parametrize("auth_type", [AUTH_TYPE_PKI, AUTH_TYPE_OIDC])
     def test_permitted(self, auth_type):
         assert local_fallback_permitted_for(auth_type) is True
 
@@ -69,7 +69,7 @@ class TestBothCallSitesDelegate:
         assert "local_password_allowed" in source
         # The old inline literals must be gone.
         assert '"ldap"' not in source
-        assert '("pki", "keycloak")' not in source
+        assert '("pki", "oidc")' not in source
 
     def test_orm_path_delegates(self):
         from app.core import security

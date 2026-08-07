@@ -71,35 +71,35 @@ export interface LDAPConfig {
   ldap_group_attr: string;
 }
 
-/** Mirrors `backend/app/schemas/auth_config.py:KeycloakConfig` — same names, same order. */
-export interface KeycloakConfig {
-  keycloak_enabled: boolean;
-  keycloak_server_url: string;
-  keycloak_internal_url: string;
+/** Mirrors `backend/app/schemas/auth_config.py:OIDCConfig` — same names, same order. */
+export interface OIDCConfig {
+  oidc_enabled: boolean;
+  oidc_server_url: string;
+  oidc_internal_url: string;
   /**
    * Full `.well-known/openid-configuration` URL. When set it REPLACES the
-   * realm-based endpoint construction entirely and `keycloak_realm` is ignored.
-   * `<server>/realms/<realm>/protocol/openid-connect/...` is a Keycloak-only URL
+   * realm-based endpoint construction entirely and `oidc_realm` is ignored.
+   * `<server>/realms/<realm>/protocol/openid-connect/...` is one vendor's URL
    * shape; Authentik and others 404 on it (issue #353).
    */
-  keycloak_discovery_url: string;
+  oidc_discovery_url: string;
   /** Only used when no discovery URL is set. */
-  keycloak_realm: string;
-  keycloak_client_id: string;
+  oidc_realm: string;
+  oidc_client_id: string;
   /** Never sent by the API — `null` on the wire, `is_set` carries the signal. */
-  keycloak_client_secret?: string | null;
-  keycloak_callback_url: string;
-  keycloak_admin_role: string;
+  oidc_client_secret?: string | null;
+  oidc_callback_url: string;
+  oidc_admin_role: string;
   /** Dotted path to the claim carrying group/role membership. */
-  keycloak_roles_claim: string;
+  oidc_roles_claim: string;
   /** Optional issuer override; normally taken from the discovery document. */
-  keycloak_issuer: string;
-  keycloak_scopes: string;
-  keycloak_timeout: number;
-  keycloak_verify_audience: boolean;
-  keycloak_audience: string;
-  keycloak_use_pkce: boolean;
-  keycloak_verify_issuer: boolean;
+  oidc_issuer: string;
+  oidc_scopes: string;
+  oidc_timeout: number;
+  oidc_verify_audience: boolean;
+  oidc_audience: string;
+  oidc_use_pkce: boolean;
+  oidc_verify_issuer: boolean;
 }
 
 export interface PKIConfig {
@@ -143,7 +143,7 @@ export const AUTH_CONFIG_CATEGORIES = [
   'lockout',
   'session',
   'ldap',
-  'keycloak',
+  'oidc',
   'pki',
   'banner',
 ] as const;

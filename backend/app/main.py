@@ -20,6 +20,7 @@ from app.core.exceptions import LLMServiceError
 from app.core.exceptions import OpenTranscribeError
 from app.core.exceptions import SearchIndexError
 from app.core.exceptions import StorageError
+from app.core.legacy_auth_env import deprecated_oidc_env_names
 from app.core.logging_config import configure_logging
 from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
@@ -69,12 +70,24 @@ def _validate_production_secrets():
         )
         raise ValueError("Insecure ENCRYPTION_KEY in production environment")
 
-    # Warn about Keycloak audience validation disabled in production
-    if is_production and settings.KEYCLOAK_ENABLED and not settings.KEYCLOAK_VERIFY_AUDIENCE:
+    # Warn about OIDC audience validation disabled in production
+    if is_production and settings.OIDC_ENABLED and not settings.OIDC_VERIFY_AUDIENCE:
         logger.warning(
-            "SECURITY WARNING: KEYCLOAK_VERIFY_AUDIENCE is disabled in production! "
+            "SECURITY WARNING: OIDC_VERIFY_AUDIENCE is disabled in production! "
             "This allows tokens intended for other clients to be accepted. "
-            "Set KEYCLOAK_VERIFY_AUDIENCE=true and configure KEYCLOAK_AUDIENCE for proper token validation."
+            "Set OIDC_VERIFY_AUDIENCE=true and configure OIDC_AUDIENCE for proper token validation."
+        )
+
+    # One line, once, naming the retired environment-variable spellings still in use.
+    # They keep working permanently (core/legacy_auth_env.py); this only tells the
+    # operator that a provider-neutral canonical name now exists.
+    deprecated_env = deprecated_oidc_env_names()
+    if deprecated_env:
+        logger.warning(
+            "DEPRECATED: %s still use the pre-rename environment-variable names. "
+            "They continue to work and take precedence, but the canonical spelling is "
+            "OIDC_* (see docs/OIDC_SETUP.md).",
+            ", ".join(deprecated_env),
         )
 
     # Enforce PKI trusted proxies in production, warn in development

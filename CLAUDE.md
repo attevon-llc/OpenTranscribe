@@ -105,11 +105,11 @@ Configure auth via Admin UI (Settings → Authentication); DB config takes prece
 
 ```bash
 ./opentr.sh start dev --with-ldap-test       # LDAP at localhost:3890, UI :17170 (admin/admin_password)
-./opentr.sh start dev --with-keycloak-test   # Keycloak at localhost:8180 (admin/admin)
+./opentr.sh start dev --with-keycloak-test   # a Keycloak IdP to test OIDC against, localhost:8180 (admin/admin)
 ./opentr.sh start prod --build --with-pki    # PKI/mTLS at https://localhost:5182 (prod-only — Vite can't do mTLS)
 ```
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
-Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/KEYCLOAK_SETUP.md`.
+Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
 
 ### Multi-GPU worker scaling (optional)
 

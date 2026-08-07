@@ -661,7 +661,7 @@ def _update_ldap_user(db, user, username: str, email: str, ldap_data: LdapUserDa
 
     Privilege is deliberately NOT decided here. Promotion and demotion used to be
     copy-pasted into this function, :func:`_convert_local_user_to_ldap` and both
-    Keycloak equivalents, each with its own super_admin guard and none of them
+    OIDC equivalents, each with its own super_admin guard and none of them
     revoking sessions. It now lives in
     ``services/idp_group_mapping_service.reconcile_user``, which
     :func:`sync_ldap_user_to_db` calls for every login.

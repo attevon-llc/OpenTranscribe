@@ -1,3 +1,7 @@
+# mypy: disable-error-code="arg-type"
+# These tests pass structural stand-ins to signatures declaring Session/User
+# and build config objects from dicts. Suppressing arg-type for the file is the
+# honest statement of that; the alternative is casts at every call site.
 """Unit tests for OIDC discovery and generic-provider support (issue #353).
 
 Covers:
@@ -5,8 +9,8 @@ Covers:
 - Public/internal split: the browser-facing authorization endpoint stays public while
   token/JWKS/userinfo move to the compose-network host
 - Realm fallback is byte-identical when no discovery URL is configured
-- Dotted-path roles claim (``groups`` for Authentik, ``realm_access.roles`` for Keycloak)
-- ID-token-preferred validation
+- Dotted-path roles claim (``groups`` for Authentik, ``realm_access.roles`` for realms)
+- ID-token-only validation (there is no access-token fallback)
 - TTL caching (one HTTP fetch serves two calls)
 - A discovery failure degrades to the realm URLs instead of raising
 
@@ -18,14 +22,14 @@ import asyncio
 
 import pytest
 
-from app.auth import oidc_discovery
-from app.auth.keycloak_auth import KeycloakConfig
-from app.auth.keycloak_auth import _claim_by_path
-from app.auth.keycloak_auth import _get_keycloak_urls
-from app.auth.keycloak_auth import _normalize_roles
-from app.auth.keycloak_auth import get_authorization_url
-from app.auth.keycloak_auth import resolve_endpoints
-from app.auth.keycloak_auth import validate_token
+from app.auth.oidc import OIDCConfig
+from app.auth.oidc import discovery as oidc_discovery
+from app.auth.oidc import get_authorization_url
+from app.auth.oidc import resolve_endpoints
+from app.auth.oidc import validate_token
+from app.auth.oidc.claims import _claim_by_path
+from app.auth.oidc.claims import _normalize_roles
+from app.auth.oidc.endpoints import _get_realm_urls
 
 AUTHENTIK_DISCOVERY = (
     "https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration"
@@ -100,7 +104,7 @@ def fake_http(monkeypatch):
     oidc_discovery.clear_discovery_caches()
 
 
-def _cfg(**kwargs) -> KeycloakConfig:
+def _cfg(**kwargs) -> OIDCConfig:
     base = {
         "enabled": True,
         "server_url": "https://keycloak.example.com",
@@ -111,7 +115,7 @@ def _cfg(**kwargs) -> KeycloakConfig:
         "timeout": 5,
     }
     base.update(kwargs)
-    return KeycloakConfig(**base)
+    return OIDCConfig(**base)
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +286,7 @@ class TestResolveEndpoints:
         fake_http.routes[AUTHENTIK_DISCOVERY] = httpx.ConnectError("down")
         cfg = _cfg(discovery_url=AUTHENTIK_DISCOVERY, realm="myrealm")
         endpoints = asyncio.run(resolve_endpoints(cfg))
-        assert endpoints == _get_keycloak_urls(cfg)
+        assert endpoints == _get_realm_urls(cfg)
 
     def test_missing_end_session_endpoint_is_empty(self, fake_http):
         document = {k: v for k, v in AUTHENTIK_DOCUMENT.items() if k != "end_session_endpoint"}
@@ -368,12 +372,12 @@ class TestSecurityDefaults:
     def test_audience_validation_defaults_on(self):
         """A token-validation control must not default to the off position.
 
-        ``core/config.py:KEYCLOAK_VERIFY_AUDIENCE`` is the authority and says True;
-        KeycloakConfig used to disagree in three places.
+        ``core/config.py:OIDC_VERIFY_AUDIENCE`` is the authority and says True;
+        the config dataclass used to disagree in three places.
         """
-        assert KeycloakConfig().verify_audience is True
-        assert KeycloakConfig().verify_issuer is True
-        assert KeycloakConfig().use_pkce is True
+        assert OIDCConfig().verify_audience is True
+        assert OIDCConfig().verify_issuer is True
+        assert OIDCConfig().use_pkce is True
 
 
 class TestClaimByPath:
@@ -421,12 +425,12 @@ class _StubJWT:
 
 @pytest.fixture
 def stub_jwt(monkeypatch, fake_http):
-    """Replace jose's jwt in keycloak_auth and stub the JWKS fetch."""
-    from app.auth import keycloak_auth
+    """Replace jose's jwt in the claims module and stub the JWKS fetch."""
+    from app.auth.oidc import claims as oidc_claims
 
     def _install(table: dict):
         stub = _StubJWT(table)
-        monkeypatch.setattr(keycloak_auth, "jwt", stub)
+        monkeypatch.setattr(oidc_claims, "jwt", stub)
         return stub
 
     fake_http.routes[
@@ -459,24 +463,27 @@ class TestValidateTokenPrefersIdToken:
         assert data is not None
         assert data["is_admin"] is True
 
-    def test_falls_back_to_access_token(self, stub_jwt):
-        """An opaque/unverifiable ID token must not break a working Keycloak login."""
+    def test_invalid_id_token_never_falls_back_to_the_access_token(self, stub_jwt):
+        """The downgrade path is gone, and this is the test that proves it.
+
+        An ID token that fails validation used to fall through to the access token,
+        which is attacker-influenceable (RFC 9068 §6 forbids the client inspecting an
+        access token at all, and its ``aud`` means something different). Here the
+        access token WOULD validate and WOULD grant admin — the login must still fail.
+        """
         stub = stub_jwt({"ACCESS": self._payload(realm_access={"roles": ["admin"]})})
         cfg = _cfg(verify_issuer=False, admin_role="admin")
-        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="OPAQUE"))
-        assert stub.decoded == ["OPAQUE", "ACCESS"]
-        assert data is not None and data["is_admin"] is True
+        assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="OPAQUE")) is None
+        assert stub.decoded == ["OPAQUE"], "the access token must never be decoded"
 
-    def test_no_id_token_behaves_as_before(self, stub_jwt):
+    def test_no_id_token_is_a_hard_failure(self, stub_jwt):
+        """Previously succeeded on the access token alone; now refused outright."""
         stub = stub_jwt({"ACCESS": self._payload(realm_access={"roles": ["user"]})})
         cfg = _cfg(verify_issuer=False, admin_role="admin")
-        data = asyncio.run(validate_token("ACCESS", cfg=cfg))
-        assert stub.decoded == ["ACCESS"]
-        assert data is not None
-        assert data["roles"] == ["user"]
-        assert data["is_admin"] is False
+        assert asyncio.run(validate_token("ACCESS", cfg=cfg)) is None
+        assert stub.decoded == []
 
-    def test_both_tokens_invalid_returns_none(self, stub_jwt):
+    def test_invalid_id_token_returns_none(self, stub_jwt):
         stub_jwt({})
         cfg = _cfg(verify_issuer=False)
         assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID")) is None

@@ -61,25 +61,29 @@ class User(Base):
     )  # "user", "admin", or "super_admin" (authorization source of truth)
     auth_type: Mapped[str] = mapped_column(
         String, default="local", nullable=False
-    )  # "local", "ldap", "keycloak", "pki"
+    )  # "local", "ldap", "oidc", "pki" — see auth/constants.VALID_AUTH_TYPES
     allow_local_fallback: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )  # When True: user can authenticate via password even if auth_type != 'local'
     ldap_uid: Mapped[str | None] = mapped_column(
         String, nullable=True, unique=True, index=True
     )  # sAMAccountName from AD
-    keycloak_id: Mapped[str | None] = mapped_column(
+    # The OIDC ``sub`` claim. Named for what it is: ``sub`` is unique **per issuer**,
+    # not globally, so the column is a subject identifier and not an account id. The
+    # UNIQUE index is safe only while exactly one provider is configured — supporting
+    # several simultaneously means keying on ``(issuer, subject)``.
+    oidc_subject: Mapped[str | None] = mapped_column(
         String(255), unique=True, nullable=True, index=True
-    )  # Keycloak subject ID
+    )
     external_id: Mapped[str | None] = mapped_column(
         String(255), unique=True, nullable=True, index=True
     )  # External IdP subject id
     external_org_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )  # Last-seen external org — convenience only, never authorization authority
-    keycloak_refresh_token: Mapped[str | None] = mapped_column(
+    oidc_refresh_token: Mapped[str | None] = mapped_column(
         Text, nullable=True
-    )  # Encrypted KC refresh token for federated logout
+    )  # Encrypted provider refresh token, for federated logout
     pki_subject_dn: Mapped[str | None] = mapped_column(
         String(512), unique=True, nullable=True, index=True
     )  # X.509 certificate DN

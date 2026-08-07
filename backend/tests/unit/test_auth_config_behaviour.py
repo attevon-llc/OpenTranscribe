@@ -294,16 +294,16 @@ def test_ldap_server_reaches_the_connection_config(db_session, super_admin_user)
     assert config.port == 3269
 
 
-# ── keycloak ────────────────────────────────────────────────────────────────────
+# ── oidc ────────────────────────────────────────────────────────────────────
 
 
-def test_keycloak_roles_claim_reaches_the_token_mapper(db_session, super_admin_user):
+def test_oidc_roles_claim_reaches_the_token_mapper(db_session, super_admin_user):
     """Reading the wrong claim means everyone logs in and nobody is an admin."""
-    from app.auth.keycloak_auth import KeycloakConfig
+    from app.auth.oidc import OIDCConfig
 
-    save(db_session, super_admin_user, "keycloak", {"keycloak_roles_claim": "groups"})
+    save(db_session, super_admin_user, "oidc", {"oidc_roles_claim": "groups"})
 
-    assert KeycloakConfig.from_db(db_session).roles_claim == "groups"
+    assert OIDCConfig.from_db(db_session).roles_claim == "groups"
 
 
 # ── pki ─────────────────────────────────────────────────────────────────────────

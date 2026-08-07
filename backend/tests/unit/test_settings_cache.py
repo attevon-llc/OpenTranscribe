@@ -8,6 +8,12 @@ monkeypatched ``_bypass`` and a tiny in-memory ``TTLCache`` — no real DB rows 
 cross-test leakage. A separate test proves the bypass itself is airtight.
 """
 
+# mypy: disable-error-code="var-annotated"
+# This suite passes structural stand-ins (fake sessions, fake users, namespace
+# requests) to signatures that declare Session/User/Request, and indexes
+# HTTPException.detail, which is typed str while every lifecycle gate raises an
+# object. Declared once here rather than as a cast at every call site — casts
+# bury the assertion, and widening a production signature to suit a test is worse.
 from __future__ import annotations
 
 import time

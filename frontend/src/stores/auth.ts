@@ -43,7 +43,7 @@ export interface User {
   // Authentication type. External/SSO provider strings beyond the core four
   // are registered by the managed edition's auth layer; the password-change UI
   // keys off `auth_type === 'local'`.
-  auth_type: 'local' | 'ldap' | 'keycloak' | 'pki' | string;
+  auth_type: 'local' | 'ldap' | 'oidc' | 'pki' | string;
   allow_local_fallback?: boolean;
   certificate?: CertificateInfo;
   // Cloud-edition tenancy/billing context (populated by the backend from the
@@ -66,7 +66,13 @@ export interface User {
 // Available authentication methods
 export interface AuthMethods {
   methods: string[];
-  keycloak_enabled: boolean;
+  oidc_enabled: boolean;
+  /**
+   * @deprecated Duplicate of `oidc_enabled`, emitted by the backend for one
+   * minor release so a cached bundle of THIS file keeps working against an
+   * upgraded backend. Never read it in new code.
+   */
+  keycloak_enabled?: boolean;
   pki_enabled: boolean;
   ldap_enabled: boolean;
   // Whether accounts holding a local password may sign in at all. Note this is
@@ -718,7 +724,7 @@ export async function getAuthMethods(): Promise<AuthMethods> {
     //     operator deliberately turned off. Both are worse than hiding it.
     return {
       methods: ['local'],
-      keycloak_enabled: false,
+      oidc_enabled: false,
       pki_enabled: false,
       ldap_enabled: false,
       local_enabled: true,
@@ -732,19 +738,19 @@ export async function getAuthMethods(): Promise<AuthMethods> {
   }
 }
 
-// Initiate Keycloak login
-export async function loginWithKeycloak(): Promise<{
+// Initiate OIDC login
+export async function loginWithOIDC(): Promise<{
   success: boolean;
   message?: string;
 }> {
   try {
-    const response = await axiosInstance.get('/auth/keycloak/login');
+    const response = await axiosInstance.get('/auth/oidc/login');
     const { authorization_url } = response.data;
 
     if (!authorization_url) {
       return {
         success: false,
-        message: get(t)('auth.error.keycloakAuthUrlMissing'),
+        message: get(t)('auth.error.oidcAuthUrlMissing'),
       };
     }
 
@@ -756,35 +762,35 @@ export async function loginWithKeycloak(): Promise<{
     try {
       parsed = new URL(authorization_url);
     } catch {
-      console.error('Keycloak login: invalid authorization_url format');
-      return { success: false, message: get(t)('auth.error.keycloakAuthUrlInvalid') };
+      console.error('OIDC login: invalid authorization_url format');
+      return { success: false, message: get(t)('auth.error.oidcAuthUrlInvalid') };
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      console.error('Keycloak login: non-http(s) protocol rejected', parsed.protocol);
-      return { success: false, message: get(t)('auth.error.keycloakAuthUrlProtocol') };
+      console.error('OIDC login: non-http(s) protocol rejected', parsed.protocol);
+      return { success: false, message: get(t)('auth.error.oidcAuthUrlProtocol') };
     }
 
-    // Redirect to Keycloak login page
+    // Redirect to the identity provider's login page
     window.location.href = parsed.toString();
     return { success: true };
   } catch (error: unknown) {
-    console.error('Keycloak login error:', error);
+    console.error('OIDC login error:', error);
     return {
       success: false,
       message:
         (asAuthError(error).response?.data?.detail as string) ||
-        get(t)('auth.error.keycloakInitFailed'),
+        get(t)('auth.error.oidcInitFailed'),
     };
   }
 }
 
-// Handle Keycloak callback (called after redirect back from Keycloak)
-export async function handleKeycloakCallback(
+// Handle the OIDC callback (called after redirect back from the provider)
+export async function handleOIDCCallback(
   code: string,
   state: string
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const response = await axiosInstance.get('/auth/keycloak/callback', {
+    const response = await axiosInstance.get('/auth/oidc/callback', {
       params: { code, state },
     });
 
@@ -803,15 +809,15 @@ export async function handleKeycloakCallback(
 
     return {
       success: false,
-      message: get(t)('auth.error.keycloakCallbackInvalidResponse'),
+      message: get(t)('auth.error.oidcCallbackInvalidResponse'),
     };
   } catch (error: unknown) {
-    console.error('Keycloak callback error:', error);
+    console.error('OIDC callback error:', error);
     return {
       success: false,
       message:
         (asAuthError(error).response?.data?.detail as string) ||
-        get(t)('auth.error.keycloakCallbackFailed'),
+        get(t)('auth.error.oidcCallbackFailed'),
     };
   }
 }

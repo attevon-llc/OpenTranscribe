@@ -32,7 +32,7 @@ from app.utils.encryption import encrypt_api_key
 logger = logging.getLogger(__name__)
 
 #: Spellings accepted for a stored boolean. Anything else is a parse FAILURE, not
-#: a false: ``keycloak_verify_issuer`` and friends are security controls, and
+#: a false: ``oidc_verify_issuer`` and friends are security controls, and
 #: ``value.lower() in ("true", "1", "yes", "on")`` quietly turned a typo into
 #: "validation off".
 BOOL_TRUE_VALUES = frozenset({"true", "1", "yes", "on", "t", "y"})
@@ -46,7 +46,7 @@ MAX_AUDIT_LOG_LIMIT = 500
 #: as if it were one. The API used to return the literal ``***REDACTED***``, the
 #: panel bound it into the password field, and clicking Save on any OTHER field in
 #: the same tab re-encrypted the placeholder over the real LDAP bind password /
-#: Keycloak client secret, with a success toast. Writes now reject it outright.
+#: OIDC client secret, with a success toast. Writes now reject it outright.
 SENSITIVE_SET_SENTINEL = "__SECRET_IS_SET__"  # noqa: S105 # nosec B105
 
 #: Values that mean "the user did not type a new secret" and must leave the stored
@@ -68,7 +68,7 @@ class AuthConfigService:
     # Keys that contain sensitive data and should be encrypted
     SENSITIVE_KEYS = {
         "ldap_bind_password",
-        "keycloak_client_secret",
+        "oidc_client_secret",
     }
 
     #: Keys whose new value does NOT take effect until the process restarts.
@@ -137,12 +137,12 @@ class AuthConfigService:
         "ldap_use_tls": "bool",
         "ldap_timeout": "int",
         "ldap_recursive_groups": "bool",
-        # Keycloak settings
-        "keycloak_enabled": "bool",
-        "keycloak_timeout": "int",
-        "keycloak_verify_audience": "bool",
-        "keycloak_use_pkce": "bool",
-        "keycloak_verify_issuer": "bool",
+        # OIDC settings
+        "oidc_enabled": "bool",
+        "oidc_timeout": "int",
+        "oidc_verify_audience": "bool",
+        "oidc_use_pkce": "bool",
+        "oidc_verify_issuer": "bool",
         # PKI settings
         "pki_enabled": "bool",
         "pki_verify_revocation": "bool",
@@ -213,29 +213,29 @@ class AuthConfigService:
         "LDAP_RECURSIVE_GROUPS": "ldap_recursive_groups",
         "LDAP_GROUP_ATTR": "ldap_group_attr",
         "LDAP_USER_SEARCH_FILTER": "ldap_user_search_filter",
-        # Keycloak
-        "KEYCLOAK_ENABLED": "keycloak_enabled",
-        "KEYCLOAK_SERVER_URL": "keycloak_server_url",
-        "KEYCLOAK_INTERNAL_URL": "keycloak_internal_url",
-        # Generic OIDC discovery (issue #353). The OIDC_* spellings are aliases for
-        # non-Keycloak deployments; KEYCLOAK_* wins when both are set, which is why
-        # it is listed second here — the reverse map keeps the last writer.
-        "OIDC_DISCOVERY_URL": "keycloak_discovery_url",
-        "KEYCLOAK_DISCOVERY_URL": "keycloak_discovery_url",
-        "OIDC_ISSUER": "keycloak_issuer",
-        "KEYCLOAK_ISSUER": "keycloak_issuer",
-        "KEYCLOAK_ROLES_CLAIM": "keycloak_roles_claim",
-        "KEYCLOAK_SCOPES": "keycloak_scopes",
-        "KEYCLOAK_REALM": "keycloak_realm",
-        "KEYCLOAK_CLIENT_ID": "keycloak_client_id",
-        "KEYCLOAK_CLIENT_SECRET": "keycloak_client_secret",
-        "KEYCLOAK_CALLBACK_URL": "keycloak_callback_url",
-        "KEYCLOAK_ADMIN_ROLE": "keycloak_admin_role",
-        "KEYCLOAK_TIMEOUT": "keycloak_timeout",
-        "KEYCLOAK_VERIFY_AUDIENCE": "keycloak_verify_audience",
-        "KEYCLOAK_AUDIENCE": "keycloak_audience",
-        "KEYCLOAK_USE_PKCE": "keycloak_use_pkce",
-        "KEYCLOAK_VERIFY_ISSUER": "keycloak_verify_issuer",
+        # OIDC. Only the canonical spellings appear here: every retired variable
+        # name is translated onto its OIDC_* counterpart before Settings is built,
+        # by core/legacy_auth_env.py. That is the one place the old spelling lives,
+        # so `getattr(settings, env_var_for(key))` below resolves correctly for a
+        # deployment that still sets the historical names, without this table having
+        # to know they exist.
+        "OIDC_ENABLED": "oidc_enabled",
+        "OIDC_SERVER_URL": "oidc_server_url",
+        "OIDC_INTERNAL_URL": "oidc_internal_url",
+        "OIDC_DISCOVERY_URL": "oidc_discovery_url",
+        "OIDC_ISSUER": "oidc_issuer",
+        "OIDC_ROLES_CLAIM": "oidc_roles_claim",
+        "OIDC_SCOPES": "oidc_scopes",
+        "OIDC_REALM": "oidc_realm",
+        "OIDC_CLIENT_ID": "oidc_client_id",
+        "OIDC_CLIENT_SECRET": "oidc_client_secret",
+        "OIDC_CALLBACK_URL": "oidc_callback_url",
+        "OIDC_ADMIN_ROLE": "oidc_admin_role",
+        "OIDC_TIMEOUT": "oidc_timeout",
+        "OIDC_VERIFY_AUDIENCE": "oidc_verify_audience",
+        "OIDC_AUDIENCE": "oidc_audience",
+        "OIDC_USE_PKCE": "oidc_use_pkce",
+        "OIDC_VERIFY_ISSUER": "oidc_verify_issuer",
         # PKI
         "PKI_ENABLED": "pki_enabled",
         "PKI_CA_CERT_PATH": "pki_ca_cert_path",
@@ -357,7 +357,7 @@ class AuthConfigService:
         A value that does not parse falls back to *key*'s schema default, never to
         the zero value. ``value.lower() in ("true", "1", "yes", "on")`` read every
         malformed string as ``False``, so one bad character in
-        ``keycloak_verify_issuer``, ``keycloak_verify_audience`` or
+        ``oidc_verify_issuer``, ``oidc_verify_audience`` or
         ``ldap_use_ssl`` silently turned that security control OFF. Failing open
         because a string did not parse is the bug; the declared default is a known,
         safe source. Parse failures are logged so the bad row is fixable.
@@ -421,7 +421,7 @@ class AuthConfigService:
 
         Args:
             db: Database session
-            category: Configuration category (ldap, keycloak, pki, etc.)
+            category: Configuration category (ldap, oidc, pki, etc.)
             decrypt: Whether to decrypt sensitive values
 
         Returns:
@@ -884,9 +884,7 @@ class AuthConfigService:
         """
         return {
             "ldap_enabled": bool(AuthConfigService.get_effective_config(db, "ldap_enabled")),
-            "keycloak_enabled": bool(
-                AuthConfigService.get_effective_config(db, "keycloak_enabled")
-            ),
+            "oidc_enabled": bool(AuthConfigService.get_effective_config(db, "oidc_enabled")),
             "pki_enabled": bool(AuthConfigService.get_effective_config(db, "pki_enabled")),
             "mfa_enabled": bool(AuthConfigService.get_effective_config(db, "mfa_enabled")),
             "password_policy_enabled": bool(

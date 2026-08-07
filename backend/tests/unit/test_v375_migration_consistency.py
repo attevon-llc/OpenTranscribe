@@ -66,12 +66,12 @@ def test_v375_migration_is_vendor_neutral():
 
 
 def test_detection_arm_returns_v375_on_current_schema(db_session):
-    """An untracked DB with the current (post-v375) schema stamps at v375."""
-    from app.db.migrations import _detect_schema_version
+    """An untracked DB carrying v375's markers must never stamp EARLIER than v375."""
+    from tests.unit._migration_detection import assert_detected_at_or_after
 
     conn = db_session.connection()
     tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) == REVISION
+    assert_detected_at_or_after(conn, tables, REVISION)
 
 
 def test_role_and_auth_type_are_not_nullable(db_session):
@@ -223,6 +223,13 @@ def test_backfill_repairs_null_role_and_unknown_auth_type(db_session):
     conn.execute(text('ALTER TABLE "user" ALTER COLUMN role DROP NOT NULL'))
     conn.execute(text('ALTER TABLE "user" DROP CONSTRAINT IF EXISTS ck_user_auth_type_valid'))
     conn.execute(text('ALTER TABLE "user" ALTER COLUMN auth_type DROP NOT NULL'))
+    # The legacy shape is `is_superuser=true` with a NULL role, which v369's
+    # mirror constraint also rejects — a NULL role makes it evaluate to UNKNOWN,
+    # which is exactly the hole v375 closed. Drop it too or the row cannot be
+    # created to be repaired.
+    conn.execute(
+        text('ALTER TABLE "user" DROP CONSTRAINT IF EXISTS ck_user_superuser_matches_role')
+    )
 
     conn.execute(
         text(

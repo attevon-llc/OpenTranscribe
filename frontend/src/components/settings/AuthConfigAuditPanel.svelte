@@ -30,7 +30,7 @@
     lockout: 'settings.authAudit.category.lockout',
     session: 'settings.authentication.tab.session',
     ldap: 'settings.authentication.tab.ldap',
-    keycloak: 'settings.authentication.tab.keycloak',
+    oidc: 'settings.authentication.tab.oidc',
     pki: 'settings.authentication.tab.pki',
     banner: 'settings.authAudit.category.banner',
   };

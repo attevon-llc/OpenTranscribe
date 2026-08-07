@@ -1,16 +1,16 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
-  import type { KeycloakConfig } from '$lib/api/authConfig';
+  import type { OIDCConfig } from '$lib/api/authConfig';
 
-  export let config: Partial<KeycloakConfig> = {};
+  export let config: Partial<OIDCConfig> = {};
 
   /**
    * Whether the backend reports a stored client secret (`is_set` on the sensitive
    * config row). The secret itself never reaches the browser, so this is the only
    * signal available for the "leave blank to keep the current value" affordance.
    *
-   * Left `undefined` we fall back to `config.keycloak_client_secret === null`,
+   * Left `undefined` we fall back to `config.oidc_client_secret === null`,
    * which is what a stored sensitive row flattens to (the key is absent entirely
    * when no row exists).
    */
@@ -23,30 +23,30 @@
    * two hand-maintained copies; a field added to only one of them silently reset
    * itself the first time the parent reloaded the config.
    *
-   * `keycloak_client_secret` is deliberately absent — see `clientSecretInput`.
+   * `oidc_client_secret` is deliberately absent — see `clientSecretInput`.
    */
-  function buildFormData(source: Partial<KeycloakConfig>): KeycloakConfig {
+  function buildFormData(source: Partial<OIDCConfig>): OIDCConfig {
     return {
-      keycloak_enabled: source.keycloak_enabled ?? false,
-      keycloak_server_url: source.keycloak_server_url ?? '',
-      keycloak_internal_url: source.keycloak_internal_url ?? '',
-      keycloak_discovery_url: source.keycloak_discovery_url ?? '',
-      keycloak_realm: source.keycloak_realm ?? '',
-      keycloak_client_id: source.keycloak_client_id ?? '',
-      keycloak_callback_url: source.keycloak_callback_url ?? '',
-      keycloak_admin_role: source.keycloak_admin_role ?? 'admin',
-      keycloak_roles_claim: source.keycloak_roles_claim ?? 'realm_access.roles',
-      keycloak_issuer: source.keycloak_issuer ?? '',
-      keycloak_scopes: source.keycloak_scopes ?? 'openid email profile',
-      keycloak_timeout: source.keycloak_timeout ?? 30,
-      keycloak_verify_audience: source.keycloak_verify_audience ?? true,
-      keycloak_audience: source.keycloak_audience ?? '',
-      keycloak_use_pkce: source.keycloak_use_pkce ?? true,
-      keycloak_verify_issuer: source.keycloak_verify_issuer ?? true
+      oidc_enabled: source.oidc_enabled ?? false,
+      oidc_server_url: source.oidc_server_url ?? '',
+      oidc_internal_url: source.oidc_internal_url ?? '',
+      oidc_discovery_url: source.oidc_discovery_url ?? '',
+      oidc_realm: source.oidc_realm ?? '',
+      oidc_client_id: source.oidc_client_id ?? '',
+      oidc_callback_url: source.oidc_callback_url ?? '',
+      oidc_admin_role: source.oidc_admin_role ?? 'admin',
+      oidc_roles_claim: source.oidc_roles_claim ?? 'realm_access.roles',
+      oidc_issuer: source.oidc_issuer ?? '',
+      oidc_scopes: source.oidc_scopes ?? 'openid email profile',
+      oidc_timeout: source.oidc_timeout ?? 30,
+      oidc_verify_audience: source.oidc_verify_audience ?? true,
+      oidc_audience: source.oidc_audience ?? '',
+      oidc_use_pkce: source.oidc_use_pkce ?? true,
+      oidc_verify_issuer: source.oidc_verify_issuer ?? true
     };
   }
 
-  let formData: KeycloakConfig = buildFormData(config);
+  let formData: OIDCConfig = buildFormData(config);
 
   /**
    * Held outside `formData` so a secret is only ever submitted when the admin
@@ -67,16 +67,16 @@
     clientSecretInput = '';
   }
 
-  $: clientSecretIsSet = secretIsSet ?? config.keycloak_client_secret === null;
+  $: clientSecretIsSet = secretIsSet ?? config.oidc_client_secret === null;
 
   /** A discovery URL supersedes the realm-based endpoint construction. */
-  $: discoveryActive = (formData.keycloak_discovery_url ?? '').trim() !== '';
+  $: discoveryActive = (formData.oidc_discovery_url ?? '').trim() !== '';
 
   /** Payload for save/test: everything in the form, plus the secret only if typed. */
-  function buildPayload(): KeycloakConfig {
+  function buildPayload(): OIDCConfig {
     return clientSecretInput === ''
       ? { ...formData }
-      : { ...formData, keycloak_client_secret: clientSecretInput };
+      : { ...formData, oidc_client_secret: clientSecretInput };
   }
 
   function handleChange() {
@@ -97,7 +97,7 @@
 
   function generateCallbackUrl() {
     if (typeof window !== 'undefined') {
-      formData.keycloak_callback_url = `${window.location.origin}/api/auth/keycloak/callback`;
+      formData.oidc_callback_url = `${window.location.origin}/api/auth/oidc/callback`;
       handleChange();
     }
   }
@@ -108,268 +108,268 @@
     <label class="toggle-label">
       <input
         type="checkbox"
-        bind:checked={formData.keycloak_enabled}
+        bind:checked={formData.oidc_enabled}
         on:change={handleChange}
       />
-      <span class="toggle-text">{$t('settings.keycloak.enable')}</span>
+      <span class="toggle-text">{$t('settings.oidc.enable')}</span>
     </label>
   </div>
 
   <div class="info-box">
-    <strong>{$t('settings.keycloak.oidcTitle')}</strong>
-    <p>{$t('settings.keycloak.oidcDescription')}</p>
+    <strong>{$t('settings.oidc.oidcTitle')}</strong>
+    <p>{$t('settings.oidc.oidcDescription')}</p>
   </div>
 
-  <div class="section" class:disabled={!formData.keycloak_enabled}>
-    <h3>{$t('settings.keycloak.serverConfiguration')}</h3>
+  <div class="section" class:disabled={!formData.oidc_enabled}>
+    <h3>{$t('settings.oidc.serverConfiguration')}</h3>
 
     <div class="form-group">
-      <label for="keycloak_server_url">{$t('settings.keycloak.serverUrlPublic')}</label>
+      <label for="oidc_server_url">{$t('settings.oidc.serverUrlPublic')}</label>
       <input
-        id="keycloak_server_url"
+        id="oidc_server_url"
         type="text"
-        bind:value={formData.keycloak_server_url}
+        bind:value={formData.oidc_server_url}
         on:input={handleChange}
-        placeholder="https://keycloak.example.com"
-        disabled={!formData.keycloak_enabled}
+        placeholder="https://idp.example.com"
+        disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.keycloak.serverUrlPublicHelp')}</span>
+      <span class="help-text">{$t('settings.oidc.serverUrlPublicHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="keycloak_internal_url">{$t('settings.keycloak.serverUrlInternal')}</label>
+      <label for="oidc_internal_url">{$t('settings.oidc.serverUrlInternal')}</label>
       <input
-        id="keycloak_internal_url"
+        id="oidc_internal_url"
         type="text"
-        bind:value={formData.keycloak_internal_url}
+        bind:value={formData.oidc_internal_url}
         on:input={handleChange}
-        placeholder="http://keycloak:8080"
-        disabled={!formData.keycloak_enabled}
+        placeholder="http://idp:8080"
+        disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.keycloak.serverUrlInternalHelp')}</span>
+      <span class="help-text">{$t('settings.oidc.serverUrlInternalHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="keycloak_discovery_url">{$t('settings.keycloak.discoveryUrl')}</label>
+      <label for="oidc_discovery_url">{$t('settings.oidc.discoveryUrl')}</label>
       <input
-        id="keycloak_discovery_url"
+        id="oidc_discovery_url"
         type="text"
-        bind:value={formData.keycloak_discovery_url}
+        bind:value={formData.oidc_discovery_url}
         on:input={handleChange}
         placeholder="https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration"
-        disabled={!formData.keycloak_enabled}
+        disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.keycloak.discoveryUrlHelp')}</span>
+      <span class="help-text">{$t('settings.oidc.discoveryUrlHelp')}</span>
     </div>
 
     <div class="form-group" class:superseded={discoveryActive}>
-      <label for="keycloak_realm">{$t('settings.keycloak.realm')}</label>
+      <label for="oidc_realm">{$t('settings.oidc.realm')}</label>
       <input
-        id="keycloak_realm"
+        id="oidc_realm"
         type="text"
-        bind:value={formData.keycloak_realm}
+        bind:value={formData.oidc_realm}
         on:input={handleChange}
         placeholder="master"
-        disabled={!formData.keycloak_enabled}
+        disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.keycloak.realmHelp')}</span>
+      <span class="help-text">{$t('settings.oidc.realmHelp')}</span>
       {#if discoveryActive}
-        <span class="help-text superseded-note">{$t('settings.keycloak.realmSupersededHelp')}</span>
+        <span class="help-text superseded-note">{$t('settings.oidc.realmSupersededHelp')}</span>
       {/if}
     </div>
 
     <div class="form-group">
-      <label for="keycloak_timeout">{$t('settings.keycloak.requestTimeout')}</label>
+      <label for="oidc_timeout">{$t('settings.oidc.requestTimeout')}</label>
       <input
-        id="keycloak_timeout"
+        id="oidc_timeout"
         type="number"
-        bind:value={formData.keycloak_timeout}
+        bind:value={formData.oidc_timeout}
         on:input={handleChange}
         min="5"
         max="120"
-        disabled={!formData.keycloak_enabled}
+        disabled={!formData.oidc_enabled}
       />
     </div>
   </div>
 
-  <div class="section" class:disabled={!formData.keycloak_enabled}>
-    <h3>{$t('settings.keycloak.clientConfiguration')}</h3>
+  <div class="section" class:disabled={!formData.oidc_enabled}>
+    <h3>{$t('settings.oidc.clientConfiguration')}</h3>
 
     <div class="form-row">
       <div class="form-group">
-        <label for="keycloak_client_id">{$t('settings.keycloak.clientId')}</label>
+        <label for="oidc_client_id">{$t('settings.oidc.clientId')}</label>
         <input
-          id="keycloak_client_id"
+          id="oidc_client_id"
           type="text"
-          bind:value={formData.keycloak_client_id}
+          bind:value={formData.oidc_client_id}
           on:input={handleChange}
           placeholder="opentranscribe"
-          disabled={!formData.keycloak_enabled}
+          disabled={!formData.oidc_enabled}
         />
       </div>
 
       <div class="form-group">
-        <label for="keycloak_client_secret">{$t('settings.keycloak.clientSecret')}</label>
+        <label for="oidc_client_secret">{$t('settings.oidc.clientSecret')}</label>
         <div class="input-with-toggle">
           <input
-            id="keycloak_client_secret"
+            id="oidc_client_secret"
             type={showSecret ? 'text' : 'password'}
             bind:value={clientSecretInput}
             on:input={handleChange}
             autocomplete="new-password"
             placeholder={clientSecretIsSet
-              ? $t('settings.keycloak.clientSecretKeepPlaceholder')
-              : $t('settings.keycloak.enterClientSecret')}
-            disabled={!formData.keycloak_enabled}
+              ? $t('settings.oidc.clientSecretKeepPlaceholder')
+              : $t('settings.oidc.enterClientSecret')}
+            disabled={!formData.oidc_enabled}
           />
           <button
             type="button"
             class="toggle-visibility"
             on:click={() => showSecret = !showSecret}
-            disabled={!formData.keycloak_enabled}
+            disabled={!formData.oidc_enabled}
           >
             {showSecret ? $t('common.hide') : $t('common.show')}
           </button>
         </div>
         <span class="help-text">
           {clientSecretIsSet
-            ? $t('settings.keycloak.clientSecretSetHelp')
-            : $t('settings.keycloak.clientSecretHelp')}
+            ? $t('settings.oidc.clientSecretSetHelp')
+            : $t('settings.oidc.clientSecretHelp')}
         </span>
       </div>
     </div>
 
     <div class="form-group">
-      <label for="keycloak_callback_url">{$t('settings.keycloak.callbackUrl')}</label>
+      <label for="oidc_callback_url">{$t('settings.oidc.callbackUrl')}</label>
       <div class="input-with-button">
         <input
-          id="keycloak_callback_url"
+          id="oidc_callback_url"
           type="text"
-          bind:value={formData.keycloak_callback_url}
+          bind:value={formData.oidc_callback_url}
           on:input={handleChange}
-          placeholder="https://app.example.com/api/auth/keycloak/callback"
-          disabled={!formData.keycloak_enabled}
+          placeholder="https://app.example.com/login"
+          disabled={!formData.oidc_enabled}
         />
         <button
           type="button"
           class="btn btn-small"
           on:click={generateCallbackUrl}
-          disabled={!formData.keycloak_enabled}
+          disabled={!formData.oidc_enabled}
         >
-          {$t('settings.keycloak.autoDetect')}
+          {$t('settings.oidc.autoDetect')}
         </button>
       </div>
-      <span class="help-text">{$t('settings.keycloak.callbackUrlHelp')}</span>
+      <span class="help-text">{$t('settings.oidc.callbackUrlHelp')}</span>
     </div>
   </div>
 
-  <div class="section" class:disabled={!formData.keycloak_enabled}>
-    <h3>{$t('settings.keycloak.securityOptions')}</h3>
+  <div class="section" class:disabled={!formData.oidc_enabled}>
+    <h3>{$t('settings.oidc.securityOptions')}</h3>
 
     <label class="checkbox-label">
       <input
         type="checkbox"
-        bind:checked={formData.keycloak_use_pkce}
+        bind:checked={formData.oidc_use_pkce}
         on:change={handleChange}
-        disabled={!formData.keycloak_enabled}
+        disabled={!formData.oidc_enabled}
       />
-      <span>{$t('settings.keycloak.usePkce')}</span>
+      <span>{$t('settings.oidc.usePkce')}</span>
     </label>
-    <span class="help-text indented">{$t('settings.keycloak.usePkceHelp')}</span>
+    <span class="help-text indented">{$t('settings.oidc.usePkceHelp')}</span>
 
     <label class="checkbox-label">
       <input
         type="checkbox"
-        bind:checked={formData.keycloak_verify_issuer}
+        bind:checked={formData.oidc_verify_issuer}
         on:change={handleChange}
-        disabled={!formData.keycloak_enabled}
+        disabled={!formData.oidc_enabled}
       />
-      <span>{$t('settings.keycloak.verifyIssuer')}</span>
+      <span>{$t('settings.oidc.verifyIssuer')}</span>
     </label>
 
     <label class="checkbox-label">
       <input
         type="checkbox"
-        bind:checked={formData.keycloak_verify_audience}
+        bind:checked={formData.oidc_verify_audience}
         on:change={handleChange}
-        disabled={!formData.keycloak_enabled}
+        disabled={!formData.oidc_enabled}
       />
-      <span>{$t('settings.keycloak.verifyAudience')}</span>
+      <span>{$t('settings.oidc.verifyAudience')}</span>
     </label>
 
-    {#if formData.keycloak_verify_audience}
+    {#if formData.oidc_verify_audience}
       <div class="form-group indented">
-        <label for="keycloak_audience">{$t('settings.keycloak.expectedAudience')}</label>
+        <label for="oidc_audience">{$t('settings.oidc.expectedAudience')}</label>
         <input
-          id="keycloak_audience"
+          id="oidc_audience"
           type="text"
-          bind:value={formData.keycloak_audience}
+          bind:value={formData.oidc_audience}
           on:input={handleChange}
-          placeholder={$t('settings.keycloak.expectedAudiencePlaceholder')}
-          disabled={!formData.keycloak_enabled}
+          placeholder={$t('settings.oidc.expectedAudiencePlaceholder')}
+          disabled={!formData.oidc_enabled}
         />
       </div>
     {/if}
   </div>
 
-  <div class="section" class:disabled={!formData.keycloak_enabled}>
-    <h3>{$t('settings.keycloak.roleMapping')}</h3>
+  <div class="section" class:disabled={!formData.oidc_enabled}>
+    <h3>{$t('settings.oidc.roleMapping')}</h3>
 
     <div class="form-group">
-      <label for="keycloak_admin_role">{$t('settings.keycloak.adminRoleName')}</label>
+      <label for="oidc_admin_role">{$t('settings.oidc.adminRoleName')}</label>
       <input
-        id="keycloak_admin_role"
+        id="oidc_admin_role"
         type="text"
-        bind:value={formData.keycloak_admin_role}
+        bind:value={formData.oidc_admin_role}
         on:input={handleChange}
         placeholder="admin"
-        disabled={!formData.keycloak_enabled}
+        disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.keycloak.adminRoleHelp')}</span>
+      <span class="help-text">{$t('settings.oidc.adminRoleHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="keycloak_roles_claim">{$t('settings.keycloak.rolesClaim')}</label>
+      <label for="oidc_roles_claim">{$t('settings.oidc.rolesClaim')}</label>
       <input
-        id="keycloak_roles_claim"
+        id="oidc_roles_claim"
         type="text"
-        bind:value={formData.keycloak_roles_claim}
+        bind:value={formData.oidc_roles_claim}
         on:input={handleChange}
         placeholder="realm_access.roles"
-        disabled={!formData.keycloak_enabled}
+        disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.keycloak.rolesClaimHelp')}</span>
-      <span class="help-text">{$t('settings.keycloak.rolesClaimWarning')}</span>
+      <span class="help-text">{$t('settings.oidc.rolesClaimHelp')}</span>
+      <span class="help-text">{$t('settings.oidc.rolesClaimWarning')}</span>
     </div>
   </div>
 
-  <div class="section" class:disabled={!formData.keycloak_enabled}>
-    <h3>{$t('settings.keycloak.advancedOptions')}</h3>
+  <div class="section" class:disabled={!formData.oidc_enabled}>
+    <h3>{$t('settings.oidc.advancedOptions')}</h3>
 
     <div class="form-group">
-      <label for="keycloak_scopes">{$t('settings.keycloak.scopes')}</label>
+      <label for="oidc_scopes">{$t('settings.oidc.scopes')}</label>
       <input
-        id="keycloak_scopes"
+        id="oidc_scopes"
         type="text"
-        bind:value={formData.keycloak_scopes}
+        bind:value={formData.oidc_scopes}
         on:input={handleChange}
         placeholder="openid email profile"
-        disabled={!formData.keycloak_enabled}
+        disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.keycloak.scopesHelp')}</span>
+      <span class="help-text">{$t('settings.oidc.scopesHelp')}</span>
     </div>
 
     <div class="form-group">
-      <label for="keycloak_issuer">{$t('settings.keycloak.issuer')}</label>
+      <label for="oidc_issuer">{$t('settings.oidc.issuer')}</label>
       <input
-        id="keycloak_issuer"
+        id="oidc_issuer"
         type="text"
-        bind:value={formData.keycloak_issuer}
+        bind:value={formData.oidc_issuer}
         on:input={handleChange}
-        placeholder={$t('settings.keycloak.issuerPlaceholder')}
-        disabled={!formData.keycloak_enabled}
+        placeholder={$t('settings.oidc.issuerPlaceholder')}
+        disabled={!formData.oidc_enabled}
       />
-      <span class="help-text">{$t('settings.keycloak.issuerHelp')}</span>
+      <span class="help-text">{$t('settings.oidc.issuerHelp')}</span>
     </div>
   </div>
 
@@ -377,16 +377,16 @@
     <button
       class="btn btn-secondary"
       on:click={handleTest}
-      disabled={!formData.keycloak_enabled || testing}
+      disabled={!formData.oidc_enabled || testing}
     >
-      {testing ? $t('common.testing') : $t('settings.keycloak.testConnection')}
+      {testing ? $t('common.testing') : $t('settings.oidc.testConnection')}
     </button>
     <button
       class="btn btn-primary"
       on:click={handleSave}
       disabled={saving}
     >
-      {saving ? $t('common.saving') : $t('settings.keycloak.saveConfiguration')}
+      {saving ? $t('common.saving') : $t('settings.oidc.saveConfiguration')}
     </button>
   </div>
 </div>

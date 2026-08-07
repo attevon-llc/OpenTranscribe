@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 #: Directory sources a :class:`GroupMapping` can key off. ``ldap`` claim values are
 #: group DNs as the server returns them; ``oidc`` values are whatever the configured
-#: roles claim emits (Keycloak realm roles, Authentik/Okta groups, Entra app roles).
+#: roles claim emits (realm roles, Authentik/Okta groups, Entra app roles).
 #: The two are deliberately separate namespaces — a DN and a role name are not
 #: interchangeable, and their matching rules differ (see the mapping service).
 MAPPING_SOURCE_LDAP = "ldap"

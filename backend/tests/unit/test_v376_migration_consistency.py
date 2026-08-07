@@ -80,12 +80,12 @@ def test_v376_migration_is_vendor_neutral():
 
 
 def test_detection_arm_returns_v376_on_current_schema(db_session):
-    """An untracked DB with the current (post-v376) schema stamps at v376."""
-    from app.db.migrations import _detect_schema_version
+    """An untracked DB carrying v376's markers must never stamp EARLIER than v376."""
+    from tests.unit._migration_detection import assert_detected_at_or_after
 
     conn = db_session.connection()
     tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) == REVISION
+    assert_detected_at_or_after(conn, tables, REVISION)
 
 
 def test_detection_needs_both_markers(db_session):

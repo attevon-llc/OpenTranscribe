@@ -15,16 +15,16 @@ Prerequisites:
 
 Run:
     # Headless (fast)
-    RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_keycloak.py -v
+    RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_oidc.py -v
 
     # With visible browser on XRDP (watch the tests)
-    RUN_AUTH_E2E=true DISPLAY=:13 pytest backend/tests/e2e/test_ldap_keycloak.py -v --headed
+    RUN_AUTH_E2E=true DISPLAY=:13 pytest backend/tests/e2e/test_ldap_oidc.py -v --headed
 
     # Just LDAP tests
-    RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_keycloak.py -v -k ldap
+    RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_oidc.py -v -k ldap
 
     # Just Keycloak tests
-    RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_keycloak.py -v -k keycloak
+    RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_oidc.py -v -k oidc
 """
 
 import json
@@ -427,7 +427,7 @@ def _open_settings_auth_tab(page, tab_name: str = "LDAP/AD"):
     tab_index = {
         "Local Auth": 0,
         "LDAP/AD": 1,
-        "OIDC/Keycloak": 2,
+        "OIDC": 2,
         "PKI/Certificate": 3,
         "Sessions": 4,
     }
@@ -615,36 +615,36 @@ class TestLDAPLogin:
 
 
 @pytest.mark.auth
-class TestKeycloakConfiguration:
+class TestOIDCConfiguration:
     """Configure Keycloak via the admin UI."""
 
-    def test_configure_keycloak_settings(self, admin_page):
+    def test_configure_oidc_settings(self, admin_page):
         """Open settings, go to Authentication > OIDC/Keycloak, fill in config, and save."""
         page = admin_page
-        _open_settings_auth_tab(page, "OIDC/Keycloak")
+        _open_settings_auth_tab(page, "OIDC")
 
         # Enable Keycloak
-        enable_label = page.locator("label:has-text('Enable OIDC/Keycloak')")
+        enable_label = page.locator("label:has-text('Enable OIDC Authentication')")
         enable_checkbox = enable_label.locator("input[type=checkbox]")
         if not enable_checkbox.is_checked():
             enable_checkbox.check()
             page.wait_for_timeout(500)
 
         # Server config - public URL (browser accesses this)
-        page.fill("#keycloak_server_url", KEYCLOAK_URL)
+        page.fill("#oidc_server_url", KEYCLOAK_URL)
         # Internal URL (backend container to Keycloak container)
-        page.fill("#keycloak_internal_url", "http://transcribe-app-keycloak-1:8080")
-        page.fill("#keycloak_realm", KC_REALM)
+        page.fill("#oidc_internal_url", "http://transcribe-app-keycloak-1:8080")
+        page.fill("#oidc_realm", KC_REALM)
 
         # Client config
-        page.fill("#keycloak_client_id", KC_CLIENT_ID)
-        page.fill("#keycloak_client_secret", KC_CLIENT_SECRET)
+        page.fill("#oidc_client_id", KC_CLIENT_ID)
+        page.fill("#oidc_client_secret", KC_CLIENT_SECRET)
 
         # Callback URL - must point to the backend callback endpoint
-        page.fill("#keycloak_callback_url", f"{BACKEND_URL}/api/auth/keycloak/callback")
+        page.fill("#oidc_callback_url", f"{BACKEND_URL}/api/auth/oidc/callback")
 
         # Role mapping
-        page.fill("#keycloak_admin_role", "admin")
+        page.fill("#oidc_admin_role", "admin")
 
         # Security - ensure PKCE is enabled, audience verification off
         pkce_label = page.locator("label:has-text('Use PKCE')")
@@ -666,17 +666,17 @@ class TestKeycloakConfiguration:
 
 
 @pytest.mark.auth
-class TestKeycloakLogin:
+class TestOIDCLogin:
     """Test Keycloak OIDC login flow through the frontend."""
 
-    def test_keycloak_redirect_flow(self, browser_context):
-        """Clicking 'Sign in with Keycloak/OIDC' should redirect to Keycloak login page."""
+    def test_oidc_redirect_flow(self, browser_context):
+        """Clicking the SSO button should redirect to the provider's login page."""
         page = browser_context.new_page()
         page.goto(f"{FRONTEND_URL}/login")
         page.wait_for_load_state("networkidle")
 
         # Use the specific CSS class for the Keycloak button
-        kc_button = page.locator("button.keycloak-button")
+        kc_button = page.locator("button.oidc-button")
 
         if kc_button.count() == 0:
             pytest.skip(
@@ -697,13 +697,13 @@ class TestKeycloakLogin:
         )
         page.close()
 
-    def test_keycloak_admin_login_full_flow(self, browser_context):
+    def test_oidc_admin_login_full_flow(self, browser_context):
         """Complete the full Keycloak OIDC login flow with the admin user."""
         page = browser_context.new_page()
         page.goto(f"{FRONTEND_URL}/login")
         page.wait_for_load_state("networkidle")
 
-        kc_button = page.locator("button.keycloak-button")
+        kc_button = page.locator("button.oidc-button")
 
         if kc_button.count() == 0:
             pytest.skip("Keycloak login button not visible")
@@ -737,7 +737,7 @@ class TestKeycloakLogin:
         page.goto(f"{FRONTEND_URL}/login")
         page.wait_for_load_state("networkidle")
 
-        kc_button = page.locator("button.keycloak-button")
+        kc_button = page.locator("button.oidc-button")
 
         if kc_button.count() == 0:
             pytest.skip("Keycloak login button not visible")
@@ -768,7 +768,7 @@ class TestKeycloakLogin:
         page.goto(f"{FRONTEND_URL}/login")
         page.wait_for_load_state("networkidle")
 
-        kc_button = page.locator("button.keycloak-button")
+        kc_button = page.locator("button.oidc-button")
 
         if kc_button.count() == 0:
             pytest.skip("Keycloak login button not visible")
@@ -832,7 +832,7 @@ class TestHybridAuthentication:
         page.goto(f"{FRONTEND_URL}/login")
         page.wait_for_load_state("networkidle")
 
-        kc_button = page.locator("button.keycloak-button")
+        kc_button = page.locator("button.oidc-button")
         assert kc_button.count() > 0, (
             "Keycloak login button should be visible when Keycloak is enabled"
         )

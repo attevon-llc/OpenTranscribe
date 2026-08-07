@@ -33,8 +33,8 @@ describe('getAuthMethods', () => {
   it('passes the backend flags through untouched', async () => {
     mockedGet.mockResolvedValueOnce({
       data: {
-        methods: ['ldap', 'keycloak'],
-        keycloak_enabled: true,
+        methods: ['ldap', 'oidc'],
+        oidc_enabled: true,
         pki_enabled: false,
         ldap_enabled: true,
         local_enabled: false,
@@ -65,7 +65,7 @@ describe('getAuthMethods', () => {
     // Never advertised: a signup link we cannot confirm either 403s or exposes
     // registration the operator turned off.
     expect(methods.allow_registration).toBe(false);
-    expect(methods.keycloak_enabled).toBe(false);
+    expect(methods.oidc_enabled).toBe(false);
     expect(methods.pki_enabled).toBe(false);
     expect(methods.ldap_enabled).toBe(false);
   });

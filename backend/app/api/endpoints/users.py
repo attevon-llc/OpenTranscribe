@@ -109,7 +109,7 @@ def create_user(user_data: UserCreate, db: Session) -> User:
 
     # local_password_allowed is the single source of truth for whether an account
     # may hold a local password. A freshly created account never has
-    # allow_local_fallback, so pki/keycloak/ldap all land on the placeholder.
+    # allow_local_fallback, so pki/oidc/ldap all land on the placeholder.
     holds_local_password, _reason = local_password_allowed(auth_type, False)
     now = datetime.now(UTC)
 

@@ -17,6 +17,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -163,6 +164,7 @@ def revoke_invitation_endpoint(
 @limiter.limit(get_auth_rate_limit())
 def lookup_invitation_endpoint(
     request: Request,
+    response: Response,
     body: InvitationLookupRequest,
     db: Session = Depends(get_db),
 ):
@@ -189,6 +191,7 @@ def lookup_invitation_endpoint(
 @limiter.limit(get_auth_rate_limit())
 def accept_invitation_endpoint(
     request: Request,
+    response: Response,
     body: InvitationAcceptRequest,
     db: Session = Depends(get_db),
 ):

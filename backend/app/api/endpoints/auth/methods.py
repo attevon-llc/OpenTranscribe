@@ -5,6 +5,7 @@ from datetime import UTC
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Request
+from fastapi import Response
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
@@ -26,7 +27,7 @@ router = APIRouter()
 
 @router.get("/methods", response_model=AuthMethodsResponse)
 @limiter.limit(get_auth_rate_limit())
-def get_auth_methods(request: Request, db: Session = Depends(get_db)):
+def get_auth_methods(request: Request, response: Response, db: Session = Depends(get_db)):
     """
     Get available authentication methods.
 
@@ -41,7 +42,7 @@ def get_auth_methods(request: Request, db: Session = Depends(get_db)):
     auth_settings = get_auth_settings(db)
 
     ldap_enabled = auth_settings.get_bool("ldap_enabled", settings.LDAP_ENABLED)
-    keycloak_enabled = auth_settings.get_bool("keycloak_enabled", settings.KEYCLOAK_ENABLED)
+    oidc_enabled = auth_settings.get_bool("oidc_enabled", settings.OIDC_ENABLED)
     pki_enabled = auth_settings.pki_enabled or settings.PKI_ENABLED
     local_enabled = auth_settings.local_enabled
     allow_registration = auth_settings.allow_registration
@@ -60,8 +61,8 @@ def get_auth_methods(request: Request, db: Session = Depends(get_db)):
         methods.append("local")
     if ldap_enabled:
         methods.append("ldap")
-    if keycloak_enabled:
-        methods.append("keycloak")
+    if oidc_enabled:
+        methods.append("oidc")
     if pki_enabled:
         methods.append("pki")
 
@@ -74,7 +75,7 @@ def get_auth_methods(request: Request, db: Session = Depends(get_db)):
 
     return AuthMethodsResponse(
         methods=methods,
-        keycloak_enabled=keycloak_enabled,
+        oidc_enabled=oidc_enabled,
         pki_enabled=pki_enabled,
         ldap_enabled=ldap_enabled,
         local_enabled=local_enabled,
@@ -129,6 +130,7 @@ def get_login_banner(db: Session = Depends(get_db)):
 @limiter.limit(get_auth_rate_limit())
 def acknowledge_banner(
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):

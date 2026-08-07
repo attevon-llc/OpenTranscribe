@@ -72,12 +72,12 @@ def test_v374_migration_is_vendor_neutral():
 
 
 def test_detection_arm_returns_v374_on_current_schema(db_session):
-    """An untracked DB with the current (post-v374) schema stamps at v374."""
-    from app.db.migrations import _detect_schema_version
+    """An untracked DB carrying v374's markers must never stamp EARLIER than v374."""
+    from tests.unit._migration_detection import assert_detected_at_or_after
 
     conn = db_session.connection()
     tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) == REVISION
+    assert_detected_at_or_after(conn, tables, REVISION)
 
 
 def test_tag_user_id_column_and_indexes_exist(db_session):

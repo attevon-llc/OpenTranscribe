@@ -47,6 +47,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name='user' AND column_name='auth_type')"
     )
+    # NOTE ON THE RETIRED SPELLING IN THIS FILE. Every probe below describes a
+    # schema *as it was at some past revision*, so the pre-v378 column names are the
+    # correct — and only possible — fingerprints for those revisions. This file and
+    # core/legacy_auth_env.py are the two modules under backend/app permitted to name
+    # the old provider at all; see tests/unit/test_oidc_naming_invariant.py.
     has_keycloak_pki = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name='user' AND column_name='keycloak_id')"
@@ -293,7 +298,74 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'user_group_member' AND column_name = 'source')"
     )
 
+    # v378 guards: the OIDC identity rename. THREE markers, all required — the
+    # revision is a single transaction, so a schema carrying only part of it is a
+    # hand-edited database and must stamp lower and receive the whole thing.
+    has_oidc_subject = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'oidc_subject')"
+    )
+    has_oidc_user_refresh_token = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'oidc_refresh_token')"
+    )
+    has_session_id_token = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'refresh_token' AND column_name = 'oidc_id_token')"
+    )
+
+    # v377 guards: the auth-config data rename. This revision adds NO DDL, so there
+    # is no column to probe — the fingerprint is the absence of the retired key
+    # prefix in both config tables. A deployment that never configured OIDC has no
+    # matching rows either way, which is correct: v377 is a no-op there, so stamping
+    # it costs nothing and re-running it costs nothing.
+    has_legacy_oidc_config_keys = (
+        has_auth_config
+        and "auth_config_audit" in tables
+        and _check_exists(
+            "SELECT EXISTS(SELECT 1 FROM auth_config WHERE config_key LIKE 'keycloak\\_%' "
+            "UNION ALL SELECT 1 FROM auth_config_audit WHERE config_key LIKE 'keycloak\\_%')"
+        )
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v378: OIDC identity columns and the auth_type value rename.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+    ):
+        return "v378_oidc_identity_columns"
+    # v377: auth_config / auth_config_audit keys renamed to the oidc_ prefix.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+    ):
+        return "v377_rename_keycloak_config_to_oidc"
     # v376: directory groups drive in-app groups and privileges.
     if (
         has_cloud_seams

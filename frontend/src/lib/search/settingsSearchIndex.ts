@@ -45,7 +45,7 @@ const SECTION_NAMESPACES: Partial<Record<SettingsSection, string[]>> = {
   authentication: [
     'settings.authentication',
     'settings.ldap',
-    'settings.keycloak',
+    'settings.oidc',
     'settings.pki',
     'settings.localAuth',
     'settings.session',

@@ -99,7 +99,7 @@ class AuthConfigAuditResponse(BaseModel):
 class _CategoryConfig(BaseModel):
     """Base for the per-category models.
 
-    ``extra="forbid"`` is what turns a typo'd key (``keycloak_verify_audiance``)
+    ``extra="forbid"`` is what turns a typo'd key (``oidc_verify_audiance``)
     into a 400 instead of a row that is stored forever and read by nothing.
     """
 
@@ -151,45 +151,44 @@ class LDAPConfig(_CategoryConfig):
     ldap_group_attr: str = "memberOf"
 
 
-class KeycloakConfig(_CategoryConfig):
-    """Keycloak/OIDC configuration.
+class OIDCConfig(_CategoryConfig):
+    """OpenID Connect configuration.
 
     Field order drives the admin UI, so the discovery URL sits next to the realm
     it replaces.
     """
 
-    keycloak_enabled: bool = False
-    keycloak_server_url: str = ""
-    keycloak_internal_url: str = ""
+    oidc_enabled: bool = False
+    oidc_server_url: str = ""
+    oidc_internal_url: str = ""
     #: Full ``.well-known/openid-configuration`` URL. When set, every endpoint and
-    #: the issuer come from the provider's metadata and ``keycloak_realm`` is
-    #: ignored. Endpoints used to be built by concatenating
-    #: ``server_url + "/realms/" + realm + ...``, which is a Keycloak-only URL
-    #: shape — Authentik and others 404 on it (issue #353).
-    keycloak_discovery_url: str = ""
+    #: the issuer come from the provider's metadata and ``oidc_realm`` is ignored.
+    #: Endpoints used to be built by concatenating
+    #: ``server_url + "/realms/" + realm + ...``, which is one vendor's URL shape —
+    #: Authentik and others 404 on it (issue #353).
+    oidc_discovery_url: str = ""
     #: Only used when no discovery URL is set.
-    keycloak_realm: str = "opentranscribe"
-    keycloak_client_id: str = ""
-    keycloak_client_secret: str | None = None  # Sensitive
-    keycloak_callback_url: str = ""
-    keycloak_admin_role: str = "admin"
-    #: Dotted path to the claim carrying group/role membership. Keycloak puts it
-    #: in ``realm_access.roles``, which is why that is the default; Authentik and
-    #: Okta use ``groups``, Entra ID uses ``roles``. Reading the Keycloak-only
-    #: claim from another provider fails silently — everyone logs in, nobody is
-    #: an admin.
-    keycloak_roles_claim: str = "realm_access.roles"
+    oidc_realm: str = "opentranscribe"
+    oidc_client_id: str = ""
+    oidc_client_secret: str | None = None  # Sensitive
+    oidc_callback_url: str = ""
+    oidc_admin_role: str = "admin"
+    #: Dotted path to the claim carrying group/role membership. Realm-shaped
+    #: providers put it in ``realm_access.roles``, which is why that is the default;
+    #: Authentik and Okta use ``groups``, Entra ID uses ``roles``. Reading the wrong
+    #: claim fails silently — everyone logs in, nobody is an admin.
+    oidc_roles_claim: str = "realm_access.roles"
     #: Optional issuer override. Normally taken from the discovery document.
-    keycloak_issuer: str = ""
-    keycloak_scopes: str = "openid email profile"
-    keycloak_timeout: int = Field(default=30, ge=1, le=300)
-    #: True matches ``config.py:KEYCLOAK_VERIFY_AUDIENCE``. Both this and
-    #: ``keycloak_verify_issuer`` are token-validation controls: an unparseable
-    #: value must never be read as "off" (see ``AuthConfigService._convert_value``).
-    keycloak_verify_audience: bool = True
-    keycloak_audience: str = ""
-    keycloak_use_pkce: bool = True
-    keycloak_verify_issuer: bool = True
+    oidc_issuer: str = ""
+    oidc_scopes: str = "openid email profile"
+    oidc_timeout: int = Field(default=30, ge=1, le=300)
+    #: True matches ``config.py:OIDC_VERIFY_AUDIENCE``. Both this and
+    #: ``oidc_verify_issuer`` are token-validation controls: an unparseable value
+    #: must never be read as "off" (see ``AuthConfigService._convert_value``).
+    oidc_verify_audience: bool = True
+    oidc_audience: str = ""
+    oidc_use_pkce: bool = True
+    oidc_verify_issuer: bool = True
 
 
 class PKIConfig(_CategoryConfig):
@@ -213,7 +212,7 @@ class PKIConfig(_CategoryConfig):
     #: same transport, but a bare DN assertion is refused — the full certificate
     #: must be forwarded so this application validates it itself.
     #:
-    #: It was ``direct``/``keycloak``/``hybrid``, describing a delegation choice no
+    #: It was ``direct``/``broker``/``hybrid``, describing a delegation choice no
     #: code branched on, and sharing no value with the ``header``/``mutual_tls``
     #: the admin UI sends — so **every save of the PKI tab was rejected** once
     #: unknown values started 400ing.
@@ -312,7 +311,7 @@ class LockoutConfig(_CategoryConfig):
 CATEGORY_SCHEMAS: dict[str, type[_CategoryConfig]] = {
     "local": LocalAuthConfig,
     "ldap": LDAPConfig,
-    "keycloak": KeycloakConfig,
+    "oidc": OIDCConfig,
     "pki": PKIConfig,
     "password_policy": PasswordPolicyConfig,
     "mfa": MFAConfig,
@@ -470,7 +469,7 @@ def validate_category_config(
 class AuthMethodTestRequest(BaseModel):
     """Request to test authentication method connection."""
 
-    category: str  # ldap or keycloak
+    category: str  # ldap or oidc
     config: dict[str, Any]
 
 
@@ -500,7 +499,7 @@ class AuthConfigStatusResponse(BaseModel):
     """Response schema for overall auth configuration status."""
 
     ldap_enabled: bool = False
-    keycloak_enabled: bool = False
+    oidc_enabled: bool = False
     pki_enabled: bool = False
     mfa_enabled: bool = False
     password_policy_enabled: bool = True

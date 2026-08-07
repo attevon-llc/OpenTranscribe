@@ -128,7 +128,7 @@ def test_timing_non_admin_forbidden(client, user_token_headers, path):
     """A normal user is rejected with the admin-gate detail."""
     response = client.get(path, headers=user_token_headers)
     assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert response.json()["detail"] == "Not enough permissions"
+    assert response.json()["detail"].startswith("Not enough permissions")
 
 
 # ---------------------------------------------------------------------------

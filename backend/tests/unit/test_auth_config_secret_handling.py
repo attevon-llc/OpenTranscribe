@@ -5,13 +5,19 @@ PUTs the whole category back when the admin saves ANY field in that tab. The rea
 side returned the literal ``***REDACTED***`` for sensitive keys, and the write
 side skipped only ``None``/``""`` — so opening the LDAP tab and clicking Save
 encrypted the placeholder over the real bind password and reported success. The
-same path applied to ``keycloak_client_secret``.
+same path applied to ``oidc_client_secret``.
 
 A second, opposite defect on the same surface: ``get_config_by_category`` only
 masked inside its ``decrypt=True`` branch, while the admin endpoint calls it with
 ``decrypt=False`` — so that endpoint returned the raw ciphertext to the browser.
 """
 
+# mypy: disable-error-code="arg-type"
+# This suite passes structural stand-ins (fake sessions, fake users, namespace
+# requests) to signatures that declare Session/User/Request, and indexes
+# HTTPException.detail, which is typed str while every lifecycle gate raises an
+# object. Declared once here rather than as a cast at every call site — casts
+# bury the assertion, and widening a production signature to suit a test is worse.
 from __future__ import annotations
 
 import pytest

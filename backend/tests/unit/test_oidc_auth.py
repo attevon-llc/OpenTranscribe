@@ -1,25 +1,25 @@
-"""Unit tests for Keycloak authentication helpers.
+"""Unit tests for the OIDC authentication helpers.
 
 Covers:
 - PKCE code verifier validation (RFC 7636)
 - PKCE pair generation
-- Certificate claim extraction from OIDC tokens (Keycloak-via-PKI / gov flows)
-- Keycloak URL construction
+- Certificate claim extraction from OIDC tokens (IdP-brokered PKI / gov flows)
+- Realm-fallback URL construction
 """
 
-from app.auth.keycloak_auth import KeycloakConfig
-from app.auth.keycloak_auth import _extract_certificate_claims
-from app.auth.keycloak_auth import _get_keycloak_urls
-from app.auth.keycloak_auth import generate_pkce_pair
-from app.auth.keycloak_auth import validate_pkce_code_verifier
+from app.auth.oidc import OIDCConfig
+from app.auth.oidc import generate_pkce_pair
+from app.auth.oidc import validate_pkce_code_verifier
+from app.auth.oidc.claims import _extract_certificate_claims
+from app.auth.oidc.endpoints import _get_realm_urls
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _cfg(**kwargs: object) -> KeycloakConfig:
-    return KeycloakConfig(
+def _cfg(**kwargs: object) -> OIDCConfig:
+    return OIDCConfig(
         enabled=bool(kwargs.get("enabled", True)),
         server_url=str(kwargs.get("server_url", "https://keycloak.example.com")),
         internal_url=str(kwargs.get("internal_url", "")),
@@ -114,12 +114,12 @@ class TestGeneratePkcePair:
 
 
 # ---------------------------------------------------------------------------
-# Certificate claim extraction (Keycloak-via-PKI / government OIDC flows)
+# Certificate claim extraction (IdP-brokered PKI / government OIDC flows)
 # ---------------------------------------------------------------------------
 
 
 class TestExtractCertificateClaims:
-    """Keycloak X.509 authenticator can inject cert metadata into OIDC tokens
+    """An X.509 authenticator can inject cert metadata into OIDC tokens
     using either the short claim names (cert_dn, cert_serial …) or the
     x509_cert_* aliases. Both must be supported for government PKI compliance.
     """
@@ -146,7 +146,7 @@ class TestExtractCertificateClaims:
         assert result["cert_fingerprint"] == "AA:BB:CC:DD"
 
     def test_x509_alias_claim_names(self):
-        """Keycloak X.509 authenticator uses x509_cert_* prefix by default."""
+        """The X.509 authenticator uses the x509_cert_* prefix by default."""
         payload = {
             "x509_cert_dn": "CN=DOE.JANE.9876543210,OU=USA,O=U.S. Government,C=US",
             "x509_cert_serial": "11223344",
@@ -191,8 +191,8 @@ class TestExtractCertificateClaims:
         assert result["cert_issuer"] is None
         assert result["cert_fingerprint"] is None
 
-    def test_keycloak_gov_space_separated_dn(self):
-        """Government Keycloak X.509 format: CN=LastName FirstName emailusername.
+    def test_gov_space_separated_dn(self):
+        """Government X.509 format: CN=LastName FirstName emailusername.
         The email username has no @domain — just the local part.
         """
         payload = {
@@ -217,13 +217,13 @@ class TestExtractCertificateClaims:
 
 
 # ---------------------------------------------------------------------------
-# Government DN display-name parsing (shared path for PKI and Keycloak-via-PKI)
+# Government DN display-name parsing (shared path for PKI and IdP-brokered PKI)
 # ---------------------------------------------------------------------------
 
 
 class TestGovDNDisplayName:
-    """Tests for extract_display_name_from_gov_dn covering the Keycloak space-separated
-    format that government deployments use when Keycloak acts as the X.509 broker.
+    """Tests for extract_display_name_from_gov_dn covering the space-separated format
+    that government deployments use when the IdP acts as the X.509 broker.
     """
 
     def _parse(self, dn: str) -> str:
@@ -231,25 +231,25 @@ class TestGovDNDisplayName:
 
         return extract_display_name_from_gov_dn(dn)
 
-    # --- Keycloak / government space-separated format ---
+    # --- Government space-separated format ---
 
-    def test_keycloak_gov_format_basic(self):
+    def test_gov_format_basic(self):
         """CN=LastName FirstName emailusername → 'FirstName LastName'."""
         assert self._parse("CN=Doe John jdoe,OU=Agency,O=U.S. Government,C=US") == "John Doe"
 
-    def test_keycloak_gov_format_email_user_ignored(self):
+    def test_gov_format_email_user_ignored(self):
         """The email username token (no @domain) must not appear in the display name."""
         result = self._parse("CN=Smith Jane jsmith123,OU=Agency,O=U.S. Government,C=US")
         assert result == "Jane Smith"
         assert "jsmith123" not in result
 
-    def test_keycloak_gov_format_case_normalised(self):
+    def test_gov_format_case_normalised(self):
         """Mixed-case input is title-cased correctly."""
         assert (
             self._parse("CN=WILLIAMS ROBERT rwilliams,O=U.S. Government,C=US") == "Robert Williams"
         )
 
-    def test_keycloak_gov_format_hyphenated_surname(self):
+    def test_gov_format_hyphenated_surname(self):
         """Hyphenated last names are preserved as-is after title-casing."""
         result = self._parse("CN=Garcia-Lopez Maria mgarcia,O=U.S. Government,C=US")
         assert "Maria" in result
@@ -326,14 +326,14 @@ class TestIsPkiAdmin:
 
 
 # ---------------------------------------------------------------------------
-# Keycloak-via-PKI admin promotion
+# IdP-brokered-PKI admin promotion
 # ---------------------------------------------------------------------------
 
 
-class TestKeycloakPkiAdminPromotion:
-    """When Keycloak acts as the X.509/PKI broker, a user whose cert DN is in
-    PKI_ADMIN_DNS must receive admin status even if the Keycloak realm role
-    is not assigned.
+class TestOIDCPkiAdminPromotion:
+    """When the IdP acts as the X.509/PKI broker, a user whose cert DN is in
+    PKI_ADMIN_DNS must receive admin status even if the provider role is not
+    assigned.
     """
 
     def _make_payload(self, roles: list, cert_dn: str | None = None) -> dict:
@@ -348,15 +348,15 @@ class TestKeycloakPkiAdminPromotion:
             payload["cert_dn"] = cert_dn
         return payload
 
-    def test_admin_via_keycloak_role(self):
+    def test_admin_via_provider_role(self):
         payload = self._make_payload(roles=["admin"])
         cert_claims = _extract_certificate_claims(payload)
         roles = payload.get("realm_access", {}).get("roles", [])
         assert "admin" in roles
         assert cert_claims["cert_dn"] is None
 
-    def test_admin_via_cert_dn_when_no_keycloak_role(self):
-        """Cert DN in PKI_ADMIN_DNS must grant admin even without the realm role."""
+    def test_admin_via_cert_dn_when_no_provider_role(self):
+        """Cert DN in PKI_ADMIN_DNS must grant admin even without the provider role."""
         from unittest.mock import patch
 
         from app.auth.pki_auth import _is_pki_admin
@@ -366,7 +366,7 @@ class TestKeycloakPkiAdminPromotion:
 
         cert_claims = _extract_certificate_claims(payload)
         roles = payload.get("realm_access", {}).get("roles", [])
-        is_admin = "admin" in roles  # False — no Keycloak role
+        is_admin = "admin" in roles  # False — no provider role
 
         with patch("app.auth.pki_auth.settings") as mock_settings:
             mock_settings.PKI_ADMIN_DNS = gov_dn
@@ -406,14 +406,14 @@ class TestKeycloakPkiAdminPromotion:
 
 
 # ---------------------------------------------------------------------------
-# Keycloak URL construction
+# Realm-fallback URL construction
 # ---------------------------------------------------------------------------
 
 
-class TestGetKeycloakUrls:
+class TestGetRealmUrls:
     def test_standard_urls_built_from_server_and_realm(self):
         cfg = _cfg(server_url="https://keycloak.example.com", realm="myrealm")
-        urls = _get_keycloak_urls(cfg)
+        urls = _get_realm_urls(cfg)
         assert urls["authorization"] == (
             "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/auth"
         )
@@ -430,12 +430,12 @@ class TestGetKeycloakUrls:
             internal_url="http://keycloak:8080",
             realm="myrealm",
         )
-        urls = _get_keycloak_urls(cfg, internal=True)
+        urls = _get_realm_urls(cfg, internal=True)
         # token and certs use internal URL; auth still uses external
         assert urls["token"].startswith("http://keycloak:8080")
         assert urls["authorization"].startswith("https://keycloak.example.com")
 
     def test_fallback_to_server_url_when_no_internal(self):
         cfg = _cfg(server_url="https://keycloak.example.com", internal_url="", realm="myrealm")
-        urls = _get_keycloak_urls(cfg, internal=True)
+        urls = _get_realm_urls(cfg, internal=True)
         assert urls["token"].startswith("https://keycloak.example.com")

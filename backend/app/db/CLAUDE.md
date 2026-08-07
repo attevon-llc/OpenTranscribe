@@ -28,11 +28,15 @@ pending. `alembic upgrade head` by hand is **production-only**.
 5. Test both paths: `./opentr.sh reset dev` (full chain from scratch) **and** a
    rebuild-and-restart (migration applied on startup over an existing DB).
 
-Version context: `v364_add_content_redaction`, `v365_add_prompt_shared_by`,
-`v366_add_watch_sources`, `v367_add_cloud_seams`, `v369_superuser_role_invariant`
-(the `role`/`is_superuser` CHECK), `v373_add_cluster_organization_id`, head currently
-`v374_add_tag_user_id` (per-user tag ownership — the one revision so far that both
-backfills *and* splits rows, and that drops a pre-existing UNIQUE constraint).
+Version context: `v367_add_cloud_seams`, `v369_superuser_role_invariant` (the
+`role`/`is_superuser` CHECK), `v374_add_tag_user_id` (per-user tag ownership),
+`v375_harden_user_auth_invariants` (auth-type CHECK + invitations),
+`v376_idp_group_mapping`, `v377_rename_keycloak_config_to_oidc` (a **data-only**
+revision — no DDL, so its detection arm keys on the *absence* of the retired config-key
+prefix), head currently `v378_oidc_identity_columns` (`user.oidc_subject`,
+`user.oidc_refresh_token`, `refresh_token.oidc_id_token`, the `auth_type` value swap,
+and the removal of a duplicate CHECK that would otherwise have refused every OIDC
+login).
 
 ## Gotchas
 
@@ -43,6 +47,17 @@ backfills *and* splits rows, and that drops a pre-existing UNIQUE constraint).
   *different* engine/session that never held it. Concurrent backend replicas starting
   together can still race. Treat this as unfixed; if you touch it, hold one dedicated
   connection open for the whole run.
+- **`_detect_schema_version()` legitimately names the pre-`v378` column spellings.**
+  Those probes describe the schema *as it was* at v031 and v170; they are the only
+  possible fingerprints for those revisions. This file and `core/legacy_auth_env.py`
+  are the two modules the OIDC naming invariant
+  (`tests/unit/test_oidc_naming_invariant.py`) exempts on that basis.
+- **A superseded revision's detection test compares chain position, not identity.**
+  `assert _detect_schema_version(...) == REVISION` is only true while that revision is
+  head, so each new revision silently turned its predecessor's test red (three were
+  already failing that way). `tests/unit/_migration_detection.py:
+  assert_detected_at_or_after` asserts what the test is actually for: the ladder must
+  never stamp *lower* than the revision whose markers the schema carries.
 - Only the **backend** runs migrations — Celery workers do not, and there is **no
   `RUN_MIGRATIONS` env gate**. A migration failure calls `SystemExit(1)`; the container
   aborts rather than serving a half-migrated schema.

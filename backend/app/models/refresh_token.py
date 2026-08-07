@@ -13,6 +13,7 @@ from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
 from sqlalchemy import String
+from sqlalchemy import Text
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
@@ -53,6 +54,7 @@ class RefreshToken(Base):
         created_at: Token creation timestamp
         last_activity_at: When this session last presented a refresh token
         absolute_expires_at: Hard ceiling for the whole session, never extended
+        oidc_id_token: Encrypted OIDC ID token, for RP-initiated logout
         user_agent: Optional user agent string for session identification
         ip_address: Optional IP address for session identification
     """
@@ -94,6 +96,17 @@ class RefreshToken(Base):
     absolute_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    #: The OIDC ID token this session was established with, encrypted at rest.
+    #:
+    #: RP-Initiated Logout 1.0 needs it as ``id_token_hint``, so it has to outlive the
+    #: callback — but it carries the user's full identity claim set, so it lives
+    #: **here and never in a cookie**. The obvious reference implementation puts it in
+    #: a browser cookie by default and its own documentation calls that unsafe. On
+    #: this row its lifetime is the session's: rotation, revocation and the
+    #: concurrent-session cap already delete these rows, so nothing extra has to
+    #: remember to clean it up. NULL for every non-OIDC session.
+    oidc_id_token: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)  # IPv6 max length

@@ -35,8 +35,8 @@ from pathlib import Path
 import pytest
 
 import app.api.endpoints.admin as admin
-import app.api.endpoints.auth.keycloak as auth_keycloak
 import app.api.endpoints.auth.methods as auth_methods
+import app.api.endpoints.auth.oidc as auth_oidc
 import app.api.endpoints.auth.pki as auth_pki
 import app.api.endpoints.auth_config as auth_config
 import app.api.endpoints.combined_speaker_migration as combined_speaker_migration
@@ -70,7 +70,7 @@ HARDENED_MODULES = [
     # Issue #320
     admin,
     auth_config,
-    auth_keycloak,
+    auth_oidc,
     auth_methods,
     auth_pki,
     combined_speaker_migration,
@@ -178,7 +178,7 @@ HARDENED_HANDLERS = [
     (admin, "repair_profile_embeddings"),
     (auth_config, "get_all_configs"),
     (auth_config, "update_config_category"),
-    # NOTE: `keycloak_login` used to be here. It became `async def` for OIDC
+    # NOTE: `oidc_login` used to be here. It became `async def` for OIDC
     # discovery (issue #353) — the authorization endpoint now comes from the
     # provider's metadata over HTTP, which cannot be awaited from a sync handler.
     # The invariant this file protects is "blocking I/O must not run on the event
@@ -253,7 +253,7 @@ def test_hardened_handlers_are_sync_on_the_mounted_app(client) -> None:
 BLOCKING_HELPERS = [
     # ldap3 binds block for up to the 10 s connect timeout; the caller hands this to
     # ``run_in_threadpool`` because ``test_auth_connection`` must stay a coroutine for
-    # the genuinely-async Keycloak branch (issue #320).
+    # the genuinely-async OIDC branch (issue #320).
     (auth_config, "_test_ldap_connection"),
     # Issue #320 follow-ups — awaitless coroutines outside the endpoint layer.
     # Blocking object storage, dispatched from the lifespan via run_in_threadpool.
@@ -284,7 +284,7 @@ OFFLOADED_ASYNC_HANDLERS = [
     # for the provider config, and a Redis state write — would otherwise stall every
     # concurrent request rather than one threadpool worker, which is strictly worse
     # than the sync handler it replaced.
-    (auth_keycloak, "keycloak_login", ("KeycloakConfig.from_db", "store_state")),
+    (auth_oidc, "oidc_login", ("OIDCConfig.from_db", "store_state")),
 ]
 
 

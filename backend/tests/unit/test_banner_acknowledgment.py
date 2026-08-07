@@ -21,6 +21,10 @@ its own.
 Everything here runs against fakes: no Postgres, no Redis, no HTTP client.
 """
 
+# mypy: disable-error-code="arg-type,index,method-assign"
+# These tests pass structural stand-ins to signatures declaring Session/User
+# and index HTTPException.detail, which is declared str while every lifecycle
+# gate raises an object. Suppressing both for the file is the honest statement.
 from __future__ import annotations
 
 from datetime import UTC
@@ -31,6 +35,7 @@ from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
+from fastapi import Response
 
 from app.api.endpoints.auth.dependencies import BANNER_EXEMPT_PATHS
 from app.api.endpoints.auth.dependencies import ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED
@@ -252,7 +257,12 @@ class TestAcknowledgingClearsTheGate:
             handler = methods_module.acknowledge_banner
             while hasattr(handler, "__wrapped__"):
                 handler = handler.__wrapped__
-            result = handler(request=_request(ACKNOWLEDGE_PATH), db=_FakeDB(), current_user=user)
+            result = handler(
+                request=_request(ACKNOWLEDGE_PATH),
+                response=Response(),
+                db=_FakeDB(),
+                current_user=user,
+            )
         finally:
             methods_module.audit_logger.log = original
 

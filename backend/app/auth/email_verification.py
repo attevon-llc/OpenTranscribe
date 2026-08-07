@@ -182,7 +182,7 @@ def assert_email_verified_for_local_login(db: Session, user_uuid: str) -> None:
     user = db.query(User).filter(User.uuid == parsed).first()
     if user is None or user.email_verified:
         return
-    # An externally-owned identity reaching this path is a pki/keycloak local
+    # An externally-owned identity reaching this path is a pki/oidc local
     # fallback. Its address was asserted by the IdP (ExternalIdentity.
     # email_verified); re-verifying it here would second-guess the provider.
     if user.auth_type != AUTH_TYPE_LOCAL:

@@ -281,7 +281,7 @@ class TestProtectedAccounts:
     def test_is_protected_predicate(self):
         assert svc.is_protected(FakeUser(1, "a@x.com", role="super_admin")) is True
         assert svc.is_protected(FakeUser(2, "b@x.com", auth_type="local")) is True
-        assert svc.is_protected(FakeUser(3, "c@x.com", auth_type="keycloak")) is True
+        assert svc.is_protected(FakeUser(3, "c@x.com", auth_type="oidc")) is True
         assert svc.is_protected(FakeUser(4, "d@x.com", role="admin")) is False
         assert svc.is_protected(FakeUser(5, "e@x.com")) is False
 

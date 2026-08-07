@@ -1,7 +1,7 @@
 """API endpoints for authentication configuration management.
 
 This module provides REST API endpoints for super admin users to manage
-authentication configuration settings including LDAP, Keycloak, PKI,
+authentication configuration settings including LDAP, OIDC, PKI,
 MFA, password policy, and session configurations.
 
 All endpoints require super_admin role and include audit logging for
@@ -72,7 +72,7 @@ def get_all_configs(
     """Get all authentication configurations grouped by category.
 
     Returns all authentication configuration settings organized by their
-    category (ldap, keycloak, pki, mfa, password_policy, session, banner).
+    category (ldap, oidc, pki, mfa, password_policy, session, banner).
 
     Sensitive values are masked in the response.
 
@@ -138,7 +138,7 @@ def get_config_by_category(
     """Get configuration for a specific category.
 
     Args:
-        category: Configuration category (ldap, keycloak, pki, etc.)
+        category: Configuration category (ldap, oidc, pki, etc.)
 
     Returns:
         Dictionary of configuration key-value pairs for the category
@@ -229,13 +229,13 @@ async def test_auth_connection(
     config: dict[str, Any],
     current_user: User = Depends(get_current_super_admin_user),
 ) -> AuthMethodTestResponse:
-    """Test connection for LDAP or Keycloak.
+    """Test connection for LDAP or OIDC.
 
     Tests the provided configuration without saving it. Useful for
     validating settings before applying them.
 
     Args:
-        category: Configuration category (ldap or keycloak)
+        category: Configuration category (ldap or oidc)
         config: Configuration values to test
 
     Returns:
@@ -250,8 +250,8 @@ async def test_auth_connection(
         # ldap3 is blocking; keep it off the event loop (issue #320).
         ldap_result: AuthMethodTestResponse = await run_in_threadpool(_test_ldap_connection, config)
         return ldap_result
-    elif category == "keycloak":
-        return await _test_keycloak_connection(config)
+    elif category == "oidc":
+        return await _test_oidc_connection(config)
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -462,17 +462,17 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
         )
 
 
-async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
+async def _test_oidc_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
     """Test the OIDC provider connection with the supplied configuration.
 
     Resolves the metadata URL exactly the way the login path does — the explicit
-    discovery URL when one is configured, the Keycloak realm form otherwise. It
-    previously always built the realm form, so on a non-Keycloak provider this
-    button reported a failure for a configuration that was in fact correct, and
-    on Keycloak it tested a URL the login path might not use.
+    discovery URL when one is configured, the realm form otherwise. It previously
+    always built the realm form, so on a provider that does not serve that URL shape
+    this button reported a failure for a configuration that was in fact correct, and
+    on a realm provider it tested a URL the login path might not use.
 
     Args:
-        config: Keycloak/OIDC configuration to test
+        config: OIDC configuration to test
 
     Returns:
         Test result with success status, message, and optional details
@@ -482,9 +482,9 @@ async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestRes
 
         from app.utils.url_validation import assert_safe_outbound_url
 
-        server_url = config.get("keycloak_server_url", "")
-        realm = config.get("keycloak_realm", "opentranscribe")
-        discovery_url = (config.get("keycloak_discovery_url") or "").strip()
+        server_url = config.get("oidc_server_url", "")
+        realm = config.get("oidc_realm", "opentranscribe")
+        discovery_url = (config.get("oidc_discovery_url") or "").strip()
 
         if not discovery_url and not server_url:
             return AuthMethodTestResponse(
@@ -515,7 +515,7 @@ async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestRes
                 message="That URL is not an allowed outbound target.",
             )
 
-        logger.info(f"Testing Keycloak connection to {well_known_url}")
+        logger.info(f"Testing OIDC connection to {well_known_url}")
 
         async with httpx.AsyncClient(timeout=10.0, verify=True) as client:
             response = await client.get(well_known_url)
@@ -535,37 +535,37 @@ async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestRes
                     "supported_scopes": oidc_config.get("scopes_supported", [])[:10],
                 }
 
-                logger.info(f"Keycloak connection test successful to {server_url}")
+                logger.info(f"OIDC connection test successful to {server_url}")
 
                 return AuthMethodTestResponse(
                     success=True,
-                    message="Keycloak connection successful",
+                    message="OIDC connection successful",
                     details=details,
                 )
             else:
                 logger.warning(
-                    f"Keycloak connection test failed with status {response.status_code}: "
+                    f"OIDC connection test failed with status {response.status_code}: "
                     f"{response.text[:200]}"
                 )
                 return AuthMethodTestResponse(
                     success=False,
-                    message=f"Keycloak returned HTTP status {response.status_code}. Check server logs for details.",
+                    message=f"The identity provider returned HTTP status {response.status_code}. Check server logs for details.",
                 )
 
     except httpx.ConnectError as e:
-        logger.warning(f"Keycloak connection test failed: {e}")
+        logger.warning(f"OIDC connection test failed: {e}")
         return AuthMethodTestResponse(
             success=False,
-            message="Could not connect to Keycloak server. Please verify the server URL and network connectivity.",
+            message="Could not connect to the identity provider. Please verify the server URL and network connectivity.",
         )
     except httpx.TimeoutException:
         return AuthMethodTestResponse(
             success=False,
-            message="Connection to Keycloak server timed out",
+            message="Connection to the identity provider timed out",
         )
     except Exception as e:
-        logger.exception(f"Keycloak connection test error: {e}")
+        logger.exception(f"OIDC connection test error: {e}")
         return AuthMethodTestResponse(
             success=False,
-            message="Keycloak connection failed due to an unexpected error. Check server logs for details.",
+            message="OIDC connection failed due to an unexpected error. Check server logs for details.",
         )

@@ -27,7 +27,7 @@ so keep heavy imports lazy.
   `ErrorHandler` builders for opaque 5xx. `pagination.py` — `paginate()` replaces the
   count+offset+limit boilerplate (counts with `order_by(None)`).
 - `encryption.py` — AES-256-GCM (v3) with legacy Fernet auto-detect. Every stored secret (ASR/LLM
-  keys, S3/SMB creds, Keycloak refresh tokens) goes through it.
+  keys, S3/SMB creds, OIDC refresh/ID tokens) goes through it.
 - `uuid7.py` — RFC 9562 UUIDv7, the `default=` for every model `uuid` column (index locality).
 - `scratch_volume.py` — cross-worker WAV handoff at `/scratch/opentranscribe`. **Presence of the
   mount is the feature flag** — there is no enable/disable env var.

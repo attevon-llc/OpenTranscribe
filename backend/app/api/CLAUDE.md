@@ -16,7 +16,7 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   `get_current_active_superuser`, `get_optional_current_user` are defined in
   `endpoints/auth/dependencies.py` and re-exported from the package — there is no `deps.py`,
   and `from app.api.endpoints.auth import get_current_active_user` still works. The rest of
-  the package is one module per flow (`login`, `registration`, `profile`, `keycloak`, `pki`,
+  the package is one module per flow (`login`, `registration`, `profile`, `oidc`, `pki`,
   `methods`, `mfa` + `mfa_tokens`, `sessions`), each owning its own `APIRouter` that
   `__init__.py` includes in declaration order.
 - `deps_context.py` — tenant-aware DI: `get_current_context` → `RequestContext(user, org_id,

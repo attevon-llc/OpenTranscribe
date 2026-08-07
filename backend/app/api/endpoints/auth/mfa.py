@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -75,6 +76,7 @@ def get_mfa_status(
 @limiter.limit(get_auth_rate_limit())
 def setup_mfa(
     request: Request,
+    response: Response,
     enrollment: EnrollmentContext = Depends(get_user_for_enrollment),
     db: Session = Depends(get_db),
 ):
@@ -93,7 +95,7 @@ def setup_mfa(
     a QR code (CPU).
 
     Note: This endpoint is only available when MFA is enabled and the user
-    is not using PKI or Keycloak authentication (which handle MFA separately).
+    is not using PKI or OIDC authentication (which handle MFA separately).
     """
     current_user = enrollment.user
 
@@ -176,6 +178,7 @@ def setup_mfa(
 @limiter.limit(get_auth_rate_limit())
 def verify_mfa_setup(
     request: Request,
+    response: Response,
     request_body: MFAVerifySetupRequest,
     enrollment: EnrollmentContext = Depends(get_user_for_enrollment),
     db: Session = Depends(get_db),
@@ -305,6 +308,7 @@ def verify_mfa_setup(
 @limiter.limit(get_auth_rate_limit())
 def verify_mfa(
     request: Request,
+    response: Response,
     request_body: MFAVerifyRequest,
     db: Session = Depends(get_db),
 ):
@@ -385,6 +389,7 @@ def verify_mfa(
 @limiter.limit(get_auth_rate_limit())
 def disable_mfa(
     request: Request,
+    response: Response,
     request_body: MFADisableRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

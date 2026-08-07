@@ -1,3 +1,9 @@
+# mypy: disable-error-code="operator,union-attr"
+# This suite passes structural stand-ins (fake sessions, fake users, namespace
+# requests) to signatures that declare Session/User/Request, and indexes
+# HTTPException.detail, which is typed str while every lifecycle gate raises an
+# object. Declared once here rather than as a cast at every call site — casts
+# bury the assertion, and widening a production signature to suit a test is worse.
 """
 E2E Tests for Login Page Auth Buttons and Login Flows (Playwright)
 
@@ -5,7 +11,7 @@ Tests verify in a real browser:
 - Login page displays correct auth buttons based on enabled auth methods
 - Local login with email/password works end-to-end
 - LDAP login with username/password works end-to-end
-- Keycloak/OIDC button appears and redirects correctly
+- The OIDC/SSO button appears and redirects correctly
 - PKI certificate button appears when enabled
 - Login form validation (empty fields, invalid email)
 - Thumbnails/gallery load after successful login
@@ -101,12 +107,12 @@ class TestLoginPageAuthButtons:
 
         assert "methods" in result
         assert "local" in result["methods"]
-        assert isinstance(result["keycloak_enabled"], bool)
+        assert isinstance(result["oidc_enabled"], bool)
         assert isinstance(result["pki_enabled"], bool)
         assert isinstance(result["ldap_enabled"], bool)
 
-    def test_keycloak_button_visible_when_enabled(self, page: Page):
-        """Keycloak button appears when keycloak_enabled is true."""
+    def test_oidc_button_visible_when_enabled(self, page: Page):
+        """The SSO button appears when oidc_enabled is true."""
         page.goto(f"{FRONTEND_URL}/login")
         page.wait_for_selector("#email", timeout=10000)
 
@@ -120,16 +126,15 @@ class TestLoginPageAuthButtons:
         """
         )
 
-        keycloak_button = page.locator("button.keycloak-button")
+        oidc_button = page.locator("button.oidc-button")
 
-        if methods.get("keycloak_enabled"):
-            expect(keycloak_button).to_be_visible()
+        if methods.get("oidc_enabled"):
+            expect(oidc_button).to_be_visible()
             assert (
-                "Keycloak" in keycloak_button.text_content()
-                or "keycloak" in keycloak_button.text_content().lower()
+                "SSO" in oidc_button.text_content() or "sso" in oidc_button.text_content().lower()
             )
         else:
-            expect(keycloak_button).to_have_count(0)
+            expect(oidc_button).to_have_count(0)
 
     def test_pki_button_visible_when_enabled(self, page: Page):
         """PKI/Certificate button appears when pki_enabled is true."""
@@ -170,7 +175,7 @@ class TestLoginPageAuthButtons:
 
         divider = page.locator(".auth-divider")
 
-        if methods.get("keycloak_enabled") or methods.get("pki_enabled"):
+        if methods.get("oidc_enabled") or methods.get("pki_enabled"):
             expect(divider).to_be_visible()
         else:
             expect(divider).to_have_count(0)
@@ -330,16 +335,16 @@ class TestLDAPLogin:
         assert "/login" in page.url or page.locator("#email").is_visible()
 
 
-# ===== Keycloak/OIDC Login Tests =====
+# ===== OIDC Login Tests =====
 
 
-class TestKeycloakLogin:
+class TestOIDCLogin:
     """Test Keycloak/OIDC login button and redirect flow.
 
     Requires Keycloak container running and Keycloak enabled in backend config.
     """
 
-    def _is_keycloak_enabled(self, page: Page) -> bool:
+    def _is_oidc_enabled(self, page: Page) -> bool:
         """Check if Keycloak is enabled via API."""
         methods = cast(
             dict,
@@ -352,34 +357,34 @@ class TestKeycloakLogin:
         """
             ),
         )
-        return cast(bool, methods.get("keycloak_enabled", False))
+        return cast(bool, methods.get("oidc_enabled", False))
 
-    def test_keycloak_button_click_redirects(self, page: Page):
+    def test_oidc_button_click_redirects(self, page: Page):
         """Clicking Keycloak button initiates OIDC redirect."""
         page.goto(f"{FRONTEND_URL}/login")
         page.wait_for_selector("#email", timeout=10000)
 
-        if not self._is_keycloak_enabled(page):
+        if not self._is_oidc_enabled(page):
             pytest.skip("Keycloak is not enabled")
 
-        keycloak_button = page.locator("button.keycloak-button")
-        expect(keycloak_button).to_be_visible()
+        oidc_button = page.locator("button.oidc-button")
+        expect(oidc_button).to_be_visible()
 
-        keycloak_button.click()
+        oidc_button.click()
 
         # Should redirect to Keycloak login page (different domain/path)
         page.wait_for_url("**/realms/**", timeout=15000)
         assert "realms" in page.url
 
-    def test_keycloak_redirect_shows_login_form(self, page: Page):
+    def test_oidc_redirect_shows_login_form(self, page: Page):
         """Keycloak redirect page shows a login form."""
         page.goto(f"{FRONTEND_URL}/login")
         page.wait_for_selector("#email", timeout=10000)
 
-        if not self._is_keycloak_enabled(page):
+        if not self._is_oidc_enabled(page):
             pytest.skip("Keycloak is not enabled")
 
-        page.locator("button.keycloak-button").click()
+        page.locator("button.oidc-button").click()
         page.wait_for_url("**/realms/**", timeout=15000)
 
         # Keycloak login page should have username/password fields

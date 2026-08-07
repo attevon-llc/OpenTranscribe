@@ -18,9 +18,9 @@
 import { axiosInstance } from '../axios';
 
 /** Core auth types. External providers register their own strings server-side. */
-export type AuthType = 'local' | 'ldap' | 'keycloak' | 'pki';
+export type AuthType = 'local' | 'ldap' | 'oidc' | 'pki';
 
-export const AUTH_TYPES: readonly AuthType[] = ['local', 'ldap', 'keycloak', 'pki'] as const;
+export const AUTH_TYPES: readonly AuthType[] = ['local', 'ldap', 'oidc', 'pki'] as const;
 
 /** Server-computed lifecycle state — render it, never recompute from dates. */
 export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
@@ -30,7 +30,7 @@ export interface InvitationLookup {
   email: string;
   full_name: string | null;
   auth_type: string;
-  /** False for ldap/keycloak/pki: the IdP owns the credential. */
+  /** False for ldap/oidc/pki: the IdP owns the credential. */
   requires_password: boolean;
   expires_at: string;
 }

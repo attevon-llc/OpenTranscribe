@@ -4,10 +4,10 @@
 ``bulk_update_category`` wrote every key verbatim. Three consequences, all pinned
 here:
 
-* a typo'd key (``keycloak_verify_audiance``) was stored forever and read by
+* a typo'd key (``oidc_verify_audiance``) was stored forever and read by
   nothing, because ``CONFIG_CATEGORIES`` was never consulted on write;
 * ``_convert_value`` read ANY unrecognised string as ``False``, so a malformed
-  ``keycloak_verify_issuer`` / ``keycloak_verify_audience`` / ``ldap_use_ssl``
+  ``oidc_verify_issuer`` / ``oidc_verify_audience`` / ``ldap_use_ssl``
   silently turned that security control OFF — failing open because a string did
   not parse;
 * nothing bounded the numbers, and a key longer than ``VARCHAR(100)`` reached
@@ -22,6 +22,12 @@ globally UNIQUE, so such a key stuck to whichever tab wrote it first and went
 missing from the other tab's GET.
 """
 
+# mypy: disable-error-code="arg-type"
+# This suite passes structural stand-ins (fake sessions, fake users, namespace
+# requests) to signatures that declare Session/User/Request, and indexes
+# HTTPException.detail, which is typed str while every lifecycle gate raises an
+# object. Declared once here rather than as a cast at every call site — casts
+# bury the assertion, and widening a production signature to suit a test is worse.
 from __future__ import annotations
 
 import inspect
@@ -134,19 +140,19 @@ def no_writes(monkeypatch):
 class TestUnknownKeysAreRejected:
     def test_typo_key_is_rejected_and_named(self):
         with pytest.raises(ValueError) as exc:
-            validate_category_config("keycloak", {"keycloak_verify_audiance": True})
+            validate_category_config("oidc", {"oidc_verify_audiance": True})
 
-        assert "keycloak_verify_audiance" in str(exc.value)
+        assert "oidc_verify_audiance" in str(exc.value)
 
     def test_bulk_update_writes_nothing_when_a_key_is_unknown(self, no_writes):
         """The whole payload is refused — not partially applied."""
         with pytest.raises(ValueError):
             AuthConfigService.bulk_update_category(
                 db=None,
-                category="keycloak",
+                category="oidc",
                 config_dict={
-                    "keycloak_realm": "opentranscribe",
-                    "keycloak_verify_audiance": True,
+                    "oidc_realm": "opentranscribe",
+                    "oidc_verify_audiance": True,
                 },
                 user_id=1,
             )
@@ -156,14 +162,14 @@ class TestUnknownKeysAreRejected:
     def test_key_from_another_category_is_rejected(self):
         """``config_key`` is global, but each key belongs to exactly one tab."""
         with pytest.raises(ValueError):
-            validate_category_config("ldap", {"keycloak_client_secret": "x"})
+            validate_category_config("ldap", {"oidc_client_secret": "x"})
 
     def test_known_keys_pass_and_come_back_typed(self):
         cleaned = validate_category_config(
-            "keycloak", {"keycloak_verify_issuer": "true", "keycloak_timeout": "45"}
+            "oidc", {"oidc_verify_issuer": "true", "oidc_timeout": "45"}
         )
 
-        assert cleaned == {"keycloak_verify_issuer": True, "keycloak_timeout": 45}
+        assert cleaned == {"oidc_verify_issuer": True, "oidc_timeout": 45}
 
     def test_only_the_submitted_keys_are_returned(self):
         """Saving one field must not rewrite the rest of the tab with defaults."""
@@ -176,12 +182,10 @@ class TestUnknownKeysAreRejected:
 # Defect 1b — booleans must not fail open
 # --------------------------------------------------------------------------- #
 class TestBooleansNeverSilentlyBecomeFalse:
-    @pytest.mark.parametrize(
-        "key", ["keycloak_verify_issuer", "keycloak_verify_audience", "keycloak_use_pkce"]
-    )
+    @pytest.mark.parametrize("key", ["oidc_verify_issuer", "oidc_verify_audience", "oidc_use_pkce"])
     def test_malformed_boolean_is_rejected_on_write(self, key):
         with pytest.raises(ValueError) as exc:
-            validate_category_config("keycloak", {key: "yes please"})
+            validate_category_config("oidc", {key: "yes please"})
 
         assert key in str(exc.value)
 
@@ -189,13 +193,13 @@ class TestBooleansNeverSilentlyBecomeFalse:
         with pytest.raises(ValueError):
             AuthConfigService.bulk_update_category(
                 db=None,
-                category="keycloak",
-                config_dict={"keycloak_verify_issuer": "yes please"},
+                category="oidc",
+                config_dict={"oidc_verify_issuer": "yes please"},
                 user_id=1,
             )
 
-        assert "keycloak_verify_issuer" not in no_writes
-        assert no_writes.get("keycloak_verify_issuer") is not False, (
+        assert "oidc_verify_issuer" not in no_writes
+        assert no_writes.get("oidc_verify_issuer") is not False, (
             "a value that failed to parse must not be stored as False — that is "
             "issuer validation silently switched off"
         )
@@ -207,13 +211,9 @@ class TestBooleansNeverSilentlyBecomeFalse:
         migrated from a bad .env), so the read path fails CLOSED to the declared
         default instead of to the zero value.
         """
-        assert (
-            AuthConfigService._convert_value("yes please", "bool", "keycloak_verify_issuer") is True
-        )
+        assert AuthConfigService._convert_value("yes please", "bool", "oidc_verify_issuer") is True
 
-    @pytest.mark.parametrize(
-        "key", ["keycloak_verify_audience", "keycloak_verify_issuer", "ldap_use_ssl"]
-    )
+    @pytest.mark.parametrize("key", ["oidc_verify_audience", "oidc_verify_issuer", "ldap_use_ssl"])
     def test_security_controls_stay_on_when_the_stored_value_is_garbage(self, key):
         assert coded_default(key) is True
         assert AuthConfigService._convert_value("<garbage>", "bool", key) is True
@@ -249,7 +249,7 @@ class TestNumericBounds:
             ("ldap", "ldap_port", 0),
             ("ldap", "ldap_port", 65536),
             ("ldap", "ldap_timeout", 0),
-            ("keycloak", "keycloak_timeout", -1),
+            ("oidc", "oidc_timeout", -1),
             ("password_policy", "password_min_length", 7),
             ("mfa", "mfa_backup_code_count", 0),
             ("session", "jwt_access_token_expire_minutes", 0),
@@ -325,15 +325,15 @@ class TestOverLongKey:
     def test_endpoint_returns_400_for_an_unknown_key(self):
         with pytest.raises(HTTPException) as exc:
             endpoint.update_config_category(
-                category="keycloak",
-                config={"keycloak_verify_audiance": True},
+                category="oidc",
+                config={"oidc_verify_audiance": True},
                 request=None,
                 db=_FakeSession(),
                 current_user=_FakeUser(),
             )
 
         assert exc.value.status_code == 400
-        assert "keycloak_verify_audiance" in exc.value.detail
+        assert "oidc_verify_audiance" in exc.value.detail
 
 
 # --------------------------------------------------------------------------- #
@@ -595,9 +595,9 @@ class TestSchemasDriveTheValidation:
         ("key", "expected"),
         [
             # core/config.py is the authority for these; the schema mirrors it.
-            ("keycloak_verify_audience", True),
-            ("keycloak_verify_issuer", True),
-            ("keycloak_use_pkce", True),
+            ("oidc_verify_audience", True),
+            ("oidc_verify_issuer", True),
+            ("oidc_use_pkce", True),
             ("ldap_use_ssl", True),
             ("ldap_port", 636),
             ("password_min_length", 12),

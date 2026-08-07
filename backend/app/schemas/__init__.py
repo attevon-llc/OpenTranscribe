@@ -24,10 +24,10 @@ from .auth_config import AuthConfigUpdate
 from .auth_config import AuthMethodTestRequest
 from .auth_config import AuthMethodTestResponse
 from .auth_config import BulkConfigUpdate
-from .auth_config import KeycloakConfig
 from .auth_config import LDAPConfig
 from .auth_config import LoginBannerConfig
 from .auth_config import MFAConfig
+from .auth_config import OIDCConfig
 from .auth_config import PasswordPolicyConfig
 from .auth_config import PKIConfig
 from .auth_config import SessionConfig
@@ -192,7 +192,7 @@ __all__ = [
     "AuthMethodTestResponse",
     "BulkConfigUpdate",
     "LDAPConfig",
-    "KeycloakConfig",
+    "OIDCConfig",
     "PKIConfig",
     "PasswordPolicyConfig",
     "MFAConfig",

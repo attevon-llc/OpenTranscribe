@@ -306,3 +306,4 @@ test-results/
 
 # Fresh deployment generated compose overlays (opentr.sh --fresh)
 .fresh/
+backend/celerybeat-schedule*

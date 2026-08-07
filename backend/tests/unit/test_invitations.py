@@ -11,6 +11,12 @@ The session fake below evaluates real SQLAlchemy criteria (``col == v``,
 actual predicates the services issue rather than a stubbed lookup.
 """
 
+# mypy: disable-error-code="arg-type,no-any-return,union-attr"
+# This suite passes structural stand-ins (fake sessions, fake users, namespace
+# requests) to signatures that declare Session/User/Request, and indexes
+# HTTPException.detail, which is typed str while every lifecycle gate raises an
+# object. Declared once here rather than as a cast at every call site — casts
+# bury the assertion, and widening a production signature to suit a test is worse.
 from __future__ import annotations
 
 import operator as _op
@@ -22,6 +28,7 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
+from fastapi import Response
 from sqlalchemy.sql import operators as sa_ops
 
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
@@ -298,7 +305,7 @@ class TestInvitationAcceptance:
 
 
 class TestExternalAuthTypeInvitations:
-    @pytest.mark.parametrize("auth_type", ["ldap", "keycloak", "pki"])
+    @pytest.mark.parametrize("auth_type", ["ldap", "oidc", "pki"])
     def test_no_local_password_is_stored(self, db, mailer, admin, auth_type):
         from app.auth.invitations import accept_invitation
 
@@ -322,7 +329,7 @@ class TestExternalAuthTypeInvitations:
         assert user is None and error is not None
 
     def test_the_invite_email_says_no_password_is_needed(self, db, mailer, admin):
-        _invite(db, mailer, admin, auth_type="keycloak")
+        _invite(db, mailer, admin, auth_type="oidc")
         assert mailer.invitations[-1]["requires_password"] is False
 
 
@@ -418,7 +425,7 @@ class TestEmailVerification:
         self._require(monkeypatch, False)
         assert_email_verified_for_local_login(db, str(user.uuid))
 
-    @pytest.mark.parametrize("auth_type", ["ldap", "keycloak", "pki"])
+    @pytest.mark.parametrize("auth_type", ["ldap", "oidc", "pki"])
     def test_external_accounts_are_unaffected(self, db, mailer, monkeypatch, auth_type):
         """Their address is the IdP's assertion, not ours to re-verify."""
         from app.auth.email_verification import assert_email_verified_for_local_login
@@ -546,7 +553,12 @@ def test_accept_endpoint_answers_every_bad_token_identically(db, mailer, admin):
     outcomes = set()
     for token in ("no-such-token", "", expired_token, revoked_token, used_token):
         with pytest.raises(HTTPException) as exc:
-            handler(request=request, body=InvitationAcceptRequest(token=token), db=db)
+            handler(
+                request=request,
+                response=Response(),
+                body=InvitationAcceptRequest(token=token),
+                db=db,
+            )
         outcomes.add((exc.value.status_code, exc.value.detail))
 
     assert len(outcomes) == 1, f"token state leaked through the response: {outcomes}"

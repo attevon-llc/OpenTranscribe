@@ -1,12 +1,12 @@
 """Generic JIT user provisioning for registry-based external providers.
 
-Mirrors the battle-tested ``sync_keycloak_user_to_db`` pattern (lookup by
+Mirrors the battle-tested ``sync_oidc_user_to_db`` pattern (lookup by
 external id -> email -> create, with IntegrityError race recovery) but is
 provider-agnostic: any managed IdP registered through
 ``app.auth.provider_registry`` maps onto the generic ``external_id`` /
 ``external_org_id`` columns with no core changes.
 
-LDAP/Keycloak/PKI keep their existing dedicated sync paths — this module only
+LDAP/OIDC/PKI keep their existing dedicated sync paths — this module only
 serves providers registered through ``app.auth.provider_registry``.
 """
 
@@ -57,7 +57,7 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     Lookup order: external id -> email -> create. Concurrent first-requests
     are race-safe via IntegrityError recovery on the unique external-id
     column. Existing local users matched by email are converted one-way to
-    the external provider (local password cleared), mirroring the Keycloak
+    the external provider (local password cleared), mirroring the OIDC
     conversion semantics — but ONLY when the IdP asserts the email is
     verified, and NEVER for super_admin accounts (platform-owner accounts
     must be linked deliberately, not via self-serve IdP registration).
@@ -119,7 +119,7 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     # Product metric: external/JIT signup. The single point ALL external methods
     # funnel through (including any cloud-edition webhook, which calls this same
     # core function). Bound the label to the fixed core provider set so the
-    # cardinality stays in {local,ldap,keycloak,pki}; anything else maps to
+    # cardinality stays in {local,ldap,oidc,pki}; anything else maps to
     # "external".
     from app.auth.constants import VALID_AUTH_TYPES
     from app.core.metrics import user_signups_total

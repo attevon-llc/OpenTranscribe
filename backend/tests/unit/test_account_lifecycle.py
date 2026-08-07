@@ -30,6 +30,7 @@ from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
+from fastapi import Response
 
 from app.api.endpoints.auth import dependencies as deps_module
 from app.api.endpoints.auth import login as login_module
@@ -318,7 +319,7 @@ class TestPasswordExpiryAtLogin:
 
         assert user.must_change_password is False
 
-    @pytest.mark.parametrize("auth_type", ["ldap", "keycloak", "pki"])
+    @pytest.mark.parametrize("auth_type", ["ldap", "oidc", "pki"])
     def test_non_local_account_is_never_expired(self, expiry_enforced, login_audited, auth_type):
         """password_changed_at is meaningless for a directory-managed identity."""
         user = _user(
@@ -479,6 +480,7 @@ class TestLastLoginIsStamped:
 
         with pytest.raises(HTTPException) as exc:
             _unwrap(login_module.login_for_access_token)(
+                response=Response(),
                 request=None,
                 form_data=SimpleNamespace(username="person@example.com", password="pw"),
                 db=_FakeDB({User: user}),

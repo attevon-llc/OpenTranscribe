@@ -1,13 +1,13 @@
 """Turn directory groups into in-app groups and privileges — one implementation.
 
 Both directory paths already carry the caller's full group list (``LdapUserData.groups``
-from ``memberOf``, ``KeycloakUserData.roles`` from the configurable roles claim) and
+from ``memberOf``, ``OIDCUserData.roles`` from the configurable roles claim) and
 until now discarded everything but ``is_admin``. This module is what consumes the rest:
 a :class:`~app.models.group.GroupMapping` row binds one claim value to a
 ``UserGroup`` and/or a granted role, and :func:`reconcile_user` applies the result.
 
 Two callers share this one implementation — login (``auth/ldap_auth.py``,
-``auth/keycloak_auth.py``) and the periodic sweep
+``auth/oidc/provisioning.py``) and the periodic sweep
 (``services/directory_sync_service.py``). There is deliberately no second copy: a
 login-only version would never revoke, and a sweep-only version would leave a
 freshly-promoted user waiting a day for their groups.
@@ -326,7 +326,7 @@ def reconcile_user(
         source: ``ldap`` or ``oidc``.
         claim_values: The group/role strings the IdP asserted for this login.
         legacy_admin: The pre-existing admin signal — ``ldap_admin_users`` /
-            ``ldap_admin_groups`` for LDAP, ``keycloak_admin_role`` (or a PKI admin
+            ``ldap_admin_groups`` for LDAP, ``oidc_admin_role`` (or a PKI admin
             DN) for OIDC. OR-ed with the mapped grant, so a deployment that has not
             created any mapping behaves exactly as it did before ``v376``.
         reason: Actor string recorded in the audit event (``idp_login`` /

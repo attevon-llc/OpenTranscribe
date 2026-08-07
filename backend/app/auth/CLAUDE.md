@@ -1,17 +1,17 @@
-# app/auth — hybrid authentication (local · LDAP · Keycloak · PKI)
+# app/auth — hybrid authentication (local · LDAP · OIDC · PKI)
 
 ## Purpose
 
 Multiple auth methods run **simultaneously**, selected per-user by `User.auth_type`
-(`local`, `ldap`, `keycloak`, `pki` — `constants.py:VALID_AUTH_TYPES`, now enforced by a DB
-CHECK, `v375`). Configure in the Admin UI (Settings → Authentication):
+(`local`, `ldap`, `oidc`, `pki` — `constants.py:VALID_AUTH_TYPES`, enforced by a DB CHECK,
+`v375`, value set swapped by `v378`). Configure in the Admin UI (Settings → Authentication):
 **DB `auth_config` wins over `.env`, which wins over the coded default**
 (`services/auth_config_service.py`). Endpoints live in the `api/endpoints/auth/` package +
 `auth_config.py`, not here.
 
 > There is **no `AUTH_TYPE` setting**. It appears in older docs and is described there as
 > informational; nothing ever read it. What methods are *available* is decided per-method by
-> `local_enabled` / `ldap_enabled` / `keycloak_enabled` / `pki_enabled`.
+> `local_enabled` / `ldap_enabled` / `oidc_enabled` / `pki_enabled`.
 
 ## The identity-source model (issue #354)
 
@@ -22,7 +22,7 @@ with a password / still self-register?":
 |---|---|---|
 | `local_enabled` | may accounts holding a local password authenticate at all | **never applies to an active `super_admin`** |
 | `allow_registration` | may anyone create their own account | cannot be true while `local_enabled` is false |
-| per-user `auth_type` + `allow_local_fallback` | which method authenticates *this* account | `allow_local_fallback` is pki/keycloak-only, super_admin-settable |
+| per-user `auth_type` + `allow_local_fallback` | which method authenticates *this* account | `allow_local_fallback` is pki/oidc-only, super_admin-settable |
 | `pki_allow_password_fallback` | deployment **ceiling** over the per-user flag for pki accounts | effective = per-user **AND** this; defaults `True` so it adds no restriction on upgrade |
 
 - `local_enabled` does **not** hide the username/password form — LDAP authenticates through the
@@ -62,6 +62,13 @@ with a password / still self-register?":
 
 ## Key files
 
+- `oidc/` — the OpenID Connect package, split by protocol stage: `config.py`
+  (`OIDCConfig`, DB > .env > default), `discovery.py` (`.well-known` + JWKS, TTL-cached),
+  `endpoints.py` (discovery-or-realm resolution), `flow.py` (PKCE, authorization URL,
+  token exchange, federated logout), `claims.py` (ID-token verification), `provisioning.py`
+  (JIT). It replaced a single ~900-line module named for one vendor.
+- `account_linking.py` — **the single** "may this external identity take over an existing
+  account?" rule, used by LDAP, PKI and OIDC alike. Do not add a fourth.
 - `roles.py` — the authorization contract (read this first, it's 35 lines).
 - `token_service.py` — JWT issue/verify, `rotate_refresh_token`, `revoke_all_user_tokens`,
   Redis JTI revocation list + `refresh_token.revoked_at`, **and session lifetime**
@@ -104,6 +111,28 @@ with a password / still self-register?":
   (a 401 there caused a spurious logout cascade). It returns `refreshable` when only a
   refresh cookie is present.
 
+## The OIDC surface is named `oidc_*`, and a test enforces it
+
+A user in the field reported that "Keycloak" support looked hardcoded to Keycloak.
+Discovery (#353) made a generic provider work; the rename (`v377`/`v378`) made that
+*visible*, because every field an Authentik admin typed into was still named for
+someone else's product.
+
+- Config keys, schema, service, routes (`/api/auth/oidc/*`), admin panel and i18n are
+  all `oidc_*`. The IdP redirect URI points at the SPA's `/login`, never at these
+  routes, so the rename needed no identity-provider reconfiguration.
+- **`KEYCLOAK_*` environment variables keep working forever**, translated onto the
+  canonical `OIDC_*` names by `core/legacy_auth_env.py` before `Settings` is built. The
+  legacy spelling **wins** when both are set. That module is an *input adapter*, not a
+  second implementation — nothing downstream, including
+  `AuthConfigService.ENV_TO_CONFIG_MAPPING`, ever sees the old name.
+- `tests/unit/test_oidc_naming_invariant.py` fails the build if the retired noun
+  appears in any Python file under `backend/app/` outside a three-entry allow-list,
+  each carrying a written reason: the env adapter, `db/migrations.py` (historical
+  schema fingerprints for pre-`v378` databases), and the deprecated
+  `AuthMethodsResponse.keycloak_enabled` computed field, which is emitted for one
+  minor release so a cached SPA bundle keeps rendering the SSO button.
+
 ## Gotchas
 
 - **Every token carries a `type` claim and every consumer verifies it.** Access, refresh and
@@ -119,10 +148,10 @@ with a password / still self-register?":
   hard-blocked LDAP, so an LDAP account with `allow_local_fallback` authenticated against a
   local hash via the ORM path. The write side is guarded too
   (`services/account_security_service.py`).
-- **PKI/Keycloak users bypass MFA only when they used their native method.** If they fall
+- **PKI/OIDC users bypass MFA only when they used their native method.** If they fall
   back to a local password, MFA still applies (`api/endpoints/auth/login.py`, the
   `actual_auth_method` check).
-  `AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [pki, keycloak]`; LDAP never has a local password.
+  `AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [pki, oidc]`; LDAP never has a local password.
 - **Changing a credential or a privilege must revoke sessions.** Go through
   `services/account_security_service.py` — it also applies the password policy and writes the
   audit event, all three of which were previously applied inconsistently across
@@ -144,7 +173,7 @@ with a password / still self-register?":
   A DN header is only trusted from a configured proxy or alongside a validated certificate —
   the proxy is what terminates mTLS and vouches for the DN.
 - **`pki_mode` is `header` | `mutual_tls`, and `pki_auth.py` reads it.** It used to be
-  `direct`/`keycloak`/`hybrid` in the schema and `header`/`mutual_tls` in the UI — no value
+  `direct`/`broker`/`hybrid` in the schema and `header`/`mutual_tls` in the UI — no value
   could match, so **every save of the PKI tab was rejected**, and no backend code branched
   on it either way. `mutual_tls` refuses a DN-header-only assertion even from a trusted
   proxy: the certificate itself must be forwarded so this process validates it.
@@ -158,6 +187,30 @@ with a password / still self-register?":
   `/auth/banner/acknowledge` and both logout routes reachable. Deliberately **not** audited
   per request — it would fire on every request of every pre-acknowledgment session; the
   acknowledgment itself is the audit artefact.
+- **Only the ID token authenticates an OIDC login.** `validate_token` used to try the
+  ID token and then fall back to the access token, accepting whichever verified — so an
+  ID token failing `aud`/`iss` silently downgraded to a credential RFC 9068 §6 forbids
+  the client from inspecting, whose `aud` means something else entirely, and which is
+  opaque on Okta/Google/Entra. The fallback is deleted; a missing or invalid ID token is
+  a hard 401. `openid` is forced into the requested scopes for the same reason.
+  The access token is still used — as a **bearer credential** against `userinfo`, which
+  is what it is for.
+- **The OIDC ID token lives on the session row, never in a cookie**
+  (`refresh_token.oidc_id_token`, `v378`, encrypted at rest). RP-Initiated Logout needs
+  it as `id_token_hint`, so it has to outlive the callback; a cookie would expose the
+  full identity claim set to anything that reaches the cookie jar and outlive the
+  session that justified it. On the session row, rotation/revocation/the concurrent
+  cap already delete it.
+- **`user.oidc_subject` is a `sub`, unique only per ISSUER.** The UNIQUE index on it is
+  sound only while exactly one provider is configured; multi-provider means keying on
+  `(iss, sub)`. The old column name asserted a global identifier, which is why it was
+  renamed rather than left alone.
+- **`user.auth_type` had TWO CHECK constraints** — `ck_user_auth_type_valid` (v375) and
+  a legacy `users_auth_type_check` (v200, re-asserted by v367/v371, still in
+  `database/init_db.sql`). Swapping only the first would not have failed the migration;
+  it would have failed every OIDC login afterwards with a CheckViolation on JIT
+  provisioning. `v378` drops the duplicate — one rule, one owner — and
+  `test_v378_migration_consistency.py` pins that exactly one remains.
 - **Secrets never leave the auth-config API.** `config_value` is `None` for a sensitive key and
   `is_set` carries the signal. Do not reintroduce a placeholder: returning `***REDACTED***`
   meant the admin panel bound it into the password field and the next Save encrypted it over
@@ -169,8 +222,10 @@ with a password / still self-register?":
   Prod keeps strict values — the override is never loaded there. Env changes need a
   container **recreate**, not `restart-backend`.
 - Local IdPs for testing: `--with-ldap-test` (LDAP :3890, UI :17170, `admin`/`admin_password`),
-  `--with-keycloak-test` (:8180, `admin`/`admin`), `./opentr.sh start prod --build --with-pki`
+  `--with-keycloak-test` (a Keycloak to test OIDC against, :8180, `admin`/`admin`),
+  `./opentr.sh start prod --build --with-pki`
   (mTLS at https://localhost:5182 — **prod-only, Vite can't do mTLS**). Client certs:
   `scripts/pki/test-certs/clients/*.p12`.
-- Setup docs: `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/KEYCLOAK_SETUP.md`,
-  `docs-site/docs/authentication/{overview,pki,ldap,keycloak}.md`.
+- Setup docs: `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`,
+  `docs-site/docs/authentication/{overview,pki,ldap,keycloak}.md` (the docs-site page is
+  still named for the old provider — Phase 5 of `plans/oidc-conformance-plan.md`).

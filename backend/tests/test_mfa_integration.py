@@ -8,7 +8,7 @@ Tests verify the full MFA lifecycle through FastAPI endpoints with a real databa
 - Login with MFA required (returns mfa_token)
 - MFA verify during login (TOTP code + backup code)
 - MFA disable
-- PKI/Keycloak users cannot set up MFA
+- PKI/OIDC users cannot set up MFA
 
 Run with: pytest tests/test_mfa_integration.py -v
 """

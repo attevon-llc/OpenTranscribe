@@ -91,6 +91,10 @@ def _ensure_admin_user(db: Session) -> None:
             hashed_password=get_password_hash(password),
             role=ROLE_SUPER_ADMIN,
             is_superuser=role_implies_superuser(ROLE_SUPER_ADMIN),
+            # System-created: there is no inbox to prove control of, and an
+            # unverified bootstrap admin is the one account a
+            # require_email_verification deployment could strand.
+            email_verified=True,
             # Password expiry keys off this column. Leaving it NULL made the
             # bootstrap admin indistinguishable from an account whose password
             # age is unknown, which is the one account that must never be locked

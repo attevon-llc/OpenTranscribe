@@ -130,7 +130,7 @@ source backend/venv/bin/activate
 pytest backend/tests/e2e/test_auth_buttons.py -v
 
 # LDAP and Keycloak config + login tests (requires containers)
-RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_keycloak.py -v
+RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_oidc.py -v
 
 # PKI E2E tests (requires PKI nginx overlay with TLS)
 RUN_PKI_E2E=true pytest backend/tests/e2e/test_pki.py -v --headed

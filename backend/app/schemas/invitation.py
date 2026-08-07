@@ -84,7 +84,7 @@ class InvitationLookupResponse(BaseModel):
     email: str
     full_name: str | None = None
     auth_type: str
-    #: False for ldap/keycloak/pki: the IdP owns the credential, so the accept
+    #: False for ldap/oidc/pki: the IdP owns the credential, so the accept
     #: page bounces to it instead of showing a password form.
     requires_password: bool
     expires_at: datetime

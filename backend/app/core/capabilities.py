@@ -103,7 +103,7 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     "llm.byok": False,  # bring-your-own LLM key (cloud tier-gated extra)
     "redaction.policy": True,  # enforcement floor (org admin in cloud; operator here)
     # -- platform (staff / self-host operator config & ops) ----------------------
-    "auth.config_ui": True,  # LDAP/Keycloak/PKI admin configuration UI
+    "auth.config_ui": True,  # LDAP/OIDC/PKI admin configuration UI
     "users.local_admin": True,  # local user CRUD admin UI
     "asr.model_selection": True,  # admin local-model pinning UI
     "engine.settings": True,  # diarization/boundary tuning admin panel

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import EmailStr
 from pydantic import Field
+from pydantic import computed_field
 from pydantic import field_validator
 from pydantic import model_validator
 
@@ -139,10 +140,10 @@ class UserInDB(UserBase, UUIDBaseSchema):
     updated_at: datetime
     is_active: bool
     is_superuser: bool
-    auth_type: str  # "local", "ldap", "keycloak", "pki"
+    auth_type: str  # "local", "ldap", "oidc", "pki"
     allow_local_fallback: bool = False
     ldap_uid: str | None = None
-    keycloak_id: str | None = None
+    oidc_subject: str | None = None
     pki_subject_dn: str | None = None
 
     # FedRAMP compliance fields
@@ -257,7 +258,7 @@ class MFAStatusResponse(BaseModel):
     mfa_enabled: bool
     mfa_configured: bool  # True if user has started MFA setup
     mfa_required: bool  # True if system requires MFA
-    can_setup_mfa: bool  # True if user can set up MFA (not PKI/Keycloak)
+    can_setup_mfa: bool  # True if user can set up MFA (not PKI/OIDC)
 
 
 class MFALoginResponse(BaseModel):
@@ -292,7 +293,7 @@ class AuthMethodsResponse(BaseModel):
     """
 
     methods: list[str]
-    keycloak_enabled: bool
+    oidc_enabled: bool
     pki_enabled: bool
     ldap_enabled: bool
     #: Whether accounts holding a local password may sign in. The password form
@@ -306,6 +307,22 @@ class AuthMethodsResponse(BaseModel):
     login_banner_enabled: bool
     login_banner_text: str
     login_banner_classification: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def keycloak_enabled(self) -> bool:
+        """DEPRECATED duplicate of :attr:`oidc_enabled`.
+
+        A browser holding a cached SPA bundle from before the rename against a
+        freshly-upgraded backend is a real deployment state, and that bundle reads
+        this key to decide whether to render the SSO button. Emitted for **one minor
+        release**; removal ticket: "drop AuthMethodsResponse.keycloak_enabled".
+
+        Computed rather than a second stored field on purpose — the two can never
+        report different values, and deletion is one block rather than a hunt for
+        every constructor call site.
+        """
+        return self.oidc_enabled
 
 
 class BannerAcknowledgmentRequest(BaseModel):

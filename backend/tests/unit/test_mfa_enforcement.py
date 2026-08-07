@@ -31,6 +31,7 @@ from uuid import UUID
 import pyotp
 import pytest
 from fastapi import HTTPException
+from fastapi import Response
 from jose import jwt
 
 from app.api.endpoints.auth import login as login_module
@@ -240,6 +241,7 @@ class TestEnrollmentIsEnforcedAtLogin:
         monkeypatch.setattr(settings, "MAX_CONCURRENT_SESSIONS", 0)
 
         response = _unwrap(login_module.login_for_access_token)(
+            response=Response(),
             request=cast(Any, None),
             form_data=SimpleNamespace(username="person@example.com", password="pw"),
             db=db,
@@ -449,7 +451,9 @@ class TestForcedEnrollmentFlow:
         db = _db({User: _user(), UserMFA: None})
         ctx = self._context(_enroll_token(), db)
 
-        response = _unwrap(mfa_module.setup_mfa)(request=cast(Any, None), enrollment=ctx, db=db)
+        response = _unwrap(mfa_module.setup_mfa)(
+            response=Response(), request=cast(Any, None), enrollment=ctx, db=db
+        )
 
         assert response.secret
         assert response.provisioning_uri.startswith("otpauth://totp/")
@@ -461,7 +465,7 @@ class TestForcedEnrollmentFlow:
         token = _enroll_token()
 
         _unwrap(mfa_module.setup_mfa)(
-            request=cast(Any, None), enrollment=self._context(token, db), db=db
+            response=Response(), request=cast(Any, None), enrollment=self._context(token, db), db=db
         )
 
         # Still resolvable → still unspent.
@@ -484,6 +488,7 @@ class TestForcedEnrollmentFlow:
         ctx = self._context(_enroll_token(), db)
 
         response = _unwrap(mfa_module.verify_mfa_setup)(
+            response=Response(),
             request=cast(Any, None),
             request_body=MFAVerifySetupRequest(code=pyotp.TOTP(secret).now()),
             enrollment=ctx,
@@ -503,6 +508,7 @@ class TestForcedEnrollmentFlow:
         db = _db({User: _user(), UserMFA: user_mfa})
 
         response = _unwrap(mfa_module.verify_mfa_setup)(
+            response=Response(),
             request=cast(Any, None),
             request_body=MFAVerifySetupRequest(code=pyotp.TOTP(secret).now()),
             enrollment=self._context(_enroll_token(), db),
@@ -520,6 +526,7 @@ class TestForcedEnrollmentFlow:
         token = _enroll_token()
 
         _unwrap(mfa_module.verify_mfa_setup)(
+            response=Response(),
             request=cast(Any, None),
             request_body=MFAVerifySetupRequest(code=pyotp.TOTP(secret).now()),
             enrollment=self._context(token, db),
@@ -540,6 +547,7 @@ class TestForcedEnrollmentFlow:
 
         with pytest.raises(HTTPException) as exc:
             _unwrap(mfa_module.verify_mfa_setup)(
+                response=Response(),
                 request=cast(Any, None),
                 request_body=MFAVerifySetupRequest(code="000000"),
                 enrollment=self._context(token, db),
@@ -557,6 +565,7 @@ class TestForcedEnrollmentFlow:
         ctx = mfa_enrollment_module.EnrollmentContext(user=_user(), user_role="user")
 
         response = _unwrap(mfa_module.verify_mfa_setup)(
+            response=Response(),
             request=cast(Any, None),
             request_body=MFAVerifySetupRequest(code=pyotp.TOTP(secret).now()),
             enrollment=ctx,
@@ -595,6 +604,7 @@ class TestDisableConsumesBackupCode:
 
     def _disable(self, code: str, db, user=None):
         return _unwrap(mfa_module.disable_mfa)(
+            response=Response(),
             request=cast(Any, None),
             request_body=MFADisableRequest(code=code),
             current_user=user or _user(),
@@ -904,6 +914,7 @@ class TestLockoutRecording:
 
     def _login(self, db):
         return _unwrap(login_module.login_for_access_token)(
+            response=Response(),
             request=cast(Any, None),
             form_data=SimpleNamespace(username="person@example.com", password="pw"),
             db=db,

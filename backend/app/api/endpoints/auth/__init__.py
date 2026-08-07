@@ -18,7 +18,7 @@ Layout:
   replaces self-registration when an IdP owns identity.
 - :mod:`email_verification` — ``/verify-email``, ``/verify-email/resend``.
 - :mod:`profile` — ``/me``, ``/session``, ``/me/certificate``.
-- :mod:`keycloak` · :mod:`pki` — external IdP flows.
+- :mod:`oidc` · :mod:`pki` — external IdP flows.
 - :mod:`methods` — ``/methods``, ``/banner``.
 - :mod:`mfa_tokens` — MFA half-token minting / scope + single-use replay protection.
 - :mod:`mfa_enrollment` — the enrolment dependency and post-second-factor session
@@ -58,8 +58,6 @@ from app.api.endpoints.auth.invitations import create_invitation_endpoint
 from app.api.endpoints.auth.invitations import list_invitations
 from app.api.endpoints.auth.invitations import lookup_invitation_endpoint
 from app.api.endpoints.auth.invitations import revoke_invitation_endpoint
-from app.api.endpoints.auth.keycloak import keycloak_callback
-from app.api.endpoints.auth.keycloak import keycloak_login
 from app.api.endpoints.auth.login import _check_mfa_requirement
 from app.api.endpoints.auth.login import _generate_login_tokens
 from app.api.endpoints.auth.login import _handle_lockout_check
@@ -90,6 +88,8 @@ from app.api.endpoints.auth.mfa_tokens import _is_mfa_token_blacklisted
 from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
 from app.api.endpoints.auth.mfa_tokens import _verify_mfa_code
 from app.api.endpoints.auth.mfa_tokens import _verify_mfa_token
+from app.api.endpoints.auth.oidc import oidc_callback
+from app.api.endpoints.auth.oidc import oidc_login
 from app.api.endpoints.auth.pki import pki_login
 from app.api.endpoints.auth.profile import get_user_certificate_info
 from app.api.endpoints.auth.profile import read_users_me
@@ -108,10 +108,10 @@ from app.api.endpoints.auth.sessions import refresh_access_token
 from . import email_verification as _email_verification_module
 from . import flower as _flower_module
 from . import invitations as _invitations_module
-from . import keycloak as _keycloak_module
 from . import login as _login_module
 from . import methods as _methods_module
 from . import mfa as _mfa_module
+from . import oidc as _oidc_module
 from . import pki as _pki_module
 from . import profile as _profile_module
 from . import registration as _registration_module
@@ -123,7 +123,7 @@ router.include_router(_registration_module.router)
 router.include_router(_invitations_module.router)
 router.include_router(_email_verification_module.router)
 router.include_router(_profile_module.router)
-router.include_router(_keycloak_module.router)
+router.include_router(_oidc_module.router)
 router.include_router(_pki_module.router)
 router.include_router(_methods_module.router)
 router.include_router(_mfa_module.router)
@@ -156,8 +156,8 @@ __all__ = [
     "get_user_certificate_info",
     "get_user_for_enrollment",
     "issue_session_response",
-    "keycloak_callback",
-    "keycloak_login",
+    "oidc_callback",
+    "oidc_login",
     "list_invitations",
     "login_for_access_token",
     "logout",

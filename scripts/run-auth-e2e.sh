@@ -450,7 +450,7 @@ phase_2_ldap_keycloak() {
     # Run LDAP/Keycloak E2E tests
     # The test file's session-scoped fixtures handle user creation and auth config
     local output
-    if output=$(RUN_AUTH_E2E=true python3 -m pytest "${TESTS_DIR}/test_ldap_keycloak.py" $PYTEST_ARGS \
+    if output=$(RUN_AUTH_E2E=true python3 -m pytest "${TESTS_DIR}/test_ldap_oidc.py" $PYTEST_ARGS \
         --screenshot only-on-failure --output="$SCREENSHOT_DIR" 2>&1); then
         RESULT_ldap_keycloak=0
         COUNT_ldap_keycloak=$(extract_test_counts "$output")

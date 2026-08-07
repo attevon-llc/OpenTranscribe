@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/pki/authenticate", response_model=Token)
 @limiter.limit(get_auth_rate_limit())
-def pki_login(request: Request, db: Session = Depends(get_db)):
+def pki_login(request: Request, response: Response, db: Session = Depends(get_db)):
     """
     Authenticate via X.509 client certificate.
 

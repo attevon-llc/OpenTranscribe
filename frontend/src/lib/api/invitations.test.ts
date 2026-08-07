@@ -176,7 +176,7 @@ describe('admin invitation endpoints', () => {
       email: 'new@example.com',
       full_name: 'New Person',
       role: 'user',
-      auth_type: 'keycloak',
+      auth_type: 'oidc',
       expires_in_hours: INVITE_EXPIRY_DEFAULT_HOURS,
     });
 
@@ -184,7 +184,7 @@ describe('admin invitation endpoints', () => {
       email: 'new@example.com',
       full_name: 'New Person',
       role: 'user',
-      auth_type: 'keycloak',
+      auth_type: 'oidc',
       expires_in_hours: 72,
     });
   });

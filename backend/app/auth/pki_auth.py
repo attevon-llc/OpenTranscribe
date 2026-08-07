@@ -281,7 +281,7 @@ def extract_display_name_from_gov_dn(subject_dn: str) -> str:
             return f"{first.title()} {middle.upper()}. {last.title()}"
         return f"{first.title()} {last.title()}"
 
-    # Keycloak X.509 / government space-separated format:
+    # IdP-brokered X.509 / government space-separated format:
     # "LastName FirstName emailusername" (three space-separated tokens)
     # The third token is the email username (no @domain) used for account lookup.
     parts = cn.split()

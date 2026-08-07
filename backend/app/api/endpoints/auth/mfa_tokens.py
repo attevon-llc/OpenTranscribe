@@ -30,7 +30,7 @@ from jose import JWTError
 from jose import jwt
 from sqlalchemy.orm import Session
 
-from app.auth.constants import AUTH_TYPE_KEYCLOAK
+from app.auth.constants import AUTH_TYPE_OIDC
 from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.constants import TOKEN_TYPE_MFA
 from app.auth.constants import VALID_AUTH_TYPES
@@ -73,7 +73,7 @@ def _user_can_setup_mfa(user: User) -> bool:
     authenticated by an external identity provider get their MFA from that IdP:
 
     - PKI: smart card is already two-factor (something you have + PIN).
-    - Keycloak: MFA is handled by the identity provider.
+    - OIDC: MFA is handled by the identity provider.
     - Any registry-based external/SSO provider (e.g. a cloud-edition IdP): MFA
       and auth are owned by the provider, so a redundant local TOTP is excluded.
 
@@ -88,7 +88,7 @@ def _user_can_setup_mfa(user: User) -> bool:
         bool: True if user can set up local MFA
     """
     # Explicit core IdPs whose MFA is handled externally.
-    if user.auth_type in (AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK):
+    if user.auth_type in (AUTH_TYPE_PKI, AUTH_TYPE_OIDC):
         return False
     # Any auth_type not in the core set is an external/registry-based SSO
     # provider (cloud edition) — local TOTP would be redundant.

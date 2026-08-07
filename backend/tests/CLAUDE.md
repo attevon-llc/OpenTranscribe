@@ -39,7 +39,7 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
   `test_fedramp_compliance`+`_controls`, `RUN_FIPS_TESTS`→`test_fips_140_3`,
   `RUN_AUTH_CONFIG_TESTS`→`test_auth_config_service`, `RUN_ADVANCED_ADMIN_TESTS`→
   `test_admin_security`, `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (corpus-dependent,
-  deliberately never in CI), `RUN_AUTH_E2E`→`e2e/test_ldap_keycloak` + LDAP half of
+  deliberately never in CI), `RUN_AUTH_E2E`→`e2e/test_ldap_oidc` + LDAP half of
   `e2e/test_auth_buttons`, `RUN_PKI_E2E`→`e2e/test_pki`.
 - **MinIO/OpenSearch tests auto-enable by TCP probe.** Root conftest `_service_reachable`
   (0.3 s) `setdefault`s `SKIP_S3` from `localhost:5178` and `SKIP_OPENSEARCH` from

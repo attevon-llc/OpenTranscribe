@@ -6,6 +6,10 @@ from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
+from app.core.legacy_auth_env import oidc_bool_env
+from app.core.legacy_auth_env import oidc_env
+from app.core.legacy_auth_env import oidc_int_env
+
 _config_logger = logging.getLogger(__name__)
 
 
@@ -80,29 +84,29 @@ def _validate_ldap_settings(settings: "Settings") -> None:
         )
 
 
-def _validate_keycloak_settings(settings: "Settings") -> None:
-    """Validate Keycloak/OIDC configuration when Keycloak authentication is enabled.
+def _validate_oidc_settings(settings: "Settings") -> None:
+    """Validate OIDC configuration when OIDC authentication is enabled.
 
     Args:
         settings: The Settings instance to validate.
 
     Raises:
-        ValueError: If KEYCLOAK_ENABLED is true but required Keycloak fields are missing.
+        ValueError: If OIDC_ENABLED is true but required OIDC fields are missing.
     """
-    if not settings.KEYCLOAK_ENABLED:
+    if not settings.OIDC_ENABLED:
         return
 
-    missing_keycloak = []
-    if not settings.KEYCLOAK_SERVER_URL:
-        missing_keycloak.append("KEYCLOAK_SERVER_URL")
-    if not settings.KEYCLOAK_CLIENT_ID:
-        missing_keycloak.append("KEYCLOAK_CLIENT_ID")
-    if not settings.KEYCLOAK_CALLBACK_URL:
-        missing_keycloak.append("KEYCLOAK_CALLBACK_URL")
-    if missing_keycloak:
+    missing_oidc = []
+    if not settings.OIDC_SERVER_URL:
+        missing_oidc.append("OIDC_SERVER_URL")
+    if not settings.OIDC_CLIENT_ID:
+        missing_oidc.append("OIDC_CLIENT_ID")
+    if not settings.OIDC_CALLBACK_URL:
+        missing_oidc.append("OIDC_CALLBACK_URL")
+    if missing_oidc:
         raise ValueError(
-            f"KEYCLOAK_ENABLED=true but the following required settings are missing: "
-            f"{', '.join(missing_keycloak)}"
+            f"OIDC_ENABLED=true but the following required settings are missing: "
+            f"{', '.join(missing_oidc)}"
         )
 
 
@@ -583,7 +587,7 @@ class Settings(BaseSettings):
         import warnings
 
         _validate_ldap_settings(self)
-        _validate_keycloak_settings(self)
+        _validate_oidc_settings(self)
         _validate_pki_settings(self)
 
         # Warn if using the default JWT_SECRET_KEY
@@ -668,51 +672,46 @@ class Settings(BaseSettings):
     # Attribute to check for group membership (default: memberOf for AD)
     LDAP_GROUP_ATTR: str = os.getenv("LDAP_GROUP_ATTR", "memberOf")
 
-    # ===== OIDC/Keycloak Configuration =====
-    KEYCLOAK_ENABLED: bool = os.getenv("KEYCLOAK_ENABLED", "false").lower() == "true"
-    KEYCLOAK_SERVER_URL: str = os.getenv("KEYCLOAK_SERVER_URL", "")  # e.g., http://localhost:8180
-    # Internal URL for backend-to-Keycloak communication (Docker networking)
-    # If not set, falls back to KEYCLOAK_SERVER_URL
-    KEYCLOAK_INTERNAL_URL: str = os.getenv("KEYCLOAK_INTERNAL_URL", "")
-    KEYCLOAK_REALM: str = os.getenv("KEYCLOAK_REALM", "opentranscribe")
-    KEYCLOAK_CLIENT_ID: str = os.getenv("KEYCLOAK_CLIENT_ID", "")
-    KEYCLOAK_CLIENT_SECRET: str = os.getenv("KEYCLOAK_CLIENT_SECRET", "")
-    KEYCLOAK_CALLBACK_URL: str = os.getenv(
-        "KEYCLOAK_CALLBACK_URL", ""
-    )  # e.g., http://localhost:5174/api/auth/keycloak/callback
-    KEYCLOAK_ADMIN_ROLE: str = os.getenv(
-        "KEYCLOAK_ADMIN_ROLE", "admin"
-    )  # Keycloak role that grants admin access
-    KEYCLOAK_TIMEOUT: int = _int_env("KEYCLOAK_TIMEOUT", 30)
+    # ===== OpenID Connect =====
+    # Every one of these also resolves from its historical vendor-prefixed spelling,
+    # which takes precedence when both are set — see core/legacy_auth_env.py, the one
+    # module that still names it. Deployments never have to edit their .env.
+    OIDC_ENABLED: bool = oidc_bool_env("OIDC_ENABLED", False)
+    OIDC_SERVER_URL: str = oidc_env("OIDC_SERVER_URL")  # e.g., http://localhost:8180
+    # Internal URL for backend-to-provider communication (Docker networking).
+    # If not set, falls back to OIDC_SERVER_URL.
+    OIDC_INTERNAL_URL: str = oidc_env("OIDC_INTERNAL_URL")
+    OIDC_REALM: str = oidc_env("OIDC_REALM", "opentranscribe")
+    OIDC_CLIENT_ID: str = oidc_env("OIDC_CLIENT_ID")
+    OIDC_CLIENT_SECRET: str = oidc_env("OIDC_CLIENT_SECRET")
+    # e.g. http://localhost:5173/login — the SPA route, not a backend path.
+    OIDC_CALLBACK_URL: str = oidc_env("OIDC_CALLBACK_URL")
+    # Role/group value in the token that grants admin access.
+    OIDC_ADMIN_ROLE: str = oidc_env("OIDC_ADMIN_ROLE", "admin")
+    OIDC_TIMEOUT: int = oidc_int_env("OIDC_TIMEOUT", 30)
     # OIDC Security: Enable audience (aud) claim validation (OWASP recommended)
     # Default to True for security - validates tokens are intended for this client
-    KEYCLOAK_VERIFY_AUDIENCE: bool = os.getenv("KEYCLOAK_VERIFY_AUDIENCE", "true").lower() == "true"
+    OIDC_VERIFY_AUDIENCE: bool = oidc_bool_env("OIDC_VERIFY_AUDIENCE", True)
     # Expected audience claim value (usually the client ID)
-    KEYCLOAK_AUDIENCE: str = os.getenv("KEYCLOAK_AUDIENCE", "")
+    OIDC_AUDIENCE: str = oidc_env("OIDC_AUDIENCE")
     # Enable PKCE (Proof Key for Code Exchange) for OAuth 2.1 compliance
-    KEYCLOAK_USE_PKCE: bool = os.getenv("KEYCLOAK_USE_PKCE", "true").lower() == "true"
+    OIDC_USE_PKCE: bool = oidc_bool_env("OIDC_USE_PKCE", True)
     # Enable issuer (iss) claim validation (OWASP recommended)
-    # Validates that the token was issued by the expected Keycloak realm
-    KEYCLOAK_VERIFY_ISSUER: bool = os.getenv("KEYCLOAK_VERIFY_ISSUER", "true").lower() == "true"
+    OIDC_VERIFY_ISSUER: bool = oidc_bool_env("OIDC_VERIFY_ISSUER", True)
 
     # ===== Generic OIDC discovery (issue #353) =====
-    # The endpoints above are built from KEYCLOAK_SERVER_URL + "/realms/<realm>/...",
-    # which is a Keycloak-only URL shape — Authentik and most other providers 404 on
-    # it. Set a discovery URL and every endpoint (plus the issuer) is read from the
-    # provider's own metadata document instead; the realm form stays as the fallback
-    # so existing Keycloak deployments are unaffected.
-    #
-    # The OIDC_* spellings are aliases for deployments that do not use Keycloak and
-    # would reasonably not look for a KEYCLOAK_ prefix. KEYCLOAK_* wins if both are set.
-    KEYCLOAK_DISCOVERY_URL: str = os.getenv("KEYCLOAK_DISCOVERY_URL", "")
-    OIDC_DISCOVERY_URL: str = os.getenv("OIDC_DISCOVERY_URL", "")
-    KEYCLOAK_ISSUER: str = os.getenv("KEYCLOAK_ISSUER", "")
-    OIDC_ISSUER: str = os.getenv("OIDC_ISSUER", "")
-    # Dotted path to the claim carrying group/role membership. Keycloak:
-    # realm_access.roles (the default). Authentik/Okta: groups. Entra ID: roles.
-    # Getting this wrong is silent — everyone logs in and nobody is an admin.
-    KEYCLOAK_ROLES_CLAIM: str = os.getenv("KEYCLOAK_ROLES_CLAIM", "realm_access.roles")
-    KEYCLOAK_SCOPES: str = os.getenv("KEYCLOAK_SCOPES", "openid email profile")
+    # Without a discovery URL the endpoints are built from OIDC_SERVER_URL +
+    # "/realms/<realm>/...", which is a single vendor's URL shape — Authentik and most
+    # other providers 404 on it. Set a discovery URL and every endpoint (plus the
+    # issuer) is read from the provider's own metadata document instead; the realm
+    # form stays as the fallback so existing realm-based deployments are unaffected.
+    OIDC_DISCOVERY_URL: str = oidc_env("OIDC_DISCOVERY_URL")
+    OIDC_ISSUER: str = oidc_env("OIDC_ISSUER")
+    # Dotted path to the claim carrying group/role membership. Realm-shaped
+    # providers: realm_access.roles (the default). Authentik/Okta: groups. Entra ID:
+    # roles. Getting this wrong is silent — everyone logs in and nobody is an admin.
+    OIDC_ROLES_CLAIM: str = oidc_env("OIDC_ROLES_CLAIM", "realm_access.roles")
+    OIDC_SCOPES: str = oidc_env("OIDC_SCOPES", "openid email profile")
 
     # ===== MFA Settings (FedRAMP IA-2) =====
     # MFA is disabled by default for air-gapped deployments

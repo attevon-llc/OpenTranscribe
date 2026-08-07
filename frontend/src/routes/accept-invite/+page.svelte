@@ -15,7 +15,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { t } from '$stores/locale';
-  import { loginWithKeycloak, loginWithPKI } from '$stores/auth';
+  import { loginWithOIDC, loginWithPKI } from '$stores/auth';
   import { toastStore } from '$stores/toast';
   import Spinner from '$components/ui/Spinner.svelte';
   import {
@@ -102,7 +102,7 @@
     if (!accepted) return;
     ssoPending = true;
     const result =
-      accepted.auth_type === 'keycloak' ? await loginWithKeycloak() : await loginWithPKI();
+      accepted.auth_type === 'oidc' ? await loginWithOIDC() : await loginWithPKI();
     ssoPending = false;
     if (!result.success) {
       toastStore.error(result.message || $t('auth.loginFailed'));
@@ -144,15 +144,15 @@
         <button type="button" class="auth-button" on:click={() => goto('/login')}>
           {$t('auth.signIn')}
         </button>
-      {:else if accepted.auth_type === 'keycloak' || accepted.auth_type === 'pki'}
+      {:else if accepted.auth_type === 'oidc' || accepted.auth_type === 'pki'}
         <!-- Externally-owned identity: the credential lives with the provider,
              so hand the user straight to it instead of to a password form. -->
         <button type="button" class="auth-button" on:click={handleSso} disabled={ssoPending}>
           {#if ssoPending}
             <Spinner size="small" color="white" />
           {/if}
-          {accepted.auth_type === 'keycloak'
-            ? $t('auth.loginWithKeycloak')
+          {accepted.auth_type === 'oidc'
+            ? $t('auth.loginWithOidc')
             : $t('auth.loginWithCertificate')}
         </button>
       {:else}

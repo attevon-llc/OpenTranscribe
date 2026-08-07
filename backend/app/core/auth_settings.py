@@ -241,63 +241,64 @@ class DynamicAuthSettings:
         """Get LDAP connection timeout in seconds."""
         return self.get_int("ldap_timeout", 10)
 
-    # Keycloak Settings Properties
+    # OIDC Settings Properties
     @property
-    def keycloak_enabled(self) -> bool:
-        """Check if Keycloak authentication is enabled."""
-        return self.get_bool("keycloak_enabled", False)
+    def oidc_enabled(self) -> bool:
+        """Check if OIDC authentication is enabled."""
+        return self.get_bool("oidc_enabled", False)
 
     @property
-    def keycloak_server_url(self) -> str:
-        """Get Keycloak server URL."""
-        return self.get_str("keycloak_server_url", "")
+    def oidc_server_url(self) -> str:
+        """Get the identity provider's public base URL."""
+        return self.get_str("oidc_server_url", "")
 
     @property
-    def keycloak_realm(self) -> str:
-        """Get Keycloak realm name."""
-        return self.get_str("keycloak_realm", "opentranscribe")
+    def oidc_realm(self) -> str:
+        """Realm name, used only by the no-discovery URL fallback."""
+        return self.get_str("oidc_realm", "opentranscribe")
 
     @property
-    def keycloak_client_id(self) -> str:
-        """Get Keycloak client ID."""
-        return self.get_str("keycloak_client_id", "")
+    def oidc_client_id(self) -> str:
+        """Get the OIDC client ID."""
+        return self.get_str("oidc_client_id", "")
 
     @property
-    def keycloak_client_secret(self) -> str:
-        """Get Keycloak client secret."""
-        return self.get_str("keycloak_client_secret", "")
+    def oidc_client_secret(self) -> str:
+        """Get the OIDC client secret."""
+        return self.get_str("oidc_client_secret", "")
 
     @property
-    def keycloak_use_pkce(self) -> bool:
-        """Check if PKCE should be used for Keycloak."""
-        return self.get_bool("keycloak_use_pkce", True)
+    def oidc_use_pkce(self) -> bool:
+        """Check if PKCE should be used."""
+        return self.get_bool("oidc_use_pkce", True)
 
     @property
-    def keycloak_discovery_url(self) -> str:
+    def oidc_discovery_url(self) -> str:
         """OIDC ``.well-known/openid-configuration`` URL.
 
-        Set this for any provider that is not Keycloak. Empty keeps the legacy
-        realm-derived URL construction, which only Keycloak serves (issue #353).
+        Set this for any provider that does not serve the realm URL shape. Empty
+        keeps the legacy realm-derived construction (issue #353).
         """
-        return self.get_str("keycloak_discovery_url", "")
+        return self.get_str("oidc_discovery_url", "")
 
     @property
-    def keycloak_issuer(self) -> str:
+    def oidc_issuer(self) -> str:
         """Expected ``iss`` claim. Empty means "use the discovered/realm issuer"."""
-        return self.get_str("keycloak_issuer", "")
+        return self.get_str("oidc_issuer", "")
 
     @property
-    def keycloak_roles_claim(self) -> str:
+    def oidc_roles_claim(self) -> str:
         """Dotted path to the claim carrying role/group names.
 
-        Keycloak: ``realm_access.roles``. Authentik: ``groups``. Entra: ``roles``.
+        Realm-shaped providers: ``realm_access.roles``. Authentik: ``groups``.
+        Entra: ``roles``.
         """
-        return self.get_str("keycloak_roles_claim", "realm_access.roles")
+        return self.get_str("oidc_roles_claim", "realm_access.roles")
 
     @property
-    def keycloak_scopes(self) -> str:
+    def oidc_scopes(self) -> str:
         """Space-separated scopes requested at authorization time."""
-        return self.get_str("keycloak_scopes", "openid email profile")
+        return self.get_str("oidc_scopes", "openid email profile")
 
     # PKI Settings Properties
     @property
@@ -328,7 +329,7 @@ class DynamicAuthSettings:
         validates it itself. Stricter, and the mode to use when the proxy is not
         the only thing standing between clients and the backend.
 
-        The earlier ``direct``/``keycloak``/``hybrid`` vocabulary described a
+        The earlier ``direct``/``broker``/``hybrid`` vocabulary described a
         delegation choice no code ever made, and did not even overlap with the
         values the admin UI sent — so every save of the PKI tab was rejected.
         """

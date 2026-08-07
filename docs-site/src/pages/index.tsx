@@ -160,7 +160,7 @@ const features = [
   {
     title: 'Enterprise Auth',
     icon: <IconShield />,
-    desc: 'LDAP/AD, Keycloak OIDC, PKI/X.509, MFA. FedRAMP-aligned controls, AES-256-GCM encryption, audit logging, FIPS 140-3 ready.',
+    desc: 'LDAP/AD, OpenID Connect, PKI/X.509, MFA. FedRAMP-aligned controls, AES-256-GCM encryption, audit logging, FIPS 140-3 ready.',
   },
   {
     title: 'Self-Hosted',

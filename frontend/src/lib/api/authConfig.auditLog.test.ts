@@ -25,7 +25,7 @@ describe('AuthConfigApi.getAuditLog', () => {
   });
 
   it('clamps an over-large page to the server ceiling instead of 422-ing', async () => {
-    await AuthConfigApi.getAuditLog('keycloak', 100000);
+    await AuthConfigApi.getAuditLog('oidc', 100000);
 
     expect(get.mock.calls[0][1]?.params.limit).toBe(AUTH_CONFIG_AUDIT_MAX_LIMIT);
   });

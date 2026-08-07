@@ -1,27 +1,27 @@
 """OIDC provider metadata (``.well-known``) and JWKS fetching, TTL-cached.
 
-Why this module exists (issue #353): the OIDC integration advertised "Keycloak or any
+Why this module exists (issue #353): the OIDC integration advertised support for "any
 OpenID Connect provider" but built every endpoint by concatenating
-``<server>/realms/<realm>/protocol/openid-connect/...``. That path shape is Keycloak's
-alone — an Authentik deployment got redirected to
+``<server>/realms/<realm>/protocol/openid-connect/...``. That path shape belongs to one
+vendor — an Authentik deployment got redirected to
 ``https://idp/realms/default/protocol/openid-connect/auth`` and was handed a 404. Every
 conforming provider publishes its real endpoints in a discovery document, so fetching
 that document is the portable way to find them.
 
-Caching is not a micro-optimisation here. ``get_keycloak_jwks`` refetched the **full**
-key set on every single token validation; against a third-party IdP that rate-limits
-(or that simply is not a container on the same Docker network) that turns each login
-into an extra round trip and, eventually, a 429.
+Caching is not a micro-optimisation here. The JWKS fetch used to pull the **full** key
+set on every single token validation; against a third-party IdP that rate-limits (or
+that simply is not a container on the same Docker network) that turns each login into
+an extra round trip and, eventually, a 429.
 
 Failure policy: every function degrades to ``None`` rather than raising. The caller
 falls back to the realm-derived URLs, so a discovery blip can never take down an
-otherwise-working Keycloak deployment, and no exception from here can escape into the
-login path.
+otherwise-working deployment, and no exception from here can escape into the login
+path.
 
 SSRF: the discovery URL is admin-supplied, so it goes through
 :func:`app.utils.url_validation.assert_safe_outbound_url` — but with
 ``allow_private=True``, because an IdP on the LAN or on the compose network
-(``http://keycloak:8080``) is the normal case for this deployment, not an attack.
+(``http://idp:8080``) is the normal case for this deployment, not an attack.
 """
 
 from __future__ import annotations

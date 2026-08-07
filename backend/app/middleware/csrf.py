@@ -35,7 +35,7 @@ _AUTH_COOKIES = (ACCESS_COOKIE, REFRESH_COOKIE)
 # Prefixes only where EVERY sub-path is genuinely pre-authentication.
 _EXEMPT_PREFIXES = (
     "/api/auth/password-reset/",
-    "/api/auth/keycloak/",
+    "/api/auth/oidc/",
     "/api/auth/pki/",
     "/api/docs",
     "/api/redoc",

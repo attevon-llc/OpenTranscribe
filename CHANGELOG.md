@@ -239,6 +239,91 @@ This release also incorporates the substantial pipeline work that landed since v
 
 ### Security
 
+#### Authentication audit (issues #353, #354, #355)
+
+A production user reported that LDAP was enabled yet users could still self-register. Auditing
+that turned up a set of defects across the authentication surface, listed here by class and
+impact. Everything below is fixed in this release.
+
+- **MFA could be bypassed with the token the login endpoint hands out before the second factor.**
+  Access, refresh and MFA tokens are all signed with the same key, and the request-authentication
+  path verified the subject, the JTI and the revocation list but never *what kind of token it
+  was*. The short-lived MFA token — issued to a client that has supplied only a password — was
+  therefore accepted as a full session. Every token now carries a purpose claim and every
+  consumer verifies the one it expects; refresh tokens are likewise no longer accepted as
+  sessions, including on the WebSocket handshake, where one already worked.
+- **A cross-origin page could strip a victim's MFA enrolment.** The CSRF middleware exempted the
+  whole `/api/auth/mfa/` prefix so the pre-authentication verify step could work, which also
+  exempted the cookie-authenticated setup endpoint — an endpoint that regenerates the TOTP secret
+  and clears every backup code, with no code required. Only the pre-authentication path is exempt
+  now. The middleware also skipped any request without an access-token cookie, which left token
+  refresh unprotected for the seven days the refresh cookie outlives it; the CSRF cookie's own
+  lifetime was raised to match so the check applies uniformly rather than being waived.
+- **PKI header trust failed open in a relaxed environment.** With PKI enabled and no trusted-proxy
+  allowlist, a forwarded certificate DN was accepted from any source with only a warning, and a
+  DN header alone could authenticate without a certificate ever being parsed. The reverse proxy is
+  what terminates mTLS and vouches for that header, so it is now refused outright when no proxy is
+  allow-listed, and a DN is only trusted from a configured proxy or alongside a validated
+  certificate. Hardened deployments were never exposed — startup already refused that
+  configuration — but the login route also gained the rate limit and lockout recording it lacked.
+  **`PKI_TRUSTED_PROXIES` is now required for any PKI deployment, not just hardened ones.**
+- **One rule, two implementations, and they disagreed.** Whether an account may authenticate with
+  a local password was decided in two places; only one hard-blocked LDAP. Since the login flow
+  tries the first and falls through to the second, an LDAP account with the per-user fallback flag
+  set could authenticate against a locally stored hash — breaking the invariant that directory
+  accounts never have one. There is now a single implementation, enforced when the flag is *set*
+  as well as when it is read, and the admin password-reset endpoint no longer plants a hash on an
+  account whose identity lives elsewhere.
+- **Changing a credential or a privilege did not end existing sessions.** Only the self-service
+  password reset revoked anything. Role changes, deactivation, account lock, MFA reset, and both
+  admin and self-service password changes all left every other session live — so an attacker
+  holding a session kept it through the victim's password change, which is the case revocation
+  exists for. All of those paths revoke now. Because access tokens are stateless there was nothing
+  to revoke for the current one, which made "log out everywhere" *weaker* than "log out"; a
+  per-user revocation epoch closes that.
+- **Multi-factor enforcement was advisory.** `MFA_REQUIRED` was reported by the status endpoint and
+  read by nothing at login, so on a deployment that required MFA an unenrolled user simply received
+  a full session — enforcement existed only in the frontend, and any API client ignored it. Login
+  now issues a scoped enrolment challenge instead, and completing enrolment issues the session.
+  Separately, the switch governing MFA replay protection defaulted to the fail-open setting: on a
+  Redis error both TOTP codes and MFA tokens became replayable. It now defaults secure in a
+  hardened environment. A backup code used to disable MFA was verified but never consumed, so the
+  same code worked indefinitely.
+- **Account lockout was neither atomic nor crash-safe.** The Redis path issued its optimistic lock
+  on one connection and its write on another, so the transaction guarded nothing and concurrent
+  failures could both record the same attempt count; its error path passed the wrong object to the
+  in-memory fallback and turned a Redis blip into a 500 on every login. It is a server-side
+  compare-and-set now, with a working fallback. The super_admin lockout exemption was computed only
+  on *successful* attempts, so the emergency-access account still locked out and a success never
+  cleared its counter.
+- **The interactive API documentation was published unconditionally**, enumerating the entire admin
+  and authentication surface to anonymous visitors in production. It is withheld when hardened
+  (`ENABLE_API_DOCS=true` opts back in) and denied at the reverse proxy as well.
+- **Account takeover via an unverified email change.** Changing your own address required no
+  password, notified nobody, and was unaudited — change the address, request a password reset, own
+  the account. It now requires the current password, notifies the previous address, and is audited.
+- **Password-reset links were written to the application log** whenever SMTP was unconfigured —
+  the default, and set in none of the shipped compose files — and again on any send failure. A
+  reset URL is a single-use credential; it is no longer logged, and SMTP sends now time out
+  instead of holding a request thread open indefinitely.
+- **Directory login could not promote an admin, and demoted platform owners.** Converting a local
+  account to LDAP wrote a role/flag combination the database forbids, so any user in an LDAP admin
+  group got a server error on first login and could never convert; the same path also demoted an
+  existing `super_admin`. All derived-privilege writes across the LDAP, OIDC and PKI sync paths now
+  go through the single canonical derivation.
+- **The role invariant was not actually enforced.** The constraints added in v369 make the
+  superuser flag a mirror of the role, but the role column remained nullable — and PostgreSQL
+  passes a constraint that evaluates to unknown, so a row could carry the superuser flag with no
+  role at all and satisfy the very check meant to prevent it. Migration `v375` makes the column
+  NOT NULL, does the same for `auth_type`, and adds the missing `auth_type` constraint (an
+  unrecognised value silently exempted an account from MFA enrolment).
+- **Assorted**: an inactive account produced a distinguishable response that both disclosed the
+  account's existence and skipped lockout recording; lockout was keyed on the submitted identifier,
+  giving accounts reachable by two identifiers two independent budgets; logout could leave valid
+  cookies in place when Redis was down, and a failed federated logout was reported to the user as a
+  clean sign-out; several authentication routes had no rate limit; audit records attributed every
+  failed login to LDAP whenever LDAP was enabled, regardless of how the attempt was actually made.
+
 - **Security controls no longer weaken silently when Redis is unavailable (issue #284 A0/A1 follow-up, issue #324)**: Redis holds the state several controls depend on — the token-revocation blacklist, account-lockout counters, MFA single-use replay protection, and auth rate limiting — and that state is *shared across replicas*. When Redis was unreachable each process fell back to its own in-memory store, which is empty on start and never shared, so **a token revoked on one replica was still honoured by every other**: "log out all devices" and password-reset revocation quietly stopped meaning anything, on the exact control you reach for during an incident. It logged at `warning` and scrolled past. Redis here is a **cache**, not the system of record, so the degraded path now consults the system of record instead: `refresh_token.revoked_at` is durable and shared by every replica, so revocation keeps working and nobody is logged out during an outage. An access token (which has no durable row of its own) is denied only on **positive evidence** — the user demonstrably had sessions and every one was revoked — because "this user has no refresh tokens" is not evidence of revocation and denying on absence would lock out valid users whose auth path never mints one. With no database session, or if the fallback query itself fails, the check **denies**. Degradation now logs at `CRITICAL` and increments a new `security_state_degraded_total{control,fallback}` Prometheus counter — **alert on it**. Behaviour is identical for self-hosted single-node and cloud (the gate is `ENVIRONMENT`, which defaults to `production`; only a developer laptop keeps the in-memory convenience), and there is deliberately **no flag to disable it** — an off-switch on a security control gets flipped during exactly the incident it guards against.
 - **A password reset that could not revoke sessions reported success anyway (issue #324)**: `confirm_password_reset` called a helper that commits on success and calls `db.rollback()` on *any* error — and it ran **before** the caller's own commit, so a Redis outage or failed commit silently reverted the new password hash, the history row and the used-token markers, while the function still returned success. **The user was told their password had changed when it had not, and their existing sessions were left live** — the outcome FedRAMP AC-12 exists to prevent, arriving at the moment it matters most, since a reset is frequently triggered by a suspected compromise. Revocation now runs inside the caller's transaction and a failure aborts the whole reset with a real error. The two revocation entry points are split by contract so the mistake cannot recur: `revoke_all_user_tokens_in_transaction` (commits nothing, propagates) and `revoke_all_user_tokens` (best-effort, commits, documented as unsafe to call mid-transaction).
 - **An undecryptable auth secret is now treated as unset instead of returned as ciphertext (issue #324)**: `AuthConfigService.get_config` handed back the stored ciphertext when decryption failed — the comment said so outright — and had a quieter second path where a decrypt returning falsy *without raising* left the ciphertext in place and logged **nothing at all**. These values are used as real credentials (an LDAP bind password, an OIDC client secret), so ciphertext is at best a baffling authentication failure and at worst an encrypted blob shipped to an external IdP or rendered in the admin UI. Both paths now return `None` and log, naming `ENCRYPTION_KEY` as the usual cause; the caller falls through to the env value and then the coded default — a known source rather than garbage. A test had been *asserting* the old behaviour, which is how it survived.
@@ -291,6 +376,44 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Removed the superseded `_intro.mdx` orphan**: same self-referential image component, imported by nothing, excluded from the build, and factually stale (claimed OpenSearch 3.3.1 against the shipped 3.4, and a 7-language UI against the current 8 locales). Its content is covered by the published `getting-started/introduction`.
 
 ### Breaking Changes
+
+#### Deployment configuration moved from `admin` to `super_admin`
+
+Six admin panels now require the `super_admin` role instead of `admin`: **ASR provider**,
+**Engine configuration**, **Backups**, **Media Mirror**, **Watch sources**, and the
+**Redaction policy** floor. They configure how the deployment runs, and four of them store
+infrastructure credentials (S3 keys, SMB passwords, SMTP passwords) that a team-level admin has
+no reason to read or replace.
+
+**If a plain `admin` administers those panels today, promote them to `super_admin`** (Settings →
+Users → Role) before upgrading, or move the work to an existing super_admin. Nothing else changes
+tier: user accounts, tasks, search and speaker maintenance stay at `admin`.
+
+#### `PKI_TRUSTED_PROXIES` is now required whenever PKI is enabled
+
+Header-sourced PKI authentication is **refused** when no trusted proxy is allow-listed, instead of
+being accepted with a warning. Hardened deployments already refused to *start* in that
+configuration, so this is a change only for development and evaluation stacks that enabled PKI
+through the admin UI. Set it to the address the backend sees the reverse proxy arrive from.
+
+#### `POST /api/auth/token/refresh` now requires the CSRF header for cookie-authenticated clients
+
+It mints a new session from the refresh cookie alone, which is exactly what a forged cross-site
+request would target, so it is no longer CSRF-exempt. Browsers are unaffected — the SPA already
+double-submits the token, and the CSRF cookie's lifetime was extended to match the refresh
+cookie's so an idle session still has one. **A non-browser API client that sends cookies must now
+send `X-CSRF-Token` too**; clients using `Authorization: Bearer` are exempt as before.
+
+#### `GET /api/auth/methods` no longer always advertises `local`
+
+`methods` previously contained `"local"` unconditionally. It now reflects
+`local_enabled`, so a deployment whose identity lives entirely in an external IdP reports only the
+methods it actually accepts. The response also gained `local_enabled` and `allow_registration`.
+
+#### Interactive API docs are withheld in a hardened environment
+
+`/api/docs`, `/api/redoc` and `/api/openapi.json` return 404 unless `ENABLE_API_DOCS=true`. They
+remain available in development.
 
 #### API — `GET /api/files/{uuid}` returns tag objects instead of tag names (issue #326)
 
@@ -350,6 +473,55 @@ coerces incoming strings into objects with fabricated `temp-<name>` uuids, and `
 typed `MediaFileDetail` instead of `any`.
 
 ### Upgrade Notes
+
+- **ACTION REQUIRED if a plain `admin` manages deployment settings**: the ASR provider, Engine
+  configuration, Backups, Media Mirror, Watch sources and Redaction policy panels now require
+  `super_admin`. Promote those accounts (Settings → Users → Role → Super Admin) before upgrading,
+  or hand the work to an existing super_admin. **Creating additional super_admins is now possible
+  from the UI** — the role select previously offered only `user` and `admin`, so the tier could not
+  be granted at all without direct API access.
+- **ACTION REQUIRED for PKI deployments: set `PKI_TRUSTED_PROXIES`.** Header-sourced PKI
+  authentication is refused when no trusted proxy is allow-listed, where it was previously accepted
+  with a warning. Hardened deployments already refused to start without it, so this affects
+  development and evaluation stacks that enabled PKI through the admin UI. Set it to the address
+  the backend sees your reverse proxy arrive from (e.g. `127.0.0.1,10.0.0.0/8`).
+- **Existing sessions end on upgrade.** Access tokens now carry a purpose claim and tokens minted
+  before the upgrade do not have one, so they are rejected and users sign in again once. This is
+  deliberate: accepting an unmarked token would leave the MFA-bypass path open for the lifetime of
+  every token already in circulation.
+- **Self-registration and local password login are now real switches.** The admin UI has shown an
+  "Allow self-registration" toggle since v0.4.0 that was wired to nothing — the endpoint read the
+  `ALLOW_OPEN_REGISTRATION` environment variable instead, and that variable had no mapping to the
+  database key, so flipping the switch did nothing. It works now, as does a new `local_enabled`
+  companion. **If you set `ALLOW_OPEN_REGISTRATION=false` in `.env` as a workaround, that still
+  applies** (the environment remains the fallback), but the database value now takes precedence
+  once you save the panel — check Settings → Authentication → Local reflects what you intend.
+  For an LDAP- or OIDC-owned deployment the combination is `local_enabled=false`,
+  `allow_registration=false`; an **active `super_admin` is always exempt** from `local_enabled` so
+  you cannot lock yourself out of the screen that undoes it.
+- **API clients that authenticate with cookies must send `X-CSRF-Token` on token refresh.** Bearer
+  clients and browsers are unaffected.
+- **`GET /api/auth/methods` may no longer list `local`**, and gained `local_enabled` /
+  `allow_registration`. Anything asserting `"local" in methods` should assert on the flag instead.
+- **Interactive API docs are withheld when hardened.** Set `ENABLE_API_DOCS=true` to restore
+  `/api/docs`, `/api/redoc` and `/api/openapi.json` on a hardened deployment.
+- **Migration `v375_harden_user_auth_invariants` applies automatically on backend startup** (dev)
+  or via `alembic upgrade head` (production). It makes `user.role` and `user.auth_type` NOT NULL and
+  adds an `auth_type` CHECK. Rows carrying a NULL role are repaired to `user` with the superuser
+  mirror recomputed, and an unrecognised `auth_type` is repaired to `local` — both backfills only
+  ever remove privilege, never grant it. A correctly-migrated database has neither and the backfills
+  are no-ops.
+- **Flower's persistent database moved off the code directory.** It was mounted at `/app`, which is
+  where the application code lives, so the named volume shadowed the image's code and pinned Flower
+  to whatever it contained when the volume was first created — a rebuilt image was never picked up.
+  It now lives under `/app/temp`. Existing deployments can delete the old `flower_data` volume
+  (`docker volume rm <project>_flower_data`); it holds only task history.
+- **The Queue Dashboard link now works on every deployment, and is admin-only.** `/flower/` was
+  served only by the optional nginx overlay, so the button 404'd on prod and PKI stacks; it is now
+  proxied by the frontend image too, gated by an `auth_request` check against the app session, and
+  hidden from non-admins. Flower exposes task names and arguments, so it was previously reachable
+  by any logged-in user (and, where the overlay injected credentials, by anyone who could load the
+  origin).
 
 - **Redaction runs that hit a detector failure are now marked `failed`, and are NOT retried automatically**: previously such a run was recorded as `done` with empty spans, so a transcript that was never fully scanned looked permanently clean. It is now recorded honestly as `failed`, with the failed detector names logged at `ERROR`. Two consequences worth knowing:
   - **Nothing blocks.** `failed` never withholds a transcript (only `pending`/`processing` do), so users see their transcripts exactly as before. You may simply start seeing `failed` where you previously saw `done` — that is the fix surfacing pre-existing failures, not a new fault.

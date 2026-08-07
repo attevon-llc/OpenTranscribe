@@ -2,12 +2,62 @@
 
 ## Purpose
 
-Multiple auth methods run **simultaneously**, selected per-user by `User.auth_type`.
-`AUTH_TYPE` may be a single value or comma-separated (`local`, `ldap`, `keycloak`, `pki` —
-`constants.py:VALID_AUTH_TYPES`). Configure in the Admin UI (Settings → Authentication):
+Multiple auth methods run **simultaneously**, selected per-user by `User.auth_type`
+(`local`, `ldap`, `keycloak`, `pki` — `constants.py:VALID_AUTH_TYPES`, now enforced by a DB
+CHECK, `v375`). Configure in the Admin UI (Settings → Authentication):
 **DB `auth_config` wins over `.env`, which wins over the coded default**
 (`services/auth_config_service.py`). Endpoints live in the `api/endpoints/auth/` package +
 `auth_config.py`, not here.
+
+> There is **no `AUTH_TYPE` setting**. It appears in older docs and is described there as
+> informational; nothing ever read it. What methods are *available* is decided per-method by
+> `local_enabled` / `ldap_enabled` / `keycloak_enabled` / `pki_enabled`.
+
+## The identity-source model (issue #354)
+
+Three settings, and they are the answer to "our IdP owns identity, why can users still get in
+with a password / still self-register?":
+
+| Setting | Meaning | Safety rule |
+|---|---|---|
+| `local_enabled` | may accounts holding a local password authenticate at all | **never applies to an active `super_admin`** |
+| `allow_registration` | may anyone create their own account | cannot be true while `local_enabled` is false |
+| per-user `auth_type` + `allow_local_fallback` | which method authenticates *this* account | `allow_local_fallback` is pki/keycloak-only, super_admin-settable |
+
+- `local_enabled` does **not** hide the username/password form — LDAP authenticates through the
+  same form. The login page renders it on `local_enabled || ldap_enabled`.
+- The super_admin exemption is load-bearing, not a convenience: auth configuration is
+  super_admin-gated, so without it a deployment that disabled local auth while its IdP was
+  misconfigured would have no way back in. Enforced in
+  `api/endpoints/auth/authenticators.py:_local_auth_permitted`.
+- `allow_registration` is read by `api/endpoints/auth/registration.py` through
+  `get_auth_settings(db)`. It previously read `settings.ALLOW_OPEN_REGISTRATION` directly while
+  the admin UI wrote the DB key, and `ALLOW_OPEN_REGISTRATION` was missing from
+  `ENV_TO_CONFIG_MAPPING` — which is exactly why the toggle did nothing.
+
+## Privilege tiers
+
+`role` ∈ {`user`, `admin`, `super_admin`}. The dividing rule:
+
+> **Anything that changes how the deployment runs, or that stores infrastructure credentials,
+> is `super_admin`. Anything that manages users and their content is `admin`.**
+
+| Tier | Dependency | Covers |
+|---|---|---|
+| user | `get_current_active_user` | own content, own settings, own MFA |
+| admin | `get_current_admin_user` | user accounts, tasks, search/speaker maintenance |
+| super_admin | `get_current_active_superuser` | auth config, role changes, audit log, ASR/engine settings, backups, media mirror, watch sources, redaction policy |
+
+- **One definition each.** `get_current_super_admin_user` in `api/endpoints/admin.py` and
+  `api/endpoints/auth_config.py` are re-export aliases; the real thing lives in
+  `api/endpoints/auth/dependencies.py`. It used to be declared three times, each comparing
+  against its own `"super_admin"` literal.
+- `tests/unit/test_route_privilege_tiers.py` walks the live dependency tree and fails if a new
+  route lands at the wrong tier or is accidentally public. Add genuinely-public routes to its
+  `KNOWN_PUBLIC` set **with a reason**.
+- **Creating more super_admins is a UI action, not a secret**: Settings → Users, role select
+  (super_admin-only). `PUT /api/admin/users/{uuid}/role` is the audited endpoint behind it.
+  Demoting or deleting the last remaining super_admin is refused.
 
 ## Key files
 
@@ -46,10 +96,37 @@ Multiple auth methods run **simultaneously**, selected per-user by `User.auth_ty
 
 ## Gotchas
 
+- **Every token carries a `type` claim and every consumer verifies it.** Access, refresh and
+  MFA tokens are signed with the same key, so `type` is the only thing separating them —
+  without the check the MFA half-token (handed out BEFORE the second factor) was a full
+  session, i.e. a complete MFA bypass. Never widen `get_current_user` to accept another type;
+  the forced-enrolment flow uses a separate narrow dependency
+  (`mfa_tokens.get_user_for_enrollment`) scoped to `/mfa/setup` + `/mfa/verify-setup` only, and
+  distinguishes an `enroll`-scoped half-token from a `verify`-scoped one.
+- **"May this account use a local password?" has exactly one implementation** —
+  `auth/utils.py:local_password_allowed`, keyed off `AUTH_TYPES_SUPPORT_LOCAL_FALLBACK` /
+  `AUTH_TYPES_NO_LOCAL_FALLBACK`. It existed twice and the two disagreed: only the raw-SQL path
+  hard-blocked LDAP, so an LDAP account with `allow_local_fallback` authenticated against a
+  local hash via the ORM path. The write side is guarded too
+  (`services/account_security_service.py`).
 - **PKI/Keycloak users bypass MFA only when they used their native method.** If they fall
   back to a local password, MFA still applies (`api/endpoints/auth/login.py`, the
   `actual_auth_method` check).
   `AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [pki, keycloak]`; LDAP never has a local password.
+- **Changing a credential or a privilege must revoke sessions.** Go through
+  `services/account_security_service.py` — it also applies the password policy and writes the
+  audit event, all three of which were previously applied inconsistently across
+  `users.py` / `admin.py` / `password_reset.py`. Access tokens are stateless, so revocation
+  reaches them via a **per-user epoch** (`token_service.stamp_user_revocation_epoch`), not a
+  JTI list.
+- **PKI header trust fails closed.** With `PKI_ENABLED` and no `PKI_TRUSTED_PROXIES`, header-
+  sourced authentication is refused outright (and `main.py` refuses to start when hardened).
+  A DN header is only trusted from a configured proxy or alongside a validated certificate —
+  the proxy is what terminates mTLS and vouches for the DN.
+- **Secrets never leave the auth-config API.** `config_value` is `None` for a sensitive key and
+  `is_set` carries the signal. Do not reintroduce a placeholder: returning `***REDACTED***`
+  meant the admin panel bound it into the password field and the next Save encrypted it over
+  the real LDAP bind password.
 - **Negative login tests MUST use a nonexistent account** — never a wrong password for
   `admin@example.com`. Lockout is progressive per-account and poisons the whole suite.
 - **Dev relaxes auth limits** (`docker-compose.override.yml`: `RATE_LIMIT_AUTH_PER_MINUTE`

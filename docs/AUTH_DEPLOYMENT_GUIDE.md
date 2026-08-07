@@ -84,6 +84,46 @@ OpenTranscribe always maintains a local super_admin account for emergency access
 - PKI mode includes a password fallback so the super admin can always log in with a password even when PKI is the primary method
 - Regular admins (from LDAP/Keycloak/PKI) cannot configure authentication settings
 
+### Creating additional super admins
+
+There is **no secret key, bootstrap password, or environment variable** for this, and there
+should not be — a shared secret that mints platform owners is worse than the problem it solves.
+
+An existing super_admin promotes another account:
+
+**Settings → Users → (row) → Role → Super Admin.** The option only appears when *you* are a
+super_admin, and promoting asks for confirmation because the tier grants authentication
+configuration, role changes, and the audit log.
+
+Two guard rails:
+
+- **The last super_admin cannot be demoted or deleted.** Auth configuration is super_admin-gated,
+  so losing the last one is unrecoverable without direct database access.
+- **External IdPs grant at most `admin`.** `super_admin` is local-only by design, which is what
+  keeps the break-glass account independent of the identity provider it exists to rescue you from.
+
+If Settings → Authentication does not appear for you at all, your account is `admin`, not
+`super_admin` — that is the single most common cause. On startup the app now repairs any legacy
+account carrying the old `role='admin' + is_superuser=true` shape.
+
+### Choosing which methods may authenticate
+
+| Setting | Effect | Where |
+|---|---|---|
+| `local_enabled` | accounts with a local password may sign in | Settings → Authentication → Local |
+| `allow_registration` | anyone may create their own account | Settings → Authentication → Local |
+| `ldap_enabled` / `keycloak_enabled` / `pki_enabled` | that method is offered | its own tab |
+
+For a deployment where the directory owns identity, the combination is:
+**`ldap_enabled = true`, `local_enabled = false`, `allow_registration = false`.**
+
+Two behaviours to expect:
+
+- The username/password form stays visible. LDAP authenticates through that same form, so it is
+  shown whenever local **or** LDAP is enabled.
+- Your active super_admin can still sign in with its password even with `local_enabled = false`.
+  That exemption is deliberate — see above.
+
 ### Configuration Methods
 
 **Precedence order: Database > Environment Variables > Built-in defaults**

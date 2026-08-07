@@ -299,6 +299,18 @@ def get_audit_log(
         offset=offset,
     )
 
+    # Resolve the actors in one query rather than per row. `changed_by` is a NOT
+    # NULL FK, but the referenced account may have been deleted since, so a miss
+    # is rendered as unknown rather than dropping the entry — losing the record
+    # of a change because its author left is the opposite of an audit trail.
+    actor_ids = {audit.changed_by for audit in audits if audit.changed_by is not None}
+    actor_emails: dict[int, str] = {}
+    if actor_ids:
+        actor_emails = {
+            row.id: row.email
+            for row in db.query(User.id, User.email).filter(User.id.in_(actor_ids)).all()
+        }
+
     return [
         AuthConfigAuditResponse(
             id=audit.id,  # type: ignore[arg-type]
@@ -307,6 +319,7 @@ def get_audit_log(
             old_value=audit.old_value,  # type: ignore[arg-type]
             new_value=audit.new_value,  # type: ignore[arg-type]
             change_type=audit.change_type,  # type: ignore[arg-type]
+            changed_by_email=actor_emails.get(audit.changed_by),  # type: ignore[arg-type]
             ip_address=audit.ip_address,  # type: ignore[arg-type]
             created_at=audit.created_at,  # type: ignore[arg-type]
         )

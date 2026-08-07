@@ -422,6 +422,121 @@
   }
 
   /**
+   * UUID of the row with an account action in flight, so its buttons can be
+   * disabled without freezing the whole table.
+   * @type {string|null}
+   */
+  let pendingActionUuid = null;
+
+  /**
+   * Run an admin account action for one row, with the row's buttons disabled for
+   * the duration and the backend's `detail` surfaced verbatim on failure.
+   * @param {User} targetUser
+   * @param {() => Promise<unknown>} action
+   * @param {(result: any, name: string) => string} successMessage
+   * @param {string} failureMessage
+   * @param {boolean} [refresh] - Refresh the user list afterwards
+   */
+  async function runAccountAction(targetUser, action, successMessage, failureMessage, refresh = false) {
+    pendingActionUuid = targetUser.uuid;
+    const userName = targetUser.full_name || targetUser.email;
+    try {
+      const result = await action();
+      toastStore.success(successMessage(result, userName));
+      if (refresh) onRefresh();
+    } catch (err) {
+      console.error('Account action failed:', err);
+      toastStore.error(extractErrorMessage(err, failureMessage));
+    } finally {
+      pendingActionUuid = null;
+    }
+  }
+
+  /**
+   * Lock an account: deactivates it AND revokes every session it holds.
+   *
+   * The reason is written verbatim into the audit record, so it stays a stable
+   * English string rather than the admin's current UI language.
+   * @param {User} targetUser
+   */
+  function lockAccount(targetUser) {
+    showConfirmation(
+      $t('userManagement.lockAccount'),
+      $t('userManagement.lockConfirmMessage', { name: targetUser.full_name || targetUser.email }),
+      () => runAccountAction(
+        targetUser,
+        () => AdminApi.lockAccount(targetUser.uuid, 'Locked by admin from user management'),
+        (_result, name) => $t('userManagement.lockSuccess', { name }),
+        $t('userManagement.lockFailed'),
+        true
+      ),
+      $t('userManagement.lockAccount')
+    );
+  }
+
+  /**
+   * Clear a failed-login lockout.
+   *
+   * This is NOT the inverse of {@link lockAccount}: the endpoint resets the
+   * lockout counter only and leaves `is_active` alone, so `was_locked === false`
+   * is reported as "nothing to clear" rather than as a successful unlock.
+   * @param {User} targetUser
+   */
+  function unlockAccount(targetUser) {
+    showConfirmation(
+      $t('userManagement.unlockAccount'),
+      $t('userManagement.unlockConfirmMessage', { name: targetUser.full_name || targetUser.email }),
+      () => runAccountAction(
+        targetUser,
+        () => AdminApi.unlockAccount(targetUser.uuid),
+        (result, name) => result?.was_locked
+          ? $t('userManagement.unlockSuccess', { name })
+          : $t('userManagement.unlockNotLocked', { name }),
+        $t('userManagement.unlockFailed')
+      )
+    );
+  }
+
+  /**
+   * Force logout: revoke every refresh token the target holds.
+   * @param {User} targetUser
+   */
+  function forceLogout(targetUser) {
+    showConfirmation(
+      $t('userManagement.forceLogout'),
+      $t('userManagement.forceLogoutConfirmMessage', { name: targetUser.full_name || targetUser.email }),
+      () => runAccountAction(
+        targetUser,
+        () => AdminApi.terminateUserSessions(targetUser.uuid),
+        (result, name) => $t('userManagement.forceLogoutSuccess', {
+          name,
+          sessions: result?.sessions_terminated ?? 0
+        }),
+        $t('userManagement.forceLogoutFailed')
+      ),
+      $t('userManagement.forceLogout')
+    );
+  }
+
+  /**
+   * Reset the target's MFA enrolment (super_admin only, enforced server-side).
+   * @param {User} targetUser
+   */
+  function resetUserMFA(targetUser) {
+    showConfirmation(
+      $t('userManagement.resetMfa'),
+      $t('userManagement.resetMfaConfirmMessage', { name: targetUser.full_name || targetUser.email }),
+      () => runAccountAction(
+        targetUser,
+        () => AdminApi.resetUserMFA(targetUser.uuid),
+        (_result, name) => $t('userManagement.resetMfaSuccess', { name }),
+        $t('userManagement.resetMfaFailed')
+      ),
+      $t('userManagement.resetMfa')
+    );
+  }
+
+  /**
    * Process search input
    * @param {Event} e
    */
@@ -567,7 +682,12 @@
       <tbody>
         {#each filteredUsers as currentUser (currentUser.uuid)}
           <tr>
-            <td>{currentUser.full_name || $t('userManagement.notAvailable')}</td>
+            <td>
+              {currentUser.full_name || $t('userManagement.notAvailable')}
+              {#if currentUser.is_active === false}
+                <span class="status-badge inactive">{$t('userManagement.inactiveBadge')}</span>
+              {/if}
+            </td>
             <td>{currentUser.email}</td>
             <td>
               <!-- Role changes require super_admin server-side
@@ -619,6 +739,62 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
                       <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                  </button>
+                  {/if}
+                  {#if currentUser.is_active !== false}
+                  <button
+                    class="icon-button lock-button"
+                    disabled={pendingActionUuid === currentUser.uuid}
+                    on:click={() => lockAccount(currentUser)}
+                    title={$t('userManagement.lockAccountFor', { name: currentUser.full_name || currentUser.email })}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                      <line x1="12" x2="12" y1="15" y2="18"/>
+                    </svg>
+                  </button>
+                  {/if}
+                  <!-- Clears a failed-login lockout. Deliberately NOT paired with
+                       the lock button: the endpoint resets the lockout counter and
+                       does not re-activate a deactivated account. -->
+                  <button
+                    class="icon-button unlock-button"
+                    disabled={pendingActionUuid === currentUser.uuid}
+                    on:click={() => unlockAccount(currentUser)}
+                    title={$t('userManagement.unlockAccountFor', { name: currentUser.full_name || currentUser.email })}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                    </svg>
+                  </button>
+                  <button
+                    class="icon-button force-logout-button"
+                    disabled={pendingActionUuid === currentUser.uuid}
+                    on:click={() => forceLogout(currentUser)}
+                    title={$t('userManagement.forceLogoutFor', { name: currentUser.full_name || currentUser.email })}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                      <polyline points="16 17 21 12 16 7"/>
+                      <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                  </button>
+                  {#if isSuperAdmin}
+                  <!-- MFA reset requires super_admin server-side; a plain admin
+                       would only get a 403 from the button. -->
+                  <button
+                    class="icon-button mfa-reset-button"
+                    disabled={pendingActionUuid === currentUser.uuid}
+                    on:click={() => resetUserMFA(currentUser)}
+                    title={$t('userManagement.resetMfaFor', { name: currentUser.full_name || currentUser.email })}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3Z"/>
+                      <line x1="9.5" y1="9.5" x2="14.5" y2="14.5"/>
+                      <line x1="14.5" y1="9.5" x2="9.5" y2="14.5"/>
                     </svg>
                   </button>
                   {/if}
@@ -1051,6 +1227,101 @@
 
   .reset-password-button:active:not(:disabled) {
     transform: scale(0.95);
+  }
+
+  /* Lock account - orange */
+  .lock-button {
+    background-color: rgba(249, 115, 22, 0.1);
+    color: #f97316;
+  }
+
+  .lock-button:hover:not(:disabled) {
+    background-color: #f97316;
+    color: white;
+    transform: scale(1.05);
+  }
+
+  .lock-button:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  /* Clear login lockout - sky */
+  .unlock-button {
+    background-color: rgba(14, 165, 233, 0.1);
+    color: #0ea5e9;
+  }
+
+  .unlock-button:hover:not(:disabled) {
+    background-color: #0ea5e9;
+    color: white;
+    transform: scale(1.05);
+  }
+
+  .unlock-button:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  /* Force logout - slate */
+  .force-logout-button {
+    background-color: rgba(100, 116, 139, 0.15);
+    color: #475569;
+  }
+
+  .force-logout-button:hover:not(:disabled) {
+    background-color: #475569;
+    color: white;
+    transform: scale(1.05);
+  }
+
+  .force-logout-button:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  :global([data-theme='dark']) .force-logout-button {
+    color: #cbd5e1;
+  }
+
+  :global([data-theme='dark']) .force-logout-button:hover:not(:disabled) {
+    background-color: #64748b;
+    color: white;
+  }
+
+  /* MFA reset - violet */
+  .mfa-reset-button {
+    background-color: rgba(168, 85, 247, 0.1);
+    color: #a855f7;
+  }
+
+  .mfa-reset-button:hover:not(:disabled) {
+    background-color: #a855f7;
+    color: white;
+    transform: scale(1.05);
+  }
+
+  .mfa-reset-button:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  .status-badge {
+    display: inline-block;
+    margin-left: 0.375rem;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 999px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    vertical-align: middle;
+  }
+
+  .status-badge.inactive {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: rgb(220, 38, 38);
+  }
+
+  :global([data-theme='dark']) .status-badge.inactive {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: rgb(248, 113, 113);
   }
 
   .current-role {

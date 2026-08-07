@@ -2,7 +2,10 @@
 
 The alembic chain must contain v375 (revises v374), and the untracked-DB
 detection in ``app/db/migrations.py`` must recognize a v375-shape schema by its
-marker (the ``ck_user_auth_type_valid`` constraint).
+markers (the ``ck_user_auth_type_valid`` constraint **and** the
+``user_invitation`` table — the revision also carries the invitation /
+email-verification schema, so the constraint alone would mis-stamp a database
+that predates that half and it would never receive the new DDL).
 
 The substantive test is ``test_backfill_repairs_null_role``: v369 added
 ``ck_user_superuser_matches_role`` to make ``is_superuser`` a derived mirror of
@@ -83,6 +86,57 @@ def test_role_and_auth_type_are_not_nullable(db_session):
             {"c": column},
         ).scalar()
         assert nullable == "NO", f"user.{column} must be NOT NULL"
+
+
+def test_invitation_and_verification_tables_exist(db_session):
+    """The invitation flow's schema ships in v375, not a later revision."""
+    conn = db_session.connection()
+    tables = set(inspect(conn).get_table_names())
+    assert {"user_invitation", "email_verification_token"} <= tables
+
+
+def test_user_has_email_verification_columns(db_session):
+    """``require_email_verification`` had no reader AND no column to read."""
+    conn = db_session.connection()
+    columns = {c["name"] for c in inspect(conn).get_columns("user")}
+    assert {"email_verified", "email_verified_at"} <= columns
+
+
+def test_existing_accounts_are_grandfathered_verified(db_session):
+    """Turning the setting on must not retroactively lock out the deployment."""
+    conn = db_session.connection()
+    unverified = conn.execute(
+        text('SELECT count(*) FROM "user" WHERE email_verified IS NOT TRUE')
+    ).scalar()
+    assert unverified == 0, (
+        "accounts that predate v375 must be marked verified by the migration's one-time backfill"
+    )
+
+
+def test_invitation_auth_type_check_rejects_an_unknown_value(db_session):
+    """An invitation is a promise about a row that does not exist yet.
+
+    Without the CHECK, an out-of-set ``auth_type`` would only be caught when the
+    account was created — i.e. after the invite had been emailed.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    conn = db_session.connection()
+    admin_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
+    if admin_id is None:
+        pytest.skip("no user rows to attribute an invitation to")
+
+    with pytest.raises(IntegrityError):
+        conn.execute(
+            text(
+                "INSERT INTO user_invitation "
+                "(uuid, email, role, auth_type, token_hash, expires_at, created_by_id) "
+                "VALUES (gen_random_uuid(), :e, 'user', 'not-a-real-method', :t, "
+                "now() + interval '1 day', :a)"
+            ),
+            {"e": f"v375_{uuid_pkg.uuid4().hex[:8]}@example.com", "t": "x" * 64, "a": admin_id},
+        )
+    db_session.rollback()
 
 
 def test_auth_type_check_constraint_exists(db_session):

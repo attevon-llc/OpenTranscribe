@@ -14,6 +14,9 @@ from app.core.config import settings
 ACCESS_COOKIE = "access_token"
 REFRESH_COOKIE = "refresh_token"
 CSRF_COOKIE = "csrf_token"
+#: Binds an in-flight OIDC login to the browser that started it — see
+#: :func:`set_oidc_state_binding`.
+OIDC_STATE_COOKIE = "oidc_state_binding"
 
 # Cookie max-age mirrors JWT expiration settings
 ACCESS_MAX_AGE = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
@@ -68,6 +71,45 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
         max_age=REFRESH_MAX_AGE,
         path="/",
     )
+
+
+def set_oidc_state_binding(response: Response, secret: str, max_age: int) -> None:
+    """Bind an in-flight OIDC login to the browser that started it.
+
+    The `state` parameter is unguessable and single-use, which stops replay — but
+    it is carried in a URL, so it does not prove the callback arrived in the SAME
+    browser that began the flow. Without this an attacker can start a login,
+    capture their own callback URL, and get a victim to visit it, silently signing
+    the victim into the ATTACKER's account (login CSRF / session fixation).
+    Anything the victim then uploads or types lands in an account the attacker
+    controls.
+
+    This cookie is the second half: the callback must present it, and it never
+    leaves the browser it was set in.
+
+    ``samesite="lax"`` is required, not a compromise — the callback is a
+    top-level cross-site GET navigation from the provider, and ``strict`` would
+    withhold the cookie and break every login.
+    """
+    response.set_cookie(
+        OIDC_STATE_COOKIE,
+        secret,
+        httponly=True,
+        secure=_SECURE,
+        samesite="lax",
+        max_age=max_age,
+        path="/api/auth",
+    )
+
+
+def clear_oidc_state_binding(response: Response) -> None:
+    """Drop the binding cookie once the flow completes or fails."""
+    response.delete_cookie(OIDC_STATE_COOKIE, path="/api/auth")
+
+
+def get_oidc_state_binding(request: Request) -> str | None:
+    """Read the binding secret presented by the browser at the callback."""
+    return request.cookies.get(OIDC_STATE_COOKIE)
 
 
 def clear_auth_cookies(response: Response) -> None:

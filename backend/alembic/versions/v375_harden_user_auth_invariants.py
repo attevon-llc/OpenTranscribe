@@ -29,9 +29,40 @@ server default) with ``is_superuser`` re-derived, before the NOT NULL lands;
 rows with an unrecognised ``auth_type`` are repaired to ``'local'``. Neither
 backfill can grant privilege: it only ever removes it.
 
-COMMUNITY EDITION: no behavioural change. A correctly-migrated database has no
-NULL roles and no unknown auth types, so both backfills are no-ops and only the
-constraints are added.
+Third — the same invariant seen from the provisioning side. Disabling
+self-registration (``allow_registration``, #354) is only safe if there is a
+working admin-driven way to create an account, and there was not:
+``POST /api/admin/users`` made the admin type a password, sent no mail, stamped
+no ``password_changed_at``, wrote no password-history row, and could not set
+``auth_type`` at all — so every admin-created account was ``local`` and could not
+log in on a deployment where local passwords are off. This revision adds the
+schema the invitation flow needs:
+
+``user_invitation``
+    One hashed, expiring, single-use invite per row (same shape as
+    ``password_reset_token``), carrying the *target* ``role`` and ``auth_type``
+    so an LDAP/OIDC/PKI account can be pre-provisioned and matched at first
+    login. Both are CHECK-constrained against the same closed sets as ``user``,
+    for the same reason: an invitation is a promise about a row that does not
+    exist yet, and an out-of-set value there would only be caught after the
+    account was created.
+
+``user.email_verified`` / ``email_verified_at`` and ``email_verification_token``
+    ``require_email_verification`` has been a declared auth-config key with no
+    reader anywhere — the setting existed, the feature did not. These columns are
+    what makes it enforceable. Note ``external_identity.email_verified`` is a
+    DIFFERENT flag (IdP-asserted, consumed by ``app/auth/external_sync.py``);
+    this one records that *we* proved control of the address.
+
+Existing accounts are grandfathered to verified when the column is first added:
+they were provisioned before the feature existed, and an admin turning the
+setting on must not lock out the entire deployment retroactively. That backfill
+runs only inside the ADD COLUMN guard, so re-running the revision never
+re-verifies an address an admin deliberately marked unverified.
+
+COMMUNITY EDITION: no behavioural change to existing rows. A correctly-migrated
+database has no NULL roles and no unknown auth types, so both backfills are
+no-ops; the new tables are empty until an admin sends an invitation.
 
 Revision ID: v375_harden_user_auth_invariants
 Revises: v374_add_tag_user_id
@@ -60,6 +91,94 @@ BACKFILL_SQL = """
     UPDATE "user" SET auth_type = 'local'
      WHERE auth_type IS NULL
         OR auth_type NOT IN ('local', 'ldap', 'keycloak', 'pki');
+"""
+
+#: Admin provisioning (invitations) + email verification. Both tables mirror
+#: ``password_reset_token``: a SHA-256 token hash — never the token — plus
+#: ``expires_at`` and ``used_at`` for single-use semantics.
+INVITATION_DDL = """
+    CREATE TABLE IF NOT EXISTS user_invitation (
+        id SERIAL PRIMARY KEY,
+        uuid UUID NOT NULL UNIQUE,
+        email VARCHAR(255) NOT NULL,
+        full_name VARCHAR(255),
+        role VARCHAR(20) NOT NULL DEFAULT 'user',
+        auth_type VARCHAR(20) NOT NULL DEFAULT 'local',
+        token_hash VARCHAR(64) NOT NULL UNIQUE,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        used_at TIMESTAMP WITH TIME ZONE,
+        revoked_at TIMESTAMP WITH TIME ZONE,
+        created_by_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+        created_user_id INTEGER REFERENCES "user"(id) ON DELETE SET NULL,
+        ip_address VARCHAR(45),
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        CONSTRAINT ck_user_invitation_role_valid
+            CHECK (role IN ('user', 'admin', 'super_admin')),
+        CONSTRAINT ck_user_invitation_auth_type_valid
+            CHECK (auth_type IN ('local', 'ldap', 'keycloak', 'pki'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_invitation_email ON user_invitation (email);
+    CREATE INDEX IF NOT EXISTS idx_user_invitation_created_by
+        ON user_invitation (created_by_id);
+
+    CREATE TABLE IF NOT EXISTS email_verification_token (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+        token_hash VARCHAR(64) NOT NULL UNIQUE,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        used_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        ip_address VARCHAR(45)
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_verification_token_user
+        ON email_verification_token (user_id);
+"""
+
+#: The grandfather UPDATE lives INSIDE the ADD COLUMN guard: on a re-run the
+#: column already exists, so an address an admin deliberately un-verified is
+#: never silently re-verified.
+EMAIL_VERIFIED_COLUMNS_SQL = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'user' AND column_name = 'email_verified'
+        ) THEN
+            ALTER TABLE "user"
+                ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE;
+            UPDATE "user" SET email_verified = TRUE;
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'user' AND column_name = 'email_verified_at'
+        ) THEN
+            ALTER TABLE "user"
+                ADD COLUMN email_verified_at TIMESTAMP WITH TIME ZONE;
+            UPDATE "user" SET email_verified_at = now() WHERE email_verified;
+        END IF;
+    END $$;
+"""
+
+
+#: Password expiry (``PASSWORD_MAX_AGE_DAYS``) keys off ``password_changed_at``,
+#: and no account-creation path ever stamped it — so on an upgrade every existing
+#: local account has NULL and the control stays inert.
+#:
+#: Stamped to **now**, deliberately, not to ``created_at``. We do not know when
+#: these passwords were actually last changed; dating them from account creation
+#: would immediately expire most of a deployment on upgrade day and confine every
+#: user to the change-password screen at once. Starting the clock at upgrade makes
+#: the control real going forward without manufacturing a support incident.
+#:
+#: Local accounts only: the column is meaningless for LDAP/OIDC/PKI identities,
+#: whose password lives with the provider, and stamping it would make the admin
+#: account-status report count them as expiring.
+PASSWORD_CHANGED_AT_BACKFILL_SQL = """
+    UPDATE "user"
+       SET password_changed_at = now()
+     WHERE password_changed_at IS NULL
+       AND auth_type = 'local';
 """
 
 
@@ -94,7 +213,8 @@ def upgrade():
         END $$;
     """)
 
-    # The marker this revision is detected by (app/db/migrations.py).
+    # One of the two markers this revision is detected by (app/db/migrations.py);
+    # the other is the user_invitation table created below.
     op.execute("""
         DO $$
         BEGIN
@@ -108,9 +228,17 @@ def upgrade():
         END $$;
     """)
 
+    op.execute(EMAIL_VERIFIED_COLUMNS_SQL)
+    op.execute(INVITATION_DDL)
+    op.execute(PASSWORD_CHANGED_AT_BACKFILL_SQL)
+
 
 def downgrade():
-    op.execute("ALTER TABLE \"user\" DROP CONSTRAINT IF EXISTS ck_user_auth_type_valid")
+    op.execute("DROP TABLE IF EXISTS user_invitation")
+    op.execute("DROP TABLE IF EXISTS email_verification_token")
+    op.execute('ALTER TABLE "user" DROP COLUMN IF EXISTS email_verified_at')
+    op.execute('ALTER TABLE "user" DROP COLUMN IF EXISTS email_verified')
+    op.execute('ALTER TABLE "user" DROP CONSTRAINT IF EXISTS ck_user_auth_type_valid')
     # Deliberately partial: the columns are NOT NULL in the model and in
     # database/init_db.sql, so re-widening them would put the schema back into the
     # state this revision exists to make impossible. The constraint drop is enough

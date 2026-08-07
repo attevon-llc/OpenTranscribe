@@ -11,6 +11,8 @@ from .email_notification_config import EmailNotificationConfig
 from .email_notification_config import WatchSourceEmail
 from .group import UserGroup
 from .group import UserGroupMember
+from .invitation import EmailVerificationToken
+from .invitation import UserInvitation
 from .media import Analytics
 from .media import Collection
 from .media import CollectionMember
@@ -80,6 +82,8 @@ __all__ = [
     "UserMFA",
     "PasswordHistory",
     "PasswordResetToken",
+    "UserInvitation",
+    "EmailVerificationToken",
     "AuthConfig",
     "AuthConfigAudit",
     "UserGroup",

@@ -130,6 +130,16 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )  # Login banner ack
 
+    # Proof that THIS deployment sent mail to `email` and someone holding it came
+    # back. Gates local login when the `require_email_verification` auth-config
+    # key is on (app/auth/email_verification.py) — that key had no reader at all
+    # before v375. Not to be confused with ExternalIdentity.email_verified, which
+    # records an IdP's assertion about an address (app/auth/external_sync.py).
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), onupdate=func.now(), nullable=False

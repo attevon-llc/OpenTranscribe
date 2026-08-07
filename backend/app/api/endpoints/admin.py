@@ -14,6 +14,7 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import status
 from sqlalchemy import and_
+from sqlalchemy import false as sa_false
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -28,6 +29,7 @@ from app.auth.audit import audit_logger
 from app.auth.lockout import unlock_account as lockout_unlock_account
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
+from app.auth.password_policy import password_expiry_cutoff
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.roles import ELEVATED_ROLES
@@ -1271,13 +1273,30 @@ def admin_unlock_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Admin unlock of locked account."""
+    """Admin unlock of a locked account — the true inverse of ``/lock``.
+
+    Two different things can stop a user signing in, and this endpoint clears
+    both:
+
+    * the **failed-login lockout** (progressive, per-identifier, in Redis), and
+    * ``is_active = False``, which is what ``/lock`` sets.
+
+    It previously cleared only the first, so an account locked by an admin could
+    not be unlocked by the paired endpoint at all — the only way back was
+    ``PUT /users/{uuid}`` with ``is_active``. Two endpoints named lock/unlock
+    that are not inverses is a trap, not an API.
+    """
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Use the lockout manager to unlock the account
+    # Use the lockout manager to clear the failed-login lockout
     unlocked = lockout_unlock_account(str(user.email))
+
+    was_disabled = not bool(user.is_active)
+    if was_disabled:
+        user.is_active = True  # type: ignore[assignment]
+        db.commit()
 
     audit_logger.log(
         event_type=AuditEventType.AUTH_ACCOUNT_UNLOCK,
@@ -1288,10 +1307,11 @@ def admin_unlock_account(
             "target_user": user_uuid,
             "unlocked_by": "admin",
             "was_locked": unlocked,
+            "was_disabled": was_disabled,
         },
     )
 
-    return {"success": True, "was_locked": unlocked}
+    return {"success": True, "was_locked": unlocked, "was_disabled": was_disabled}
 
 
 @router.post("/users/{user_uuid}/lock")
@@ -1544,12 +1564,18 @@ def get_account_status_report(
     current_user: User = Depends(get_current_admin_user),
 ):
     """Account status summary for compliance reporting."""
-    # Consolidate 3 User COUNT queries into 1 using FILTER clauses
-    expiry_threshold = datetime.now(UTC) - timedelta(days=settings.PASSWORD_MAX_AGE_DAYS)
+    # Consolidate 3 User COUNT queries into 1 using FILTER clauses.
+    # The expiry cutoff comes from the password policy rather than a local
+    # timedelta(PASSWORD_MAX_AGE_DAYS): this report reimplemented the rule that
+    # password_policy already owns, so with PASSWORD_POLICY_ENABLED=false it kept
+    # reporting expired passwords that nothing would ever act on. A None cutoff
+    # means expiry is not enforced, so nothing is expired.
+    expiry_threshold = password_expiry_cutoff()
+    expired_filter = User.password_changed_at < expiry_threshold if expiry_threshold else sa_false()
     user_row = db.query(
         func.count().label("total"),
         func.count().filter(User.is_active.is_(True)).label("active"),
-        func.count().filter(User.password_changed_at < expiry_threshold).label("pwd_expired"),
+        func.count().filter(expired_filter).label("pwd_expired"),
     ).one()
 
     # MFA is a separate table, so one more query

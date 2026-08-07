@@ -8,6 +8,8 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
+from app.auth.constants import AUTH_TYPE_LOCAL
+from app.auth.constants import VALID_AUTH_TYPES
 from app.schemas.base import UUIDBaseSchema
 
 
@@ -44,24 +46,50 @@ class UserCreate(UserBase):
     - Minimum length (default: 12 characters)
     - Character complexity (uppercase, lowercase, digits, special chars)
     - No user information in password (email username, name parts)
+
+    ``auth_type`` is settable so an admin can pre-provision an LDAP/OIDC/PKI
+    account that the external provider matches at first login. Without it every
+    admin-created account was ``local`` — and therefore unable to log in at all
+    on a deployment that had turned local passwords off.
+
+    ``password`` is required only for ``auth_type == "local"``. An external
+    account must NOT carry a local password (``app/auth/utils.py:
+    local_password_allowed``), so demanding one would mean storing a credential
+    that is, by policy, never accepted.
     """
 
-    password: str = Field(..., min_length=8)  # Base minimum for backward compatibility
+    password: str | None = Field(default=None, min_length=8)
     role: str | None = "user"
+    auth_type: str | None = AUTH_TYPE_LOCAL
     is_active: bool | None = True
     is_superuser: bool | None = False
 
     @model_validator(mode="after")
     def validate_password_policy(self) -> "UserCreate":
-        """Validate password against the configured password policy.
+        """Validate the password/auth_type combination against policy.
 
         This validator runs after all field validators, so we have access
         to both email and full_name for comprehensive validation.
 
         Raises:
-            ValueError: If password doesn't meet policy requirements
+            ValueError: If auth_type is unknown, if a local account has no
+                password, or if the password doesn't meet policy requirements.
         """
         from app.auth.password_policy import validate_password
+
+        auth_type = self.auth_type or AUTH_TYPE_LOCAL
+        if auth_type not in VALID_AUTH_TYPES:
+            raise ValueError(f"Invalid auth_type: {auth_type}")
+
+        if auth_type != AUTH_TYPE_LOCAL:
+            # Silently dropping it would leave the caller believing a password
+            # was set; the account would then fail every login attempt.
+            if self.password:
+                raise ValueError(f"auth_type={auth_type!r} accounts do not hold a local password")
+            return self
+
+        if not self.password:
+            raise ValueError("Password is required for local accounts")
 
         result = validate_password(
             password=self.password,
@@ -85,7 +113,22 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
     is_superuser: bool | None = None
     role: str | None = None
+    #: super_admin-only (stripped for lesser admins in users.update_user, which
+    #: already listed it as privileged before the field existed here).
+    auth_type: str | None = None
     allow_local_fallback: bool | None = None
+
+    @field_validator("auth_type")
+    @classmethod
+    def validate_auth_type(cls, v: str | None) -> str | None:
+        """Reject an auth_type outside the closed set.
+
+        ``user.auth_type`` is CHECK-constrained since v375, so an unknown value
+        would fail at COMMIT with an IntegrityError (a 500) instead of a 422.
+        """
+        if v is not None and v not in VALID_AUTH_TYPES:
+            raise ValueError(f"Invalid auth_type: {v}")
+        return v
 
 
 class UserInDB(UserBase, UUIDBaseSchema):
@@ -107,6 +150,11 @@ class UserInDB(UserBase, UUIDBaseSchema):
     must_change_password: bool = False
     last_login_at: datetime | None = None
     account_expires_at: datetime | None = None
+
+    #: Whether this deployment has proved control of the address (v375). Read by
+    #: the admin user list so an unverified account is visible as such.
+    email_verified: bool = False
+    email_verified_at: datetime | None = None
 
 
 class User(UserInDB):

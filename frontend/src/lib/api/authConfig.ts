@@ -27,11 +27,21 @@ export interface AuthConfigAuditResponse {
   id: number;
   uuid: string;
   config_key: string;
+  /** Already redacted server-side for sensitive keys — render as received. */
   old_value: string | null;
+  /** Already redacted server-side for sensitive keys — render as received. */
   new_value: string | null;
+  /** `create` | `update` | `delete`. */
   change_type: string;
   ip_address: string | null;
   created_at: string;
+  /**
+   * Actor. `auth_config_audit.changed_by` is recorded in Postgres but
+   * `AuthConfigAuditResponse` (backend/app/schemas/auth_config.py) does not expose
+   * it, so the API never sends this today. Optional so the panel lights the
+   * column up on its own once the backend serialises the actor.
+   */
+  changed_by_email?: string | null;
 }
 
 export interface AuthMethodTestResponse {
@@ -116,6 +126,30 @@ export interface SessionConfig {
   concurrent_session_policy: string;
 }
 
+/**
+ * Page ceiling the audit endpoint enforces (`MAX_AUDIT_LOG_LIMIT` in
+ * `backend/app/services/auth_config_service.py`). Keep in sync with the backend.
+ */
+export const AUTH_CONFIG_AUDIT_MAX_LIMIT = 500;
+
+/**
+ * Categories `GET /admin/auth-config/audit/{category}` accepts — mirrors
+ * `CATEGORY_SCHEMAS` in `backend/app/schemas/auth_config.py`. Anything else is a 400.
+ */
+export const AUTH_CONFIG_CATEGORIES = [
+  'local',
+  'password_policy',
+  'mfa',
+  'lockout',
+  'session',
+  'ldap',
+  'keycloak',
+  'pki',
+  'banner',
+] as const;
+
+export type AuthConfigCategory = (typeof AUTH_CONFIG_CATEGORIES)[number];
+
 export class AuthConfigApi {
   static async getAllConfigs(): Promise<Record<string, AuthConfigResponse[]>> {
     const response = await axiosInstance.get('/admin/auth-config');
@@ -139,12 +173,27 @@ export class AuthConfigApi {
     return response.data;
   }
 
+  /**
+   * Audit trail for one configuration category, newest first.
+   *
+   * `limit` is clamped to {@link AUTH_CONFIG_AUDIT_MAX_LIMIT} before it is sent:
+   * the endpoint declares `le=MAX_AUDIT_LOG_LIMIT` and answers an over-large page
+   * with a 422 rather than a truncated list, so asking for an unbounded page
+   * fails the whole request. The category is validated server-side too — an
+   * unknown one is a 400, not a silent full-table read.
+   *
+   * Sensitive values arrive already redacted; there is no unmasked variant.
+   */
   static async getAuditLog(
     category: string,
-    limit: number = 100
+    limit: number = 100,
+    offset: number = 0
   ): Promise<AuthConfigAuditResponse[]> {
     const response = await axiosInstance.get(`/admin/auth-config/audit/${category}`, {
-      params: { limit },
+      params: {
+        limit: Math.min(Math.max(Math.trunc(limit), 1), AUTH_CONFIG_AUDIT_MAX_LIMIT),
+        offset: Math.max(Math.trunc(offset), 0),
+      },
     });
     return response.data;
   }

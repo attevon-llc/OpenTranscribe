@@ -6,6 +6,7 @@
   import PKISettings from './PKISettings.svelte';
   import LocalAuthSettings from './LocalAuthSettings.svelte';
   import SessionSettings from './SessionSettings.svelte';
+  import AuthConfigAuditPanel from './AuthConfigAuditPanel.svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
 
@@ -71,7 +72,11 @@
     { id: 'ldap', label: $t('settings.authentication.tab.ldap') },
     { id: 'keycloak', label: $t('settings.authentication.tab.keycloak') },
     { id: 'pki', label: $t('settings.authentication.tab.pki') },
-    { id: 'session', label: $t('settings.authentication.tab.session') }
+    { id: 'session', label: $t('settings.authentication.tab.session') },
+    // Reads auth_config_audit (Postgres) — a different source from the "Audit
+    // Log" section, which streams security events out of OpenSearch and carries
+    // no configuration changes.
+    { id: 'audit', label: $t('settings.authentication.tab.audit') }
   ];
 
   onMount(async () => {
@@ -296,6 +301,8 @@
             on:save={(e) => handleSave('session', e.detail)}
             on:change={handleChange}
           />
+        {:else if activeTab === 'audit'}
+          <AuthConfigAuditPanel />
         {/if}
       </div>
     {/if}

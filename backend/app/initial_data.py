@@ -12,6 +12,8 @@ All operations are idempotent (safe to run multiple times).
 
 import logging
 import secrets
+from datetime import UTC
+from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -89,6 +91,11 @@ def _ensure_admin_user(db: Session) -> None:
             hashed_password=get_password_hash(password),
             role=ROLE_SUPER_ADMIN,
             is_superuser=role_implies_superuser(ROLE_SUPER_ADMIN),
+            # Password expiry keys off this column. Leaving it NULL made the
+            # bootstrap admin indistinguishable from an account whose password
+            # age is unknown, which is the one account that must never be locked
+            # out by an expiry rule.
+            password_changed_at=datetime.now(UTC),
         )
         db.add(user)
         db.commit()

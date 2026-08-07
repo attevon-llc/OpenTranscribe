@@ -271,15 +271,20 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'tag' AND column_name = 'user_id')"
     )
 
-    # v375 guard: the auth_type CHECK is the revision's marker. role/auth_type
-    # NOT NULL are also part of it, but a constraint name is the cheapest probe
-    # and the three always land together.
+    # v375 guard: the auth_type CHECK plus the invitation table. The constraint
+    # alone was the marker while the revision only hardened the user columns; it
+    # now also creates user_invitation / email_verification_token and the
+    # user.email_verified columns, so a DB that has the constraint but not the
+    # tables predates the extension and must NOT be stamped v375 — it would
+    # never receive the new DDL.
     has_auth_type_check = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_user_auth_type_valid')"
     )
+    has_user_invitation = "user_invitation" in tables
 
     # Return the highest version stamp that matches (newest first)
-    # v375: user auth invariants (role NOT NULL + auth_type CHECK).
+    # v375: user auth invariants (role NOT NULL + auth_type CHECK) and the
+    # invitation / email-verification schema.
     if (
         has_cloud_seams
         and not has_legacy_varchar_uuid
@@ -290,6 +295,7 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_speaker_cluster_org
         and has_tag_user_id
         and has_auth_type_check
+        and has_user_invitation
     ):
         return "v375_harden_user_auth_invariants"
     # v374: per-user tag ownership (tag.user_id).

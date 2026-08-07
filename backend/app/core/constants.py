@@ -509,6 +509,26 @@ DEFAULT_BACKUP_MIRROR_S3_BUCKET = ""  # target bucket (must already exist)
 DEFAULT_BACKUP_MIRROR_S3_PREFIX = "opentranscribe-media/"  # key prefix within the bucket
 DEFAULT_BACKUP_MIRROR_S3_ACCESS_KEY_ID = ""
 
+# Directory reconciliation / deprovisioning (LDAP).
+# DB-backed via SystemSettings (admin-UI managed, no beat restart). Coded defaults
+# here are the single source of truth — there are NO directory-sync .env vars; the
+# directory connection itself reuses the existing LDAP auth config.
+# SystemSettings keys: directory_sync.enabled / directory_sync.schedule /
+# directory_sync.dry_run / directory_sync.max_disables_per_run /
+# directory_sync.last_run_at / directory_sync.last_result.
+#
+# Defaults are deliberately the timid ones. The sweep DISABLES accounts, so
+# shipping it on-by-default would let a first-boot LDAP misconfiguration lock a
+# whole deployment out before anyone saw a log line. Enabled=False + dry_run=True
+# means an operator must opt in twice — once to run it, once to let it act.
+DEFAULT_DIRECTORY_SYNC_ENABLED = False  # opt-in: disables accounts
+DEFAULT_DIRECTORY_SYNC_SCHEDULE = "0 4 * * *"  # cron: daily 04:00 UTC, after the backups
+DEFAULT_DIRECTORY_SYNC_DRY_RUN = True  # report what WOULD be disabled, change nothing
+# Blast radius per pass. A directory that answers "gone" for everyone (wrong
+# search_base, wrong group DN) is indistinguishable from mass offboarding, so the
+# cap is what stops one bad config from disabling the deployment in a single run.
+DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN = 10
+
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
 DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)
 DEFAULT_VAD_MIN_SILENCE_MS = 2000  # Min silence to split segments (ms)

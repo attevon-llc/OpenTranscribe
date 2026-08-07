@@ -44,24 +44,50 @@ export interface UserSearchResult {
 
 export class AdminApi {
   // Account Management
+  /**
+   * Admin-initiated password reset.
+   *
+   * The password travels in the request BODY, never as a query parameter: query
+   * strings land in server access logs, browser history and referrer headers.
+   * The backend (`AdminPasswordResetRequest` in `app/schemas/user.py`, consumed by
+   * `POST /admin/users/{uuid}/reset-password`) accepts the body form only — the
+   * query form this used to send was rejected with a 422.
+   */
   static async resetUserPassword(
     userUuid: string,
     newPassword: string,
     forceChange: boolean = true
   ): Promise<void> {
-    await axiosInstance.post(`/admin/users/${userUuid}/reset-password`, null, {
-      params: { new_password: newPassword, force_change: forceChange },
+    await axiosInstance.post(`/admin/users/${userUuid}/reset-password`, {
+      new_password: newPassword,
+      force_change: forceChange,
     });
   }
 
-  static async unlockAccount(userUuid: string): Promise<void> {
-    await axiosInstance.post(`/admin/users/${userUuid}/unlock`);
+  /**
+   * Clear a failed-login lockout.
+   *
+   * `was_locked` is false when the account was not actually locked out, which the
+   * caller should surface rather than reporting a no-op as a success. Note this
+   * does NOT re-activate an account deactivated by {@link lockAccount} — see the
+   * backend's `admin_unlock_account`.
+   */
+  static async unlockAccount(userUuid: string): Promise<{ success: boolean; was_locked: boolean }> {
+    const response = await axiosInstance.post(`/admin/users/${userUuid}/unlock`);
+    return response.data;
   }
 
-  static async lockAccount(userUuid: string, reason: string): Promise<void> {
-    await axiosInstance.post(`/admin/users/${userUuid}/lock`, null, {
+  /**
+   * Deactivate an account and revoke every one of its sessions.
+   *
+   * `reason` is recorded verbatim in the audit log, so callers pass a stable
+   * English string rather than a localised one.
+   */
+  static async lockAccount(userUuid: string, reason: string): Promise<{ success: boolean }> {
+    const response = await axiosInstance.post(`/admin/users/${userUuid}/lock`, null, {
       params: { reason },
     });
+    return response.data;
   }
 
   static async terminateUserSessions(userUuid: string): Promise<{ sessions_terminated: number }> {
@@ -80,8 +106,10 @@ export class AdminApi {
     });
   }
 
-  static async resetUserMFA(userUuid: string): Promise<void> {
-    await axiosInstance.post(`/admin/users/${userUuid}/mfa/reset`);
+  /** Clear the target's TOTP secret and backup codes, and revoke their sessions. */
+  static async resetUserMFA(userUuid: string): Promise<{ success: boolean }> {
+    const response = await axiosInstance.post(`/admin/users/${userUuid}/mfa/reset`);
+    return response.data;
   }
 
   // User Search

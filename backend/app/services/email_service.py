@@ -56,6 +56,100 @@ class EmailService:
 
         self._send_email(to_email, subject, html_body, text_body, sensitive=True)
 
+    def send_invitation(
+        self,
+        to_email: str,
+        accept_url: str,
+        inviter: str,
+        expires_in_hours: int,
+        requires_password: bool,
+    ) -> None:
+        """Send an admin invitation to create an account.
+
+        Args:
+            to_email: Address the admin invited.
+            accept_url: Full URL carrying the single-use invite token.
+            inviter: Email of the admin who issued it, so the recipient can tell
+                an expected invitation from a phishing attempt.
+            expires_in_hours: Link lifetime, stated so an expired link is
+                recognisable as expired rather than broken.
+            requires_password: False for an LDAP/OIDC/PKI invitation — those
+                accounts have no local password and the page bounces to the IdP.
+        """
+        subject = f"{settings.PROJECT_NAME} - You've been invited"
+        credential_line = (
+            "You'll choose your own password on that page."
+            if requires_password
+            else "You'll sign in with your organization's identity provider — "
+            "no password is stored here."
+        )
+        html_body = f"""
+        <html>
+        <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>You've been invited to {settings.PROJECT_NAME}</h2>
+            <p>{inviter} invited you to create an account.</p>
+            <p>{credential_line} This link expires in {expires_in_hours} hours and
+               can only be used once.</p>
+            <p><a href="{accept_url}" style="display: inline-block; padding: 12px 24px;
+                background-color: #4f46e5; color: white; text-decoration: none;
+                border-radius: 6px;">Accept Invitation</a></p>
+            <p>If you weren't expecting this, you can safely ignore this email.</p>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+            <p style="color: #6b7280; font-size: 12px;">
+                This is an automated message from {settings.PROJECT_NAME}.
+            </p>
+        </body>
+        </html>
+        """
+        text_body = (
+            f"You've been invited to {settings.PROJECT_NAME}\n\n"
+            f"{inviter} invited you to create an account.\n"
+            f"{credential_line}\n\n"
+            f"Accept the invitation (expires in {expires_in_hours} hours, single use):\n"
+            f"{accept_url}\n\n"
+            "If you weren't expecting this, you can safely ignore this email."
+        )
+        # The URL is a single-use credential — never logged. See _send_email.
+        self._send_email(to_email, subject, html_body, text_body, sensitive=True)
+
+    def send_email_verification(
+        self, to_email: str, verify_url: str, expires_in_hours: int
+    ) -> None:
+        """Send an address-verification link.
+
+        Args:
+            to_email: Address to prove control of.
+            verify_url: Full URL carrying the single-use verification token.
+            expires_in_hours: Link lifetime.
+        """
+        subject = f"{settings.PROJECT_NAME} - Verify your email address"
+        html_body = f"""
+        <html>
+        <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>Verify your email address</h2>
+            <p>Confirm this address to finish setting up your
+               {settings.PROJECT_NAME} account.</p>
+            <p>This link expires in {expires_in_hours} hours.</p>
+            <p><a href="{verify_url}" style="display: inline-block; padding: 12px 24px;
+                background-color: #4f46e5; color: white; text-decoration: none;
+                border-radius: 6px;">Verify Email</a></p>
+            <p>If you didn't create this account, you can safely ignore this email.</p>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+            <p style="color: #6b7280; font-size: 12px;">
+                This is an automated message from {settings.PROJECT_NAME}.
+            </p>
+        </body>
+        </html>
+        """
+        text_body = (
+            f"Verify your email address\n\n"
+            f"Confirm this address to finish setting up your "
+            f"{settings.PROJECT_NAME} account.\n\n"
+            f"Visit this link (expires in {expires_in_hours} hours):\n{verify_url}\n\n"
+            "If you didn't create this account, you can safely ignore this email."
+        )
+        self._send_email(to_email, subject, html_body, text_body, sensitive=True)
+
     def send_security_notice(self, to_email: str, subject: str, message: str) -> None:
         """Notify a user that a security-relevant change was made to their account.
 

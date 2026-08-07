@@ -8,6 +8,8 @@ package ``__init__``.
 
 import logging
 import os
+from datetime import UTC
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import Depends
@@ -19,6 +21,9 @@ from jose import JWTError
 from jose import jwt
 from sqlalchemy.orm import Session
 
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
 from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
@@ -31,6 +36,149 @@ logger = logging.getLogger(__name__)
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/token", auto_error=False)
+
+
+# ── account-lifecycle gate (FedRAMP AC-2 / IA-5) ────────────────────────────────
+#
+# ``must_change_password`` and ``account_expires_at`` were both written and never
+# read: the admin "force change on next login" flag let the user sign in with the
+# admin-chosen password and never prompted, and a time-boxed contractor account
+# stayed usable forever. Both are enforced here, at the one dependency every
+# user-facing route passes through.
+
+#: Machine-readable codes carried in the 403 ``detail``. The SPA branches on
+#: ``detail.code`` to render the forced-change screen; prose is not a contract,
+#: and a client that has to string-match an English message breaks on rewording.
+ERROR_CODE_PASSWORD_CHANGE_REQUIRED = "password_change_required"  # noqa: S105 # nosec B105
+ERROR_CODE_ACCOUNT_EXPIRED = "account_expired"
+
+#: Routes that stay reachable while ``must_change_password`` is set: the endpoint
+#: that CLEARS the flag (``PUT /users/me`` — the self-service password change; its
+#: GET twin is the caller's own profile, which the change screen renders), plus the
+#: routes that end the session. Logout does not resolve through this dependency
+#: today; it is listed so the exemption survives a refactor that gives it one.
+#: Matched against the resolved route template, so a path parameter can never be
+#: crafted to look like an exempt path.
+PASSWORD_CHANGE_EXEMPT_PATHS = frozenset(
+    {
+        f"{settings.API_PREFIX}/users/me",
+        f"{settings.API_PREFIX}/auth/logout",
+        f"{settings.API_PREFIX}/auth/logout/all",
+    }
+)
+
+
+def _route_path(request: Request | None) -> str:
+    """Return the matched route template for *request*.
+
+    Falls back to the raw URL path when no route has been matched yet (and to
+    an empty string for a request stand-in), which fails safe: an unknown path
+    is not in the exempt set, so the caller is refused.
+    """
+    scope = getattr(request, "scope", None)
+    route = scope.get("route") if isinstance(scope, dict) else None
+    path = getattr(route, "path", None) or getattr(getattr(request, "url", None), "path", "") or ""
+    return path.rstrip("/") if len(path) > 1 else path
+
+
+def _lifecycle_client_info(request: Request | None) -> tuple[str, str]:
+    """Client IP / user agent for a lifecycle audit event, never raising.
+
+    An audit record must not be the reason an authorization decision fails, so
+    an unusual request object degrades to "unknown" instead of a 500.
+    """
+    try:
+        return _get_client_info(request)  # type: ignore[arg-type]
+    except Exception:
+        logger.debug("Could not resolve client info for lifecycle audit", exc_info=True)
+        return "unknown", "unknown"
+
+
+def _audit_lifecycle_denial(
+    event_type: AuditEventType,
+    user: User,
+    request: Request | None,
+    error_code: str,
+    details: dict,
+) -> None:
+    """Record an account-lifecycle access denial (FedRAMP AU-2)."""
+    client_ip, user_agent = _lifecycle_client_info(request)
+    audit_logger.log(
+        event_type=event_type,
+        outcome=AuditOutcome.FAILURE,
+        user_id=getattr(user, "id", None),
+        username=str(getattr(user, "email", "") or ""),
+        source_ip=client_ip,
+        user_agent=user_agent,
+        error_code=error_code,
+        details=details,
+    )
+
+
+def _enforce_account_expiry(user: User, request: Request | None) -> None:
+    """Refuse a time-boxed account past its ``account_expires_at``.
+
+    Unconditional — unlike a forced password change there is no self-service
+    remedy, so no route is exempt.
+
+    Raises:
+        HTTPException: 403 with ``detail.code == account_expired``.
+    """
+    expires_at = getattr(user, "account_expires_at", None)
+    if expires_at is None:
+        return
+
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if datetime.now(UTC) < expires_at:
+        return
+
+    _audit_lifecycle_denial(
+        AuditEventType.AUTH_ACCOUNT_EXPIRED,
+        user,
+        request,
+        error_code="ACCOUNT_EXPIRED",
+        details={"expired_at": expires_at.isoformat(), "path": _route_path(request)},
+    )
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": ERROR_CODE_ACCOUNT_EXPIRED,
+            "message": (
+                f"This account expired on {expires_at.date().isoformat()}. "
+                "Contact an administrator to extend it."
+            ),
+        },
+    )
+
+
+def _enforce_password_change(user: User, request: Request | None) -> None:
+    """Confine a caller flagged ``must_change_password`` to the change endpoint.
+
+    Raises:
+        HTTPException: 403 with ``detail.code == password_change_required``.
+    """
+    if not getattr(user, "must_change_password", False):
+        return
+
+    path = _route_path(request)
+    if path in PASSWORD_CHANGE_EXEMPT_PATHS:
+        return
+
+    _audit_lifecycle_denial(
+        AuditEventType.AUTH_PASSWORD_EXPIRED,
+        user,
+        request,
+        error_code="PASSWORD_CHANGE_REQUIRED",
+        details={"reason": "must_change_password", "path": path},
+    )
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": ERROR_CODE_PASSWORD_CHANGE_REQUIRED,
+            "message": "You must change your password before continuing.",
+        },
+    )
 
 
 def _get_client_info(request: Request) -> tuple[str, str]:
@@ -244,13 +392,28 @@ def get_current_user(
 
 
 def get_current_active_user(
+    request: Request,
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """
-    Check if the current user is active
+    """Check that the current user is active and their account is usable.
+
+    ``get_current_user`` answers "is this credential valid?"; this dependency
+    answers "may this account act right now?" — the account-lifecycle gate lives
+    here rather than there so that the credential-validating layer stays
+    untouched (widening or narrowing it affects the WebSocket handshake, the
+    session probe and the optional-auth path, none of which want a 403).
+
+    Raises:
+        HTTPException: 400 for a deactivated account; 403 with a machine-readable
+            ``detail.code`` for an expired account or a required password change.
     """
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
+
+    # Expiry first: it has no self-service remedy, so being ALSO flagged for a
+    # password change must not route the caller to a screen that cannot help.
+    _enforce_account_expiry(current_user, request)
+    _enforce_password_change(current_user, request)
     return current_user
 
 
@@ -352,10 +515,15 @@ def get_optional_current_user(
 
 
 def get_current_admin_user(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> User:
     """
-    Check if the current user is an admin or super_admin
+    Check if the current user is an admin or super_admin.
+
+    Chains through ``get_current_active_user`` so the account-lifecycle gate
+    applies here too — depending straight on ``get_current_user`` meant an admin
+    flagged ``must_change_password`` (or past ``account_expires_at``) was refused
+    on user routes but still had the whole admin surface.
     """
     if current_user.role not in ("admin", "super_admin"):
         raise HTTPException(
@@ -366,14 +534,16 @@ def get_current_admin_user(
 
 
 def get_current_active_superuser(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> User:
     """
     Check if the current user is a platform super_admin.
 
     role is the authorization source of truth; is_superuser is its derived
     mirror (role == super_admin). We gate on role so this stays consistent
-    with the rest of the super_admin-tier endpoints.
+    with the rest of the super_admin-tier endpoints. Chains through
+    ``get_current_active_user`` for the same reason ``get_current_admin_user``
+    does — the account-lifecycle gate must not have a privileged bypass.
     """
     if current_user.role != ROLE_SUPER_ADMIN:
         raise HTTPException(

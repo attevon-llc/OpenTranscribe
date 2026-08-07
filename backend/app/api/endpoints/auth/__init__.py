@@ -14,6 +14,9 @@ Layout:
 - :mod:`authenticators` — per-``auth_type`` credential verification.
 - :mod:`login` — ``/token`` + ``/login`` and the authentication orchestration.
 - :mod:`registration` — ``/register``, ``/password-policy``, ``/password-reset/*``.
+- :mod:`invitations` — admin provisioning (``/invitations*``): the path that
+  replaces self-registration when an IdP owns identity.
+- :mod:`email_verification` — ``/verify-email``, ``/verify-email/resend``.
 - :mod:`profile` — ``/me``, ``/session``, ``/me/certificate``.
 - :mod:`keycloak` · :mod:`pki` — external IdP flows.
 - :mod:`methods` — ``/methods``, ``/banner``.
@@ -47,7 +50,14 @@ from app.api.endpoints.auth.dependencies import get_current_admin_user
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.dependencies import get_optional_current_user
 from app.api.endpoints.auth.dependencies import oauth2_scheme
+from app.api.endpoints.auth.email_verification import resend_verification_endpoint
+from app.api.endpoints.auth.email_verification import verify_email_endpoint
 from app.api.endpoints.auth.flower import flower_authz
+from app.api.endpoints.auth.invitations import accept_invitation_endpoint
+from app.api.endpoints.auth.invitations import create_invitation_endpoint
+from app.api.endpoints.auth.invitations import list_invitations
+from app.api.endpoints.auth.invitations import lookup_invitation_endpoint
+from app.api.endpoints.auth.invitations import revoke_invitation_endpoint
 from app.api.endpoints.auth.keycloak import keycloak_callback
 from app.api.endpoints.auth.keycloak import keycloak_login
 from app.api.endpoints.auth.login import _check_mfa_requirement
@@ -95,7 +105,9 @@ from app.api.endpoints.auth.sessions import logout
 from app.api.endpoints.auth.sessions import logout_all_sessions
 from app.api.endpoints.auth.sessions import refresh_access_token
 
+from . import email_verification as _email_verification_module
 from . import flower as _flower_module
+from . import invitations as _invitations_module
 from . import keycloak as _keycloak_module
 from . import login as _login_module
 from . import methods as _methods_module
@@ -108,6 +120,8 @@ from . import sessions as _sessions_module
 router = APIRouter()
 router.include_router(_login_module.router)
 router.include_router(_registration_module.router)
+router.include_router(_invitations_module.router)
+router.include_router(_email_verification_module.router)
 router.include_router(_profile_module.router)
 router.include_router(_keycloak_module.router)
 router.include_router(_pki_module.router)
@@ -123,8 +137,10 @@ __all__ = [
     "EnrollmentContext",
     "PasswordResetConfirmBody",
     "PasswordResetRequestBody",
+    "accept_invitation_endpoint",
     "acknowledge_banner",
     "confirm_password_reset_endpoint",
+    "create_invitation_endpoint",
     "disable_mfa",
     "flower_authz",
     "get_active_sessions",
@@ -142,18 +158,23 @@ __all__ = [
     "issue_session_response",
     "keycloak_callback",
     "keycloak_login",
+    "list_invitations",
     "login_for_access_token",
     "logout",
     "logout_all_sessions",
+    "lookup_invitation_endpoint",
     "oauth2_scheme",
     "pki_login",
     "read_users_me",
     "refresh_access_token",
     "register",
     "request_password_reset_endpoint",
+    "resend_verification_endpoint",
+    "revoke_invitation_endpoint",
     "router",
     "session_status",
     "setup_mfa",
+    "verify_email_endpoint",
     "verify_mfa",
     "verify_mfa_setup",
 ]

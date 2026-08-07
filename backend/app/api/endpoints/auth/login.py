@@ -3,6 +3,7 @@
 import logging
 import os
 from datetime import UTC
+from datetime import datetime
 from datetime import timedelta
 from uuid import UUID
 
@@ -34,10 +35,13 @@ from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import check_and_record_attempt
 from app.auth.lockout import get_lockout_info
+from app.auth.password_policy import get_days_until_expiration
+from app.auth.password_policy import is_password_expired
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
+from app.auth.utils import local_password_allowed
 from app.core.config import settings
 from app.db.base import get_db
 from app.models.user import User
@@ -206,6 +210,108 @@ def _handle_lockout_check(
     return False, None
 
 
+def record_successful_login(db: Session, user: User) -> None:
+    """Stamp ``last_login_at`` for a caller that has just been given a session.
+
+    **Every successful authentication path must call this** — local/LDAP login,
+    PKI, Keycloak, and MFA completion. Nothing wrote the column, so the admin UI
+    reported ``null`` for every user forever and no inactive-account control
+    (FedRAMP AC-2(3), the usual 30/60/90-day disable) had any data to act on.
+
+    Stamped where a full session is issued rather than where the first factor
+    passes: an MFA challenge that is never answered is not a login.
+
+    Args:
+        db: Database session
+        user: The authenticated user row
+    """
+    try:
+        user.last_login_at = datetime.now(UTC)  # type: ignore[assignment]
+        db.commit()
+    except Exception:
+        # Bookkeeping must never cost the caller the session they just earned.
+        logger.exception("Could not stamp last_login_at for user_id=%s", getattr(user, "id", None))
+        db.rollback()
+
+
+def _apply_password_expiry(
+    db: Session,
+    user: User,
+    auth_method: str,
+    client_ip: str,
+    user_agent: str,
+) -> None:
+    """Flag an expired local password so the dependency gate forces a change.
+
+    ``password_policy.is_password_expired`` existed with zero call sites, so
+    ``PASSWORD_MAX_AGE_DAYS`` was reported by the admin account-status page and
+    enforced nowhere. Rather than invent a second mechanism, an expired password
+    sets ``must_change_password`` and flows into the same
+    ``get_current_active_user`` gate the admin force-change flag uses.
+
+    Only accounts that actually hold a local password are considered:
+    ``password_changed_at`` is meaningless for an LDAP/OIDC/PKI identity, and
+    treating it as expired would lock those users out of an app whose password
+    they cannot change here.
+
+    Args:
+        db: Database session
+        user: The authenticated user row
+        auth_method: The method actually used for this login ("local", "ldap", …)
+        client_ip: Client IP address, for the audit record
+        user_agent: Client user agent, for the audit record
+    """
+    if auth_method != AUTH_TYPE_LOCAL:
+        # The credential just verified was not a local password.
+        return
+
+    allowed, reason = local_password_allowed(
+        str(user.auth_type) if user.auth_type else None,
+        bool(getattr(user, "allow_local_fallback", False)),
+    )
+    if not allowed:
+        logger.debug("Skipping password expiry for %s: %s", user.email, reason)
+        return
+
+    password_changed_at = getattr(user, "password_changed_at", None)
+    if password_changed_at is None:
+        # ``is_password_expired`` treats "no recorded change time" as expired, which is
+        # the right default for a policy primitive but the wrong one HERE: nothing on
+        # the account-creation paths (initial_data, users.py, registration.py) ever
+        # stamped the column, so almost every pre-existing local user carries NULL.
+        # Forcing all of them through a password change on their next login would be a
+        # self-inflicted outage, not a control. Say so loudly instead — same reasoning
+        # as the password-history degradation warning in password_policy.
+        logger.warning(
+            "Password age unknown for user_id=%s (password_changed_at is NULL); expiry "
+            "not enforced for this login. Backfill the column to enable IA-5(1).",
+            user.id,
+        )
+        return
+
+    if not is_password_expired(password_changed_at):
+        return
+
+    if not user.must_change_password:
+        user.must_change_password = True  # type: ignore[assignment]
+        db.commit()
+
+    audit_logger.log(
+        event_type=AuditEventType.AUTH_PASSWORD_EXPIRED,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=user.id,
+        username=str(user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+        error_code="PASSWORD_EXPIRED",
+        details={
+            "max_age_days": settings.PASSWORD_MAX_AGE_DAYS,
+            "days_until_expiration": get_days_until_expiration(password_changed_at),
+        },
+    )
+    logger.info("Password expired for user %s; a change is now required", user.email)
+
+
 def _check_mfa_requirement(
     db: Session,
     user: User,
@@ -321,6 +427,9 @@ def _generate_login_tokens(
         ip_address=client_ip,
     )
 
+    # Stamp last_login_at now that a full session exists (FedRAMP AC-2(3)).
+    record_successful_login(db, user)
+
     # Log successful login
     audit_logger.log_login_success(
         user_id=user.id,
@@ -435,10 +544,13 @@ def login_for_access_token(
         # Get user's role for inclusion in the token
         user_role = _get_user_role(db, user_uuid_str, user_data)
 
+        # Password expiry (FedRAMP IA-5(1)). Evaluated before the MFA branch so the
+        # flag is set even when the caller still owes a second factor — it is the
+        # dependency gate, not this response, that confines them afterwards.
+        _apply_password_expiry(db, user_db, actual_auth_method, client_ip, user_agent)
+
         # FedRAMP AC-10: Enforce concurrent session limit
         if settings.MAX_CONCURRENT_SESSIONS > 0:
-            from datetime import datetime
-
             from app.models.refresh_token import RefreshToken
 
             # Use SELECT FOR UPDATE to prevent race conditions when checking/modifying sessions

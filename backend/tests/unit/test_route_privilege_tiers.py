@@ -56,6 +56,16 @@ KNOWN_PUBLIC = {
     "/api/auth/pki/authenticate",
     "/api/auth/password-reset/request",
     "/api/auth/password-reset/confirm",
+    # Redeeming an admin invitation IS the pre-session step that creates the
+    # account; the bearer of the single-use token is the only credential there
+    # is. Rate-limited, and every bad token gets one identical error.
+    "/api/auth/invitations/lookup",
+    "/api/auth/invitations/accept",
+    # An account blocked BY require_email_verification cannot authenticate to
+    # verify itself; the emailed token is the credential. Resend is deliberately
+    # answer-identical so it is not an account-existence oracle.
+    "/api/auth/verify-email",
+    "/api/auth/verify-email/resend",
     # Read by the login page before a session exists.
     "/api/auth/methods",
     "/api/auth/banner",

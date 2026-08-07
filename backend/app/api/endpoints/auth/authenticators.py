@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.direct_auth import direct_authenticate_user
+from app.auth.email_verification import assert_email_verified_for_local_login
 from app.auth.ldap_auth import ldap_authenticate
 from app.auth.ldap_auth import sync_ldap_user_to_db
 from app.auth.roles import ROLE_SUPER_ADMIN
@@ -190,11 +191,18 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
         username: Username to authenticate
         password: Password to verify
 
+    Both branches end in ``assert_email_verified_for_local_login``: when the
+    deployment sets ``require_email_verification``, an unverified address does
+    not get a session. This is the only consumer of that setting — it was a
+    declared auth-config key with no reader anywhere before v375. It is applied
+    here, on the local-password path, so LDAP/OIDC/PKI logins (whose address is
+    asserted by the provider) are untouched.
+
     Returns:
         Tuple of (uuid_str, user_data) if successful, None otherwise
 
     Raises:
-        HTTPException: If user is inactive
+        HTTPException: If user is inactive or their email is unverified
     """
     # Try direct auth first
     user_data = direct_authenticate_user(username, password)
@@ -202,6 +210,7 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
         logger.info(f"Direct authentication successful for local user: {username}")
         user_uuid_str = _ensure_user_uuid(db, user_data)
         _check_user_active(user_data, username)
+        assert_email_verified_for_local_login(db, user_uuid_str)
         return user_uuid_str, user_data
 
     # Fall back to ORM-based auth
@@ -216,6 +225,8 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user account",
         )
+
+    assert_email_verified_for_local_login(db, str(user.uuid))
 
     return str(user.uuid), _build_user_data(user)
 

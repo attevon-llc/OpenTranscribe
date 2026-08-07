@@ -9,6 +9,7 @@
   import { isCloudEdition } from '$lib/edition';
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
+  import ActiveSessionsPanel from '$components/settings/ActiveSessionsPanel.svelte';
 
   // Managed-edition users never have a local password; the password-change card
   // and the local MFA panel are both handled by the hosted IdP and replaced by a
@@ -335,6 +336,13 @@
   {#if !isCloudEdition}
   <div class="mfa-card">
     <SecuritySettings />
+  </div>
+
+  <!-- Active sessions — same edition gate as the MFA card: in the managed
+       edition the hosted IdP owns the session, and signing out everywhere is
+       done from its account portal (linked above). -->
+  <div class="mfa-card">
+    <ActiveSessionsPanel />
   </div>
   {/if}
 </div>

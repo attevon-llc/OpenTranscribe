@@ -71,6 +71,12 @@ class AuthConfigAuditResponse(BaseModel):
     old_value: str | None = None  # Will be masked for sensitive
     new_value: str | None = None  # Will be masked for sensitive
     change_type: str
+    #: Who made the change. ``auth_config_audit.changed_by`` is a NOT NULL FK and
+    #: was never serialised, so the answer to "who turned MFA off / changed the
+    #: LDAP bind password" sat in Postgres and was invisible in the product —
+    #: which is most of the point of an audit trail. Nullable on the wire only
+    #: because the referenced account may since have been deleted.
+    changed_by_email: str | None = None
     ip_address: str | None = None
     created_at: datetime
 

@@ -17,12 +17,16 @@ from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.constants import AUTH_TYPE_LOCAL
+from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
+from app.auth.constants import VALID_AUTH_TYPES
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser
+from app.auth.utils import local_password_allowed
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.core.security import verify_password
@@ -49,11 +53,33 @@ router = APIRouter()
 
 
 def create_user(user_data: UserCreate, db: Session) -> User:
-    """
-    Create a new user
+    """Create a new user (admin provisioning path).
 
-    This function is called from both the registration endpoint
-    and the admin user creation endpoint
+    Called from ``admin.create_admin_user``. It is the direct-provisioning
+    counterpart to the invitation flow (``auth/invitations.py``), which is the
+    preferred path because it never has an admin choose someone else's password.
+
+    Three gaps this used to have, all of which made "disable self-registration"
+    unusable in practice (v375):
+
+    * ``auth_type`` could not be set, so every admin-created account was
+      ``local`` — unable to log in at all where local passwords are off.
+    * No ``password_changed_at``, no password-history row: password expiry and
+      reuse prevention (FedRAMP IA-5) both start from missing data.
+    * A local account got a password the *admin* chose and no forced change, so
+      the admin permanently knew a working credential for someone else's
+      account. ``must_change_password`` is now set on that path.
+
+    Args:
+        user_data: Validated create payload. ``password`` is present only for
+            ``auth_type == "local"`` (enforced by the schema).
+        db: Database session.
+
+    Returns:
+        The created user.
+
+    Raises:
+        HTTPException: 400 if the email is taken or the role is invalid.
     """
     # Check if email already exists
     db_user = db.query(User).filter(User.email == user_data.email).first()
@@ -72,16 +98,49 @@ def create_user(user_data: UserCreate, db: Session) -> User:
             detail=f"Invalid role: {role}",
         )
 
+    auth_type = user_data.auth_type or AUTH_TYPE_LOCAL
+    if auth_type not in VALID_AUTH_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid auth_type: {auth_type}",
+        )
+
+    # local_password_allowed is the single source of truth for whether an account
+    # may hold a local password. A freshly created account never has
+    # allow_local_fallback, so pki/keycloak/ldap all land on the placeholder.
+    holds_local_password, _reason = local_password_allowed(auth_type, False)
+    now = datetime.now(UTC)
+
+    if holds_local_password:
+        if not user_data.password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password is required for local accounts",
+            )
+        password_hash = get_password_hash(user_data.password)
+    else:
+        password_hash = EXTERNAL_AUTH_NO_PASSWORD
+
     new_user = User(
         email=user_data.email,
-        hashed_password=get_password_hash(user_data.password),
+        hashed_password=password_hash,
         full_name=user_data.full_name,
         is_active=user_data.is_active if user_data.is_active is not None else True,
         role=role,
         is_superuser=role_implies_superuser(role),
+        auth_type=auth_type,
+        password_changed_at=now if holds_local_password else None,
+        # The admin knows this password. It must not stay the account's password.
+        must_change_password=holds_local_password,
     )
 
     db.add(new_user)
+    db.flush()
+
+    if holds_local_password:
+        # Without this row the initial password is invisible to reuse checks.
+        add_password_to_history(db, int(new_user.id), password_hash)
+
     db.commit()
     db.refresh(new_user)
 

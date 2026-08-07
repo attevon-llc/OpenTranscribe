@@ -1,5 +1,6 @@
 """Keycloak OIDC login and callback endpoints."""
 
+import hashlib
 import logging
 import secrets
 from datetime import timedelta
@@ -15,7 +16,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.login import record_successful_login
 from app.auth.audit import audit_logger
+from app.auth.cookies import clear_oidc_state_binding
+from app.auth.cookies import get_oidc_state_binding
+from app.auth.cookies import set_oidc_state_binding
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.keycloak_auth import KeycloakConfig
 from app.auth.keycloak_auth import exchange_code_for_tokens
@@ -72,11 +77,20 @@ async def keycloak_login(request: Request, db: Session = Depends(get_db)):
     # Generate CSRF protection state
     state = secrets.token_urlsafe(32)
 
+    # ...and a second secret that never travels in the URL. `state` alone proves
+    # the callback corresponds to a flow WE started; it does not prove the flow
+    # was started by THIS browser. Without that, an attacker starts a login, keeps
+    # their own callback URL, and gets a victim to open it — signing the victim
+    # into the attacker's account (login CSRF). The binding cookie closes it.
+    state_binding = secrets.token_urlsafe(32)
+
     authorization_url, code_verifier = await get_authorization_url(state, cfg=kc_cfg)
 
     # Store state with PKCE verifier in Redis-backed store
     # Returns False if state limit exceeded (prevents exhaustion attack)
-    state_data = {"code_verifier": code_verifier} if code_verifier else {}
+    state_data: dict[str, str] = {"binding": _hash_binding(state_binding)}
+    if code_verifier:
+        state_data["code_verifier"] = code_verifier
     stored = await run_in_threadpool(
         _oidc_state_store.store_state,
         state=state,
@@ -96,7 +110,18 @@ async def keycloak_login(request: Request, db: Session = Depends(get_db)):
     else:
         logger.info("Keycloak login initiated, redirecting to authorization URL")
 
-    return {"authorization_url": authorization_url}
+    response = JSONResponse(content={"authorization_url": authorization_url})
+    set_oidc_state_binding(response, state_binding, _OIDC_STATE_EXPIRY_SECONDS)
+    return response
+
+
+def _hash_binding(secret: str) -> str:
+    """Hash the binding secret before storing it.
+
+    The store holds only the hash, so a Redis read cannot reconstruct a cookie
+    that would let an attacker complete someone else's in-flight login.
+    """
+    return hashlib.sha256(secret.encode()).hexdigest()
 
 
 @router.get("/keycloak/callback")
@@ -142,6 +167,40 @@ async def keycloak_callback(
             error_code="INVALID_STATE",
             auth_method="keycloak",
         )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired state parameter",
+        )
+
+    # The state proved this callback belongs to a flow we started. The binding
+    # cookie proves it arrived in the browser that started it — without it, a
+    # captured callback URL replayed in a victim's browser signs the victim into
+    # the attacker's account.
+    expected_binding = state_data.get("binding")
+    presented = get_oidc_state_binding(request)
+    if not expected_binding or not presented:
+        logger.warning("OIDC callback missing its state-binding cookie")
+        audit_logger.log_login_failure(
+            username="unknown",
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="MISSING_STATE_BINDING",
+            auth_method="keycloak",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired state parameter",
+        )
+    if not secrets.compare_digest(_hash_binding(presented), expected_binding):
+        logger.warning("OIDC callback presented a state-binding cookie that does not match")
+        audit_logger.log_login_failure(
+            username="unknown",
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="STATE_BINDING_MISMATCH",
+            auth_method="keycloak",
+        )
+        # Same message as an unknown state: a mismatch must not be distinguishable.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired state parameter",
@@ -227,6 +286,9 @@ async def keycloak_callback(
         auth_method="keycloak",
     )
 
+    # Every successful auth path stamps last_login_at — see pki.py for why.
+    record_successful_login(db, user)
+
     logger.info(f"Keycloak authentication successful for user: {user.email}")
 
     # Generate refresh token for Keycloak users too
@@ -252,4 +314,6 @@ async def keycloak_callback(
     from app.auth.cookies import set_auth_cookies
 
     set_auth_cookies(response, access_token, refresh_token)
+    # The flow is complete; the binding cookie has served its purpose.
+    clear_oidc_state_binding(response)
     return response

@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.login import record_successful_login
 from app.auth.audit import audit_logger
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import check_and_record_attempt
@@ -143,6 +144,11 @@ def pki_login(request: Request, db: Session = Depends(get_db)):
         user_agent=user_agent,
         auth_method="pki",
     )
+
+    # Every successful auth path stamps last_login_at. It was written by NOTHING,
+    # so the admin user list showed null forever and every inactive-account
+    # control (FedRAMP AC-2(3)) had no data to work from.
+    record_successful_login(db, user)
 
     logger.info(f"PKI authentication successful for user: {pki_data['subject_dn']}")
 

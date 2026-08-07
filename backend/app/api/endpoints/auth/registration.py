@@ -79,6 +79,16 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
             detail="Self-registration is disabled. Contact your administrator for an account.",
         )
 
+    # Self-registration only ever creates a LOCAL account (auth_type is hardcoded
+    # below). ``UserCreate.password`` became optional so an admin can provision an
+    # external account without inventing one — refuse that shape here rather than
+    # letting a passwordless body reach get_password_hash().
+    if (user_in.auth_type or AUTH_TYPE_LOCAL) != AUTH_TYPE_LOCAL or not user_in.password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Self-registration creates local password accounts only.",
+        )
+
     # Check if email already exists
     user_exists = db.query(User).filter(User.email == user_in.email).first()
 

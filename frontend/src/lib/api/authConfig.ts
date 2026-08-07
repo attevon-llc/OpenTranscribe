@@ -61,15 +61,30 @@ export interface LDAPConfig {
   ldap_group_attr: string;
 }
 
+/** Mirrors `backend/app/schemas/auth_config.py:KeycloakConfig` — same names, same order. */
 export interface KeycloakConfig {
   keycloak_enabled: boolean;
   keycloak_server_url: string;
   keycloak_internal_url: string;
+  /**
+   * Full `.well-known/openid-configuration` URL. When set it REPLACES the
+   * realm-based endpoint construction entirely and `keycloak_realm` is ignored.
+   * `<server>/realms/<realm>/protocol/openid-connect/...` is a Keycloak-only URL
+   * shape; Authentik and others 404 on it (issue #353).
+   */
+  keycloak_discovery_url: string;
+  /** Only used when no discovery URL is set. */
   keycloak_realm: string;
   keycloak_client_id: string;
-  keycloak_client_secret?: string;
+  /** Never sent by the API — `null` on the wire, `is_set` carries the signal. */
+  keycloak_client_secret?: string | null;
   keycloak_callback_url: string;
   keycloak_admin_role: string;
+  /** Dotted path to the claim carrying group/role membership. */
+  keycloak_roles_claim: string;
+  /** Optional issuer override; normally taken from the discovery document. */
+  keycloak_issuer: string;
+  keycloak_scopes: string;
   keycloak_timeout: number;
   keycloak_verify_audience: boolean;
   keycloak_audience: string;

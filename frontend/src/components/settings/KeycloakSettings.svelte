@@ -5,44 +5,78 @@
 
   export let config: Partial<KeycloakConfig> = {};
 
+  /**
+   * Whether the backend reports a stored client secret (`is_set` on the sensitive
+   * config row). The secret itself never reaches the browser, so this is the only
+   * signal available for the "leave blank to keep the current value" affordance.
+   *
+   * Left `undefined` we fall back to `config.keycloak_client_secret === null`,
+   * which is what a stored sensitive row flattens to (the key is absent entirely
+   * when no row exists).
+   */
+  export let secretIsSet: boolean | undefined = undefined;
+
   const dispatch = createEventDispatcher();
 
-  let formData: KeycloakConfig = {
-    keycloak_enabled: config.keycloak_enabled ?? false,
-    keycloak_server_url: config.keycloak_server_url ?? '',
-    keycloak_internal_url: config.keycloak_internal_url ?? '',
-    keycloak_realm: config.keycloak_realm ?? '',
-    keycloak_client_id: config.keycloak_client_id ?? '',
-    keycloak_client_secret: config.keycloak_client_secret ?? '',
-    keycloak_callback_url: config.keycloak_callback_url ?? '',
-    keycloak_admin_role: config.keycloak_admin_role ?? 'admin',
-    keycloak_timeout: config.keycloak_timeout ?? 30,
-    keycloak_verify_audience: config.keycloak_verify_audience ?? true,
-    keycloak_audience: config.keycloak_audience ?? '',
-    keycloak_use_pkce: config.keycloak_use_pkce ?? true,
-    keycloak_verify_issuer: config.keycloak_verify_issuer ?? true
-  };
+  /**
+   * One builder for both the initial value and the reactive rebuild. These were
+   * two hand-maintained copies; a field added to only one of them silently reset
+   * itself the first time the parent reloaded the config.
+   *
+   * `keycloak_client_secret` is deliberately absent — see `clientSecretInput`.
+   */
+  function buildFormData(source: Partial<KeycloakConfig>): KeycloakConfig {
+    return {
+      keycloak_enabled: source.keycloak_enabled ?? false,
+      keycloak_server_url: source.keycloak_server_url ?? '',
+      keycloak_internal_url: source.keycloak_internal_url ?? '',
+      keycloak_discovery_url: source.keycloak_discovery_url ?? '',
+      keycloak_realm: source.keycloak_realm ?? '',
+      keycloak_client_id: source.keycloak_client_id ?? '',
+      keycloak_callback_url: source.keycloak_callback_url ?? '',
+      keycloak_admin_role: source.keycloak_admin_role ?? 'admin',
+      keycloak_roles_claim: source.keycloak_roles_claim ?? 'realm_access.roles',
+      keycloak_issuer: source.keycloak_issuer ?? '',
+      keycloak_scopes: source.keycloak_scopes ?? 'openid email profile',
+      keycloak_timeout: source.keycloak_timeout ?? 30,
+      keycloak_verify_audience: source.keycloak_verify_audience ?? true,
+      keycloak_audience: source.keycloak_audience ?? '',
+      keycloak_use_pkce: source.keycloak_use_pkce ?? true,
+      keycloak_verify_issuer: source.keycloak_verify_issuer ?? true
+    };
+  }
+
+  let formData: KeycloakConfig = buildFormData(config);
+
+  /**
+   * Held outside `formData` so a secret is only ever submitted when the admin
+   * typed one. The field used to bind whatever the API returned — which was the
+   * literal `***REDACTED***` — and Save then wrote that placeholder over the real
+   * client secret.
+   */
+  let clientSecretInput = '';
 
   let testing = false;
   let saving = false;
   let showSecret = false;
 
   $: if (config) {
-    formData = {
-      keycloak_enabled: config.keycloak_enabled ?? false,
-      keycloak_server_url: config.keycloak_server_url ?? '',
-      keycloak_internal_url: config.keycloak_internal_url ?? '',
-      keycloak_realm: config.keycloak_realm ?? '',
-      keycloak_client_id: config.keycloak_client_id ?? '',
-      keycloak_client_secret: config.keycloak_client_secret ?? '',
-      keycloak_callback_url: config.keycloak_callback_url ?? '',
-      keycloak_admin_role: config.keycloak_admin_role ?? 'admin',
-      keycloak_timeout: config.keycloak_timeout ?? 30,
-      keycloak_verify_audience: config.keycloak_verify_audience ?? true,
-      keycloak_audience: config.keycloak_audience ?? '',
-      keycloak_use_pkce: config.keycloak_use_pkce ?? true,
-      keycloak_verify_issuer: config.keycloak_verify_issuer ?? true
-    };
+    formData = buildFormData(config);
+    // A reload means the previous edit either landed or was discarded; either way
+    // the typed secret must not survive into the next save.
+    clientSecretInput = '';
+  }
+
+  $: clientSecretIsSet = secretIsSet ?? config.keycloak_client_secret === null;
+
+  /** A discovery URL supersedes the realm-based endpoint construction. */
+  $: discoveryActive = (formData.keycloak_discovery_url ?? '').trim() !== '';
+
+  /** Payload for save/test: everything in the form, plus the secret only if typed. */
+  function buildPayload(): KeycloakConfig {
+    return clientSecretInput === ''
+      ? { ...formData }
+      : { ...formData, keycloak_client_secret: clientSecretInput };
   }
 
   function handleChange() {
@@ -51,13 +85,13 @@
 
   function handleSave() {
     saving = true;
-    dispatch('save', formData);
+    dispatch('save', buildPayload());
     setTimeout(() => saving = false, 500);
   }
 
   async function handleTest() {
     testing = true;
-    dispatch('test', formData);
+    dispatch('test', buildPayload());
     setTimeout(() => testing = false, 2000);
   }
 
@@ -116,6 +150,19 @@
     </div>
 
     <div class="form-group">
+      <label for="keycloak_discovery_url">{$t('settings.keycloak.discoveryUrl')}</label>
+      <input
+        id="keycloak_discovery_url"
+        type="text"
+        bind:value={formData.keycloak_discovery_url}
+        on:input={handleChange}
+        placeholder="https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration"
+        disabled={!formData.keycloak_enabled}
+      />
+      <span class="help-text">{$t('settings.keycloak.discoveryUrlHelp')}</span>
+    </div>
+
+    <div class="form-group" class:superseded={discoveryActive}>
       <label for="keycloak_realm">{$t('settings.keycloak.realm')}</label>
       <input
         id="keycloak_realm"
@@ -126,6 +173,9 @@
         disabled={!formData.keycloak_enabled}
       />
       <span class="help-text">{$t('settings.keycloak.realmHelp')}</span>
+      {#if discoveryActive}
+        <span class="help-text superseded-note">{$t('settings.keycloak.realmSupersededHelp')}</span>
+      {/if}
     </div>
 
     <div class="form-group">
@@ -164,9 +214,12 @@
           <input
             id="keycloak_client_secret"
             type={showSecret ? 'text' : 'password'}
-            bind:value={formData.keycloak_client_secret}
+            bind:value={clientSecretInput}
             on:input={handleChange}
-            placeholder={$t('settings.keycloak.enterClientSecret')}
+            autocomplete="new-password"
+            placeholder={clientSecretIsSet
+              ? $t('settings.keycloak.clientSecretKeepPlaceholder')
+              : $t('settings.keycloak.enterClientSecret')}
             disabled={!formData.keycloak_enabled}
           />
           <button
@@ -178,7 +231,11 @@
             {showSecret ? $t('common.hide') : $t('common.show')}
           </button>
         </div>
-        <span class="help-text">{$t('settings.keycloak.clientSecretHelp')}</span>
+        <span class="help-text">
+          {clientSecretIsSet
+            ? $t('settings.keycloak.clientSecretSetHelp')
+            : $t('settings.keycloak.clientSecretHelp')}
+        </span>
       </div>
     </div>
 
@@ -269,6 +326,50 @@
         disabled={!formData.keycloak_enabled}
       />
       <span class="help-text">{$t('settings.keycloak.adminRoleHelp')}</span>
+    </div>
+
+    <div class="form-group">
+      <label for="keycloak_roles_claim">{$t('settings.keycloak.rolesClaim')}</label>
+      <input
+        id="keycloak_roles_claim"
+        type="text"
+        bind:value={formData.keycloak_roles_claim}
+        on:input={handleChange}
+        placeholder="realm_access.roles"
+        disabled={!formData.keycloak_enabled}
+      />
+      <span class="help-text">{$t('settings.keycloak.rolesClaimHelp')}</span>
+      <span class="help-text">{$t('settings.keycloak.rolesClaimWarning')}</span>
+    </div>
+  </div>
+
+  <div class="section" class:disabled={!formData.keycloak_enabled}>
+    <h3>{$t('settings.keycloak.advancedOptions')}</h3>
+
+    <div class="form-group">
+      <label for="keycloak_scopes">{$t('settings.keycloak.scopes')}</label>
+      <input
+        id="keycloak_scopes"
+        type="text"
+        bind:value={formData.keycloak_scopes}
+        on:input={handleChange}
+        placeholder="openid email profile"
+        disabled={!formData.keycloak_enabled}
+      />
+      <span class="help-text">{$t('settings.keycloak.scopesHelp')}</span>
+    </div>
+
+    <div class="form-group">
+      <label for="keycloak_issuer">{$t('settings.keycloak.issuer')}</label>
+      <input
+        id="keycloak_issuer"
+        type="text"
+        bind:value={formData.keycloak_issuer}
+        on:input={handleChange}
+        placeholder={$t('settings.keycloak.issuerPlaceholder')}
+        disabled={!formData.keycloak_enabled}
+      />
+      <span class="help-text">{$t('settings.keycloak.issuerHelp')}</span>
     </div>
   </div>
 
@@ -372,6 +473,19 @@
 
   .form-group.indented {
     margin-left: 1.5rem;
+  }
+
+  /*
+   * A discovery URL makes the realm irrelevant. Fade it rather than disable it —
+   * an admin may be mid-edit, and a disabled field also loses its value on save.
+   */
+  .form-group.superseded label,
+  .form-group.superseded input {
+    opacity: 0.55;
+  }
+
+  .superseded-note {
+    color: var(--color-warning-text);
   }
 
   .form-group label {

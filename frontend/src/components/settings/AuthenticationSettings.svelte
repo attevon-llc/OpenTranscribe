@@ -83,15 +83,29 @@
     if (!Array.isArray(configArray)) return configArray || {};
     const result: Record<string, any> = {};
     for (const item of configArray) {
-      if (item.config_key && item.config_value !== undefined) {
+      if (!item.config_key) continue;
+
+      // A sensitive key always arrives with config_value === null — the API never
+      // sends a secret or a placeholder standing in for one. `is_set` is the only
+      // signal that a value exists, so it has to survive the flattening or the
+      // panels have to infer it from the null, which is weaker.
+      result[`${item.config_key}_is_set`] = item.is_set === true;
+
+      if (item.config_value !== undefined && item.config_value !== null) {
         // Convert string values to appropriate types
         let value = item.config_value;
         if (item.data_type === 'bool') {
           value = value === 'true' || value === true;
         } else if (item.data_type === 'int') {
-          value = parseInt(value, 10) || 0;
+          // `|| 0` would coerce a legitimate stored 0 — parse, then fall back.
+          const parsed = parseInt(value, 10);
+          value = Number.isNaN(parsed) ? 0 : parsed;
         }
         result[item.config_key] = value;
+      } else if (item.config_value === null) {
+        // Preserve the null so a panel can distinguish "secret stored, withheld"
+        // from "key absent entirely".
+        result[item.config_key] = null;
       }
     }
     return result;
@@ -265,6 +279,7 @@
         {:else if activeTab === 'keycloak'}
           <KeycloakSettings
             config={configs.keycloak || {}}
+            secretIsSet={configs.keycloak?.keycloak_client_secret_is_set}
             on:save={(e) => handleSave('keycloak', e.detail)}
             on:test={(e) => handleTestConnection('keycloak', e.detail)}
             on:change={handleChange}

@@ -3441,6 +3441,8 @@
   "settings.authentication.loadingConfig": "正在加载配置...",
   "settings.authentication.configSaved": "{{category}} 配置已保存",
   "settings.authentication.configSaveFailed": "保存 {{category}} 配置失败",
+  "settings.authentication.localConfigSaved": "已保存本地身份验证设置",
+  "settings.authentication.configSavePartialFailure": "部分设置未能保存（{{categories}}）。其他更改已应用。",
   "settings.authentication.connectionTestFailed": "连接测试失败",
   "settings.authentication.tab.local": "本地认证",
   "settings.authentication.tab.ldap": "LDAP/AD",

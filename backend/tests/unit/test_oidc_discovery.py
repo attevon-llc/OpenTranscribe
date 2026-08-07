@@ -364,6 +364,18 @@ class TestAuthorizationUrl:
 # ---------------------------------------------------------------------------
 
 
+class TestSecurityDefaults:
+    def test_audience_validation_defaults_on(self):
+        """A token-validation control must not default to the off position.
+
+        ``core/config.py:KEYCLOAK_VERIFY_AUDIENCE`` is the authority and says True;
+        KeycloakConfig used to disagree in three places.
+        """
+        assert KeycloakConfig().verify_audience is True
+        assert KeycloakConfig().verify_issuer is True
+        assert KeycloakConfig().use_pkce is True
+
+
 class TestClaimByPath:
     def test_dotted_path(self):
         assert _claim_by_path({"realm_access": {"roles": ["admin"]}}, "realm_access.roles") == [

@@ -259,13 +259,36 @@ class OIDCStateStore:
         return self._store
 
     def _count_states(self) -> int:
-        """Count the number of active OIDC states.
+        """Count the number of active OIDC states, without scanning the keyspace.
+
+        This ran ``KEYS oidc:state:*`` on **every** login attempt at an
+        unauthenticated endpoint. ``KEYS`` is O(total keyspace) and blocks the
+        Redis event loop for the whole scan, so on a busy instance — Redis is
+        also the Celery broker and the cache here — an anonymous caller could
+        stall every other client just by hitting the login route repeatedly.
+
+        ``SCAN`` with a bound is used instead: this is a guard against state
+        exhaustion, so all it needs to answer is "are we at the limit?", not the
+        exact population. Counting stops one past the ceiling.
 
         Returns:
-            Number of active states in storage
+            Number of active states, capped at the configured limit plus one.
         """
-        keys = self.store.keys(f"{OIDC_STATE_PREFIX}*")
-        return len(keys)
+        pattern = f"{OIDC_STATE_PREFIX}*"
+        ceiling = self._max_states + 1
+
+        scan_iter = getattr(self.store, "scan_iter", None)
+        if scan_iter is None:
+            # In-memory fallback store has no SCAN; its keyspace is this process's
+            # own and small by construction.
+            return len(self.store.keys(pattern))
+
+        count = 0
+        for _ in scan_iter(match=pattern, count=500):
+            count += 1
+            if count >= ceiling:
+                break
+        return count
 
     def _cleanup_oldest_states(self, count: int = 100) -> int:
         """Remove oldest states when limit is exceeded.

@@ -3441,6 +3441,8 @@
   "settings.authentication.loadingConfig": "設定を読み込み中...",
   "settings.authentication.configSaved": "{{category}} の設定を保存しました",
   "settings.authentication.configSaveFailed": "{{category}} の設定の保存に失敗しました",
+  "settings.authentication.localConfigSaved": "ローカル認証の設定を保存しました",
+  "settings.authentication.configSavePartialFailure": "一部の設定を保存できませんでした（{{categories}}）。その他の変更は適用されました。",
   "settings.authentication.connectionTestFailed": "接続テストに失敗しました",
   "settings.authentication.tab.local": "ローカル認証",
   "settings.authentication.tab.ldap": "LDAP/AD",

@@ -3431,6 +3431,8 @@
   "settings.authentication.loadingConfig": "Загрузка конфигурации...",
   "settings.authentication.configSaved": "Конфигурация {{category}} сохранена",
   "settings.authentication.configSaveFailed": "Не удалось сохранить конфигурацию {{category}}",
+  "settings.authentication.localConfigSaved": "Настройки локальной аутентификации сохранены",
+  "settings.authentication.configSavePartialFailure": "Некоторые настройки не удалось сохранить ({{categories}}). Остальные изменения применены.",
   "settings.authentication.connectionTestFailed": "Тест подключения не пройден",
   "settings.authentication.tab.local": "Локальная авт.",
   "settings.authentication.tab.ldap": "LDAP/AD",

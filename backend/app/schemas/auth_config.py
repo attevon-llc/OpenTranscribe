@@ -140,16 +140,36 @@ class LDAPConfig(_CategoryConfig):
 
 
 class KeycloakConfig(_CategoryConfig):
-    """Keycloak/OIDC configuration."""
+    """Keycloak/OIDC configuration.
+
+    Field order drives the admin UI, so the discovery URL sits next to the realm
+    it replaces.
+    """
 
     keycloak_enabled: bool = False
     keycloak_server_url: str = ""
     keycloak_internal_url: str = ""
+    #: Full ``.well-known/openid-configuration`` URL. When set, every endpoint and
+    #: the issuer come from the provider's metadata and ``keycloak_realm`` is
+    #: ignored. Endpoints used to be built by concatenating
+    #: ``server_url + "/realms/" + realm + ...``, which is a Keycloak-only URL
+    #: shape — Authentik and others 404 on it (issue #353).
+    keycloak_discovery_url: str = ""
+    #: Only used when no discovery URL is set.
     keycloak_realm: str = "opentranscribe"
     keycloak_client_id: str = ""
     keycloak_client_secret: str | None = None  # Sensitive
     keycloak_callback_url: str = ""
     keycloak_admin_role: str = "admin"
+    #: Dotted path to the claim carrying group/role membership. Keycloak puts it
+    #: in ``realm_access.roles``, which is why that is the default; Authentik and
+    #: Okta use ``groups``, Entra ID uses ``roles``. Reading the Keycloak-only
+    #: claim from another provider fails silently — everyone logs in, nobody is
+    #: an admin.
+    keycloak_roles_claim: str = "realm_access.roles"
+    #: Optional issuer override. Normally taken from the discovery document.
+    keycloak_issuer: str = ""
+    keycloak_scopes: str = "openid email profile"
     keycloak_timeout: int = Field(default=30, ge=1, le=300)
     #: True matches ``config.py:KEYCLOAK_VERIFY_AUDIENCE``. Both this and
     #: ``keycloak_verify_issuer`` are token-validation controls: an unparseable

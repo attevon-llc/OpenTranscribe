@@ -9,6 +9,12 @@ export interface AuthConfigResponse {
   config_key: string;
   config_value: string | null;
   is_sensitive: boolean;
+  /**
+   * Whether a value is stored. A sensitive key always arrives with
+   * `config_value: null` — the secret never reaches the browser — so this is the
+   * only signal for rendering "a secret is configured, leave blank to keep it".
+   */
+  is_set: boolean;
   category: string;
   data_type: string;
   description: string | null;

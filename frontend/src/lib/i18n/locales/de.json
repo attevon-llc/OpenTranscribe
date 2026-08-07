@@ -3441,6 +3441,8 @@
   "settings.authentication.loadingConfig": "Konfiguration wird geladen...",
   "settings.authentication.configSaved": "{{category}}-Konfiguration gespeichert",
   "settings.authentication.configSaveFailed": "Fehler beim Speichern der {{category}}-Konfiguration",
+  "settings.authentication.localConfigSaved": "Einstellungen für die lokale Authentifizierung gespeichert",
+  "settings.authentication.configSavePartialFailure": "Einige Einstellungen konnten nicht gespeichert werden ({{categories}}). Ihre übrigen Änderungen wurden übernommen.",
   "settings.authentication.connectionTestFailed": "Verbindungstest fehlgeschlagen",
   "settings.authentication.tab.local": "Lokale Auth",
   "settings.authentication.tab.ldap": "LDAP/AD",

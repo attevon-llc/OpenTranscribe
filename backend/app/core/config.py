@@ -695,6 +695,25 @@ class Settings(BaseSettings):
     # Validates that the token was issued by the expected Keycloak realm
     KEYCLOAK_VERIFY_ISSUER: bool = os.getenv("KEYCLOAK_VERIFY_ISSUER", "true").lower() == "true"
 
+    # ===== Generic OIDC discovery (issue #353) =====
+    # The endpoints above are built from KEYCLOAK_SERVER_URL + "/realms/<realm>/...",
+    # which is a Keycloak-only URL shape — Authentik and most other providers 404 on
+    # it. Set a discovery URL and every endpoint (plus the issuer) is read from the
+    # provider's own metadata document instead; the realm form stays as the fallback
+    # so existing Keycloak deployments are unaffected.
+    #
+    # The OIDC_* spellings are aliases for deployments that do not use Keycloak and
+    # would reasonably not look for a KEYCLOAK_ prefix. KEYCLOAK_* wins if both are set.
+    KEYCLOAK_DISCOVERY_URL: str = os.getenv("KEYCLOAK_DISCOVERY_URL", "")
+    OIDC_DISCOVERY_URL: str = os.getenv("OIDC_DISCOVERY_URL", "")
+    KEYCLOAK_ISSUER: str = os.getenv("KEYCLOAK_ISSUER", "")
+    OIDC_ISSUER: str = os.getenv("OIDC_ISSUER", "")
+    # Dotted path to the claim carrying group/role membership. Keycloak:
+    # realm_access.roles (the default). Authentik/Okta: groups. Entra ID: roles.
+    # Getting this wrong is silent — everyone logs in and nobody is an admin.
+    KEYCLOAK_ROLES_CLAIM: str = os.getenv("KEYCLOAK_ROLES_CLAIM", "realm_access.roles")
+    KEYCLOAK_SCOPES: str = os.getenv("KEYCLOAK_SCOPES", "openid email profile")
+
     # ===== MFA Settings (FedRAMP IA-2) =====
     # MFA is disabled by default for air-gapped deployments
     MFA_ENABLED: bool = os.getenv("MFA_ENABLED", "false").lower() == "true"

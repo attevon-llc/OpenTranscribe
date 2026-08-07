@@ -450,10 +450,16 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
 
 
 async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
-    """Test Keycloak connection with provided configuration.
+    """Test the OIDC provider connection with the supplied configuration.
+
+    Resolves the metadata URL exactly the way the login path does — the explicit
+    discovery URL when one is configured, the Keycloak realm form otherwise. It
+    previously always built the realm form, so on a non-Keycloak provider this
+    button reported a failure for a configuration that was in fact correct, and
+    on Keycloak it tested a URL the login path might not use.
 
     Args:
-        config: Keycloak configuration to test
+        config: Keycloak/OIDC configuration to test
 
     Returns:
         Test result with success status, message, and optional details
@@ -461,19 +467,36 @@ async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestRes
     try:
         import httpx
 
+        from app.utils.url_validation import assert_safe_outbound_url
+
         server_url = config.get("keycloak_server_url", "")
         realm = config.get("keycloak_realm", "opentranscribe")
+        discovery_url = (config.get("keycloak_discovery_url") or "").strip()
 
-        if not server_url:
+        if not discovery_url and not server_url:
             return AuthMethodTestResponse(
                 success=False,
-                message="Keycloak server URL is required",
+                message="Provide either a discovery URL or a server URL",
             )
 
-        # Build the well-known endpoint URL
-        # Remove trailing slash if present
-        server_url = server_url.rstrip("/")
-        well_known_url = f"{server_url}/realms/{realm}/.well-known/openid-configuration"
+        if discovery_url:
+            well_known_url = discovery_url
+        else:
+            # Remove trailing slash if present
+            server_url = server_url.rstrip("/")
+            well_known_url = f"{server_url}/realms/{realm}/.well-known/openid-configuration"
+
+        # This endpoint fetches a super_admin-supplied URL, which is a classic
+        # SSRF primitive — it had no guard at all. Private targets stay allowed
+        # because an IdP on the LAN or the compose network is a legitimate
+        # deployment; what this blocks is cloud instance metadata and friends.
+        try:
+            assert_safe_outbound_url(well_known_url, allow_private=True)
+        except HTTPException:
+            return AuthMethodTestResponse(
+                success=False,
+                message="That URL is not an allowed outbound target.",
+            )
 
         logger.info(f"Testing Keycloak connection to {well_known_url}")
 

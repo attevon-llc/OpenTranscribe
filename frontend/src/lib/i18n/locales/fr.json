@@ -3441,6 +3441,8 @@
   "settings.authentication.loadingConfig": "Chargement de la configuration...",
   "settings.authentication.configSaved": "Configuration {{category}} enregistrée",
   "settings.authentication.configSaveFailed": "Échec de l'enregistrement de la configuration {{category}}",
+  "settings.authentication.localConfigSaved": "Paramètres d'authentification locale enregistrés",
+  "settings.authentication.configSavePartialFailure": "Certains paramètres n'ont pas pu être enregistrés ({{categories}}). Vos autres modifications ont été appliquées.",
   "settings.authentication.connectionTestFailed": "Échec du test de connexion",
   "settings.authentication.tab.local": "Auth locale",
   "settings.authentication.tab.ldap": "LDAP/AD",

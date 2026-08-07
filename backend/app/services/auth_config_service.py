@@ -172,6 +172,15 @@ class AuthConfigService:
         "KEYCLOAK_ENABLED": "keycloak_enabled",
         "KEYCLOAK_SERVER_URL": "keycloak_server_url",
         "KEYCLOAK_INTERNAL_URL": "keycloak_internal_url",
+        # Generic OIDC discovery (issue #353). The OIDC_* spellings are aliases for
+        # non-Keycloak deployments; KEYCLOAK_* wins when both are set, which is why
+        # it is listed second here — the reverse map keeps the last writer.
+        "OIDC_DISCOVERY_URL": "keycloak_discovery_url",
+        "KEYCLOAK_DISCOVERY_URL": "keycloak_discovery_url",
+        "OIDC_ISSUER": "keycloak_issuer",
+        "KEYCLOAK_ISSUER": "keycloak_issuer",
+        "KEYCLOAK_ROLES_CLAIM": "keycloak_roles_claim",
+        "KEYCLOAK_SCOPES": "keycloak_scopes",
         "KEYCLOAK_REALM": "keycloak_realm",
         "KEYCLOAK_CLIENT_ID": "keycloak_client_id",
         "KEYCLOAK_CLIENT_SECRET": "keycloak_client_secret",

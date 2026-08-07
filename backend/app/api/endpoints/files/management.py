@@ -61,7 +61,7 @@ class BulkActionRequest(BaseModel):
     """Request for bulk file operations."""
 
     file_uuids: list[str]
-    action: str  # delete | retry | cancel | recover | reprocess | summarize | redact
+    action: str  # delete|retry|cancel|recover|reprocess|summarize|redact|identify_speakers
     force: bool = False
     reset_retry_count: bool = False
     # Selective reprocessing (optional, used when action='reprocess')
@@ -617,6 +617,73 @@ def _handle_summarize_action(
     return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
 
 
+def _handle_identify_speakers_action(
+    db: Session, file_uuid: str, file_id: int, user_id: int | None = None
+) -> BulkActionResult:
+    """Handle LLM speaker identification for bulk operations.
+
+    Mirrors ``POST /api/files/{uuid}/identify-speakers``. Suggestions are stored as
+    confidence-scored predictions for manual review and are never auto-applied.
+
+    Availability is probed by constructing the client, as ``_handle_summarize_action``
+    does — the async ``is_llm_available`` helper the single-file endpoint uses cannot be
+    awaited from this synchronous dispatch.
+    """
+    import os
+
+    from app.models.media import MediaFile
+    from app.services.llm_service import LLMService
+
+    # Via the `speaker_tasks` re-export shim, as every other caller does — it keeps the
+    # legacy task-name routing alive.
+    from app.tasks.speaker_tasks import identify_speakers_llm_task
+
+    try:
+        llm_service = LLMService.create_from_settings(user_id=user_id)
+        if llm_service is None:
+            return BulkActionResult(
+                file_uuid=file_uuid,
+                success=False,
+                message="LLM provider is not configured",
+                error="LLM_NOT_AVAILABLE",
+            )
+        llm_service.close()
+    except Exception:
+        # Bulk actions report per-file outcomes instead of aborting the batch.
+        logger.exception(f"Could not construct an LLM client for file {file_uuid}")
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="LLM provider is not configured",
+            error="LLM_NOT_AVAILABLE",
+        )
+
+    db_file = db.query(MediaFile).filter_by(id=file_id).first()
+    if not db_file or db_file.status != FileStatus.COMPLETED:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="File must be completed before identifying speakers",
+            error="INVALID_STATUS",
+        )
+
+    if not db_file.speakers:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="No speakers found in this file to identify",
+            error="NO_SPEAKERS",
+        )
+
+    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
+        message = f"Speaker identification started (task: {task.id})"
+    else:
+        message = "Speaker identification prepared (test mode)"
+
+    return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
+
+
 def _handle_redact_action(db: Session, file_uuid: str, file_id: int) -> BulkActionResult:
     """Handle content-redaction (re)scan for bulk/selective operations.
 
@@ -691,6 +758,9 @@ def _process_single_file_action(
         ),
         "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, current_user.id),
         "redact": lambda: _handle_redact_action(db, file_uuid, file_id),
+        "identify_speakers": lambda: _handle_identify_speakers_action(
+            db, file_uuid, file_id, current_user.id
+        ),
     }
 
     handler = action_handlers.get(action)

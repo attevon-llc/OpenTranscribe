@@ -231,9 +231,25 @@
     dispatch('navigateToMatch', { match, segment, segmentIndex: match.segmentIndex, autoSeek: true });
   }
 
-  // When the page appends newly loaded segments, re-index and (if the user pressed
-  // "next" past the loaded window) advance to the first newly revealed match.
-  $: if (isVisible && searchQuery.trim() && transcriptSegments.length !== lastSegmentCount) {
+  // Renaming a speaker changes what `computeMatches` produces without changing the
+  // segment count, so a count-only trigger left `type: 'speaker'` matches pointing at the
+  // old name — searching the name the user had just typed found nothing. Fold the current
+  // display names into the trigger.
+  $: speakerNameSignature = speakerList
+    .map((speaker: Speaker) => `${speaker.name}=${speaker.display_name || ''}`)
+    .join('|');
+  let lastSpeakerNameSignature = '';
+
+  // When the page appends newly loaded segments or a speaker is renamed, re-index and (if
+  // the user pressed "next" past the loaded window) advance to the first newly revealed
+  // match.
+  $: if (
+    isVisible &&
+    searchQuery.trim() &&
+    (transcriptSegments.length !== lastSegmentCount ||
+      speakerNameSignature !== lastSpeakerNameSignature)
+  ) {
+    lastSpeakerNameSignature = speakerNameSignature;
     const prevTotal = reindexLocal();
     if (pendingAdvance) {
       if (totalMatches > prevTotal) {

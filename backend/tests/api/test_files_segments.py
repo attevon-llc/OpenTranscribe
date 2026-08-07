@@ -49,6 +49,56 @@ def _add_segments(db_session, media_file, n: int = 3) -> None:
     db_session.commit()
 
 
+def test_segments_include_grouping(client, user_token_headers, normal_user, db_session):
+    """The SPA renders ``grouped_segments``; omitting it here meant paginated
+    segments were fetched but never displayed (issue #352)."""
+    media_file = _make_file(db_session, normal_user)
+    _add_segments(db_session, media_file, n=3)
+    response = client.get(f"/api/files/{media_file.uuid}/segments", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+
+    groups = body["grouped_segments"]
+    assert len(groups) == 3
+    # Groups reference segments by uuid — never copies (the #352 dual-copy bug).
+    assert "segments" not in groups[0]
+    flat_uuids = [s["uuid"] for s in body["transcript_segments"]]
+    assert [u for g in groups for u in g["segment_uuids"]] == flat_uuids
+    assert [g["start_segment_index"] for g in groups] == [0, 1, 2]
+
+
+def test_segments_group_indices_are_global(client, user_token_headers, normal_user, db_session):
+    """``start_segment_index`` must account for ``segment_offset`` — the reading
+    progress bar divides it by the total count, so page-local indices go backwards."""
+    media_file = _make_file(db_session, normal_user)
+    _add_segments(db_session, media_file, n=5)
+    response = client.get(
+        f"/api/files/{media_file.uuid}/segments",
+        headers=user_token_headers,
+        params={"segment_limit": 2, "segment_offset": 3},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert [g["start_segment_index"] for g in response.json()["grouped_segments"]] == [3, 4]
+
+
+def test_segments_empty_has_grouping_key(client, user_token_headers, normal_user, db_session):
+    """Always present, so the client can concatenate pages without a null guard."""
+    media_file = _make_file(db_session, normal_user)
+    response = client.get(f"/api/files/{media_file.uuid}/segments", headers=user_token_headers)
+    assert response.json()["grouped_segments"] == []
+
+
+def test_segments_limit_above_cap_422(client, user_token_headers, normal_user, db_session):
+    """Bounded so a jump-to-end can't request an entire 50k-segment transcript."""
+    media_file = _make_file(db_session, normal_user)
+    response = client.get(
+        f"/api/files/{media_file.uuid}/segments",
+        headers=user_token_headers,
+        params={"segment_limit": 50_000},
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
 def test_segments_owner_populated(client, user_token_headers, normal_user, db_session):
     media_file = _make_file(db_session, normal_user)
     _add_segments(db_session, media_file, n=3)

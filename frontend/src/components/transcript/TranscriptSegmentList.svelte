@@ -88,10 +88,21 @@
     updateScrollProgress();
   }
 
+  // Identifies the observed row set. Rebuilding is O(n) over the DOM, and
+  // `groupedTranscriptSegments` is a fresh array on every `file` change — including
+  // renames and text edits, which add no rows. Only rebuild when the rows actually
+  // differ, or a rename on a 500-row transcript costs a full re-observe.
+  let observedRowSignature = '';
+
   // Re-target the observer when the segment set changes (pagination appends rows).
   // O(n) once per data change instead of O(n) per scroll event.
   async function refreshProgressObserver() {
     if (typeof IntersectionObserver === 'undefined') return;
+
+    const signature = `${groupedTranscriptSegments.length}:${groupKey(groupedTranscriptSegments[0] ?? {})}:${groupKey(groupedTranscriptSegments[groupedTranscriptSegments.length - 1] ?? {})}`;
+    if (signature === observedRowSignature && progressObserver) return;
+    observedRowSignature = signature;
+
     await tick();
     if (!transcriptDisplayElement) return;
 
@@ -112,16 +123,15 @@
     void refreshProgressObserver();
   }
 
-  // A group renders as one row, so it needs a key that is stable across reorders
-  // and appends. Overlap groups are identified by their group id, plain groups by
-  // their single segment's uuid; the prefix keeps the two id spaces from colliding.
+  // A group renders as one row, so it needs a key that is stable across reorders and
+  // appends. The first segment's uuid is both stable and unique — a segment belongs to
+  // exactly one group. Keying overlap groups by `overlapGroupId` instead would collide
+  // whenever two non-adjacent runs share an id, and a duplicate key takes down the
+  // entire list at render time.
   function groupKey(group: {
-    isOverlapGroup?: boolean;
-    overlapGroupId?: string;
     segments?: { uuid?: string | number }[];
     startSegmentIndex?: number;
   }): string {
-    if (group?.isOverlapGroup && group.overlapGroupId) return `g:${group.overlapGroupId}`;
     const uuid = group?.segments?.[0]?.uuid;
     return uuid != null ? `s:${uuid}` : `i:${group?.startSegmentIndex}`;
   }

@@ -97,17 +97,23 @@
     const successfulMerges: Speaker[] = [];
     const failedMerges: { speaker: Speaker; error: string }[] = [];
 
-    // Merge each source speaker into target
-    for (const sourceSpeaker of sourceSpeakers) {
-      try {
-        await mergeSpeakers(sourceSpeaker.uuid, target.uuid);
+    // Merge each source speaker into target. Concurrent, not serial: merging k speakers
+    // took k round trips end to end. `allSettled` keeps the same per-source success/failure
+    // accounting the messages below depend on.
+    const outcomes = await Promise.allSettled(
+      sourceSpeakers.map(sourceSpeaker => mergeSpeakers(sourceSpeaker.uuid, target.uuid))
+    );
+
+    outcomes.forEach((outcome, i) => {
+      const sourceSpeaker = sourceSpeakers[i];
+      if (outcome.status === 'fulfilled') {
         successfulMerges.push(sourceSpeaker);
-      } catch (error: unknown) {
-        const errorMessage = getErrorMessage(error, $t('common.unknownError'));
+      } else {
+        const errorMessage = getErrorMessage(outcome.reason, $t('common.unknownError'));
         failedMerges.push({ speaker: sourceSpeaker, error: errorMessage });
-        console.error(`Error merging speaker ${sourceSpeaker.display_name || sourceSpeaker.name}:`, error);
+        console.error(`Error merging speaker ${sourceSpeaker.display_name || sourceSpeaker.name}:`, outcome.reason);
       }
-    }
+    });
 
     // Show appropriate message based on results
     if (failedMerges.length === 0) {

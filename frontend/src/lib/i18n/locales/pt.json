@@ -4040,7 +4040,7 @@
   "chat.adminSettings.semanticCacheEnabled": "Cache semântica",
   "chat.adminSettings.semanticCacheThreshold": "Semelhança da cache semântica",
   "chat.adminSettings.title": "Conversa e RAG",
-  "chat.composer.hint": "Enter para enviar · Shift+Enter para nova linha",
+  "chat.composer.disclaimer": "A IA pode cometer erros. Verifique informações importantes na transcrição.",
   "chat.composer.placeholder": "Pergunte sobre as suas transcrições…",
   "chat.composer.send": "Enviar",
   "chat.composer.stop": "Parar a geração",

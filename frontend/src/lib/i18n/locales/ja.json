@@ -4040,7 +4040,7 @@
   "chat.adminSettings.semanticCacheEnabled": "セマンティックキャッシュ",
   "chat.adminSettings.semanticCacheThreshold": "セマンティックキャッシュの類似度",
   "chat.adminSettings.title": "チャットと RAG",
-  "chat.composer.hint": "Enter で送信 · Shift+Enter で改行",
+  "chat.composer.disclaimer": "AI は誤ることがあります。重要な情報は文字起こしで確認してください。",
   "chat.composer.placeholder": "文字起こしについて質問する…",
   "chat.composer.send": "送信",
   "chat.composer.stop": "生成を停止",

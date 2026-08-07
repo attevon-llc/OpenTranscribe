@@ -115,7 +115,6 @@
   </div>
 
   <div class="composer-footer">
-    <span class="hint">{$t('chat.composer.hint')}</span>
     {#if tooLong}
       <span class="counter over" data-testid="chat-char-counter">
         {$t('chat.composer.tooLong', { max: maxLength.toLocaleString() })}
@@ -129,6 +128,14 @@
       </span>
     {/if}
   </div>
+
+  <!--
+    Standard AI disclaimer. Deliberately OUTSIDE .composer-footer (a
+    space-between row for the character counter) so it stays centred under the
+    input at every width, and it is shown on mobile too — the smaller the
+    screen, the less other context the reader has.
+  -->
+  <p class="ai-disclaimer">{$t('chat.composer.disclaimer')}</p>
 </div>
 
 <style>
@@ -222,11 +229,6 @@
     min-height: 1.1rem;
   }
 
-  .hint {
-    font-size: 0.72rem;
-    color: var(--text-secondary);
-  }
-
   .counter {
     font-size: 0.72rem;
     color: var(--text-secondary);
@@ -238,9 +240,11 @@
     font-weight: 600;
   }
 
-  @media (max-width: 768px) {
-    .hint {
-      display: none;
-    }
+  .ai-disclaimer {
+    margin: 0.15rem 0 0;
+    text-align: center;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
   }
+
 </style>

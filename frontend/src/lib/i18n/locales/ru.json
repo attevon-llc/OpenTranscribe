@@ -4040,7 +4040,7 @@
   "chat.adminSettings.semanticCacheEnabled": "Семантический кэш",
   "chat.adminSettings.semanticCacheThreshold": "Порог сходства семантического кэша",
   "chat.adminSettings.title": "Чат и RAG",
-  "chat.composer.hint": "Enter — отправить · Shift+Enter — новая строка",
+  "chat.composer.disclaimer": "ИИ может ошибаться. Проверяйте важную информацию по расшифровке.",
   "chat.composer.placeholder": "Спросите о ваших расшифровках…",
   "chat.composer.send": "Отправить",
   "chat.composer.stop": "Остановить генерацию",

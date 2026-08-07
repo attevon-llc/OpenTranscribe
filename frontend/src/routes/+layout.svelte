@@ -243,7 +243,11 @@
 
   .content {
     flex: 1;
-    padding: 1rem;
+    /* Exposed as a variable so a full-bleed page (chat) can cancel it with a
+       negative margin instead of hardcoding — and stay correct across the
+       breakpoint below. */
+    --content-padding: 1rem;
+    padding: var(--content-padding);
     margin-top: var(--content-top, 60px);
   }
 
@@ -253,7 +257,7 @@
 
   @media (min-width: 768px) {
     .content {
-      padding: 2rem;
+      --content-padding: 2rem;
     }
   }
 

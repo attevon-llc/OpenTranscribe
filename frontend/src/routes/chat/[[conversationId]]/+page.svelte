@@ -428,8 +428,23 @@
   .chat-page {
     display: grid;
     grid-template-columns: 17rem 1fr;
+    /* Full-bleed, like every other chat product: the composer sits ON the
+       viewport bottom and the page itself never scrolls — only the thread does.
+       The app shell pads .content, so cancel that padding rather than
+       subtracting it from the height; otherwise the shell's padding is added
+       back below the page and the whole window scrolls by exactly 2x padding. */
+    margin: -1rem;
     height: calc(100vh - var(--navbar-height, 60px));
     overflow: hidden;
+  }
+
+  /* Mirrors .content's own breakpoint in +layout.svelte. The negative margin
+     must equal the shell's padding exactly: any mismatch reappears as page
+     scroll of 2x the difference. */
+  @media (min-width: 768px) {
+    .chat-page {
+      margin: -2rem;
+    }
   }
 
   .sidebar-pane {

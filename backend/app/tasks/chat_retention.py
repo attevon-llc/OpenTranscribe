@@ -17,7 +17,7 @@ from datetime import timedelta
 
 from celery import shared_task
 
-from app.core.task_priorities import UtilityPriority
+from app.core.constants import UtilityPriority
 
 logger = logging.getLogger(__name__)
 

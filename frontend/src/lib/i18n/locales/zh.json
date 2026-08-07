@@ -4040,7 +4040,7 @@
   "chat.adminSettings.semanticCacheEnabled": "语义缓存",
   "chat.adminSettings.semanticCacheThreshold": "语义缓存相似度",
   "chat.adminSettings.title": "对话与 RAG",
-  "chat.composer.hint": "Enter 发送 · Shift+Enter 换行",
+  "chat.composer.disclaimer": "AI 可能会出错。请对照转录内容核实重要信息。",
   "chat.composer.placeholder": "询问你的转写内容…",
   "chat.composer.send": "发送",
   "chat.composer.stop": "停止生成",

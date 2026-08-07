@@ -159,6 +159,29 @@
     background-color: var(--button-hover);
   }
 
+  /* --- selection affordance ---
+     A bare native checkbox against a list of similar-looking rows makes the
+     selected set genuinely hard to read at a glance. accent-color paints the
+     control itself, and the row tint + weight make the selection legible
+     without scanning the checkbox column. */
+  .picker-row input[type='checkbox'] {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+  }
+
+  .picker-row:has(input:checked) {
+    background-color: rgba(var(--primary-color-rgb), 0.12);
+    font-weight: 600;
+  }
+
+  .picker-row:focus-within {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
+
   .row-label {
     overflow: hidden;
     text-overflow: ellipsis;

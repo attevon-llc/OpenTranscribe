@@ -4040,7 +4040,7 @@
   "chat.adminSettings.semanticCacheEnabled": "Semantischer Cache",
   "chat.adminSettings.semanticCacheThreshold": "Ähnlichkeit für semantischen Cache",
   "chat.adminSettings.title": "Chat & RAG",
-  "chat.composer.hint": "Enter zum Senden · Umschalt+Enter für neue Zeile",
+  "chat.composer.disclaimer": "KI kann Fehler machen. Überprüfen Sie wichtige Informationen anhand des Transkripts.",
   "chat.composer.placeholder": "Frage zu deinen Transkripten stellen…",
   "chat.composer.send": "Senden",
   "chat.composer.stop": "Generierung stoppen",

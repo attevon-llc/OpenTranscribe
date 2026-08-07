@@ -759,7 +759,10 @@ class Settings(BaseSettings):
     ANTHROPIC_BASE_URL: str = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 
-    OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-3-haiku")
+    # NOTE the slug convention differs from Anthropic's first-party API: OpenRouter
+    # uses a dot ("claude-haiku-4.5"), the first-party ID uses dashes
+    # ("claude-haiku-4-5"). Mixing them yields a 404 from whichever side is wrong.
+    OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-haiku-4.5")
     OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
 

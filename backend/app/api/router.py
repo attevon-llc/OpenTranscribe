@@ -34,6 +34,7 @@ from .endpoints import tags
 from .endpoints import tasks
 from .endpoints import topics
 from .endpoints import transcript_segments
+from .endpoints import usage
 from .endpoints import user_files
 from .endpoints import user_settings
 from .endpoints import users
@@ -175,6 +176,7 @@ include_router_with_consistency(
     media_mirror_settings.router, prefix="/admin/backup/mirror", tags=["admin"]
 )
 include_router_with_consistency(topics.router, prefix="/files", tags=["topics"])
+include_router_with_consistency(usage.router, prefix="/usage", tags=["usage"])
 include_router_with_consistency(
     transcript_segments.router, prefix="/transcripts", tags=["transcript-segments"]
 )

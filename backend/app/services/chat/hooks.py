@@ -70,6 +70,15 @@ class ChatCompletionContext:
     tokens_estimated: bool
     retrieved_chunks: int
     success: bool
+    # Cache tokens are priced separately (reads far below, writes above the uncached
+    # input rate), so a meter that folds them into prompt_tokens misprices every
+    # cache-enabled request. Zero when the provider reports no cache activity.
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    # Whether the answer was grounded in the user's transcripts. The single most
+    # useful signal for telling a heavy legitimate user apart from someone using the
+    # deployment as a general-purpose chatbot, and it costs nothing to record.
+    use_context: bool = True
 
 
 BeforeMessageHook = Callable[[ChatDispatchContext], None]

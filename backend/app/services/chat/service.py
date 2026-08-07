@@ -76,6 +76,10 @@ class ChatTurn:
         self.answer_parts: list[str] = []
         self.prompt_tokens: int | None = None
         self.completion_tokens: int | None = None
+        # Cache tokens are priced differently from ordinary input tokens — reads far
+        # below, writes above — so they are carried separately rather than folded in.
+        self.cache_read_tokens: int | None = None
+        self.cache_write_tokens: int | None = None
         self.tokens_estimated = False
         self.finish_reason: str | None = None
         self.error: str | None = None
@@ -193,6 +197,7 @@ async def _finalize_turn(
     is_first_exchange: bool,
     question: str,
     started: float,
+    use_context: bool,
 ) -> None:
     """Persist, meter and audit one turn. Safe to call during teardown.
 
@@ -247,6 +252,9 @@ async def _finalize_turn(
                 tokens_estimated=turn.tokens_estimated,
                 retrieved_chunks=masked_count,
                 success=not turn.error,
+                cache_read_tokens=turn.cache_read_tokens or 0,
+                cache_write_tokens=turn.cache_write_tokens or 0,
+                use_context=use_context,
             )
         )
     except Exception:  # noqa: BLE001 — hooks are contained by contract
@@ -409,6 +417,8 @@ class ChatService:
                 elif event.type == "usage":
                     turn.prompt_tokens = event.prompt_tokens
                     turn.completion_tokens = event.completion_tokens
+                    turn.cache_read_tokens = event.cache_read_tokens
+                    turn.cache_write_tokens = event.cache_write_tokens
                 elif event.type == "error":
                     turn.error = event.message
                     turn.error_code = "provider_error"
@@ -465,6 +475,7 @@ class ChatService:
                     is_first_exchange=is_first_exchange,
                     question=question,
                     started=started,
+                    use_context=use_context,
                 )
 
         # Only reachable on a normal (non-cancelled) exit — there is no client

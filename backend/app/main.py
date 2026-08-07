@@ -609,6 +609,21 @@ async def _initialize_neural_search():
         logger.error(f"Error initializing neural search: {e}")
 
 
+def _register_chat_usage_hook() -> None:
+    """Install the core chat usage recorder.
+
+    Registered in EVERY edition — a self-hosted operator paying an LLM bill wants
+    the same visibility a hosted tenant does. The cloud edition registers its own
+    billing hook alongside this one; the two are independent.
+    """
+    try:
+        from app.services.chat.usage import register as register_chat_usage
+
+        register_chat_usage()
+    except Exception as e:  # noqa: BLE001 — accounting never blocks startup
+        logger.warning(f"Chat usage hook registration failed (non-fatal): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
@@ -639,6 +654,8 @@ async def lifespan(app: FastAPI):
             "RUN_MIGRATIONS_ON_STARTUP=false — skipping migrations; a migrate job is "
             "expected to own them. Readiness will verify the schema is at head."
         )
+
+    _register_chat_usage_hook()
 
     # Seed initial data (admin user, default tags, system prompts)
     try:

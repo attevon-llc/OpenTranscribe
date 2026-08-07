@@ -3,6 +3,15 @@
 **Not posted yet — for review before publishing.** These go to a real user; the wording is
 yours to approve. Nothing here discloses a working exploit path.
 
+> **Corrected 2026-08-07 after Max's follow-up.** He reports the `/flower/` and `/docs/` 404s
+> were **their own reverse proxy** — the virtual directory pointed at the wrong port. So those
+> were never our bug on his deployment, and the earlier drafts claiming "real bug, now fixed"
+> were wrong. The `/flower/` gap we found is genuine and independent (the frontend nginx image
+> serves no `/flower/` location, so the button 404s on any prod/PKI stack without the optional
+> nginx overlay) — but it is **not** what he hit, and we should not imply otherwise. He also
+> declined a hotfix and has worked around registration by blocking `/api/auth/register` at the
+> proxy, so nothing is blocking him.
+
 ---
 
 ## #355 — Flower container always reports as unhealthy
@@ -117,20 +126,27 @@ yours to approve. Nothing here discloses a working exploit path.
 > directly. On startup we also now repair any account left in an older inconsistent
 > admin/superuser state, which may be how yours ended up as it is.
 >
-> **2. Queue dashboard 404.** Real bug, now fixed. The `/flower/` path was only served by our
-> optional nginx overlay, so on a deployment without it the request fell through to the single-
-> page app, which has no such route. The frontend image now proxies it too. We also made it
-> admin-only and put it behind a session check — Flower exposes task names and arguments, and it
-> was previously reachable by any logged-in user.
+> **2. Queue dashboard and docs 404s.** Thanks for closing the loop — and no need to excuse it,
+> a wrong port in a virtual directory is exactly the kind of thing that presents as an
+> application bug. Nothing to apologise for.
 >
-> **3. Docs page baseUrl error.** Fixed on master (commit `133efc77`) — an nginx location
-> precedence problem meant Docusaurus's asset requests were being resolved against the wrong
-> path, so the JavaScript bundle never loaded and Docusaurus fell back to its "wrong baseUrl"
-> message. The confusing part was that the suggested value matched the configured one.
+> Your report did surface a separate, genuine gap on our side that you would have hit eventually:
+> the `/flower/` path was only served by our optional nginx overlay, so on a prod or PKI
+> deployment without that overlay the button 404s regardless of the proxy in front. The frontend
+> image now serves it too. While fixing that we also made Flower admin-only and put it behind a
+> session check — it exposes task names and arguments, and it was previously reachable by any
+> logged-in user.
+>
+> On the docs page: a related nginx location-precedence bug was fixed on master in `133efc77`,
+> which caused the same "wrong baseUrl" symptom on direct container access. It may or may not
+> have contributed to what you saw — your proxy port explains it on its own.
 >
 > **4. Self-registration with LDAP enabled.** Covered in #354 above — the admin toggle for this
 > existed but was not connected to anything, which is worse than it simply being absent. Fixed,
-> along with a switch that disables local password login outright.
+> along with a switch that disables local password login outright. Your proxy-level block on
+> `/api/auth/register` is a sound workaround in the meantime; once you're on v0.5.0 you can drop
+> it and use the setting, which also hides the "Create Account" link rather than letting someone
+> fill in the form first.
 >
 > **One thing to raise directly.** Your reports prompted a full audit of the authentication
 > code, and it found a number of issues more serious than the ones you reported — including a

@@ -129,3 +129,59 @@ def test_a_failing_allowlist_resolver_does_not_lock_everyone_out():
 
     set_allowed_models_resolver(_boom)
     assert resolve_allowed_models(1) is None
+
+
+# --------------------------------------------------------------------------
+# chat.ungrounded capability
+# --------------------------------------------------------------------------
+
+
+def test_ungrounded_chat_is_allowed_by_default():
+    """Open-source and paid tiers alike. It has legitimate uses ("rewrite this
+    summary more formally"), so it is not gated by default anywhere.
+    """
+    from types import SimpleNamespace
+    from typing import Any
+    from typing import cast
+
+    from app.api.endpoints.chat.common import resolve_use_context
+
+    conv = cast(Any, SimpleNamespace(settings={"use_context": False}))
+    assert resolve_use_context(conv, {"use_context_default": True}) is False
+
+
+def test_disabling_the_capability_degrades_to_grounded_rather_than_rejecting():
+    """Withholding the feature must not break chat: the user still gets an answer,
+    just one anchored to their own transcripts.
+    """
+    from types import SimpleNamespace
+    from typing import Any
+    from typing import cast
+
+    from app.api.endpoints.chat.common import resolve_use_context
+    from app.core.capabilities import reset_capability_resolver
+    from app.core.capabilities import set_capability_resolver
+
+    try:
+        set_capability_resolver(lambda _req: {"chat.ungrounded": False})
+        conv = cast(Any, SimpleNamespace(settings={"use_context": False}))
+        assert resolve_use_context(conv, {"use_context_default": True}) is True
+    finally:
+        reset_capability_resolver()
+
+
+def test_capability_does_not_disturb_grounded_chat():
+    from types import SimpleNamespace
+    from typing import Any
+    from typing import cast
+
+    from app.api.endpoints.chat.common import resolve_use_context
+    from app.core.capabilities import reset_capability_resolver
+    from app.core.capabilities import set_capability_resolver
+
+    try:
+        set_capability_resolver(lambda _req: {"chat.ungrounded": False})
+        conv = cast(Any, SimpleNamespace(settings={"use_context": True}))
+        assert resolve_use_context(conv, {"use_context_default": False}) is True
+    finally:
+        reset_capability_resolver()

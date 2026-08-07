@@ -57,6 +57,12 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     "llm.user_settings": True,  # per-user LLM provider/endpoint/keys
     "watch_sources": True,  # local/S3/SMB auto-import (Settings → Watch Sources)
     "chat.rag": True,  # RAG chat over selected transcripts
+    # Ungrounded chat — the "use my transcripts: off" toggle. True everywhere by
+    # default (it has legitimate uses: "rewrite this summary more formally"). It is
+    # a separate key because it is the one switch that turns a grounded transcript
+    # assistant into a general-purpose chatbot, so a hosted edition may want to
+    # withhold it on a free tier without disabling chat itself.
+    "chat.ungrounded": True,
     # -- team-facing (inner-team collaboration) ----------------------------------
     "sharing.teams": True,  # groups + collection shares
     "collections.shared": True,  # shared/org-visible collections
@@ -94,6 +100,7 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
     "llm.user_settings": AUDIENCE_USER,
     "watch_sources": AUDIENCE_USER,
     "chat.rag": AUDIENCE_USER,
+    "chat.ungrounded": AUDIENCE_USER,
     "sharing.teams": AUDIENCE_TEAM,
     "collections.shared": AUDIENCE_TEAM,
     "speakers.shared": AUDIENCE_TEAM,

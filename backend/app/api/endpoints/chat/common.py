@@ -96,11 +96,25 @@ def read_user_chat_settings(db: Session, user_id: int) -> dict:
 
 
 def resolve_use_context(conversation: ChatConversation, user_defaults: dict) -> bool:
-    """Per-conversation toggle when set, otherwise the user's default."""
+    """Per-conversation toggle when set, otherwise the user's default.
+
+    Forced to True when the ``chat.ungrounded`` capability is off. Ungrounded chat
+    is the one switch that turns a grounded transcript assistant into a
+    general-purpose chatbot, so an edition may withhold it without disabling chat.
+    Degrading to grounded (rather than rejecting the request) keeps the feature
+    usable: the user still gets an answer, just one anchored to their transcripts.
+
+    Enforced here rather than in the UI because the toggle is user-supplied
+    (``conversation.settings``), so a client that skips the control would otherwise
+    set it freely.
+    """
+    from app.core.capabilities import capability_enabled
+
     raw = (conversation.settings or {}).get("use_context")
-    if raw is None:
-        return bool(user_defaults["use_context_default"])
-    return bool(raw)
+    resolved = bool(user_defaults["use_context_default"]) if raw is None else bool(raw)
+    if not resolved and not capability_enabled("chat.ungrounded"):
+        return True
+    return resolved
 
 
 def to_summary(conversation: ChatConversation, message_count: int = 0) -> ConversationSummary:

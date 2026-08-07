@@ -71,6 +71,28 @@ The footer of the picker estimates how much of the model's context window your
 selection would occupy, and warns before you pick more than the model can
 usefully handle.
 
+## Projects
+
+A project groups conversations about one recurring subject — a client, a weekly
+meeting, a case — and pins two things every chat inside it inherits:
+
+- **Recordings.** Pin a collection, some tags or specific files, and every chat
+  started in that project searches those recordings without you re-picking
+  context each time. This is what makes a project more than a folder: it is a
+  retrieval boundary, which is also the safer default when several customers'
+  material lives on one server.
+- **Instructions.** Standing background about the subject — *"this client calls
+  their product Atlas"*, *"always name the account manager"* — applied to every
+  chat in the project without retyping it.
+
+Create one with **+** beside *Projects* in the chat sidebar. Each project row
+expands to show its conversations, and **+** on the row starts a new chat
+already scoped to it. Chats that do not belong to a project stay in the
+date-grouped list below, exactly as before.
+
+**Deleting a project never deletes its conversations.** They fall back to
+ungrouped. Losing a grouping is recoverable; losing the threads would not be.
+
 ## What the assistant actually sees
 
 Understanding this is the difference between a vague answer and a good one.
@@ -187,8 +209,31 @@ The gear icon in the chat header opens per-conversation settings:
   Switching to one with a smaller context window warns first, since it silently
   changes how much of the conversation the model can see.
 
+Under **Advanced**, collapsed by default because most people never need them:
+
+- **Answer length** — the reply's token ceiling. Empty follows the model
+  default. Longer answers cost more, and the server clamps the value to what the
+  model and any plan limit actually allow rather than failing the request.
+- **Focus** — narrows the words the model may choose from. Lower is more
+  predictable. Leave it alone unless answers wander; it is omitted entirely when
+  unset, because some models reject it.
+
 Account-wide defaults for new conversations live in **Settings → Chat**. Any
 individual conversation can override them.
+
+### How instructions combine
+
+Instructions are **additive**, applied broadest first:
+
+```
+built-in rules  →  your Settings → Chat default  →  the project  →  this chat
+```
+
+They answer different questions, so they stack rather than replace: *"answer
+concisely"* (yours) and *"their product is called Atlas"* (the project's) are
+both true at once. The built-in rules always come first and **cannot be
+overridden** by any of the layers above — that is what keeps transcript
+excerpts data rather than instructions.
 
 ## Requirements
 
@@ -216,8 +261,11 @@ have finished transcribing to be searchable.
 
 ## Administration
 
-**Settings → Chat & RAG** (administrators) tunes retrieval and limits. Every
-value applies to the next message — no restart, no `.env` edit:
+**Settings → Chat → Advanced features** tunes retrieval and limits for the whole
+server. The tab is **administrator-only and enforced server-side**, not merely
+hidden: the endpoints behind it require an admin, so a normal user cannot reach
+them by other means. Every value applies to the next message — no restart, no
+`.env` edit:
 
 | Setting | Effect |
 |---|---|
@@ -232,7 +280,22 @@ value applies to the next message — no restart, no `.env` edit:
 
 The reranker model (`cross-encoder/ms-marco-MiniLM-L-6-v2`, ~90&nbsp;MB) is
 downloaded by `scripts/download-models.py`. If it is absent, reranking disables
-itself with a warning and chat continues to work.
+itself with a warning and chat continues to work, retrying every few minutes so
+a model cache that appears later — a volume mounted after the container
+started, for instance — is picked up without a restart.
+
+### Per-user preferences
+
+Users can narrow two of these for their own chats in **Settings → Chat**:
+*Excerpts per answer* and *Rerank excerpts*. Both are **ceilings, not
+overrides** — a user may ask for fewer excerpts or turn reranking off, making
+their own chats cheaper and faster, but cannot exceed what you allow. Reranking
+is deliberately one-way: it can be switched off, never on when you have it off,
+since the model may not be installed at all.
+
+A user's stored preference is kept even when it exceeds your current limit, so
+raising the platform value later restores their original intent instead of
+silently leaving them at the old ceiling.
 
 ## How it works
 

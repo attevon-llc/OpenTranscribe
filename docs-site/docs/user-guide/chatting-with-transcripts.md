@@ -52,6 +52,27 @@ tags choose *which* recordings to search; speakers choose *who* to listen to
 within them. Combine them (*"what did Dana say in the Q3 calls?"*) or use
 speakers alone (*"everything Dana said, anywhere"*).
 
+## Organising chats into projects
+
+If you keep coming back to the same subject — a client, a weekly meeting, an
+investigation — make it a **project**. Click **+** beside *Projects* in the
+sidebar.
+
+A project remembers two things so you stop repeating yourself:
+
+- **Which recordings to search.** Pin a collection, some tags or specific files,
+  and every chat you start inside the project already searches them. No more
+  re-picking context each time.
+- **Standing instructions.** Background that is always true for this subject —
+  *"this client calls their product Atlas"*, *"always name the account
+  manager"*.
+
+Click a project to expand its chats; the **+** on its row starts a new one
+already scoped to it. Chats outside any project stay in the list below, grouped
+by date as before.
+
+Deleting a project **keeps its conversations** — they simply become ungrouped.
+
 ## Getting better answers
 
 **Use the words that were spoken.** Retrieval matches your question against the
@@ -106,7 +127,26 @@ The gear icon opens per-conversation settings:
   words* (keyword only).
 - **Model** — pin a different provider or model for this conversation.
 
-Account-wide defaults live in **Settings → Chat**.
+Under **Advanced** there are two more, collapsed because most people never need
+them: **Answer length** (the reply's ceiling — longer costs more) and **Focus**
+(how narrowly the model picks its words; lower is more predictable).
+
+Account-wide defaults live in **Settings → Chat**, where you can also set
+**Excerpts per answer** and turn **Rerank excerpts** off for your own chats.
+Both only ever make your chats *leaner* than the server default — you cannot ask
+for more than your administrator allows.
+
+### How instructions stack
+
+Instructions add up rather than replace each other, broadest first:
+
+```
+built-in rules  →  your default  →  the project  →  this chat
+```
+
+So *"answer concisely"* in your settings and *"their product is called Atlas"*
+on the project both apply. The built-in rules always win, which is what stops a
+recording from talking the assistant into ignoring them.
 
 ## Keeping an eye on cost
 

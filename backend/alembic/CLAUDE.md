@@ -9,7 +9,7 @@ authoring the revision file itself.
 
 ## Key files
 
-- `versions/` — 60 revisions, `v010_baseline` … head `v374_add_tag_user_id`.
+- `versions/` — 62 revisions, `v010_baseline` … head `v376_add_chat_projects`.
 - `env.py` — builds the URL from `POSTGRES_*` env (`load_dotenv()`), `target_metadata =
   Base.metadata`. No `compare_type`, no naming convention.
 - `script.py.mako` — **stock alembic template**: it emits neither the `v###` id nor idempotent

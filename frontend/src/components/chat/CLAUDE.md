@@ -65,6 +65,32 @@ Exactly ONE stream is in flight at a time.
 | `FilePickerModal`     | Edits a **draft**, commits on Confirm — scope changes rewrite what every later answer is based on                         |
 | `ChatStatusIndicator` | The ONLY `aria-live` region; announcing the token stream would read the answer character by character                     |
 
+## ⚠️ Events must be forwarded at EVERY hop
+
+`ChatThread` sits between `ChatMessage` and the page. A `dispatch(...)` in
+`ChatMessage` reaches `chatStore` only if `ChatThread` re-emits it — Svelte does
+not bubble component events.
+
+This bit us: `ChatThread` forwarded `regenerate` and `retry` but not `edit`, so
+**edit-and-resend did nothing at all** — the editor closed, the question stayed
+as it was, and no request was ever sent. It went unnoticed because the E2E test
+covering it had never run (it self-skipped without an LLM). Use bare `on:edit`
+forwarding rather than a wrapping handler unless you need to transform.
+
+When adding an event to `ChatMessage`, check all three: dispatch in the child,
+forward in `ChatThread`, handle on the page.
+
+## Projects in the sidebar (issue #360)
+
+`ChatSidebar` renders project groups above the date-grouped list. Conversations
+with a `project_uuid` appear ONLY under their project, so nothing is listed
+twice. Project sections are collapsed by default.
+
+"New chat in this project" does NOT create a row: the conversation is still
+created lazily on first send, with `chatStore.setPendingProject(uuid)` holding
+the target so an abandoned visit leaves nothing behind — same reasoning as
+`newConversation()`.
+
 ## Accessibility invariants
 
 These are easy to regress and hard to notice without a keyboard:

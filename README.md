@@ -97,9 +97,12 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Scope a conversation** by recordings, collections, or tags — collections and tags resolve at query time, so a recording added later is automatically in scope
 - **Ask about one person**: a Speakers filter that is exact rather than approximate. Transcripts are indexed as speaker turns, so selecting a speaker retrieves only their own words — "what did Dana commit to?" can never be answered from someone else's sentence *about* Dana
 - **Familiar chat interactions**: edit a question and re-answer from that point, regenerate, stop mid-stream, copy, export to Markdown or JSON, archive, and a searchable conversation history
-- **Per-conversation model choice**, or turn transcript context off entirely to use the model as a plain assistant
+- **Projects**: group conversations by client, meeting or case. A project pins the recordings its chats search and standing instructions they all inherit, so you stop re-picking context and re-typing background. Deleting a project keeps its conversations
+- **Per-conversation model choice**, creativity, answer length and focus — or turn transcript context off entirely to use the model as a plain assistant
+- **Instructions stack** rather than replace: built-in rules → your default → the project → this chat, and the built-in rules always win
 - **Redaction is honoured** — retrieved excerpts are re-masked before they reach a provider, and masking fails closed
 - **Usage visibility**: `GET /usage/me` shows tokens and estimated cost per model, so you can see what you are spending
+- **Test it without a model**: `./opentr.sh start dev --with-mock-llm` runs an OpenAI-compatible mock so chat works with no GPU, API key, or internet — including scenario models that exercise the real error paths
 
 ### 📊 **Analytics & Insights**
 - **Advanced Content Analysis**: Comprehensive speaker analytics including talk time, interruption detection, and turn-taking patterns

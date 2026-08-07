@@ -108,6 +108,21 @@ Configure auth via Admin UI (Settings → Authentication); DB config takes prece
 ./opentr.sh start dev --with-keycloak-test   # Keycloak at localhost:8180 (admin/admin)
 ./opentr.sh start prod --build --with-pki    # PKI/mTLS at https://localhost:5182 (prod-only — Vite can't do mTLS)
 ```
+
+### Mock LLM (chat / AI features without a model)
+
+```bash
+./opentr.sh start dev --with-mock-llm        # OpenAI-compatible mock at http://mock-llm:5199/v1
+```
+
+Runs `scripts/mock-llm-server.py` on the app network so chat, summarization and
+topic extraction work with **no GPU, API key, or internet**. Only token generation
+is canned — retrieval, redaction masking, citations, SSE and usage recording all
+take their real paths. Scenario models drive the app's real error handling:
+`mock-gpt` (normal), `mock-echo` (returns the prompt it was given — assert what the
+app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`. Never start it as a
+bare host process: it binds 5199 and then blocks the container. Fixtures and the
+full table: `backend/tests/CLAUDE.md`.
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
 Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/KEYCLOAK_SETUP.md`.
 

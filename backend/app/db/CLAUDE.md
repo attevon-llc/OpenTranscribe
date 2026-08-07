@@ -30,9 +30,11 @@ pending. `alembic upgrade head` by hand is **production-only**.
 
 Version context: `v364_add_content_redaction`, `v365_add_prompt_shared_by`,
 `v366_add_watch_sources`, `v367_add_cloud_seams`, `v369_superuser_role_invariant`
-(the `role`/`is_superuser` CHECK), `v373_add_cluster_organization_id`, head currently
-`v374_add_tag_user_id` (per-user tag ownership — the one revision so far that both
-backfills *and* splits rows, and that drops a pre-existing UNIQUE constraint).
+(the `role`/`is_superuser` CHECK), `v373_add_cluster_organization_id`, `v374_add_tag_user_id` (per-user tag ownership —
+the one revision so far that both backfills *and* splits rows, and that drops a
+pre-existing UNIQUE constraint), `v375_add_chat_tables`, head currently
+`v376_add_chat_projects` (chat projects; note its FK is ON DELETE **SET NULL**, so
+deleting a project leaves its conversations ungrouped rather than destroying them).
 
 ## Gotchas
 

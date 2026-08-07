@@ -7,8 +7,11 @@ conversations, scope the context, and toggle chat off.
 Requirements:
 - Dev environment running: ./opentr.sh start dev
 - At least one COMPLETED transcript in the library (retrieval needs content)
-- An LLM provider configured for the test user, for the streaming tests
-  (they self-skip when none is configured — the setup CTA test covers that case)
+- An LLM provider for the streaming tests. Start the mock and they run for real:
+      ./opentr.sh start dev --with-mock-llm
+  Without one they self-skip (the setup CTA test covers that case) — which for a
+  long time meant the streaming path was never actually exercised by any E2E run
+  while the suite still reported green.
 
 Run:
     pytest backend/tests/e2e/test_chat.py -v
@@ -22,6 +25,7 @@ from __future__ import annotations
 
 import os
 import re
+import socket
 
 import pytest
 import requests
@@ -57,6 +61,15 @@ def api_session() -> requests.Session:
         timeout=30,
     )
     assert response.status_code == 200, f"Login failed: {response.status_code}"
+
+    # Attach the CSRF token to every subsequent request. Without it the backend
+    # rejects all mutations with 403, which silently broke two things: tests
+    # that arrange state via POST failed outright, and `cleanup_conversations`
+    # DELETEs failed too — so every E2E run was LEAVING its conversations behind
+    # in dev data, exactly what this suite is required not to do.
+    csrf_token = session.cookies.get("csrf_token")
+    assert csrf_token, "login did not set a csrf_token cookie"
+    session.headers["X-CSRF-Token"] = csrf_token
     return session
 
 
@@ -68,6 +81,65 @@ def cleanup_conversations(api_session: requests.Session):
     for uuid in created:
         try:
             api_session.delete(f"{BACKEND_URL}/api/chat/conversations/{uuid}", timeout=15)
+        except requests.RequestException:
+            pass
+
+
+MOCK_LLM_PORT = 5199
+MOCK_LLM_URL_FOR_BACKEND = f"http://mock-llm:{MOCK_LLM_PORT}/v1"
+
+
+def _mock_llm_running() -> bool:
+    """Whether the docker-compose mock LLM is up on the host."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.3)
+        return sock.connect_ex(("127.0.0.1", MOCK_LLM_PORT)) == 0
+
+
+# Module-scoped to match api_session; a session-scoped fixture cannot depend
+# on a narrower one.
+@pytest.fixture(scope="module", autouse=True)
+def ensure_llm_provider(api_session: requests.Session):
+    """Give the streaming tests a provider when the mock LLM is available.
+
+    Without this the streaming tests self-skip, so the most valuable part of the
+    suite never ran while the whole file still reported green — the failure mode
+    where a green run means less than it looks.
+
+    Leaves a real configured provider alone (someone testing against Ollama or a
+    cloud model should keep it), and removes anything it registers itself, since
+    E2E must never persist changes to dev data.
+    """
+    if _llm_configured(api_session) or not _mock_llm_running():
+        yield
+        return
+
+    created_uuid = None
+    try:
+        response = api_session.post(
+            f"{BACKEND_URL}/api/llm-settings",
+            json={
+                "name": "Mock LLM (e2e)",
+                "provider": "custom",
+                "model_name": "mock-gpt",
+                "base_url": MOCK_LLM_URL_FOR_BACKEND,
+                "api_key": "mock-key-not-secret",
+            },
+            timeout=30,
+        )
+        if response.ok:
+            created_uuid = response.json().get("uuid")
+    except requests.RequestException:
+        created_uuid = None
+
+    yield
+
+    if created_uuid:
+        try:
+            api_session.delete(
+                f"{BACKEND_URL}/api/llm-settings/config/{created_uuid}",
+                timeout=30,
+            )
         except requests.RequestException:
             pass
 

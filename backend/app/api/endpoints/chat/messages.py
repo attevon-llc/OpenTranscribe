@@ -160,7 +160,8 @@ def _prepare_turn(
             headers={"Retry-After": str(retry_after)},
         )
 
-    if not limits.acquire_stream_slot(ctx.user.id, chat_settings.max_concurrent_streams):
+    slot_id = limits.acquire_stream_slot(ctx.user.id, chat_settings.max_concurrent_streams)
+    if slot_id is None:
         raise HTTPException(
             status_code=429,
             detail="Too many chats streaming at once. Wait for one to finish.",
@@ -259,15 +260,19 @@ def _prepare_turn(
             "assistant_message_uuid": assistant_uuid,
             "user_message_uuid": str(user_message.uuid),
             "is_first_exchange": is_first_exchange,
+            # Carried out so the response wrapper can release exactly this slot.
+            "_slot_id": slot_id,
         }
     except Exception:
         # Anything that fails before the stream starts must give the slot back.
-        limits.release_stream_slot(ctx.user.id)
+        limits.release_stream_slot(ctx.user.id, slot_id)
         raise
 
 
 def _streaming_response(kwargs: dict, user_id: int) -> StreamingResponse:
     """Wrap the turn generator so the concurrency slot is always released."""
+    # Popped, not forwarded: stream_reply does not take it.
+    slot_id = kwargs.pop("_slot_id", None)
 
     async def guarded():
         try:
@@ -277,7 +282,7 @@ def _streaming_response(kwargs: dict, user_id: int) -> StreamingResponse:
             logger.exception("Chat stream generator failed")
             yield sse("error", {"code": "provider_error", "message": "Generation failed."})
         finally:
-            limits.release_stream_slot(user_id)
+            limits.release_stream_slot(user_id, slot_id)
 
     return StreamingResponse(guarded(), media_type="text/event-stream", headers=STREAM_HEADERS)
 

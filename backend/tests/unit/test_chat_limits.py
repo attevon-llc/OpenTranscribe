@@ -8,6 +8,7 @@ never to "nobody can chat".
 
 from __future__ import annotations
 
+import time
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -91,45 +92,81 @@ def test_hourly_limit_keys_are_per_user_and_per_hour():
 
 
 def test_slot_is_granted_below_the_cap():
-    client = _redis(incr=1)
+    client = _redis(zcard=0)
     with patch("app.core.redis.get_redis", return_value=client):
-        assert limits.acquire_stream_slot(user_id=1, max_concurrent=2) is True
+        slot = limits.acquire_stream_slot(user_id=1, max_concurrent=2)
+    assert slot, "a slot below the cap must be granted and return its id"
+    client.zadd.assert_called_once()
     # A leak guard TTL is mandatory: a dead process must not hold a slot forever.
     client.expire.assert_called_once()
 
 
-def test_slot_at_the_cap_is_still_granted():
-    client = _redis(incr=2)
+def test_stale_slots_are_pruned_before_counting():
+    """THE leak fix.
+
+    The old implementation was one counter whose TTL was refreshed on every
+    acquire, so a slot leaked by a died-mid-stream request never aged out for a
+    user who kept chatting: their usable concurrency degraded 2 -> 1 -> 0 with
+    no recovery short of deleting the key by hand. Pruning by age on each
+    acquire is what bounds that.
+    """
+    client = _redis(zcard=0)
     with patch("app.core.redis.get_redis", return_value=client):
-        assert limits.acquire_stream_slot(user_id=1, max_concurrent=2) is True
+        limits.acquire_stream_slot(user_id=1, max_concurrent=2)
+    client.zremrangebyscore.assert_called_once()
+    key, low, high = client.zremrangebyscore.call_args[0]
+    assert low == "-inf"
+    assert high < time.time(), "the prune cutoff must be in the past"
 
 
-def test_slot_past_the_cap_is_refused_and_handed_back():
-    """The refused attempt must not leave the counter inflated."""
-    client = _redis(incr=3)
+def test_slot_below_the_cap_is_granted_with_one_already_held():
+    client = _redis(zcard=1)
     with patch("app.core.redis.get_redis", return_value=client):
-        assert limits.acquire_stream_slot(user_id=1, max_concurrent=2) is False
-    client.decr.assert_called_once()
+        assert limits.acquire_stream_slot(user_id=1, max_concurrent=2)
+
+
+def test_slot_at_the_cap_is_refused():
+    client = _redis(zcard=2)
+    with patch("app.core.redis.get_redis", return_value=client):
+        assert limits.acquire_stream_slot(user_id=1, max_concurrent=2) is None
+    client.zadd.assert_not_called(), "a refused attempt must not take a slot"
 
 
 def test_slot_acquisition_fails_open():
-    client = _redis(incr=ConnectionError("redis down"))
+    """Chat must not go down because Redis did."""
+    client = _redis(zcard=ConnectionError("redis down"))
     with patch("app.core.redis.get_redis", return_value=client):
-        assert limits.acquire_stream_slot(user_id=1, max_concurrent=2) is True
+        assert limits.acquire_stream_slot(user_id=1, max_concurrent=2)
 
 
-def test_releasing_never_drives_the_counter_negative():
-    """Over-releasing (double finally, retry) must not create free slots."""
-    client = _redis(decr=-1)
+def test_release_removes_only_its_own_slot():
+    """Releasing by id is idempotent and cannot free someone else's stream.
+
+    A bare decrement could: a double release (retry, double finally) would hand
+    out a slot still legitimately held by another in-flight request.
+    """
+    client = _redis()
+    with patch("app.core.redis.get_redis", return_value=client):
+        limits.release_stream_slot(user_id=1, slot_id="slot-abc")
+    client.zrem.assert_called_once()
+    assert client.zrem.call_args[0][1] == "slot-abc"
+    client.delete.assert_not_called()
+
+
+def test_release_without_an_id_prunes_by_age_and_never_clears_the_key():
+    """Older call sites must degrade to pruning, not blanket removal."""
+    client = _redis()
     with patch("app.core.redis.get_redis", return_value=client):
         limits.release_stream_slot(user_id=1)
-    client.set.assert_called_once_with(client.set.call_args[0][0], 0)
+    client.zremrangebyscore.assert_called_once()
+    client.delete.assert_not_called()
+    client.zrem.assert_not_called()
 
 
 def test_release_is_silent_when_redis_is_down():
-    client = _redis(decr=ConnectionError("redis down"))
+    client = _redis(zrem=ConnectionError("redis down"))
     with patch("app.core.redis.get_redis", return_value=client):
-        limits.release_stream_slot(user_id=1)  # must not raise
+        limits.release_stream_slot(user_id=1, slot_id="slot-abc")  # must not raise
 
 
 # ---------------------------------------------------------------------------

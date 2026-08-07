@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,12 @@ _HOURLY_KEY = "rl:chat:msg:{user_id}:{hour}"
 _ACTIVE_KEY = "chat:active:{user_id}"
 _CANCEL_KEY = "chat:cancel:{message_uuid}"
 
-# Leak guard: a stream whose process died without decrementing must not
-# permanently consume a concurrency slot.
+# Leak guard: a stream whose process died without releasing must not permanently
+# consume a concurrency slot. Slots are tracked INDIVIDUALLY (a sorted set keyed
+# by stream id, scored by start time) rather than as one counter with a TTL: a
+# counter's expiry is refreshed on every acquire, so for an active user a leaked
+# slot never ages out and their usable concurrency degrades 2 -> 1 -> 0 with no
+# way back short of flushing the key by hand.
 _ACTIVE_TTL_SECONDS = 900
 _CANCEL_TTL_SECONDS = 600
 
@@ -64,36 +69,79 @@ def check_hourly_limit(user_id: int, limit: int) -> tuple[bool, int]:
         return True, 0
 
 
-def acquire_stream_slot(user_id: int, max_concurrent: int) -> bool:
-    """Reserve one concurrent-stream slot; False when the user is at the cap."""
+def _drop_legacy_counter(client, key: str) -> None:
+    """Delete a pre-sorted-set counter left at ``key`` by an older version."""
+    try:
+        if client.type(key) == "string" or client.type(key) == b"string":
+            client.delete(key)
+            logger.info("Retired legacy chat concurrency counter at %s", key)
+    except Exception as exc:  # noqa: BLE001 — never block a chat over cleanup
+        logger.debug(f"Could not inspect chat slot key type: {exc}")
+
+
+def acquire_stream_slot(
+    user_id: int, max_concurrent: int, slot_id: str | None = None
+) -> str | None:
+    """Reserve one concurrent-stream slot.
+
+    Args:
+        user_id: The streaming user.
+        max_concurrent: Cap from the admin settings.
+        slot_id: Identifier for this stream; generated when omitted.
+
+    Returns:
+        The slot id to pass to :func:`release_stream_slot`, or ``None`` when the
+        user is already at the cap.
+
+    Stale slots are pruned by age on every acquire, so a stream that died
+    without releasing frees its own slot after ``_ACTIVE_TTL_SECONDS`` and
+    cannot accumulate against a user who keeps chatting.
+    """
     key = _ACTIVE_KEY.format(user_id=user_id)
+    slot = slot_id or uuid.uuid4().hex
+    now = time.time()
     try:
         client = _redis()
-        active = client.incr(key)
-        client.expire(key, _ACTIVE_TTL_SECONDS)
-        if int(active) > max_concurrent:
-            # Give the slot straight back — this attempt never held it.
-            client.decr(key)
+        # An upgraded deployment still holds the previous implementation's
+        # INTEGER counter at this key. Every sorted-set command against it
+        # raises WRONGTYPE, which the fail-open handler below would swallow —
+        # leaving the concurrency cap silently disabled until the stale key
+        # happened to expire. Retire it once, on first contact.
+        _drop_legacy_counter(client, key)
+        # Drop slots older than the leak window before counting.
+        client.zremrangebyscore(key, "-inf", now - _ACTIVE_TTL_SECONDS)
+        if int(client.zcard(key)) >= max_concurrent:
             logger.info(
-                "Chat concurrency cap hit for user %s (%s active, max %s)",
+                "Chat concurrency cap hit for user %s (max %s)",
                 user_id,
-                active - 1,
                 max_concurrent,
             )
-            return False
-        return True
+            return None
+        client.zadd(key, {slot: now})
+        # Whole-key expiry is only a backstop for a user who never returns; the
+        # per-member prune above is what actually bounds a leak.
+        client.expire(key, _ACTIVE_TTL_SECONDS * 2)
+        return slot
     except Exception as exc:  # noqa: BLE001 — fail open
         logger.warning(f"Chat concurrency guard unavailable (allowing): {exc}")
-        return True
+        return slot
 
 
-def release_stream_slot(user_id: int) -> None:
-    """Release a slot taken by :func:`acquire_stream_slot` (safe to over-call)."""
+def release_stream_slot(user_id: int, slot_id: str | None = None) -> None:
+    """Release a slot taken by :func:`acquire_stream_slot` (safe to over-call).
+
+    Removing by id makes this idempotent: a double release cannot free someone
+    else's in-flight stream, which a bare decrement could.
+    """
     key = _ACTIVE_KEY.format(user_id=user_id)
     try:
         client = _redis()
-        if int(client.decr(key)) < 0:
-            client.set(key, 0)
+        if slot_id:
+            client.zrem(key, slot_id)
+        else:
+            # No id (older call site): prune by age only, never blanket-delete —
+            # that would free slots still legitimately held.
+            client.zremrangebyscore(key, "-inf", time.time() - _ACTIVE_TTL_SECONDS)
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Could not release chat stream slot: {exc}")
 

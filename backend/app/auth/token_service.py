@@ -46,6 +46,43 @@ REVOKED_TOKEN_PREFIX = "revoked:jti:"  # noqa: S105 # nosec B105
 USER_REVOCATION_EPOCH_PREFIX = "revoked:user:"  # noqa: S105 # nosec B105
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Coerce a timestamp read back from the database to an aware UTC datetime.
+
+    The session columns are ``TIMESTAMP WITH TIME ZONE``, but a row constructed in
+    memory (or read through a driver configured otherwise) can still carry a naive
+    value, and comparing naive to aware raises ``TypeError`` — inside an auth path
+    that would surface as a 500 rather than a denial.
+    """
+    if value is None:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _session_lifetime_minutes(db: Session) -> tuple[int, int]:
+    """Return ``(idle_timeout_minutes, absolute_timeout_minutes)`` for this deployment.
+
+    DB-backed (admin UI) over ``.env`` over the coded default, like the rest of the
+    auth configuration. Never raises: a configuration read must not be able to
+    break token issue or verification, so an unavailable database degrades to the
+    environment values.
+    """
+    try:
+        from app.core.auth_settings import get_auth_settings
+
+        auth_settings = get_auth_settings(db)
+        return (
+            auth_settings.session_idle_timeout_minutes,
+            auth_settings.session_absolute_timeout_minutes,
+        )
+    except Exception:  # pragma: no cover - defensive
+        logger.debug("Could not read session lifetime config; using .env values", exc_info=True)
+        return (
+            settings.SESSION_IDLE_TIMEOUT_MINUTES,
+            settings.SESSION_ABSOLUTE_TIMEOUT_MINUTES,
+        )
+
+
 def _record_degradation(control: str, fallback: str) -> None:
     """Count a security control running without its shared state store.
 
@@ -256,6 +293,7 @@ class TokenService:
         role: str,
         user_agent: str | None = None,
         ip_address: str | None = None,
+        absolute_expires_at: datetime | None = None,
     ) -> tuple[str, RefreshToken]:
         """
         Create a new refresh token for a user.
@@ -275,6 +313,10 @@ class TokenService:
             role: User's role (for inclusion in token)
             user_agent: Optional user agent for session tracking
             ip_address: Optional IP address for session tracking
+            absolute_expires_at: The session's existing hard ceiling, carried
+                forward by :meth:`rotate_refresh_token`. ``None`` establishes a
+                NEW session and stamps a fresh ceiling — passing the predecessor's
+                value is what stops rotation from renewing a session forever.
 
         Returns:
             Tuple of (token_string, RefreshToken model instance)
@@ -286,6 +328,12 @@ class TokenService:
         now = datetime.now(UTC)
         expires_delta = timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
         expires_at = now + expires_delta
+
+        # The session ceiling. Only computed when none was carried in, so a
+        # rotated session keeps the ceiling of the login that established it.
+        if absolute_expires_at is None:
+            _idle_minutes, absolute_minutes = _session_lifetime_minutes(db)
+            absolute_expires_at = now + timedelta(minutes=absolute_minutes)
 
         # Create token payload
         token_data = {
@@ -316,6 +364,8 @@ class TokenService:
             expires_at=expires_at,
             user_agent=user_agent,
             ip_address=ip_address,
+            last_activity_at=now,
+            absolute_expires_at=absolute_expires_at,
         )
 
         db.add(refresh_token)
@@ -342,6 +392,15 @@ class TokenService:
         4. Check token is not revoked in database
         5. Check token is not on Redis blacklist
         6. Check token is not expired
+        7. Check the SESSION is still within its idle and absolute caps
+
+        Step 7 is what makes ``session_idle_timeout_minutes`` and
+        ``session_absolute_timeout_minutes`` real. It fires once per access-token
+        lifetime rather than per request, deliberately: per-request activity
+        tracking would be refreshed continuously by polling endpoints (progress,
+        notifications, task status) and WebSocket keepalives, so idle timeout
+        would appear to work and never actually fire — worse than not having it,
+        because it reads as a satisfied control.
 
         Args:
             db: Database session
@@ -394,6 +453,9 @@ class TokenService:
                 logger.warning("Token verification failed: token expired")
                 return None, None
 
+            if not self._session_within_lifetime(db, refresh_token):
+                return None, None
+
             logger.debug(f"Refresh token verified successfully (jti={jti[:8]}...)")
             return payload, refresh_token
 
@@ -406,6 +468,55 @@ class TokenService:
         except Exception as e:
             logger.error(f"Token verification error: {e}")
             return None, None
+
+    @staticmethod
+    def _session_within_lifetime(db: Session, refresh_token: RefreshToken) -> bool:
+        """Whether *refresh_token*'s session is still inside its idle and absolute caps.
+
+        Both columns are nullable and a NULL is treated as "no cap recorded", not
+        as an expiry. Sessions that predate ``v375`` carry NULL in both, and
+        invalidating them on upgrade would sign every user out for a second time
+        in the same release (the token-type change already does it once). The next
+        rotation stamps real values on the successor row.
+
+        Args:
+            db: Database session, used to resolve the DB-backed timeouts.
+            refresh_token: The stored session row being verified.
+
+        Returns:
+            True when the session may continue.
+        """
+        now = datetime.now(UTC)
+
+        absolute_expires_at = _as_utc(refresh_token.absolute_expires_at)
+        if absolute_expires_at is not None and now > absolute_expires_at:
+            logger.info(
+                "Session refused: absolute timeout reached at %s (jti=%s...)",
+                absolute_expires_at.isoformat(),
+                str(refresh_token.jti)[:8],
+            )
+            return False
+
+        idle_minutes, _absolute_minutes = _session_lifetime_minutes(db)
+        last_activity_at = _as_utc(refresh_token.last_activity_at)
+        # 0 disables the idle cap. The admin UI's schema bounds it at 1, but
+        # SESSION_IDLE_TIMEOUT_MINUTES is a plain .env integer with no bound, and
+        # `now - last_activity > 0` would refuse every session on sight.
+        idle_exceeded = (
+            idle_minutes > 0
+            and last_activity_at is not None
+            and now - last_activity_at > timedelta(minutes=idle_minutes)
+        )
+        if idle_exceeded:
+            logger.info(
+                "Session refused: idle for more than %s minutes (last activity %s, jti=%s...)",
+                idle_minutes,
+                last_activity_at.isoformat() if last_activity_at else "unknown",
+                str(refresh_token.jti)[:8],
+            )
+            return False
+
+        return True
 
     def revoke_token(self, db: Session, jti: str, expires_at: datetime | None = None) -> bool:
         """
@@ -781,6 +892,14 @@ class TokenService:
                 "jti": token.jti,
                 "created_at": token.created_at.isoformat(),
                 "expires_at": token.expires_at.isoformat(),
+                # Null on a session established before v375 — "no cap recorded",
+                # not "never expires"; the next rotation stamps both.
+                "last_activity_at": (
+                    token.last_activity_at.isoformat() if token.last_activity_at else None
+                ),
+                "absolute_expires_at": (
+                    token.absolute_expires_at.isoformat() if token.absolute_expires_at else None
+                ),
                 "user_agent": token.user_agent,
                 "ip_address": token.ip_address,
             }
@@ -806,6 +925,13 @@ class TokenService:
         - Creates a new refresh token with fresh expiration
         - Limits the impact of stolen refresh tokens
 
+        The successor row inherits ``absolute_expires_at`` **unchanged**, so the
+        session's ceiling is fixed by the login that established it. Recomputing
+        it here would mean a client that refreshes before every expiry never has
+        to re-authenticate, which is exactly the gap this column closes.
+        ``last_activity_at``, by contrast, is stamped fresh on the new row — that
+        is what "activity" means for the idle cap.
+
         Args:
             db: Database session
             old_token: The old refresh token string
@@ -820,6 +946,9 @@ class TokenService:
             Tuple of (new_token_string, new_RefreshToken model instance)
         """
         # Create new refresh token FIRST (atomic safety: if this fails, user keeps old token)
+        # A legacy row (pre-v375) carries NULL here; passing it through means the
+        # successor gets a freshly-stamped ceiling rather than the session being
+        # refused, which is how NULL is grandfathered.
         new_token, new_token_record = self.create_refresh_token(
             db=db,
             user_id=user_id,
@@ -827,6 +956,7 @@ class TokenService:
             role=role,
             user_agent=user_agent,
             ip_address=ip_address,
+            absolute_expires_at=_as_utc(old_token_record.absolute_expires_at),
         )
 
         logger.info(

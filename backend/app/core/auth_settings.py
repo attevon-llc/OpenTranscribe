@@ -295,6 +295,40 @@ class DynamicAuthSettings:
         """Semicolon-separated certificate DNs granted admin on PKI login."""
         return self.get_str("pki_admin_dns", "")
 
+    @property
+    def pki_mode(self) -> str:
+        """How a client certificate reaches this application.
+
+        ``header`` (default) — a reverse proxy terminates mTLS and forwards the
+        certificate and/or its DN in ``PKI_CERT_HEADER`` / ``PKI_CERT_DN_HEADER``.
+        Only a configured ``PKI_TRUSTED_PROXIES`` peer may assert them.
+
+        ``mutual_tls`` — the same transport, but a bare DN assertion is refused:
+        the full certificate must be forwarded so this application parses and
+        validates it itself. Stricter, and the mode to use when the proxy is not
+        the only thing standing between clients and the backend.
+
+        The earlier ``direct``/``keycloak``/``hybrid`` vocabulary described a
+        delegation choice no code ever made, and did not even overlap with the
+        values the admin UI sent — so every save of the PKI tab was rejected.
+        """
+        return self.get_str("pki_mode", "header")
+
+    @property
+    def pki_allow_password_fallback(self) -> bool:
+        """Deployment-level ceiling over the per-user ``allow_local_fallback`` flag.
+
+        The effective permission is ``user.allow_local_fallback AND this``. The
+        per-user flag stays the precise control (it is super_admin-settable, per
+        account); this is the switch that turns password fallback off for the
+        whole deployment without visiting every PKI account.
+
+        Defaults True — i.e. no additional restriction — because the per-user flag
+        already defaults to False. Defaulting this to False would silently revoke
+        fallback from accounts a super_admin had deliberately granted it to.
+        """
+        return self.get_bool("pki_allow_password_fallback", True)
+
     # MFA Settings Properties
     @property
     def mfa_enabled(self) -> bool:
@@ -312,20 +346,64 @@ class DynamicAuthSettings:
         return self.get_str("mfa_issuer_name", "OpenTranscribe")
 
     # Session Settings Properties
+    #
+    # A session IS a ``refresh_token`` row (``app/models/refresh_token.py``). The
+    # three settings below are enforced against those rows —
+    # ``token_service.verify_refresh_token`` for the two timeouts,
+    # ``api/endpoints/auth/login.py`` for the concurrency limit — so changing them
+    # in the admin UI takes effect on the next refresh with no restart.
+    #
+    # ``jwt_access_token_expire_minutes`` / ``jwt_refresh_token_expire_days`` are
+    # the exception and are marked ``requires_restart``: ``auth/cookies.py``
+    # computes ``ACCESS_MAX_AGE`` / ``REFRESH_MAX_AGE`` from them **at import
+    # time**, so a live change would leave cookie lifetimes disagreeing with token
+    # lifetimes. They are read here for display only.
     @property
     def jwt_access_token_expire_minutes(self) -> int:
-        """Get JWT access token expiration in minutes."""
+        """Access-token lifetime in minutes. Restart-required — see above."""
         return self.get_int("jwt_access_token_expire_minutes", 60)
 
     @property
+    def jwt_refresh_token_expire_days(self) -> int:
+        """Refresh-token lifetime in days. Restart-required — see above."""
+        return self.get_int("jwt_refresh_token_expire_days", 7)
+
+    @property
     def session_idle_timeout_minutes(self) -> int:
-        """Get session idle timeout in minutes."""
+        """Minutes a session may go without refreshing before it is refused.
+
+        Checked when a refresh token is presented, so the granularity is one
+        access-token lifetime rather than one request — a deliberate choice, since
+        per-request tracking would be reset continuously by polling and WebSocket
+        keepalives and the control would never fire. 0 (reachable only via ``.env``)
+        disables it.
+        """
         return self.get_int("session_idle_timeout_minutes", 15)
 
     @property
+    def session_absolute_timeout_minutes(self) -> int:
+        """Maximum total lifetime of a session, regardless of activity.
+
+        Stamped into ``refresh_token.absolute_expires_at`` when the session is
+        established and carried forward through every rotation. This had no
+        reader at all before: rotation issued a fresh expiry each time, so a
+        continuously-active client never had to re-authenticate.
+        """
+        return self.get_int("session_absolute_timeout_minutes", 480)
+
+    @property
     def max_concurrent_sessions(self) -> int:
-        """Get maximum concurrent sessions per user."""
+        """Maximum simultaneous sessions per user. 0 = unlimited."""
         return self.get_int("max_concurrent_sessions", 5)
+
+    @property
+    def concurrent_session_policy(self) -> str:
+        """What to do at the limit: ``terminate_oldest`` or ``reject``.
+
+        These two strings are the ones the login path compares against; any other
+        value falls through both branches and silently enforces nothing.
+        """
+        return self.get_str("concurrent_session_policy", "terminate_oldest")
 
     # Password Policy Properties
     @property

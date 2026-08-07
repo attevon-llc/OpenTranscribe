@@ -69,7 +69,11 @@ def pki_login(request: Request, db: Session = Depends(get_db)):
 
     client_ip, user_agent = _get_client_info(request)
 
-    pki_data = pki_authenticate(request, admin_dns_config=auth_settings.pki_admin_dns)
+    pki_data = pki_authenticate(
+        request,
+        admin_dns_config=auth_settings.pki_admin_dns,
+        pki_mode=auth_settings.pki_mode,
+    )
 
     # Lockout is keyed on the subject DN — the identity a PKI client is claiming, the
     # analogue of the username on /token. On failure the verified DN is unavailable, so we

@@ -51,6 +51,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/token
 #: and a client that has to string-match an English message breaks on rewording.
 ERROR_CODE_PASSWORD_CHANGE_REQUIRED = "password_change_required"  # noqa: S105 # nosec B105
 ERROR_CODE_ACCOUNT_EXPIRED = "account_expired"
+ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED = "banner_acknowledgment_required"
 
 #: Routes that stay reachable while ``must_change_password`` is set: the endpoint
 #: that CLEARS the flag (``PUT /users/me`` — the self-service password change; its
@@ -62,6 +63,19 @@ ERROR_CODE_ACCOUNT_EXPIRED = "account_expired"
 PASSWORD_CHANGE_EXEMPT_PATHS = frozenset(
     {
         f"{settings.API_PREFIX}/users/me",
+        f"{settings.API_PREFIX}/auth/logout",
+        f"{settings.API_PREFIX}/auth/logout/all",
+    }
+)
+
+#: Routes that stay reachable while the login banner is unacknowledged: the
+#: endpoint that RECORDS the acknowledgment (without it the user can never clear
+#: the gate), the banner text itself, and the routes that end the session. Same
+#: route-template matching as above, for the same reason.
+BANNER_EXEMPT_PATHS = frozenset(
+    {
+        f"{settings.API_PREFIX}/auth/banner",
+        f"{settings.API_PREFIX}/auth/banner/acknowledge",
         f"{settings.API_PREFIX}/auth/logout",
         f"{settings.API_PREFIX}/auth/logout/all",
     }
@@ -177,6 +191,113 @@ def _enforce_password_change(user: User, request: Request | None) -> None:
         detail={
             "code": ERROR_CODE_PASSWORD_CHANGE_REQUIRED,
             "message": "You must change your password before continuing.",
+        },
+    )
+
+
+def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
+    """Return ``(banner_enabled, text_last_changed_at)`` for this deployment.
+
+    Reads the two ``auth_config`` rows in one query — the same DB-over-.env
+    precedence the banner endpoints use, so a banner enabled in the admin UI is
+    enforced, not just displayed.
+
+    ``text_last_changed_at`` is the ``login_banner_text`` row's ``updated_at``,
+    which is what makes an acknowledgment expire when the wording changes; see
+    :func:`_enforce_banner_acknowledgment`. It is ``None`` when the text comes
+    from ``.env`` (no row, hence no change history — and an ``.env`` edit needs a
+    restart anyway).
+
+    Args:
+        db: Database session, or anything without a ``query`` when none is
+            available. Falls back to the environment values rather than raising:
+            this runs on every authenticated request.
+
+    Returns:
+        Whether the banner is enabled, and when its text last changed.
+    """
+    if db is None or not hasattr(db, "query"):
+        return settings.LOGIN_BANNER_ENABLED, None
+
+    try:
+        from app.models.auth_config import AuthConfig
+
+        rows = {
+            row.config_key: row
+            for row in db.query(AuthConfig)
+            .filter(AuthConfig.config_key.in_(("login_banner_enabled", "login_banner_text")))
+            .all()
+        }
+    except Exception:
+        logger.debug("Could not read banner configuration; using .env", exc_info=True)
+        return settings.LOGIN_BANNER_ENABLED, None
+
+    enabled_row = rows.get("login_banner_enabled")
+    if enabled_row is None or enabled_row.config_value is None:
+        enabled = settings.LOGIN_BANNER_ENABLED
+    else:
+        from app.services.auth_config_service import BOOL_TRUE_VALUES
+
+        enabled = str(enabled_row.config_value).strip().lower() in BOOL_TRUE_VALUES
+
+    text_row = rows.get("login_banner_text")
+    return enabled, getattr(text_row, "updated_at", None)
+
+
+def _enforce_banner_acknowledgment(user: User, request: Request | None, db: Session) -> None:
+    """Confine a caller who has not accepted the login banner (FedRAMP AC-8).
+
+    ``banner_acknowledged_at`` was written by ``POST /auth/banner/acknowledge``
+    — whose own docstring says it "must be called after login before granting
+    full access" — and read by **nothing**. The SPA approximated the control with
+    a ``sessionStorage`` flag, which clears per tab, is trivially removed, and
+    never reaches the server at all, so the consent AC-8 requires was never
+    actually a precondition for anything.
+
+    An acknowledgment **expires when the banner text changes.** A user who
+    accepted "UNCLASSIFIED — monitoring in effect" has not accepted a later
+    "SECRET — no personal use"; treating the old click as consent to new wording
+    is precisely the thing the control exists to prevent, and an admin editing
+    the banner is a deliberate act with an obvious expectation. The comparison is
+    against the ``login_banner_text`` row's ``updated_at``, so it costs no schema
+    and no extra query.
+
+    Raises:
+        HTTPException: 403 with ``detail.code == banner_acknowledgment_required``.
+    """
+    enabled, text_changed_at = _banner_requirement(db)
+    if not enabled:
+        return
+
+    path = _route_path(request)
+    if path in BANNER_EXEMPT_PATHS:
+        return
+
+    acknowledged_at = getattr(user, "banner_acknowledged_at", None)
+    if acknowledged_at is not None:
+        if acknowledged_at.tzinfo is None:
+            acknowledged_at = acknowledged_at.replace(tzinfo=UTC)
+        changed_at = text_changed_at
+        if changed_at is not None and changed_at.tzinfo is None:
+            changed_at = changed_at.replace(tzinfo=UTC)
+        if changed_at is None or acknowledged_at >= changed_at:
+            return
+        reason = "banner_text_changed"
+    else:
+        reason = "never_acknowledged"
+
+    # Deliberately NOT audited. Unlike the two gates above — which fire for one
+    # flagged account at a time — this refuses every request of every session
+    # until the user clicks through, so per-request events would swamp the
+    # OpenSearch audit index. The AC-8 artefact is the acknowledgment itself,
+    # which `POST /auth/banner/acknowledge` already records.
+    logger.debug("Banner acknowledgment required for user %s (%s)", user.id, reason)
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED,
+            "message": "You must acknowledge the login banner before continuing.",
+            "reason": reason,
         },
     )
 
@@ -394,6 +515,7 @@ def get_current_user(
 def get_current_active_user(
     request: Request,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> User:
     """Check that the current user is active and their account is usable.
 
@@ -403,9 +525,14 @@ def get_current_active_user(
     untouched (widening or narrowing it affects the WebSocket handshake, the
     session probe and the optional-auth path, none of which want a 403).
 
+    ``db`` is the same session ``get_current_user`` already resolved (FastAPI
+    caches a dependency per request), so the banner gate costs one extra query,
+    not an extra connection.
+
     Raises:
         HTTPException: 400 for a deactivated account; 403 with a machine-readable
-            ``detail.code`` for an expired account or a required password change.
+            ``detail.code`` for an expired account, an unacknowledged login
+            banner, or a required password change.
     """
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
@@ -413,6 +540,10 @@ def get_current_active_user(
     # Expiry first: it has no self-service remedy, so being ALSO flagged for a
     # password change must not route the caller to a screen that cannot help.
     _enforce_account_expiry(current_user, request)
+    # Then the banner: AC-8 wants consent recorded BEFORE access is granted, so
+    # it precedes the password-change gate. Both have a remedy, and their exempt
+    # sets differ, so a caller owing both clears them in this order.
+    _enforce_banner_acknowledgment(current_user, request, db)
     _enforce_password_change(current_user, request)
     return current_user
 

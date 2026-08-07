@@ -42,6 +42,7 @@ from app.auth.rate_limit import limiter
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.auth.utils import local_password_allowed
+from app.core.auth_settings import get_auth_settings
 from app.core.config import settings
 from app.db.base import get_db
 from app.models.user import User
@@ -549,8 +550,15 @@ def login_for_access_token(
         # dependency gate, not this response, that confines them afterwards.
         _apply_password_expiry(db, user_db, actual_auth_method, client_ip, user_agent)
 
-        # FedRAMP AC-10: Enforce concurrent session limit
-        if settings.MAX_CONCURRENT_SESSIONS > 0:
+        # FedRAMP AC-10: Enforce concurrent session limit.
+        # DB-backed (admin UI) over .env, like the rest of the auth config — these
+        # read `settings.*` directly, so the Session tab's limit and policy were
+        # inert and only an .env edit plus a restart could change them.
+        session_settings = get_auth_settings(db)
+        max_concurrent_sessions = session_settings.max_concurrent_sessions
+        concurrent_session_policy = session_settings.concurrent_session_policy
+
+        if max_concurrent_sessions > 0:
             from app.models.refresh_token import RefreshToken
 
             # Use SELECT FOR UPDATE to prevent race conditions when checking/modifying sessions
@@ -568,15 +576,16 @@ def login_for_access_token(
             active_session_rows = db.execute(sessions_stmt).scalars().all()
             active_sessions = len(active_session_rows)
 
-            if active_sessions >= settings.MAX_CONCURRENT_SESSIONS:
-                if settings.CONCURRENT_SESSION_POLICY == "reject":
+            if active_sessions >= max_concurrent_sessions:
+                if concurrent_session_policy == "reject":
                     raise HTTPException(
                         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        detail=f"Maximum {settings.MAX_CONCURRENT_SESSIONS} concurrent sessions reached. Please logout from another device.",
+                        detail=(
+                            f"Maximum {max_concurrent_sessions} concurrent sessions reached. "
+                            "Please logout from another device."
+                        ),
                     )
-                elif (
-                    settings.CONCURRENT_SESSION_POLICY == "terminate_oldest" and active_session_rows
-                ):
+                elif concurrent_session_policy == "terminate_oldest" and active_session_rows:
                     # Terminate oldest session - rows are already locked from the query above
                     # Sort by created_at to find the oldest
                     oldest_token = min(active_session_rows, key=lambda t: t.created_at)

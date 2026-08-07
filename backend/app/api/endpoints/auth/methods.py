@@ -134,11 +134,21 @@ def acknowledge_banner(
 ):
     """
     Record banner acknowledgment for the current user.
-    Must be called after login before granting full access.
+
+    Must be called after login before granting full access — and since v375 that
+    is enforced rather than merely documented: ``get_current_active_user`` refuses
+    every non-exempt route with ``detail.code == "banner_acknowledgment_required"``
+    while the banner is enabled and this timestamp is missing or predates the last
+    edit of the banner text. This endpoint is one of the routes exempt from that
+    gate, or it could never be reached to clear it.
+
     FedRAMP AC-8 compliance.
     """
     from datetime import datetime
 
+    # A bare "now" is all the gate needs: it compares this against the
+    # login_banner_text row's updated_at, so acknowledging always lands after the
+    # wording currently on screen.
     current_user.banner_acknowledged_at = datetime.now(UTC)  # type: ignore[assignment]
     db.commit()
 

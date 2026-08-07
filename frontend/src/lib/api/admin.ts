@@ -2,6 +2,7 @@
  * Admin API client for user and account management.
  */
 import { axiosInstance } from '../axios';
+import type { AuthType } from './invitations';
 
 export interface UserSession {
   id: string;
@@ -42,7 +43,42 @@ export interface UserSearchResult {
   created_at: string;
 }
 
+export interface CreateUserPayload {
+  email: string;
+  full_name: string;
+  role: string;
+  auth_type: AuthType;
+  /** Local accounts only. Ignored — and rejected server-side — for every other type. */
+  password?: string;
+  is_active?: boolean;
+}
+
 export class AdminApi {
+  /**
+   * Create a user directly (`POST /admin/users`).
+   *
+   * `password` is optional and must be **omitted entirely** for an external
+   * `auth_type`: `UserCreate` rejects the combination with a 422 rather than
+   * silently dropping the value, because a stored credential that policy will
+   * never accept is worse than an error (`app/auth/utils.py:
+   * local_password_allowed`). Prefer an invitation over this route — it emails
+   * the invitee and never asks an admin to choose someone else's password.
+   */
+  static async createUser(payload: CreateUserPayload): Promise<UserSearchResult> {
+    const { password, auth_type, is_active, ...rest } = payload;
+    const body: Record<string, unknown> = {
+      ...rest,
+      auth_type,
+      is_active: is_active ?? true,
+      // is_superuser is derived from role server-side (mirror of super_admin)
+    };
+    if (auth_type === 'local' && password) {
+      body.password = password;
+    }
+    const response = await axiosInstance.post('/admin/users', body);
+    return response.data;
+  }
+
   // Account Management
   /**
    * Admin-initiated password reset.

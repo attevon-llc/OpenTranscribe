@@ -12,6 +12,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.auth.constants import AUTH_TYPE_LOCAL
+from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.direct_auth import direct_authenticate_user
 from app.auth.email_verification import assert_email_verified_for_local_login
 from app.auth.ldap_auth import ldap_authenticate
@@ -234,20 +235,42 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
 def _local_auth_permitted(db: Session, user: User | None) -> bool:
     """Whether *user* may authenticate with a local password on this deployment.
 
-    ``local_enabled`` is the deployment-level switch (DB > env > default true).
-    An active ``super_admin`` is always permitted regardless — see the call site
-    for why that exemption has to exist.
+    Two deployment-level switches, both DB-backed (admin UI > .env > default):
+
+    * ``local_enabled`` — may accounts holding a local password authenticate at all.
+    * ``pki_allow_password_fallback`` — a **ceiling over the per-user**
+      ``User.allow_local_fallback`` for PKI accounts: effective permission is
+      ``per-user AND this``. The per-user flag stays the precise control; this is
+      how a deployment turns password fallback off for every PKI account at once
+      without editing them individually. Before this, the key was stored, typed,
+      and read by nothing.
+
+    An active ``super_admin`` is always permitted regardless of either — see the
+    call site for why that break-glass exemption has to exist. It applies to the
+    PKI ceiling for the same reason it applies to ``local_enabled``: auth
+    configuration is super_admin-gated, so the account that could undo a
+    misconfiguration must not be locked out by it.
 
     Args:
-        db: Database session, used to resolve the DB-backed setting.
+        db: Database session, used to resolve the DB-backed settings.
         user: The resolved account, or None when the identifier matched nobody.
 
     Returns:
         True when a local password may be accepted for this account.
     """
-    if get_auth_settings(db).local_enabled:
+    if user is not None and user.is_active and user.role == ROLE_SUPER_ADMIN:
         return True
-    return bool(user is not None and user.is_active and user.role == ROLE_SUPER_ADMIN)
+
+    auth_settings = get_auth_settings(db)
+
+    if (
+        user is not None
+        and str(user.auth_type or "") == AUTH_TYPE_PKI
+        and not auth_settings.pki_allow_password_fallback
+    ):
+        return False
+
+    return bool(auth_settings.local_enabled)
 
 
 def _authenticate_production_user(

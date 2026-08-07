@@ -23,6 +23,7 @@ with a password / still self-register?":
 | `local_enabled` | may accounts holding a local password authenticate at all | **never applies to an active `super_admin`** |
 | `allow_registration` | may anyone create their own account | cannot be true while `local_enabled` is false |
 | per-user `auth_type` + `allow_local_fallback` | which method authenticates *this* account | `allow_local_fallback` is pki/keycloak-only, super_admin-settable |
+| `pki_allow_password_fallback` | deployment **ceiling** over the per-user flag for pki accounts | effective = per-user **AND** this; defaults `True` so it adds no restriction on upgrade |
 
 - `local_enabled` does **not** hide the username/password form — LDAP authenticates through the
   same form. The login page renders it on `local_enabled || ldap_enabled`.
@@ -63,10 +64,12 @@ with a password / still self-register?":
 
 - `roles.py` — the authorization contract (read this first, it's 35 lines).
 - `token_service.py` — JWT issue/verify, `rotate_refresh_token`, `revoke_all_user_tokens`,
-  Redis JTI revocation list + `refresh_token.revoked_at`.
+  Redis JTI revocation list + `refresh_token.revoked_at`, **and session lifetime**
+  (`_session_within_lifetime`).
 - `mfa.py` (`MFAService`) · `lockout.py` (progressive, per-identifier) · `rate_limit.py`
-  (slowapi, per-IP with trusted-proxy parsing) · `session.py` (`SessionManager`,
-  `OIDCStateStore`) · `audit.py` (`AuditLogger`, `AuditEventType`).
+  (slowapi, per-IP with trusted-proxy parsing) · `session.py` (`OIDCStateStore`,
+  `InMemoryStore`, `get_redis_client` — **OIDC login state only, not sessions**) ·
+  `audit.py` (`AuditLogger`, `AuditEventType`).
 - `provider_registry.py` — **cloud-edition seam**, empty in community. `constants.py`
   carries `CLOUD_SEAM_VERSION`; bump it on any seam signature change.
 - `direct_auth.py`, `external_sync.py`, `cookies.py`, `password_policy.py`,
@@ -81,6 +84,13 @@ with a password / still self-register?":
   most `admin`; `super_admin` is local-only.
 - Short-lived JWT access token + long-lived refresh token with **rotation on every use**
   (OAuth 2.1); the old JTI is revoked in the same call.
+- **A session IS a `refresh_token` row.** Concurrent-session limits, rotation, revocation,
+  the #324 fail-closed fallback and (since `v375`) idle/absolute timeouts all key off those
+  rows. `session.py` used to carry a Redis `SessionManager` doing the timeout half with zero
+  call sites; it was **deleted**, not wired up — two owners would enforce against different
+  session sets the moment Redis and Postgres diverged, and #324 already established that
+  Redis is a cache here, not the system of record. Rationale:
+  `plans/session-ownership-decision.md`.
 - TOTP per RFC 6238/4226 (Google Authenticator / Authy compatible). MFA tokens are
   single-use — the JTI is blacklisted in Redis after verification.
 - Auth events go to the **audit log, which is OpenSearch-backed** (`audit.py`), not a table.
@@ -119,10 +129,35 @@ with a password / still self-register?":
   `users.py` / `admin.py` / `password_reset.py`. Access tokens are stateless, so revocation
   reaches them via a **per-user epoch** (`token_service.stamp_user_revocation_epoch`), not a
   JTI list.
+- **`absolute_expires_at` is carried forward, never recomputed.** It is the only thing that
+  caps a client which refreshes forever; `expires_at` moves with each rotation and therefore
+  caps nothing. `last_activity_at` is the half that does move. Both are **nullable and
+  un-backfilled** — NULL is "no cap recorded", treated as valid and stamped on the row's
+  first rotation, so upgrading does not sign everyone out a second time.
+- **Idle timeout is checked at refresh, not per request.** Deliberate: polling endpoints
+  (progress, notifications, task status) and WebSocket keepalives would reset a per-request
+  activity clock continuously, so the control would read as satisfied and never fire. The
+  error is bounded by the access-token lifetime. True per-request idle timeout needs an
+  explicit non-activity denylist and is its own change.
 - **PKI header trust fails closed.** With `PKI_ENABLED` and no `PKI_TRUSTED_PROXIES`, header-
   sourced authentication is refused outright (and `main.py` refuses to start when hardened).
   A DN header is only trusted from a configured proxy or alongside a validated certificate —
   the proxy is what terminates mTLS and vouches for the DN.
+- **`pki_mode` is `header` | `mutual_tls`, and `pki_auth.py` reads it.** It used to be
+  `direct`/`keycloak`/`hybrid` in the schema and `header`/`mutual_tls` in the UI — no value
+  could match, so **every save of the PKI tab was rejected**, and no backend code branched
+  on it either way. `mutual_tls` refuses a DN-header-only assertion even from a trusted
+  proxy: the certificate itself must be forwarded so this process validates it.
+  `pki_support_cac` / `pki_support_piv` were deleted (v375 also drops their rows) — the CAC
+  and PIV CN formats are parsed unconditionally for every certificate.
+- **The login banner is enforced, not just displayed** (AC-8). `get_current_active_user`
+  refuses with `detail.code == "banner_acknowledgment_required"` while
+  `login_banner_enabled` and the user has no `banner_acknowledged_at` **or** theirs predates
+  the last edit of `login_banner_text` (compared against that config row's `updated_at`, so
+  changing the wording re-asks). `BANNER_EXEMPT_PATHS` keeps `/auth/banner`,
+  `/auth/banner/acknowledge` and both logout routes reachable. Deliberately **not** audited
+  per request — it would fire on every request of every pre-acknowledgment session; the
+  acknowledgment itself is the audit artefact.
 - **Secrets never leave the auth-config API.** `config_value` is `None` for a sensitive key and
   `is_set` carries the signal. Do not reintroduce a placeholder: returning `***REDACTED***`
   meant the admin panel bound it into the password field and the next Save encrypted it over

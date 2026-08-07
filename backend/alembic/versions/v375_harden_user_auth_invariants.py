@@ -60,9 +60,37 @@ setting on must not lock out the entire deployment retroactively. That backfill
 runs only inside the ADD COLUMN guard, so re-running the revision never
 re-verifies an address an admin deliberately marked unverified.
 
+Fourth — session lifetime. ``refresh_token`` becomes the single owner of a
+session (see ``plans/session-ownership-decision.md``), which needs two columns:
+
+``refresh_token.absolute_expires_at``
+    Stamped once when a session is first established and **carried forward
+    unchanged through every rotation**. Without it, rotation had no ceiling: a
+    client that refreshed before each expiry held a session indefinitely, and
+    ``SESSION_ABSOLUTE_TIMEOUT_MINUTES`` was configuration that changed nothing
+    (its only reader, ``auth/session.py:SessionManager``, had no call sites and
+    is deleted in this branch).
+
+``refresh_token.last_activity_at``
+    Stamped on issue and therefore re-stamped on every rotation, which is what
+    ``SESSION_IDLE_TIMEOUT_MINUTES`` is compared against.
+
+Both are **nullable with no backfill, deliberately**. NULL means "no cap
+recorded" and is treated as valid, then stamped on the row's first rotation.
+Backfilling would either invalidate every live session on upgrade or invent an
+issue time we do not know; users are already being signed out once by the
+token-type change in this branch, and twice is gratuitous.
+
+The same section retires two auth-config keys that described nothing:
+``pki_support_cac`` / ``pki_support_piv`` gated certificate-DN parsing that is
+and always was unconditional (``auth/pki_auth.py:extract_display_name_from_gov_dn``
+handles both formats for every certificate). Their rows are deleted so the PKI
+tab stops serving keys no code reads; the schema no longer accepts them.
+
 COMMUNITY EDITION: no behavioural change to existing rows. A correctly-migrated
 database has no NULL roles and no unknown auth types, so both backfills are
-no-ops; the new tables are empty until an admin sends an invitation.
+no-ops; the new tables are empty until an admin sends an invitation, and the new
+refresh-token columns start NULL on every existing session.
 
 Revision ID: v375_harden_user_auth_invariants
 Revises: v374_add_tag_user_id
@@ -182,6 +210,44 @@ PASSWORD_CHANGED_AT_BACKFILL_SQL = """
 """
 
 
+#: Session ownership moves to ``refresh_token``. Nullable and NOT backfilled —
+#: NULL means "no cap recorded", which the verifier treats as valid and stamps on
+#: the row's first rotation. See the module docstring for why.
+SESSION_LIFETIME_COLUMNS_SQL = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'refresh_token' AND column_name = 'last_activity_at'
+        ) THEN
+            ALTER TABLE refresh_token
+                ADD COLUMN last_activity_at TIMESTAMP WITH TIME ZONE;
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'refresh_token' AND column_name = 'absolute_expires_at'
+        ) THEN
+            ALTER TABLE refresh_token
+                ADD COLUMN absolute_expires_at TIMESTAMP WITH TIME ZONE;
+        END IF;
+    END $$;
+"""
+
+#: Auth-config keys retired because nothing ever read them. Guarded on the table
+#: existing so the revision stays runnable against a schema stamped before
+#: ``auth_config`` was introduced.
+RETIRED_AUTH_CONFIG_KEYS_SQL = """
+    DO $$
+    BEGIN
+        IF to_regclass('public.auth_config') IS NOT NULL THEN
+            DELETE FROM auth_config
+             WHERE config_key IN ('pki_support_cac', 'pki_support_piv');
+        END IF;
+    END $$;
+"""
+
+
 def upgrade():
     op.execute(BACKFILL_SQL)
 
@@ -231,9 +297,13 @@ def upgrade():
     op.execute(EMAIL_VERIFIED_COLUMNS_SQL)
     op.execute(INVITATION_DDL)
     op.execute(PASSWORD_CHANGED_AT_BACKFILL_SQL)
+    op.execute(SESSION_LIFETIME_COLUMNS_SQL)
+    op.execute(RETIRED_AUTH_CONFIG_KEYS_SQL)
 
 
 def downgrade():
+    op.execute("ALTER TABLE refresh_token DROP COLUMN IF EXISTS absolute_expires_at")
+    op.execute("ALTER TABLE refresh_token DROP COLUMN IF EXISTS last_activity_at")
     op.execute("DROP TABLE IF EXISTS user_invitation")
     op.execute("DROP TABLE IF EXISTS email_verification_token")
     op.execute('ALTER TABLE "user" DROP COLUMN IF EXISTS email_verified_at')

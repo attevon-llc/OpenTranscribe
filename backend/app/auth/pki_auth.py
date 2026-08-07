@@ -1322,6 +1322,7 @@ def _extract_user_info_from_request(
     request,
     cert: x509.Certificate | None,
     cert_pem: str | None,
+    require_certificate: bool = False,
 ) -> tuple[str, str, str] | None:
     """
     Extract user info (subject_dn, common_name, email) from request.
@@ -1330,6 +1331,9 @@ def _extract_user_info_from_request(
         request: FastAPI Request object
         cert: Parsed certificate (may be None)
         cert_pem: PEM-encoded certificate string (may be None)
+        require_certificate: ``pki_mode == "mutual_tls"``. Refuses a DN header
+            that is not accompanied by the certificate itself, even from a
+            trusted proxy — see below.
 
     Returns:
         Tuple of (subject_dn, common_name, email) or None if extraction fails
@@ -1338,6 +1342,22 @@ def _extract_user_info_from_request(
     subject_dn = extract_dn_from_headers(request)
 
     if subject_dn:
+        # pki_mode == "mutual_tls": the proxy's word is not enough. In "header"
+        # mode a trusted proxy may vouch for a DN it validated, which is one
+        # trusted component away from the evidence; in "mutual_tls" mode the
+        # certificate must be forwarded so THIS process parses it, checks its
+        # validity window and (optionally) its revocation status. That is the
+        # whole difference between the two modes, and the reason the setting is
+        # worth having at all.
+        if cert is None and require_certificate:
+            logger.error(
+                "Refusing DN-only PKI authentication from %s: pki_mode is 'mutual_tls', "
+                "which requires the client certificate itself (configure the proxy to "
+                "forward it in the PKI_CERT_HEADER).",
+                _get_pki_client_ip(request),
+            )
+            return None
+
         # The DN header is a *claim*, not evidence. It is trustworthy in exactly two cases:
         #
         # 1. A certificate was also presented. `pki_authenticate` has already parsed it and
@@ -1371,7 +1391,18 @@ def _extract_user_info_from_request(
     return None
 
 
-def pki_authenticate(request, admin_dns_config: str | None = None) -> PKIUserData | None:
+#: The only two PKI transports this module implements. ``pki_mode`` is validated
+#: against the same pair in ``schemas/auth_config.py``; an unrecognised stored
+#: value is treated as ``header``, the pre-existing behaviour.
+PKI_MODE_HEADER = "header"
+PKI_MODE_MUTUAL_TLS = "mutual_tls"
+
+
+def pki_authenticate(
+    request,
+    admin_dns_config: str | None = None,
+    pki_mode: str | None = None,
+) -> PKIUserData | None:
     """
     Authenticate user via X.509 client certificate.
 
@@ -1383,6 +1414,11 @@ def pki_authenticate(request, admin_dns_config: str | None = None) -> PKIUserDat
 
     Args:
         request: FastAPI Request object
+        admin_dns_config: DB-backed ``pki_admin_dns`` value, if available.
+        pki_mode: ``header`` (default) or ``mutual_tls``. In ``mutual_tls`` the
+            certificate itself must be forwarded — a DN header alone is refused
+            even from a trusted proxy. Until this parameter existed, ``pki_mode``
+            was a stored string no code read.
 
     Returns:
         PKIUserData with certificate metadata or None if authentication fails
@@ -1443,7 +1479,12 @@ def pki_authenticate(request, admin_dns_config: str | None = None) -> PKIUserDat
         return None  # Revocation check failed or certificate revoked
 
     # Extract user information from request
-    user_info = _extract_user_info_from_request(request, cert, cert_pem)
+    user_info = _extract_user_info_from_request(
+        request,
+        cert,
+        cert_pem,
+        require_certificate=pki_mode == PKI_MODE_MUTUAL_TLS,
+    )
     if user_info is None:
         return None
 

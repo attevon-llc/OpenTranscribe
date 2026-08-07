@@ -166,6 +166,47 @@ def test_auth_type_check_rejects_an_unknown_value(db_session):
     db_session.rollback()
 
 
+def test_refresh_token_has_session_lifetime_columns(db_session):
+    """``refresh_token`` owns the session, so it owns the timeouts.
+
+    Their only previous implementation, ``auth/session.py:SessionManager``, had no
+    call sites — so ``SESSION_IDLE_TIMEOUT_MINUTES`` and
+    ``SESSION_ABSOLUTE_TIMEOUT_MINUTES`` were configuration that changed nothing.
+    """
+    conn = db_session.connection()
+    columns = {c["name"] for c in inspect(conn).get_columns("refresh_token")}
+    assert {"last_activity_at", "absolute_expires_at"} <= columns
+
+
+def test_session_lifetime_columns_are_nullable(db_session):
+    """NULL means "no cap recorded" for sessions that predate the columns.
+
+    Making them NOT NULL (or backfilling them) would invalidate every live session
+    on upgrade — a second forced sign-out in a release that already causes one via
+    the token-type change.
+    """
+    conn = db_session.connection()
+    nullable = {
+        c["name"]: c["nullable"]
+        for c in inspect(conn).get_columns("refresh_token")
+        if c["name"] in ("last_activity_at", "absolute_expires_at")
+    }
+    assert nullable == {"last_activity_at": True, "absolute_expires_at": True}
+
+
+def test_retired_pki_config_keys_are_deleted(db_session):
+    """``pki_support_cac`` / ``pki_support_piv`` gated parsing that is unconditional."""
+    conn = db_session.connection()
+    conn.execute(text(_revision_module().RETIRED_AUTH_CONFIG_KEYS_SQL))
+    remaining = conn.execute(
+        text(
+            "SELECT count(*) FROM auth_config "
+            "WHERE config_key IN ('pki_support_cac', 'pki_support_piv')"
+        )
+    ).scalar()
+    assert remaining == 0
+
+
 def test_backfill_repairs_null_role_and_unknown_auth_type(db_session):
     """Replay the backfill against the exact shape the constraints could not catch.
 

@@ -1,86 +1,38 @@
-"""
-Redis-backed session management for OIDC state storage and session tracking.
+"""Redis-backed stores for the OIDC login flow, with an in-memory fallback.
 
 Provides:
 - OIDC state storage for PKCE code verifiers and OAuth state
-- Session tracking with idle and absolute timeouts (NIST compliant)
-- Distributed session management for clustered deployments
 - Fallback to in-memory storage when Redis is unavailable
 
 Security Considerations:
-- Session IDs are cryptographically random (256 bits)
 - OIDC states are single-use (deleted after retrieval)
-- Idle timeout: 15 minutes (NIST SP 800-63B moderate assurance)
-- Absolute timeout: 8 hours (force re-authentication)
+- The state store is capped, so an unauthenticated caller cannot exhaust it
+
+**This module does not own sessions.** It used to also carry a ``SessionManager``
+implementing Redis-backed idle/absolute timeouts, with zero call sites — so the
+two settings it read changed nothing. Sessions are owned by the ``refresh_token``
+table (``app/models/refresh_token.py``), which already carried concurrent-session
+limits, rotation and revocation; the timeouts were moved there rather than
+duplicated here. Two owners would enforce against different session sets the
+moment Redis and Postgres diverged, and issue #324 already established that Redis
+is a cache here, not the system of record. See
+``plans/session-ownership-decision.md``.
 """
 
 import builtins
 import json
 import logging
-import secrets
 import threading
 from datetime import UTC
 from datetime import datetime
-from datetime import timedelta
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-# Session prefixes for Redis keys
+# Redis key prefix for OIDC login states
 OIDC_STATE_PREFIX = "oidc:state:"
-SESSION_PREFIX = "session:"
-USER_SESSIONS_PREFIX = "user:sessions:"
-
-# Session ID generation: 32 bytes = 256 bits of entropy
-# This provides cryptographically secure session IDs that are resistant to
-# brute-force attacks. OWASP recommends at least 128 bits of entropy for
-# session identifiers; 256 bits provides additional security margin.
-SESSION_ID_BYTES = 32
-
-# Base64url character set for session ID validation (RFC 4648 Section 5)
-BASE64URL_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
-
-# Expected session ID length: secrets.token_urlsafe(32) produces ~43 chars
-# (32 bytes -> 43 base64url characters without padding)
-SESSION_ID_EXPECTED_LENGTH = 43
-
-
-def validate_session_id_format(session_id: str) -> bool:
-    """
-    Validate that a session ID has the expected format.
-
-    Session IDs are generated using secrets.token_urlsafe(32) which produces
-    a 43-character base64url-encoded string (32 bytes = 43 chars without padding).
-
-    This validation prevents:
-    - Injection attacks through malformed session IDs
-    - Unnecessary storage lookups for obviously invalid IDs
-
-    Args:
-        session_id: Session ID to validate
-
-    Returns:
-        True if format is valid, False otherwise
-    """
-    if not session_id:
-        return False
-
-    # Check length (should be exactly 43 characters for 32 bytes of entropy)
-    if len(session_id) != SESSION_ID_EXPECTED_LENGTH:
-        logger.debug(
-            f"Session ID format invalid: length {len(session_id)} "
-            f"(expected {SESSION_ID_EXPECTED_LENGTH})"
-        )
-        return False
-
-    # Check that all characters are valid base64url characters
-    if not all(c in BASE64URL_CHARS for c in session_id):
-        logger.debug("Session ID format invalid: contains non-base64url characters")
-        return False
-
-    return True
 
 
 def get_redis_client():
@@ -398,259 +350,5 @@ class OIDCStateStore:
         return bool(deleted)
 
 
-class SessionManager:
-    """
-    Session management with idle and absolute timeouts.
-
-    Tracks user sessions across requests, enforcing:
-    - Idle timeout: Session expires after inactivity (default: 15 minutes)
-    - Absolute timeout: Session expires regardless of activity (default: 8 hours)
-
-    Session data structure:
-        {
-            "session_id": str,
-            "user_id": str,
-            "created_at": ISO datetime string,
-            "last_activity": ISO datetime string,
-            "metadata": dict  # IP, user-agent, etc.
-        }
-
-    Thread-safe for concurrent requests.
-    """
-
-    def __init__(
-        self,
-        idle_timeout_minutes: int | None = None,
-        absolute_timeout_minutes: int | None = None,
-    ):
-        """
-        Initialize the session manager.
-
-        Args:
-            idle_timeout_minutes: Override idle timeout (default from settings)
-            absolute_timeout_minutes: Override absolute timeout (default from settings)
-        """
-        self._store = None
-        self.idle_timeout = timedelta(
-            minutes=idle_timeout_minutes or settings.SESSION_IDLE_TIMEOUT_MINUTES
-        )
-        self.absolute_timeout = timedelta(
-            minutes=absolute_timeout_minutes or settings.SESSION_ABSOLUTE_TIMEOUT_MINUTES
-        )
-        logger.debug(
-            f"SessionManager initialized: idle={self.idle_timeout}, "
-            f"absolute={self.absolute_timeout}"
-        )
-
-    @property
-    def store(self):
-        """Lazy-load storage backend."""
-        if self._store is None:
-            self._store = _get_store()
-        return self._store
-
-    def _generate_session_id(self) -> str:
-        """Generate a cryptographically secure session ID (256 bits)."""
-        return secrets.token_urlsafe(SESSION_ID_BYTES)
-
-    def _session_key(self, session_id: str) -> str:
-        """Get the Redis key for a session."""
-        return f"{SESSION_PREFIX}{session_id}"
-
-    def _user_sessions_key(self, user_id: str) -> str:
-        """Get the Redis key for a user's session set."""
-        return f"{USER_SESSIONS_PREFIX}{user_id}"
-
-    def create_session(self, user_id: str, token: str, metadata: dict | None = None) -> str:
-        """
-        Create a new session for a user.
-
-        Args:
-            user_id: User identifier
-            token: JWT or session token associated with this session
-            metadata: Optional session metadata (IP, user-agent, etc.)
-
-        Returns:
-            session_id: Unique session identifier
-        """
-        session_id = self._generate_session_id()
-        now = datetime.now(UTC)
-
-        session_data = {
-            "session_id": session_id,
-            "user_id": user_id,
-            "token": token,
-            "created_at": now.isoformat(),
-            "last_activity": now.isoformat(),
-            "metadata": metadata or {},
-        }
-
-        # Store session with absolute timeout as TTL
-        key = self._session_key(session_id)
-        ttl_seconds = int(self.absolute_timeout.total_seconds())
-        self.store.set(key, json.dumps(session_data), ex=ttl_seconds)
-
-        # Track session in user's session set
-        user_key = self._user_sessions_key(user_id)
-        self.store.sadd(user_key, session_id)
-
-        logger.info(f"Created session {session_id[:8]}... for user {user_id}")
-        return session_id
-
-    def validate_session(self, session_id: str) -> dict | None:
-        """
-        Validate a session and update last activity time.
-
-        Args:
-            session_id: Session identifier to validate
-
-        Returns:
-            Session data dict if valid, None if invalid/expired
-
-        Checks:
-            1. Session ID format is valid (base64url, expected length)
-            2. Session exists in storage
-            3. Idle timeout not exceeded
-            4. Absolute timeout not exceeded (implicit via Redis TTL)
-        """
-        # Validate session ID format before querying storage
-        # This prevents injection attacks and unnecessary storage lookups
-        if not validate_session_id_format(session_id):
-            logger.warning(
-                f"Session validation rejected: malformed session ID "
-                f"(length={len(session_id) if session_id else 0})"
-            )
-            return None
-
-        key = self._session_key(session_id)
-        data = self.store.get(key)
-
-        if not data:
-            logger.debug(f"Session not found: {session_id[:8]}...")
-            return None
-
-        session_data = json.loads(data)
-        now = datetime.now(UTC)
-
-        # Check idle timeout
-        last_activity = datetime.fromisoformat(session_data["last_activity"])
-        if now - last_activity > self.idle_timeout:
-            logger.info(
-                f"Session {session_id[:8]}... expired due to idle timeout "
-                f"(last activity: {last_activity.isoformat()})"
-            )
-            self.invalidate_session(session_id)
-            return None
-
-        # Update last activity
-        session_data["last_activity"] = now.isoformat()
-
-        # Calculate remaining TTL based on absolute timeout
-        created_at = datetime.fromisoformat(session_data["created_at"])
-        remaining = self.absolute_timeout - (now - created_at)
-        remaining_seconds = max(1, int(remaining.total_seconds()))
-
-        self.store.set(key, json.dumps(session_data), ex=remaining_seconds)
-
-        logger.debug(f"Session {session_id[:8]}... validated, remaining TTL: {remaining_seconds}s")
-        return dict(session_data)  # type: ignore[arg-type]
-
-    def invalidate_session(self, session_id: str) -> bool:
-        """
-        Invalidate (logout) a single session.
-
-        Args:
-            session_id: Session identifier to invalidate
-
-        Returns:
-            True if session was invalidated, False if not found
-        """
-        key = self._session_key(session_id)
-        data = self.store.get(key)
-
-        if data:
-            session_data = json.loads(data)
-            user_id = session_data.get("user_id")
-
-            # Remove from user's session set
-            if user_id:
-                user_key = self._user_sessions_key(user_id)
-                self.store.srem(user_key, session_id)
-
-        deleted = self.store.delete(key)
-        if deleted:
-            logger.info(f"Invalidated session: {session_id[:8]}...")
-        return bool(deleted)
-
-    def get_user_sessions(self, user_id: str) -> list[dict]:
-        """
-        Get all active sessions for a user.
-
-        Args:
-            user_id: User identifier
-
-        Returns:
-            List of session data dicts for the user
-
-        Note:
-            Cleans up expired sessions from the user's session set.
-        """
-        user_key = self._user_sessions_key(user_id)
-        session_ids = self.store.smembers(user_key)
-
-        sessions = []
-        expired_ids = []
-
-        for session_id in session_ids:
-            key = self._session_key(session_id)
-            data = self.store.get(key)
-            if data:
-                session_data = json.loads(data)
-                # Check idle timeout
-                last_activity = datetime.fromisoformat(session_data["last_activity"])
-                now = datetime.now(UTC)
-                if now - last_activity <= self.idle_timeout:
-                    # Don't include token in listing for security
-                    safe_data = {k: v for k, v in session_data.items() if k != "token"}
-                    sessions.append(safe_data)
-                else:
-                    expired_ids.append(session_id)
-            else:
-                expired_ids.append(session_id)
-
-        # Clean up expired session references
-        for session_id in expired_ids:
-            self.store.srem(user_key, session_id)
-
-        logger.debug(f"Found {len(sessions)} active sessions for user {user_id}")
-        return sessions
-
-    def invalidate_all_user_sessions(self, user_id: str) -> int:
-        """
-        Invalidate all sessions for a user (logout all devices).
-
-        Args:
-            user_id: User identifier
-
-        Returns:
-            Number of sessions invalidated
-        """
-        user_key = self._user_sessions_key(user_id)
-        session_ids = self.store.smembers(user_key)
-
-        count = 0
-        for session_id in session_ids:
-            key = self._session_key(session_id)
-            if self.store.delete(key):
-                count += 1
-
-        # Clear the user's session set
-        self.store.delete(user_key)
-
-        logger.info(f"Invalidated {count} sessions for user {user_id}")
-        return count
-
-
-# Module-level singletons for convenience
+# Module-level singleton for convenience
 oidc_state_store = OIDCStateStore()
-session_manager = SessionManager()

@@ -178,7 +178,14 @@ HARDENED_HANDLERS = [
     (admin, "repair_profile_embeddings"),
     (auth_config, "get_all_configs"),
     (auth_config, "update_config_category"),
-    (auth_keycloak, "keycloak_login"),
+    # NOTE: `keycloak_login` used to be here. It became `async def` for OIDC
+    # discovery (issue #353) — the authorization endpoint now comes from the
+    # provider's metadata over HTTP, which cannot be awaited from a sync handler.
+    # The invariant this file protects is "blocking I/O must not run on the event
+    # loop", not "the handler must be sync", so it moved to
+    # OFFLOADED_ASYNC_HANDLERS below, which pins the stronger property: every
+    # blocking call in its body is wrapped in `run_in_threadpool`. Same shape as
+    # `test_auth_connection`, which has been a coroutine since issue #320.
     (auth_methods, "get_auth_methods"),
     (auth_pki, "pki_login"),
     (combined_speaker_migration, "get_combined_migration_status"),
@@ -263,6 +270,48 @@ BLOCKING_HELPERS = [
     # ffmpeg + object-storage PUT; had a byte-identical `async def` twin until #320.
     (thumbnail, "generate_and_upload_thumbnail"),
 ]
+
+
+#: Handlers that are legitimately ``async def`` but still call blocking code, and
+#: therefore must hand every blocking call to ``run_in_threadpool``. Each entry
+#: names the blocking callables the handler is allowed to reach only that way.
+#:
+#: This is the stronger guard: a sync handler is merely *one* way to keep blocking
+#: I/O off the event loop, and it stops being available the moment a handler needs
+#: to await anything (OIDC discovery, here).
+OFFLOADED_ASYNC_HANDLERS = [
+    # Discovery made this a coroutine (#353). Its blocking prologue — a sync DB read
+    # for the provider config, and a Redis state write — would otherwise stall every
+    # concurrent request rather than one threadpool worker, which is strictly worse
+    # than the sync handler it replaced.
+    (auth_keycloak, "keycloak_login", ("KeycloakConfig.from_db", "store_state")),
+]
+
+
+@pytest.mark.parametrize(
+    ("module", "name", "blocking_calls"),
+    OFFLOADED_ASYNC_HANDLERS,
+    ids=[f"{m.__name__.rsplit('.', 1)[-1]}.{n}" for m, n, _ in OFFLOADED_ASYNC_HANDLERS],
+)
+def test_async_handlers_offload_their_blocking_calls(module, name: str, blocking_calls) -> None:
+    """An async handler's blocking calls must go through ``run_in_threadpool``."""
+    handler = getattr(module, name)
+    assert asyncio.iscoroutinefunction(handler), (
+        f"{module.__name__}.{name} is no longer a coroutine — move it back to "
+        f"HARDENED_HANDLERS, which is the simpler guarantee."
+    )
+
+    source = inspect.getsource(handler)
+    assert "run_in_threadpool" in source, (
+        f"{module.__name__}.{name} is `async def` and calls blocking code, but never "
+        f"offloads it; the blocking work runs on the event loop (issue #320)."
+    )
+    for call in blocking_calls:
+        leaf = call.rsplit(".", 1)[-1]
+        assert leaf in source, (
+            f"{module.__name__}.{name} no longer calls {call}; update this guard so it "
+            f"keeps pinning something real rather than passing vacuously."
+        )
 
 
 def _resolve(module, dotted: str):

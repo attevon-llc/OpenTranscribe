@@ -2,6 +2,15 @@
   import { onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { AdminApi } from '$lib/api/admin';
+  import {
+    AUTH_TYPES,
+    INVITE_EXPIRY_DEFAULT_HOURS,
+    INVITE_EXPIRY_MIN_HOURS,
+    INVITE_EXPIRY_MAX_HOURS,
+    createInvitation,
+    listInvitations,
+    revokeInvitation
+  } from '$lib/api/invitations';
   import { user } from '../stores/auth';
   import { toastStore } from '../stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
@@ -19,6 +28,8 @@
    * @property {string} [full_name]
    * @property {string} [auth_type]
    * @property {boolean} [allow_local_fallback]
+   * @property {boolean} [email_verified]
+   * @property {string|null} [email_verified_at]
    */
 
   /** @type {Array<User>} */
@@ -44,6 +55,40 @@
 
   /** @type {string} */
   let newRole = 'user';
+
+  /**
+   * Identity source for a directly-created account. Without this every
+   * admin-created user was `local`, which on a deployment that has turned local
+   * passwords off produces an account that can never sign in.
+   * @type {import('$lib/api/invitations').AuthType}
+   */
+  let newAuthType = 'local';
+
+  // Only a local account holds a password; the server rejects one on any other
+  // auth_type rather than storing a credential it will never accept.
+  $: createNeedsPassword = newAuthType === 'local';
+
+  // ── invitations ───────────────────────────────────────────────────────────
+  /** @type {boolean} */
+  let showInviteForm = false;
+  /** @type {string} */
+  let inviteEmail = '';
+  /** @type {string} */
+  let inviteFullName = '';
+  /** @type {string} */
+  let inviteRole = 'user';
+  /** @type {import('$lib/api/invitations').AuthType} */
+  let inviteAuthType = 'local';
+  /** @type {number} */
+  let inviteExpiresInHours = INVITE_EXPIRY_DEFAULT_HOURS;
+  /** @type {boolean} */
+  let inviteSubmitting = false;
+  /** @type {Array<import('$lib/api/invitations').Invitation>} */
+  let invitations = [];
+  /** @type {boolean} */
+  let invitationsLoading = false;
+  /** @type {string|null} */
+  let pendingInviteUuid = null;
 
   // Confirmation modal state
   let showConfirmModal = false;
@@ -72,6 +117,7 @@
       } catch (err) {
         console.warn('Could not load password policy; using default minimum', err);
       }
+      await refreshInvitations();
     })();
   });
 
@@ -81,6 +127,22 @@
     user: $t('userManagement.roleUser'),
     admin: $t('userManagement.roleAdmin'),
     super_admin: $t('userManagement.roleSuperAdmin')
+  });
+
+  $: authTypeLabels = /** @type {Record<string, string>} */ ({
+    local: $t('userManagement.authTypeLocal'),
+    ldap: $t('userManagement.authTypeLdap'),
+    keycloak: $t('userManagement.authTypeKeycloak'),
+    pki: $t('userManagement.authTypePki')
+  });
+
+  // The backend pre-computes `status` (pending|accepted|revoked|expired) — this
+  // maps it to a label only. Never re-derive it from expires_at/used_at here.
+  $: invitationStatusLabels = /** @type {Record<string, string>} */ ({
+    pending: $t('userManagement.invitationStatusPending'),
+    accepted: $t('userManagement.invitationStatusAccepted'),
+    revoked: $t('userManagement.invitationStatusRevoked'),
+    expired: $t('userManagement.invitationStatusExpired')
   });
 
   // Password reset modal state
@@ -152,7 +214,7 @@
    * Create a new user
    */
   async function createUser() {
-    if (!newUsername || !newEmail || !newPassword) {
+    if (!newUsername || !newEmail || (createNeedsPassword && !newPassword)) {
       toastStore.error($t('userManagement.fillAllFields'));
       return;
     }
@@ -177,15 +239,15 @@
    */
   async function executeCreateUser() {
     try {
-      // The backend expects full_name as a required field
-      // Using username as the full_name since that's what we collect
-      await axiosInstance.post('/admin/users', {
+      // AdminApi.createUser omits `password` entirely for an external auth_type
+      // (the backend 422s on the combination) — don't inline the POST again.
+      await AdminApi.createUser({
         email: newEmail,
-        password: newPassword,
         full_name: newUsername, // Required field
         role: newRole,
+        auth_type: newAuthType,
+        password: newPassword,
         is_active: true
-        // is_superuser is derived from role server-side (mirror of super_admin)
       });
 
       // Capture name for toast before resetting
@@ -196,6 +258,7 @@
       newEmail = '';
       newPassword = '';
       newRole = 'user';
+      newAuthType = 'local';
       showAddUserForm = false;
 
       toastStore.success($t('userManagement.userCreatedSuccess', { name: createdUserName }));
@@ -205,6 +268,128 @@
     } catch (err) {
       console.error('Error creating user:', err);
       toastStore.error(extractErrorMessage(err, $t('userManagement.createUserFailed')));
+    }
+  }
+
+  // ── invitations ───────────────────────────────────────────────────────────
+
+  /**
+   * Load the pending invitation list.
+   *
+   * Each row carries a server-computed `status`; render it, never re-derive it
+   * from `expires_at` / `used_at` (fat backend, thin frontend).
+   */
+  async function refreshInvitations() {
+    invitationsLoading = true;
+    try {
+      invitations = await listInvitations(false);
+    } catch (err) {
+      // A plain admin still sees the rest of the panel; the endpoint is admin-
+      // gated exactly like the user list, so a failure here is not fatal.
+      console.warn('Could not load invitations', err);
+      invitations = [];
+    } finally {
+      invitationsLoading = false;
+    }
+  }
+
+  /**
+   * Invite someone to create their own account.
+   *
+   * Preferred over {@link createUser}: the admin never sees or chooses the
+   * invitee's password, the invitee gets an email, and `auth_type` is carried
+   * through so an IdP-fronted deployment can pre-provision matching accounts.
+   */
+  async function sendInvitation() {
+    if (!inviteEmail.trim()) {
+      toastStore.error($t('userManagement.fillAllFields'));
+      return;
+    }
+
+    if (inviteRole === 'super_admin') {
+      showConfirmation(
+        $t('userManagement.confirmSuperAdminTitle'),
+        $t('userManagement.confirmSuperAdminInvite', { name: inviteFullName || inviteEmail }),
+        () => executeSendInvitation(),
+        $t('userManagement.confirmSuperAdminButton')
+      );
+      return;
+    }
+
+    await executeSendInvitation();
+  }
+
+  async function executeSendInvitation() {
+    inviteSubmitting = true;
+    const invitedAddress = inviteEmail.trim();
+    try {
+      await createInvitation({
+        email: invitedAddress,
+        full_name: inviteFullName.trim() || undefined,
+        role: inviteRole,
+        auth_type: inviteAuthType,
+        expires_in_hours: inviteExpiresInHours
+      });
+
+      inviteEmail = '';
+      inviteFullName = '';
+      inviteRole = 'user';
+      inviteAuthType = 'local';
+      inviteExpiresInHours = INVITE_EXPIRY_DEFAULT_HOURS;
+      showInviteForm = false;
+
+      toastStore.success($t('userManagement.inviteSent', { email: invitedAddress }));
+      await refreshInvitations();
+    } catch (err) {
+      console.error('Error creating invitation:', err);
+      toastStore.error(extractErrorMessage(err, $t('userManagement.inviteFailed')));
+    } finally {
+      inviteSubmitting = false;
+    }
+  }
+
+  /**
+   * Revoke a pending invitation.
+   * @param {import('$lib/api/invitations').Invitation} invitation
+   */
+  function revokeInvite(invitation) {
+    showConfirmation(
+      $t('userManagement.revokeInvitation'),
+      $t('userManagement.revokeInvitationConfirm', { email: invitation.email }),
+      () => executeRevokeInvite(invitation),
+      $t('userManagement.revokeInvitation')
+    );
+  }
+
+  /**
+   * @param {import('$lib/api/invitations').Invitation} invitation
+   */
+  async function executeRevokeInvite(invitation) {
+    pendingInviteUuid = invitation.uuid;
+    try {
+      await revokeInvitation(invitation.uuid);
+      toastStore.success($t('userManagement.inviteRevoked', { email: invitation.email }));
+      await refreshInvitations();
+    } catch (err) {
+      console.error('Error revoking invitation:', err);
+      toastStore.error(extractErrorMessage(err, $t('userManagement.revokeInviteFailed')));
+    } finally {
+      pendingInviteUuid = null;
+    }
+  }
+
+  /**
+   * Toggle the invite form, resetting it on open.
+   */
+  function toggleInviteForm() {
+    showInviteForm = !showInviteForm;
+    if (showInviteForm) {
+      showAddUserForm = false;
+      inviteEmail = '';
+      inviteFullName = '';
+      inviteRole = 'user';
+      inviteAuthType = 'local';
+      inviteExpiresInHours = INVITE_EXPIRY_DEFAULT_HOURS;
     }
   }
 
@@ -572,10 +757,12 @@
     showAddUserForm = !showAddUserForm;
     // Reset form when toggling
     if (showAddUserForm) {
+      showInviteForm = false;
       newUsername = '';
       newEmail = '';
       newPassword = '';
       newRole = 'user';
+      newAuthType = 'local';
     }
   }
 
@@ -594,6 +781,14 @@
     </div>
 
     <button
+      on:click={toggleInviteForm}
+      class={showInviteForm ? 'btn-cancel' : 'add-button'}
+      title={showInviteForm ? $t('userManagement.cancelInvite') : $t('userManagement.inviteUserTitle')}
+    >
+      {showInviteForm ? $t('common.cancel') : $t('userManagement.inviteUser')}
+    </button>
+
+    <button
       on:click={toggleAddUserForm}
       class={showAddUserForm ? 'btn-cancel' : 'add-button'}
       title={showAddUserForm ? $t('userManagement.cancelAddUser') : $t('userManagement.createNewUser')}
@@ -601,6 +796,90 @@
       {showAddUserForm ? $t('common.cancel') : $t('userManagement.addUser')}
     </button>
   </div>
+
+  {#if showInviteForm}
+    <div class="add-user-form">
+      <h3>{$t('userManagement.inviteUser')}</h3>
+      <p class="form-hint">{$t('userManagement.inviteDescription')}</p>
+
+      <div class="form-group">
+        <label for="invite-email">{$t('userManagement.email')}</label>
+        <input
+          type="email"
+          id="invite-email"
+          bind:value={inviteEmail}
+          placeholder={$t('userManagement.email')}
+          disabled={inviteSubmitting}
+          required
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="invite-full-name">{$t('userManagement.fullName')}</label>
+        <input
+          type="text"
+          id="invite-full-name"
+          bind:value={inviteFullName}
+          placeholder={$t('userManagement.fullName')}
+          disabled={inviteSubmitting}
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="invite-role">{$t('userManagement.role')}</label>
+        <select id="invite-role" bind:value={inviteRole} disabled={inviteSubmitting}>
+          <option value="user">{$t('userManagement.roleUser')}</option>
+          {#if isSuperAdmin}
+            <!-- An invitation is a deferred account creation, so it inherits the
+                 same gate as POST /admin/users: only a super_admin may mint
+                 elevated accounts (the backend 403s otherwise). -->
+            <option value="admin">{$t('userManagement.roleAdmin')}</option>
+            <option value="super_admin">{$t('userManagement.roleSuperAdmin')}</option>
+          {/if}
+        </select>
+        {#if isSuperAdmin && inviteRole === 'super_admin'}
+          <span class="role-warning">{$t('userManagement.superAdminWarning')}</span>
+        {/if}
+      </div>
+
+      <div class="form-group">
+        <label for="invite-auth-type">{$t('userManagement.authType')}</label>
+        <select id="invite-auth-type" bind:value={inviteAuthType} disabled={inviteSubmitting}>
+          {#each AUTH_TYPES as authType (authType)}
+            <option value={authType}>{authTypeLabels[authType] || authType}</option>
+          {/each}
+        </select>
+        <span class="form-hint">{$t('userManagement.authTypeHint')}</span>
+      </div>
+
+      <div class="form-group">
+        <label for="invite-expiry">{$t('userManagement.inviteExpiry')}</label>
+        <input
+          type="number"
+          id="invite-expiry"
+          bind:value={inviteExpiresInHours}
+          min={INVITE_EXPIRY_MIN_HOURS}
+          max={INVITE_EXPIRY_MAX_HOURS}
+          disabled={inviteSubmitting}
+        />
+        <span class="form-hint">
+          {$t('userManagement.inviteExpiryHint', {
+            min: INVITE_EXPIRY_MIN_HOURS,
+            max: INVITE_EXPIRY_MAX_HOURS
+          })}
+        </span>
+      </div>
+
+      <button
+        on:click={sendInvitation}
+        class="create-button"
+        disabled={inviteSubmitting}
+        title={$t('userManagement.inviteUserTitle')}
+      >
+        {inviteSubmitting ? $t('userManagement.inviteSending') : $t('userManagement.sendInvite')}
+      </button>
+    </div>
+  {/if}
 
   {#if showAddUserForm}
     <div class="add-user-form">
@@ -628,15 +907,34 @@
       </div>
 
       <div class="form-group">
-        <label for="password">{$t('userManagement.password')}</label>
-        <input
-          type="password"
-          id="password"
-          bind:value={newPassword}
-          placeholder={$t('userManagement.password')}
-          required
-        />
+        <label for="auth-type">{$t('userManagement.authType')}</label>
+        <select id="auth-type" bind:value={newAuthType}>
+          {#each AUTH_TYPES as authType (authType)}
+            <option value={authType}>{authTypeLabels[authType] || authType}</option>
+          {/each}
+        </select>
+        <span class="form-hint">{$t('userManagement.authTypeHint')}</span>
       </div>
+
+      {#if createNeedsPassword}
+        <!-- Only a local account holds a password. Sending one for ldap/keycloak/
+             pki is a 422, not a silent no-op — the field is hidden rather than
+             disabled so nothing stale is submitted. -->
+        <div class="form-group">
+          <label for="password">{$t('userManagement.password')}</label>
+          <input
+            type="password"
+            id="password"
+            bind:value={newPassword}
+            placeholder={$t('userManagement.password')}
+            minlength={passwordMinLength}
+            required
+          />
+          <span class="form-hint">{$t('userManagement.minimumCharacters', { min: passwordMinLength })}</span>
+        </div>
+      {:else}
+        <p class="form-hint external-note">{$t('userManagement.externalAccountNote')}</p>
+      {/if}
 
       <div class="form-group">
         <label for="role">{$t('userManagement.role')}</label>
@@ -688,7 +986,16 @@
                 <span class="status-badge inactive">{$t('userManagement.inactiveBadge')}</span>
               {/if}
             </td>
-            <td>{currentUser.email}</td>
+            <td>
+              {currentUser.email}
+              <!-- Only meaningful for local accounts: an external identity's
+                   address is asserted by its IdP (ExternalIdentity.email_verified,
+                   a separate flag), so `email_verified` is false there by default
+                   and badging it would libel every LDAP/OIDC user. -->
+              {#if currentUser.auth_type === 'local' && currentUser.email_verified === false}
+                <span class="status-badge unverified">{$t('userManagement.unverifiedBadge')}</span>
+              {/if}
+            </td>
             <td>
               <!-- Role changes require super_admin server-side
                    (PUT /admin/users/{uuid}/role). A plain admin used to get a
@@ -834,6 +1141,66 @@
     </table>
     </div>
   {/if}
+
+  <!-- Pending invitations. `status` is computed server-side; this renders it. -->
+  <section class="invitations-section">
+    <h3>{$t('userManagement.pendingInvitations')}</h3>
+    {#if invitationsLoading}
+      <div class="loading-state"><p>{$t('userManagement.loadingInvitations')}</p></div>
+    {:else if invitations.length === 0}
+      <EmptyState title={$t('userManagement.noPendingInvitations')} padding="1.5rem" />
+    {:else}
+      <div class="table-scroll-wrapper">
+        <table class="users-table">
+          <thead>
+            <tr>
+              <th>{$t('userManagement.email')}</th>
+              <th>{$t('userManagement.role')}</th>
+              <th>{$t('userManagement.authType')}</th>
+              <th>{$t('userManagement.invitationStatus')}</th>
+              <th>{$t('userManagement.inviteExpires')}</th>
+              <th>{$t('userManagement.actions')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each invitations as invitation (invitation.uuid)}
+              <tr>
+                <td>
+                  {invitation.email}
+                  {#if invitation.full_name}
+                    <span class="invite-name">{invitation.full_name}</span>
+                  {/if}
+                </td>
+                <td>{roleLabels[invitation.role] || invitation.role}</td>
+                <td>{authTypeLabels[invitation.auth_type] || invitation.auth_type}</td>
+                <td>
+                  <span class="status-badge status-{invitation.status}">
+                    {invitationStatusLabels[invitation.status] || invitation.status}
+                  </span>
+                </td>
+                <td>{formatDate(invitation.expires_at)}</td>
+                <td>
+                  <div class="table-actions">
+                    <button
+                      class="icon-button delete-button"
+                      disabled={pendingInviteUuid === invitation.uuid}
+                      on:click={() => revokeInvite(invitation)}
+                      title={$t('userManagement.revokeInvitationFor', { email: invitation.email })}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="4.9" y1="4.9" x2="19.1" y2="19.1" />
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+  </section>
 </div>
 
 <!-- Confirmation Modal -->
@@ -1314,14 +1681,81 @@
     vertical-align: middle;
   }
 
-  .status-badge.inactive {
+  .status-badge.inactive,
+  .status-badge.status-revoked {
     background-color: rgba(239, 68, 68, 0.15);
     color: rgb(220, 38, 38);
   }
 
-  :global([data-theme='dark']) .status-badge.inactive {
+  :global([data-theme='dark']) .status-badge.inactive,
+  :global([data-theme='dark']) .status-badge.status-revoked {
     background-color: rgba(239, 68, 68, 0.2);
     color: rgb(248, 113, 113);
+  }
+
+  .status-badge.unverified,
+  .status-badge.status-expired {
+    background-color: rgba(245, 158, 11, 0.18);
+    color: rgb(180, 83, 9);
+  }
+
+  :global([data-theme='dark']) .status-badge.unverified,
+  :global([data-theme='dark']) .status-badge.status-expired {
+    background-color: rgba(245, 158, 11, 0.22);
+    color: rgb(252, 211, 77);
+  }
+
+  .status-badge.status-pending {
+    background-color: rgba(14, 165, 233, 0.15);
+    color: rgb(2, 132, 199);
+  }
+
+  :global([data-theme='dark']) .status-badge.status-pending {
+    background-color: rgba(14, 165, 233, 0.22);
+    color: rgb(125, 211, 252);
+  }
+
+  .status-badge.status-accepted {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: rgb(4, 120, 87);
+  }
+
+  :global([data-theme='dark']) .status-badge.status-accepted {
+    background-color: rgba(16, 185, 129, 0.22);
+    color: rgb(110, 231, 183);
+  }
+
+  .form-hint {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .external-note {
+    margin: 0 0 0.5rem;
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--background-color);
+  }
+
+  .invitations-section {
+    margin-top: 2rem;
+  }
+
+  .invitations-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-color);
+    margin-bottom: 0.75rem;
+  }
+
+  .invite-name {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
   }
 
   .current-role {

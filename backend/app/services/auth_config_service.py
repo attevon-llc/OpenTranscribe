@@ -70,6 +70,24 @@ class AuthConfigService:
         "keycloak_client_secret",
     }
 
+    #: Keys whose new value does NOT take effect until the process restarts.
+    #: Written to ``auth_config.requires_restart`` so the admin UI can say so
+    #: instead of implying the change is live. That column has existed since the
+    #: table was created and was never written by anything.
+    #:
+    #: Both members are read at **import time** by ``app/auth/cookies.py`` to
+    #: compute ``ACCESS_MAX_AGE`` / ``REFRESH_MAX_AGE``. Honouring a live change
+    #: for the token but not the cookie would end sessions early (cookie expires
+    #: first) or leave a dead cookie behind (token expires first). Everything else
+    #: in the session category is enforced against ``refresh_token`` rows at
+    #: request time and is genuinely live.
+    RESTART_REQUIRED_KEYS = frozenset(
+        {
+            "jwt_access_token_expire_minutes",
+            "jwt_refresh_token_expire_days",
+        }
+    )
+
     # Mapping of config keys to their data types
     DATA_TYPE_MAPPING = {
         # Local auth settings
@@ -96,8 +114,6 @@ class AuthConfigService:
         "pki_crl_cache_seconds": "int",
         "pki_revocation_soft_fail": "bool",
         "pki_allow_password_fallback": "bool",
-        "pki_support_cac": "bool",
-        "pki_support_piv": "bool",
         "pki_mode": "string",
         # Password policy settings
         "password_policy_enabled": "bool",
@@ -476,6 +492,8 @@ class AuthConfigService:
         # Encrypt sensitive values
         encrypted_value = encrypt_api_key(str_value) if is_sensitive and str_value else str_value
 
+        requires_restart = key in AuthConfigService.RESTART_REQUIRED_KEYS
+
         # Get existing config
         config: AuthConfig | None = (
             db.query(AuthConfig).filter(AuthConfig.config_key == key).first()
@@ -486,6 +504,9 @@ class AuthConfigService:
             # Update existing
             config.config_value = encrypted_value  # type: ignore[assignment]
             config.data_type = data_type  # type: ignore[assignment]
+            # Re-derived on every write, not just on create: rows written before
+            # the flag was populated would otherwise stay False forever.
+            config.requires_restart = requires_restart  # type: ignore[assignment]
             # Heal a stale category. `config_key` is globally UNIQUE and this branch
             # never rewrote `category`, so a key that used to be listed under two
             # categories stayed pinned to whichever tab wrote it first — and then
@@ -512,6 +533,7 @@ class AuthConfigService:
                 category=category,
                 data_type=data_type,
                 description=description,
+                requires_restart=requires_restart,
                 created_by=user_id,
                 updated_by=user_id,
             )

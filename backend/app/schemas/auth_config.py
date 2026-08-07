@@ -201,10 +201,28 @@ class PKIConfig(_CategoryConfig):
     #: the deployed default is strict revocation checking.
     pki_revocation_soft_fail: bool = False
     pki_trusted_proxies: str = ""
-    pki_mode: Literal["direct", "keycloak", "hybrid"] = "direct"
+    #: How the certificate reaches us, which is the only PKI choice the backend
+    #: actually makes (``auth/pki_auth.py``). ``header``: a trusted proxy
+    #: terminates mTLS and forwards the certificate and/or its DN. ``mutual_tls``:
+    #: same transport, but a bare DN assertion is refused — the full certificate
+    #: must be forwarded so this application validates it itself.
+    #:
+    #: It was ``direct``/``keycloak``/``hybrid``, describing a delegation choice no
+    #: code branched on, and sharing no value with the ``header``/``mutual_tls``
+    #: the admin UI sends — so **every save of the PKI tab was rejected** once
+    #: unknown values started 400ing.
+    pki_mode: Literal["header", "mutual_tls"] = "header"
+    #: Deployment ceiling over the per-user ``User.allow_local_fallback``:
+    #: effective = per-user AND this. True keeps the per-user flag as the sole
+    #: gate, which is the pre-existing behaviour; the per-user flag already
+    #: defaults to False, so defaulting this to False instead would silently
+    #: revoke fallback a super_admin had granted.
     pki_allow_password_fallback: bool = True
-    pki_support_cac: bool = True
-    pki_support_piv: bool = True
+
+    # `pki_support_cac` / `pki_support_piv` were removed in v375: they gated
+    # nothing. `pki_auth.extract_display_name_from_gov_dn` parses both the DoD CAC
+    # and the PIV CN formats for every certificate, unconditionally, and always
+    # has. Their stored rows are deleted by the same revision.
 
 
 class PasswordPolicyConfig(_CategoryConfig):
@@ -233,14 +251,32 @@ class MFAConfig(_CategoryConfig):
 
 
 class SessionConfig(_CategoryConfig):
-    """Session and token configuration."""
+    """Session and token configuration.
 
+    A session is a ``refresh_token`` row. The three live settings here are
+    enforced against those rows — the timeouts in
+    ``token_service.verify_refresh_token``, the limit in
+    ``api/endpoints/auth/login.py`` — and take effect without a restart.
+    """
+
+    #: Restart-required (``AuthConfigService.RESTART_REQUIRED_KEYS``):
+    #: ``auth/cookies.py`` computes cookie max-age from these two at import time,
+    #: so a live change would leave cookie and token lifetimes disagreeing.
     jwt_access_token_expire_minutes: int = Field(default=60, ge=1, le=1440)
     jwt_refresh_token_expire_days: int = Field(default=7, ge=1, le=365)
+    #: Enforced when a refresh token is presented, so the granularity is one
+    #: access-token lifetime — see the note on ``verify_refresh_token`` for why
+    #: per-request tracking is the wrong control. The admin UI cannot set 0; the
+    #: enforcement path still treats 0 as "disabled" because
+    #: ``SESSION_IDLE_TIMEOUT_MINUTES`` comes from an unbounded ``.env`` value.
     session_idle_timeout_minutes: int = Field(default=15, ge=1, le=1440)
     session_absolute_timeout_minutes: int = Field(default=480, ge=1, le=10080)
     #: 0 = unlimited, matching ``config.py:MAX_CONCURRENT_SESSIONS``.
     max_concurrent_sessions: int = Field(default=5, ge=0, le=1000)
+    #: These are the two strings ``login.py`` compares against. The admin panel
+    #: offers ``oldest``/``newest``/``all``, none of which can ever match — so the
+    #: limit silently enforced nothing whichever option was chosen. The backend
+    #: vocabulary is the one with code behind it; the panel must send these.
     concurrent_session_policy: Literal["terminate_oldest", "reject"] = "terminate_oldest"
 
 

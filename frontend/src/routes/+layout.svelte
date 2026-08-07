@@ -12,7 +12,7 @@
   import "../styles/search.css";
 
   // Import auth store
-  import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods } from "$stores/auth";
+  import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods, accountLifecycle, installAccountLifecycleInterceptor } from "$stores/auth";
   import { loadCapabilities } from "$stores/capabilities";
   import { isCloudEdition } from "$lib/edition";
   import { theme } from "../stores/theme";
@@ -33,6 +33,30 @@
   import ClassificationBanner from "$lib/components/ClassificationBanner.svelte";
   import ConnectionStatusBanner from "$components/ui/ConnectionStatusBanner.svelte";
   import QuotaExceededModal from "$lib/cloud/components/QuotaExceededModal.svelte";
+
+  /**
+   * Routes reachable without a session — the ONE definition.
+   *
+   * This list previously existed twice (an imperative copy in the onMount guard
+   * and a `{@const}` copy in the template). They drifted independently, which
+   * meant a route could be guarded as public and still render the "redirect in
+   * flight" loading screen forever. Add new public routes here only.
+   *
+   * `/accept-invite` and `/verify-email` are unauthenticated by definition: the
+   * account either does not exist yet or cannot sign in until it is verified.
+   *
+   * Cloud edition: the hosted IdP owns login, sign-up and recovery inline on
+   * /login, so the local credential routes are dead there and are redirected.
+   */
+  const TOKEN_PUBLIC_PATHS = ["/accept-invite", "/verify-email"];
+  const LOCAL_CREDENTIAL_PATHS = ["/register", "/forgot-password", "/reset-password"];
+  const PUBLIC_PATHS = isCloudEdition
+    ? ["/login", ...TOKEN_PUBLIC_PATHS]
+    : ["/login", ...LOCAL_CREDENTIAL_PATHS, ...TOKEN_PUBLIC_PATHS];
+
+  // A lifecycle hold (`must_change_password` / expired account) confines the
+  // session to the login route, which renders the remedy. See $stores/auth.
+  $: lifecycleHold = $accountLifecycle !== null;
 
   // Classification banner state
   let bannerEnabled = false;
@@ -63,6 +87,9 @@
   // Initialize auth state when the component mounts
   onMount(() => {
     window.addEventListener('pageshow', handlePageShow);
+
+    // Observe the two account-lifecycle 403s (object `detail`) on every request.
+    installAccountLifecycleInterceptor();
 
     // Optional, env-gated error reporting — no-op unless VITE_SENTRY_DSN is set.
     void initMonitoring();
@@ -105,20 +132,11 @@
 
         // Cloud edition: the hosted IdP owns login/registration/forgot-password
         // (its sign-in component on /login handles sign-up + recovery inline), so
-        // the local /register, /forgot-password, /reset-password routes are dead —
-        // redirect any hit to /login. Only /login is a public path here.
-        if (isCloudEdition) {
-          const cloudAuthRedirects = ["/register", "/forgot-password", "/reset-password"];
-          if (cloudAuthRedirects.includes(currentPath)) {
-            goto("/login", { replaceState: true });
-          } else if (!isAuth && currentPath !== "/login") {
-            goto("/login", { replaceState: true });
-          } else if (isAuth && currentPath === "/login") {
-            goto("/", { replaceState: true });
-          }
+        // the local credential routes are dead — redirect any hit to /login.
+        if (isCloudEdition && LOCAL_CREDENTIAL_PATHS.includes(currentPath)) {
+          goto("/login", { replaceState: true });
         } else {
-          const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
-          const isPublicPath = publicPaths.includes(currentPath);
+          const isPublicPath = PUBLIC_PATHS.includes(currentPath);
 
           if (!isAuth && !isPublicPath) {
             goto("/login", { replaceState: true });
@@ -154,17 +172,19 @@
     resetScrollLock();
   });
 
+  // A lifecycle hold can land on any page (an admin can force a password change
+  // mid-session). Bounce to /login, which owns both remedy screens. `goto` keeps
+  // this an SPA navigation — a full reload would drop the in-memory reason.
+  $: if ($authReady && lifecycleHold && $page.url.pathname !== '/login') {
+    goto('/login', { replaceState: true });
+  }
+
 </script>
 
 {#if $authReady}
-  <!-- Cloud edition: only /login is public (the hosted IdP handles sign-up and
-       recovery inline); the local /register, /forgot-password, /reset-password
-       routes are redirected to /login by the auth guard, so they are not
-       treated as public here. -->
-  {@const publicPaths = isCloudEdition
-    ? ['/login']
-    : ['/login', '/register', '/forgot-password', '/reset-password']}
-  {@const isPublicPath = publicPaths.includes($page.url.pathname)}
+  <!-- PUBLIC_PATHS is defined once, in the script block, and shared with the
+       imperative guard above. Do not reintroduce a second copy here. -->
+  {@const isPublicPath = PUBLIC_PATHS.includes($page.url.pathname)}
 
   <!-- Classification Banner (FedRAMP AC-8) - shows on all pages when enabled -->
   {#if bannerEnabled && $isAuthenticated}
@@ -176,7 +196,7 @@
 
   <div class="app" class:has-banner={bannerEnabled && $isAuthenticated} style="--banner-offset: {bannerEnabled && $isAuthenticated ? '28px' : '0px'}">
     <ToastContainer />
-    {#if $isAuthenticated}
+    {#if $isAuthenticated && !lifecycleHold}
       <Navbar />
       <NotificationsPanel />
       <UploadManager />
@@ -187,7 +207,15 @@
       {/if}
     {/if}
 
-    {#if $isAuthenticated && !isPublicPath}
+    {#if lifecycleHold && isPublicPath}
+      <!-- Account-lifecycle hold: the session (if any) can reach nothing but the
+           remedy, so render /login bare — chrome would only offer dead links.
+           `password_change_required` keeps the session; `account_expired` has
+           already torn it down. -->
+      <main class="content no-navbar">
+        <slot />
+      </main>
+    {:else if $isAuthenticated && !isPublicPath}
       <!-- Authenticated user on a protected route — render the app -->
       <AppContent>
         <slot />

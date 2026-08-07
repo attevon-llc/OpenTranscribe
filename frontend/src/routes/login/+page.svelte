@@ -1,7 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithKeycloak, handleKeycloakCallback, loginWithPKI, verifyMFA, type AuthMethods } from "$stores/auth";
+  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithKeycloak, handleKeycloakCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, logout, type AuthMethods } from "$stores/auth";
+  import { resendEmailVerification } from '$lib/api/invitations';
   import { onMount, onDestroy } from 'svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
@@ -41,6 +42,21 @@
   let mfaCode = "";
   let mfaLoading = false;
   let useBackupCode = false;
+
+  // Email verification (v375). `/auth/login` raises exactly ONE 403 — an
+  // unverified address on a deployment that requires verification — so the HTTP
+  // status identifies this state and no substring match on the localised
+  // message is needed.
+  let emailNotVerified = false;
+  let resendPending = false;
+  let resendNotice = "";
+
+  // Forced password change (403 `detail.code === password_change_required`).
+  // The session is alive; PUT /users/me is the only route that answers.
+  let forcedCurrentPassword = "";
+  let forcedNewPassword = "";
+  let forcedConfirmPassword = "";
+  let forcedChangeLoading = false;
 
   // Banner state
   let bannerAcknowledged = false;
@@ -330,7 +346,28 @@
         return;
       }
 
+      // The credentials were accepted but the address is unverified. Offer the
+      // resend action instead of the generic "check your credentials" toast.
+      if (!result.success && result.email_not_verified) {
+        emailNotVerified = true;
+        resendNotice = "";
+        password = "";
+        loading = false;
+        return;
+      }
+
       if (result.success) {
+        // The account carries `must_change_password`: a session exists, but the
+        // lifecycle gate refuses every route bar PUT /users/me until it clears.
+        // Publishing the hold here shows the remedy immediately, instead of the
+        // app shell failing its first request with a 403.
+        if (result.must_change_password) {
+          accountLifecycle.set({ code: 'password_change_required', message: '' });
+          password = "";
+          loading = false;
+          return;
+        }
+
         loginSuccess = true;
         loading = false;
 
@@ -367,6 +404,88 @@
   // Toggle password visibility
   function togglePasswordVisibility() {
     showPassword = !showPassword;
+  }
+
+  /**
+   * Ask for a fresh verification link.
+   *
+   * The endpoint always answers 200 with ONE constant message — for a
+   * registered address, an unknown one, and an already-verified one alike — and
+   * that message is rendered verbatim. Branching on the outcome (or reporting
+   * "no such account") would rebuild the account-existence oracle the endpoint
+   * exists to remove, and it needs no session to query.
+   */
+  async function handleResendVerification() {
+    const address = email.trim();
+    if (!address) {
+      toastStore.error($t('auth.emailRequired'));
+      document.getElementById('verify-email-address')?.focus();
+      return;
+    }
+
+    resendPending = true;
+    try {
+      const { message } = await resendEmailVerification(address);
+      resendNotice = message || $t('auth.verifyEmail.resendSent');
+    } catch {
+      // Transport/rate-limit failure — a condition of the request, not of the
+      // address, so this text must not vary with who was typed in.
+      resendNotice = $t('auth.verifyEmail.resendUnavailable');
+    } finally {
+      resendPending = false;
+    }
+  }
+
+  /** Leave the unverified-address state and show the credential form again. */
+  function dismissEmailNotVerified() {
+    emailNotVerified = false;
+    resendNotice = "";
+    setTimeout(() => document.getElementById('password')?.focus(), 0);
+  }
+
+  /**
+   * Clear `must_change_password` via the one route that still answers.
+   *
+   * On success the flag is cleared server-side, the lifecycle hold drops, and
+   * the next request goes through — so we proceed exactly as after a login.
+   */
+  async function handleForcedPasswordChange() {
+    if (!forcedCurrentPassword || !forcedNewPassword || !forcedConfirmPassword) {
+      toastStore.error($t('auth.allFieldsRequired'));
+      return;
+    }
+    if (forcedNewPassword !== forcedConfirmPassword) {
+      toastStore.error($t('auth.passwordsNoMatch'));
+      return;
+    }
+
+    forcedChangeLoading = true;
+    const result = await changeOwnPassword(forcedCurrentPassword, forcedNewPassword);
+    forcedChangeLoading = false;
+
+    if (!result.success) {
+      toastStore.error(result.message || $t('auth.forcedChange.failed'));
+      return;
+    }
+
+    forcedCurrentPassword = "";
+    forcedNewPassword = "";
+    forcedConfirmPassword = "";
+    toastStore.success($t('auth.forcedChange.success'));
+    import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
+    // Navigate immediately rather than through the usual 600 ms "signing in"
+    // flourish: the hold has already dropped, so the shell would render its
+    // redirect placeholder over this page for the whole delay.
+    goto('/', { replaceState: true });
+  }
+
+  /** Abandon the forced change: end the session and return to the sign-in form. */
+  async function abandonForcedChange() {
+    forcedCurrentPassword = "";
+    forcedNewPassword = "";
+    forcedConfirmPassword = "";
+    password = "";
+    await logout();
   }
 
   // Handle Keycloak login with timeout
@@ -519,10 +638,108 @@
       <div class="auth-logo">
         <img src={logoBanner} alt="OpenTranscribe" class="logo-banner" />
       </div>
-      <h1>{$t('auth.login')}</h1>
-      <p>{$t('auth.signInToAccount')}</p>
+      <!-- The lifecycle and unverified-address panels carry their own heading;
+           "Sign in to your account" would misdescribe them. -->
+      {#if !$accountLifecycle && !emailNotVerified}
+        <h1>{$t('auth.login')}</h1>
+        <p>{$t('auth.signInToAccount')}</p>
+      {/if}
     </div>
-    {#if isCloudEdition}
+    {#if $accountLifecycle}
+      <!-- Account-lifecycle hold. Both states arrive as a 403 whose `detail` is
+           an OBJECT carrying a machine-readable `code`; we branch on that code,
+           never on the prose, which is server-owned and rendered as-is. -->
+      {#if $accountLifecycle.code === 'password_change_required'}
+        <div class="lifecycle-panel">
+          <h2>{$t('auth.forcedChange.title')}</h2>
+          <p class="lifecycle-message">
+            {$accountLifecycle.message || $t('auth.forcedChange.description')}
+          </p>
+
+          <form on:submit|preventDefault={handleForcedPasswordChange} class="auth-form">
+            <div class="form-group">
+              <label for="forced-current-password">{$t('auth.forcedChange.currentPassword')}</label>
+              <input
+                type="password"
+                id="forced-current-password"
+                bind:value={forcedCurrentPassword}
+                autocomplete="current-password"
+                disabled={forcedChangeLoading}
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="forced-new-password">{$t('auth.newPassword')}</label>
+              <input
+                type="password"
+                id="forced-new-password"
+                bind:value={forcedNewPassword}
+                placeholder={$t('auth.newPasswordPlaceholder')}
+                autocomplete="new-password"
+                disabled={forcedChangeLoading}
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="forced-confirm-password">{$t('auth.confirmPassword')}</label>
+              <input
+                type="password"
+                id="forced-confirm-password"
+                bind:value={forcedConfirmPassword}
+                placeholder={$t('auth.confirmPasswordPlaceholder')}
+                autocomplete="new-password"
+                disabled={forcedChangeLoading}
+              />
+            </div>
+
+            <div class="password-policy">
+              <strong>{$t('auth.passwordRequirements')}</strong>
+              <ul>
+                <li>{$t('auth.passwordReqLength')}</li>
+                <li>{$t('auth.passwordReqUppercase')}</li>
+                <li>{$t('auth.passwordReqLowercase')}</li>
+                <li>{$t('auth.passwordReqNumber')}</li>
+                <li>{$t('auth.passwordReqSpecial')}</li>
+              </ul>
+            </div>
+
+            <button type="submit" class="auth-button" disabled={forcedChangeLoading}>
+              {#if forcedChangeLoading}
+                <Spinner size="small" color="white" /> {$t('auth.forcedChange.submitting')}
+              {:else}
+                {$t('auth.forcedChange.submit')}
+              {/if}
+            </button>
+          </form>
+
+          <div class="mfa-options">
+            <button
+              type="button"
+              class="text-button cancel-button"
+              on:click={abandonForcedChange}
+              disabled={forcedChangeLoading}
+            >
+              {$t('nav.logout')}
+            </button>
+          </div>
+        </div>
+      {:else}
+        <!-- Expired account: no self-service remedy exists, and the session has
+             already been torn down. Terminal state by design. -->
+        <div class="lifecycle-panel">
+          <h2>{$t('auth.accountExpired.title')}</h2>
+          <p class="lifecycle-message">
+            {$accountLifecycle.message || $t('auth.accountExpired.description')}
+          </p>
+          <p class="lifecycle-hint">{$t('auth.accountExpired.contactAdmin')}</p>
+          <div class="mfa-options">
+            <button type="button" class="text-button" on:click={clearAccountLifecycle}>
+              {$t('auth.backToLogin')}
+            </button>
+          </div>
+        </div>
+      {/if}
+    {:else if isCloudEdition}
       <!-- Cloud edition: the hosted IdP owns login + registration + MFA. Its
            sign-in component mounts here; org context is resolved server-side
            from the IdP's org claim, and the IdP handles MFA factors itself. -->
@@ -617,6 +834,47 @@
             on:click={cancelMFA}
           >
             {$t('auth.cancel')}
+          </button>
+        </div>
+      </div>
+    {:else if emailNotVerified}
+      <!-- Credentials accepted, address unverified. Distinct from a credential
+           failure: there is nothing to retype, so offer the resend instead. -->
+      <div class="lifecycle-panel">
+        <h2>{$t('auth.verifyEmail.notVerifiedTitle')}</h2>
+        <p class="lifecycle-message">{$t('auth.verifyEmail.notVerifiedDescription')}</p>
+
+        <form on:submit|preventDefault={handleResendVerification} class="auth-form">
+          <div class="form-group">
+            <label for="verify-email-address">{$t('auth.email')}</label>
+            <input
+              type="email"
+              id="verify-email-address"
+              bind:value={email}
+              placeholder={$t('auth.emailPlaceholder')}
+              autocomplete="email"
+              disabled={resendPending}
+            />
+          </div>
+
+          <button type="submit" class="auth-button" disabled={resendPending}>
+            {#if resendPending}
+              <Spinner size="small" color="white" /> {$t('auth.verifyEmail.resending')}
+            {:else}
+              {$t('auth.verifyEmail.resend')}
+            {/if}
+          </button>
+        </form>
+
+        {#if resendNotice}
+          <!-- Rendered verbatim and identically for every address: this notice
+               must never imply whether the account exists. -->
+          <p class="lifecycle-hint" role="status" aria-live="polite">{resendNotice}</p>
+        {/if}
+
+        <div class="mfa-options">
+          <button type="button" class="text-button cancel-button" on:click={dismissEmailNotVerified}>
+            {$t('auth.backToLogin')}
           </button>
         </div>
       </div>
@@ -1105,6 +1363,51 @@
   /* Banner offset for classification banner */
   .banner-offset {
     padding-top: 30px;
+  }
+
+  /* Account-lifecycle / email-verification panels. Colours come from theme vars
+     so light and dark stay in parity. */
+  .lifecycle-panel h2 {
+    font-size: 1.25rem;
+    color: var(--text-color);
+    margin-bottom: 0.5rem;
+    text-align: center;
+  }
+
+  .lifecycle-message {
+    color: var(--text-light);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+  }
+
+  .lifecycle-hint {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--background-color);
+    color: var(--text-light);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  .password-policy {
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--background-color);
+    color: var(--text-light);
+    font-size: 0.8rem;
+  }
+
+  .password-policy ul {
+    margin: 0.5rem 0 0;
+    padding-left: 1.1rem;
+  }
+
+  .password-policy li {
+    margin-bottom: 0.2rem;
   }
 
   /* MFA Form Styles */

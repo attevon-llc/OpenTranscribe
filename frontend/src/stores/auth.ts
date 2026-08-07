@@ -51,6 +51,14 @@ export interface User {
   org_id?: string;
   org_role?: string;
   subscription_tier?: string;
+  // Account-lifecycle flags (backend `UserInDB`). `must_change_password` is the
+  // same condition the 403 gate enforces — reading it here lets the login page
+  // show the forced-change screen without first provoking a refused request.
+  must_change_password?: boolean;
+  account_expires_at?: string | null;
+  // Email verification (v375). Surfaced in the admin user list.
+  email_verified?: boolean;
+  email_verified_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -142,6 +150,115 @@ export const user = derived(authStore, ($store) => $store.user);
 export const isAuthenticated = derived(authStore, ($store) => $store.isAuthenticated);
 export const authReady = derived(authStore, ($store) => $store.ready);
 export const token = derived(authStore, ($store) => $store.token);
+
+// ---------------------------------------------------------------------------
+// Account lifecycle (FedRAMP AC-2 / IA-5)
+//
+// `get_current_active_user` refuses two account states with a 403 whose `detail`
+// is an OBJECT, not the usual string:
+//
+//   {"detail": {"code": "password_change_required", "message": "…"}}
+//   {"detail": {"code": "account_expired",         "message": "…"}}
+//
+// The `code` is the contract; the prose is not. Anything that string-matches the
+// message breaks the moment it is reworded or translated, and every other 403
+// ("Not enough permissions") still carries a plain string and must keep its
+// ordinary error handling — hence the narrow classifier below rather than a
+// blanket "403 means locked out".
+// ---------------------------------------------------------------------------
+
+export type AccountLifecycleCode = 'password_change_required' | 'account_expired';
+
+export interface AccountLifecycleState {
+  code: AccountLifecycleCode;
+  /** Server-supplied prose, rendered verbatim. May be empty. */
+  message: string;
+}
+
+const ACCOUNT_LIFECYCLE_CODES: readonly AccountLifecycleCode[] = [
+  'password_change_required',
+  'account_expired',
+];
+
+/**
+ * The active lifecycle hold, or null. Non-null means the session is confined to
+ * the corresponding screen: no other API call will succeed until it clears.
+ */
+export const accountLifecycle = writable<AccountLifecycleState | null>(null);
+
+/**
+ * Classify an axios error as an account-lifecycle refusal.
+ *
+ * Returns null for every other error — including a 403 with a string `detail`,
+ * an array `detail` (Pydantic validation), and an object `detail` carrying an
+ * unrecognised code. Callers must fall back to their normal error path then.
+ */
+export function readAccountLifecycle(error: unknown): AccountLifecycleState | null {
+  const response = (
+    error as { response?: { status?: number; data?: { detail?: unknown } } } | undefined
+  )?.response;
+  if (response?.status !== 403) return null;
+
+  const detail = response?.data?.detail;
+  if (detail === null || typeof detail !== 'object' || Array.isArray(detail)) return null;
+
+  const { code, message } = detail as { code?: unknown; message?: unknown };
+  if (typeof code !== 'string') return null;
+  if (!ACCOUNT_LIFECYCLE_CODES.includes(code as AccountLifecycleCode)) return null;
+
+  return {
+    code: code as AccountLifecycleCode,
+    message: typeof message === 'string' ? message : '',
+  };
+}
+
+/**
+ * Apply an account-lifecycle refusal, if this error is one.
+ *
+ * `account_expired` has no self-service remedy, so the session is torn down
+ * immediately; the reason is re-published afterwards because `logout()` clears
+ * user state. `password_change_required` keeps the session alive on purpose —
+ * `PUT /users/me` is what clears the flag, and it needs that session.
+ */
+export async function handleAccountLifecycleError(
+  error: unknown
+): Promise<AccountLifecycleState | null> {
+  const state = readAccountLifecycle(error);
+  if (!state) return null;
+
+  accountLifecycle.set(state);
+
+  if (state.code === 'account_expired') {
+    await logout();
+    accountLifecycle.set(state);
+  }
+
+  return state;
+}
+
+/** Drop the lifecycle hold (the flag cleared server-side, or the user signed out). */
+export function clearAccountLifecycle(): void {
+  accountLifecycle.set(null);
+}
+
+let lifecycleInterceptorId: number | null = null;
+
+/**
+ * Watch every axios response for the two lifecycle refusals.
+ *
+ * Installed once from the app shell. It only observes — the error still rejects,
+ * so existing catch blocks are unaffected; the UI reacts to `accountLifecycle`.
+ */
+export function installAccountLifecycleInterceptor(): void {
+  if (lifecycleInterceptorId !== null) return;
+  lifecycleInterceptorId = axiosInstance.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      await handleAccountLifecycleError(error);
+      return Promise.reject(error);
+    }
+  );
+}
 
 /**
  * Cloud-edition session init: read the hosted external-auth session instead of
@@ -253,6 +370,14 @@ export async function login(
   // hence the strict `=== true` test below.
   mfa_enrollment_required?: boolean;
   mfa_token?: string;
+  // The credentials were correct but the address is unverified and this
+  // deployment requires verification (v375). `/auth/login` raises exactly one
+  // 403 — `assert_email_verified_for_local_login` — so the STATUS identifies it
+  // and no substring match on the localised message is needed.
+  email_not_verified?: boolean;
+  // The account carries `must_change_password`. The session is real, but every
+  // route except `PUT /users/me` and logout will answer 403 until it clears.
+  must_change_password?: boolean;
 }> {
   try {
     const params = new URLSearchParams();
@@ -291,11 +416,15 @@ export async function login(
     // Token is now in httpOnly cookie — mark as authenticated in memory
     authStore.setToken('cookie');
 
-    await fetchUserInfo();
+    const userData = await fetchUserInfo();
 
     authStore.setReady(true);
 
-    return { success: true };
+    // `/auth/me` resolves through `get_current_user`, which does NOT run the
+    // lifecycle gate, so this flag is the earliest honest signal. Surfacing it
+    // here means the forced-change screen appears instead of the app shell
+    // failing its first request with a 403.
+    return { success: true, must_change_password: userData?.must_change_password === true };
   } catch (rawErr: unknown) {
     const err = asAuthError(rawErr);
     console.error('auth.ts: Login error:', rawErr);
@@ -342,7 +471,46 @@ export async function login(
       success: false,
       message: errorMessage,
       status: err.response?.status,
+      email_not_verified: err.response?.status === 403,
     };
+  }
+}
+
+/**
+ * Self-service password change (`PUT /users/me`).
+ *
+ * This is the ONLY route (besides logout) that answers while
+ * `must_change_password` is set, and succeeding here is what clears the flag
+ * server-side — so the lifecycle hold is dropped on success and the next
+ * request goes through.
+ */
+export async function changeOwnPassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    await axiosInstance.put('/users/me', {
+      current_password: currentPassword,
+      password: newPassword,
+    });
+
+    clearAccountLifecycle();
+    await fetchUserInfo();
+    return { success: true };
+  } catch (rawError: unknown) {
+    const detail = asAuthError(rawError).response?.data?.detail;
+
+    if (typeof detail === 'string') return { success: false, message: detail };
+    if (Array.isArray(detail)) {
+      return {
+        success: false,
+        message: detail
+          .map((item: { msg?: string }) => item?.msg ?? String(item))
+          .filter(Boolean)
+          .join('. '),
+      };
+    }
+    return { success: false, message: get(t)('auth.forcedChange.failed') };
   }
 }
 
@@ -412,6 +580,11 @@ export async function loginWithExternalAuth(): Promise<{ success: boolean; messa
 
 // Logout function
 export async function logout() {
+  // A voluntary sign-out ends any lifecycle hold. `handleAccountLifecycleError`
+  // re-publishes it afterwards for `account_expired`, which must survive the
+  // teardown so the login page can explain why the session ended.
+  clearAccountLifecycle();
+
   // Cloud edition: the hosted IdP owns the session. Sign out there (revokes its
   // session + clears its cookies) instead of hitting the local revoke endpoint.
   if (isCloudEdition) {

@@ -115,7 +115,9 @@ services:
     container_name: otbench-flower
     pull_policy: never
     volumes:
-      - flower_bench_data:/app
+      # /app/temp, never /app — a named volume over the image's code directory
+      # is seeded once and then pins Flower to that stale code snapshot forever.
+      - flower_bench_data:/app/temp
 
   frontend:
     image: opentranscribe-frontend:bench

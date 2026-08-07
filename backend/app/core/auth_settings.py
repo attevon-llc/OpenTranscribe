@@ -150,6 +150,31 @@ class DynamicAuthSettings:
         else:
             self._cache.clear()
 
+    # Local (password) Settings Properties
+    @property
+    def local_enabled(self) -> bool:
+        """Whether local password accounts may authenticate.
+
+        The deployment-level identity-source switch. Turn it off when an external
+        IdP owns identity and no one should be able to sign in with a password
+        stored here. It deliberately does **not** disable the username/password
+        form outright — LDAP shares that form — and it never applies to an active
+        ``super_admin``, which is the documented break-glass account.
+        """
+        return self.get_bool("local_enabled", settings.LOCAL_AUTH_ENABLED)
+
+    @property
+    def allow_registration(self) -> bool:
+        """Whether anyone may create their own account via ``POST /auth/register``.
+
+        This toggle already existed in the admin UI and was wired to nothing: the
+        endpoint read the ``ALLOW_OPEN_REGISTRATION`` env var instead, and that env
+        var was missing from ``ENV_TO_CONFIG_MAPPING``, so flipping the switch did
+        nothing at all. Reported by a deployment running LDAP where users could
+        still self-register.
+        """
+        return self.get_bool("allow_registration", settings.ALLOW_OPEN_REGISTRATION)
+
     # LDAP Settings Properties
     @property
     def ldap_enabled(self) -> bool:

@@ -22,8 +22,11 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app import models
+
+# Deployment configuration is the super_admin tier: this router
+# sets the deployment-wide redaction governance floor.
+from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.auth import get_current_admin_user
 from app.core import constants as C  # noqa: N812
 from app.db.base import get_db
 from app.schemas.redaction_settings import RedactionPolicy
@@ -234,7 +237,7 @@ def _read_policy(db: Session) -> RedactionPolicy:
 @admin_router.get("", response_model=RedactionPolicy)
 def get_redaction_policy(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> RedactionPolicy:
     """Return the admin redaction governance policy."""
     return _read_policy(db)
@@ -244,7 +247,7 @@ def get_redaction_policy(
 def update_redaction_policy(
     body: RedactionPolicyUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> RedactionPolicy:
     """Update the admin governance policy (only provided fields)."""
     updates = body.model_dump(exclude_none=True)
@@ -270,7 +273,7 @@ def update_redaction_policy(
 @admin_router.post("/reindex")
 def trigger_redaction_reindex(
     only_stale: bool = True,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> dict:
     """Backfill / re-index redaction spans across completed files (model upgrade / rollout)."""
     from app.tasks.redaction_task import redaction_reindex_all_task

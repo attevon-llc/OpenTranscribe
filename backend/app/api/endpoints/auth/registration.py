@@ -18,7 +18,7 @@ from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.password_history import add_password_to_history
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
-from app.core.config import settings
+from app.core.auth_settings import get_auth_settings
 from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.models.user import User
@@ -60,10 +60,16 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
 
     Rate-limited like every other auth route — this was the ONLY one without a limiter,
     while creating accounts that are immediately active and GPU-capable (issue #284
-    A0.11). Registration can also be closed entirely with ALLOW_OPEN_REGISTRATION=false,
-    which a deployment fronted by an external IdP should always do.
+    A0.11).
+
+    Registration can be closed entirely, which a deployment fronted by an external
+    IdP should always do. The switch is DB-backed (Settings -> Authentication ->
+    Local) with ``ALLOW_OPEN_REGISTRATION`` as the env fallback, matching the
+    precedence every other auth setting uses. It previously read the env var ONLY,
+    so the admin-UI toggle that appeared to control this did nothing at all — a
+    deployment running LDAP reported that users could still self-register (#354).
     """
-    if not settings.ALLOW_OPEN_REGISTRATION:
+    if not get_auth_settings(db).allow_registration:
         logger.warning(
             "Rejected registration attempt for %s: open registration is disabled",
             user_in.email,

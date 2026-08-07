@@ -759,14 +759,37 @@ async def lifespan(app: FastAPI):
                 await task
 
 
+def _resolve_docs_urls() -> tuple[str | None, str | None, str | None]:
+    """Resolve the OpenAPI schema, Swagger UI, and ReDoc URLs.
+
+    Swagger UI is anonymously reachable wherever it is mounted (nginx proxies
+    ``/api/`` straight through), and it enumerates the whole admin/auth attack
+    surface. A hardened deployment therefore publishes none of the three; set
+    ``ENABLE_API_DOCS=true`` to opt back in.
+
+    Returns:
+        The three URLs, or ``(None, None, None)`` when the docs are disabled.
+    """
+    opted_in = os.getenv("ENABLE_API_DOCS", "").strip().lower() in ("1", "true", "yes")
+    if settings.is_hardened and not opted_in:
+        return None, None, None
+    return (
+        f"{settings.API_PREFIX}/openapi.json",
+        f"{settings.API_PREFIX}/docs",
+        f"{settings.API_PREFIX}/redoc",
+    )
+
+
+_openapi_url, _swagger_url, _redoc_url = _resolve_docs_urls()
+
 # Create FastAPI app with lifespan and consistent routing configuration
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Audio transcription and analysis API",
     version=APP_VERSION,
-    openapi_url=f"{settings.API_PREFIX}/openapi.json",
-    docs_url=f"{settings.API_PREFIX}/docs",
-    redoc_url=f"{settings.API_PREFIX}/redoc",
+    openapi_url=_openapi_url,
+    docs_url=_swagger_url,
+    redoc_url=_redoc_url,
     lifespan=lifespan,
     # Disable redirect_slashes to prevent 307 redirects that expose Docker internal hostnames
     # Routes should be defined with "" (not "/") to match paths without trailing slash

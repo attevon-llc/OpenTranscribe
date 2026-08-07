@@ -31,6 +31,10 @@ from cryptography.x509.oid import ExtensionOID
 
 from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
+from app.auth.roles import ELEVATED_ROLES
+from app.auth.roles import ROLE_ADMIN
+from app.auth.roles import ROLE_USER
+from app.auth.roles import role_implies_superuser
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -102,13 +106,20 @@ def _is_pki_trusted_proxy(client_ip: str, trusted_networks: list) -> bool:
 
 def _get_pki_client_ip(request) -> str:
     """
-    Get the client IP from a request.
+    Get the immediate peer address of a request.
+
+    Deliberately NOT ``app/utils/client_ip.py:resolve_client_ip``. That resolver walks
+    ``X-Forwarded-For`` to find the *originating* client, which is the wrong end of the
+    chain here: the question this address answers is "did the host that physically
+    delivered these PKI headers terminate mTLS for us?", and only the socket peer can
+    answer it. Anything derived from a forwarded header is asserted by the same party
+    whose assertion we are trying to validate.
 
     Args:
         request: FastAPI Request object
 
     Returns:
-        Client IP address or "unknown"
+        Immediate peer IP address, or "unknown" when the transport does not expose one
     """
     if hasattr(request, "client") and request.client:
         return request.client.host or "unknown"
@@ -1204,6 +1215,25 @@ def _is_pki_admin(subject_dn: str, admin_dns_config: str | None = None) -> bool:
     return normalized_subject in admin_dns
 
 
+def _pki_header_source_is_trusted(request) -> bool:
+    """
+    Whether the peer that delivered this request may assert PKI headers.
+
+    There is exactly one rule, and no environment-dependent relaxation of it: the immediate
+    peer must be in the configured ``PKI_TRUSTED_PROXIES`` allowlist. An empty allowlist
+    trusts nobody.
+
+    Args:
+        request: FastAPI Request object
+
+    Returns:
+        True if the immediate peer is a configured trusted proxy
+    """
+    if not _pki_trusted_proxy_networks:
+        return False
+    return _is_pki_trusted_proxy(_get_pki_client_ip(request), _pki_trusted_proxy_networks)
+
+
 def _validate_pki_headers_source(request) -> bool | None:
     """
     Validate that PKI headers come from a trusted proxy.
@@ -1219,27 +1249,40 @@ def _validate_pki_headers_source(request) -> bool | None:
         settings.PKI_CERT_DN_HEADER
     )
 
-    if _pki_trusted_proxy_networks:
-        if not _is_pki_trusted_proxy(client_ip, _pki_trusted_proxy_networks):
-            if has_pki_headers:
-                logger.warning(
-                    f"PKI certificate headers received from untrusted IP {client_ip}. "
-                    "This may indicate header injection attempt. "
-                    f"Configure PKI_TRUSTED_PROXIES to include legitimate proxy IPs."
-                )
-                return False
-            # No PKI headers present, allow for fallback to other auth methods
-            logger.debug(f"No PKI headers from IP {client_ip}, no trusted proxy validation needed")
+    if _pki_header_source_is_trusted(request):
         return True
 
-    # No trusted proxies configured - log warning about potential risk
-    if has_pki_headers:
+    if not has_pki_headers:
+        # Nothing was asserted, so there is nothing to refuse — let the request fall
+        # through to the other auth methods.
+        logger.debug(f"No PKI headers from IP {client_ip}, no trusted proxy validation needed")
+        return True
+
+    # PKI headers are only meaningful when a reverse proxy terminated mTLS and vouched for
+    # them. An unvouched header set is just an attacker-supplied string, and a DN listed in
+    # PKI_ADMIN_DNS would mint an admin session from it. The empty-allowlist case used to
+    # return True with only a warning — FAIL CLOSED instead, unconditionally. `main.py`
+    # already refuses to start in a hardened environment with PKI_ENABLED and no allowlist;
+    # this is the defence in depth behind that guard, so a relaxed developer stack cannot be
+    # spoofed by accident either.
+    if _pki_trusted_proxy_networks:
         logger.warning(
-            "SECURITY: PKI_TRUSTED_PROXIES not configured. PKI headers accepted from any source. "
-            "This allows potential header injection attacks. "
+            f"PKI certificate headers received from untrusted immediate peer {client_ip} "
+            "(the socket peer, not necessarily the originating client). "
+            "This may indicate a header injection attempt. "
+            "Configure PKI_TRUSTED_PROXIES to include legitimate proxy IPs."
+        )
+    else:
+        logger.warning(
+            "SECURITY: PKI_TRUSTED_PROXIES not configured. "
+            "This would allow header injection attacks. "
             "Configure PKI_TRUSTED_PROXIES with your reverse proxy IP addresses."
         )
-    return True
+    logger.error(
+        f"Refusing header-sourced PKI authentication from {client_ip}: "
+        "no configured trusted proxy can vouch for these headers."
+    )
+    return False
 
 
 def _handle_revocation_check(cert: x509.Certificate | None) -> bool | None:
@@ -1295,6 +1338,25 @@ def _extract_user_info_from_request(
     subject_dn = extract_dn_from_headers(request)
 
     if subject_dn:
+        # The DN header is a *claim*, not evidence. It is trustworthy in exactly two cases:
+        #
+        # 1. A certificate was also presented. `pki_authenticate` has already parsed it and
+        #    rejected it if it is outside its validity window, so by the time we get here
+        #    the identity is backed by a certificate we checked. The header DN still wins
+        #    over the certificate's rfc4514 form because the proxy emits the canonical
+        #    string deployments configure PKI_ADMIN_DNS with.
+        # 2. No certificate, but the request came from a configured trusted proxy — the
+        #    component that terminated mTLS and is therefore vouching for the DN.
+        #
+        # Anything else is an unverified string from an unauthenticated peer, and
+        # `_is_pki_admin` would happily grant admin on it.
+        if cert is None and not _pki_header_source_is_trusted(request):
+            logger.error(
+                "Refusing DN-only PKI authentication from untrusted peer "
+                f"{_get_pki_client_ip(request)}: no certificate was presented and no "
+                "trusted proxy vouched for the DN header."
+            )
+            return None
         common_name, email = _parse_dn_components(subject_dn)
         return (subject_dn, common_name, email)
 
@@ -1333,7 +1395,10 @@ def pki_authenticate(request, admin_dns_config: str | None = None) -> PKIUserDat
     if _validate_pki_headers_source(request) is False:
         return None
 
-    # Extract certificate from headers - needed for revocation checking
+    # Extract certificate from headers - needed for revocation checking.
+    # ORDER IS LOAD-BEARING: the certificate is parsed and its validity window checked
+    # BEFORE `_extract_user_info_from_request` is allowed to trust the DN header. A DN
+    # header sent alongside an expired certificate must not short-circuit that check.
     cert_pem = extract_certificate_from_headers(request)
     cert = None
     cert_metadata: dict | None = None
@@ -1449,6 +1514,8 @@ def _create_pki_user(db, pki_data: PKIUserData):
         pki_not_after = datetime.fromisoformat(not_after_str)
 
     fingerprint = pki_data.get("fingerprint")
+    # External IdPs grant at most 'admin'; super_admin is local-only.
+    role = ROLE_ADMIN if pki_data["is_admin"] else ROLE_USER
     user = User(
         email=email,
         full_name=pki_data["common_name"] or email.split("@")[0],
@@ -1464,10 +1531,9 @@ def _create_pki_user(db, pki_data: PKIUserData):
         pki_not_before=pki_not_before,
         pki_not_after=pki_not_after,
         pki_fingerprint_sha256=fingerprint.replace(":", "") if fingerprint else None,
-        role="admin" if pki_data["is_admin"] else "user",
+        role=role,
         is_active=True,
-        # External IdPs grant at most 'admin'; is_superuser mirrors super_admin.
-        is_superuser=False,
+        is_superuser=role_implies_superuser(role),
     )
     db.add(user)
 
@@ -1546,15 +1612,15 @@ def _update_pki_user(db, user, pki_data: PKIUserData):
     # Update admin role based on PKI_ADMIN_DNS list
     if pki_data["is_admin"]:
         # External IdPs grant at most 'admin'; never demote a local super_admin.
-        if user.role not in ("admin", "super_admin"):
+        if user.role not in ELEVATED_ROLES:
             logger.info(f"Promoting PKI user {subject_dn} to admin")
-            user.role = "admin"
-        user.is_superuser = user.role == "super_admin"
-    elif user.role == "admin":
+            user.role = ROLE_ADMIN
+        user.is_superuser = role_implies_superuser(user.role)
+    elif user.role == ROLE_ADMIN:
         # Demote if user was admin but no longer in PKI_ADMIN_DNS
         logger.info(f"Demoting PKI user {subject_dn} from admin (removed from PKI_ADMIN_DNS)")
-        user.role = "user"
-        user.is_superuser = False
+        user.role = ROLE_USER
+        user.is_superuser = role_implies_superuser(user.role)
 
     db.commit()
     return user
@@ -1618,15 +1684,15 @@ def _convert_local_user_to_pki(db, user, pki_data: PKIUserData):
     # Update admin role based on PKI_ADMIN_DNS list
     if pki_data["is_admin"]:
         # External IdPs grant at most 'admin'; never demote a local super_admin.
-        if user.role not in ("admin", "super_admin"):
+        if user.role not in ELEVATED_ROLES:
             logger.info(f"Promoting converted PKI user {subject_dn} to admin")
-            user.role = "admin"
-        user.is_superuser = user.role == "super_admin"
-    elif user.role == "admin":
+            user.role = ROLE_ADMIN
+        user.is_superuser = role_implies_superuser(user.role)
+    elif user.role == ROLE_ADMIN:
         # Demote if user was admin locally but not in PKI_ADMIN_DNS
         logger.info(f"Demoting converted PKI user {subject_dn} from admin (not in PKI_ADMIN_DNS)")
-        user.role = "user"
-        user.is_superuser = False
+        user.role = ROLE_USER
+        user.is_superuser = role_implies_superuser(user.role)
 
     db.commit()
     return user

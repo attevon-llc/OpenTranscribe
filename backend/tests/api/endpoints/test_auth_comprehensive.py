@@ -18,6 +18,19 @@ from uuid import uuid4
 
 import pytest
 
+
+def _csrf_headers(client) -> dict[str, str]:
+    """Double-submit header for a cookie-carrying client.
+
+    ``/api/auth/token/refresh`` is no longer CSRF-exempt: it mints a new session
+    from the refresh cookie alone, which is precisely what a forged cross-site
+    request would target. ``TestClient`` keeps the login's cookie jar, so it
+    presents as a browser and has to submit the token like one.
+    """
+    csrf = client.cookies.get("csrf_token")
+    return {"X-CSRF-Token": csrf} if csrf else {}
+
+
 # ============== Login/Logout Workflow Tests ==============
 
 
@@ -126,6 +139,7 @@ class TestTokenRefresh:
         refresh_response = client.post(
             "/api/auth/token/refresh",
             json={"refresh_token": refresh_token},
+            headers=_csrf_headers(client),
         )
         assert refresh_response.status_code == 200
         new_tokens = refresh_response.json()
@@ -139,6 +153,7 @@ class TestTokenRefresh:
         response = client.post(
             "/api/auth/token/refresh",
             json={"refresh_token": "invalid.token.here"},
+            headers=_csrf_headers(client),
         )
         assert response.status_code == 401
 
@@ -157,6 +172,7 @@ class TestTokenRefresh:
         refresh_response = client.post(
             "/api/auth/token/refresh",
             json={"refresh_token": old_refresh_token},
+            headers=_csrf_headers(client),
         )
         assert refresh_response.status_code == 200
 
@@ -164,6 +180,7 @@ class TestTokenRefresh:
         second_refresh = client.post(
             "/api/auth/token/refresh",
             json={"refresh_token": old_refresh_token},
+            headers=_csrf_headers(client),
         )
         assert second_refresh.status_code == 401
 
@@ -718,6 +735,7 @@ class TestFullAuthenticationFlow:
         refresh_response = client.post(
             "/api/auth/token/refresh",
             json={"refresh_token": refresh_token},
+            headers=_csrf_headers(client),
         )
         assert refresh_response.status_code == 200
         new_tokens = refresh_response.json()

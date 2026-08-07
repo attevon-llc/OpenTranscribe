@@ -12,23 +12,30 @@ from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.rate_limit import get_auth_rate_limit
+from app.auth.rate_limit import limiter
 from app.core.auth_settings import get_auth_settings
 from app.core.config import settings
 from app.db.base import get_db
 from app.models.user import User
+from app.schemas.user import AuthMethodsResponse
 from app.schemas.user import LoginBannerResponse
 
 router = APIRouter()
 
 
-@router.get("/methods")
-def get_auth_methods(db: Session = Depends(get_db)):
+@router.get("/methods", response_model=AuthMethodsResponse)
+@limiter.limit(get_auth_rate_limit())
+def get_auth_methods(request: Request, db: Session = Depends(get_db)):
     """
     Get available authentication methods.
 
     Returns a list of enabled authentication methods that the frontend
     can use to display appropriate login options. Checks database settings
     first (set via admin UI), falls back to environment variables.
+
+    Rate-limited: it is unauthenticated and reports the deployment's entire auth
+    topology, so it should not be a free reconnaissance oracle.
     """
     # Use dynamic settings to check database first, then fall back to .env
     auth_settings = get_auth_settings(db)
@@ -36,14 +43,21 @@ def get_auth_methods(db: Session = Depends(get_db)):
     ldap_enabled = auth_settings.get_bool("ldap_enabled", settings.LDAP_ENABLED)
     keycloak_enabled = auth_settings.get_bool("keycloak_enabled", settings.KEYCLOAK_ENABLED)
     pki_enabled = auth_settings.pki_enabled or settings.PKI_ENABLED
+    local_enabled = auth_settings.local_enabled
+    allow_registration = auth_settings.allow_registration
     mfa_enabled = auth_settings.mfa_enabled or settings.MFA_ENABLED
     mfa_required = auth_settings.get_bool("mfa_required", settings.MFA_REQUIRED)
     login_banner_enabled = auth_settings.get_bool(
         "login_banner_enabled", settings.LOGIN_BANNER_ENABLED
     )
 
-    methods = ["local"]  # Always available
-
+    # "local" is no longer unconditional. It was hardcoded as
+    # `methods = ["local"]  # Always available`, which is why a deployment whose
+    # identity lives entirely in an external IdP still advertised — and accepted —
+    # local password login.
+    methods = []
+    if local_enabled:
+        methods.append("local")
     if ldap_enabled:
         methods.append("ldap")
     if keycloak_enabled:
@@ -58,33 +72,44 @@ def get_auth_methods(db: Session = Depends(get_db)):
     external_providers = get_registered_providers()
     methods.extend(p for p in external_providers if p not in methods)
 
-    return {
-        "methods": methods,
-        "keycloak_enabled": keycloak_enabled,
-        "pki_enabled": pki_enabled,
-        "ldap_enabled": ldap_enabled,
+    return AuthMethodsResponse(
+        methods=methods,
+        keycloak_enabled=keycloak_enabled,
+        pki_enabled=pki_enabled,
+        ldap_enabled=ldap_enabled,
+        local_enabled=local_enabled,
+        allow_registration=allow_registration,
         # Registered external IdP providers, reported generically. Clients gate
         # on membership in this list (e.g. `external_providers.length > 0`),
         # never on a hardcoded per-vendor flag.
-        "external_providers": external_providers,
-        "mfa_enabled": mfa_enabled,
-        "mfa_required": mfa_required,
-        "login_banner_enabled": login_banner_enabled,
-        "login_banner_text": settings.LOGIN_BANNER_TEXT if login_banner_enabled else "",
-        "login_banner_classification": settings.LOGIN_BANNER_CLASSIFICATION
-        if login_banner_enabled
-        else "UNCLASSIFIED",
-    }
+        external_providers=external_providers,
+        mfa_enabled=mfa_enabled,
+        mfa_required=mfa_required,
+        login_banner_enabled=login_banner_enabled,
+        # Read the banner copy from the same place as the flag. Reading the flag
+        # from the DB but the text from the environment meant enabling the banner
+        # in the admin UI produced an EMPTY banner — the inverse of the AC-8
+        # control it implements.
+        login_banner_text=auth_settings.login_banner_text if login_banner_enabled else "",
+        login_banner_classification=(
+            auth_settings.login_banner_classification if login_banner_enabled else "UNCLASSIFIED"
+        ),
+    )
 
 
 @router.get("/banner", response_model=LoginBannerResponse)
-def get_login_banner():
+def get_login_banner(db: Session = Depends(get_db)):
     """
     PUBLIC endpoint - returns banner text without authentication.
     Called before login to display classification banner.
     FedRAMP AC-8 compliance.
+
+    Reads the DB-backed settings, not the environment: this is the endpoint the
+    SPA actually calls for the banner, and it ignored every value a super_admin
+    set in the admin UI.
     """
-    if not settings.LOGIN_BANNER_ENABLED:
+    auth_settings = get_auth_settings(db)
+    if not auth_settings.get_bool("login_banner_enabled", settings.LOGIN_BANNER_ENABLED):
         return LoginBannerResponse(
             enabled=False,
             text="",
@@ -94,13 +119,14 @@ def get_login_banner():
 
     return LoginBannerResponse(
         enabled=True,
-        text=settings.LOGIN_BANNER_TEXT,
-        classification=settings.LOGIN_BANNER_CLASSIFICATION,
+        text=auth_settings.login_banner_text,
+        classification=auth_settings.login_banner_classification,
         requires_acknowledgment=True,
     )
 
 
 @router.post("/banner/acknowledge")
+@limiter.limit(get_auth_rate_limit())
 def acknowledge_banner(
     request: Request,
     db: Session = Depends(get_db),

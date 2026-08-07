@@ -871,7 +871,9 @@ def reset_transcription_settings(
 
 
 @router.get("/transcription/system-defaults", response_model=TranscriptionSystemDefaults)
-def get_transcription_system_defaults() -> TranscriptionSystemDefaults:
+def get_transcription_system_defaults(
+    current_user: models.User = Depends(get_current_active_user),
+) -> TranscriptionSystemDefaults:
     """
     Get system-level transcription defaults.
 
@@ -1259,6 +1261,7 @@ def reset_speaker_attribute_settings(
 )
 def get_speaker_attribute_system_defaults(
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
 ) -> SpeakerAttributeSystemDefaults:
     """Get system-level speaker attribute defaults."""
     import os
@@ -1411,7 +1414,9 @@ def reset_download_settings(
 
 
 @router.get("/download/system-defaults", response_model=DownloadSystemDefaults)
-def get_download_system_defaults() -> DownloadSystemDefaults:
+def get_download_system_defaults(
+    current_user: models.User = Depends(get_current_active_user),
+) -> DownloadSystemDefaults:
     """Get system-level download defaults and available options."""
     return DownloadSystemDefaults(
         video_quality=DEFAULT_VIDEO_QUALITY,

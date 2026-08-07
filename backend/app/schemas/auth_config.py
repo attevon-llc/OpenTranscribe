@@ -35,6 +35,10 @@ class AuthConfigResponse(AuthConfigBase):
 
     id: int
     uuid: str
+    #: Whether a value is stored. For a sensitive key ``config_value`` is always
+    #: ``None`` on the wire, so this is how the admin UI renders "a secret is
+    #: configured — leave blank to keep it" without ever receiving the secret.
+    is_set: bool = False
     created_at: datetime
     updated_at: datetime
 

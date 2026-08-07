@@ -42,6 +42,15 @@ AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK]
 # Auth types that never support local password (no local password stored)
 AUTH_TYPES_NO_LOCAL_FALLBACK = [AUTH_TYPE_LDAP]
 
+# JWT ``type`` claim values. Every token this app mints carries one, and every
+# consumer verifies the one it expects. Without that check a token minted for a
+# narrow purpose is accepted wherever any token is accepted — the MFA half-token
+# is handed to a client that has NOT yet passed the second factor, so treating it
+# as an access token silently bypasses MFA entirely.
+TOKEN_TYPE_ACCESS = "access"  # noqa: S105 # nosec B105
+TOKEN_TYPE_REFRESH = "refresh"  # noqa: S105 # nosec B105
+TOKEN_TYPE_MFA = "mfa"  # noqa: S105 # nosec B105
+
 # Placeholder for external auth users who authenticate via external provider
 # These users don't have local passwords. Using a distinctive value that:
 # 1. Cannot be a valid bcrypt hash (starts with $2b$)

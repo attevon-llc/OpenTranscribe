@@ -20,8 +20,11 @@ from app.api.endpoints.auth.authenticators import _authenticate_production_user
 from app.api.endpoints.auth.authenticators import _authenticate_testing_user
 from app.api.endpoints.auth.authenticators import _get_user_role
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.mfa_tokens import MFA_SCOPE_ENROLL
 from app.api.endpoints.auth.mfa_tokens import _create_mfa_token
 from app.api.endpoints.auth.mfa_tokens import _is_mfa_enabled
+from app.api.endpoints.auth.mfa_tokens import _is_mfa_required
+from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
@@ -33,6 +36,7 @@ from app.auth.lockout import check_and_record_attempt
 from app.auth.lockout import get_lockout_info
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.core.config import settings
 from app.db.base import get_db
@@ -62,9 +66,11 @@ def _perform_authentication(
         - user_uuid_str: User UUID string (empty if failed)
         - user_data: User data dict (empty if failed or testing)
         - actual_auth_method: How the user actually authenticated ("local", "ldap", etc.)
+          Empty when authentication failed.
 
     Raises:
-        HTTPException: If user is inactive (400) or other non-auth errors
+        HTTPException: Only for genuinely unexpected errors. Bad credentials AND a
+            disabled account both come back as a plain failure.
     """
     # TESTING enables auth shortcuts (a fabricated user, a password-free login path).
     # Gate on is_hardened as well, so the flag can never take effect in a real
@@ -73,11 +79,11 @@ def _perform_authentication(
         os.environ.get("TESTING", "False").lower() == "true" and not settings.is_hardened
     )
 
-    if testing_environment:
-        user_uuid_str = _authenticate_testing_user(db, username, password)
-        return True, user_uuid_str, {}, "local"
-
     try:
+        if testing_environment:
+            user_uuid_str = _authenticate_testing_user(db, username, password)
+            return True, user_uuid_str, {}, AUTH_TYPE_LOCAL
+
         user_uuid_str, user_data, actual_auth_method = _authenticate_production_user(
             db, username, password
         )
@@ -85,8 +91,51 @@ def _perform_authentication(
     except HTTPException as auth_error:
         if auth_error.status_code == status.HTTP_401_UNAUTHORIZED:
             return False, "", {}, ""
-        # Re-raise non-auth errors (400 for inactive user, etc.)
+        if auth_error.status_code == status.HTTP_400_BAD_REQUEST:
+            # "Inactive user account". Surfacing that 400 to an anonymous caller was a
+            # username-enumeration oracle (every other failure is a uniform 401), and
+            # because it was raised before the lockout recorder ran it also let an
+            # attacker probe a disabled account without ever tripping lockout. Treat it
+            # as an ordinary failed attempt; the reason stays in the server log only.
+            logger.warning("Login refused for username=%s: %s", username, auth_error.detail)
+            return False, "", {}, ""
+        # Re-raise genuinely unexpected errors.
         raise
+
+
+def _is_exempt_from_lockout(db: Session, username: str, user_uuid_str: str) -> bool:
+    """Whether this login attempt targets a lockout-exempt account.
+
+    Resolves the account from the attempt itself, so the exemption applies to failures
+    as well as successes (NIST AC-7 allows exempting emergency-access accounts, and a
+    super admin that can be locked out by an attacker is the outage that exemption
+    exists to prevent). Attempts are still recorded for audit — see
+    ``lockout._record_attempt_audit_only``.
+
+    Args:
+        db: Database session
+        username: Submitted username (email or LDAP uid)
+        user_uuid_str: UUID of the authenticated user, empty when the attempt failed
+
+    Returns:
+        bool: True only for a ``super_admin`` that has local fallback enabled.
+    """
+    try:
+        if user_uuid_str:
+            user = db.query(User).filter(User.uuid == UUID(user_uuid_str)).first()
+        else:
+            user = (
+                db.query(User)
+                .filter((User.email == username) | (User.ldap_uid == username))
+                .first()
+            )
+    except Exception:  # noqa: BLE001 - a lookup failure must never break login
+        logger.debug("Could not resolve account for lockout exemption", exc_info=True)
+        return False
+
+    if not user or not getattr(user, "allow_local_fallback", False):
+        return False
+    return bool(user.role == ROLE_SUPER_ADMIN)
 
 
 def _handle_lockout_check(
@@ -95,6 +144,7 @@ def _handle_lockout_check(
     client_ip: str,
     user_agent: str,
     exempt_from_lockout: bool = False,
+    auth_method: str = "",
 ) -> tuple[bool, int | None]:
     """Handle lockout logic with atomic check-and-record.
 
@@ -105,6 +155,8 @@ def _handle_lockout_check(
         user_agent: Client user agent
         exempt_from_lockout: If True, record attempts for audit but never lock.
             Used for super admin accounts with allow_local_fallback.
+        auth_method: How the caller actually authenticated. Empty on a failure where no
+            method ever succeeded, which is audited as "unknown".
 
     Returns:
         Tuple of (is_locked, unlock_time)
@@ -144,7 +196,10 @@ def _handle_lockout_check(
             source_ip=client_ip,
             user_agent=user_agent,
             error_code="INVALID_CREDENTIALS",
-            auth_method="ldap" if settings.LDAP_ENABLED else "local",
+            # The method that was actually used, not "whatever LDAP_ENABLED implies":
+            # deriving it from the setting audited EVERY failure on an LDAP-enabled
+            # deployment as an LDAP failure, including local-password failures.
+            auth_method=auth_method or "unknown",
             lockout_count=lockout_info.get("lockout_count", 0),
         )
 
@@ -170,7 +225,8 @@ def _check_mfa_requirement(
             and MFA should still apply.
 
     Returns:
-        JSONResponse with MFA token if MFA required, None otherwise
+        JSONResponse with an MFA half-token if MFA verification or enrolment is
+        required, None if the caller may be issued a full session.
     """
     # Skip MFA check if MFA is disabled (check DB first, then .env)
     if not _is_mfa_enabled(db):
@@ -198,6 +254,29 @@ def _check_mfa_requirement(
             }
         )
 
+    if _is_mfa_required(db):
+        # Deployment requires MFA and this user has not enrolled. Enrolment used to be
+        # enforced only by the SPA, so any API/CLI client that ignored the hint received
+        # a full, unrestricted session on an MFA_REQUIRED deployment.
+        if not _user_can_setup_mfa(user) and actual_auth_method != AUTH_TYPE_LOCAL:
+            # An external IdP owns this user's second factor and there is no local TOTP
+            # to enrol in — same reasoning as the PKI/Keycloak bypass above.
+            return None
+
+        # Same short-lived, single-use half-token as the verification branch, but scoped
+        # to enrolment: it carries the "mfa" type claim (so every access-token consumer
+        # rejects it) and only authorizes /mfa/setup + /mfa/verify-setup.
+        mfa_token = _create_mfa_token(user_uuid_str, user_role, scope=MFA_SCOPE_ENROLL)
+        logger.info(f"MFA enrollment required before access for user: {str(user.email)}")
+        return JSONResponse(
+            content={
+                "mfa_required": True,
+                "mfa_enrollment_required": True,
+                "mfa_token": mfa_token,
+                "message": "MFA enrollment is required before access is granted",
+            }
+        )
+
     return None
 
 
@@ -208,6 +287,7 @@ def _generate_login_tokens(
     user_role: str,
     user_agent: str,
     client_ip: str,
+    auth_method: str = "",
 ) -> JSONResponse:
     """Generate access and refresh tokens for successful login.
 
@@ -218,6 +298,7 @@ def _generate_login_tokens(
         user_role: User's role
         user_agent: Client user agent
         client_ip: Client IP address
+        auth_method: How the user actually authenticated ("local", "ldap", …)
 
     Returns:
         JSONResponse with access_token, refresh_token, and token metadata
@@ -246,9 +327,9 @@ def _generate_login_tokens(
         username=str(user.email),
         source_ip=client_ip,
         user_agent=user_agent,
-        auth_method="ldap"
-        if settings.LDAP_ENABLED and user.auth_type != AUTH_TYPE_LOCAL
-        else "local",
+        # The method actually used, not one inferred from LDAP_ENABLED + auth_type: a
+        # PKI/Keycloak user falling back to a local password was audited as "ldap".
+        auth_method=auth_method or str(user.auth_type),
     )
 
     logger.info(f"Login successful for user: {str(user.email)}")
@@ -308,16 +389,21 @@ def login_for_access_token(
         # Get client info for audit logging
         client_ip, user_agent = _get_client_info(request)
 
-        # Determine if user is exempt from lockout (super admin with local fallback)
-        exempt_from_lockout = False
-        if auth_success:
-            _user_for_lockout = db.query(User).filter(User.uuid == UUID(user_uuid_str)).first()
-            if _user_for_lockout and getattr(_user_for_lockout, "allow_local_fallback", False):
-                exempt_from_lockout = _user_for_lockout.role == "super_admin"
+        # Determine if user is exempt from lockout (super admin with local fallback).
+        # Resolved BEFORE the attempt is recorded and regardless of the outcome:
+        # computing it only on success made the exemption useless, since it is FAILED
+        # attempts that lock an account — and check_and_record_attempt short-circuits
+        # for exempt callers, so it never cleared the counter on success either.
+        exempt_from_lockout = _is_exempt_from_lockout(db, username, user_uuid_str)
 
         # Handle lockout check and recording
         is_locked, _ = _handle_lockout_check(
-            username, auth_success, client_ip, user_agent, exempt_from_lockout=exempt_from_lockout
+            username,
+            auth_success,
+            client_ip,
+            user_agent,
+            exempt_from_lockout=exempt_from_lockout,
+            auth_method=actual_auth_method,
         )
 
         if is_locked:
@@ -407,7 +493,15 @@ def login_for_access_token(
             return mfa_response
 
         # Generate tokens and return response
-        return _generate_login_tokens(db, user_db, user_uuid_str, user_role, user_agent, client_ip)
+        return _generate_login_tokens(
+            db,
+            user_db,
+            user_uuid_str,
+            user_role,
+            user_agent,
+            client_ip,
+            auth_method=actual_auth_method,
+        )
 
     except HTTPException:
         raise

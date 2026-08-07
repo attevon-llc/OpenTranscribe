@@ -25,8 +25,11 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
+
+# Deployment configuration is the super_admin tier: this router
+# pins the deployment's ASR engine/model.
+from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.auth import get_current_admin_user
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
 from app.db.base import get_db
@@ -940,7 +943,7 @@ def set_active_local_model(
     body: _SetLocalModelRequest,
     response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """Set the active local Whisper model (admin only).
 
@@ -1013,7 +1016,7 @@ def restart_gpu_worker(
     request: Request,
     response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """Gracefully restart the GPU Celery worker to apply a new model (admin only).
 

@@ -271,7 +271,27 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'tag' AND column_name = 'user_id')"
     )
 
+    # v375 guard: the auth_type CHECK is the revision's marker. role/auth_type
+    # NOT NULL are also part of it, but a constraint name is the cheapest probe
+    # and the three always land together.
+    has_auth_type_check = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_user_auth_type_valid')"
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v375: user auth invariants (role NOT NULL + auth_type CHECK).
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_auth_type_check
+    ):
+        return "v375_harden_user_auth_invariants"
     # v374: per-user tag ownership (tag.user_id).
     if (
         has_cloud_seams

@@ -53,12 +53,21 @@
     keycloak_enabled: false,
     pki_enabled: false,
     ldap_enabled: false,
+    local_enabled: true,
+    allow_registration: false,
     mfa_enabled: false,
     mfa_required: false,
     login_banner_enabled: false,
     login_banner_text: "",
     login_banner_classification: "UNCLASSIFIED",
   };
+
+  // The username/password form serves BOTH local accounts and LDAP — LDAP
+  // credentials are posted to the same /auth/login endpoint — so it must not be
+  // gated on `local_enabled` alone, or an LDAP-only deployment loses its only
+  // way in.
+  $: credentialFormEnabled = authMethods.local_enabled || authMethods.ldap_enabled;
+  $: ssoButtonsEnabled = authMethods.keycloak_enabled || authMethods.pki_enabled;
 
   // Validation
   let emailValid = true;
@@ -325,13 +334,17 @@
         console.error('Login.svelte: Login failed:', result.message);
         toastStore.error(result.message || $t('auth.loginFailed'));
 
-        // Focus appropriate field based on error type
-        if (result.message && result.message.toLowerCase().includes('email')) {
-          document.getElementById('email')?.focus();
-        } else if (result.message && (result.message.toLowerCase().includes('password') || result.message.toLowerCase().includes('credentials'))) {
+        // Steer focus from the HTTP status, never from the message text: the
+        // message is localised, so matching English substrings ('email',
+        // 'credentials', …) silently no-ops in the other seven locales.
+        // 401/403 = the credentials were rejected; 400/422 = the identifier
+        // itself was malformed.
+        if (result.status === 401 || result.status === 403) {
           document.getElementById('password')?.focus();
           // Clear password on failed authentication for security
           password = "";
+        } else if (result.status === 400 || result.status === 422) {
+          document.getElementById('email')?.focus();
         }
       }
     } catch (err) {
@@ -568,7 +581,10 @@
         </div>
       </div>
     {:else}
-      <!-- Normal Login Form -->
+      <!-- Normal Login Form. Hidden entirely when neither local nor LDAP
+           credentials are accepted — otherwise the user fills it in and the
+           backend rejects every submission. -->
+      {#if credentialFormEnabled}
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
       {#if successMessage}
         <div class="success-message" role="alert" aria-live="polite">
@@ -646,11 +662,16 @@
         {/if}
       </div>
 
-      <div class="forgot-password-row">
-        <a href="/forgot-password" class="forgot-password-link">
-          {$t('auth.forgotPassword')}
-        </a>
-      </div>
+      <!-- Self-service reset only exists for passwords stored here. An
+           LDAP-only deployment renders the form above but no reset link — the
+           directory owns those credentials. -->
+      {#if authMethods.local_enabled}
+        <div class="forgot-password-row">
+          <a href="/forgot-password" class="forgot-password-link">
+            {$t('auth.forgotPassword')}
+          </a>
+        </div>
+      {/if}
 
       <button
         type="submit"
@@ -664,11 +685,14 @@
         {/if}
       </button>
     </form>
+    {/if}
 
-    {#if authMethods.keycloak_enabled || authMethods.pki_enabled}
-      <div class="auth-divider">
-        <span>{$t('auth.orContinueWith')}</span>
-      </div>
+    {#if ssoButtonsEnabled}
+      {#if credentialFormEnabled}
+        <div class="auth-divider">
+          <span>{$t('auth.orContinueWith')}</span>
+        </div>
+      {/if}
 
       <div class="external-auth-buttons">
         {#if authMethods.keycloak_enabled}
@@ -711,12 +735,20 @@
       </div>
     {/if}
 
-    <div class="auth-links">
-      <span class="auth-link-text">{$t('auth.needAccountPrefix')} <a
-        href="/register"
-        class="auth-link"
-      >{$t('auth.register')}</a></span>
-    </div>
+    {#if !credentialFormEnabled && !ssoButtonsEnabled}
+      <p class="no-auth-methods" role="alert">{$t('auth.noAuthMethodsAvailable')}</p>
+    {/if}
+
+    <!-- Only advertise signup when the backend actually accepts it; otherwise
+         the user fills the whole registration form and gets a 403. -->
+    {#if authMethods.allow_registration}
+      <div class="auth-links">
+        <span class="auth-link-text">{$t('auth.needAccountPrefix')} <a
+          href="/register"
+          class="auth-link"
+        >{$t('auth.register')}</a></span>
+      </div>
+    {/if}
     {/if}
     {/if}
   </div>
@@ -837,6 +869,18 @@
     cursor: not-allowed;
   }
 
+
+  /* Shown when the deployment advertises no usable sign-in method at all. */
+  .no-auth-methods {
+    margin: 0;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--background-color);
+    color: var(--text-light);
+    font-size: 0.9rem;
+    text-align: center;
+  }
 
   .auth-links {
     margin-top: 1.5rem;

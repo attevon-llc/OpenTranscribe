@@ -26,6 +26,21 @@ from app.utils.encryption import encrypt_api_key
 
 logger = logging.getLogger(__name__)
 
+#: Marker returned in place of a stored secret. It exists so the admin UI can show
+#: "a value is set" without receiving the value — but it must NEVER be written back
+#: as if it were one. The API used to return the literal ``***REDACTED***``, the
+#: panel bound it into the password field, and clicking Save on any OTHER field in
+#: the same tab re-encrypted the placeholder over the real LDAP bind password /
+#: Keycloak client secret, with a success toast. Writes now reject it outright.
+SENSITIVE_SET_SENTINEL = "__SECRET_IS_SET__"  # noqa: S105 # nosec B105
+
+#: Values that mean "the user did not type a new secret" and must leave the stored
+#: one untouched. Empty is the deliberate "leave blank to keep current" case;
+#: the rest are placeholders older clients may echo back.
+SENSITIVE_NO_CHANGE_VALUES = frozenset(
+    {SENSITIVE_SET_SENTINEL, "***REDACTED***", "***ENCRYPTED***", ""}
+)
+
 
 class AuthConfigService:
     """Service for managing authentication configuration.
@@ -110,8 +125,16 @@ class AuthConfigService:
         "password_require_numbers": "bool",
     }
 
+    #: Lazily-built reverse of ``ENV_TO_CONFIG_MAPPING`` (config key -> env var).
+    _CONFIG_TO_ENV: dict[str, str] = {}
+
     # Environment variable to config key mapping
     ENV_TO_CONFIG_MAPPING = {
+        # Local / identity source. ALLOW_OPEN_REGISTRATION was missing here, which
+        # is why the admin UI's self-registration toggle did nothing: the endpoint
+        # read the env var and the DB key had no env counterpart to migrate from.
+        "ALLOW_OPEN_REGISTRATION": "allow_registration",
+        "LOCAL_AUTH_ENABLED": "local_enabled",
         # LDAP
         "LDAP_ENABLED": "ldap_enabled",
         "LDAP_SERVER": "ldap_server",
@@ -402,6 +425,17 @@ class AuthConfigService:
 
         for config in configs:
             value = config.config_value  # type: ignore[assignment]
+
+            # A sensitive value NEVER leaves this function in readable form when
+            # the caller did not ask for it decrypted. The masking below used to
+            # live inside the `and decrypt` branch, so the one caller that passes
+            # decrypt=False (the admin GET /{category} endpoint) skipped it and
+            # returned the raw CIPHERTEXT to the browser — the opposite of what
+            # the endpoint's own comment claimed.
+            if config.is_sensitive and not decrypt:
+                result[config.config_key] = SENSITIVE_SET_SENTINEL if value else None
+                continue
+
             if config.is_sensitive and decrypt and value:
                 try:
                     decrypted = decrypt_api_key(value)  # type: ignore[call-overload]
@@ -600,8 +634,13 @@ class AuthConfigService:
         for key, value in config_dict.items():
             is_sensitive = key in AuthConfigService.SENSITIVE_KEYS
 
-            # Skip empty sensitive values (don't overwrite with empty)
-            if is_sensitive and (value is None or value == ""):
+            # Leave the stored secret alone unless the caller actually typed a new
+            # one. Skipping only None/"" was not enough: the read path handed the
+            # client a placeholder, the client submitted it back verbatim, and it
+            # was encrypted over the real credential.
+            if is_sensitive and (
+                value is None or (isinstance(value, str) and value in SENSITIVE_NO_CHANGE_VALUES)
+            ):
                 continue
 
             config = AuthConfigService.set_config(
@@ -636,8 +675,23 @@ class AuthConfigService:
             return AuthConfigService._convert_value(db_value, data_type)
 
         # Fall back to environment/settings
-        env_key = key.upper()
-        return getattr(settings, env_key, None)
+        return getattr(settings, AuthConfigService.env_var_for(key), None)
+
+    @staticmethod
+    def env_var_for(config_key: str) -> str:
+        """Return the ``Settings`` attribute backing *config_key*.
+
+        Most keys are just the upper-cased name, but a handful deliberately are
+        not — ``allow_registration`` is ``ALLOW_OPEN_REGISTRATION``, for instance.
+        ``ENV_TO_CONFIG_MAPPING`` recorded those pairs and nothing consulted it,
+        so the mismatched keys silently resolved to ``None`` and could never be
+        migrated out of the environment.
+        """
+        if not AuthConfigService._CONFIG_TO_ENV:
+            AuthConfigService._CONFIG_TO_ENV.update(
+                {v: k for k, v in AuthConfigService.ENV_TO_CONFIG_MAPPING.items()}
+            )
+        return AuthConfigService._CONFIG_TO_ENV.get(config_key, config_key.upper())
 
     @staticmethod
     def get_audit_log(
@@ -697,8 +751,10 @@ class AuthConfigService:
                 if existing:
                     continue
 
-                # Find corresponding env variable
-                env_key = key.upper()
+                # Find corresponding env variable. Not simply key.upper(): a few
+                # keys deliberately differ (allow_registration is
+                # ALLOW_OPEN_REGISTRATION), and those silently resolved to None.
+                env_key = AuthConfigService.env_var_for(key)
                 env_value = getattr(settings, env_key, None)
 
                 if env_value is not None:

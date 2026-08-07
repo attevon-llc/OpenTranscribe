@@ -18,6 +18,8 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.dependencies import oauth2_scheme
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.constants import AUTH_TYPE_KEYCLOAK
 from app.auth.direct_auth import create_access_token as direct_create_token
@@ -197,9 +199,13 @@ async def logout(
 
     client_ip, user_agent = _get_client_info(request)
 
+    # Clearing the cookies is the one thing logout MUST always do. Previously the
+    # handler caught only JWTError, so a Redis outage inside revoke_token escaped
+    # as a 500 and the browser kept valid credentials on a "failed" logout.
     try:
         if token:
-            # Decode token to get JTI and user info
+            # Decode token to get JTI and user info. Purpose-agnostic on purpose:
+            # logging out with a refresh token is still a logout.
             payload = jwt.decode(
                 token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
             )
@@ -224,6 +230,7 @@ async def logout(
                 user_uuid = UUID(user_uuid_str)
                 user = db.query(User).filter(User.uuid == user_uuid).first()
                 if user:
+                    federated_ok: bool | None = None
                     # Keycloak federated logout (issue #125)
                     if user.auth_type == AUTH_TYPE_KEYCLOAK and user.keycloak_refresh_token:
                         try:
@@ -231,32 +238,45 @@ async def logout(
                             decrypted_rt = MFAService.decrypt_totp_secret(
                                 user.keycloak_refresh_token
                             )
-                            await call_keycloak_logout(decrypted_rt, cfg=kc_cfg)
+                            federated_ok = await call_keycloak_logout(decrypted_rt, cfg=kc_cfg)
                         except Exception as e:
                             logger.warning(f"Keycloak federated logout failed: {e}")
+                            federated_ok = False
                         finally:
                             # Always clear stored token regardless of outcome
                             user.keycloak_refresh_token = None
                             db.commit()
 
-                    audit_logger.log_logout(
+                    # A failed federated logout leaves the IdP session alive while
+                    # the user is told they signed out — on a shared machine that is
+                    # a real exposure, so it has to be visible in the audit trail
+                    # rather than only in a warning log.
+                    audit_logger.log(
+                        event_type=AuditEventType.AUTH_LOGOUT,
+                        outcome=AuditOutcome.SUCCESS
+                        if federated_ok is not False
+                        else AuditOutcome.FAILURE,
                         user_id=user.id,
                         username=str(user.email),
                         source_ip=client_ip,
                         user_agent=user_agent,
-                        all_sessions=False,
+                        details={
+                            "all_sessions": False,
+                            "federated_logout": federated_ok,
+                        },
                     )
-
-        response = JSONResponse(content={"message": "Successfully logged out"})
-        clear_auth_cookies(response)
-        return response
 
     except JWTError as e:
         logger.warning(f"Logout with invalid token: {e}")
-        # Still return success - user wanted to logout anyway
-        response = JSONResponse(content={"message": "Successfully logged out"})
-        clear_auth_cookies(response)
-        return response
+    except Exception as e:
+        # Infrastructure failure (Redis, database). The session is still ended
+        # client-side; log loudly so the incomplete server-side revocation is
+        # visible rather than silently swallowed.
+        logger.error("Logout could not fully revoke server-side state: %s", e)
+
+    response = JSONResponse(content={"message": "Successfully logged out"})
+    clear_auth_cookies(response)
+    return response
 
 
 @router.post("/logout/all")

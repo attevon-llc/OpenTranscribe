@@ -61,6 +61,13 @@ export interface AuthMethods {
   keycloak_enabled: boolean;
   pki_enabled: boolean;
   ldap_enabled: boolean;
+  // Whether accounts holding a local password may sign in at all. Note this is
+  // NOT the same as "show the username/password form" — LDAP authenticates
+  // through that same form, so the form is gated on `local_enabled ||
+  // ldap_enabled`.
+  local_enabled: boolean;
+  // Whether anyone may create their own account via POST /auth/register.
+  allow_registration: boolean;
   mfa_enabled: boolean;
   mfa_required: boolean;
   login_banner_enabled: boolean;
@@ -235,6 +242,10 @@ export async function login(
 ): Promise<{
   success: boolean;
   message?: string;
+  // HTTP status of the failed request. Callers must key their UI off THIS, not
+  // off substrings of `message` — `message` is localised, so `.includes('email')`
+  // silently matches nothing in the other seven locales.
+  status?: number;
   mfa_required?: boolean;
   mfa_token?: string;
 }> {
@@ -322,6 +333,7 @@ export async function login(
     return {
       success: false,
       message: errorMessage,
+      status: err.response?.status,
     };
   }
 }
@@ -378,7 +390,7 @@ export async function loginWithExternalAuth(): Promise<{ success: boolean; messa
     const userData = await fetchUserInfo();
     if (!userData) {
       authStore.reset();
-      return { success: false, message: 'Failed to load account after sign-in.' };
+      return { success: false, message: get(t)('auth.error.externalAccountLoadFailed') };
     }
     authStore.setToken('external');
     authStore.setReady(true);
@@ -386,7 +398,7 @@ export async function loginWithExternalAuth(): Promise<{ success: boolean; messa
   } catch (error) {
     console.error('auth.ts: external-auth login hydration failed:', error);
     authStore.reset();
-    return { success: false, message: 'Sign-in could not be completed.' };
+    return { success: false, message: get(t)('auth.error.externalSignInIncomplete') };
   }
 }
 
@@ -436,12 +448,25 @@ export async function getAuthMethods(): Promise<AuthMethods> {
     return response.data;
   } catch (error) {
     console.error('Failed to fetch auth methods:', error);
-    // Return default methods if fetch fails
+    // Fail-closed defaults when the probe fails. The two new flags are
+    // deliberately ASYMMETRIC:
+    //   local_enabled: true  — "closed" here means "still reachable". A
+    //     self-hosted install whose /auth/methods probe fails (backend
+    //     restarting, proxy hiccup) must still render the sign-in form, or a
+    //     transient error locks every operator out of their own deployment.
+    //     The backend is the authority and rejects the login anyway if local
+    //     auth really is off.
+    //   allow_registration: false — "closed" here means "offer nothing". A
+    //     signup link we cannot confirm is enabled either 403s after the user
+    //     fills the whole form, or advertises an open-registration surface the
+    //     operator deliberately turned off. Both are worse than hiding it.
     return {
       methods: ['local'],
       keycloak_enabled: false,
       pki_enabled: false,
       ldap_enabled: false,
+      local_enabled: true,
+      allow_registration: false,
       mfa_enabled: false,
       mfa_required: false,
       login_banner_enabled: false,
@@ -463,7 +488,7 @@ export async function loginWithKeycloak(): Promise<{
     if (!authorization_url) {
       return {
         success: false,
-        message: 'Failed to get Keycloak authorization URL',
+        message: get(t)('auth.error.keycloakAuthUrlMissing'),
       };
     }
 
@@ -476,11 +501,11 @@ export async function loginWithKeycloak(): Promise<{
       parsed = new URL(authorization_url);
     } catch {
       console.error('Keycloak login: invalid authorization_url format');
-      return { success: false, message: 'Invalid authorization URL' };
+      return { success: false, message: get(t)('auth.error.keycloakAuthUrlInvalid') };
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
       console.error('Keycloak login: non-http(s) protocol rejected', parsed.protocol);
-      return { success: false, message: 'Invalid authorization URL protocol' };
+      return { success: false, message: get(t)('auth.error.keycloakAuthUrlProtocol') };
     }
 
     // Redirect to Keycloak login page
@@ -492,7 +517,7 @@ export async function loginWithKeycloak(): Promise<{
       success: false,
       message:
         (asAuthError(error).response?.data?.detail as string) ||
-        'Failed to initiate Keycloak login',
+        get(t)('auth.error.keycloakInitFailed'),
     };
   }
 }
@@ -522,7 +547,7 @@ export async function handleKeycloakCallback(
 
     return {
       success: false,
-      message: 'Invalid response from Keycloak callback',
+      message: get(t)('auth.error.keycloakCallbackInvalidResponse'),
     };
   } catch (error: unknown) {
     console.error('Keycloak callback error:', error);
@@ -530,7 +555,7 @@ export async function handleKeycloakCallback(
       success: false,
       message:
         (asAuthError(error).response?.data?.detail as string) ||
-        'Failed to complete Keycloak authentication',
+        get(t)('auth.error.keycloakCallbackFailed'),
     };
   }
 }
@@ -558,17 +583,18 @@ export async function loginWithPKI(): Promise<{
 
     return {
       success: false,
-      message: 'Invalid response from PKI authentication',
+      message: get(t)('auth.error.pkiInvalidResponse'),
     };
   } catch (rawError: unknown) {
     const error = asAuthError(rawError);
     console.error('PKI login error:', rawError);
 
-    let message = 'PKI authentication failed';
+    let message = get(t)('auth.error.pkiFailed');
     if (error.response?.status === 401) {
-      message = 'Invalid or missing client certificate';
+      message = get(t)('auth.error.pkiCertificateMissing');
     } else if (error.response?.status === 400) {
-      message = (error.response?.data?.detail as string) || 'PKI authentication is not enabled';
+      message =
+        (error.response?.data?.detail as string) || get(t)('auth.error.pkiNotEnabled');
     }
 
     return { success: false, message };
@@ -613,7 +639,8 @@ export async function verifyMFA(
     if (error.response?.status === 401) {
       message = (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidCode');
     } else if (error.response?.status === 400) {
-      message = (error.response?.data?.detail as string) || 'Invalid MFA token or code';
+      message =
+        (error.response?.data?.detail as string) || get(t)('auth.error.mfaInvalidToken');
     } else if (error.response?.status === 429) {
       message = get(t)('auth.error.mfaTooManyAttempts');
     }

@@ -13,47 +13,48 @@
     return val !== undefined ? val : defaultVal;
   }
 
-  let formData = {
-    local_enabled: getVal('local_enabled', true),
-    allow_registration: getVal('allow_registration', false),
-    // Password policy
-    password_min_length: getVal('password_min_length', 12),
-    password_require_uppercase: getVal('password_require_uppercase', true),
-    password_require_lowercase: getVal('password_require_lowercase', true),
-    password_require_numbers: getVal('password_require_numbers', true),
-    password_require_special: getVal('password_require_special', true),
-    password_max_age_days: getVal('password_max_age_days', 90),
-    password_history_count: getVal('password_history_count', 5),
-    // MFA
-    mfa_enabled: getVal('mfa_enabled', true),
-    mfa_required: getVal('mfa_required', false),
-    mfa_issuer: getVal('mfa_issuer', 'OpenTranscribe'),
-    // Rate limiting
-    max_login_attempts: getVal('max_login_attempts', 5),
-    lockout_duration_minutes: getVal('lockout_duration_minutes', 30)
-  };
+  // Every key below must be the name the BACKEND reads (app/core/auth_settings.py).
+  // Four fields used to write frontend-only aliases — password_require_numbers,
+  // mfa_issuer, max_login_attempts, lockout_duration_minutes — which were stored
+  // faithfully and then never consulted by anything, so the panel silently did
+  // nothing. Defaults below mirror the backend's coded defaults so a fresh
+  // install shows the truth rather than an invented policy.
+  function defaults() {
+    return {
+      local_enabled: getVal('local_enabled', true),
+      allow_registration: getVal('allow_registration', true),
+      // Password policy
+      password_min_length: getVal('password_min_length', 12),
+      password_require_uppercase: getVal('password_require_uppercase', true),
+      password_require_lowercase: getVal('password_require_lowercase', true),
+      password_require_digit: getVal('password_require_digit', true),
+      password_require_special: getVal('password_require_special', true),
+      password_max_age_days: getVal('password_max_age_days', 60),
+      // FedRAMP IA-5 requires 24 remembered passwords, not 5.
+      password_history_count: getVal('password_history_count', 24),
+      // MFA
+      mfa_enabled: getVal('mfa_enabled', false),
+      mfa_required: getVal('mfa_required', false),
+      mfa_issuer_name: getVal('mfa_issuer_name', 'OpenTranscribe'),
+      // Account lockout
+      account_lockout_threshold: getVal('account_lockout_threshold', 5),
+      account_lockout_duration_minutes: getVal('account_lockout_duration_minutes', 15)
+    };
+  }
+
+  let formData = defaults();
 
   let saving = false;
 
   // Update formData when config changes
   $: if (config) {
-    formData = {
-      local_enabled: getVal('local_enabled', true),
-      allow_registration: getVal('allow_registration', false),
-      password_min_length: getVal('password_min_length', 12),
-      password_require_uppercase: getVal('password_require_uppercase', true),
-      password_require_lowercase: getVal('password_require_lowercase', true),
-      password_require_numbers: getVal('password_require_numbers', true),
-      password_require_special: getVal('password_require_special', true),
-      password_max_age_days: getVal('password_max_age_days', 90),
-      password_history_count: getVal('password_history_count', 5),
-      mfa_enabled: getVal('mfa_enabled', true),
-      mfa_required: getVal('mfa_required', false),
-      mfa_issuer: getVal('mfa_issuer', 'OpenTranscribe'),
-      max_login_attempts: getVal('max_login_attempts', 5),
-      lockout_duration_minutes: getVal('lockout_duration_minutes', 30)
-    };
+    formData = defaults();
   }
+
+  // Server-side refusal: self-registration creates a LOCAL password account, so
+  // it cannot be enabled while local password login is off. Warn before saving
+  // rather than letting the save bounce.
+  $: registrationConflict = formData.allow_registration && !formData.local_enabled;
 
   function handleChange() {
     dispatch('change');
@@ -72,7 +73,7 @@
     }
     if (formData.password_require_uppercase) requirements.push($t('settings.localAuth.uppercase'));
     if (formData.password_require_lowercase) requirements.push($t('settings.localAuth.lowercase'));
-    if (formData.password_require_numbers) requirements.push($t('settings.localAuth.numbers'));
+    if (formData.password_require_digit) requirements.push($t('settings.localAuth.numbers'));
     if (formData.password_require_special) requirements.push($t('settings.localAuth.specialChars'));
     return requirements.join(', ');
   }
@@ -88,7 +89,15 @@
       />
       <span class="toggle-text">{$t('settings.localAuth.enableLocal')}</span>
     </label>
+    <span class="help-text">{$t('settings.localAuth.enableLocalHelp')}</span>
   </div>
+
+  {#if registrationConflict}
+    <!-- Lives outside the greyed-out registration section on purpose: that
+         section is dimmed and pointer-events:none the moment local login is
+         switched off, which is exactly when this warning matters. -->
+    <p class="warning-banner" role="alert">{$t('settings.localAuth.registrationRequiresLocal')}</p>
+  {/if}
 
   <div class="section" class:disabled={!formData.local_enabled}>
     <h3>{$t('settings.localAuth.registrationSettings')}</h3>
@@ -149,7 +158,7 @@
       <label class="checkbox-label">
         <input
           type="checkbox"
-          bind:checked={formData.password_require_numbers}
+          bind:checked={formData.password_require_digit}
           on:change={handleChange}
           disabled={!formData.local_enabled}
         />
@@ -226,11 +235,11 @@
         <span class="help-text indented">{$t('settings.localAuth.requireMfaHelp')}</span>
 
         <div class="form-group">
-          <label for="mfa_issuer">{$t('settings.localAuth.mfaIssuerName')}</label>
+          <label for="mfa_issuer_name">{$t('settings.localAuth.mfaIssuerName')}</label>
           <input
-            id="mfa_issuer"
+            id="mfa_issuer_name"
             type="text"
-            bind:value={formData.mfa_issuer}
+            bind:value={formData.mfa_issuer_name}
             on:input={handleChange}
             placeholder="OpenTranscribe"
             disabled={!formData.local_enabled}
@@ -246,11 +255,11 @@
 
     <div class="form-row">
       <div class="form-group">
-        <label for="max_login_attempts">{$t('settings.localAuth.maxLoginAttempts')}</label>
+        <label for="account_lockout_threshold">{$t('settings.localAuth.maxLoginAttempts')}</label>
         <input
-          id="max_login_attempts"
+          id="account_lockout_threshold"
           type="number"
-          bind:value={formData.max_login_attempts}
+          bind:value={formData.account_lockout_threshold}
           on:input={handleChange}
           min="3"
           max="20"
@@ -260,11 +269,11 @@
       </div>
 
       <div class="form-group">
-        <label for="lockout_duration_minutes">{$t('settings.localAuth.lockoutDuration')}</label>
+        <label for="account_lockout_duration_minutes">{$t('settings.localAuth.lockoutDuration')}</label>
         <input
-          id="lockout_duration_minutes"
+          id="account_lockout_duration_minutes"
           type="number"
-          bind:value={formData.lockout_duration_minutes}
+          bind:value={formData.account_lockout_duration_minutes}
           on:input={handleChange}
           min="1"
           max="1440"
@@ -313,6 +322,17 @@
   .toggle-text {
     font-weight: 500;
     font-size: 1rem;
+  }
+
+  .warning-banner {
+    margin: 0 0 1.5rem 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    border-radius: 6px;
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--color-text);
+    font-size: 0.8125rem;
+    line-height: 1.45;
   }
 
   .section {

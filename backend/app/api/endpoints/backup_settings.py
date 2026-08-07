@@ -24,7 +24,10 @@ from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.endpoints.auth import get_current_admin_user
+
+# Deployment configuration is the super_admin tier: this router
+# holds the backup destination and its stored S3 secret.
+from app.api.endpoints.auth import get_current_active_superuser
 from app.db.base import get_db
 from app.services import backup_service
 
@@ -209,7 +212,7 @@ def _settings_response(cfg: dict, db: Session) -> BackupSettings:
 @router.get("", response_model=BackupSettings)
 def get_backup_settings(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> BackupSettings:
     """Return scheduled-backup settings + destination mount status (admin only)."""
     return _settings_response(backup_service.get_settings(db), db)
@@ -219,7 +222,7 @@ def get_backup_settings(
 def update_backup_settings(
     body: BackupSettingsUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> BackupSettings:
     """Update scheduled-backup settings (only provided fields)."""
     updates = body.model_dump(exclude_none=True)
@@ -237,7 +240,7 @@ def update_backup_settings(
 @router.get("/status", response_model=BackupStatus)
 def get_backup_status(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> BackupStatus:
     """Return last run / result and whether the schedule is currently due."""
     cfg = backup_service.get_settings(db)
@@ -273,7 +276,7 @@ def get_backup_status(
 def test_s3_connection(
     body: BackupSettingsUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> S3ConnectionTestResponse:
     """Test S3 reachability with the saved (or just-submitted) credentials.
 
@@ -305,7 +308,7 @@ def test_s3_connection(
 @router.post("/run", response_model=BackupRunResponse)
 def run_backup_now(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> BackupRunResponse:
     """Dispatch a backup immediately (bypasses the schedule)."""
     from app.tasks.backup_tasks import run_backup
@@ -320,7 +323,7 @@ def run_backup_now(
 @router.get("/list", response_model=BackupListResponse)
 def list_backup_files(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> BackupListResponse:
     """List existing backup files in the configured destination, newest first."""
     cfg = backup_service.get_settings(db)

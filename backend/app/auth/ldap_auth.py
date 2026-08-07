@@ -21,6 +21,10 @@ from sqlalchemy.exc import IntegrityError
 from app.auth.constants import AUTH_TYPE_LDAP
 from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
+from app.auth.roles import ELEVATED_ROLES
+from app.auth.roles import ROLE_ADMIN
+from app.auth.roles import ROLE_USER
+from app.auth.roles import role_implies_superuser
 from app.core.config import settings as env_settings
 
 logger = logging.getLogger(__name__)
@@ -593,17 +597,17 @@ def _create_ldap_user(db, username: str, email: str, ldap_data: LdapUserData):
     from app.models.user import User
 
     logger.info(f"Creating new user from LDAP: {username} ({email})")
+    # External IdPs grant at most 'admin'; super_admin is local-only.
+    role = ROLE_ADMIN if ldap_data["is_admin"] else ROLE_USER
     user = User(
         email=email,
         full_name=ldap_data["full_name"] or email.split("@")[0],
         hashed_password=LDAP_NO_PASSWORD,
         auth_type=AUTH_TYPE_LDAP,
         ldap_uid=username,
-        role="admin" if ldap_data["is_admin"] else "user",
+        role=role,
         is_active=True,
-        # External IdPs grant at most 'admin'; super_admin is local-only, and
-        # is_superuser mirrors (role == super_admin) — so it is always False here.
-        is_superuser=False,
+        is_superuser=role_implies_superuser(role),
     )
     db.add(user)
 
@@ -637,16 +641,16 @@ def _update_ldap_user(db, user, username: str, email: str, ldap_data: LdapUserDa
 
     if ldap_data["is_admin"]:
         # External IdPs grant at most 'admin'; never demote a local super_admin.
-        if user.role not in ("admin", "super_admin"):
+        if user.role not in ELEVATED_ROLES:
             logger.info(f"Promoting LDAP user {username} to admin")
-            user.role = "admin"
-        user.is_superuser = user.role == "super_admin"
-    elif user.role == "admin":
+            user.role = ROLE_ADMIN
+        user.is_superuser = role_implies_superuser(user.role)
+    elif user.role == ROLE_ADMIN:
         logger.info(
             f"Demoting LDAP user {username} from admin (removed from LDAP admin_users/admin_groups)"
         )
-        user.role = "user"
-        user.is_superuser = False
+        user.role = ROLE_USER
+        user.is_superuser = role_implies_superuser(user.role)
 
     db.commit()
     return user
@@ -669,17 +673,21 @@ def _convert_local_user_to_ldap(db, user, username: str, email: str, ldap_data: 
     user.full_name = ldap_data["full_name"] or user.full_name
 
     if ldap_data["is_admin"]:
-        if user.role != "admin":
+        # External IdPs grant at most 'admin'; never demote a local super_admin.
+        # Setting role='admin' with is_superuser=True here used to violate the
+        # ck_user_superuser_matches_role CHECK constraint (v369) and 500 the commit
+        # below, locking every LDAP-admin local user out of conversion.
+        if user.role not in ELEVATED_ROLES:
             logger.info(f"Promoting converted LDAP user {username} to admin")
-        user.role = "admin"
-        user.is_superuser = True
-    elif user.role == "admin":
+            user.role = ROLE_ADMIN
+        user.is_superuser = role_implies_superuser(user.role)
+    elif user.role == ROLE_ADMIN:
         logger.info(
             f"Demoting converted LDAP user {username} from admin "
             "(not in LDAP admin_users/admin_groups)"
         )
-        user.role = "user"
-        user.is_superuser = False
+        user.role = ROLE_USER
+        user.is_superuser = role_implies_superuser(user.role)
 
     db.commit()
     return user

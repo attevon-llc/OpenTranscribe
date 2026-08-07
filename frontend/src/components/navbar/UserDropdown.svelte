@@ -3,6 +3,7 @@
     full_name?: string | null;
     email?: string | null;
     auth_type?: string | null;
+    role?: string | null;
   }
 </script>
 
@@ -13,6 +14,10 @@
 
   /** The currently signed-in user (null when unauthenticated). */
   export let user: NavbarUser | null = null;
+
+  // Flower exposes task arguments (file/user IDs) and worker topology, so the
+  // entry is admin-only. Cosmetic only — nginx auth_request is the real gate.
+  $: isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const dispatch = createEventDispatcher<{
     open: void;
@@ -158,17 +163,19 @@
         <span>{$t('nav.docs')}</span>
       </a>
 
-      <button
-        class="dropdown-item"
-        on:click={handleFlower}
-        aria-label={$t('nav.flowerDashboard')}
-        title={$t('nav.flowerDashboard')}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-        </svg>
-        <span>{$t('nav.flowerDashboard')}</span>
-      </button>
+      {#if isAdmin}
+        <button
+          class="dropdown-item"
+          on:click={handleFlower}
+          aria-label={$t('nav.flowerDashboard')}
+          title={$t('nav.flowerDashboard')}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          <span>{$t('nav.flowerDashboard')}</span>
+        </button>
+      {/if}
       <div class="dropdown-divider"></div>
       <button
         class="dropdown-item logout"

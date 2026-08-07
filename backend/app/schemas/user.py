@@ -160,11 +160,21 @@ class MFAVerifySetupRequest(BaseModel):
 
 
 class MFAVerifySetupResponse(BaseModel):
-    """Response from successful MFA setup verification."""
+    """Response from successful MFA setup verification.
+
+    The token fields are populated ONLY for forced enrolment — when the call was
+    authorized by an enrolment half-token rather than an existing session, completing
+    setup also issues the session (matching what /mfa/verify returns). A user who was
+    already logged in gets them as None; they already have a session.
+    """
 
     success: bool
     backup_codes: list[str]  # One-time use backup codes (shown only once)
     message: str
+    access_token: str | None = None
+    token_type: str | None = None
+    refresh_token: str | None = None
+    expires_in: int | None = None
 
 
 class MFAVerifyRequest(BaseModel):
@@ -207,6 +217,9 @@ class MFALoginResponse(BaseModel):
 
     mfa_required: bool = True
     mfa_token: str  # Short-lived token for MFA verification step
+    # True when the deployment requires MFA and this user has NOT enrolled: the token is
+    # scoped to /mfa/setup + /mfa/verify-setup, not /mfa/verify.
+    mfa_enrollment_required: bool = False
     message: str = "MFA verification required"
 
 
@@ -220,6 +233,31 @@ class LoginBannerResponse(BaseModel):
     text: str
     classification: str
     requires_acknowledgment: bool
+
+
+class AuthMethodsResponse(BaseModel):
+    """What the login page needs in order to render itself correctly.
+
+    This endpoint returned a bare dict, so its contract existed only in a
+    hand-maintained TypeScript interface and was invisible to OpenAPI. Every
+    field below drives a rendering decision in the SPA.
+    """
+
+    methods: list[str]
+    keycloak_enabled: bool
+    pki_enabled: bool
+    ldap_enabled: bool
+    #: Whether accounts holding a local password may sign in. The password form
+    #: stays visible when LDAP is on, because LDAP authenticates through it too.
+    local_enabled: bool
+    #: Whether to offer a "create an account" link at all.
+    allow_registration: bool
+    external_providers: list[str]
+    mfa_enabled: bool
+    mfa_required: bool
+    login_banner_enabled: bool
+    login_banner_text: str
+    login_banner_classification: str
 
 
 class BannerAcknowledgmentRequest(BaseModel):

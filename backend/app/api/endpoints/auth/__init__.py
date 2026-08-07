@@ -20,6 +20,7 @@ Layout:
 - :mod:`mfa_tokens` — MFA token minting / single-use replay protection.
 - :mod:`mfa` — the MFA endpoints.
 - :mod:`sessions` — refresh rotation, logout, active sessions.
+- :mod:`flower` — the nginx ``auth_request`` gate for the Flower dashboard.
 
 Sub-routers are included in the same order the routes were declared in the flat
 module. No auth route carries a path parameter, so include order is presentation
@@ -44,6 +45,7 @@ from app.api.endpoints.auth.dependencies import get_current_admin_user
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.dependencies import get_optional_current_user
 from app.api.endpoints.auth.dependencies import oauth2_scheme
+from app.api.endpoints.auth.flower import flower_authz
 from app.api.endpoints.auth.keycloak import keycloak_callback
 from app.api.endpoints.auth.keycloak import keycloak_login
 from app.api.endpoints.auth.login import _check_mfa_requirement
@@ -85,6 +87,7 @@ from app.api.endpoints.auth.sessions import logout
 from app.api.endpoints.auth.sessions import logout_all_sessions
 from app.api.endpoints.auth.sessions import refresh_access_token
 
+from . import flower as _flower_module
 from . import keycloak as _keycloak_module
 from . import login as _login_module
 from . import methods as _methods_module
@@ -103,6 +106,7 @@ router.include_router(_pki_module.router)
 router.include_router(_methods_module.router)
 router.include_router(_mfa_module.router)
 router.include_router(_sessions_module.router)
+router.include_router(_flower_module.router)
 
 __all__ = [
     "MFA_TOKEN_BLACKLIST_PREFIX",
@@ -111,6 +115,7 @@ __all__ = [
     "acknowledge_banner",
     "confirm_password_reset_endpoint",
     "disable_mfa",
+    "flower_authz",
     "get_active_sessions",
     "get_auth_methods",
     "get_current_active_superuser",

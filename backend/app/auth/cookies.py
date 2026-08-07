@@ -46,7 +46,11 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
         refresh_token,
         httponly=True,
         secure=_SECURE,
-        samesite="lax",
+        # Strict, not Lax: this cookie is only ever used by same-site XHR to
+        # /api/auth/token/refresh, so it never needs to survive a cross-site
+        # top-level navigation — and not sending it on one removes the CSRF
+        # surface for the single most powerful cookie in the app.
+        samesite="strict",
         max_age=REFRESH_MAX_AGE,
         path="/api/auth",  # Only sent to auth endpoints
     )
@@ -56,7 +60,12 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
         httponly=False,  # Readable by JavaScript for double-submit pattern
         secure=_SECURE,
         samesite="lax",
-        max_age=ACCESS_MAX_AGE,
+        # Must outlive the ACCESS cookie, not match it. The double-submit token
+        # is what authorises a token refresh, and a refresh happens precisely
+        # when the access cookie has already lapsed — pinning it to
+        # ACCESS_MAX_AGE meant every idle session lost the ability to refresh
+        # and got logged out instead.
+        max_age=REFRESH_MAX_AGE,
         path="/",
     )
 

@@ -20,8 +20,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+
+# Deployment configuration is the super_admin tier: this router
+# holds SMTP/S3/SMB credentials for automated import.
+from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.auth import get_current_admin_user
 from app.core.config import settings
 from app.db.base import get_db
 from app.models.email_notification_config import EmailNotificationConfig
@@ -273,7 +276,7 @@ def test_multipart_regex(
 @router.get("/settings")
 def get_global_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     from app.services import watch_settings_service
 
@@ -284,7 +287,7 @@ def get_global_settings(
 def update_global_settings(
     payload: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     from app.services import watch_settings_service
 
@@ -340,7 +343,7 @@ def _email_to_response(cfg: EmailNotificationConfig) -> dict:
 @router.get("/email-configs", response_model=EmailConfigsList)
 def list_email_configs(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     configs = db.query(EmailNotificationConfig).order_by(EmailNotificationConfig.name).all()
     return {"configs": [_email_to_response(c) for c in configs]}
@@ -350,7 +353,7 @@ def list_email_configs(
 def create_email_config(
     data: EmailConfigCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     cfg = EmailNotificationConfig(
         uuid=uuid_pkg.uuid4(),
@@ -388,7 +391,7 @@ def update_email_config(
     config_uuid: str,
     data: EmailConfigUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     cfg = (
         db.query(EmailNotificationConfig)
@@ -418,7 +421,7 @@ def update_email_config(
 def delete_email_config(
     config_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     cfg = (
         db.query(EmailNotificationConfig)
@@ -436,7 +439,7 @@ def delete_email_config(
 def test_email_config(
     config_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> EmailTestResponse:
     from app.services import watch_email_service
 

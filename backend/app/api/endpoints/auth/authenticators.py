@@ -15,6 +15,9 @@ from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.direct_auth import direct_authenticate_user
 from app.auth.ldap_auth import ldap_authenticate
 from app.auth.ldap_auth import sync_ldap_user_to_db
+from app.auth.roles import ROLE_SUPER_ADMIN
+from app.auth.utils import mask_identifier
+from app.core.auth_settings import get_auth_settings
 from app.core.security import authenticate_user
 from app.models.user import User
 
@@ -217,6 +220,25 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
     return str(user.uuid), _build_user_data(user)
 
 
+def _local_auth_permitted(db: Session, user: User | None) -> bool:
+    """Whether *user* may authenticate with a local password on this deployment.
+
+    ``local_enabled`` is the deployment-level switch (DB > env > default true).
+    An active ``super_admin`` is always permitted regardless — see the call site
+    for why that exemption has to exist.
+
+    Args:
+        db: Database session, used to resolve the DB-backed setting.
+        user: The resolved account, or None when the identifier matched nobody.
+
+    Returns:
+        True when a local password may be accepted for this account.
+    """
+    if get_auth_settings(db).local_enabled:
+        return True
+    return bool(user is not None and user.is_active and user.role == ROLE_SUPER_ADMIN)
+
+
 def _authenticate_production_user(
     db: Session, username: str, password: str
 ) -> tuple[str, dict, str]:
@@ -249,6 +271,24 @@ def _authenticate_production_user(
         local_user.auth_type == AUTH_TYPE_LOCAL
         or getattr(local_user, "allow_local_fallback", False)
     )
+
+    # Deployment-level identity-source policy. There was NO such check: /token
+    # always accepted a local password, so an LDAP- or OIDC-owned deployment could
+    # not actually turn local authentication off — the intended auth method was
+    # advisory only. LDAP is unaffected because it authenticates below, through
+    # the same form.
+    #
+    # An active super_admin is always exempt. That is the documented break-glass
+    # account (docs/AUTH_DEPLOYMENT_GUIDE.md): auth configuration is super_admin
+    # -gated, so without the exemption a deployment that disabled local auth while
+    # its IdP was misconfigured would have no way back in.
+    if can_use_local_auth and not _local_auth_permitted(db, local_user):
+        logger.info(
+            "Local password authentication is disabled for %s; deferring to the "
+            "configured identity provider",
+            mask_identifier(username),
+        )
+        can_use_local_auth = False
 
     # If user can use local auth, try it first
     if can_use_local_auth:

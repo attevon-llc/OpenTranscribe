@@ -12,6 +12,8 @@ from datetime import timedelta
 import psycopg2
 from jose import jwt
 
+from app.auth.constants import TOKEN_TYPE_ACCESS
+from app.auth.utils import local_password_allowed
 from app.core.config import settings
 from app.core.security import pwd_context
 from app.core.security import verify_and_update_password
@@ -62,6 +64,9 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
             "exp": expire,
             "iat": now,
             "jti": str(uuid.uuid4()),  # JWT ID for token revocation support
+            # Purpose binding: consumers verify this, so an MFA half-token or a
+            # refresh token can never be replayed as an access token.
+            "type": TOKEN_TYPE_ACCESS,
         }
     )
     encoded_jwt: str = jwt.encode(
@@ -106,8 +111,9 @@ def _fetch_user_by_email(conn, cursor, email: str) -> tuple | None:
 def _validate_user_can_authenticate(user_tuple: tuple, masked_email: str) -> bool:
     """Check if user can authenticate with password.
 
-    LDAP users are always rejected (no local password stored).
-    PKI/Keycloak users are rejected unless allow_local_fallback is True.
+    Delegates to :func:`app.auth.utils.local_password_allowed`, which is the one
+    definition of this rule — the ORM path in ``core.security.authenticate_user``
+    calls the same function, so the two can no longer drift.
 
     Args:
         user_tuple: User record tuple from database
@@ -119,20 +125,10 @@ def _validate_user_can_authenticate(user_tuple: tuple, masked_email: str) -> boo
     auth_type = user_tuple[7]  # auth_type is at index 7
     allow_local_fallback = user_tuple[8] if len(user_tuple) > 8 else False
 
-    if auth_type == "ldap":
-        logger.info(
-            f"Authentication failed: user {masked_email} is LDAP type, cannot use password auth"
-        )
-        return False
-
-    if auth_type in ("pki", "keycloak") and not allow_local_fallback:
-        logger.info(
-            f"Authentication failed: user {masked_email} has auth_type={auth_type!r} "
-            f"without local fallback permission"
-        )
-        return False
-
-    return True
+    allowed, reason = local_password_allowed(auth_type, allow_local_fallback)
+    if not allowed:
+        logger.info("Authentication failed: user %s — %s", masked_email, reason)
+    return allowed
 
 
 def _verify_and_upgrade_password(

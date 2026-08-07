@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
+  import { AdminApi } from '$lib/api/admin';
   import { user } from '../stores/auth';
   import { toastStore } from '../stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
@@ -48,8 +49,29 @@
   let showConfirmModal = false;
   let confirmModalTitle = '';
   let confirmModalMessage = '';
+  /** @type {string} */
+  let confirmModalConfirmText = '';
   /** @type {(() => void) | null} */
   let confirmCallback = null;
+  /** @type {(() => void) | null} */
+  let confirmCancelCallback = null;
+
+  // Server-owned password policy (GET /auth/password-policy). Hardcoding a
+  // client-side minimum drifts from the backend's — it said 8 while the policy
+  // required 12, so every "valid" password bounced off the API.
+  /** @type {number} */
+  let passwordMinLength = 12;
+
+  onMount(async () => {
+    try {
+      const { data } = await axiosInstance.get('/auth/password-policy');
+      if (typeof data?.min_length === 'number' && data.min_length > 0) {
+        passwordMinLength = data.min_length;
+      }
+    } catch (err) {
+      console.warn('Could not load password policy; using default minimum', err);
+    }
+  });
 
   // Password reset modal state
   let showPasswordResetModal = false;
@@ -99,6 +121,35 @@
   }
 
   /**
+   * Pull the backend's `detail` out of an axios error.
+   *
+   * `err.message` is the axios string ("Request failed with status code 403"),
+   * which hides the reason the API actually gave.
+   * @param {any} err
+   * @param {string} fallback
+   * @returns {string}
+   */
+  function extractErrorMessage(err, fallback) {
+    const detail = err?.response?.data?.detail;
+    if (!detail) return fallback;
+    if (Array.isArray(detail)) {
+      return detail.map(d => d.msg || d).join('; ');
+    }
+    return String(detail);
+  }
+
+  /**
+   * Human label for a role value.
+   * @param {string} role
+   * @returns {string}
+   */
+  function roleLabel(role) {
+    if (role === 'super_admin') return $t('userManagement.roleSuperAdmin');
+    if (role === 'admin') return $t('userManagement.roleAdmin');
+    return $t('userManagement.roleUser');
+  }
+
+  /**
    * Create a new user
    */
   async function createUser() {
@@ -107,6 +158,25 @@
       return;
     }
 
+    // A super_admin can change auth configuration and other users' roles —
+    // confirm before minting one.
+    if (newRole === 'super_admin') {
+      showConfirmation(
+        $t('userManagement.confirmSuperAdminTitle'),
+        $t('userManagement.confirmSuperAdminCreate', { name: newUsername || newEmail }),
+        () => executeCreateUser(),
+        $t('userManagement.confirmSuperAdminButton')
+      );
+      return;
+    }
+
+    await executeCreateUser();
+  }
+
+  /**
+   * Create the user after any confirmation step
+   */
+  async function executeCreateUser() {
     try {
       // The backend expects full_name as a required field
       // Using username as the full_name since that's what we collect
@@ -135,16 +205,7 @@
       onRefresh();
     } catch (err) {
       console.error('Error creating user:', err);
-      let message = $t('userManagement.createUserFailed');
-      if (err?.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (Array.isArray(detail)) {
-          message = detail.map(d => d.msg || d).join('; ');
-        } else {
-          message = String(detail);
-        }
-      }
-      toastStore.error(message);
+      toastStore.error(extractErrorMessage(err, $t('userManagement.createUserFailed')));
     }
   }
 
@@ -153,11 +214,15 @@
    * @param {string} title - The modal title
    * @param {string} message - The confirmation message
    * @param {() => void} callback - The callback to execute on confirmation
+   * @param {string} [confirmText] - Label for the confirm button
+   * @param {(() => void) | null} [onCancel] - Callback to run if the user backs out
    */
-  function showConfirmation(title, message, callback) {
+  function showConfirmation(title, message, callback, confirmText = '', onCancel = null) {
     confirmModalTitle = title;
     confirmModalMessage = message;
+    confirmModalConfirmText = confirmText;
     confirmCallback = callback;
+    confirmCancelCallback = onCancel;
     showConfirmModal = true;
   }
 
@@ -169,6 +234,7 @@
       confirmCallback();
       confirmCallback = null;
     }
+    confirmCancelCallback = null;
     showConfirmModal = false;
   }
 
@@ -176,6 +242,10 @@
    * Handle confirmation modal cancel
    */
   function handleConfirmModalCancel() {
+    if (confirmCancelCallback) {
+      confirmCancelCallback();
+      confirmCancelCallback = null;
+    }
     confirmCallback = null;
     showConfirmModal = false;
   }
@@ -205,27 +275,30 @@
       onRefresh();
     } catch (err) {
       console.error('Error deleting user:', err);
-      const message = err instanceof Error ? err.message : $t('userManagement.deleteUserFailed');
-      toastStore.error(message);
+      toastStore.error(extractErrorMessage(err, $t('userManagement.deleteUserFailed')));
     }
   }
 
   /**
-   * Update a user's role
+   * Update a user's role.
+   *
+   * Goes through the admin client (PUT /admin/users/{uuid}/role), not the
+   * generic user update — that route is the one that writes an audit record,
+   * revokes the target's sessions, and refuses to demote the last super_admin.
    * @param {string} userId
    * @param {string} role
    */
   async function updateUserRole(userId, role) {
     try {
-      await axiosInstance.put(`/users/${userId}`, { role });
-      toastStore.success($t('userManagement.userRoleUpdated', { role }));
+      await AdminApi.changeUserRole(userId, role);
+      toastStore.success($t('userManagement.userRoleUpdated', { role: roleLabel(role) }));
 
       // Refresh user list
       onRefresh();
     } catch (err) {
       console.error('Error updating user role:', err);
-      const message = err instanceof Error ? err.message : $t('userManagement.updateRoleFailed');
-      toastStore.error(message);
+      toastStore.error(extractErrorMessage(err, $t('userManagement.updateRoleFailed')));
+      onRefresh();
     }
   }
 
@@ -235,9 +308,30 @@
    * @param {Event} e
    */
   function handleUserRoleChange(userId, e) {
-    if (e.target && 'value' in e.target) {
-      updateUserRole(userId, /** @type {HTMLSelectElement} */ (e.target).value);
+    const select = /** @type {HTMLSelectElement} */ (e.currentTarget);
+    if (!select) return;
+
+    const newRole = select.value;
+    const target = users.find(u => u.uuid === userId);
+    const previousRole = target?.role ?? 'user';
+    if (newRole === previousRole) return;
+
+    // Promoting to super_admin hands over auth-configuration and role-change
+    // power — make it deliberate, and put the select back if they back out.
+    if (newRole === 'super_admin') {
+      showConfirmation(
+        $t('userManagement.confirmSuperAdminTitle'),
+        $t('userManagement.confirmSuperAdminPromote', {
+          name: target?.full_name || target?.email || ''
+        }),
+        () => updateUserRole(userId, newRole),
+        $t('userManagement.confirmSuperAdminButton'),
+        () => { select.value = previousRole; }
+      );
+      return;
     }
+
+    updateUserRole(userId, newRole);
   }
 
   /**
@@ -282,8 +376,8 @@
       return;
     }
 
-    if (resetPassword.length < 8) {
-      toastStore.error($t('userManagement.passwordMinLength'));
+    if (resetPassword.length < passwordMinLength) {
+      toastStore.error($t('userManagement.passwordMinLength', { min: passwordMinLength }));
       return;
     }
 
@@ -299,16 +393,7 @@
       closePasswordResetModal();
     } catch (err) {
       console.error('Error resetting password:', err);
-      let message = $t('userManagement.passwordResetFailed');
-      if (err?.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (Array.isArray(detail)) {
-          message = detail.map(d => d.msg || d).join('; ');
-        } else {
-          message = String(detail);
-        }
-      }
-      toastStore.error(message);
+      toastStore.error(extractErrorMessage(err, $t('userManagement.passwordResetFailed')));
     } finally {
       passwordResetLoading = false;
     }
@@ -333,11 +418,7 @@
       onRefresh();
     } catch (err) {
       console.error('Error toggling local fallback:', err);
-      let message = $t('userManagement.localFallbackFailed');
-      if (err?.response?.data?.detail) {
-        message = String(err.response.data.detail);
-      }
-      toastStore.error(message);
+      toastStore.error(extractErrorMessage(err, $t('userManagement.localFallbackFailed')));
     }
   }
 
@@ -448,10 +529,14 @@
         <select id="role" bind:value={newRole}>
           <option value="user">{$t('userManagement.roleUser')}</option>
           {#if isSuperAdmin}
-            <!-- Only a super_admin may mint admin accounts (backend enforces this) -->
+            <!-- Only a super_admin may mint elevated accounts (backend enforces this) -->
             <option value="admin">{$t('userManagement.roleAdmin')}</option>
+            <option value="super_admin">{$t('userManagement.roleSuperAdmin')}</option>
           {/if}
         </select>
+        {#if isSuperAdmin && newRole === 'super_admin'}
+          <span class="role-warning">{$t('userManagement.superAdminWarning')}</span>
+        {/if}
       </div>
 
       <button
@@ -486,7 +571,13 @@
             <td>{currentUser.full_name || $t('userManagement.notAvailable')}</td>
             <td>{currentUser.email}</td>
             <td>
-              {#if currentUser.uuid !== currentUserId}
+              <!-- Role changes require super_admin server-side
+                   (PUT /admin/users/{uuid}/role). A plain admin used to get a
+                   select they could not act on: picking "Administrator" just
+                   returned 403. A super_admin row also had no matching option,
+                   so it rendered blank and any accidental change silently
+                   demoted the account. Both cases now render as static text. -->
+              {#if currentUser.uuid !== currentUserId && isSuperAdmin}
                 <select
                   value={currentUser.role}
                   on:change={(e) => handleUserRoleChange(currentUser.uuid, e)}
@@ -494,9 +585,10 @@
                 >
                   <option value="user">{$t('userManagement.roleUser')}</option>
                   <option value="admin">{$t('userManagement.roleAdmin')}</option>
+                  <option value="super_admin">{$t('userManagement.roleSuperAdmin')}</option>
                 </select>
               {:else}
-                <span class="current-role">{currentUser.role}</span>
+                <span class="current-role">{roleLabel(currentUser.role)}</span>
               {/if}
             </td>
             <td>{formatDate(currentUser.created_at)}</td>
@@ -574,7 +666,7 @@
   bind:isOpen={showConfirmModal}
   title={confirmModalTitle}
   message={confirmModalMessage}
-  confirmText={$t('common.delete')}
+  confirmText={confirmModalConfirmText || $t('common.delete')}
   cancelText={$t('common.cancel')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
@@ -635,9 +727,9 @@
             bind:value={resetPassword}
             placeholder={$t('userManagement.enterNewPassword')}
             required
-            minlength="8"
+            minlength={passwordMinLength}
           />
-          <small class="form-text">{$t('userManagement.minimumCharacters')}</small>
+          <small class="form-text">{$t('userManagement.minimumCharacters', { min: passwordMinLength })}</small>
         </div>
 
         <div class="form-group">
@@ -674,7 +766,7 @@
             bind:value={confirmResetPassword}
             placeholder={$t('userManagement.confirmNewPassword')}
             required
-            minlength="8"
+            minlength={passwordMinLength}
           />
         </div>
 
@@ -787,6 +879,18 @@
     border: 1px solid #ccc;
     border-radius: 4px;
     font-size: 0.8125rem;
+  }
+
+  .role-warning {
+    display: block;
+    margin-top: 0.375rem;
+    padding: 0.5rem 0.625rem;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-radius: 6px;
+    background-color: rgba(245, 158, 11, 0.12);
+    color: var(--text-color);
+    font-size: 0.75rem;
+    line-height: 1.4;
   }
 
   .create-button {

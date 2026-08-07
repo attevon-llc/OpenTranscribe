@@ -19,11 +19,17 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
+from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
+from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.lockout import unlock_account as lockout_unlock_account
+from app.auth.password_history import add_password_to_history
+from app.auth.password_history import check_password_against_history
+from app.auth.rate_limit import get_auth_rate_limit
+from app.auth.rate_limit import limiter
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
@@ -76,6 +82,11 @@ from app.schemas.user import AdminPasswordResetRequest
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.services import system_settings_service
+from app.services.account_security_service import assert_password_auth_possible
+from app.services.account_security_service import audit_password_change
+from app.services.account_security_service import audit_role_change
+from app.services.account_security_service import enforce_password_policy
+from app.services.account_security_service import revoke_all_sessions
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -1191,22 +1202,23 @@ def _reload_protected_media_providers():
 
 
 # ============== Super Admin Role Verification ==============
-
-
-def get_current_super_admin_user(
-    current_user: User = Depends(get_current_admin_user),
-) -> User:
-    """Verify user has super_admin role."""
-    if current_user.role != "super_admin":
-        raise HTTPException(status_code=403, detail="Super admin access required")
-    return current_user
+#
+# Re-exported for backwards compatibility with the ~20 call sites in this module.
+# The definition lives in api/endpoints/auth/dependencies.py alongside
+# get_current_user / get_current_admin_user — it was declared here AND in
+# auth_config.py, each re-implementing the same check with its own "super_admin"
+# string literal instead of roles.ROLE_SUPER_ADMIN. Three copies of an
+# authorization rule is three chances for one of them to drift.
+get_current_super_admin_user = get_current_active_superuser
 
 
 # ============== Account Management (FedRAMP AC-2) ==============
 
 
 @router.post("/users/{user_uuid}/reset-password")
+@limiter.limit(get_auth_rate_limit())
 def admin_reset_user_password(
+    request: Request,
     user_uuid: str,
     request_body: AdminPasswordResetRequest,
     db: Session = Depends(get_db),
@@ -1216,26 +1228,38 @@ def admin_reset_user_password(
 
     Security: Password is passed in request body (not query parameter) to prevent
     exposure in server logs, browser history, and HTTP referrer headers.
+
+    This path used to skip every control its sibling in ``users.py`` applies: it
+    set a hash on ANY account regardless of ``auth_type`` (planting a local
+    password on a directory-managed row), bypassed the password policy and the
+    reuse history in both directions, and left the target's existing sessions
+    alive — so an admin resetting a compromised account did not actually evict
+    the attacker.
     """
+    client_ip, user_agent = _get_client_info(request)
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.hashed_password = get_password_hash(request_body.new_password)  # type: ignore[assignment]
+    assert_password_auth_possible(user)
+    enforce_password_policy(request_body.new_password, user)
+
+    if not check_password_against_history(db, user.id, request_body.new_password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password has been used recently. Please choose a different password.",
+        )
+
+    new_hash = get_password_hash(request_body.new_password)
+    user.hashed_password = new_hash  # type: ignore[assignment]
     user.must_change_password = request_body.force_change  # type: ignore[assignment]
     user.password_changed_at = datetime.now(UTC)  # type: ignore[assignment]
+    add_password_to_history(db, user.id, new_hash)
+    revoke_all_sessions(db, user, reason="admin password reset")
     db.commit()
 
-    audit_logger.log(
-        event_type=AuditEventType.ADMIN_USER_UPDATE,
-        user_id=current_user.id,
-        username=str(current_user.email),
-        outcome=AuditOutcome.SUCCESS,
-        details={
-            "action": "password_reset",
-            "target_user": user_uuid,
-            "force_change": request_body.force_change,
-        },
+    audit_password_change(
+        user, current_user, client_ip, user_agent, forced=request_body.force_change
     )
 
     return {"success": True}
@@ -1283,6 +1307,9 @@ def admin_lock_account(
         raise HTTPException(status_code=404, detail="User not found")
 
     user.is_active = False  # type: ignore[assignment]
+    # Locking an account that keeps a live refresh token is not a lock: token
+    # rotation would carry the session past the lock for its full lifetime.
+    revoke_all_sessions(db, user, reason="account locked by admin")
     db.commit()
 
     audit_logger.log(
@@ -1381,12 +1408,14 @@ def admin_get_user_sessions(
 
 @router.put("/users/{user_uuid}/role")
 def admin_change_user_role(
+    request: Request,
     user_uuid: str,
     new_role: str = Query(..., description="New role for the user (user, admin, super_admin)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
 ):
     """Change user role. Only super_admin can promote to super_admin."""
+    client_ip, user_agent = _get_client_info(request)
     if new_role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
 
@@ -1397,23 +1426,20 @@ def admin_change_user_role(
     if str(user.uuid) == str(current_user.uuid):
         raise HTTPException(status_code=400, detail="Cannot change your own role")
 
+    from app.api.endpoints.users import _assert_not_last_super_admin
+
+    _assert_not_last_super_admin(db, user, new_role)
+
     old_role = user.role
     user.role = new_role  # type: ignore[assignment]
     # Keep is_superuser in sync with role (derived; v369 CHECK enforces it).
     user.is_superuser = role_implies_superuser(new_role)
+    # A role change is usually a reaction to something; the target's existing
+    # sessions must not outlive it.
+    revoke_all_sessions(db, user, reason="role change")
     db.commit()
 
-    audit_logger.log(
-        event_type=AuditEventType.ADMIN_ROLE_CHANGE,
-        user_id=current_user.id,
-        username=str(current_user.email),
-        outcome=AuditOutcome.SUCCESS,
-        details={
-            "target_user": user_uuid,
-            "old_role": old_role,
-            "new_role": new_role,
-        },
-    )
+    audit_role_change(user, current_user, str(old_role), new_role, client_ip, user_agent)
 
     return {"success": True, "old_role": old_role, "new_role": new_role}
 
@@ -1437,6 +1463,9 @@ def admin_reset_user_mfa(
         mfa_settings.totp_enabled = False  # type: ignore[assignment]
         mfa_settings.totp_secret = None  # type: ignore[assignment]
         mfa_settings.backup_codes = []  # type: ignore[assignment]
+        # Dropping the second factor must not leave sessions that were minted
+        # while it was still in force.
+        revoke_all_sessions(db, user, reason="admin MFA reset")
         db.commit()
 
     audit_logger.log(

@@ -1,19 +1,25 @@
 import logging
 from datetime import UTC
 from datetime import datetime
+from types import SimpleNamespace
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
-from app.auth.ldap_auth import AUTH_TYPE_LOCAL
+from app.api.endpoints.auth.dependencies import _get_client_info
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
+from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser
@@ -26,6 +32,15 @@ from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.schemas.user import UserSearchResult
 from app.schemas.user import UserUpdate
+from app.services.account_security_service import assert_local_fallback_settable
+from app.services.account_security_service import assert_password_auth_possible
+from app.services.account_security_service import audit_account_status_change
+from app.services.account_security_service import audit_password_change
+from app.services.account_security_service import audit_role_change
+from app.services.account_security_service import audit_user_deleted
+from app.services.account_security_service import enforce_password_policy
+from app.services.account_security_service import notify_email_changed
+from app.services.account_security_service import revoke_all_sessions
 from app.utils.uuid_helpers import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -97,6 +112,7 @@ def get_current_user_info(current_user: User = Depends(get_current_active_user))
 
 @router.put("/me", response_model=UserSchema)
 def update_current_user(
+    request: Request,
     user_update: UserUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -104,40 +120,18 @@ def update_current_user(
     """
     Update current user info
     """
-    # Check if email is being changed and is already taken
-    if user_update.email and user_update.email != current_user.email:
-        existing_user = db.query(User).filter(User.email == user_update.email).first()
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered",
-            )
-
-    # Update fields — strip privileged fields that only admins may change.
-    # Without this, any user could promote themselves via PUT /users/me.
+    client_ip, user_agent = _get_client_info(request)
     update_data = user_update.model_dump(exclude_unset=True)
-    privileged_fields = {"is_active", "is_superuser", "role", "auth_type", "allow_local_fallback"}
-    for field in privileged_fields:
-        update_data.pop(field, None)
 
-    # Hash password if it's provided
-    if "password" in update_data:
-        # Allow password changes for local users OR users with allow_local_fallback
-        can_change_password = current_user.auth_type == AUTH_TYPE_LOCAL or getattr(
-            current_user, "allow_local_fallback", False
-        )
-        if not can_change_password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot change password for non-local users",
-            )
+    # A password change and an email change are both credential-grade operations,
+    # so each needs the current password. Pull it out once — it is not a model field.
+    current_password = update_data.pop("current_password", None)
 
-        # Require current password verification before allowing password change
-        current_password = update_data.pop("current_password", None)
+    def _require_current_password() -> None:
         if not current_password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Current password is required to change password",
+                detail="Current password is required for this change",
             )
         if not verify_password(current_password, str(current_user.hashed_password)):
             raise HTTPException(
@@ -145,7 +139,39 @@ def update_current_user(
                 detail="Current password is incorrect",
             )
 
+    # Check if email is being changed and is already taken
+    old_email = str(current_user.email)
+    email_changed = bool(user_update.email and user_update.email != current_user.email)
+    if email_changed:
+        existing_user = db.query(User).filter(User.email == user_update.email).first()
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered",
+            )
+        # Changing the address and then requesting a password reset is a complete
+        # account takeover. Proving possession of the current password stops a
+        # hijacked session from doing it silently.
+        assert_password_auth_possible(current_user)
+        _require_current_password()
+
+    # Update fields — strip privileged fields that only admins may change.
+    # Without this, any user could promote themselves via PUT /users/me.
+    privileged_fields = {"is_active", "is_superuser", "role", "auth_type", "allow_local_fallback"}
+    for field in privileged_fields:
+        update_data.pop(field, None)
+
+    # Hash password if it's provided
+    password_changed = "password" in update_data
+    if password_changed:
+        assert_password_auth_possible(current_user)
+        _require_current_password()
+
         new_password = update_data.pop("password")
+
+        # Policy was previously enforced only by UserCreate's validator, so a
+        # self-service change could set a password the policy forbids.
+        enforce_password_policy(new_password, current_user)
 
         # Check password history (FedRAMP IA-5)
         if not check_password_against_history(db, current_user.id, new_password):
@@ -162,15 +188,36 @@ def update_current_user(
         # Store password in history after successful change
         add_password_to_history(db, current_user.id, new_hash)
         logger.info(f"Password changed for user {current_user.id}")
-    else:
-        # Remove current_password if no password change is being made
-        update_data.pop("current_password", None)
 
     for field, value in update_data.items():
         setattr(current_user, field, value)
 
+    # Both changes invalidate every other session: an attacker holding one keeps
+    # it through the victim's password change otherwise. In-transaction so a
+    # commit failure below rolls the revocation back with it.
+    if password_changed or email_changed:
+        revoke_all_sessions(
+            db,
+            current_user,
+            reason="password change" if password_changed else "email change",
+        )
+
     db.commit()
     db.refresh(current_user)
+
+    if password_changed:
+        audit_password_change(current_user, current_user, client_ip, user_agent)
+    if email_changed:
+        audit_logger.log(
+            event_type=AuditEventType.ADMIN_USER_UPDATE,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=current_user.id,
+            username=str(current_user.email),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            details={"action": "email_change", "old_email": old_email},
+        )
+        notify_email_changed(old_email, str(current_user.email))
 
     return current_user
 
@@ -221,6 +268,7 @@ def get_user(
 
 @router.put("/{user_uuid}", response_model=UserSchema)
 def update_user(
+    request: Request,
     user_uuid: str,
     user_update: UserUpdate,
     db: Session = Depends(get_db),
@@ -229,8 +277,11 @@ def update_user(
     """
     Update user by UUID (admin only)
     """
+    client_ip, user_agent = _get_client_info(request)
     # Uses helper that validates UUID format and returns 400 for invalid UUIDs
     user = get_user_by_uuid(db, user_uuid)
+    old_role = str(user.role)
+    was_active = bool(user.is_active)
 
     # Update fields — strip privilege-escalation fields unless caller is super_admin.
     # Regular admins can update names, emails, etc. but cannot promote users.
@@ -264,20 +315,23 @@ def update_user(
                 detail=f"Invalid role: {update_data['role']}",
             )
         update_data["is_superuser"] = role_implies_superuser(update_data["role"])
+        _assert_not_last_super_admin(db, user, update_data["role"])
+
+    # allow_local_fallback only means anything for accounts whose identity lives in
+    # PKI or an OIDC provider. The UI hides the toggle elsewhere, but that is a
+    # client-side check only, and on an LDAP row it was half of a password bypass.
+    if update_data.get("allow_local_fallback"):
+        assert_local_fallback_settable(str(update_data.get("auth_type") or user.auth_type))
 
     # Hash password if it's provided
-    if "password" in update_data:
-        # Allow password changes for local users OR users with allow_local_fallback
-        can_change_password = user.auth_type == AUTH_TYPE_LOCAL or getattr(
-            user, "allow_local_fallback", False
-        )
-        if not can_change_password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot change password for non-local users",
-            )
+    password_changed = "password" in update_data
+    if password_changed:
+        assert_password_auth_possible(user)
 
         new_password = update_data.pop("password")
+
+        # Admins are not exempt from the policy — this path skipped it entirely.
+        enforce_password_policy(new_password, user)
 
         # Check password history (FedRAMP IA-5) - admins must also comply
         if not check_password_against_history(db, user.id, new_password):
@@ -301,14 +355,53 @@ def update_user(
     for field, value in update_data.items():
         setattr(user, field, value)
 
+    role_changed = "role" in update_data and str(user.role) != old_role
+    deactivated = was_active and not bool(user.is_active)
+    identity_changed = bool({"auth_type", "allow_local_fallback"} & set(update_data))
+
+    # An admin demoting, disabling or re-crediting an account is usually reacting
+    # to something; leaving that account's existing sessions alive defeats it.
+    if password_changed or role_changed or deactivated or identity_changed:
+        revoke_all_sessions(db, user, reason="admin account change")
+
     db.commit()
     db.refresh(user)
+
+    if password_changed:
+        audit_password_change(user, current_user, client_ip, user_agent)
+    if role_changed:
+        audit_role_change(user, current_user, old_role, str(user.role), client_ip, user_agent)
+    if was_active != bool(user.is_active):
+        audit_account_status_change(user, current_user, bool(user.is_active), client_ip, user_agent)
 
     return user
 
 
+def _assert_not_last_super_admin(db: Session, user: User, new_role: str) -> None:
+    """Refuse a change that would leave the deployment with no super_admin.
+
+    Auth configuration, role changes and the audit log are all super_admin-gated,
+    so demoting the last one locks everyone out of them permanently — there is no
+    recovery path short of editing the database by hand.
+    """
+    if str(user.role) != ROLE_SUPER_ADMIN or new_role == ROLE_SUPER_ADMIN:
+        return
+
+    remaining = (
+        db.query(User)
+        .filter(User.role == ROLE_SUPER_ADMIN, User.id != user.id, User.is_active.is_(True))
+        .count()
+    )
+    if remaining == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot demote the last super_admin — promote another account first.",
+        )
+
+
 @router.delete("/{user_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
+    request: Request,
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -316,6 +409,7 @@ def delete_user(
     """
     Delete user by UUID (admin only)
     """
+    client_ip, user_agent = _get_client_info(request)
     # Uses helper that validates UUID format and returns 400 for invalid UUIDs
     user = get_user_by_uuid(db, user_uuid)
 
@@ -325,6 +419,18 @@ def delete_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete own user account",
         )
+
+    # Only a super_admin may delete a super_admin, and never the last one.
+    if str(user.role) == ROLE_SUPER_ADMIN:
+        if str(current_user.role) != ROLE_SUPER_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only a super_admin can delete a super_admin account",
+            )
+        _assert_not_last_super_admin(db, user, ROLE_USER)
+
+    # Capture what the audit record needs before the row is gone.
+    deleted_snapshot = SimpleNamespace(uuid=user.uuid, email=user.email)
 
     # Use the comprehensive cleanup from the admin endpoint to avoid orphaned records.
     from app.api.endpoints.admin import _delete_user_media_files
@@ -338,5 +444,8 @@ def delete_user(
 
     db.delete(user)
     db.commit()
+
+    # ADMIN_USER_DELETE existed as an event type with no emitter anywhere.
+    audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent)
 
     return None

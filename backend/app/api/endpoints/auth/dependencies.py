@@ -19,6 +19,7 @@ from jose import JWTError
 from jose import jwt
 from sqlalchemy.orm import Session
 
+from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.core.config import settings
@@ -148,11 +149,28 @@ def get_current_user(
         if user_uuid_str is None:
             raise credentials_exception
 
-        # Check token revocation blacklist (FedRAMP AC-12)
+        # Purpose binding. The MFA half-token is handed to a client that has NOT
+        # yet passed the second factor, and is signed with the same key/algorithm
+        # as an access token — without this check it is a complete MFA bypass.
+        # Refresh tokens are likewise only valid at /auth/token/refresh.
+        if payload.get("type") != TOKEN_TYPE_ACCESS:
+            logger.warning(
+                "Rejected token with type=%r on an access-token path", payload.get("type")
+            )
+            raise credentials_exception
+
+        # Check token revocation blacklist (FedRAMP AC-12). `issued_at` lets the
+        # per-user revocation epoch invalidate a stateless access token, which has
+        # no blacklist entry of its own.
         if (
             settings.TOKEN_REVOCATION_ENABLED
             and token_jti
-            and token_service.is_token_revoked(token_jti, db=db, user_uuid=user_uuid_str)
+            and token_service.is_token_revoked(
+                token_jti,
+                db=db,
+                user_uuid=user_uuid_str,
+                issued_at=payload.get("iat"),
+            )
         ):
             logger.warning(f"Rejected revoked token (jti={token_jti[:8]}...)")
             raise credentials_exception
@@ -298,6 +316,11 @@ def get_optional_current_user(
         token_jti: str = payload.get("jti")
 
         if user_uuid_str is None:
+            return None
+
+        # Same purpose binding as get_current_user — an optional-auth route must
+        # not accept an MFA or refresh token either.
+        if payload.get("type") != TOKEN_TYPE_ACCESS:
             return None
 
         # Check token revocation blacklist

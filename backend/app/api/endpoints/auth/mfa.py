@@ -12,18 +12,23 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
 from app.api.endpoints.auth.dependencies import get_current_user
+from app.api.endpoints.auth.mfa_tokens import EnrollmentContext
+from app.api.endpoints.auth.mfa_tokens import _claim_mfa_token
 from app.api.endpoints.auth.mfa_tokens import _complete_mfa_verification
 from app.api.endpoints.auth.mfa_tokens import _get_user_for_mfa
 from app.api.endpoints.auth.mfa_tokens import _is_mfa_enabled
 from app.api.endpoints.auth.mfa_tokens import _is_mfa_required
 from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
 from app.api.endpoints.auth.mfa_tokens import _verify_mfa_code
+from app.api.endpoints.auth.mfa_tokens import get_user_for_enrollment
+from app.api.endpoints.auth.mfa_tokens import issue_session_response
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.mfa import MFAService
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.core.config import settings
 from app.db.base import get_db
 from app.models.user import User
 from app.models.user_mfa import UserMFA
@@ -68,7 +73,7 @@ def get_mfa_status(
 @router.post("/mfa/setup", response_model=MFASetupResponse)
 def setup_mfa(
     request: Request,
-    current_user: User = Depends(get_current_user),
+    enrollment: EnrollmentContext = Depends(get_user_for_enrollment),
     db: Session = Depends(get_db),
 ):
     """
@@ -77,9 +82,16 @@ def setup_mfa(
     Returns the TOTP secret, provisioning URI, and QR code for authenticator app setup.
     The user must verify with a valid TOTP code to complete setup.
 
+    Authorized by a normal session OR an enrolment-scoped half-token (forced enrolment
+    on an MFA_REQUIRED deployment). A *verify*-scoped half-token is refused: this
+    endpoint overwrites the TOTP secret and wipes the backup codes, so honouring one
+    would let a password-only attacker reset the second factor.
+
     Note: This endpoint is only available when MFA is enabled and the user
     is not using PKI or Keycloak authentication (which handle MFA separately).
     """
+    current_user = enrollment.user
+
     if not _is_mfa_enabled(db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -155,7 +167,7 @@ def setup_mfa(
 def verify_mfa_setup(
     request: Request,
     request_body: MFAVerifySetupRequest,
-    current_user: User = Depends(get_current_user),
+    enrollment: EnrollmentContext = Depends(get_user_for_enrollment),
     db: Session = Depends(get_db),
 ):
     """
@@ -163,7 +175,14 @@ def verify_mfa_setup(
 
     This completes the MFA setup process and generates backup codes.
     Backup codes are returned only once - the user must save them securely.
+
+    When the call was authorized by an enrolment half-token (forced enrolment), the
+    token is burned here — not at /mfa/setup, which the user may legitimately re-run to
+    re-render the QR code — and the response additionally carries a real session, so the
+    user lands logged in instead of being bounced back to the login form.
     """
+    current_user = enrollment.user
+
     if not _is_mfa_enabled(db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -214,6 +233,18 @@ def verify_mfa_setup(
             detail="Invalid verification code. Please try again.",
         )
 
+    # Possession is proven — burn the enrolment half-token now, before MFA is enabled.
+    # Claiming only after a *successful* code check keeps a mistyped code from costing
+    # the user their enrolment token, while still making the token single-use: a second
+    # /mfa/setup + replay of the same token cannot re-run enrolment.
+    if enrollment.mfa_jti and not _claim_mfa_token(
+        enrollment.mfa_jti, settings.MFA_TOKEN_EXPIRE_MINUTES * 60
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="MFA token has already been used",
+        )
+
     # Generate backup codes
     backup_codes = MFAService.generate_backup_codes()
     hashed_backup_codes = MFAService.hash_backup_codes(backup_codes)
@@ -235,11 +266,26 @@ def verify_mfa_setup(
 
     logger.info(f"MFA enabled successfully for user: {str(current_user.email)}")
 
-    return MFAVerifySetupResponse(
-        success=True,
-        backup_codes=backup_codes,  # Return plaintext codes only once
-        message="MFA has been enabled successfully. Save your backup codes securely.",
-    )
+    body = {
+        "success": True,
+        "backup_codes": backup_codes,  # Return plaintext codes only once
+        "message": "MFA has been enabled successfully. Save your backup codes securely.",
+    }
+
+    if enrollment.mfa_jti:
+        # Forced enrolment: the caller has no session yet and has just proven the second
+        # factor, so issue one the same way /mfa/verify does (cookies included).
+        return issue_session_response(
+            db,
+            current_user,
+            str(current_user.uuid),
+            enrollment.user_role,
+            client_ip,
+            user_agent,
+            extra_content=body,
+        )
+
+    return JSONResponse(content=body)
 
 
 @router.post("/mfa/verify", response_model=MFAVerifyResponse)
@@ -370,7 +416,18 @@ def disable_mfa(
     # Try backup code verification
     if not is_valid:
         backup_codes_list: list[str] = list(user_mfa.backup_codes)
-        is_valid, _ = MFAService.verify_backup_code(request_body.code, backup_codes_list)
+        is_valid, matched_hash = MFAService.verify_backup_code(request_body.code, backup_codes_list)
+        if is_valid and matched_hash:
+            # Consume it. A backup code is one-time use: accepting it here without
+            # removing it left the code valid forever, so a single leaked code could
+            # keep disabling MFA every time it was re-enabled. Mirrors
+            # mfa_tokens._verify_mfa_code, which has always consumed the match.
+            user_mfa.backup_codes = [c for c in backup_codes_list if c != matched_hash]  # type: ignore[assignment]
+            db.commit()
+            logger.info(
+                f"Backup code consumed for MFA disable by user: {str(current_user.email)}. "
+                f"{len(user_mfa.backup_codes)} codes remaining."
+            )
 
     # Get client info for audit logging
     client_ip, user_agent = _get_client_info(request)

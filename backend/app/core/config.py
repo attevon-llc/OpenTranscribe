@@ -165,6 +165,20 @@ class Settings(BaseSettings):
     # external IdP owns identity, or when accounts should be admin-provisioned.
     ALLOW_OPEN_REGISTRATION: bool = os.getenv("ALLOW_OPEN_REGISTRATION", "true").lower() == "true"
 
+    # Whether accounts holding a local password may sign in at all. Turn this off
+    # when an external IdP (LDAP / OIDC / PKI) is the authoritative identity source
+    # and nobody should be able to authenticate against a password stored here.
+    #
+    # It does NOT hide the username/password form — LDAP authenticates through the
+    # same form — and it never applies to an active super_admin, which is the
+    # documented break-glass account (docs/AUTH_DEPLOYMENT_GUIDE.md). Both are
+    # deliberate: without the first, disabling local auth would break LDAP login;
+    # without the second, a misconfiguration would lock every administrator out of
+    # the very screen needed to undo it.
+    #
+    # DB-backed override: auth_config `local_enabled` (Settings -> Authentication).
+    LOCAL_AUTH_ENABLED: bool = os.getenv("LOCAL_AUTH_ENABLED", "true").lower() == "true"
+
     # SSRF egress policy for user-supplied endpoint URLs (issue #284 A0.1/A0.10).
     # Self-hosted Ollama/vLLM on a private LAN is a legitimate setup, so a single-tenant
     # deployment can opt back into private targets. MUST stay false on anything
@@ -695,10 +709,23 @@ class Settings(BaseSettings):
     # TOTP verification window (number of time steps before/after to accept)
     # 1 = allow 1 step before/after for clock drift (±30 seconds)
     TOTP_VALID_WINDOW: int = _int_env("TOTP_VALID_WINDOW", 1)
-    # Require Redis for MFA token blacklist (fail-secure mode)
-    # When true, MFA verification fails if Redis is unavailable
-    # When false, logs warning but allows MFA (reduced replay protection)
-    MFA_REQUIRE_REDIS: bool = os.getenv("MFA_REQUIRE_REDIS", "false").lower() == "true"
+    # Require Redis for MFA replay protection (fail-secure mode).
+    # Redis is the only place the "this TOTP code / this MFA half-token was already
+    # used" claim lives. With this off, a Redis outage silently downgrades MFA to
+    # replayable: _consume_totp_code accepts a replayed code and the half-token
+    # blacklist check answers "not used". Defaulting it off therefore made the whole
+    # replay defence fail OPEN in production.
+    # Default follows the hardened posture (never ENVIRONMENT == "production" —
+    # see app/core/CLAUDE.md): fail closed in a real deployment, stay permissive in
+    # dev/test where a stack without Redis must still log in. An explicit env value
+    # always wins over the default.
+    MFA_REQUIRE_REDIS: bool = (
+        os.getenv(
+            "MFA_REQUIRE_REDIS",
+            "false" if is_relaxed_environment(ENVIRONMENT) else "true",
+        ).lower()
+        == "true"
+    )
 
     # ===== PKI/X.509 Certificate Configuration =====
     PKI_ENABLED: bool = os.getenv("PKI_ENABLED", "false").lower() == "true"

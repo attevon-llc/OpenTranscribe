@@ -36,6 +36,15 @@ logger = logging.getLogger(__name__)
 # Redis key prefix for revoked tokens (not a password)
 REVOKED_TOKEN_PREFIX = "revoked:jti:"  # noqa: S105 # nosec B105
 
+#: Per-user revocation epoch. Access tokens are stateless — nothing durable
+#: records their JTIs — so revoking "all of a user's tokens" could only ever
+#: blacklist their *refresh* tokens, leaving the current access token valid for
+#: up to its full lifetime. That made ``/auth/logout/all`` strictly weaker than
+#: ``/auth/logout``, which does blacklist the access JTI. Stamping a timestamp
+#: per user and rejecting any access token issued before it closes the gap for
+#: every revocation path at once.
+USER_REVOCATION_EPOCH_PREFIX = "revoked:user:"  # noqa: S105 # nosec B105
+
 
 def _record_degradation(control: str, fallback: str) -> None:
     """Count a security control running without its shared state store.
@@ -436,7 +445,52 @@ class TokenService:
             logger.error(f"Error revoking token: {e}")
             return False
 
-    def revoke_all_user_tokens_in_transaction(self, db: Session, user_id: int) -> int:
+    def stamp_user_revocation_epoch(self, user_uuid: str | None) -> None:
+        """Invalidate every access token already issued to *user_uuid*.
+
+        Access tokens are stateless, so there is no JTI list to blacklist. This
+        records "nothing issued before now is acceptable" instead, and
+        :meth:`is_token_revoked` compares each token's ``iat`` against it.
+
+        The key only needs to outlive the longest access token, so it expires
+        with a small margin over ``JWT_ACCESS_TOKEN_EXPIRE_MINUTES``. Best-effort:
+        a Redis failure here degrades to the database heuristic in
+        :meth:`_is_revoked_without_redis`, which reaches the same conclusion from
+        the user's revoked refresh tokens.
+        """
+        if not user_uuid:
+            return
+        ttl = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 60
+        try:
+            self.store.set(
+                f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}",
+                str(int(datetime.now(UTC).timestamp())),
+                ex=ttl,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Could not stamp revocation epoch for user %s: %s", user_uuid, exc)
+
+    def _issued_before_user_epoch(self, user_uuid: str | None, issued_at: int | None) -> bool:
+        """Whether an access token predates the user's revocation epoch."""
+        if not user_uuid or issued_at is None or self._degraded:
+            return False
+        try:
+            marker = self.store.get(f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}")
+        except Exception:
+            return False
+        if marker is None:
+            return False
+        try:
+            epoch = int(marker.decode() if isinstance(marker, bytes) else marker)
+        except (TypeError, ValueError):
+            return False
+        # `<` not `<=`: a token minted in the same second as the epoch is the one
+        # a re-authentication just issued, and must not be killed by its own stamp.
+        return issued_at < epoch
+
+    def revoke_all_user_tokens_in_transaction(
+        self, db: Session, user_id: int, user_uuid: str | None = None
+    ) -> int:
         """
         Revoke all refresh tokens for a user **without** committing.
 
@@ -480,7 +534,18 @@ class TokenService:
             token.revoked_at = now  # type: ignore[assignment]
             count += 1
 
+        # Access tokens have no rows to revoke — kill them by epoch instead.
+        self.stamp_user_revocation_epoch(
+            user_uuid or self._user_uuid_for(db, user_id),
+        )
+
         return count
+
+    @staticmethod
+    def _user_uuid_for(db: Session, user_id: int) -> str | None:
+        """Resolve a user's UUID, for callers that only have the integer id."""
+        row = db.query(User.uuid).filter(User.id == user_id).first()
+        return str(row[0]) if row else None
 
     def revoke_all_user_tokens(self, db: Session, user_id: int) -> int:
         """
@@ -522,6 +587,7 @@ class TokenService:
         jti: str,
         db: Session | None = None,
         user_uuid: str | None = None,
+        issued_at: int | None = None,
     ) -> bool:
         """
         Check if a token JTI is on the revocation blacklist.
@@ -565,7 +631,13 @@ class TokenService:
                 jti[:8],
             )
             return self._is_revoked_without_redis(jti, db, user_uuid)
-        return result is not None
+        if result is not None:
+            return True
+
+        # A stateless access token has no JTI entry of its own; the per-user
+        # epoch is what makes logout-all / password reset / admin termination
+        # take effect on it immediately rather than at its natural expiry.
+        return self._issued_before_user_epoch(user_uuid, issued_at)
 
     def _is_revoked_without_redis(
         self,

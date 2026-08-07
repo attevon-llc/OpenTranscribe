@@ -19,7 +19,7 @@ from fastapi import status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.auth import get_current_active_superuser
 from app.db.base import get_db
 from app.models.auth_config import AuthConfig
 from app.models.user import User
@@ -33,30 +33,11 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def get_current_super_admin_user(
-    current_user: User = Depends(get_current_active_user),
-) -> User:
-    """Verify user has super_admin role.
-
-    Args:
-        current_user: Currently authenticated user
-
-    Returns:
-        User if they have super_admin role
-
-    Raises:
-        HTTPException: If user does not have super_admin role
-    """
-    if current_user.role != "super_admin":
-        logger.warning(
-            f"User {current_user.email} (role={current_user.role}) "
-            "attempted to access super admin endpoint"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Super admin access required",
-        )
-    return current_user
+# The super_admin gate lives in api/endpoints/auth/dependencies.py, next to
+# get_current_user and get_current_admin_user. It used to be re-declared here and
+# in admin.py, each comparing against its own "super_admin" string literal rather
+# than roles.ROLE_SUPER_ADMIN — three copies of one authorization rule.
+get_current_super_admin_user = get_current_active_superuser
 
 
 @router.get("", response_model=dict[str, list[AuthConfigResponse]])
@@ -94,12 +75,17 @@ def get_all_configs(
         result[category] = []
 
         for config in configs:
-            # Mask sensitive values in response
+            # Never hand a secret — or a placeholder standing in for one — back to
+            # the client. Returning the literal "***REDACTED***" here is what let
+            # the admin panel bind it into the password field and submit it back,
+            # overwriting the real credential on the next Save. `is_set` carries
+            # the only thing the UI actually needs: whether a value exists.
             config_dict = {
                 "id": config.id,
                 "uuid": str(config.uuid),
                 "config_key": config.config_key,
-                "config_value": ("***REDACTED***" if config.is_sensitive else config.config_value),
+                "config_value": (None if config.is_sensitive else config.config_value),
+                "is_set": bool(config.config_value),
                 "is_sensitive": config.is_sensitive,
                 "category": config.category,
                 "data_type": config.data_type,

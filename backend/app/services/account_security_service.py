@@ -25,18 +25,22 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 
 from fastapi import HTTPException
+from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.password_policy import validate_password
 from app.auth.token_service import token_service
 from app.auth.utils import local_fallback_permitted_for
 from app.auth.utils import local_password_allowed
+from app.core.config import settings
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -108,6 +112,57 @@ def revoke_all_sessions(db: Session, user: User, *, reason: str) -> int:
     if revoked:
         logger.info("Revoked %d session(s) for user %s (%s)", revoked, user.id, reason)
     return revoked
+
+
+def reissue_current_session(
+    db: Session,
+    user: User,
+    response: Response,
+    *,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+) -> None:
+    """Give the caller a working session back after changing their OWN credential.
+
+    :func:`revoke_all_sessions` is deliberately total: it kills the session the
+    request arrived on as well, and stamps the per-user revocation epoch that
+    invalidates stateless access tokens. That is correct for an admin acting on
+    somebody else, but for a self-service change it signs the user out mid-flow —
+    and when the change was a *forced* one, being bounced to the login screen is
+    indistinguishable from the change having failed.
+
+    Revoke everything, then mint exactly one new session: that is what "sign out
+    everywhere else" means. Ordering is safe because the epoch check compares with
+    ``<``, so a token minted in the same second as the epoch survives by design.
+
+    Args:
+        db: Session; ``create_refresh_token`` commits, so call this AFTER the
+            caller's own commit.
+        user: The account whose session is being re-established.
+        response: The outgoing response; auth cookies are set on it.
+        user_agent: Recorded on the new session row.
+        ip_address: Recorded on the new session row.
+    """
+    from app.auth.cookies import set_auth_cookies
+    from app.auth.direct_auth import create_access_token
+
+    role = str(user.role)
+    user_uuid = str(user.uuid)
+
+    access_token = create_access_token(
+        data={"sub": user_uuid, "role": role, "type": TOKEN_TYPE_ACCESS},
+        expires_delta=timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    refresh_token, _row = token_service.create_refresh_token(
+        db=db,
+        user_id=user.id,
+        user_uuid=user_uuid,
+        role=role,
+        user_agent=user_agent,
+        ip_address=ip_address,
+    )
+    set_auth_cookies(response, access_token, refresh_token)
+    logger.info("Re-issued the caller's session for user %s after a credential change", user.id)
 
 
 def audit_password_change(

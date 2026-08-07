@@ -7,6 +7,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -44,6 +45,7 @@ from app.services.account_security_service import audit_role_change
 from app.services.account_security_service import audit_user_deleted
 from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import notify_email_changed
+from app.services.account_security_service import reissue_current_session
 from app.services.account_security_service import revoke_all_sessions
 from app.utils.uuid_helpers import get_user_by_uuid
 
@@ -172,12 +174,17 @@ def get_current_user_info(current_user: User = Depends(get_current_active_user))
 @router.put("/me", response_model=UserSchema)
 def update_current_user(
     request: Request,
+    response: Response,
     user_update: UserUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """
-    Update current user info
+    """Update the caller's own profile.
+
+    A password or email change revokes every session (AC-12) and then re-issues
+    this one, so the caller stays signed in on the device that made the change and
+    is signed out everywhere else. A password change also clears
+    ``must_change_password`` — this is the only non-email path that does.
     """
     client_ip, user_agent = _get_client_info(request)
     update_data = user_update.model_dump(exclude_unset=True)
@@ -251,6 +258,14 @@ def update_current_user(
     for field, value in update_data.items():
         setattr(current_user, field, value)
 
+    if password_changed:
+        # THE thing that ends a forced-change hold. Three paths set this flag
+        # (admin create, admin force-change, password expiry at login) and until
+        # now exactly one cleared it — the emailed reset — so a deployment with no
+        # mail transport had no exit at all: change the password, get held again,
+        # and after PASSWORD_HISTORY_COUNT attempts run out of reusable passwords.
+        current_user.must_change_password = False
+
     # Both changes invalidate every other session: an attacker holding one keeps
     # it through the victim's password change otherwise. In-transaction so a
     # commit failure below rolls the revocation back with it.
@@ -263,6 +278,13 @@ def update_current_user(
 
     db.commit()
     db.refresh(current_user)
+
+    if password_changed or email_changed:
+        # The revocation above is total and includes THIS session. Hand the caller
+        # a fresh one rather than signing them out of the flow they just completed.
+        reissue_current_session(
+            db, current_user, response, user_agent=user_agent, ip_address=client_ip
+        )
 
     if password_changed:
         audit_password_change(current_user, current_user, client_ip, user_agent)
@@ -406,6 +428,14 @@ def update_user(
 
         # Store password in history after successful change
         add_password_to_history(db, user.id, new_hash)
+
+        # The admin now knows a working credential for someone else's account, so
+        # it must not stay that account's password — same rule create_user applies.
+        # Not applied when an admin edits their OWN row through this route: they
+        # chose it themselves, and forcing a second change would be a loop.
+        if user.id != current_user.id:
+            update_data["must_change_password"] = True
+
         logger.info(f"Admin {current_user.id} changed password for user {user.id}")
 
     # Remove current_password from update_data as it's not a model field

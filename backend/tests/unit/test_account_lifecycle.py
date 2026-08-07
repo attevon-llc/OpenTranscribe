@@ -24,6 +24,8 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 from types import SimpleNamespace
+from typing import Any
+from typing import cast
 from uuid import UUID
 
 import pytest
@@ -81,8 +83,13 @@ class _FakeDB:
         self.rollbacks += 1
 
 
-def _user(**overrides):
-    """A ``User`` stand-in with the attributes the lifecycle paths read."""
+def _user(**overrides: Any) -> Any:
+    """A ``User`` stand-in with the attributes the lifecycle paths read.
+
+    Typed ``Any`` deliberately: these are structural stand-ins handed to
+    signatures that declare ``User``/``Session``, and casting at every call site
+    would bury the assertions.
+    """
     attrs = {
         "id": 1,
         "uuid": UUID(USER_UUID),
@@ -100,7 +107,7 @@ def _user(**overrides):
     return SimpleNamespace(**attrs)
 
 
-def _request(path: str = ORDINARY_PATH) -> SimpleNamespace:
+def _request(path: str = ORDINARY_PATH) -> Any:
     """A Request stand-in carrying a matched route, as Starlette would."""
     return SimpleNamespace(
         scope={"route": SimpleNamespace(path=path)},
@@ -110,6 +117,15 @@ def _request(path: str = ORDINARY_PATH) -> SimpleNamespace:
         state=SimpleNamespace(),
         cookies={},
     )
+
+
+def _code(exc) -> str:
+    """The machine-readable code from a lifecycle refusal.
+
+    ``HTTPException.detail`` is declared ``str``, but every gate in this module
+    raises an object detail — the code is the contract, the prose is not.
+    """
+    return str(cast(dict, exc.value.detail)["code"])
 
 
 def _unwrap(func):
@@ -161,8 +177,8 @@ class TestForcedPasswordChangeIsEnforced:
                 request=_request(ORDINARY_PATH), current_user=_user(must_change_password=True)
             )
 
-        assert exc.value.detail["code"] == ERROR_CODE_PASSWORD_CHANGE_REQUIRED
-        assert exc.value.detail["message"]
+        assert _code(exc) == ERROR_CODE_PASSWORD_CHANGE_REQUIRED
+        assert cast(dict, exc.value.detail)["message"]
 
     def test_change_password_endpoint_stays_reachable(self, audited):
         """The one route that can CLEAR the flag must not be behind the flag."""
@@ -197,7 +213,7 @@ class TestForcedPasswordChangeIsEnforced:
             )
 
         assert exc.value.status_code == 403
-        assert exc.value.detail["code"] == ERROR_CODE_PASSWORD_CHANGE_REQUIRED
+        assert _code(exc) == ERROR_CODE_PASSWORD_CHANGE_REQUIRED
 
     def test_refusal_is_audited(self, audited):
         with pytest.raises(HTTPException):
@@ -210,7 +226,7 @@ class TestForcedPasswordChangeIsEnforced:
 
     def test_an_unmatched_path_fails_closed(self, audited):
         """No route resolved → not exempt. The gate must not open on uncertainty."""
-        blank = SimpleNamespace(scope={}, client=None, headers={}, state=SimpleNamespace())
+        blank: Any = SimpleNamespace(scope={}, client=None, headers={}, state=SimpleNamespace())
 
         with pytest.raises(HTTPException) as exc:
             get_current_active_user(request=blank, current_user=_user(must_change_password=True))
@@ -265,7 +281,7 @@ class TestPasswordExpiryAtLogin:
         with pytest.raises(HTTPException) as exc:
             get_current_active_user(request=_request(ORDINARY_PATH), current_user=user)
 
-        assert exc.value.detail["code"] == ERROR_CODE_PASSWORD_CHANGE_REQUIRED
+        assert _code(exc) == ERROR_CODE_PASSWORD_CHANGE_REQUIRED
 
     def test_policy_disabled_expires_nothing(self, monkeypatch, login_audited):
         monkeypatch.setattr(policy_module.password_policy, "enabled", False)
@@ -282,7 +298,9 @@ class TestPasswordExpiryAtLogin:
             auth_type=auth_type, password_changed_at=datetime.now(UTC) - timedelta(days=61)
         )
 
-        login_module._apply_password_expiry(_FakeDB(), user, auth_type, "10.0.0.1", "pytest")
+        login_module._apply_password_expiry(
+            cast(Any, _FakeDB()), user, auth_type, "10.0.0.1", "pytest"
+        )
 
         assert user.must_change_password is False
         assert login_audited == []
@@ -342,6 +360,7 @@ class TestExpiryRuleHasOneImplementation:
 
     def test_cutoff_matches_the_row_check(self, expiry_enforced):
         cutoff = policy_module.password_expiry_cutoff()
+        assert cutoff is not None  # the fixture enables expiry
 
         assert policy_module.is_password_expired(cutoff - timedelta(seconds=1)) is True
         assert policy_module.is_password_expired(cutoff + timedelta(minutes=1)) is False
@@ -355,7 +374,8 @@ class TestExpiryRuleHasOneImplementation:
         """The missing wrapper was the tell that this build was abandoned."""
         changed = datetime.now(UTC) - timedelta(days=61)
 
-        assert policy_module.get_days_until_expiration(changed) < 0
+        days = policy_module.get_days_until_expiration(changed)
+        assert days is not None and days < 0
 
 
 # ── DEFECT 3: last_login_at is written on every successful authentication ────────
@@ -375,7 +395,7 @@ class TestLastLoginIsStamped:
         user = _user()
         db = _FakeDB()
 
-        login_module.record_successful_login(db, user)
+        login_module.record_successful_login(cast(Any, db), user)
 
         assert user.last_login_at is not None
         assert db.commits == 1
@@ -384,7 +404,7 @@ class TestLastLoginIsStamped:
         user = _user()
 
         login_module._generate_login_tokens(
-            _FakeDB(), user, USER_UUID, "user", "pytest", "10.0.0.1", auth_method="local"
+            cast(Any, _FakeDB()), user, USER_UUID, "user", "pytest", "10.0.0.1", auth_method="local"
         )
 
         assert user.last_login_at is not None
@@ -398,9 +418,15 @@ class TestLastLoginIsStamped:
 
         db = _BrokenDB()
         response = login_module._generate_login_tokens(
-            _FakeDB(), _user(), USER_UUID, "user", "pytest", "10.0.0.1", auth_method="local"
+            cast(Any, _FakeDB()),
+            _user(),
+            USER_UUID,
+            "user",
+            "pytest",
+            "10.0.0.1",
+            auth_method="local",
         )
-        login_module.record_successful_login(db, _user())
+        login_module.record_successful_login(cast(Any, db), _user())
 
         assert response.status_code == 200
         assert db.rollbacks == 1
@@ -441,7 +467,7 @@ class TestAccountExpiry:
             get_current_active_user(request=_request(), current_user=user)
 
         assert exc.value.status_code == 403
-        assert exc.value.detail["code"] == ERROR_CODE_ACCOUNT_EXPIRED
+        assert _code(exc) == ERROR_CODE_ACCOUNT_EXPIRED
 
     def test_refusal_is_audited(self, audited):
         user = _user(account_expires_at=datetime.now(UTC) - timedelta(days=1))
@@ -469,7 +495,7 @@ class TestAccountExpiry:
         with pytest.raises(HTTPException) as exc:
             get_current_active_user(request=_request(), current_user=user)
 
-        assert exc.value.detail["code"] == ERROR_CODE_ACCOUNT_EXPIRED
+        assert _code(exc) == ERROR_CODE_ACCOUNT_EXPIRED
 
     def test_expiry_is_not_exempt_on_the_change_password_route(self, audited):
         """Unlike a forced change, expiry has no self-service remedy — no route escapes."""
@@ -480,4 +506,62 @@ class TestAccountExpiry:
         with pytest.raises(HTTPException) as exc:
             get_current_active_user(request=_request(CHANGE_PASSWORD_PATH), current_user=user)
 
-        assert exc.value.detail["code"] == ERROR_CODE_ACCOUNT_EXPIRED
+        assert _code(exc) == ERROR_CODE_ACCOUNT_EXPIRED
+
+
+# ── DEFECT 4: the forced-change hold had no exit without a mail server ──────────
+
+
+class TestSelfServiceChangeClearsTheHold:
+    """The gate is only survivable if something clears the flag it reads.
+
+    Three paths SET ``must_change_password`` — admin create, admin force-change,
+    and password expiry at login — and for a while exactly one cleared it: the
+    emailed reset. A deployment with no mail transport therefore had no exit at
+    all. The user changed their password on the forced-change screen, got held
+    again on the very next request, and after ``PASSWORD_HISTORY_COUNT`` attempts
+    ran out of passwords they were allowed to reuse.
+
+    ``PUT /users/me`` is the route the gate deliberately leaves reachable, so it
+    is the route that has to clear the flag.
+    """
+
+    def test_the_self_service_route_is_the_one_that_clears_it(self):
+        import inspect
+
+        from app.api.endpoints import users as users_module
+
+        source = inspect.getsource(users_module.update_current_user)
+        body = "\n".join(line for line in source.splitlines() if not line.strip().startswith("#"))
+        assert "must_change_password = False" in body, (
+            "PUT /users/me must clear must_change_password. Without it the forced-"
+            "change gate is a permanent lockout on any deployment without SMTP."
+        )
+
+    def test_the_caller_keeps_a_session_after_changing_their_own_password(self):
+        """Revocation is total and includes THIS session, so it must be re-issued.
+
+        Otherwise the change succeeds, every cookie dies, and the user is bounced
+        to the login screen — indistinguishable from the change having failed.
+        """
+        import inspect
+
+        from app.api.endpoints import users as users_module
+
+        source = inspect.getsource(users_module.update_current_user)
+        assert "reissue_current_session" in source
+        assert source.index("revoke_all_sessions") < source.index("reissue_current_session"), (
+            "the new session must be minted AFTER the revocation, or it is revoked too"
+        )
+
+    def test_an_admin_setting_someone_elses_password_forces_a_change(self):
+        """The admin now knows a working credential for another account."""
+        import inspect
+
+        from app.api.endpoints import users as users_module
+
+        source = inspect.getsource(users_module.update_user)
+        assert '"must_change_password"' in source
+        assert "user.id != current_user.id" in source, (
+            "an admin editing their OWN row must not be forced to change again"
+        )

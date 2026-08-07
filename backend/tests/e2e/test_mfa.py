@@ -42,6 +42,9 @@ MFA_TEST_EMAIL = f"mfa-e2e-{uuid.uuid4().hex[:8]}@example.com"
 MFA_TEST_PASSWORD = "Xk9!pLm2@Wq7Rn"
 MFA_TEST_FULLNAME = "Jo Ce"
 
+# Sidebar nav item that owns the MFA panel (settings.profile.title, English UI).
+PROFILE_NAV_LABEL = "Profile & Security"
+
 
 # ===== Session fixtures =====
 
@@ -122,17 +125,22 @@ def _wait_for_gallery(page: Page, timeout: int = 15000):
 
 
 def _open_security_settings(page: Page):
-    """Navigate to Settings -> Security tab and wait for MFA content to load."""
+    """Navigate to Settings -> Profile & Security and wait for MFA content.
+
+    There is no "Security" nav item: SecuritySettings.svelte (the MFA panel)
+    is a child of UserProfileSettings.svelte, so the only way in is the
+    Profile nav item. Same label text the other settings e2e tests match on
+    (`settings.profile.title`, English UI).
+    """
     page.click(".user-button")
     page.wait_for_selector(".dropdown-item", state="visible", timeout=5000)
     page.click(".dropdown-item:has-text('Settings')")
     page.wait_for_selector(".settings-sidebar", state="visible", timeout=10000)
 
-    # Click Security nav item
-    security_nav = page.locator(".settings-sidebar button.nav-item:has-text('Security')")
-    security_nav.scroll_into_view_if_needed()
-    security_nav.wait_for(state="visible", timeout=5000)
-    security_nav.click()
+    profile_nav = page.locator(".settings-sidebar .nav-item", has_text=PROFILE_NAV_LABEL).first
+    profile_nav.scroll_into_view_if_needed()
+    profile_nav.wait_for(state="visible", timeout=5000)
+    profile_nav.click()
     page.wait_for_selector(".security-settings", state="visible", timeout=10000)
 
     # Wait for async MFA status to finish loading (spinner disappears)
@@ -178,17 +186,13 @@ class TestMFASetupFlow:
         _wait_for_gallery(page)
         _open_security_settings(page)
 
-        # Click "Enable Two-Factor Authentication" button (wait for it to appear)
+        # Click "Enable Two-Factor Authentication" button (wait for it to appear).
+        # A missing button is a real failure — the API preconditions above already
+        # established that this user can enrol.
         enable_btn = page.locator(
             "button.btn-primary:has-text('Enable'), button.btn-primary:has-text('Set Up')"
         )
-        try:
-            enable_btn.first.wait_for(state="visible", timeout=10000)
-        except Exception:
-            # Capture what's visible for debugging
-            content = page.text_content(".security-settings") or ""
-            pytest.skip(f"MFA setup button not found. Content: {content[:200]}")
-
+        enable_btn.first.wait_for(state="visible", timeout=10000)
         enable_btn.first.click()
 
         # QR code should appear
@@ -213,11 +217,7 @@ class TestMFASetupFlow:
         enable_btn = page.locator(
             "button.btn-primary:has-text('Enable'), button.btn-primary:has-text('Set Up')"
         )
-        try:
-            enable_btn.first.wait_for(state="visible", timeout=10000)
-        except Exception:
-            content = page.text_content(".security-settings") or ""
-            pytest.skip(f"MFA setup button not found. Content: {content[:200]}")
+        enable_btn.first.wait_for(state="visible", timeout=10000)
         enable_btn.first.click()
 
         # Wait for QR code to appear (setup API call)

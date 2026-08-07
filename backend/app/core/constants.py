@@ -233,7 +233,9 @@ SEARCH_DEFAULT_PAGE_SIZE = 20
 SEARCH_MAX_PAGE_SIZE = 100
 SEARCH_MAX_SNIPPETS_PER_FILE = 10  # Top occurrences per file (reduces memory/latency)
 SEARCH_MAX_SEMANTIC_SNIPPETS_PER_FILE = 2  # Display limit for card view (deprecated)
-SEARCH_HYBRID_MIN_SCORE = 0.01
+# SEARCH_HYBRID_MIN_SCORE lives in config.Settings (env-tunable, default 0.005) —
+# hybrid_search_service reads settings.SEARCH_HYBRID_MIN_SCORE. A same-named
+# constant here was dead and shadowed the real value when tuning.
 SEARCH_CACHE_TTL_SECONDS = 300
 SEARCH_CACHE_MAX_SIZE = 256
 

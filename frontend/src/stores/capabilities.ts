@@ -37,6 +37,14 @@ export const capabilities = writable<CapabilitiesState>(COMMUNITY_DEFAULTS);
  * True unless the backend explicitly disabled the key. Unknown keys default
  * to enabled (fail-open) — the cloud resolver explicitly sets false for
  * every surface it hides.
+ *
+ * This is the OPPOSITE of the backend's `capability_enabled`, which returns
+ * false for an unknown key (fail-closed). The asymmetry is intentional (a
+ * blank/failed capabilities fetch must not blank the self-hosted UI) but it
+ * hides drift: a `cap:` key the backend has never declared renders here
+ * forever and vanishes the moment someone declares it as `False`. Hence
+ * `backend/tests/unit/test_capability_contract.py`, which pins every `cap:`
+ * string in SettingsModal.svelte to a declared backend capability.
  */
 export function isCapabilityEnabled(state: CapabilitiesState, key: string): boolean {
   return state.capabilities[key] !== false;

@@ -95,9 +95,9 @@ class TestSecretsNeverReachTheWire:
         """decrypt=False is exactly how the admin endpoint calls it."""
         import inspect
 
-        from app.services.auth_config_service import AuthConfigService as service
+        from app.services.auth_config_service import AuthConfigService
 
-        source = inspect.getsource(service.get_config_by_category)
+        source = inspect.getsource(AuthConfigService.get_config_by_category)
         # The masking must happen before, and independently of, the decrypt branch.
         assert "not decrypt" in source
         assert "SENSITIVE_SET_SENTINEL" in source

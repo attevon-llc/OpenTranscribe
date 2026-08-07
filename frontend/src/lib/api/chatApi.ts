@@ -10,6 +10,9 @@
 import axiosInstance from '$lib/axios';
 import type {
   ChatAdminSettings,
+  ChatProject,
+  ChatProjectDetail,
+  ChatProjectList,
   ChatScope,
   ChatUserSettings,
   Conversation,
@@ -38,6 +41,8 @@ export interface CreateConversationPayload {
   scope?: ChatScope;
   llm_config_uuid?: string | null;
   settings?: ConversationSettings;
+  /** Joining a project makes the chat inherit its scope and prompt layer. */
+  project_uuid?: string | null;
 }
 
 export async function createConversation(
@@ -148,5 +153,58 @@ export async function updateChatAdminSettings(
   patch: Partial<ChatAdminSettings>
 ): Promise<ChatAdminSettings> {
   const { data } = await axiosInstance.put<ChatAdminSettings>('/admin/chat-settings', patch);
+  return data;
+}
+
+// --- Projects (issue #360) -------------------------------------------------
+
+export interface ProjectPayload {
+  name?: string;
+  description?: string | null;
+  system_prompt?: string | null;
+  scope?: ChatScope;
+  llm_config_uuid?: string | null;
+  is_archived?: boolean;
+}
+
+export async function listProjects(includeArchived = false): Promise<ChatProjectList> {
+  const { data } = await axiosInstance.get<ChatProjectList>('/chat/projects', {
+    params: { include_archived: includeArchived },
+  });
+  return data;
+}
+
+export async function getProject(uuid: string): Promise<ChatProjectDetail> {
+  const { data } = await axiosInstance.get<ChatProjectDetail>(`/chat/projects/${uuid}`);
+  return data;
+}
+
+export async function createProject(payload: ProjectPayload): Promise<ChatProjectDetail> {
+  const { data } = await axiosInstance.post<ChatProjectDetail>('/chat/projects', payload);
+  return data;
+}
+
+export async function updateProject(
+  uuid: string,
+  payload: ProjectPayload
+): Promise<ChatProjectDetail> {
+  const { data } = await axiosInstance.patch<ChatProjectDetail>(`/chat/projects/${uuid}`, payload);
+  return data;
+}
+
+/** Deletes the project only — its conversations survive, ungrouped. */
+export async function deleteProject(uuid: string): Promise<void> {
+  await axiosInstance.delete(`/chat/projects/${uuid}`);
+}
+
+/** Move a conversation between projects. Pass "" to move it out to ungrouped. */
+export async function setConversationProject(
+  conversationUuid: string,
+  projectUuid: string
+): Promise<Conversation> {
+  const { data } = await axiosInstance.patch<Conversation>(
+    `/chat/conversations/${conversationUuid}`,
+    { project_uuid: projectUuid }
+  );
   return data;
 }

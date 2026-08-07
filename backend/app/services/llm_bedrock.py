@@ -217,6 +217,7 @@ def stream_converse(
     messages: list[dict[str, str]],
     max_tokens: int,
     temperature: float | None = None,
+    top_p: float | None = None,
     cancel_event: threading.Event | None = None,
     attribution: dict[str, Any] | None = None,
 ) -> Iterator[LLMStreamEvent]:
@@ -234,6 +235,8 @@ def stream_converse(
         temperature: Sampling temperature, omitted when None. Some newer models
             reject non-default sampling parameters, so callers that don't need it
             should leave it unset rather than passing a default.
+        top_p: Nucleus sampling, sent as ``topP``. Omitted when None for the same
+            reason as temperature.
         cancel_event: Set by the caller on client disconnect or Stop.
         attribution: Tenant/user identifiers for ``requestMetadata``.
 
@@ -255,6 +258,8 @@ def stream_converse(
     inference_config: dict[str, Any] = {"maxTokens": max_tokens}
     if temperature is not None:
         inference_config["temperature"] = temperature
+    if top_p is not None:
+        inference_config["topP"] = top_p
 
     request: dict[str, Any] = {
         "modelId": model_id,
@@ -321,6 +326,7 @@ def invoke_converse(
     messages: list[dict[str, str]],
     max_tokens: int,
     temperature: float | None = None,
+    top_p: float | None = None,
     attribution: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Non-streaming Converse call, for the batch enrichment tasks.
@@ -339,6 +345,8 @@ def invoke_converse(
     inference_config: dict[str, Any] = {"maxTokens": max_tokens}
     if temperature is not None:
         inference_config["temperature"] = temperature
+    if top_p is not None:
+        inference_config["topP"] = top_p
 
     request: dict[str, Any] = {
         "modelId": model_id,

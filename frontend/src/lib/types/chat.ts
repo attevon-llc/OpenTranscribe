@@ -93,6 +93,10 @@ export interface ConversationSettings {
   use_context?: boolean | null;
   system_prompt?: string | null;
   temperature?: number | null;
+  /** Reply length ceiling. null inherits the provider config; the server clamps. */
+  max_tokens?: number | null;
+  /** Nucleus sampling. null omits it from the request entirely. */
+  top_p?: number | null;
   search_mode?: SearchMode | null;
 }
 
@@ -104,6 +108,8 @@ export interface ConversationSummary {
   created_at: string | null;
   updated_at: string | null;
   message_count: number;
+  /** null = ungrouped. The sidebar groups on this (#360). */
+  project_uuid?: string | null;
 }
 
 export interface Conversation extends ConversationSummary {
@@ -212,3 +218,27 @@ export type StreamStatus =
   | 'done'
   | 'error'
   | 'aborted';
+
+/** A workspace grouping conversations, with a pinned scope and prompt layer (#360). */
+export interface ChatProject {
+  uuid: string;
+  name: string;
+  description?: string | null;
+  is_archived: boolean;
+  conversation_count: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ChatProjectDetail extends ChatProject {
+  system_prompt?: string | null;
+  scope: ChatScope;
+  llm_config_uuid?: string | null;
+  /** True when the project pins recordings, so new chats inherit a scope. */
+  has_scope: boolean;
+}
+
+export interface ChatProjectList {
+  projects: ChatProject[];
+  total: number;
+}

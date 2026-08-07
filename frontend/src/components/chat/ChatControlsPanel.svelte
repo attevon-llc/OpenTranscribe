@@ -173,6 +173,59 @@
         {/each}
       </select>
     </div>
+
+    <!-- Collapsed by default: most people never need these, and the panel is
+         friendlier without two extra numeric fields competing for attention. -->
+    <details class="advanced">
+      <summary data-testid="chat-advanced-toggle">{$t('chat.controls.advanced')}</summary>
+
+      <div class="control-group">
+        <label class="field-label" for="chat-max-tokens">
+          {$t('chat.controls.maxTokens')}
+          <span class="value">
+            {settings.max_tokens ?? $t('chat.controls.inherit')}
+          </span>
+        </label>
+        <input
+          id="chat-max-tokens"
+          type="number"
+          min="256"
+          max="200000"
+          step="256"
+          placeholder={$t('chat.controls.inherit')}
+          value={settings.max_tokens ?? ''}
+          on:change={(e) => {
+            const raw = (e.target as HTMLInputElement).value.trim();
+            dispatch('change', { max_tokens: raw === '' ? null : Number(raw) });
+          }}
+          {disabled}
+          data-testid="chat-max-tokens"
+        />
+        <span class="range-hint">{$t('chat.controls.maxTokensHint')}</span>
+      </div>
+
+      <div class="control-group">
+        <label class="field-label" for="chat-top-p">
+          {$t('chat.controls.topP')}
+          <span class="value">
+            {settings.top_p ?? $t('chat.controls.inherit')}
+          </span>
+        </label>
+        <input
+          id="chat-top-p"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={settings.top_p ?? 1}
+          on:change={(e) =>
+            dispatch('change', { top_p: Number((e.target as HTMLInputElement).value) })}
+          {disabled}
+          data-testid="chat-top-p"
+        />
+        <span class="range-hint">{$t('chat.controls.topPHint')}</span>
+      </div>
+    </details>
   </div>
 {/if}
 
@@ -232,6 +285,40 @@
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
+  }
+
+  .advanced {
+    border-top: 1px solid var(--border-color);
+    padding-top: 0.85rem;
+  }
+
+  .advanced summary {
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    list-style: revert;
+  }
+
+  .advanced summary:hover {
+    color: var(--text-color);
+  }
+
+  .advanced summary:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  .advanced > .control-group {
+    margin-top: 0.9rem;
+  }
+
+  /* form-elements.css gives every <input> width:100% and a surface fill; the
+     number field wants that, but it must not inherit the button transform. */
+  .advanced input[type='number'] {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
   }
 
   .toggle-row {

@@ -277,7 +277,27 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'chat_conversation')"
     )
 
+    # v376 guard: chat projects (issue #360). The table is the marker; the
+    # nullable chat_conversation.project_id lands in the same revision.
+    has_chat_projects = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'chat_project')"
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v376: chat projects (chat_project table + chat_conversation.project_id).
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+    ):
+        return "v376_add_chat_projects"
     # v375: RAG chat conversations + messages (chat_conversation table).
     if (
         has_cloud_seams

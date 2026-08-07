@@ -68,13 +68,21 @@ def test_v375_migration_is_vendor_neutral():
         assert vendor_noun not in source.lower()
 
 
-def test_detection_arm_returns_v375_on_current_schema(db_session):
-    """An untracked DB with the current (post-v375) schema stamps at v375."""
+def test_detection_arm_returns_at_least_v375_on_current_schema(db_session):
+    """An untracked DB with the chat tables stamps at v375 or newer.
+
+    Widened deliberately: ``_detect_schema_version`` returns the NEWEST matching
+    revision, so pinning an exact value here would break on every subsequent
+    migration. The exact stamp for a revision belongs in that revision's own
+    suite — v376's is in ``test_v376_migration_consistency.py``.
+    """
     from app.db.migrations import _detect_schema_version
 
     conn = db_session.connection()
     tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) == "v375_add_chat_tables"
+    detected = _detect_schema_version(conn, tables)
+    assert detected is not None
+    assert detected >= "v375_add_chat_tables"
 
 
 def test_chat_tables_have_expected_shape(db_session):

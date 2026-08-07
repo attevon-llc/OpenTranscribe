@@ -16,10 +16,17 @@
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { llmStatusStore } from '$stores/llmStatus';
   import { chatStore } from '$stores/chat';
-  import { estimateContext } from '$lib/api/chatApi';
-  import { emptyScope, type ChatScope, type ConversationSettings } from '$lib/types/chat';
+  import { estimateContext, getProject, listProjects } from '$lib/api/chatApi';
+  import {
+    emptyScope,
+    type ChatProject,
+    type ChatProjectDetail,
+    type ChatScope,
+    type ConversationSettings,
+  } from '$lib/types/chat';
 
   import ChatSidebar from '$components/chat/ChatSidebar.svelte';
+  import ProjectModal from '$components/chat/ProjectModal.svelte';
   import ChatThread from '$components/chat/ChatThread.svelte';
   import ChatComposer from '$components/chat/ChatComposer.svelte';
   import ChatContextBar from '$components/chat/ChatContextBar.svelte';
@@ -75,6 +82,7 @@
 
   onMount(() => {
     chatStore.loadConversations(true);
+    loadProjects();
 
     // Mirror the 900px breakpoint the layout uses. Below it the sidebar is an
     // off-screen drawer; above it, a normal column that must stay reachable.
@@ -174,6 +182,45 @@
     await goto('/chat');
   }
 
+  // --- projects (#360) ---
+  let projects: ChatProject[] = [];
+  let projectModalOpen = false;
+  let editingProject: ChatProjectDetail | null = null;
+  /** Pre-selected project for the next conversation, set by "new chat here". */
+  let pendingProjectUuid: string | null = null;
+
+  async function loadProjects(): Promise<void> {
+    try {
+      projects = (await listProjects()).projects;
+    } catch {
+      projects = [];
+    }
+  }
+
+  function openNewProject(): void {
+    editingProject = null;
+    projectModalOpen = true;
+  }
+
+  async function openEditProject(uuid: string): Promise<void> {
+    try {
+      editingProject = await getProject(uuid);
+      projectModalOpen = true;
+    } catch {
+      editingProject = null;
+    }
+  }
+
+  async function newChatInProject(uuid: string): Promise<void> {
+    // The conversation row is created lazily on first send, so the project is
+    // held here and attached at that point rather than creating an empty row.
+    pendingProjectUuid = uuid;
+    sidebarOpen = false;
+    chatStore.newConversation();
+    chatStore.setPendingProject(uuid);
+    await goto('/chat');
+  }
+
   async function applyScope(scope: ChatScope): Promise<void> {
     await chatStore.persistScope(scope);
     await chatStore.refreshEstimate();
@@ -260,8 +307,23 @@
         on:archive={(e) => chatStore.setArchived(e.detail, !state.showArchived)}
         on:toggleArchived={() => chatStore.toggleArchivedView()}
         on:loadMore={() => chatStore.loadConversations()}
+        {projects}
+        on:newProject={openNewProject}
+        on:editProject={(e) => openEditProject(e.detail)}
+        on:newChatInProject={(e) => newChatInProject(e.detail)}
       />
     </div>
+
+    <ProjectModal
+      isOpen={projectModalOpen}
+      project={editingProject}
+      on:saved={loadProjects}
+      on:deleted={() => {
+        loadProjects();
+        chatStore.loadConversations();
+      }}
+      on:close={() => (projectModalOpen = false)}
+    />
 
     {#if sidebarOpen}
       <button

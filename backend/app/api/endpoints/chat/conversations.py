@@ -24,6 +24,7 @@ from app.api.endpoints.chat.common import read_user_chat_settings
 from app.api.endpoints.chat.common import resolve_llm_config_id
 from app.api.endpoints.chat.common import to_detail
 from app.api.endpoints.chat.common import to_summary
+from app.api.endpoints.chat.projects import get_owned_project
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
@@ -63,9 +64,18 @@ def create_conversation(
     """Start a new conversation, optionally pre-scoped to files/collections/tags."""
     llm_config_id = resolve_llm_config_id(db, ctx.user.id, body.llm_config_uuid)
 
+    # 404s through get_owned_project if the project isn't the caller's, so a
+    # conversation can never be filed into someone else's workspace.
+    project = get_owned_project(db, body.project_uuid, ctx) if body.project_uuid else None
+    # A project's model is a default for chats created inside it; an explicit
+    # llm_config_uuid on the request still wins.
+    if project is not None and llm_config_id is None:
+        llm_config_id = project.llm_config_id
+
     conversation = ChatConversation(
         user_id=ctx.user.id,
         organization_id=ctx.org_id,
+        project_id=project.id if project else None,
         title=body.title,
         context=body.scope.model_dump(),
         llm_config_id=llm_config_id,
@@ -175,6 +185,11 @@ def update_conversation(
             resolve_llm_config_id(db, ctx.user.id, body.llm_config_uuid)
             if body.llm_config_uuid
             else None
+        )
+    if body.project_uuid is not None:
+        # "" is the explicit "move out to ungrouped" signal; a uuid moves it.
+        conversation.project_id = (
+            get_owned_project(db, body.project_uuid, ctx).id if body.project_uuid else None
         )
     if body.settings is not None:
         # Merge so the Chat Controls panel can PATCH one field at a time.

@@ -74,7 +74,12 @@ def create_upload(object_name: str, content_type: str | None) -> str:
     ``application/octet-stream`` object the media player will refuse to stream.
     """
     ensure_bucket_exists()
-    headers: dict[str, str] = {"Content-Type": content_type or "application/octet-stream"}
+    # Typed to minio-py's own header signature rather than dict[str, str]: it
+    # accepts repeated headers as a list/tuple, and dict is invariant in its
+    # value type, so the narrower annotation is rejected at the call below.
+    headers: dict[str, str | list[str] | tuple[str]] = {
+        "Content-Type": content_type or "application/octet-stream"
+    }
     upload_id = minio_client._create_multipart_upload(_bucket(), object_name, headers)  # noqa: SLF001
     logger.info(f"Created multipart upload {upload_id} for {object_name}")
     return str(upload_id)

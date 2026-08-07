@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import RequestContext
 from app.core import constants as C  # noqa: N812
 from app.models.chat import ChatConversation
+from app.models.chat import ChatProject
 from app.schemas.chat import ChatScope
 from app.schemas.chat import ConversationDetail
 from app.schemas.chat import ConversationSettings
@@ -54,6 +55,46 @@ def get_owned_conversation(
     return conversation
 
 
+def resolve_effective_scope(
+    conversation: ChatConversation, project: ChatProject | None
+) -> ChatScope:
+    """The scope a turn actually retrieves against (issue #360).
+
+    Precedence: the conversation's own pinned recordings, else the project's
+    pinned default, else empty — which ``resolve_scope_file_uuids`` turns into
+    ``None``, meaning "everything the caller can access".
+
+    That last step is why this function must not be clever. An empty scope means
+    "all accessible", while an *explicitly resolved but empty* file list means
+    "match nothing". Returning a ChatScope with empty lists when a project pins
+    nothing preserves the first meaning; inventing an empty file_uuids list here
+    would silently switch a project to the second and answer every question with
+    "no relevant excerpts".
+
+    Speakers are a separate axis, so the conversation's own speaker filter
+    survives inheriting the project's recordings — "what did Dana say" stays
+    scoped to Dana while widening to the client's calls.
+
+    Args:
+        conversation: The conversation being answered.
+        project: Its owning project, or None when ungrouped.
+
+    Returns:
+        The scope to resolve into file UUIDs.
+    """
+    conv_scope = ChatScope(**conversation.scope)
+    if not conv_scope.is_empty or project is None or not project.has_scope:
+        return conv_scope
+
+    inherited = ChatScope(**project.default_scope)
+    return ChatScope(
+        file_uuids=inherited.file_uuids,
+        collection_uuids=inherited.collection_uuids,
+        tag_names=inherited.tag_names,
+        speakers=conv_scope.speakers or inherited.speakers,
+    )
+
+
 def conversation_settings(conversation: ChatConversation) -> ConversationSettings:
     """Per-conversation overrides as a schema object (empty when unset)."""
     raw = conversation.settings or {}
@@ -61,6 +102,8 @@ def conversation_settings(conversation: ChatConversation) -> ConversationSetting
         use_context=raw.get("use_context"),
         system_prompt=raw.get("system_prompt"),
         temperature=raw.get("temperature"),
+        max_tokens=raw.get("max_tokens"),
+        top_p=raw.get("top_p"),
         search_mode=raw.get("search_mode"),
     )
 
@@ -126,6 +169,7 @@ def to_summary(conversation: ChatConversation, message_count: int = 0) -> Conver
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
         message_count=message_count,
+        project_uuid=str(conversation.project.uuid) if conversation.project else None,
     )
 
 
@@ -156,6 +200,7 @@ def to_detail(
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
         message_count=message_count,
+        project_uuid=str(conversation.project.uuid) if conversation.project else None,
         scope=ChatScope(**conversation.scope),
         settings=conversation_settings(conversation),
         llm_config_uuid=llm_config_uuid,

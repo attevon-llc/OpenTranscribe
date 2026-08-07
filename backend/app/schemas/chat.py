@@ -78,11 +78,18 @@ class ChatScope(BaseModel):
 
 
 class ConversationSettings(BaseModel):
-    """Per-conversation overrides (None = inherit the user's default)."""
+    """Per-conversation overrides (None = inherit the user's default).
+
+    ``max_tokens`` and ``top_p`` are validated for shape only. The real ceiling
+    is the model's context window and any per-tenant cap, neither of which is
+    knowable here — both are applied when the turn is assembled.
+    """
 
     use_context: bool | None = None
     system_prompt: str | None = Field(default=None, max_length=MAX_SYSTEM_PROMPT_CHARS)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=None, ge=256, le=200_000)
+    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
     search_mode: SearchMode | None = None
 
 
@@ -91,6 +98,8 @@ class ConversationCreate(BaseModel):
     scope: ChatScope = Field(default_factory=ChatScope)
     llm_config_uuid: str | None = None
     settings: ConversationSettings | None = None
+    # Joining a project makes the conversation inherit its scope and prompt layer.
+    project_uuid: str | None = None
 
 
 class ConversationUpdate(BaseModel):
@@ -101,6 +110,8 @@ class ConversationUpdate(BaseModel):
     scope: ChatScope | None = None
     llm_config_uuid: str | None = None
     settings: ConversationSettings | None = None
+    # "" moves the conversation out to ungrouped; None leaves it where it is.
+    project_uuid: str | None = None
 
 
 class Citation(BaseModel):
@@ -150,6 +161,8 @@ class ConversationSummary(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     message_count: int = 0
+    # NULL = ungrouped. The sidebar groups on this.
+    project_uuid: str | None = None
 
 
 class ConversationDetail(ConversationSummary):
@@ -167,6 +180,55 @@ class ConversationList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class ProjectCreate(BaseModel):
+    """A new project. Everything except the name is optional."""
+
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+    system_prompt: str | None = Field(default=None, max_length=MAX_SYSTEM_PROMPT_CHARS)
+    scope: ChatScope = ChatScope()
+    llm_config_uuid: str | None = None
+
+
+class ProjectUpdate(BaseModel):
+    """PATCH body — only provided fields are applied."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+    system_prompt: str | None = Field(default=None, max_length=MAX_SYSTEM_PROMPT_CHARS)
+    scope: ChatScope | None = None
+    llm_config_uuid: str | None = None
+    is_archived: bool | None = None
+
+
+class ProjectSummary(BaseModel):
+    """Sidebar group header."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    uuid: str
+    name: str
+    description: str | None = None
+    is_archived: bool = False
+    conversation_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ProjectDetail(ProjectSummary):
+    system_prompt: str | None = None
+    scope: ChatScope = ChatScope()
+    llm_config_uuid: str | None = None
+    # True when the project pins any recordings, i.e. new chats inherit a scope
+    # rather than searching everything. Surfaced so the UI can say so plainly.
+    has_scope: bool = False
+
+
+class ProjectList(BaseModel):
+    projects: list[ProjectSummary]
+    total: int
 
 
 class MessageList(BaseModel):

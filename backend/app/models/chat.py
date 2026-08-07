@@ -39,6 +39,78 @@ STATUS_CANCELLED = "cancelled"
 STATUS_SUPERSEDED = "superseded"  # replaced by a regenerated answer
 
 
+class ChatProject(Base):
+    """A workspace grouping conversations about one recurring subject.
+
+    Carries two things a plain folder does not: a pinned transcript ``scope``
+    that every conversation inside inherits, and ``system_prompt`` — prompt
+    layer 3, between the user's account default and a per-conversation
+    override — for standing background about this client or meeting.
+
+    Private to its creator, like :class:`ChatConversation`. ``organization_id``
+    is a tenancy stamp, not a sharing surface.
+    """
+
+    __tablename__ = "chat_project"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    uuid: Mapped[uuid_pkg.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    )
+    organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organization.id"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Prompt layer 3. Appended beneath the base rules and the user's default,
+    # above any per-conversation override. Never displaces the base rules.
+    system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Default retrieval scope, same JSONB shape as ChatConversation.context.
+    scope: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    llm_config_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user_llm_settings.id", ondelete="SET NULL"), nullable=True
+    )
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    conversations: Mapped[list["ChatConversation"]] = relationship(
+        "ChatConversation",
+        back_populates="project",
+        # Deliberately NOT delete-orphan: removing a project must leave its
+        # conversations ungrouped, never destroy them.
+        passive_deletes=True,
+    )
+
+    @property
+    def default_scope(self) -> dict[str, list]:
+        """Pinned scope with every key present (empty lists when unset).
+
+        Mirrors :attr:`ChatConversation.scope` so the resolver reads either
+        without a second code path.
+        """
+        raw = self.scope or {}
+        return {
+            "file_uuids": list(raw.get("file_uuids") or []),
+            "collection_uuids": list(raw.get("collection_uuids") or []),
+            "tag_names": list(raw.get("tag_names") or []),
+            "speakers": list(raw.get("speakers") or []),
+        }
+
+    @property
+    def has_scope(self) -> bool:
+        """Whether this project pins any recording scope at all."""
+        s = self.default_scope
+        return bool(s["file_uuids"] or s["collection_uuids"] or s["tag_names"])
+
+
 class ChatConversation(Base):
     """One chat thread: its pinned transcript scope, settings and message list."""
 
@@ -53,6 +125,10 @@ class ChatConversation(Base):
     )
     organization_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("organization.id"), nullable=True, index=True
+    )
+    # NULL = ungrouped, which is every conversation created before v376.
+    project_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("chat_project.id", ondelete="SET NULL"), nullable=True, index=True
     )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Pinned retrieval scope: {"file_uuids": [], "collection_uuids": [], "tag_names": []}
@@ -79,6 +155,10 @@ class ChatConversation(Base):
         back_populates="conversation",
         cascade="all, delete-orphan",
         order_by="ChatMessage.id",
+    )
+
+    project: Mapped["ChatProject | None"] = relationship(
+        "ChatProject", back_populates="conversations"
     )
 
     @property

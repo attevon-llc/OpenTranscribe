@@ -30,6 +30,7 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import get_owned_conversation
 from app.api.endpoints.chat.common import read_user_chat_settings
+from app.api.endpoints.chat.common import resolve_effective_scope
 from app.api.endpoints.chat.common import resolve_use_context
 from app.auth.rate_limit import limiter
 from app.core.tenant_limits import resolve_allowed_models
@@ -192,11 +193,12 @@ def _prepare_turn(
 
         conv_settings = conversation.settings or {}
         use_context = resolve_use_context(conversation, user_defaults)
+        project = conversation.project
 
         file_uuids = None
         speakers: list[str] = []
         if use_context:
-            scope = ChatScope(**conversation.scope)
+            scope = resolve_effective_scope(conversation, project)
             file_uuids = resolve_scope_file_uuids(db, ctx, scope)
             # Speakers filter WITHIN the resolved recordings rather than
             # reducing them, so it is passed straight to retrieval.
@@ -230,6 +232,7 @@ def _prepare_turn(
         system_prompt = build_system_prompt(
             use_context=use_context,
             user_system_prompt=user_defaults["system_prompt"],
+            project_system_prompt=project.system_prompt if project else None,
             conversation_system_prompt=conv_settings.get("system_prompt"),
             speakers=speakers,
         )
@@ -250,6 +253,8 @@ def _prepare_turn(
             or conv_settings.get("search_mode")
             or user_defaults["default_search_mode"],
             "temperature": conv_settings.get("temperature"),
+            "max_tokens": conv_settings.get("max_tokens"),
+            "top_p": conv_settings.get("top_p"),
             "llm": llm,
             "assistant_message_uuid": assistant_uuid,
             "user_message_uuid": str(user_message.uuid),

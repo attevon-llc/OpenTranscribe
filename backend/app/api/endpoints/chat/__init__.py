@@ -12,9 +12,11 @@ from app.api.endpoints.chat import admin_settings
 from app.api.endpoints.chat import conversations
 from app.api.endpoints.chat import export
 from app.api.endpoints.chat import messages
+from app.api.endpoints.chat import projects
 from app.api.endpoints.chat import user_settings
 
 router = APIRouter()
+router.include_router(projects.router)
 router.include_router(conversations.router)
 router.include_router(messages.router)
 router.include_router(export.router)

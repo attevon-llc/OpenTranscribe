@@ -86,6 +86,8 @@ function createChatStore() {
   // Stream bookkeeping — deliberately outside the store.
   let controller: AbortController | null = null;
   let pendingContext: string[] | null = null;
+  /** Project the next lazily-created conversation joins (#360). */
+  let pendingProject: string | null = null;
   // Conversations this store created itself. The route syncs `conversationId`
   // from the URL and normally reloads on change, but when WE navigate after
   // lazily creating a conversation, that reload would wipe the optimistic
@@ -346,6 +348,17 @@ function createChatStore() {
       return selfCreated.delete(uuid);
     },
 
+    /**
+     * File the next lazily-created conversation into a project (#360).
+     *
+     * Held here rather than creating an empty row on "new chat in project":
+     * the row is created on first send, so an abandoned visit leaves no
+     * conversation behind — the same reason `newConversation` creates nothing.
+     */
+    setPendingProject(uuid: string | null): void {
+      pendingProject = uuid;
+    },
+
     /** Reset to a blank composer without creating a server row yet. */
     newConversation(): void {
       update((s) => ({
@@ -481,7 +494,9 @@ function createChatStore() {
             // Carry anything chosen in Chat Controls before the row existed.
             settings: { ...state.draftSettings, use_context: state.useContext },
             llm_config_uuid: state.draftLlmConfigUuid,
+            project_uuid: pendingProject,
           });
+          pendingProject = null;
           conversationUuid = created.uuid;
           selfCreated.add(created.uuid);
           update((s) => ({

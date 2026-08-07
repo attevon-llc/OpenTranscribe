@@ -274,6 +274,11 @@ class LLMService:
         # Reasoning models don't support temperature
         if not self._is_reasoning_model():
             payload["temperature"] = kwargs.get("temperature", self.config.temperature)
+            # Only when the caller asked for it. Sending a default would override
+            # whatever the provider or model already tunes to, and reasoning
+            # models reject it outright (handled by the branch above).
+            if kwargs.get("top_p") is not None:
+                payload["top_p"] = kwargs["top_p"]
         else:
             logger.info(
                 f"Reasoning model detected ({self.config.model}): "
@@ -517,6 +522,7 @@ class LLMService:
                 messages=messages,
                 max_tokens=kwargs.get("max_tokens", self.config.response_tokens),
                 temperature=kwargs.get("temperature"),
+                top_p=kwargs.get("top_p"),
                 cancel_event=cancel_event,
                 attribution=kwargs.get("attribution"),
             )

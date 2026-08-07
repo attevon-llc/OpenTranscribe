@@ -265,6 +265,45 @@ def test_stream_always_terminates_with_exactly_one_done_or_error():
     assert len(terminals) == 1
 
 
+# --------------------------------------------------------------------------
+# inferenceConfig — sampling parameters are opt-in (issue #359)
+# --------------------------------------------------------------------------
+
+
+def _sent_inference_config(**overrides: Any) -> dict:
+    """Run a stream and return the inferenceConfig Bedrock was actually given."""
+    client = _fake_client([{"messageStop": {"stopReason": "end_turn"}}])
+    with patch("app.services.llm_bedrock._client", return_value=client):
+        _drain(**overrides)
+    config: dict = client.converse_stream.call_args.kwargs["inferenceConfig"]
+    return config
+
+
+def test_sampling_params_are_omitted_when_unset():
+    """Newer models reject non-default sampling params, so we must not invent them."""
+    cfg = _sent_inference_config()
+    assert cfg == {"maxTokens": 100}
+    assert "topP" not in cfg
+    assert "temperature" not in cfg
+
+
+def test_top_p_is_sent_as_camel_case_top_p():
+    """Converse uses topP, not the OpenAI-style top_p."""
+    cfg = _sent_inference_config(top_p=0.4)
+    assert cfg["topP"] == 0.4
+    assert "top_p" not in cfg
+
+
+def test_temperature_and_top_p_can_be_sent_together():
+    cfg = _sent_inference_config(temperature=0.15, top_p=0.9)
+    assert cfg == {"maxTokens": 100, "temperature": 0.15, "topP": 0.9}
+
+
+def test_top_p_of_zero_is_sent_not_treated_as_absent():
+    """0.0 is a legitimate value; a falsy check here would silently drop it."""
+    assert _sent_inference_config(top_p=0.0)["topP"] == 0.0
+
+
 def test_cancel_event_stops_the_stream_and_reports_cancelled():
     cancel = threading.Event()
     cancel.set()

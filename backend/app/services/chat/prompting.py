@@ -50,6 +50,10 @@ _USER_PREFS_HEADER = (
 )
 _EXCERPT_HEADER = "Transcript excerpts:\n\n"
 _MAX_SYSTEM_PROMPT_CHARS = 2000
+# Ceiling on the three user layers combined. Two maxed-out layers are already
+# generous for standing instructions; beyond that the preferences block starts
+# competing with the transcript excerpts for context.
+_MAX_COMBINED_PROMPT_CHARS = 4000
 
 # Rough chars-per-token used only for budgeting the excerpt block.
 _CHARS_PER_TOKEN = 4
@@ -107,34 +111,54 @@ def build_system_prompt(
     *,
     use_context: bool,
     user_system_prompt: str | None = None,
+    project_system_prompt: str | None = None,
     conversation_system_prompt: str | None = None,
     speakers: list[str] | None = None,
 ) -> str:
     """Compose the layered system prompt.
 
+    Layers are ADDITIVE, broadest first, and none can displace the base rules:
+
+    1. Base rules — code, immutable.
+    2. The user's Settings → Chat default: how they like answers, always.
+    3. The project's prompt: standing background about this client or meeting.
+    4. The conversation's own: what this one thread needs.
+
+    Additive rather than most-specific-wins because the layers answer different
+    questions. "Answer concisely" (2) and "their product is called Atlas" (3)
+    are both true at once, and having a project prompt silently discard an
+    account preference would be a trap. Later layers sit closer to the question,
+    which is also where models weight instructions most heavily.
+
     Args:
         use_context: False selects the no-transcript rule set (pure chat mode).
         user_system_prompt: The user's Settings → Chat default (layer 2).
-        conversation_system_prompt: Per-conversation override, which REPLACES
-            layer 2 for this conversation only (layer 3).
+        project_system_prompt: The owning project's prompt (layer 3), or None
+            when the conversation is ungrouped.
+        conversation_system_prompt: This conversation's own additions (layer 4).
         speakers: Active speaker filter. The model must be told, or it will
             report "X was not discussed" when X simply was not in scope.
 
     Returns:
-        Base rules, followed by at most one user layer in a delimited block.
+        Base rules, followed by the non-empty user layers in one delimited block.
     """
     base = BASE_SYSTEM_RULES if use_context else NO_CONTEXT_SYSTEM_RULES
     if use_context and speakers:
         # Names are ours (validated scope values), not model output — safe to join.
         base += SPEAKER_SCOPE_RULE.format(names=", ".join(speakers))
 
-    override = conversation_system_prompt if conversation_system_prompt is not None else None
-    layer = override if override else (user_system_prompt or "")
-    layer = layer.strip()[:_MAX_SYSTEM_PROMPT_CHARS]
-    if not layer:
+    # Each layer is capped on its own so one verbose layer cannot crowd the
+    # others out, then the joined block is capped again: three maxed-out layers
+    # would otherwise spend ~1500 tokens of context on preferences alone.
+    layers = [
+        (text or "").strip()[:_MAX_SYSTEM_PROMPT_CHARS]
+        for text in (user_system_prompt, project_system_prompt, conversation_system_prompt)
+    ]
+    combined = "\n\n".join(layer for layer in layers if layer)[:_MAX_COMBINED_PROMPT_CHARS]
+    if not combined:
         return base
 
-    return base + _USER_PREFS_HEADER + layer
+    return base + _USER_PREFS_HEADER + combined
 
 
 def format_excerpts(chunks: list[MaskedChunk], *, budget_chars: int) -> tuple[str, int]:

@@ -47,10 +47,51 @@ logger = logging.getLogger(__name__)
 
 TITLE_MAX_CHARS = 60
 
+# Floor for a reply budget. Small enough to honour "keep answers short", large
+# enough that a clamped request still returns a usable answer rather than a
+# sentence cut in half.
+MIN_ANSWER_TOKENS = 256
+
 
 def sse(event: str, payload: dict[str, Any]) -> str:
     """Format one SSE frame (same helper shape as the subtitle export stream)."""
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+def resolve_answer_tokens(
+    *,
+    requested: int | None,
+    tenant_ceiling: int | None,
+    default_tokens: int,
+    context_window: int,
+) -> int:
+    """Decide how many tokens the reply may use.
+
+    Three limits apply, in order of authority: a per-tenant cap is a hard
+    ceiling the user cannot raise; the context window is a physical one; and the
+    user's own preference sits underneath both. Clamping rather than rejecting
+    is deliberate — providers disagree about oversized ``max_tokens`` (some 400,
+    some silently truncate), and a chat should not fail because someone typed an
+    ambitious number.
+
+    The window cap is half the context, not all of it: the prompt and history
+    have to fit in the same budget, and ``build_messages`` sizes the excerpt
+    block against whatever this returns.
+
+    Args:
+        requested: The conversation's override, or None to use the default.
+        tenant_ceiling: Per-tenant maximum, or None when no tier cap applies.
+        default_tokens: The LLM config's own derived reply budget.
+        context_window: The model's total context window in tokens.
+
+    Returns:
+        A positive token count safe to send as ``max_tokens``.
+    """
+    tokens = requested if requested is not None else default_tokens
+    if tenant_ceiling is not None:
+        tokens = min(tokens, tenant_ceiling)
+    window_cap = max(MIN_ANSWER_TOKENS, context_window // 2)
+    return max(MIN_ANSWER_TOKENS, min(tokens, window_cap))
 
 
 def _title_from(question: str) -> str:
@@ -291,6 +332,8 @@ class ChatService:
         system_prompt: str,
         search_mode: str,
         temperature: float | None,
+        max_tokens: int | None,
+        top_p: float | None,
         llm,
         assistant_message_uuid: str,
         user_message_uuid: str,
@@ -312,6 +355,8 @@ class ChatService:
             system_prompt: Fully layered system prompt.
             search_mode: Retrieval mode for this turn.
             temperature: Per-conversation override, or None for the config default.
+            max_tokens: Per-conversation answer-length override, clamped below.
+            top_p: Per-conversation nucleus-sampling override, omitted when None.
             llm: The caller's ``LLMService``.
             assistant_message_uuid: Pre-allocated id for the reply.
             user_message_uuid: Id of the already-persisted user message.
@@ -376,24 +421,34 @@ class ChatService:
 
             yield sse("status", {"stage": "generating"})
 
+            # Resolve the answer budget BEFORE building the prompt: build_messages
+            # reserves context for the reply, so raising max_tokens after the fact
+            # would let prompt + answer overrun the window.
+            answer_tokens = resolve_answer_tokens(
+                requested=max_tokens,
+                tenant_ceiling=settings.max_output_tokens,
+                default_tokens=llm.response_tokens,
+                context_window=llm.user_context_window,
+            )
+
             messages, chunks_used = build_messages(
                 system_prompt=system_prompt,
                 chunks=masked,
                 history=history,
                 question=question,
                 context_window=llm.user_context_window,
-                response_tokens=llm.response_tokens,
+                response_tokens=answer_tokens,
                 max_history_turns=settings.history_max_turns,
             )
             turn.metadata["chunks_used"] = chunks_used
 
-            kwargs: dict[str, Any] = {}
+            kwargs: dict[str, Any] = {"max_tokens": answer_tokens}
             if temperature is not None:
                 kwargs["temperature"] = temperature
-            # A per-tenant answer ceiling, when one applies. Without this the request
-            # sends the LLM config's own derived value and the tier cap is advisory.
-            if settings.max_output_tokens is not None:
-                kwargs["max_tokens"] = settings.max_output_tokens
+            # Omitted entirely when unset: not every provider accepts top_p, and
+            # sending a "default" would override a provider-side tuned value.
+            if top_p is not None:
+                kwargs["top_p"] = top_p
 
             first_token_deadline = time.monotonic() + C.DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S
             got_first_token = False

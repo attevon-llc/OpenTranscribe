@@ -301,6 +301,166 @@ class TestSpeakerEditor:
         expect(detail_page.locator(".speaker-editor-header")).to_be_visible(timeout=5000)
 
 
+class TestSpeakerRenameRepaint:
+    """Renaming a speaker repaints the transcript without a page reload (issue #352).
+
+    The transcript renders from ``file.grouped_segments``, which used to embed its own
+    copies of every segment while optimistic updates patched ``file.transcript_segments``
+    — a different set of objects. The rename saved to the database and then rendered
+    nothing until a full reload. Groups now reference segments by uuid, so there is one
+    segment object and a patch cannot miss it.
+
+    The ``PUT`` is stubbed at the network boundary and **nothing is written**: a real
+    rename dispatches retroactive matching, which auto-applies the new label to matching
+    speakers in OTHER files and is not reversible by renaming back. Everything in front
+    of the network — the optimistic write, ``segmentSync``, group resolution, the repaint
+    — runs for real.
+    """
+
+    def test_rename_repaints_transcript_without_reload(self, detail_page: Page) -> None:
+        edit_btn = detail_page.locator(".edit-speakers-button")
+        if edit_btn.count() == 0:
+            pytest.skip("File has no diarization (no Edit Speakers affordance)")
+
+        new_name = "E2E Repaint Check"
+
+        def _stub_put(route):  # type: ignore[no-untyped-def]
+            if route.request.method != "PUT":
+                return route.continue_()
+            return route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=f'{{"uuid":"stub","display_name":"{new_name}","verified":true}}',
+            )
+
+        detail_page.route("**/api/speakers/*", _stub_put)
+
+        edit_btn.click()
+        expect(detail_page.locator(".speaker-editor-container")).to_be_visible(timeout=10000)
+
+        # Rename the first speaker whose label input is editable.
+        name_input = detail_page.locator(".speaker-editor-container input").first
+        if name_input.count() == 0:
+            pytest.skip("Speaker editor exposes no name input")
+        name_input.fill(new_name)
+
+        save_btn = detail_page.locator(".save-speakers-button")
+        expect(save_btn).to_be_enabled(timeout=5000)
+        save_btn.click()
+
+        # A profile-linked speaker asks how to treat its profile before saving.
+        confirm = detail_page.locator('.modal-overlay button:has-text("Create New Profile")')
+        if confirm.count():
+            confirm.click()
+
+        # The assertion that fails against the pre-#352 build: the label repaints in the
+        # transcript itself, with no navigation.
+        expect(
+            detail_page.locator(".transcript-display").get_by_text(new_name).first
+        ).to_be_visible(timeout=10000)
+
+        assert _unexpected_console_errors(detail_page._console_errors) == []  # type: ignore[attr-defined]
+
+
+@pytest.fixture(scope="module")
+def paginated_file(api_token: str) -> dict[str, Any]:
+    """Discover a file with more segments than one page (>500).
+
+    Skips when the dev dataset has none — the pagination invariants below cannot be
+    exercised without a genuinely paginated transcript.
+    """
+    listing = requests.get(
+        f"{BACKEND_URL}/api/files",
+        headers={"Authorization": f"Bearer {api_token}"},
+        params={"page": "1", "page_size": "100"},
+        timeout=30,
+    )
+    items: list[dict[str, Any]] = listing.json().get("items", listing.json().get("files", []))
+    target: dict[str, Any] | None = None
+    for f in (x for x in items if x.get("status") == "completed"):
+        page_one = requests.get(
+            f"{BACKEND_URL}/api/files/{f['uuid']}/segments",
+            headers={"Authorization": f"Bearer {api_token}"},
+            params={"segment_limit": "1"},
+            timeout=30,
+        ).json()
+        if page_one.get("total_segments", 0) > 500:
+            target = f
+            break
+
+    if not target:
+        pytest.skip("No file with >500 segments in dev dataset — required for pagination E2E")
+    assert target is not None  # narrowed for mypy (pytest.skip above raises)
+    return target
+
+
+class TestTranscriptPagination:
+    """Long transcripts page in fully, and never render a segment twice (issue #352).
+
+    Two failure modes this guards, both of which shipped:
+
+    * ``GET /files/{uuid}/segments`` returned no grouping, so scrolling past segment 500
+      advanced the "N of M loaded" counter while rendering nothing new.
+    * An overlap run split across the page boundary yields two groups sharing one
+      ``overlap_group_id``. Rows keyed by that id collide, and a duplicate key makes
+      Svelte throw at render time — taking down the entire transcript list, not one row.
+
+    Read-only: scrolling mutates nothing.
+    """
+
+    def test_scrolling_loads_and_renders_every_segment(
+        self, browser, auth_storage_state: str, paginated_file: dict[str, Any]
+    ) -> None:  # type: ignore[no-untyped-def]
+        context = browser.new_context(
+            storage_state=auth_storage_state,
+            viewport={"width": 1920, "height": 1080},
+            ignore_https_errors=True,
+        )
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+        try:
+            page.goto(f"{FRONTEND_URL}/files/{paginated_file['uuid']}")
+            page.wait_for_load_state("networkidle")
+            page.wait_for_selector(".transcript-segment", timeout=25000)
+
+            rendered = page.locator("[data-segment-id]").count()
+            assert rendered > 0
+
+            # Drive the real infinite-scroll sentinel until it stops yielding rows.
+            previous = -1
+            for _ in range(40):
+                count = page.evaluate(
+                    "() => { const el = document.querySelector('.transcript-display');"
+                    " if (el) el.scrollTop = el.scrollHeight;"
+                    " return document.querySelectorAll('[data-segment-id]').length; }"
+                )
+                if count == previous:
+                    break
+                previous = count
+                page.wait_for_timeout(900)
+
+            ids = page.eval_on_selector_all(
+                "[data-segment-id]", "els => els.map(e => e.dataset.segmentId)"
+            )
+            indices = page.eval_on_selector_all(
+                "[data-seg-index]", "els => els.map(e => Number(e.dataset.segIndex))"
+            )
+
+            # Rendered past the first page at all.
+            assert len(ids) > 500, f"pagination stalled at {len(ids)} rendered segments"
+            # No segment mounted twice — a duplicate key would have thrown before here.
+            assert len(ids) == len(set(ids)), "a segment was rendered more than once"
+            assert len(indices) == len(set(indices)), "duplicate data-seg-index"
+            # Indices stay global across pages; page-local ones invert the progress bar.
+            assert indices == sorted(indices), "segment indices are not monotonic"
+
+            assert _unexpected_console_errors(errors) == []
+        finally:
+            page.close()
+            context.close()
+
+
 def _pick_search_word(page: Page) -> str:
     """Pick a real word (>=4 letters) from the first transcript segment.
 

@@ -174,11 +174,10 @@ CREATE TABLE file_summaries (
 python backend/scripts/db_inspect.py
 ```
 
-#### Create Admin User
-```bash
-# Create initial admin account
-python backend/scripts/create_admin.py
-```
+#### The bootstrap admin
+The first `super_admin` is seeded by `app/initial_data.py` at startup; there is no
+separate creation script. Further super_admins are promoted from the admin UI
+(Settings → Users → Role), which is audited and refuses to demote the last one.
 
 ### Production Operations (Future)
 

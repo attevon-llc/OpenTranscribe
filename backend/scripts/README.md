@@ -10,10 +10,6 @@ This directory contains utility scripts for OpenTranscribe backend operations.
 
 ### Database & Development Scripts
 
-- **`create_admin.py`** - Creates an admin user in the database
-  - Usage: `python scripts/create_admin.py`
-  - Alternative to `app/initial_data.py` for manual admin creation
-
 - **`db_inspect.py`** - Database inspection utility for debugging
   - Usage: `python scripts/db_inspect.py`
   - Inspect current schema and table state
@@ -48,7 +44,6 @@ This directory contains utility scripts for OpenTranscribe backend operations.
 ## Script Categories
 
 ### Development & Debugging
-- `create_admin.py` — Manual admin user creation
 - `db_inspect.py` — Database state inspection
 - `query_tags.py` — Tag system debugging
 - `fix_error_status.py` — Fix stuck error-state files

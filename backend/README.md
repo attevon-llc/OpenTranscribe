@@ -353,7 +353,6 @@ Alembic is the sole authority for database schema in all environments. Migration
 # Development
 ./opentr.sh reset dev              # Drop and recreate with full migration chain
 python scripts/db_inspect.py       # Inspect database state
-python scripts/create_admin.py     # Manually create admin user
 
 # Migrations
 alembic upgrade head               # Apply pending migrations

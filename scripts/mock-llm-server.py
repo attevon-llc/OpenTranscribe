@@ -37,6 +37,21 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODEL_ID = "mock-gpt"
 
+# Scenario models. The requested `model` selects the behaviour, so a test picks
+# a failure mode by configuring a provider rather than by patching code — which
+# means the app exercises its REAL error handling, not a mocked branch.
+#
+#   mock-gpt    normal reply with [1]/[2] citations, markdown and a code block
+#   mock-echo   echoes the exact prompt it received; lets a test assert what the
+#               app actually sent (masking applied? prompt layers in order?)
+#   mock-empty  completes with no content — the "model returned nothing" path
+#   mock-error  HTTP 500 before any token — the provider_error path
+#   mock-slow   stalls past the first-token watchdog — the timeout path
+SCENARIOS = ("mock-gpt", "mock-echo", "mock-empty", "mock-error", "mock-slow")
+
+# Long enough to trip DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S without hanging a suite.
+SLOW_FIRST_TOKEN_DELAY_S = 45
+
 # Streamed word-by-word. Mentions [1]/[2] so the citation pipeline is exercised;
 # the backend maps those to the chunks it actually retrieved.
 REPLY_TEMPLATE = (
@@ -92,7 +107,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(
                 {
                     "object": "list",
-                    "data": [{"id": MODEL_ID, "object": "model", "owned_by": "mock"}],
+                    "data": [
+                        {"id": name, "object": "model", "owned_by": "mock"}
+                        for name in SCENARIOS
+                    ],
                 }
             )
             return
@@ -106,14 +124,35 @@ class Handler(BaseHTTPRequestHandler):
             body = {}
 
         messages = body.get("messages") or []
-        text = REPLY_TEMPLATE.format(topic=_topic_from(messages))
+        model = str(body.get("model") or MODEL_ID)
+
+        if model == "mock-error":
+            # A provider that IS configured but fails. The app must surface this
+            # as an error frame, unlike "no provider configured".
+            self._json({"error": {"message": "Mock provider failure", "type": "server_error"}}, 500)
+            return
+
+        if model == "mock-slow":
+            time.sleep(SLOW_FIRST_TOKEN_DELAY_S)
+
+        if model == "mock-echo":
+            # Verbatim, so a test can assert on the prompt the app really built:
+            # whether redaction masked the excerpts, and whether the system
+            # prompt layers arrived in the documented order.
+            text = "\n\n".join(
+                f"[{m.get('role')}]\n{m.get('content') or ''}" for m in messages
+            )
+        elif model == "mock-empty":
+            text = ""
+        else:
+            text = REPLY_TEMPLATE.format(topic=_topic_from(messages))
 
         if not body.get("stream"):
             self._json(
                 {
                     "id": "mock-1",
                     "object": "chat.completion",
-                    "model": MODEL_ID,
+                    "model": model,
                     "choices": [
                         {
                             "index": 0,
@@ -152,7 +191,7 @@ class Handler(BaseHTTPRequestHandler):
                     {
                         "id": "mock-1",
                         "object": "chat.completion.chunk",
-                        "model": MODEL_ID,
+                        "model": model,
                         "choices": [{"index": 0, "delta": {"content": token}}],
                     }
                 )
@@ -162,7 +201,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "id": "mock-1",
                     "object": "chat.completion.chunk",
-                    "model": MODEL_ID,
+                    "model": model,
                     "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                 }
             )
@@ -173,7 +212,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "id": "mock-1",
                     "object": "chat.completion.chunk",
-                    "model": MODEL_ID,
+                    "model": model,
                     "choices": [],
                     "usage": {
                         "prompt_tokens": 1234,

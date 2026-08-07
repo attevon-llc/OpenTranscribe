@@ -15,6 +15,12 @@ this file is for.
   then `-m integration`.
 - **E2E** — `e2e/run-e2e.sh`: two phases, non-visual in parallel (`E2E_WORKERS`, default 3) then
   `-m visual` serially. `e2e/run-e2e-smoke.sh` is a 4-file subset of it.
+- **Fake LLM** — `mock-llm-server.py`: OpenAI-compatible server so chat/AI features work
+  without a GPU or API key. Run it via `./opentr.sh start dev --with-mock-llm` (compose
+  service `mock-llm`, in-network `http://mock-llm:5199/v1`) rather than by hand — a bare
+  host process binds 5199 and then blocks the container. Scenario models (`mock-echo`,
+  `mock-empty`, `mock-error`, `mock-slow`) drive the app's real error paths; fixtures and
+  the full table are in `backend/tests/CLAUDE.md`.
 - **Frontend gate** — `frontend-check.sh`: `npm ci` → `svelte-kit sync` → ESLint → svelte-check → vite
   build. Also the pre-commit hook (`files: ^frontend/src/`) and the `/fix-frontend` command.
 - **Publish images** — `docker-build-push.sh`; prefer the skill at `.claude/skills/docker-build-push/SKILL.md`.

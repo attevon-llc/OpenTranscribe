@@ -122,6 +122,44 @@ The streaming service deliberately opens its **own** session (it outlives the re
 dependency scope), which under the savepoint harness cannot see uncommitted rows — without
 the patch, persistence fails on a foreign key that is perfectly valid in production.
 
+## Mock LLM provider (no GPU, no API key)
+
+`scripts/mock-llm-server.py` is a real OpenAI-compatible server that cans only
+token generation. Everything else stays real — retrieval, redaction masking,
+citation assembly, SSE parsing, usage recording — which is why it is preferred
+over monkeypatching `LLMService`: a patched client proves the mock behaves, not
+that the app does.
+
+```bash
+./opentr.sh start dev --with-mock-llm     # http://mock-llm:5199/v1 in-network
+```
+
+Fixtures live in `tests/fixtures/mock_llm.py` (registered via `pytest_plugins`
+in the root conftest, so no per-file import):
+
+| Fixture | Use |
+|---|---|
+| `mock_llm_url` | URL the TEST process can reach. Reuses the container, else starts a subprocess — never skips |
+| `mock_llm_base_url_for_backend` | URL the BACKEND CONTAINER can reach. **Skips** without the container: a host subprocess is invisible to it |
+| `mock_llm_completion` | Call the mock directly; returns `{status_code, body}` |
+| `register_mock_llm_provider` | Configure the app's `custom` provider at the mock, deleted on teardown |
+
+Scenario models select behaviour by `model` name, so a test picks a failure mode
+by *configuring a provider* and the app runs its REAL error handling:
+
+| Model | Behaviour |
+|---|---|
+| `mock-gpt` | normal reply with `[1]`/`[2]` citations, markdown, code block |
+| `mock-echo` | echoes the prompt received — assert what the app **sent** (masking applied? prompt layers ordered?) |
+| `mock-empty` | completes with no content |
+| `mock-error` | HTTP 500 before any token → `provider_error` frame |
+| `mock-slow` | stalls past the first-token watchdog |
+
+**CI needs no setup**: the subprocess fallback means `tests/unit/test_mock_llm_fixture.py`
+runs in the GitHub `backend-tests` job with no compose stack. Tests that need the
+*backend* to reach the mock must use `mock_llm_base_url_for_backend` and will skip
+in CI rather than fail.
+
 **Each new migration breaks the previous suite's detection assertion.** `_detect_schema_version`
 returns the newest matching revision, so when you add vNNN, widen the vNNN-1 test to accept
 either value and pin the exact one in your own suite.

@@ -18,6 +18,7 @@ from .endpoints import comments
 from .endpoints import custom_vocabulary
 from .endpoints import embedding_migration
 from .endpoints import engine_settings
+from .endpoints import first_run_wizard
 from .endpoints import groups
 from .endpoints import llm_settings
 from .endpoints import llm_status
@@ -147,6 +148,13 @@ include_router_with_consistency(
     prefix="/admin/group-mappings",
     tags=["group-mappings"],
     capability="auth.config_ui",
+)
+# Completion state for the guided first-run flow (HANDOFF #28) — not itself a
+# config category, so no capability gate; super_admin only, enforced per-route.
+include_router_with_consistency(
+    first_run_wizard.router,
+    prefix="/admin/first-run-wizard",
+    tags=["first-run-wizard"],
 )
 # Issuing a credential that can create and disable accounts across the whole
 # deployment is infrastructure configuration, not user management — same tier as the

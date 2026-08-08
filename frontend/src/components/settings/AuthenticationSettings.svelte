@@ -12,6 +12,7 @@
   import { getEmailConfigs, type EmailConfig } from '$lib/api/watchSourcesApi';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { firstRunWizardStore } from '$stores/firstRunWizardStore';
 
   let activeTab = 'local';
   let loading = false;
@@ -262,6 +263,11 @@
 <div class="auth-settings">
   <div class="settings-header">
     <h2>{$t('settings.authentication.heading')}</h2>
+    <!-- HANDOFF #28: the guided first-run flow must be re-runnable from here
+         for a super_admin who skipped it. -->
+    <button class="btn btn-secondary rerun-wizard-button" on:click={() => firstRunWizardStore.requestReopen()}>
+      {$t('settings.authentication.rerunWizardButton')}
+    </button>
   </div>
 
   {#if backendNotReady}
@@ -386,6 +392,10 @@
     margin: 0;
     font-size: 1.25rem;
     font-weight: 600;
+  }
+
+  .rerun-wizard-button {
+    margin-left: auto;
   }
 
   /*

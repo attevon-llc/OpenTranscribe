@@ -30,6 +30,7 @@
   import UploadManager from "../components/UploadManager.svelte";
   import AppContent from "../components/AppContent.svelte";
   import SettingsModal from "../components/SettingsModal.svelte";
+  import FirstRunWizard from "../components/FirstRunWizard.svelte";
   import ClassificationBanner from "$lib/components/ClassificationBanner.svelte";
   import ConnectionStatusBanner from "$components/ui/ConnectionStatusBanner.svelte";
   import QuotaExceededModal from "$lib/cloud/components/QuotaExceededModal.svelte";
@@ -201,6 +202,7 @@
       <NotificationsPanel />
       <UploadManager />
       <SettingsModal />
+      <FirstRunWizard />
       <ConnectionStatusBanner />
       {#if isCloudEdition}
         <QuotaExceededModal />

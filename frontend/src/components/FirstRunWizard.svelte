@@ -72,11 +72,18 @@
     markComplete();
   }
 
+  // Step onto the settings page the wizard is pointing at, rather than leaving
+  // this modal open on top of it -- it was blocking the very form the button
+  // exists to reach. Not marked complete: the status check on next mount
+  // re-shows the wizard, and "Re-run setup wizard" in Settings -> Authentication
+  // is always available in the meantime.
   function openProfileSettings() {
+    visible = false;
     settingsModalStore.open('profile');
   }
 
   function openAuthenticationSettings() {
+    visible = false;
     settingsModalStore.open('authentication');
   }
 

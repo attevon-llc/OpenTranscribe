@@ -140,6 +140,20 @@ class UserUpdate(BaseModel):
 class UserInDB(UserBase, UUIDBaseSchema):
     """User schema with UUID as public identifier"""
 
+    #: Overrides UserBase's EmailStr. Federated JIT provisioning (LDAP, OIDC, SAML,
+    #: PKI — see each auth/*/provisioning.py) synthesizes a placeholder address for
+    #: an identity whose provider asserts no email, using a ``*.local`` domain
+    #: (``@oidc.local``, ``@saml.local``, ``@pki.local``, ``@{provider}.local``).
+    #: ``email_validator`` (pydantic's EmailStr backend) hard-rejects every
+    #: RFC 6761 special-use TLD — including ``.local`` — with no override
+    #: available on the validator call, so a *response* schema built on EmailStr
+    #: 500s reading back a value this same codebase wrote. Re-validating syntax on
+    #: the way out adds no safety the write path didn't already provide; only
+    #: creation (`UserCreate`, still `EmailStr` via `UserBase`) needs the strict
+    #: check, confirmed via a real Authentik login with no email claim
+    #: (issue #20/#14).
+    email: str
+
     role: str
     created_at: datetime
     updated_at: datetime

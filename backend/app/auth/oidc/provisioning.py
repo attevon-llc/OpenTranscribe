@@ -18,6 +18,25 @@ logger = logging.getLogger(__name__)
 LINK_REFUSED_DETAIL = "Invalid access token"  # noqa: S105 # nosec B105
 
 
+def _synthesize_placeholder_email(username: str, subject: str) -> str:
+    """Build a syntactically valid email when the IdP asserts none.
+
+    ``preferred_username`` is optional in the ID token — a provider with no
+    property mappings attached to its OAuth2 client (confirmed against a real
+    Authentik login, issue #20/#14) omits both ``email`` and it, and an empty
+    local part (``"@oidc.local"``) is not a valid address. It also is not safe to
+    trust blindly when present: many IdPs set ``preferred_username`` to the same
+    value as the email address, so naively appending ``@oidc.local`` doubled the
+    ``@`` (``"admin@example.com@oidc.local"``) the moment the real email claim
+    was the thing missing rather than the username. Either failure mode 500'd
+    every later ``/auth/me`` rather than surfacing at login. ``subject`` (the
+    ``sub`` claim) is always present and is what actually identifies the account,
+    so it is the only fallback safe to trust unconditionally.
+    """
+    local = (username or subject).split("@")[0] or subject.split("@")[0]
+    return f"{local}@oidc.local"
+
+
 def _parse_cert_timestamp(value: str | None, field: str) -> datetime | None:
     """Parse an ISO-8601 certificate timestamp, or None when absent/malformed."""
     if not value:
@@ -70,7 +89,7 @@ def _create_oidc_user(db, oidc_data: OIDCUserData, *, is_admin: bool):
     from app.models.user import User
 
     subject = oidc_data["oidc_subject"]
-    email = oidc_data["email"] or f"{oidc_data['username']}@oidc.local"
+    email = oidc_data["email"] or _synthesize_placeholder_email(oidc_data["username"], subject)
 
     logger.info(f"Creating new user from OIDC: {subject} ({email})")
 

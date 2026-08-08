@@ -218,6 +218,41 @@ class TestProvisioningRefusesBeforeItWrites:
         db_session.rollback()
 
 
+class TestGeneratedEmailFallback:
+    """A provider with no property mappings attached to its OAuth2 provider —
+    confirmed against a real Authentik test container, issue #20/#14 — omits both
+    ``email`` and ``preferred_username`` from the ID token. Falling back to only
+    ``username`` left an empty local part (``"@oidc.local"``), an invalid address
+    that 500'd every later ``/auth/me`` call rather than failing at provisioning
+    time where it would have been visible.
+    """
+
+    def _cfg(self, **kwargs) -> OIDCConfig:
+        return OIDCConfig(enabled=True, client_id="transcribe", **kwargs)
+
+    def test_missing_email_and_username_falls_back_to_subject(self, db_session):
+        claims = _claims(email="", username="")
+        user = sync_oidc_user_to_db(db_session, claims, self._cfg())
+        assert user.email == f"{claims['oidc_subject']}@oidc.local"
+        db_session.rollback()
+
+    def test_missing_email_with_username_present_is_unchanged(self, db_session):
+        claims = _claims(email="", username="preferred-handle")
+        user = sync_oidc_user_to_db(db_session, claims, self._cfg())
+        assert user.email == "preferred-handle@oidc.local"
+        db_session.rollback()
+
+    def test_email_shaped_username_is_not_doubled(self, db_session):
+        """A provider that sets ``preferred_username`` to the account's real email
+        (common) must not produce ``"admin@example.com@oidc.local"`` — the exact
+        failure reproduced against the real Authentik test container.
+        """
+        claims = _claims(email="", username="admin@example.com")
+        user = sync_oidc_user_to_db(db_session, claims, self._cfg())
+        assert user.email == "admin@oidc.local"
+        db_session.rollback()
+
+
 class TestGroupsWithheldNotEmpty:
     """Entra overage / Google's total absence of a groups claim (HANDOFF #40).
 

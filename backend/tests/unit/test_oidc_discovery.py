@@ -262,6 +262,59 @@ class TestResolveEndpoints:
         endpoints = asyncio.run(resolve_endpoints(cfg))
         assert endpoints == _get_realm_urls(cfg, internal=False)
 
+    def test_host_relative_provider_authorization_rewritten_to_public(self, fake_http):
+        """A provider that echoes the fetching host (Authentik) breaks the module's
+        "discovery only ever advertises public endpoints" assumption: discovery has to
+        be fetched via ``internal_url`` (the only host the backend container can
+        reach), so the document's own ``authorization_endpoint`` comes back pointing
+        at that internal host too — unusable by the browser. Confirmed against a real
+        Authentik test container (issue #20/#14): the browser landed on
+        ``chrome-error://chromewebdata/`` before this fix.
+        """
+        internal_discovery_url = (
+            "http://authentik-server:9000/application/o/opentranscribe/"
+            ".well-known/openid-configuration"
+        )
+        host_relative_document = {
+            "issuer": "http://authentik-server:9000/application/o/opentranscribe/",
+            "authorization_endpoint": "http://authentik-server:9000/application/o/authorize/",
+            "token_endpoint": "http://authentik-server:9000/application/o/token/",
+            "userinfo_endpoint": "http://authentik-server:9000/application/o/userinfo/",
+            "jwks_uri": "http://authentik-server:9000/application/o/opentranscribe/jwks/",
+        }
+        fake_http.routes[internal_discovery_url] = host_relative_document
+        cfg = _cfg(
+            discovery_url=internal_discovery_url,
+            server_url="http://localhost:9122",
+            internal_url="http://authentik-server:9000",
+        )
+
+        # Even the browser-facing (internal=False) call must come back public — that
+        # is the exact call the login redirect uses.
+        endpoints = asyncio.run(resolve_endpoints(cfg, internal=False))
+        assert endpoints["authorization"] == "http://localhost:9122/application/o/authorize/"
+
+        # The back-channel call must still resolve on the compose network.
+        internal_endpoints = asyncio.run(resolve_endpoints(cfg, internal=True))
+        assert (
+            internal_endpoints["authorization"] == "http://localhost:9122/application/o/authorize/"
+        )
+        assert internal_endpoints["token"] == "http://authentik-server:9000/application/o/token/"
+
+    def test_already_public_authorization_endpoint_is_untouched(self, fake_http):
+        """A provider with a fixed frontend URL (Keycloak) already returns a public
+        authorization endpoint even when discovery was fetched internally — its host
+        won't match ``internal_url``, so the rewrite is a no-op.
+        """
+        fake_http.routes[AUTHENTIK_DISCOVERY] = AUTHENTIK_DOCUMENT
+        cfg = _cfg(
+            discovery_url=AUTHENTIK_DISCOVERY,
+            server_url="https://auth.example.com",
+            internal_url="http://keycloak:8080",
+        )
+        endpoints = asyncio.run(resolve_endpoints(cfg, internal=False))
+        assert endpoints["authorization"] == AUTHENTIK_DOCUMENT["authorization_endpoint"]
+
     def test_missing_end_session_endpoint_is_empty(self, fake_http):
         doc = dict(AUTHENTIK_DOCUMENT)
         del doc["end_session_endpoint"]

@@ -57,8 +57,24 @@
       'password_max_age_days',
       'password_history_count'
     ],
-    mfa: ['mfa_enabled', 'mfa_required', 'mfa_issuer_name'],
-    lockout: ['account_lockout_threshold', 'account_lockout_duration_minutes']
+    mfa: [
+      'mfa_enabled',
+      'mfa_required',
+      'mfa_issuer_name',
+      'mfa_backup_code_count',
+      'mfa_token_expire_minutes'
+    ],
+    lockout: [
+      'account_lockout_enabled',
+      'account_lockout_threshold',
+      'account_lockout_duration_minutes',
+      'account_lockout_progressive',
+      'account_lockout_max_duration_minutes'
+    ],
+    // FedRAMP AC-8 — enforced at login (`get_current_active_user` refuses until
+    // acknowledged), not just displayed, so it belongs beside the other controls
+    // that gate access rather than off in its own tab for 3 fields.
+    banner: ['login_banner_enabled', 'login_banner_text', 'login_banner_classification']
   };
 
   /**

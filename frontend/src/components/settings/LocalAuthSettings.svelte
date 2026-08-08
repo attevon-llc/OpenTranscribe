@@ -41,9 +41,18 @@
       mfa_enabled: getVal('mfa_enabled', false),
       mfa_required: getVal('mfa_required', false),
       mfa_issuer_name: getVal('mfa_issuer_name', 'OpenTranscribe'),
+      mfa_backup_code_count: getVal('mfa_backup_code_count', 10),
+      mfa_token_expire_minutes: getVal('mfa_token_expire_minutes', 5),
       // Account lockout
+      account_lockout_enabled: getVal('account_lockout_enabled', true),
       account_lockout_threshold: getVal('account_lockout_threshold', 5),
-      account_lockout_duration_minutes: getVal('account_lockout_duration_minutes', 15)
+      account_lockout_duration_minutes: getVal('account_lockout_duration_minutes', 15),
+      account_lockout_progressive: getVal('account_lockout_progressive', true),
+      account_lockout_max_duration_minutes: getVal('account_lockout_max_duration_minutes', 1440),
+      // Login banner (FedRAMP AC-8) — enforced at login, not merely displayed.
+      login_banner_enabled: getVal('login_banner_enabled', false),
+      login_banner_text: getVal('login_banner_text', ''),
+      login_banner_classification: getVal('login_banner_classification', 'UNCLASSIFIED')
     };
   }
 
@@ -289,6 +298,36 @@
           />
           <span class="help-text">{$t('settings.localAuth.mfaIssuerHelp')}</span>
         </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="mfa_backup_code_count">{$t('settings.localAuth.mfaBackupCodeCount')}</label>
+            <input
+              id="mfa_backup_code_count"
+              type="number"
+              bind:value={formData.mfa_backup_code_count}
+              on:input={handleChange}
+              min="1"
+              max="50"
+              disabled={!formData.local_enabled}
+            />
+            <span class="help-text">{$t('settings.localAuth.mfaBackupCodeCountHelp')}</span>
+          </div>
+
+          <div class="form-group">
+            <label for="mfa_token_expire_minutes">{$t('settings.localAuth.mfaTokenExpiry')}</label>
+            <input
+              id="mfa_token_expire_minutes"
+              type="number"
+              bind:value={formData.mfa_token_expire_minutes}
+              on:input={handleChange}
+              min="1"
+              max="60"
+              disabled={!formData.local_enabled}
+            />
+            <span class="help-text">{$t('settings.localAuth.mfaTokenExpiryHelp')}</span>
+          </div>
+        </div>
       </div>
     {/if}
   </div>
@@ -296,35 +335,119 @@
   <div class="section" class:disabled={!formData.local_enabled}>
     <h3>{$t('settings.localAuth.accountLockout')}</h3>
 
-    <div class="form-row">
-      <div class="form-group">
-        <label for="account_lockout_threshold">{$t('settings.localAuth.maxLoginAttempts')}</label>
+    <label class="checkbox-label">
+      <input
+        type="checkbox"
+        bind:checked={formData.account_lockout_enabled}
+        on:change={handleChange}
+        disabled={!formData.local_enabled}
+      />
+      <span>{$t('settings.localAuth.lockoutEnabled')}</span>
+    </label>
+    <span class="help-text indented">{$t('settings.localAuth.lockoutEnabledHelp')}</span>
+
+    {#if formData.account_lockout_enabled}
+      <div class="form-row">
+        <div class="form-group">
+          <label for="account_lockout_threshold">{$t('settings.localAuth.maxLoginAttempts')}</label>
+          <input
+            id="account_lockout_threshold"
+            type="number"
+            bind:value={formData.account_lockout_threshold}
+            on:input={handleChange}
+            min="3"
+            max="20"
+            disabled={!formData.local_enabled}
+          />
+          <span class="help-text">{$t('settings.localAuth.maxLoginAttemptsHelp')}</span>
+        </div>
+
+        <div class="form-group">
+          <label for="account_lockout_duration_minutes">{$t('settings.localAuth.lockoutDuration')}</label>
+          <input
+            id="account_lockout_duration_minutes"
+            type="number"
+            bind:value={formData.account_lockout_duration_minutes}
+            on:input={handleChange}
+            min="1"
+            max="1440"
+            disabled={!formData.local_enabled}
+          />
+          <span class="help-text">{$t('settings.localAuth.lockoutDurationHelp')}</span>
+        </div>
+      </div>
+
+      <label class="checkbox-label">
         <input
-          id="account_lockout_threshold"
-          type="number"
-          bind:value={formData.account_lockout_threshold}
-          on:input={handleChange}
-          min="3"
-          max="20"
+          type="checkbox"
+          bind:checked={formData.account_lockout_progressive}
+          on:change={handleChange}
           disabled={!formData.local_enabled}
         />
-        <span class="help-text">{$t('settings.localAuth.maxLoginAttemptsHelp')}</span>
+        <span>{$t('settings.localAuth.lockoutProgressive')}</span>
+      </label>
+      <span class="help-text indented">{$t('settings.localAuth.lockoutProgressiveHelp')}</span>
+
+      {#if formData.account_lockout_progressive}
+        <div class="form-group">
+          <label for="account_lockout_max_duration_minutes">{$t('settings.localAuth.lockoutMaxDuration')}</label>
+          <input
+            id="account_lockout_max_duration_minutes"
+            type="number"
+            bind:value={formData.account_lockout_max_duration_minutes}
+            on:input={handleChange}
+            min="1"
+            max="525600"
+            disabled={!formData.local_enabled}
+          />
+          <span class="help-text">{$t('settings.localAuth.lockoutMaxDurationHelp')}</span>
+        </div>
+      {/if}
+    {/if}
+  </div>
+
+  <!--
+    Not gated on formData.local_enabled: the banner is enforced for every user
+    regardless of how they authenticate (FedRAMP AC-8), so it stays interactive
+    even on an SSO-only deployment.
+  -->
+  <div class="section">
+    <h3>{$t('settings.localAuth.loginBannerTitle')}</h3>
+
+    <label class="checkbox-label">
+      <input
+        type="checkbox"
+        bind:checked={formData.login_banner_enabled}
+        on:change={handleChange}
+      />
+      <span>{$t('settings.localAuth.loginBannerEnable')}</span>
+    </label>
+    <span class="help-text indented">{$t('settings.localAuth.loginBannerEnableHelp')}</span>
+
+    {#if formData.login_banner_enabled}
+      <div class="form-group">
+        <label for="login_banner_classification">{$t('settings.localAuth.loginBannerClassification')}</label>
+        <input
+          id="login_banner_classification"
+          type="text"
+          bind:value={formData.login_banner_classification}
+          on:input={handleChange}
+          placeholder="UNCLASSIFIED"
+        />
       </div>
 
       <div class="form-group">
-        <label for="account_lockout_duration_minutes">{$t('settings.localAuth.lockoutDuration')}</label>
-        <input
-          id="account_lockout_duration_minutes"
-          type="number"
-          bind:value={formData.account_lockout_duration_minutes}
+        <label for="login_banner_text">{$t('settings.localAuth.loginBannerText')}</label>
+        <textarea
+          id="login_banner_text"
+          bind:value={formData.login_banner_text}
           on:input={handleChange}
-          min="1"
-          max="1440"
-          disabled={!formData.local_enabled}
-        />
-        <span class="help-text">{$t('settings.localAuth.lockoutDurationHelp')}</span>
+          rows="6"
+          maxlength="10000"
+        ></textarea>
+        <span class="help-text">{$t('settings.localAuth.loginBannerTextHelp')}</span>
       </div>
-    </div>
+    {/if}
   </div>
 
   <div class="actions">
@@ -444,7 +567,8 @@
   }
 
   .form-group input[type="text"],
-  .form-group input[type="number"] {
+  .form-group input[type="number"],
+  .form-group textarea {
     width: 100%;
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--color-border);
@@ -452,9 +576,12 @@
     background: var(--color-bg);
     color: var(--color-text);
     font-size: 0.875rem;
+    font-family: inherit;
+    resize: vertical;
   }
 
-  .form-group input:focus {
+  .form-group input:focus,
+  .form-group textarea:focus {
     outline: none;
     border-color: var(--color-primary);
     box-shadow: 0 0 0 2px var(--color-primary-alpha);

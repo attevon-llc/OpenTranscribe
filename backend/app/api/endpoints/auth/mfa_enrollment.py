@@ -23,8 +23,9 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 from fastapi.responses import JSONResponse
-from jose import JWTError
-from jose import jwt
+from joserfc import jwt
+from joserfc.errors import JoseError
+from joserfc.jwk import OctKey
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import get_current_user
@@ -250,13 +251,12 @@ def get_user_for_enrollment(
         # Peek at the purpose claim (signature verified, expiry deferred) so an expired
         # half-token reports "expired MFA token" instead of a generic credentials error.
         try:
-            peeked = jwt.decode(
-                token,
-                settings.JWT_SECRET_KEY,
-                algorithms=[settings.JWT_ALGORITHM],
-                options={"verify_exp": False},
-            )
-        except JWTError:
+            key = OctKey.import_key(settings.JWT_SECRET_KEY)
+            # joserfc's decode() verifies the signature/algorithm only and never
+            # checks exp on its own, so this already peeks without enforcing
+            # expiry — no equivalent of python-jose's verify_exp=False needed.
+            peeked = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM]).claims
+        except JoseError:
             peeked = {}
 
         if peeked.get("type") == TOKEN_TYPE_MFA:

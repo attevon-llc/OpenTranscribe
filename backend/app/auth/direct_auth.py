@@ -10,7 +10,8 @@ from datetime import datetime
 from datetime import timedelta
 
 import psycopg2
-from jose import jwt
+from joserfc import jwt
+from joserfc.jwk import OctKey
 
 from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.utils import local_password_allowed
@@ -69,10 +70,10 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
             "type": TOKEN_TYPE_ACCESS,
         }
     )
-    encoded_jwt: str = jwt.encode(
-        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
-    )  # type: ignore[no-any-return]
-    return encoded_jwt
+    key = OctKey.import_key(settings.JWT_SECRET_KEY)
+    return jwt.encode(
+        {"alg": settings.JWT_ALGORITHM}, to_encode, key, algorithms=[settings.JWT_ALGORITHM]
+    )
 
 
 logger = logging.getLogger(__name__)

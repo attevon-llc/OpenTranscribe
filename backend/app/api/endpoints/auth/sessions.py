@@ -12,8 +12,10 @@ from fastapi import Request
 from fastapi import Response
 from fastapi import status
 from fastapi.responses import JSONResponse
-from jose import JWTError
-from jose import jwt
+from joserfc import jwt
+from joserfc.errors import JoseError
+from joserfc.jwk import OctKey
+from joserfc.jwt import JWTClaimsRegistry
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
@@ -208,9 +210,12 @@ async def logout(
         if token:
             # Decode token to get JTI and user info. Purpose-agnostic on purpose:
             # logging out with a refresh token is still a logout.
-            payload = jwt.decode(
-                token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
-            )
+            key = OctKey.import_key(settings.JWT_SECRET_KEY)
+            token_obj = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM])
+            # joserfc verifies the signature/algorithm only — exp is not checked
+            # automatically (unlike python-jose), so it's validated explicitly here.
+            JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
+            payload = token_obj.claims
             jti = payload.get("jti")
             exp_timestamp = payload.get("exp")
             user_uuid_str = payload.get("sub")
@@ -266,7 +271,7 @@ async def logout(
                         },
                     )
 
-    except JWTError as e:
+    except JoseError as e:
         logger.warning(f"Logout with invalid token: {e}")
     except Exception as e:
         # Infrastructure failure (Redis, database). The session is still ended

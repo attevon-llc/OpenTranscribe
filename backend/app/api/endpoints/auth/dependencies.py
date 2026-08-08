@@ -17,8 +17,10 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError
-from jose import jwt
+from joserfc import jwt
+from joserfc.errors import JoseError
+from joserfc.jwk import OctKey
+from joserfc.jwt import JWTClaimsRegistry
 from sqlalchemy.orm import Session
 
 from app.auth.audit import AuditEventType
@@ -571,10 +573,15 @@ def get_current_user(
     )
 
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        user_uuid_str: str = payload.get("sub")  # UUID string from token
-        user_role: str = payload.get("role")  # Extract role from token
-        token_jti: str = payload.get("jti")  # JWT ID for revocation checking
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
+        token_obj = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM])
+        # joserfc verifies the signature/algorithm only — exp is not checked
+        # automatically (unlike python-jose), so it's validated explicitly here.
+        JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
+        payload = token_obj.claims
+        user_uuid_str: str | None = payload.get("sub")  # UUID string from token
+        user_role: str | None = payload.get("role")  # Extract role from token
+        token_jti: str | None = payload.get("jti")  # JWT ID for revocation checking
         if user_uuid_str is None:
             raise credentials_exception
 
@@ -611,7 +618,7 @@ def get_current_user(
             raise credentials_exception from None
 
         token_data = TokenPayload(sub=user_uuid_str, jti=token_jti)
-    except JWTError as e:
+    except JoseError as e:
         raise credentials_exception from e
 
     try:
@@ -772,9 +779,14 @@ def get_optional_current_user(
             logger.debug(f"Error in optional external auth: {e}")
 
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        user_uuid_str: str = payload.get("sub")
-        token_jti: str = payload.get("jti")
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
+        token_obj = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM])
+        # joserfc verifies the signature/algorithm only — exp is not checked
+        # automatically (unlike python-jose), so it's validated explicitly here.
+        JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
+        payload = token_obj.claims
+        user_uuid_str: str | None = payload.get("sub")
+        token_jti: str | None = payload.get("jti")
 
         if user_uuid_str is None:
             return None
@@ -805,7 +817,7 @@ def get_optional_current_user(
 
         return user  # type: ignore[no-any-return]
 
-    except JWTError:
+    except JoseError:
         return None
     except Exception as e:
         logger.debug(f"Error in optional auth: {e}")

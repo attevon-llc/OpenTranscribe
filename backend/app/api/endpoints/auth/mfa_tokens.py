@@ -22,12 +22,15 @@ stamp and check them, and moving them up would make the two modules cycle.
 import logging
 from datetime import UTC
 from datetime import timedelta
+from typing import cast
 from uuid import UUID
 
 from fastapi import HTTPException
 from fastapi import status
-from jose import JWTError
-from jose import jwt
+from joserfc import jwt
+from joserfc.errors import JoseError
+from joserfc.jwk import OctKey
+from joserfc.jwt import JWTClaimsRegistry
 from sqlalchemy.orm import Session
 
 from app.auth.constants import AUTH_TYPE_OIDC
@@ -284,10 +287,10 @@ def _create_mfa_token(user_uuid_str: str, user_role: str, scope: str = MFA_SCOPE
     }
 
     # Create token manually since we need to include jti
-    encoded_jwt: str = jwt.encode(
-        mfa_token_data, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+    key = OctKey.import_key(settings.JWT_SECRET_KEY)
+    return jwt.encode(
+        {"alg": settings.JWT_ALGORITHM}, mfa_token_data, key, algorithms=[settings.JWT_ALGORITHM]
     )
-    return encoded_jwt
 
 
 def _verify_mfa_token(
@@ -311,9 +314,12 @@ def _verify_mfa_token(
         HTTPException: If the token is invalid, not an MFA token, out of scope, or used
     """
     try:
-        payload = jwt.decode(
-            mfa_token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
-        )
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
+        token_obj = jwt.decode(mfa_token, key, algorithms=[settings.JWT_ALGORITHM])
+        # joserfc verifies the signature/algorithm only — exp is not checked
+        # automatically (unlike python-jose), so it's validated explicitly here.
+        JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
+        payload = token_obj.claims
 
         # Verify this is an MFA token, not a regular access token
         if payload.get("type") != TOKEN_TYPE_MFA:
@@ -350,9 +356,12 @@ def _verify_mfa_token(
                 detail="MFA token has already been used",
             )
 
-        return user_uuid_str, user_role, jti
+        # Both are always set by _create_mfa_token; joserfc's real dict typing
+        # (unlike python-jose's untyped stubs) surfaces the theoretical
+        # Optional-ness that the mint side never actually produces.
+        return cast(str, user_uuid_str), cast(str, user_role), cast(str, jti)
 
-    except JWTError as e:
+    except JoseError as e:
         logger.warning(f"MFA token verification failed: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

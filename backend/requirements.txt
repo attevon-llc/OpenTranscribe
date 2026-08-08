@@ -8,10 +8,11 @@ sqlalchemy>=2.0.51
 alembic>=1.18.5
 pydantic>=2.13.4
 pydantic-settings>=2.14.2
-python-jose[cryptography]>=3.5.0     # being phased out — see #34; not yet zero call sites
-# joserfc replaces python-jose in ID-token verification (#33). Not the
-# authlib package itself — oidc/flow.py stays hand-rolled httpx; see its
-# module docstring for why the Authlib client wasn't worth adopting there.
+# joserfc replaces python-jose everywhere (#33, #34) — the OIDC ID-token
+# verifier (claims.py) and the app-wide JWT spine (core/security.py,
+# auth/token_service.py, and every endpoint that decodes a token) all use it.
+# Not the authlib package itself — oidc/flow.py stays hand-rolled httpx; see
+# its module docstring for why the Authlib client wasn't worth adopting there.
 joserfc>=1.7.4
 python-multipart>=0.0.32
 passlib[bcrypt]>=1.7.4

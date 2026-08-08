@@ -21,8 +21,10 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
-from jose import JWTError
-from jose import jwt
+from joserfc import jwt
+from joserfc.errors import ExpiredTokenError
+from joserfc.errors import JoseError
+from joserfc.jwk import OctKey
 from sqlalchemy.orm import Session
 
 from app.auth.session import InMemoryStore
@@ -185,7 +187,7 @@ class TokenService:
             The decoded token payload as a dictionary
 
         Raises:
-            JWTError: If token verification fails with all algorithms
+            JoseError: If token verification fails with all algorithms
         """
         algorithms_to_try = []
 
@@ -195,20 +197,21 @@ class TokenService:
         else:
             algorithms_to_try = ["HS256", "HS512"]
 
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
         last_error = None
         for algorithm in algorithms_to_try:
             try:
-                payload = jwt.decode(
-                    token,
-                    settings.JWT_SECRET_KEY,
-                    algorithms=[algorithm],
-                )
-                return dict(payload)
-            except JWTError as e:
+                token_obj = jwt.decode(token, key, algorithms=[algorithm])
+                # joserfc verifies the signature/algorithm only — exp is not
+                # checked automatically (unlike python-jose), so it's validated
+                # explicitly here.
+                jwt.JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
+                return dict(token_obj.claims)
+            except JoseError as e:
                 last_error = e
                 continue
 
-        raise last_error or JWTError("Token verification failed")
+        raise last_error or JoseError("Token verification failed")
 
     def create_token(
         self,
@@ -255,13 +258,8 @@ class TokenService:
             else "HS256"
         )
 
-        return str(
-            jwt.encode(
-                to_encode,
-                settings.JWT_SECRET_KEY,
-                algorithm=algorithm,
-            )
-        )
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
+        return jwt.encode({"alg": algorithm}, to_encode, key, algorithms=[algorithm])
 
     def token_needs_upgrade(self, token: str) -> bool:
         """
@@ -279,10 +277,11 @@ class TokenService:
         """
         try:
             # Try to decode with HS256 only - if it works, token is legacy
-            jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
+            key = OctKey.import_key(settings.JWT_SECRET_KEY)
+            jwt.decode(token, key, algorithms=["HS256"])
             # If we're in FIPS 140-3 mode, this token needs upgrade
             return settings.FIPS_VERSION == "140-3"
-        except JWTError:
+        except JoseError:
             return False
 
     def create_refresh_token(
@@ -347,11 +346,8 @@ class TokenService:
 
         # Encode token with FIPS-compliant algorithm
         algorithm = settings.JWT_ALGORITHM_V3 if settings.FIPS_VERSION == "140-3" else "HS256"
-        token = jwt.encode(
-            token_data,
-            settings.JWT_SECRET_KEY,
-            algorithm=algorithm,
-        )
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
+        token = jwt.encode({"alg": algorithm}, token_data, key, algorithms=[algorithm])
 
         # Hash token for storage
         token_hash = self._hash_token(token)
@@ -459,10 +455,10 @@ class TokenService:
             logger.debug(f"Refresh token verified successfully (jti={jti[:8]}...)")
             return payload, refresh_token
 
-        except jwt.ExpiredSignatureError:
+        except ExpiredTokenError:
             logger.warning("Token verification failed: token expired")
             return None, None
-        except jwt.JWTError as e:
+        except JoseError as e:
             logger.warning(f"Token verification failed: JWT error - {e}")
             return None, None
         except Exception as e:

@@ -1,3 +1,4 @@
+import contextlib
 import uuid
 from datetime import UTC
 from datetime import datetime
@@ -7,8 +8,11 @@ from typing import Any
 from fastapi import Cookie
 from fastapi import HTTPException
 from fastapi import status
-from jose import JWTError
-from jose import jwt
+from joserfc import jwt
+from joserfc.errors import JoseError
+from joserfc.jwk import OctKey
+from joserfc.jws import extract_compact
+from joserfc.jwt import JWTClaimsRegistry
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
@@ -137,8 +141,8 @@ def create_access_token(
     if additional_claims:
         to_encode.update(additional_claims)
 
-    encoded_jwt: str = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=algorithm)  # type: ignore[no-any-return]
-    return encoded_jwt
+    key = OctKey.import_key(settings.JWT_SECRET_KEY)
+    return jwt.encode({"alg": algorithm}, to_encode, key, algorithms=[algorithm])
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -303,11 +307,8 @@ def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> d
     """
     # Check token header algorithm for audit logging
     token_algorithm = None
-    try:
-        header = jwt.get_unverified_header(token)
-        token_algorithm = header.get("alg")
-    except JWTError:
-        pass  # Will be handled by decode below
+    with contextlib.suppress(JoseError):  # unparseable header is handled by decode below
+        token_algorithm = extract_compact(token.encode()).headers().get("alg")
 
     # Determine which algorithms to accept
     is_fips_140_3 = (
@@ -330,9 +331,12 @@ def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> d
             allowed_algorithms.append(settings.JWT_ALGORITHM_V3)
 
     try:
-        payload: dict[str, Any] = jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=allowed_algorithms
-        )  # type: ignore[no-any-return]
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
+        token_obj = jwt.decode(token, key, algorithms=allowed_algorithms)
+        # joserfc verifies the signature/algorithm only — exp is not checked
+        # automatically (unlike python-jose), so it's validated explicitly here.
+        JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
+        payload: dict[str, Any] = token_obj.claims
 
         if expected_type is not None and payload.get("type") != expected_type:
             raise HTTPException(
@@ -358,7 +362,7 @@ def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> d
             )
 
         return payload
-    except JWTError as e:
+    except JoseError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",

@@ -253,3 +253,140 @@ def test_tag_mutation_endpoints_require_authentication(client, db_session):
         == 401
     )
     assert client.get("/api/tags/impact", params={"tag_uuids": [tag_uuid]}).status_code == 401
+    assert client.post("/api/tags/accept", json={"tag_uuids": [tag_uuid]}).status_code == 401
+    assert client.post("/api/tags/reject", json={"tag_uuids": [tag_uuid]}).status_code == 401
+    assert (
+        client.get(
+            "/api/tags/review-impact", params={"tag_uuids": [tag_uuid], "action": "reject"}
+        ).status_code
+        == 401
+    )
+
+
+# ---------------------------------------------------------------------------
+# Accept / reject (R7, R15)
+#
+# Service behavior lives in tests/unit/test_tag_review.py; these assert the
+# wiring — UUID path/query params, the per-tag outcome list, and the removed /
+# retained split reaching the client.
+# ---------------------------------------------------------------------------
+
+
+def _auto_tag(db_session, name: str):
+    """Create a tag the auto-labeler owns — the API has no path that writes one."""
+    from app.core.constants import TAG_SOURCE_AUTO_AI
+    from app.models.media import Tag
+    from app.services.tag_service import normalize_tag_name
+
+    tag = Tag(name=name, source=TAG_SOURCE_AUTO_AI, normalized_name=normalize_tag_name(name))
+    db_session.add(tag)
+    db_session.commit()
+    return tag
+
+
+def test_accept_endpoint_marks_the_tag_accepted(client, user_token_headers, db_session):
+    tag = _auto_tag(db_session, f"accept-me-{_uuid.uuid4().hex[:8]}")
+
+    response = client.post(
+        "/api/tags/accept", headers=user_token_headers, json={"tag_uuids": [str(tag.uuid)]}
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    body = response.json()
+    assert body["applied"] is True
+    assert body["tags"][0]["uuid"] == str(tag.uuid)
+    assert body["tags"][0]["outcome"] == "accepted"
+    db_session.refresh(tag)
+    assert tag.source == "ai_accepted"
+
+
+def test_accept_endpoint_reports_ineligible_tags_without_failing(
+    client, user_token_headers, db_session
+):
+    """A mixed multi-select must not 4xx the whole call."""
+    suffix = _uuid.uuid4().hex[:8]
+    auto = _auto_tag(db_session, f"mix-auto-{suffix}")
+    manual = _create_tag(client, user_token_headers, f"mix-manual-{suffix}")
+
+    response = client.post(
+        "/api/tags/accept",
+        headers=user_token_headers,
+        json={"tag_uuids": [str(auto.uuid), manual["uuid"]]},
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    outcomes = {entry["uuid"]: entry["outcome"] for entry in response.json()["tags"]}
+    assert outcomes[str(auto.uuid)] == "accepted"
+    assert outcomes[manual["uuid"]] == "not_applicable"
+
+
+def _file_for(db_session, owner):
+    from app.models.media import MediaFile
+
+    file_uuid = str(_uuid.uuid4())
+    media_file = MediaFile(
+        uuid=file_uuid,
+        user_id=owner.id,
+        filename="tag_review_api.wav",
+        storage_path=f"media/test/{file_uuid}.wav",
+        content_type="audio/wav",
+        file_size=1024,
+        status="completed",
+    )
+    db_session.add(media_file)
+    db_session.commit()
+    return media_file
+
+
+def test_review_impact_endpoint_reports_the_reject_split(
+    client, user_token_headers, db_session, normal_user
+):
+    from app.core.constants import TAG_SOURCE_AUTO_AI
+    from app.core.constants import TAG_SOURCE_MANUAL
+    from app.models.media import FileTag
+
+    tag = _auto_tag(db_session, f"split-{_uuid.uuid4().hex[:8]}")
+    auto_file = _file_for(db_session, normal_user)
+    manual_file = _file_for(db_session, normal_user)
+    db_session.add(FileTag(media_file_id=auto_file.id, tag_id=tag.id, source=TAG_SOURCE_AUTO_AI))
+    db_session.add(FileTag(media_file_id=manual_file.id, tag_id=tag.id, source=TAG_SOURCE_MANUAL))
+    db_session.commit()
+
+    response = client.get(
+        "/api/tags/review-impact",
+        headers=user_token_headers,
+        params={"tag_uuids": [str(tag.uuid)], "action": "reject"},
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    body = response.json()
+    assert body["applied"] is False
+    assert body["removed_association_count"] == 1
+    assert body["retained_association_count"] == 1
+    assert body["tags"][0]["tag_removed"] is False
+
+
+def test_reject_endpoint_removes_the_tag_when_nothing_human_remains(
+    client, user_token_headers, db_session
+):
+    from app.models.media import Tag
+
+    tag = _auto_tag(db_session, f"reject-me-{_uuid.uuid4().hex[:8]}")
+
+    response = client.post(
+        "/api/tags/reject", headers=user_token_headers, json={"tag_uuids": [str(tag.uuid)]}
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    body = response.json()
+    assert body["tags"][0]["outcome"] == "rejected"
+    assert body["deleted_uuids"] == [str(tag.uuid)]
+    assert db_session.query(Tag).filter(Tag.name == tag.name).first() is None
+
+
+def test_review_endpoints_404_on_an_unknown_tag(client, user_token_headers, db_session):
+    unknown = str(_uuid.uuid4())
+
+    for path in ("/api/tags/accept", "/api/tags/reject"):
+        response = client.post(path, headers=user_token_headers, json={"tag_uuids": [unknown]})
+        assert response.status_code == status.HTTP_404_NOT_FOUND, path

@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -27,12 +28,17 @@ from app.schemas.media import TagImpact
 from app.schemas.media import TagMergeRequest
 from app.schemas.media import TagMutationResult
 from app.schemas.media import TagRenameRequest
+from app.schemas.media import TagReviewRequest
+from app.schemas.media import TagReviewResult
 from app.schemas.media import TagWithCount
 from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import delete_tags
 from app.services.tag_operations import merge_tags
 from app.services.tag_operations import preview_tag_impact
 from app.services.tag_operations import rename_tag
+from app.services.tag_review import accept_tags
+from app.services.tag_review import preview_tag_review
+from app.services.tag_review import reject_tags
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tag
@@ -64,10 +70,10 @@ def _tag_ids(db: Session, tag_uuids: list[UUID]) -> list[int]:
     ]
 
 
-def _apply(operation, *args, **kwargs) -> TagMutationResult:
+def _apply(operation, *args, result_model=TagMutationResult, **kwargs):
     """Run a tag operation, translating its service errors into HTTP ones."""
     try:
-        return TagMutationResult.model_validate(operation(*args, **kwargs))
+        return result_model.model_validate(operation(*args, **kwargs))
     except TagNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidTagNameError as exc:
@@ -249,6 +255,75 @@ def get_tag_impact(
         db, _tag_ids(db, tag_uuids), user_id=current_user.id, organization_id=ctx.org_id
     )
     return TagImpact.model_validate(report)
+
+
+@router.get("/review-impact", response_model=TagReviewResult)
+def preview_tag_review_endpoint(
+    tag_uuids: list[UUID] = Query(..., min_length=1),
+    action: Literal["accept", "reject"] = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Report what accepting or rejecting these tags would do, applying nothing.
+
+    A reject reports its association split — how many the auto-labeler created
+    and would lose, and how many hand-applied ones would stay — because either
+    number alone hides what the other decides.
+    """
+    return _apply(
+        preview_tag_review,
+        db,
+        _tag_ids(db, tag_uuids),
+        action=action,
+        user_id=current_user.id,
+        organization_id=ctx.org_id,
+        result_model=TagReviewResult,
+    )
+
+
+@router.post("/accept", response_model=TagReviewResult)
+def accept_tags_endpoint(
+    payload: TagReviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Endorse auto-labeled tags so they stop awaiting review.
+
+    Associations are untouched. Tags that were not the auto-labeler's come back
+    as ``not_applicable`` rather than failing the call.
+    """
+    return _apply(
+        accept_tags,
+        db,
+        _tag_ids(db, payload.tag_uuids),
+        user_id=current_user.id,
+        organization_id=ctx.org_id,
+        result_model=TagReviewResult,
+    )
+
+
+@router.post("/reject", response_model=TagReviewResult)
+def reject_tags_endpoint(
+    payload: TagReviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Remove the associations the auto-labeler created for these tags.
+
+    The tag row itself goes only when no association is left, so a tag people
+    have applied by hand survives the reject with that work intact.
+    """
+    return _apply(
+        reject_tags,
+        db,
+        _tag_ids(db, payload.tag_uuids),
+        user_id=current_user.id,
+        organization_id=ctx.org_id,
+        result_model=TagReviewResult,
+    )
 
 
 @router.patch("/{tag_uuid}", response_model=TagMutationResult)

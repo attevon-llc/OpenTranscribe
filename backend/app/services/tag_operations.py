@@ -152,7 +152,7 @@ def _better_confidence(a: float | None, b: float | None) -> float | None:
     return max(a, b)
 
 
-def _lock_tags(db: Session, tag_ids: Iterable[int]) -> dict[int, Tag]:
+def lock_tags(db: Session, tag_ids: Iterable[int]) -> dict[int, Tag]:
     """Lock the given tag rows ``FOR UPDATE`` in ascending id order.
 
     The ordering is the point: two merges running in opposite directions
@@ -188,6 +188,7 @@ def preview_tag_impact(
     *,
     user_id: int,
     organization_id: int | None = None,
+    association_source: str | None = None,
 ) -> TagImpactReport:
     """Count the files a pending tag operation would affect.
 
@@ -201,6 +202,12 @@ def preview_tag_impact(
         user_id: The acting user, used to scope the accessible count.
         organization_id: Tenant scope for the accessible count (``None`` =
             personal), matching ``GET /tags``.
+        association_source: Count only files whose association carries this
+            origin. Rename / merge / delete act on every association and leave
+            it ``None``; reject (``app.services.tag_review``) removes only the
+            auto-labeler's own associations, so counting them all would
+            overstate what it takes away. A legacy NULL association origin never
+            matches — NULL is a human's row.
 
     Returns:
         Per-tag and union counts, accessible and global reported separately.
@@ -211,11 +218,14 @@ def preview_tag_impact(
 
     tags = {tag.id: tag for tag in db.query(Tag).filter(Tag.id.in_(ordered)).all()}
     accessible_sq = select(_accessible_file_ids_subquery(db, user_id, organization_id))
+    scope = [FileTag.tag_id.in_(ordered)]
+    if association_source is not None:
+        scope.append(FileTag.source == association_source)
 
     total_by_tag: dict[int, int] = {
         int(tag_id): int(count)
         for tag_id, count in db.query(FileTag.tag_id, func.count(distinct(FileTag.media_file_id)))
-        .filter(FileTag.tag_id.in_(ordered))
+        .filter(*scope)
         .group_by(FileTag.tag_id)
         .all()
         if tag_id is not None
@@ -223,7 +233,7 @@ def preview_tag_impact(
     accessible_by_tag: dict[int, int] = {
         int(tag_id): int(count)
         for tag_id, count in db.query(FileTag.tag_id, func.count(distinct(FileTag.media_file_id)))
-        .filter(FileTag.tag_id.in_(ordered), FileTag.media_file_id.in_(accessible_sq))
+        .filter(*scope, FileTag.media_file_id.in_(accessible_sq))
         .group_by(FileTag.tag_id)
         .all()
         if tag_id is not None
@@ -242,15 +252,10 @@ def preview_tag_impact(
 
     # Union counts, not the sum of the per-tag numbers: a file carrying two of
     # the tags is one affected file, not two.
-    union_total = (
-        db.query(func.count(distinct(FileTag.media_file_id)))
-        .filter(FileTag.tag_id.in_(ordered))
-        .scalar()
-        or 0
-    )
+    union_total = db.query(func.count(distinct(FileTag.media_file_id))).filter(*scope).scalar() or 0
     union_accessible = (
         db.query(func.count(distinct(FileTag.media_file_id)))
-        .filter(FileTag.tag_id.in_(ordered), FileTag.media_file_id.in_(accessible_sq))
+        .filter(*scope, FileTag.media_file_id.in_(accessible_sq))
         .scalar()
         or 0
     )
@@ -262,7 +267,7 @@ def preview_tag_impact(
     )
 
 
-def _rewrite_stored_tag_names(
+def rewrite_stored_tag_names(
     db: Session, doomed_normalized: set[str], replacement: str | None
 ) -> int:
     """Rewrite tag names stored outside the tag table.
@@ -402,7 +407,7 @@ def merge_tags(
         TagNotFoundError: The target, or any named source, no longer exists.
     """
     wanted = {int(target_id)} | {int(i) for i in source_ids}
-    locked = _lock_tags(db, wanted)
+    locked = lock_tags(db, wanted)
 
     target = locked.get(int(target_id))
     if target is None:
@@ -435,7 +440,7 @@ def merge_tags(
     if target.source == TAG_SOURCE_AUTO_AI:
         target.source = TAG_SOURCE_AI_ACCEPTED
 
-    _rewrite_stored_tag_names(db, {_normalized_of(tag) for tag in doomed}, target.name)
+    rewrite_stored_tag_names(db, {_normalized_of(tag) for tag in doomed}, target.name)
 
     deleted_uuids = [tag.uuid for tag in doomed]
     for tag in doomed:
@@ -488,7 +493,7 @@ def rename_tag(
     if not normalized:
         raise InvalidTagNameError(f"Tag name is empty after normalization: {new_name!r}")
 
-    locked = _lock_tags(db, [tag_id])
+    locked = lock_tags(db, [tag_id])
     tag = locked.get(int(tag_id))
     if tag is None:
         raise TagNotFoundError(f"Tag {tag_id} no longer exists")
@@ -517,7 +522,7 @@ def rename_tag(
 
     tag.name = cleaned
     tag.normalized_name = normalized
-    _rewrite_stored_tag_names(db, {old_normalized}, cleaned)
+    rewrite_stored_tag_names(db, {old_normalized}, cleaned)
     db.flush()
     db.commit()
 
@@ -553,7 +558,7 @@ def delete_tags(
     if not wanted:
         return TagMutationOutcome(impact=TagImpactReport())
 
-    locked = _lock_tags(db, wanted)
+    locked = lock_tags(db, wanted)
     missing = [tag_id for tag_id in wanted if tag_id not in locked]
     if missing:
         raise TagNotFoundError(f"Tags no longer exist: {missing}")
@@ -569,7 +574,7 @@ def delete_tags(
         if file_id is not None
     ]
 
-    _rewrite_stored_tag_names(db, {_normalized_of(tag) for tag in doomed}, None)
+    rewrite_stored_tag_names(db, {_normalized_of(tag) for tag in doomed}, None)
 
     db.query(FileTag).filter(FileTag.tag_id.in_(wanted)).delete(synchronize_session=False)
     deleted_uuids = [tag.uuid for tag in doomed]

@@ -610,6 +610,49 @@ class TagMutationResult(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TagReviewRequest(BaseModel):
+    """Accept or reject one or more auto-labeled tags."""
+
+    tag_uuids: list[UUID] = Field(..., min_length=1)
+
+
+class TagReviewEntry(BaseModel):
+    """Per-tag outcome of an accept / reject.
+
+    ``outcome`` is ``accepted``, ``rejected``, or ``not_applicable`` — the tag
+    list allows multi-select across filters, so a selection routinely mixes
+    auto-labeled tags with hand-created ones and the ineligible members are
+    reported rather than failing the call.
+    """
+
+    uuid: UUID
+    name: str
+    outcome: str
+    removed_association_count: int = 0
+    retained_association_count: int = 0
+    tag_removed: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TagReviewResult(BaseModel):
+    """Outcome of an accept / reject, or of the preview that precedes it.
+
+    The two association counts are deliberately separate: rejecting removes only
+    what the auto-labeler applied, so a caller shown one number could not tell a
+    reject that clears a tag from a reject that leaves most of it in place.
+    """
+
+    tags: list[TagReviewEntry] = []
+    removed_association_count: int = 0
+    retained_association_count: int = 0
+    deleted_uuids: list[UUID] = []
+    applied: bool = False
+    impact: TagImpact
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CommentBase(BaseModel):
     text: str
     timestamp: float | None = None

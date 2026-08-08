@@ -19,9 +19,9 @@ from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import role_implies_superuser
 from app.core.security import get_password_hash
 from app.db.base import get_db
-from app.models.media import Tag
 from app.models.prompt import SummaryPrompt
 from app.models.user import User
+from app.services.tag_service import resolve_or_create_tag
 
 # No module-level basicConfig: this module is imported during app startup and
 # a default root handler here would double every log line. configure_logging()
@@ -60,20 +60,20 @@ def _ensure_admin_user(db: Session) -> None:
 
 
 def _ensure_default_tags(db: Session) -> None:
-    """Create default tags if they don't exist."""
+    """Create default tags if they don't exist.
+
+    Seeds through the shared resolver so the seeded rows carry
+    ``normalized_name``. Created inline they did not, which made them invisible
+    to normalized-exact resolution — a user typing "interview" would get a
+    second tag alongside the seeded "Interview".
+    """
     default_tags = ["Important", "Meeting", "Interview", "Personal"]
 
     for tag_name in default_tags:
-        tag = db.query(Tag).filter(Tag.name == tag_name).first()
-        if not tag:
-            try:
-                tag = Tag(name=tag_name)
-                db.add(tag)
-                db.flush()
-                logger.info(f"Created default tag: {tag_name}")
-            except IntegrityError:
-                db.rollback()
-                logger.debug(f"Default tag '{tag_name}' already exists (concurrent creation)")
+        try:
+            resolve_or_create_tag(db, tag_name)
+        except IntegrityError:
+            logger.debug(f"Default tag '{tag_name}' already exists (concurrent creation)")
 
     db.commit()
 

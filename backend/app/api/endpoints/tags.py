@@ -8,7 +8,6 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
@@ -23,33 +22,26 @@ from app.models.user import User
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TagBase
 from app.schemas.media import TagWithCount
+from app.services.tag_service import InvalidTagNameError
+from app.services.tag_service import resolve_or_create_tag
 
 logger = logging.getLogger(__name__)
 
 
-def _get_or_create_tag(db: Session, name: str, source: str = TAG_SOURCE_MANUAL) -> Tag:
-    """Atomically get or create a tag, handling concurrent race conditions.
+def _resolve_tag(db: Session, name: str) -> Tag:
+    """Resolve a user-supplied name to a tag, mapping a blank name to a 422.
 
-    Uses try-insert-then-select to avoid TOCTOU race on the unique name constraint.
+    Resolution is normalized-exact (``app/services/tag_service.py``). A near
+    match is never applied here — a person typed this name, so a fuzzy hit may
+    only ever be offered as a suggestion.
     """
-    tag = db.query(Tag).filter(Tag.name == name).first()
-    if tag:
-        return tag  # type: ignore[no-any-return]
-
     try:
-        import re
-
-        normalized = re.sub(r"\s+", " ", re.sub(r"[-_]+", " ", name.lower().strip()))
-        tag = Tag(name=name, source=source, normalized_name=normalized)
-        db.add(tag)
-        db.flush()  # Flush to trigger unique constraint check within the transaction
-        return tag  # type: ignore[no-any-return]
-    except IntegrityError:
-        db.rollback()
-        tag = db.query(Tag).filter(Tag.name == name).first()
-        if tag:
-            return tag  # type: ignore[no-any-return]
-        raise  # Re-raise if somehow still not found
+        return resolve_or_create_tag(db, name, source=TAG_SOURCE_MANUAL)
+    except InvalidTagNameError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Tag name is required",
+        ) from exc
 
 
 router = APIRouter()
@@ -64,7 +56,7 @@ def create_tag(
     """
     Create a new tag
     """
-    tag = _get_or_create_tag(db, tag_data.name)
+    tag = _resolve_tag(db, tag_data.name)
     db.commit()
     db.refresh(tag)
     return tag
@@ -235,9 +227,9 @@ async def add_tag_to_file(
     # Convert to proper TagBase object
     tag_base = TagBase(name=tag_data["name"])
 
-    # Atomically get or create the tag (race-condition safe)
+    # Atomically resolve or create the tag (race-condition safe)
     # Note: ownership already verified by get_file_by_uuid_with_permission above
-    tag = _get_or_create_tag(db, tag_base.name)
+    tag = _resolve_tag(db, tag_base.name)
     logger.info(f"Using tag: {tag.id}:{tag.name} for file_id={file_id}")
 
     # Check if file already has this tag

@@ -19,10 +19,10 @@ from app.db.base import get_db
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import FileTag
-from app.models.media import Tag
 from app.models.upload_batch import UploadBatch
 from app.schemas.media import PrepareUploadRequest
-from app.services.auto_label_service import AutoLabelService
+from app.services.tag_service import InvalidTagNameError
+from app.services.tag_service import resolve_or_create_tag
 from app.utils import benchmark_timing
 from app.utils.file_hash import check_duplicate_by_hash
 from app.utils.file_hash import cleanup_failed_duplicates
@@ -126,28 +126,19 @@ def add_file_to_collections(
 def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> None:
     """Add tags to a media file, creating tags if they don't exist.
 
-    Uses SAVEPOINTs for race-condition safety without corrupting the
-    enclosing transaction.
+    Resolution (normalization, normalized-exact match, SAVEPOINT-guarded insert)
+    is shared with every other tag-creation path via
+    ``app/services/tag_service.py``. These names were typed by a person, so the
+    fuzzy suggestion lookup is deliberately not consulted.
     """
     for name in tag_names:
-        name = name.strip()[:50]
-        if not name:
+        try:
+            tag = resolve_or_create_tag(db, name, source=TAG_SOURCE_MANUAL)
+        except InvalidTagNameError:
             continue
-
-        normalized = AutoLabelService.normalize_name(name)
-
-        tag = db.query(Tag).filter(Tag.name == name).first()
-        if not tag:
-            try:
-                nested = db.begin_nested()
-                tag = Tag(name=name, source=TAG_SOURCE_MANUAL, normalized_name=normalized)
-                db.add(tag)
-                db.flush()
-            except IntegrityError:
-                nested.rollback()
-                tag = db.query(Tag).filter(Tag.name == name).first()
-                if not tag:
-                    continue
+        except IntegrityError:
+            logger.warning(f"Could not resolve tag '{name}' for file {file_id}, skipping")
+            continue
 
         existing = (
             db.query(FileTag)

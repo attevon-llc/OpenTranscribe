@@ -1,0 +1,199 @@
+"""Shared tag resolution — the single path from a supplied name to a ``Tag`` row.
+
+Every creation path (manual tag API, upload prepare, URL ingest, watch sources,
+auto-labeling) resolves through :func:`resolve_or_create_tag` so that one
+normalized name can never end up stored as two rows. Resolution is
+**normalized-exact only**: names differing solely by case, hyphens, underscores,
+or repeated whitespace collapse onto the same tag; anything else is a new tag.
+
+Fuzzy matching lives here too but is deliberately a *separate*, opt-in lookup
+(:func:`suggest_similar_tag`). At the 0.85 threshold ``q3-earnings`` and
+``q4-earnings`` score 0.909, so resolving fuzzily with no human in the loop
+silently attaches the wrong tag — and nothing can split two tags back apart once
+combined. Only the auto-labeling path may chain suggest → apply automatically;
+on every path where a person supplied the name, a near match is a suggestion to
+accept or decline, never an automatic substitution.
+"""
+
+import difflib
+import logging
+import re
+
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.core.constants import FUZZY_MATCH_THRESHOLD
+from app.core.constants import TAG_SOURCE_MANUAL
+from app.core.exceptions import OpenTranscribeError
+from app.models.media import Tag
+
+logger = logging.getLogger(__name__)
+
+#: Storage width of ``tag.name`` (``VARCHAR(50)``). Supplied names are clamped
+#: to this on every path — an over-long name used to reach Postgres unclamped
+#: from the tag API and abort the transaction with a ``DataError``.
+MAX_TAG_NAME_LENGTH = 50
+
+
+class InvalidTagNameError(OpenTranscribeError):
+    """A supplied tag name is empty once normalized, so it cannot name a tag."""
+
+
+def normalize_tag_name(name: str) -> str:
+    """Normalize a tag name for deduplication comparison.
+
+    Lowercases, replaces hyphens/underscores with spaces, collapses runs of
+    whitespace, and trims. This is the single definition of tag-name
+    normalization; it is what gets stored in ``Tag.normalized_name``, and it
+    matches the SQL backfill in ``v230_add_auto_labeling`` (which also trims
+    *after* substitution, so ``"-foo-"`` normalizes to ``"foo"`` and a name made
+    only of separators normalizes to the empty string).
+
+    Args:
+        name: Raw supplied name.
+
+    Returns:
+        The normalized form, or ``""`` for a name with no usable characters.
+    """
+    if not name:
+        return ""
+    normalized = re.sub(r"[-_]+", " ", name.lower())
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def clean_tag_name(name: str) -> str:
+    """Trim a supplied name and clamp it to the stored column width.
+
+    Args:
+        name: Raw supplied name.
+
+    Returns:
+        The name as it would be stored: stripped and at most
+        :data:`MAX_TAG_NAME_LENGTH` characters.
+    """
+    if not name:
+        return ""
+    return name.strip()[:MAX_TAG_NAME_LENGTH].strip()
+
+
+def names_are_similar(a: str, b: str, threshold: float = FUZZY_MATCH_THRESHOLD) -> bool:
+    """Report whether two names are similar enough to be considered the same topic.
+
+    Args:
+        a: First name.
+        b: Second name.
+        threshold: Minimum ``SequenceMatcher`` ratio to count as similar.
+
+    Returns:
+        True when the normalized forms are equal or score at/above ``threshold``.
+    """
+    norm_a = normalize_tag_name(a)
+    norm_b = normalize_tag_name(b)
+    if not norm_a or not norm_b:
+        return False
+    if norm_a == norm_b:
+        return True
+    return difflib.SequenceMatcher(None, norm_a, norm_b).ratio() >= threshold
+
+
+def _lookup_existing_tag(db: Session, normalized: str, name: str) -> Tag | None:
+    """Find a tag by normalized name, falling back to an exact name match.
+
+    The fallback covers rows written before this service owned creation — the
+    bootstrap seed tags ("Important", "Meeting", …) were inserted with a NULL
+    ``normalized_name``, which left them invisible to normalized-exact
+    resolution yet still able to collide on the unique ``name`` constraint. A
+    row found that way is repaired in place (within the caller's transaction) so
+    the next lookup takes the indexed fast path.
+    """
+    tag: Tag | None = db.query(Tag).filter(Tag.normalized_name == normalized).first()
+    if tag is not None:
+        return tag
+
+    tag = db.query(Tag).filter(Tag.name == name).first()
+    if tag is not None and not tag.normalized_name:
+        tag.normalized_name = normalized
+        db.flush()
+    return tag
+
+
+def suggest_similar_tag(
+    db: Session,
+    name: str,
+    *,
+    threshold: float = FUZZY_MATCH_THRESHOLD,
+    candidates: list[Tag] | None = None,
+) -> Tag | None:
+    """Find an existing tag that is a *near* match for a supplied name.
+
+    Opt-in and never called by :func:`resolve_or_create_tag`. Callers on
+    human-supplied paths must surface the result as a suggestion to accept or
+    decline; only auto-labeling may apply it without confirmation.
+
+    Args:
+        db: Database session.
+        name: Supplied name to look for.
+        threshold: Minimum similarity ratio.
+        candidates: Optional pre-fetched tag list (e.g. an instance-level cache).
+            When omitted, every tag is scanned.
+
+    Returns:
+        The first similar tag, or None when nothing is close enough.
+    """
+    if not normalize_tag_name(name):
+        return None
+
+    pool = candidates if candidates is not None else db.query(Tag).all()
+    for existing in pool:
+        if names_are_similar(name, existing.name, threshold):
+            return existing
+    return None
+
+
+def resolve_or_create_tag(db: Session, name: str, *, source: str = TAG_SOURCE_MANUAL) -> Tag:
+    """Resolve a supplied name to an existing tag, or create it.
+
+    Matching is normalized-exact (see :func:`normalize_tag_name`) — a near match
+    is *not* resolved here, it becomes a new tag. The insert runs inside a
+    SAVEPOINT so that losing a race on the unique ``name`` constraint rolls back
+    only the failed insert; the caller's other pending writes survive.
+
+    Args:
+        db: Database session. Not committed — the caller owns the transaction.
+        name: Supplied tag name. Trimmed and clamped to
+            :data:`MAX_TAG_NAME_LENGTH`.
+        source: Provenance recorded on a newly created tag.
+
+    Returns:
+        The existing or newly created tag (flushed, so ``tag.id`` is populated).
+
+    Raises:
+        InvalidTagNameError: The name is empty once normalized.
+        IntegrityError: A collision occurred and the winning row still could not
+            be found afterwards.
+    """
+    cleaned = clean_tag_name(name)
+    normalized = normalize_tag_name(cleaned)
+    if not normalized:
+        raise InvalidTagNameError(f"Tag name is empty after normalization: {name!r}")
+
+    existing = _lookup_existing_tag(db, normalized, cleaned)
+    if existing is not None:
+        return existing
+
+    nested = db.begin_nested()
+    try:
+        tag = Tag(name=cleaned, source=source, normalized_name=normalized)
+        db.add(tag)
+        db.flush()
+        return tag
+    except IntegrityError:
+        # Another writer won the race. Roll back only the SAVEPOINT — never the
+        # session — so the caller's pending work is untouched, then take theirs.
+        nested.rollback()
+        winner = _lookup_existing_tag(db, normalized, cleaned)
+        if winner is not None:
+            logger.debug("Lost tag-insert race for %r, using the winning row", cleaned)
+            return winner
+        raise

@@ -6,9 +6,7 @@ suggestions, batch grouping for multi-file uploads, and retroactive
 application to existing files.
 """
 
-import difflib
 import logging
-import re
 from datetime import UTC
 from datetime import datetime
 from typing import Any
@@ -27,6 +25,10 @@ from app.models.media import MediaFile
 from app.models.media import Tag
 from app.models.prompt import UserSetting
 from app.models.topic import TopicSuggestion
+from app.services.tag_service import names_are_similar
+from app.services.tag_service import normalize_tag_name
+from app.services.tag_service import resolve_or_create_tag
+from app.services.tag_service import suggest_similar_tag
 
 logger = logging.getLogger(__name__)
 
@@ -47,27 +49,20 @@ class AutoLabelService:
     def normalize_name(name: str) -> str:
         """Normalize a name for deduplication comparison.
 
-        Lowercase, strip whitespace, replace hyphens/underscores with spaces,
-        collapse multiple spaces.
+        Delegating alias for ``tag_service.normalize_tag_name``, which owns the
+        single definition (lowercase, strip, hyphens/underscores to spaces,
+        collapse whitespace). Kept so existing callers — including collection
+        names, which are not tags — keep working.
         """
-        if not name:
-            return ""
-        normalized = name.lower().strip()
-        normalized = re.sub(r"[-_]+", " ", normalized)
-        normalized = re.sub(r"\s+", " ", normalized)
-        return normalized
+        return normalize_tag_name(name)
 
     @staticmethod
     def are_names_similar(a: str, b: str, threshold: float = FUZZY_MATCH_THRESHOLD) -> bool:
-        """Check if two names are similar using SequenceMatcher."""
-        norm_a = AutoLabelService.normalize_name(a)
-        norm_b = AutoLabelService.normalize_name(b)
-        if not norm_a or not norm_b:
-            return False
-        if norm_a == norm_b:
-            return True
-        ratio = difflib.SequenceMatcher(None, norm_a, norm_b).ratio()
-        return ratio >= threshold
+        """Check if two names are similar using SequenceMatcher.
+
+        Delegating alias for ``tag_service.names_are_similar``.
+        """
+        return names_are_similar(a, b, threshold)
 
     def _get_all_tags_cached(self) -> list[Tag]:
         """Return all tags, using instance-level cache to avoid repeated queries."""
@@ -96,6 +91,11 @@ class AutoLabelService:
 
         1. Exact normalized_name match (uses index)
         2. Fallback: SequenceMatcher scan of cached tags
+
+        Auto-labeling is the **only** path allowed to act on step 2 without a
+        human confirming it — the names come from the LLM, not from a person, so
+        there is no one to show a suggestion to. Every user-supplied path
+        resolves with normalized-exact matching only.
         """
         normalized = self.normalize_name(suggested_name)
 
@@ -104,12 +104,8 @@ class AutoLabelService:
         if tag:
             return tag
 
-        # Slow path: fuzzy scan using cached tag list
-        all_tags = self._get_all_tags_cached()
-        for existing in all_tags:
-            if self.are_names_similar(suggested_name, existing.name):
-                return existing
-        return None
+        # Slow path: fuzzy scan over the instance-level tag cache
+        return suggest_similar_tag(self.db, suggested_name, candidates=self._get_all_tags_cached())
 
     def find_existing_similar_collection(
         self, user_id: int, suggested_name: str
@@ -210,26 +206,20 @@ class AutoLabelService:
         return result
 
     def _get_or_create_tag_with_dedup(self, name: str, source: str = TAG_SOURCE_AUTO_AI) -> Tag:
-        """Get or create a tag, using fuzzy matching to prevent duplicates."""
+        """Get or create a tag, using fuzzy matching to prevent duplicates.
+
+        The fuzzy hit is applied automatically because this is the auto-labeling
+        path (see :meth:`find_existing_similar_tag`). Creation itself is
+        delegated to the shared resolver so normalization, the length clamp, and
+        the SAVEPOINT-guarded insert stay identical across every path.
+        """
         existing = self.find_existing_similar_tag(name)
         if existing:
             return existing
 
-        normalized = self.normalize_name(name)
-        try:
-            nested = self.db.begin_nested()
-            tag = Tag(name=name, source=source, normalized_name=normalized)
-            self.db.add(tag)
-            self.db.flush()
-            self._invalidate_tag_cache()
-            return tag
-        except IntegrityError:
-            nested.rollback()
-            self._invalidate_tag_cache()
-            existing_tag: Tag | None = self.db.query(Tag).filter(Tag.name == name).first()
-            if existing_tag:
-                return existing_tag
-            raise
+        tag = resolve_or_create_tag(self.db, name, source=source)
+        self._invalidate_tag_cache()
+        return tag
 
     def _get_or_create_collection_with_dedup(
         self, name: str, user_id: int, source: str = TAG_SOURCE_AUTO_AI

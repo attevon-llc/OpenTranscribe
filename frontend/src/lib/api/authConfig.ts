@@ -151,6 +151,37 @@ export interface ProxyConfig {
   proxy_jit_provisioning: boolean;
 }
 
+/** Mirrors `backend/app/schemas/auth_config.py:SAMLConfig` — same names, same order. */
+export interface SAMLConfig {
+  saml_enabled: boolean;
+  saml_sp_entity_id: string;
+  saml_sp_acs_url: string;
+  saml_sp_sls_url: string;
+  /** Public — safe to display. Only required when signing/encryption is on. */
+  saml_sp_x509_cert: string;
+  /** Never sent by the API — `null` on the wire, `is_set` carries the signal. */
+  saml_sp_private_key?: string | null;
+  saml_idp_entity_id: string;
+  saml_idp_sso_url: string;
+  saml_idp_slo_url: string;
+  /**
+   * The IdP's own signing certificate — what makes assertion signature
+   * verification real. Not sensitive (public key material the IdP itself
+   * publishes), but required before SAML can be enabled at all.
+   */
+  saml_idp_x509_cert: string;
+  saml_want_assertions_signed: boolean;
+  saml_want_messages_signed: boolean;
+  saml_sign_authn_requests: boolean;
+  saml_email_attribute: string;
+  saml_name_attribute: string;
+  saml_groups_attribute: string;
+  saml_admin_group: string;
+  /** Same empty-admits-everyone semantics as `OIDCConfig.oidc_allowed_groups`. */
+  saml_allowed_groups: string;
+  saml_blocked_groups: string;
+}
+
 export interface SessionConfig {
   jwt_access_token_expire_minutes: number;
   jwt_refresh_token_expire_days: number;
@@ -180,6 +211,7 @@ export const AUTH_CONFIG_CATEGORIES = [
   'oidc',
   'pki',
   'proxy',
+  'saml',
   'banner',
 ] as const;
 

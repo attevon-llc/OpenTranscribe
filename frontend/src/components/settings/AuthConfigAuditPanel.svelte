@@ -33,6 +33,7 @@
     oidc: 'settings.authentication.tab.oidc',
     pki: 'settings.authentication.tab.pki',
     proxy: 'settings.authentication.tab.proxy',
+    saml: 'settings.authentication.tab.saml',
     banner: 'settings.authAudit.category.banner',
   };
 

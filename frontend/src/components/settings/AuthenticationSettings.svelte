@@ -5,6 +5,7 @@
   import OIDCSettings from './OIDCSettings.svelte';
   import PKISettings from './PKISettings.svelte';
   import ProxySettings from './ProxySettings.svelte';
+  import SAMLSettings from './SAMLSettings.svelte';
   import LocalAuthSettings from './LocalAuthSettings.svelte';
   import SessionSettings from './SessionSettings.svelte';
   import AuthConfigAuditPanel from './AuthConfigAuditPanel.svelte';
@@ -87,6 +88,7 @@
     { id: 'oidc', label: $t('settings.authentication.tab.oidc') },
     { id: 'pki', label: $t('settings.authentication.tab.pki') },
     { id: 'proxy', label: $t('settings.authentication.tab.proxy') },
+    { id: 'saml', label: $t('settings.authentication.tab.saml') },
     // Directory group → in-app group/role. `/admin/group-mappings` had five
     // working endpoints and no consumer, so the feature existed only as an API.
     { id: 'mappings', label: $t('settings.authentication.tab.mappings') },
@@ -359,6 +361,13 @@
             config={configs.proxy || {}}
             sharedSecretIsSet={configs.proxy?.proxy_shared_secret_is_set}
             on:save={(e) => handleSave('proxy', e.detail)}
+            on:change={handleChange}
+          />
+        {:else if activeTab === 'saml'}
+          <SAMLSettings
+            config={configs.saml || {}}
+            privateKeyIsSet={configs.saml?.saml_sp_private_key_is_set}
+            on:save={(e) => handleSave('saml', e.detail)}
             on:change={handleChange}
           />
         {:else if activeTab === 'mappings'}

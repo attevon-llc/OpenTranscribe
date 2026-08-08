@@ -62,6 +62,7 @@
   $: isGalleryActive = currentPath === '/' || (currentPath as string) === '';
   $: isTasksActive = currentPath === '/file-status' || currentPath.startsWith('/file-status');
   $: isSpeakersActive = currentPath === '/speakers' || currentPath.startsWith('/speakers/');
+  $: isTagsActive = currentPath === '/tags' || currentPath.startsWith('/tags/');
   $: showGalleryLink = !isGalleryActive && !isTasksActive; // Show gallery link when not on gallery or tasks
 
   // User dropdown component reference (state lives in the child)
@@ -363,6 +364,20 @@
           <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
         </svg>
         <span class="nav-label">{$t('nav.speakers')}</span>
+      </a>
+
+      <!-- Tag manager link -->
+      <a
+        href="/tags"
+        title={$t('nav.tags')}
+        class="nav-link"
+        class:active={isTagsActive}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+          <line x1="7" y1="7" x2="7.01" y2="7"></line>
+        </svg>
+        <span class="nav-label">{$t('nav.tags')}</span>
       </a>
 
       <!-- Notifications button -->

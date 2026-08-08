@@ -34,7 +34,10 @@ AdminTaskHealthPanel).
 
 `AuthenticationSettings.svelte` is a tab shell over `LocalAuthSettings`, `LDAPSettings`,
 **`OIDCSettings`** (renamed from `KeycloakSettings`, which was deleted — do not resurrect a
-vendor-named panel), `PKISettings`, `SessionSettings` and `AuthConfigAuditPanel`.
+vendor-named panel), `PKISettings`, `ProxySettings` (trusted-header/reverse-proxy auth),
+`SAMLSettings`, `GroupMappingSettings` (the "mappings" tab, LDAP/OIDC sources only — see
+below), `SessionSettings`, `AuthMailDesignation` (the "mail" tab) and `AuthConfigAuditPanel`.
+Ten tabs total: local, ldap, oidc, pki, proxy, saml, mappings, session, mail, audit.
 
 - **The Local tab renders one form whose fields belong to FOUR backend categories**
   (`local`, `password_policy`, `mfa`, `lockout`). `PUT /admin/auth-config/{category}` validates

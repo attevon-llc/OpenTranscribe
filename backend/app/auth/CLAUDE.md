@@ -356,11 +356,13 @@ someone else's product.
 - Setup docs: `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md` (the old
   `docs/KEYCLOAK_SETUP.md` is a redirect stub — ~17 inbound links, including
   `scripts/test-all-auth.sh`, so don't delete it), and
-  `docs-site/docs/authentication/{overview,ldap,oidc,pki,groups}.md`.
+  `docs-site/docs/authentication/{overview,ldap,oidc,saml,pki,proxy,groups}.md`.
   `docs-site/docs/authentication/keycloak.md` is likewise a stub pointing at `oidc.md`;
   Docusaurus has no client-redirects plugin here, so the stub *is* the redirect.
 - **Surface that exists but has no admin UI** — say so when documenting it, don't imply a
-  panel: IdP group mappings (`/api/admin/group-mappings`, super_admin, no SPA consumer),
-  `require_email_verification` (enforced by `auth/email_verification.py`, no control in
-  `LocalAuthSettings.svelte`), and directory sync (six `SystemSettings` rows, no endpoint and
-  no panel — beat-driven only).
+  panel: directory sync (six `SystemSettings` rows, no endpoint and no panel — beat-driven
+  only). IdP group mappings (`/api/admin/group-mappings`) now has one —
+  `GroupMappingSettings.svelte`, the "mappings" tab of `AuthenticationSettings` — though it
+  only offers `ldap`/`oidc` as the source, so a `proxy`-sourced mapping still has to be created
+  through the API. `require_email_verification` also gained a control, in
+  `LocalAuthSettings.svelte`.

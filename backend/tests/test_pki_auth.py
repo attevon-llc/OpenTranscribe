@@ -1185,7 +1185,9 @@ def trusted_pki_peer(monkeypatch):
     from app.auth import header_trust
     from app.auth import pki_auth
 
-    monkeypatch.setattr(pki_auth, "_pki_header_source_is_trusted", lambda request: True)
+    monkeypatch.setattr(
+        pki_auth, "_pki_header_source_is_trusted", lambda request, networks=None: True
+    )
     monkeypatch.setattr(pki_auth, "header_source_is_trusted", lambda request, networks: True)
     monkeypatch.setattr(header_trust, "header_source_is_trusted", lambda request, networks: True)
 
@@ -1203,7 +1205,7 @@ def pki_enabled_db(db_session):
     from app.models.auth_config import AuthConfig
 
     admin_dn_value = (
-        "emailAddress=admin@example.com,"
+        "emailAddress=pki-admin-test@example.com,"
         "CN=Admin User,OU=Users,"
         "O=OpenTranscribe Admins,L=Arlington,"
         "ST=Virginia,C=US"
@@ -1290,14 +1292,14 @@ def pki_admin_cert():
     """
     pem = _generate_test_certificate(
         common_name="Admin User",
-        email="admin@example.com",
+        email="pki-admin-test@example.com",
         organization="OpenTranscribe Admins",
         organizational_unit="Users",
         days_valid=365,
         days_before=0,
     )
     subject_dn = (
-        "emailAddress=admin@example.com,"
+        "emailAddress=pki-admin-test@example.com,"
         "CN=Admin User,OU=Users,"
         "O=OpenTranscribe Admins,L=Arlington,"
         "ST=Virginia,C=US"

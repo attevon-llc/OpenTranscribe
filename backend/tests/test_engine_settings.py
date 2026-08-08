@@ -15,14 +15,14 @@ _DB_KEY = "engine.boundary_smoothing_enabled"
 class TestEngineSettingsBoundarySmoothing:
     """GET/POST/DELETE coverage for the boundary smoothing toggle."""
 
-    def test_get_includes_boundary_smoothing_default(self, client, admin_token_headers):
+    def test_get_includes_boundary_smoothing_default(self, client, super_admin_token_headers):
         """GET exposes boundary_smoothing_enabled as a boolean with an annotated source.
 
         Resets any DB override first so the result is deterministic regardless of
         pre-existing branch state, then asserts the key falls back to env/default.
         """
-        client.delete(f"{_BASE}/boundary_smoothing_enabled", headers=admin_token_headers)
-        resp = client.get(_BASE, headers=admin_token_headers)
+        client.delete(f"{_BASE}/boundary_smoothing_enabled", headers=super_admin_token_headers)
+        resp = client.get(_BASE, headers=super_admin_token_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert "boundary_smoothing_enabled" in data
@@ -30,12 +30,12 @@ class TestEngineSettingsBoundarySmoothing:
         assert isinstance(entry["value"], bool)
         assert entry["source"] in ("env", "default")
 
-    def test_set_boundary_smoothing_persists(self, client, admin_token_headers, db_session):
+    def test_set_boundary_smoothing_persists(self, client, super_admin_token_headers, db_session):
         """POST update writes the engine.boundary_smoothing_enabled key to SystemSettings."""
         resp = client.post(
             f"{_BASE}/update",
             json={"boundary_smoothing_enabled": True},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -45,33 +45,35 @@ class TestEngineSettingsBoundarySmoothing:
         # Directly assert the persisted DB value (string "true" per set_setting bool handling).
         assert get_setting(db_session, _DB_KEY) == "true"
 
-    def test_set_then_get_reflects_db_value(self, client, admin_token_headers):
+    def test_set_then_get_reflects_db_value(self, client, super_admin_token_headers):
         """A value set via POST is reflected on a fresh GET as a db override."""
         client.post(
             f"{_BASE}/update",
             json={"boundary_smoothing_enabled": True},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
-        resp = client.get(_BASE, headers=admin_token_headers)
+        resp = client.get(_BASE, headers=super_admin_token_headers)
         assert resp.status_code == 200
         entry = resp.json()["boundary_smoothing_enabled"]
         assert entry["value"] is True
         assert entry["source"] == "db"
 
     def test_reset_boundary_smoothing_removes_db_override(
-        self, client, admin_token_headers, db_session
+        self, client, super_admin_token_headers, db_session
     ):
         """DELETE reverts the key to env/default by removing the DB row."""
         client.post(
             f"{_BASE}/update",
             json={"boundary_smoothing_enabled": True},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         assert get_setting(db_session, _DB_KEY) == "true"
 
-        resp = client.delete(f"{_BASE}/boundary_smoothing_enabled", headers=admin_token_headers)
+        resp = client.delete(
+            f"{_BASE}/boundary_smoothing_enabled", headers=super_admin_token_headers
+        )
         assert resp.status_code == 204
         assert get_setting(db_session, _DB_KEY) is None
 
-        get_resp = client.get(_BASE, headers=admin_token_headers)
+        get_resp = client.get(_BASE, headers=super_admin_token_headers)
         assert get_resp.json()["boundary_smoothing_enabled"]["source"] in ("env", "default")

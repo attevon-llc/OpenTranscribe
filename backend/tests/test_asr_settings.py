@@ -880,12 +880,12 @@ class TestAdminLocalModelControl:
         )
         assert resp.status_code == 403
 
-    def test_set_local_model_as_admin(self, client, admin_token_headers, db_session):
+    def test_set_local_model_as_admin(self, client, super_admin_token_headers, db_session):
         """Admin can set the local model, stored in SystemSettings."""
         resp = client.post(
             "/api/asr-settings/local-model/set",
             json={"model_name": "large-v3"},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -900,17 +900,17 @@ class TestAdminLocalModelControl:
         assert setting is not None
         assert setting.value == "large-v3"
 
-    def test_set_local_model_updates_existing(self, client, admin_token_headers, db_session):
+    def test_set_local_model_updates_existing(self, client, super_admin_token_headers, db_session):
         """Setting the model twice updates the existing row."""
         client.post(
             "/api/asr-settings/local-model/set",
             json={"model_name": "large-v3"},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         resp = client.post(
             "/api/asr-settings/local-model/set",
             json={"model_name": "large-v3-turbo"},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         assert resp.status_code == 200
         assert resp.json()["model_name"] == "large-v3-turbo"
@@ -923,7 +923,7 @@ class TestAdminLocalModelControl:
         assert count == 1
 
     def test_set_local_model_remaps_pytorch_crisperwhisper_to_ct2(
-        self, client, admin_token_headers, db_session
+        self, client, super_admin_token_headers, db_session
     ):
         """The PyTorch CrisperWhisper checkpoint is remapped to the loadable CT2 build.
 
@@ -933,7 +933,7 @@ class TestAdminLocalModelControl:
         resp = client.post(
             "/api/asr-settings/local-model/set",
             json={"model_name": "nyrahealth/CrisperWhisper"},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         assert resp.status_code == 200
         assert resp.json()["model_name"] == "nyrahealth/faster_CrisperWhisper"
@@ -945,35 +945,37 @@ class TestAdminLocalModelControl:
         )
         assert setting.value == "nyrahealth/faster_CrisperWhisper"
 
-    def test_set_local_model_resolves_crisperwhisper_short_name(self, client, admin_token_headers):
+    def test_set_local_model_resolves_crisperwhisper_short_name(
+        self, client, super_admin_token_headers
+    ):
         """The 'crisperwhisper' short name is stored as the loadable CT2 repo id."""
         resp = client.post(
             "/api/asr-settings/local-model/set",
             json={"model_name": "crisperwhisper"},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         assert resp.status_code == 200
         assert resp.json()["model_name"] == "nyrahealth/faster_CrisperWhisper"
 
-    def test_set_local_model_empty_name_rejected(self, client, admin_token_headers):
+    def test_set_local_model_empty_name_rejected(self, client, super_admin_token_headers):
         """Empty model name is rejected."""
         resp = client.post(
             "/api/asr-settings/local-model/set",
             json={"model_name": "  "},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         assert resp.status_code == 400
 
-    def test_get_active_model_reflects_db_setting(self, client, admin_token_headers):
+    def test_get_active_model_reflects_db_setting(self, client, super_admin_token_headers):
         """After setting via admin endpoint, get returns the DB value."""
         client.post(
             "/api/asr-settings/local-model/set",
             json={"model_name": "medium"},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         resp = client.get(
             "/api/asr-settings/local-model/active",
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -1010,17 +1012,17 @@ class TestTranscriptionConfigResolvesModel:
         assert isinstance(result, str)
         assert len(result) > 0
 
-    def test_admin_set_model_reflected_in_get(self, client, admin_token_headers):
+    def test_admin_set_model_reflected_in_get(self, client, super_admin_token_headers):
         """Full round-trip: admin sets model, GET endpoint returns it."""
         # This test exercises the full DB path (set + get both use API sessions)
         client.post(
             "/api/asr-settings/local-model/set",
             json={"model_name": "distil-large-v3"},
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         resp = client.get(
             "/api/asr-settings/local-model/active",
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
         )
         assert resp.status_code == 200
         assert resp.json()["active_model"] == "distil-large-v3"

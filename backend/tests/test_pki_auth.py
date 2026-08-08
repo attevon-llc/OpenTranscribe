@@ -1170,10 +1170,24 @@ def trusted_pki_peer(monkeypatch):
     ever match, so the allowlist lookup is patched for the duration of the test rather
     than the production trust rule being relaxed. ``app/auth/pki_auth.py`` therefore has
     exactly one rule with no test-only branch in it.
+
+    Two independent call sites gate on that rule (``pki_authenticate``'s
+    ``_validate_pki_headers_source``, hit first, via ``header_assertion_permitted``;
+    and ``_extract_user_info_from_request``'s own ``_pki_header_source_is_trusted``),
+    and each resolves ``header_source_is_trusted`` through its own module's import
+    binding — patching one leaves the other running the real, untrusted-peer check.
+    Both were introduced together (``_validate_pki_headers_source``, PKI trust
+    hardening), but only the second was ever wired into this fixture, so this class's
+    whole suite 401'd against a real deployment shape (every DN-header request has
+    *some* PKI header, so ``asserted=True`` and the unmocked gate always refuses)
+    until a real backend/frontend run against Authentik/LDAP surfaced it (#20/#14).
     """
+    from app.auth import header_trust
     from app.auth import pki_auth
 
     monkeypatch.setattr(pki_auth, "_pki_header_source_is_trusted", lambda request: True)
+    monkeypatch.setattr(pki_auth, "header_source_is_trusted", lambda request, networks: True)
+    monkeypatch.setattr(header_trust, "header_source_is_trusted", lambda request, networks: True)
 
 
 @pytest.fixture

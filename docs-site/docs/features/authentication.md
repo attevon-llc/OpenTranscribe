@@ -6,7 +6,7 @@ title: Authentication & Security
 # Authentication & Security
 
 OpenTranscribe's authentication system is built around one idea: **the deployment decides where
-identity lives, and the product enforces that decision everywhere.** Four identity sources run
+identity lives, and the product enforces that decision everywhere.** Six identity sources run
 simultaneously, all configured from a single admin surface, all stored encrypted in the
 database, all changeable without a restart.
 
@@ -26,7 +26,9 @@ flowchart TD
     Source -->|local| Policy{local_enabled?<br/>super_admin exempt}
     Source -->|ldap| LDAP[Bind to directory]
     Source -->|oidc| OIDC[Authorization code + PKCE<br/>ID token verified]
+    Source -->|saml| SAML[Assertion verified<br/>python3-saml]
     Source -->|pki| PKI[X.509 via trusted proxy]
+    Source -->|proxy| Proxy[Trusted-header assertion]
 
     Policy -->|no| Denied
     Policy -->|yes| Pwd[Verify password hash]
@@ -34,7 +36,9 @@ flowchart TD
     Pwd --> MFA
     LDAP --> Reconcile[Provision / link<br/>reconcile groups + role] --> MFA
     OIDC --> Reconcile
+    SAML --> Reconcile
     PKI --> Reconcile
+    Proxy --> Reconcile
 
     MFA{MFA required<br/>for this login?}
     MFA -->|enrolled| TOTP[Verify TOTP]
@@ -74,9 +78,20 @@ discovered from its `.well-known/openid-configuration`. Authorization-code flow 
 ID-token-only validation, and RP-initiated logout using an ID token kept on the session row
 rather than in a cookie.
 
+### SAML 2.0
+Service-provider role for IdPs that only speak SAML (ADFS, Shibboleth, Okta-classic). Assertion
+parsing and signature verification are `python3-saml`'s, never hand-rolled; email-match account
+linking is refused unconditionally because SAML has no standard "address verified" claim.
+
 ### PKI / X.509
 Mutual TLS terminated at the reverse proxy, CAC/PIV common-name parsing, OCSP and CRL
 revocation checking, and a fail-closed trusted-proxy allowlist.
+
+### Trusted-header (reverse proxy)
+For a reverse proxy (oauth2-proxy, Authelia, Cloudflare Access) that already authenticates the
+user and asserts identity in a request header. Shares its trusted-peer allowlist and fail-closed
+refusal logic with PKI's header mode; a per-request consistency check revokes a session outright
+if a trusted peer later asserts a different identity for it.
 
 ## The identity-source model
 
@@ -125,9 +140,11 @@ moved from `admin` to `super_admin`. Promote anyone who administers them.
 ## Group mapping
 
 Directory groups map onto in-app groups and an optional role grant capped at `admin`. Applied
-at login for both LDAP and OIDC, and on the periodic sweep for LDAP. Directory-derived
-memberships are marked as such, so reconciliation removes only what it added — a hand-added
-membership is never touched. See [IdP group mapping](../authentication/groups).
+at login for LDAP, OIDC and trusted-header (proxy) sign-ins, and on the periodic sweep for LDAP
+only. Directory-derived memberships are marked as such, so reconciliation removes only what it
+added — a hand-added membership is never touched. The admin panel (Settings → Authentication →
+Group mappings) covers LDAP and OIDC; a proxy-sourced mapping is created via the API. See
+[IdP group mapping](../authentication/groups).
 
 ## Account lifecycle
 
@@ -170,8 +187,9 @@ everything. An empty allow-list admits everyone, so upgrading changes nothing un
 TOTP (RFC 6238) with one-time backup codes. **`mfa_required` is enforced at the server**: an
 unenrolled user receives an enrolment-scoped half-token that authorizes only the two setup
 endpoints, so an API client that ignores the hint gets nothing. Every token carries a purpose
-claim that every consumer verifies. PKI and OIDC users bypass local MFA only when they used
-their native method.
+claim that every consumer verifies. PKI, OIDC and SAML users bypass local MFA only when they
+used their native method; a proxy-authenticated user bypasses it always, since the proxy is
+expected to own authentication itself.
 
 ## Password policy, lockout, rate limiting
 
@@ -235,6 +253,8 @@ Enable with `FIPS_VERSION=140-3`. Details in `docs/FIPS_140_3_COMPLIANCE.md`.
 - [Authentication overview](../authentication/overview) — the identity-source model, tiers,
   lifecycle, and the full configuration reference
 - [LDAP](../authentication/ldap) · [OIDC](../authentication/oidc) ·
-  [PKI](../authentication/pki) · [Group mapping](../authentication/groups)
+  [SAML](../authentication/saml) · [PKI](../authentication/pki) ·
+  [Trusted-header (proxy)](../authentication/proxy) ·
+  [Group mapping](../authentication/groups)
 - [Admin panel](../user-guide/admin-panel.md)
 - [Environment variables](../configuration/environment-variables.md)

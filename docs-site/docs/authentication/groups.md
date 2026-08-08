@@ -12,17 +12,19 @@ to an in-app group, to a role grant, or to both.
 
 Added by migration `v378_idp_group_mapping`.
 
-:::note API-only for now
-There is no admin-panel screen for group mappings yet. The endpoints below are the interface.
-Everything else on this page — the login-time and sweep-time application, the role cap, the
-manual-membership protection — is live regardless of how the rows were created.
+:::note Admin panel covers LDAP and OIDC
+Settings → Authentication → **Group mappings** (`GroupMappingSettings`) lets a super_admin
+create, edit, delete and dry-run-test LDAP and OIDC mappings without touching the API. It offers
+only `ldap`/`oidc` as the source, so a **`proxy`-sourced mapping still has to be created through
+the API** below — everything else on this page (the login-time and sweep-time application, the
+role cap, the manual-membership protection) is live regardless of how a row was created.
 :::
 
 ## What a mapping is
 
 | Field | Meaning |
 |---|---|
-| `source` | `ldap` or `oidc` — which directory's claims this mapping matches |
+| `source` | `ldap`, `oidc` or `proxy` — which directory's/assertion's claims this mapping matches |
 | `claim_value` | The group DN or role/group name the provider asserts (max 1024 chars) |
 | `group_uuid` | An existing in-app `UserGroup` to place the user in (optional) |
 | `grants_role` | `user` or `admin` (optional) |
@@ -47,7 +49,7 @@ broken.
 - **LDAP** distinguished names are compared **case-insensitively**, and a partial unique index
   (`uq_group_mapping_ldap_claim_ci`) keeps the table from holding two mappings that differ only
   in case.
-- **OIDC** role and group strings are opaque, case-sensitive identifiers and are compared
+- **OIDC and proxy** role/group strings are opaque, case-sensitive identifiers and are compared
   verbatim. Folding them would silently merge `Legal` and `legal`.
 
 ## How mappings are applied
@@ -58,8 +60,13 @@ a day for their groups.
 
 | Caller | When | Sources |
 |---|---|---|
-| Login | Every LDAP and OIDC sign-in | `ldap`, `oidc` |
+| Login | Every LDAP, OIDC and trusted-header (proxy) sign-in | `ldap`, `oidc`, `proxy` |
 | [Directory sync](./ldap#directory-sync-and-deprovisioning) | On the configured schedule | `ldap` only |
+
+A proxy sign-in only reconciles membership when the proxy actually forwards a groups header
+(`PROXY_GROUPS_HEADER`) — an **absent** header means "I do not manage your groups" and skips
+reconciliation entirely, while an **empty** one reconciles to empty. See
+[Trusted-header setup](./proxy).
 
 For each pass:
 
@@ -159,3 +166,4 @@ paste the values the provider emits instead.
 - [Authentication overview → Privilege tiers](./overview#privilege-tiers)
 - [LDAP setup](./ldap)
 - [OIDC setup](./oidc)
+- [Trusted-header (reverse proxy) setup](./proxy)

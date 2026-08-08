@@ -5,10 +5,11 @@ title: Authentication Overview
 
 # Authentication Overview
 
-OpenTranscribe has four identity sources — **local passwords**, **LDAP/Active Directory**,
-**OpenID Connect**, and **PKI/X.509 certificates**. They run *simultaneously*; each account
-records which one owns it in `user.auth_type`, so a deployment can have directory users,
-certificate users and a handful of local accounts at the same time.
+OpenTranscribe has six identity sources — **local passwords**, **LDAP/Active Directory**,
+**OpenID Connect**, **SAML 2.0**, **PKI/X.509 certificates**, and **trusted-header (reverse
+proxy)** authentication. They run *simultaneously*; each account records which one owns it in
+`user.auth_type`, so a deployment can have directory users, certificate users, proxy-asserted
+users and a handful of local accounts at the same time.
 
 Everything on this page is configured in **Settings → Authentication**, which is
 **super_admin-only**. Configuration is stored in the `auth_config` table, secrets encrypted
@@ -35,7 +36,9 @@ and an `is_set` boolean; the panel renders "a secret is configured — leave bla
 | Local password | `local` | this page |
 | LDAP / Active Directory | `ldap` | [LDAP setup](./ldap) |
 | OpenID Connect (Keycloak, Authentik, Okta, Entra ID, Authelia, Auth0, Zitadel…) | `oidc` | [OIDC setup](./oidc) |
+| SAML 2.0 | `saml` | [SAML setup](./saml) |
 | PKI / X.509 client certificates | `pki` | [PKI setup](./pki) |
+| Trusted-header (reverse proxy) | `proxy` | [Trusted-header setup](./proxy) |
 
 Directory groups can be mapped onto in-app groups and an in-app role — see
 [IdP group mapping](./groups).
@@ -167,14 +170,9 @@ already used, address already registered) returns exactly the same message.
 ### Email verification
 
 `require_email_verification` (Authentication → Local, category `local`) gates **local password
-login only**. An account whose identity lives in LDAP/OIDC/PKI has its address asserted by the
-provider, so blocking those logins here would second-guess the IdP. Verification tokens expire
-after 24 hours and are rate-limited to 3 issues per hour.
-
-:::note
-There is currently no toggle for `require_email_verification` in the admin panel. Set it with
-`PUT /api/admin/auth-config/local` (`{"require_email_verification": true}`).
-:::
+login only**. An account whose identity lives in LDAP/OIDC/SAML/PKI/proxy has its address
+asserted by the provider, so blocking those logins here would second-guess the IdP.
+Verification tokens expire after 24 hours and are rate-limited to 3 issues per hour.
 
 ### Forced password change
 
@@ -248,7 +246,7 @@ fallback is an account-takeover vector, because the address is an attribute of t
 source: whoever can write it — a directory administrator, a self-service directory, anyone who
 can get a certificate issued — could point it at an existing account and inherit it.
 
-One rule, used by LDAP, OIDC and PKI alike:
+One rule, used by LDAP, OIDC, SAML, PKI and trusted-header (proxy) alike:
 
 1. Link on an email match **only when the source asserts the address is verified**.
 2. **Never** link a `super_admin` account by email, verified or not.
@@ -333,6 +331,19 @@ Settings → Audit Logs (super_admin). Separately, **Settings → Authentication
 changes to the auth configuration itself, read from the `auth_config_audit` table in Postgres —
 including *who* made each change.
 
+## SCIM 2.0 provisioning
+
+For deployments that want their IdP to create, update and deactivate accounts directly (rather
+than relying on JIT provisioning at login), OpenTranscribe exposes a SCIM 2.0 (RFC 7643/7644)
+endpoint at **`/scim/v2`** — mounted at the application root, not under `/api`, because RFC 7644
+§3.1 fixes the base path and every connector appends `/Users` / `/Groups` to it itself.
+
+Authentication is a bearer token (`scim_token`, hashed at rest) issued and revoked by a
+super_admin at `/api/admin/scim-tokens`. A SCIM connector cannot create or touch a `super_admin`,
+and cannot write a role; group membership it creates is tagged `source='scim'`, which is shielded
+from directory-sync reconciliation and vice versa. See `backend/app/auth/CLAUDE.md` for the
+filter/PATCH surface that is actually supported.
+
 ## Compliance
 
 | Requirement | Implementation |
@@ -352,6 +363,8 @@ including *who* made each change.
 
 - [LDAP / Active Directory](./ldap)
 - [OpenID Connect](./oidc)
+- [SAML 2.0](./saml)
 - [PKI / X.509](./pki)
+- [Trusted-header (reverse proxy)](./proxy)
 - [IdP group mapping](./groups)
 - [Environment variables](../configuration/environment-variables.md)

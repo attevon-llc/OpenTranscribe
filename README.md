@@ -166,11 +166,14 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Per-Upload Toggles**: Disable diarization or AI summarization on a per-file basis at upload or reprocess time
 
 ### 🔐 **Enterprise Authentication & Security**
-- **Enterprise Authentication System**: Support for 4 authentication methods with hybrid configuration
+- **Enterprise Authentication System**: Support for 6 authentication methods, running simultaneously, with hybrid (DB > env > default) configuration
   - **Local Authentication**: Username/password with bcrypt hashing
   - **LDAP/Active Directory**: Enterprise directory integration for corporate deployments
-  - **OIDC/Keycloak**: OAuth 2.0 with PKCE for single sign-on (SSO) capabilities
+  - **OpenID Connect (OIDC)**: OAuth 2.0 with PKCE for single sign-on (SSO) against any conforming provider (Keycloak, Authentik, Okta, Entra ID, Authelia, Auth0, Zitadel)
+  - **SAML 2.0**: Service-provider role for IdPs that only speak SAML (ADFS, Shibboleth, Okta-classic)
   - **PKI/X.509 Certificates**: CAC/PIV smart card support for government and high-security deployments
+  - **Trusted-header (reverse proxy)**: Delegate authentication to oauth2-proxy, Authelia, Cloudflare Access or a similar SSO gateway
+- **SCIM 2.0 Provisioning**: `/scim/v2` for IdP-driven account creation/deactivation, alongside per-method JIT provisioning
 - **Multi-Factor Authentication (MFA)**: TOTP-based authentication (Google Authenticator, Authy) with backup codes for account recovery
 - **Comprehensive Audit Logging**: All authentication events logged for compliance and security monitoring
 - **FedRAMP Compliance Features**: Password complexity policies (IA-5), account lockout after failed attempts, classification banners (AC-8)
@@ -693,32 +696,47 @@ MINIO_BUCKET_NAME=transcribe-app
 ```
 
 #### **Authentication**
-```bash
-# Authentication method: local, ldap, keycloak, pki
-AUTH_TYPE=local
 
-# LDAP/Active Directory (when AUTH_TYPE=ldap)
+There is no single `AUTH_TYPE` switch — every method is enabled independently, and all of them
+can run at once (each account records which one owns it). These `.env` values are only a
+bootstrap seed / fallback: **Settings → Authentication** in the admin UI is DB-backed and takes
+precedence over `.env`, with no restart required.
+
+```bash
+# LDAP/Active Directory
+LDAP_ENABLED=false
 LDAP_SERVER=ldap://your-ldap-server:389
 LDAP_BASE_DN=dc=example,dc=com
 LDAP_BIND_DN=cn=admin,dc=example,dc=com
 LDAP_BIND_PASSWORD=your-bind-password
 
-# OIDC/Keycloak (when AUTH_TYPE=keycloak)
-KEYCLOAK_URL=https://your-keycloak-server/auth
-KEYCLOAK_REALM=your-realm
-KEYCLOAK_CLIENT_ID=opentranscribe
-KEYCLOAK_CLIENT_SECRET=your-client-secret
+# OpenID Connect (any conforming provider, including Keycloak — the surface used to
+# be Keycloak-specific; the legacy KEYCLOAK_* names still work as a permanent alias
+# for OIDC_*, and win if both are set)
+OIDC_ENABLED=false
+OIDC_SERVER_URL=https://your-idp-server
+OIDC_REALM=your-realm
+OIDC_CLIENT_ID=opentranscribe
+OIDC_CLIENT_SECRET=your-client-secret
 
-# PKI/X.509 (when AUTH_TYPE=pki)
+# SAML 2.0
+SAML_ENABLED=false
+
+# PKI/X.509
+PKI_ENABLED=false
 PKI_CA_CERT_PATH=/path/to/ca-cert.pem
-PKI_VERIFY_CRL=true
+PKI_TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8   # required whenever PKI is enabled
+
+# Trusted-header (reverse proxy)
+PROXY_ENABLED=false
+PROXY_TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8 # required whenever proxy auth is enabled
 
 # MFA (optional, works with any auth type)
 MFA_ENABLED=false
 MFA_ISSUER=OpenTranscribe
 ```
 
-See detailed setup guides: [LDAP](docs/LDAP_AUTH.md) | [OIDC](docs/OIDC_SETUP.md) | [PKI](docs/PKI_SETUP.md)
+See detailed setup guides: [LDAP](docs/LDAP_AUTH.md) | [OIDC](docs/OIDC_SETUP.md) | [PKI](docs/PKI_SETUP.md) | [SAML](docs-site/docs/authentication/saml.md) | [Trusted-header proxy](docs-site/docs/authentication/proxy.md)
 
 #### **AI Processing**
 ```bash
@@ -1172,7 +1190,10 @@ OpenTranscribe supports multiple authentication methods for enterprise and gover
 - **Local Authentication**: Username/password with bcrypt hashing
 - **LDAP/Active Directory**: Enterprise directory integration - see [LDAP Authentication Guide](docs/LDAP_AUTH.md)
 - **OIDC**: OAuth 2.0 / OpenID Connect with PKCE for SSO against any conforming provider (Keycloak, Authentik, Authelia, Okta, Entra ID, Auth0, Zitadel) - see [OIDC Setup Guide](docs/OIDC_SETUP.md)
+- **SAML 2.0**: Service-provider role for IdPs that only speak SAML (ADFS, Shibboleth, Okta-classic) - see [SAML setup](docs-site/docs/authentication/saml.md)
 - **PKI/X.509 Certificates**: CAC/PIV smart card support - see [PKI Setup Guide](docs/PKI_SETUP.md)
+- **Trusted-header (reverse proxy)**: Delegate authentication to oauth2-proxy, Authelia, Cloudflare Access or a similar SSO gateway - see [Trusted-header setup](docs-site/docs/authentication/proxy.md)
+- **SCIM 2.0**: IdP-driven account provisioning at `/scim/v2` (RFC 7643/7644)
 
 ### **Multi-Factor Authentication**
 - TOTP-based MFA with authenticator apps (Google Authenticator, Authy, etc.)

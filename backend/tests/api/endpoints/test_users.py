@@ -90,6 +90,56 @@ def test_update_user_admin_cannot_set_privileged_fields(client, admin_token_head
     assert user_data["is_active"] is True  # is_active stripped for non-super_admin
 
 
+def test_update_user_sets_account_expiration(client, admin_token_headers, normal_user):
+    """account_expires_at (AC-2 time-boxed accounts) is admin-tier, not super_admin-only —
+    it is enforced on every request by dependencies.py but, before this write path, had
+    no way to ever be set."""
+    response = client.put(
+        f"/api/users/{normal_user.uuid}",
+        headers=admin_token_headers,
+        json={"account_expires_at": "2099-01-01T00:00:00"},
+    )
+    assert response.status_code == 200
+    user_data = response.json()
+    assert user_data["account_expires_at"] is not None
+    assert user_data["account_expires_at"].startswith("2099-01-01")
+
+
+def test_update_user_clears_account_expiration(client, admin_token_headers, normal_user):
+    """`None` clears a previously-set expiration rather than being ignored as unset —
+    `exclude_unset=True` means the key must actually be present in the payload."""
+    client.put(
+        f"/api/users/{normal_user.uuid}",
+        headers=admin_token_headers,
+        json={"account_expires_at": "2099-01-01T00:00:00"},
+    )
+    response = client.put(
+        f"/api/users/{normal_user.uuid}",
+        headers=admin_token_headers,
+        json={"account_expires_at": None},
+    )
+    assert response.status_code == 200
+    assert response.json()["account_expires_at"] is None
+
+
+def test_expired_account_is_refused_on_the_next_request(
+    client, admin_token_headers, normal_user, user_token_headers, db_session
+):
+    """The read half (dependencies.py:_enforce_account_expiry) already enforced this,
+    checked per-request rather than at login — this pins that the write half added here
+    (setting the column through the admin API) actually reaches it end-to-end."""
+    response = client.put(
+        f"/api/users/{normal_user.uuid}",
+        headers=admin_token_headers,
+        json={"account_expires_at": "2020-01-01T00:00:00"},
+    )
+    assert response.status_code == 200
+
+    response = client.get("/api/users/me", headers=user_token_headers)
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "account_expired"
+
+
 def test_update_user_invalid_uuid(client, admin_token_headers):
     """Test updating user with invalid UUID format"""
     update_data = {"full_name": "Should Fail"}

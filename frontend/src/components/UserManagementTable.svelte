@@ -33,6 +33,7 @@
    * @property {string|null} [email_verified_at]
    * @property {'pending'|'approved'|'rejected'|string} [approval_status]
    * @property {string|null} [approved_at]
+   * @property {string|null} [account_expires_at]
    */
 
   /** @type {Array<User>} */
@@ -616,6 +617,60 @@
    */
   let pendingActionUuid = null;
 
+  /**
+   * UUID of the row whose expiration-date editor is open, or null.
+   * @type {string|null}
+   */
+  let expirationEditUuid = null;
+
+  /** Value bound to the open row's `<input type="date">`. @type {string} */
+  let expirationEditValue = '';
+
+  /**
+   * Open the inline expiration editor for a row (FedRAMP AC-2 time-boxed
+   * accounts — `account_expires_at` was enforced on every request with no way
+   * to ever set it; this is that write path).
+   * @param {User} targetUser
+   */
+  function openExpirationEditor(targetUser) {
+    expirationEditUuid = targetUser.uuid;
+    expirationEditValue = targetUser.account_expires_at
+      ? targetUser.account_expires_at.slice(0, 10)
+      : '';
+  }
+
+  function closeExpirationEditor() {
+    expirationEditUuid = null;
+    expirationEditValue = '';
+  }
+
+  /**
+   * Save (or clear, if the date field was emptied) the row's account_expires_at.
+   * @param {User} targetUser
+   */
+  async function saveExpiration(targetUser) {
+    const isoValue = expirationEditValue ? `${expirationEditValue}T23:59:59` : null;
+    pendingActionUuid = targetUser.uuid;
+    try {
+      await axiosInstance.put(`/users/${targetUser.uuid}`, {
+        account_expires_at: isoValue
+      });
+      const userName = targetUser.full_name || targetUser.email;
+      toastStore.success(
+        isoValue
+          ? $t('userManagement.expirationSet', { name: userName })
+          : $t('userManagement.expirationCleared', { name: userName })
+      );
+      closeExpirationEditor();
+      onRefresh();
+    } catch (err) {
+      console.error('Error setting account expiration:', err);
+      toastStore.error(extractErrorMessage(err, $t('userManagement.expirationFailed')));
+    } finally {
+      pendingActionUuid = null;
+    }
+  }
+
   /** Target for {@link LinkIdentityModal} (P1.3 — the account_linking operator remedy). */
   let linkIdentityModalOpen = false;
   /** @type {User|null} */
@@ -1155,6 +1210,52 @@
                     </svg>
                   </button>
                   {/if}
+                  {#if expirationEditUuid === currentUser.uuid}
+                    <span class="expiration-editor">
+                      <input
+                        type="date"
+                        bind:value={expirationEditValue}
+                        aria-label={$t('userManagement.setExpirationFor', { name: currentUser.full_name || currentUser.email })}
+                      />
+                      <button
+                        class="icon-button expiration-save-button"
+                        disabled={pendingActionUuid === currentUser.uuid}
+                        on:click={() => saveExpiration(currentUser)}
+                        title={$t('common.save')}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </button>
+                      <button
+                        class="icon-button expiration-cancel-button"
+                        disabled={pendingActionUuid === currentUser.uuid}
+                        on:click={closeExpirationEditor}
+                        title={$t('common.cancel')}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="18" x2="6" y1="6" y2="18"/>
+                          <line x1="6" x2="18" y1="6" y2="18"/>
+                        </svg>
+                      </button>
+                    </span>
+                  {:else}
+                  <button
+                    class="icon-button expiration-button"
+                    class:active={currentUser.account_expires_at}
+                    on:click={() => openExpirationEditor(currentUser)}
+                    title={currentUser.account_expires_at
+                      ? $t('userManagement.editExpirationFor', { name: currentUser.full_name || currentUser.email, date: formatDate(currentUser.account_expires_at) })
+                      : $t('userManagement.setExpirationFor', { name: currentUser.full_name || currentUser.email })}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>
+                      <line x1="16" x2="16" y1="2" y2="6"/>
+                      <line x1="8" x2="8" y1="2" y2="6"/>
+                      <line x1="3" x2="21" y1="10" y2="10"/>
+                    </svg>
+                  </button>
+                  {/if}
                   <button
                     class="icon-button recover-button"
                     on:click={() => onUserRecovery(currentUser.uuid)}
@@ -1636,6 +1737,63 @@
 
   .fallback-toggle-button.active:hover:not(:disabled) {
     background-color: #d97706;
+  }
+
+  /* Expiration button - blue */
+  .expiration-button {
+    background-color: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+  }
+
+  .expiration-button:hover:not(:disabled) {
+    background-color: #3b82f6;
+    color: white;
+    transform: scale(1.05);
+  }
+
+  .expiration-button.active {
+    background-color: #3b82f6;
+    color: white;
+  }
+
+  .expiration-button.active:hover:not(:disabled) {
+    background-color: #2563eb;
+  }
+
+  .expiration-editor {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .expiration-editor input[type='date'] {
+    height: 32px;
+    padding: 0 6px;
+    border: 1px solid var(--border-color, #d1d5db);
+    border-radius: 6px;
+    background-color: var(--bg-secondary, white);
+    color: var(--text-primary, #111827);
+    font-size: 0.85rem;
+  }
+
+  .expiration-save-button {
+    background-color: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+  }
+
+  .expiration-save-button:hover:not(:disabled) {
+    background-color: #10b981;
+    color: white;
+  }
+
+  .expiration-cancel-button {
+    background-color: rgba(107, 114, 128, 0.1);
+    color: #6b7280;
+  }
+
+  .expiration-cancel-button:hover:not(:disabled) {
+    background-color: #6b7280;
+    color: white;
   }
 
   /* Reset password button - purple/indigo */

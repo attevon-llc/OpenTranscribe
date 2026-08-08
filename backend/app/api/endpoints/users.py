@@ -40,6 +40,7 @@ from app.services.account_security_service import DeletedUser
 from app.services.account_security_service import assert_local_fallback_settable
 from app.services.account_security_service import assert_password_auth_possible
 from app.services.account_security_service import audit_account_status_change
+from app.services.account_security_service import audit_expiration_change
 from app.services.account_security_service import audit_password_change
 from app.services.account_security_service import audit_role_change
 from app.services.account_security_service import audit_user_deleted
@@ -362,6 +363,7 @@ def update_user(
     # Uses helper that validates UUID format and returns 400 for invalid UUIDs
     user = get_user_by_uuid(db, user_uuid)
     old_role = str(user.role)
+    old_expires_at = str(user.account_expires_at) if user.account_expires_at else None
     was_active = bool(user.is_active)
 
     # Update fields — strip privilege-escalation fields unless caller is super_admin.
@@ -462,8 +464,19 @@ def update_user(
         audit_role_change(user, current_user, old_role, str(user.role), client_ip, user_agent)
     if was_active != bool(user.is_active):
         audit_account_status_change(user, current_user, bool(user.is_active), client_ip, user_agent)
+    if "account_expires_at" in update_data:
+        _audit_expiration_if_changed(user, current_user, old_expires_at, client_ip, user_agent)
 
     return user
+
+
+def _audit_expiration_if_changed(
+    user: User, actor: User, old_expires_at: str | None, client_ip: str, user_agent: str
+) -> None:
+    """Split out of ``update_user`` to keep that function's branch count readable."""
+    new_expires_at = str(user.account_expires_at) if user.account_expires_at else None
+    if new_expires_at != old_expires_at:
+        audit_expiration_change(user, actor, old_expires_at, new_expires_at, client_ip, user_agent)
 
 
 def _assert_not_last_super_admin(db: Session, user: User, new_role: str) -> None:

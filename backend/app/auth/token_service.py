@@ -27,6 +27,9 @@ from joserfc.errors import JoseError
 from joserfc.jwk import OctKey
 from sqlalchemy.orm import Session
 
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
 from app.auth.session import InMemoryStore
 from app.auth.session import get_redis_client
 from app.core.config import settings
@@ -373,6 +376,18 @@ class TokenService:
             f"(jti={jti[:8]}..., expires={expires_at.isoformat()})"
         )
 
+        # Single choke point: every session (refresh_token row) is created here,
+        # whatever the auth method or whether this is a fresh login or a rotation
+        # — so this is the one place that needs to emit it, not every call site.
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_SESSION_CREATED,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=user_id,
+            source_ip=ip_address,
+            user_agent=user_agent,
+            details={"jti": jti},
+        )
+
         return token, refresh_token
 
     def verify_refresh_token(
@@ -447,6 +462,12 @@ class TokenService:
             # Check expiration (should be caught by JWT decode, but double-check)
             if refresh_token.is_expired:
                 logger.warning("Token verification failed: token expired")
+                audit_logger.log(
+                    event_type=AuditEventType.AUTH_SESSION_EXPIRED,
+                    outcome=AuditOutcome.FAILURE,
+                    user_id=refresh_token.user_id,
+                    details={"jti": jti},
+                )
                 return None, None
 
             if not self._session_within_lifetime(db, refresh_token):
@@ -546,6 +567,16 @@ class TokenService:
                 db.commit()
 
             logger.info(f"Revoked token (jti={jti[:8]}..., ttl={ttl_seconds}s)")
+
+            # Single choke point for every revocation path (logout, logout-all,
+            # admin termination, password reset, federated SAML/OIDC logout) —
+            # covering it here means none of those call sites has to remember to.
+            audit_logger.log(
+                event_type=AuditEventType.AUTH_TOKEN_REVOKE,
+                outcome=AuditOutcome.SUCCESS,
+                user_id=refresh_token.user_id if refresh_token else None,
+                details={"jti": jti},
+            )
             return True
 
         except Exception as e:

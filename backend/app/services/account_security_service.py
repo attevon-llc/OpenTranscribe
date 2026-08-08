@@ -220,6 +220,37 @@ def audit_account_status_change(
     )
 
 
+def audit_expiration_change(
+    user: User,
+    actor: User,
+    old_expires_at: str | None,
+    new_expires_at: str | None,
+    client_ip: str,
+    user_agent: str,
+) -> None:
+    """Record a change to ``account_expires_at`` — the write half of AC-2's
+    time-boxed-account control. ``dependencies.py`` already enforces the read
+    half (refusing a request past this timestamp) and emits
+    ``AUTH_ACCOUNT_EXPIRED`` when it fires; this is the administrative act that
+    set the date being enforced, which needs its own trail regardless of
+    whether the account ever actually reaches it.
+    """
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_UPDATE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=actor.id,
+        username=str(actor.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+        details={
+            "action": "account_expiration_change",
+            "target_user": str(user.uuid),
+            "old_expires_at": old_expires_at,
+            "new_expires_at": new_expires_at,
+        },
+    )
+
+
 @dataclass(frozen=True)
 class DeletedUser:
     """What the audit record needs, captured before the row is deleted.

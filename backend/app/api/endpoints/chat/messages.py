@@ -20,6 +20,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
+from fastapi import Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pydantic import Field
@@ -318,6 +319,7 @@ def _streaming_response(kwargs: dict, user_id: int) -> StreamingResponse:
 @limiter.limit("20/minute")
 async def send_message(
     request: Request,
+    response: Response,
     conversation_uuid: str,
     body: MessageCreate,
     db: Session = Depends(get_db),
@@ -345,6 +347,7 @@ async def send_message(
 @limiter.limit("20/minute")
 async def regenerate(
     request: Request,
+    response: Response,
     conversation_uuid: str,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
@@ -393,6 +396,7 @@ class MessageEdit(BaseModel):
 @limiter.limit("20/minute")
 async def edit_message(
     request: Request,
+    response: Response,
     conversation_uuid: str,
     message_uuid: str,
     body: MessageEdit,
@@ -450,6 +454,7 @@ async def edit_message(
 @limiter.limit("60/minute")
 def cancel_message(
     request: Request,
+    response: Response,
     message_uuid: str,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),

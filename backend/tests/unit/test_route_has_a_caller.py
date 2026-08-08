@@ -81,6 +81,13 @@ NO_FRONTEND_CALLER: dict[str, str] = {
     # module docstring in app/api/endpoints/auth/flower.py) — never fetched by
     # the SPA, which never talks to Flower at all.
     "/api/auth/flower-authz": "Real caller: nginx auth_request subrequest gating /flower/ (app/api/endpoints/auth/flower.py)",
+    # Both routed through streamPost() (frontend/src/lib/api/chatStream.ts), a
+    # shared SSE-streaming helper — the path is a function ARGUMENT there, not
+    # a literal at a fetch()/EventSource() call site, so this scanner's regex
+    # (which only resolves inline literals and local-const template slots)
+    # cannot see it. Confirmed real by direct inspection of chatStream.ts.
+    "/api/chat/conversations/{conversation_uuid}/regenerate": "Real caller: frontend/src/lib/api/chatStream.ts:streamRegenerate, via the streamPost() helper",
+    "/api/chat/conversations/{conversation_uuid}/messages/{message_uuid}/edit": "Real caller: frontend/src/lib/api/chatStream.ts:streamEditMessage, via the streamPost() helper",
 }
 
 #: Routes this scanner found no frontend call site for, after the axios/fetch/
@@ -123,6 +130,18 @@ _UNVERIFIED_REASON = (
     "text matches were checked and turned out to be unrelated UI strings, e.g. "
     "a CSS class or an unrelated word, not a call to this route). Needs product "
     "review."
+)
+_USAGE_REASON = (
+    "No frontend call site found. app/api/endpoints/usage.py's own docstring "
+    "frames this as 'A core, open-source surface... as true for a self-hoster "
+    "with an OpenAI key as for a hosted tenant' — NOT a cloud-only seam (the "
+    "only usage UI found, lib/cloud/components/UsageDashboard.svelte and "
+    "UsageBadge.svelte, is the managed-edition stub, gated by isCloudEdition and "
+    "replaced wholesale in the commercial build). This is the real dead-surface "
+    "shape the whole gate exists to catch: implemented on the backend, "
+    "documented as core, reachable by no UI in this repo. Needs product review: "
+    "build the self-host usage panel the docstring promises, or correct the "
+    "docstring if this was only ever meant to back the cloud dashboard."
 )
 
 _NOT_YET_VERIFIED: dict[str, str] = {
@@ -208,6 +227,8 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/speakers/{speaker_uuid}/verify": _UNVERIFIED_REASON,
     "/api/user-settings/ai-summary": _UNVERIFIED_REASON,
     "/api/users": _UNVERIFIED_REASON,
+    "/api/usage/me": _USAGE_REASON,
+    "/api/usage/me/daily": _USAGE_REASON,
 }
 
 

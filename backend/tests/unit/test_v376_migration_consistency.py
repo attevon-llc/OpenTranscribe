@@ -31,13 +31,20 @@ def test_ddl_is_idempotent():
     assert source.count("IF NOT EXISTS") >= 4
 
 
-def test_detection_arm_returns_v376_on_current_schema(db_session):
-    """An untracked DB with chat_project stamps at v376."""
+def test_detection_arm_returns_v376_or_later_on_current_schema(db_session, revisions_at_or_after):
+    """An untracked DB with chat_project stamps at v376 or a later arm.
+
+    v376's arm was only the *answer* while v376 was head; the auth-identity
+    chain (v377_harden_user_auth_invariants onward, renumbered from v375-v381
+    to sit after this revision — see app/db/CLAUDE.md's renumbering note) now
+    sits above it, so the newest-first ladder correctly returns that instead.
+    What must never happen is falling BACK below v376.
+    """
     from app.db.migrations import _detect_schema_version
 
     conn = db_session.connection()
     tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) == "v376_add_chat_projects"
+    assert _detect_schema_version(conn, tables) in revisions_at_or_after("v376_add_chat_projects")
 
 
 def test_chat_project_table_exists(db_session):

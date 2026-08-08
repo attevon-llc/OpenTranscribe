@@ -84,7 +84,7 @@ async def saml_metadata(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/saml/login")
 @limiter.limit(get_auth_rate_limit())
-async def saml_login(request: Request, db: Session = Depends(get_db)):
+async def saml_login(request: Request, response: Response, db: Session = Depends(get_db)):
     """Initiate SP-initiated SSO: redirect the browser to the IdP's SSO endpoint."""
     cfg = _require_enabled_config(db)
     request_data = await saml_request_data(request)
@@ -95,7 +95,7 @@ async def saml_login(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/saml/acs")
 @limiter.limit(get_auth_rate_limit())
-async def saml_acs(request: Request, db: Session = Depends(get_db)):
+async def saml_acs(request: Request, response: Response, db: Session = Depends(get_db)):
     """Assertion Consumer Service: the IdP POSTs the SAMLResponse here.
 
     Signature verification, timing/audience/destination checks and (if configured)
@@ -200,7 +200,7 @@ async def saml_acs(request: Request, db: Session = Depends(get_db)):
 @router.get("/saml/sls")
 @router.post("/saml/sls")
 @limiter.limit(get_auth_rate_limit())
-async def saml_sls(request: Request, db: Session = Depends(get_db)):
+async def saml_sls(request: Request, response: Response, db: Session = Depends(get_db)):
     """Single Logout Service.
 
     Handles an IdP-initiated LogoutRequest (front-channel redirect binding — the

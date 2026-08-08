@@ -23,6 +23,7 @@ from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TagBase
 from app.schemas.media import TagWithCount
 from app.services.tag_service import InvalidTagNameError
+from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tag
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,9 @@ def create_tag(
     tag = _resolve_tag(db, tag_data.name)
     db.commit()
     db.refresh(tag)
+    # No file carries it yet, so there is nothing to reindex — but the new row
+    # belongs in every user's tag list, not just this one's.
+    on_tags_changed(db, user_id=current_user.id)
     return tag
 
 
@@ -243,14 +247,7 @@ async def add_tag_to_file(
         db.add(file_tag)
         db.commit()
 
-        # Invalidate caches
-        try:
-            from app.services.redis_cache_service import redis_cache
-
-            redis_cache.invalidate_tags(current_user.id)
-            redis_cache.invalidate_user_files(current_user.id)
-        except Exception as e:
-            logger.debug(f"Cache invalidation failed (non-critical): {e}")
+        on_tags_changed(db, [file_id], user_id=current_user.id)
 
     return tag
 
@@ -288,14 +285,9 @@ def remove_tag_from_file(
         db.delete(file_tag)
         db.commit()
 
-        # Invalidate caches
-        try:
-            from app.services.redis_cache_service import redis_cache
-
-            redis_cache.invalidate_tags(current_user.id)
-            redis_cache.invalidate_user_files(current_user.id)
-        except Exception as e:
-            logger.debug(f"Cache invalidation failed (non-critical): {e}")
+        # Detach is a tag change like any other: the file's indexed tag array
+        # has to lose this name or search keeps matching it.
+        on_tags_changed(db, [file_id], user_id=current_user.id)
 
     # Also check if this tag is now unused and should be removed
     # Count how many files still use this tag

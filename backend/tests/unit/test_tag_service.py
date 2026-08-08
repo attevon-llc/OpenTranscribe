@@ -22,6 +22,8 @@ from sqlalchemy import event
 from sqlalchemy import text
 
 from app.api.endpoints.files.prepare_upload import add_tags_to_file
+from app.models.media import Collection
+from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Tag
@@ -30,8 +32,10 @@ from app.services.tag_service import MAX_TAG_NAME_LENGTH
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import clean_tag_name
 from app.services.tag_service import normalize_tag_name
+from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tag
 from app.services.tag_service import suggest_similar_tag
+from app.tasks.search_indexing_task import extract_file_index_metadata
 from tests.conftest import engine
 
 
@@ -237,13 +241,19 @@ def test_long_name_truncated_identically_across_paths(db_session, normal_user):
 
 @pytest.mark.parametrize("blank", ["", "   ", "-", "__", " - _ "])
 def test_empty_after_normalization_is_rejected(db_session, blank):
-    """A name that normalizes to nothing is rejected rather than stored blank."""
-    before = db_session.query(Tag).count()
+    """A name that normalizes to nothing is rejected rather than stored blank.
 
+    Asserted against this session's pending writes and the blank-name rows
+    specifically, never a global ``COUNT(*)`` — the race tests in this module
+    commit tags on a second connection, so under ``-n auto`` a global count
+    moves underneath an unrelated test.
+    """
     with pytest.raises(InvalidTagNameError):
         resolve_or_create_tag(db_session, blank)
 
-    assert db_session.query(Tag).count() == before
+    assert [obj for obj in db_session.new if isinstance(obj, Tag)] == []
+    assert db_session.query(Tag).filter(Tag.normalized_name == "").count() == 0
+    assert db_session.query(Tag).filter(Tag.name == blank.strip()).count() == 0
 
 
 def test_upload_path_skips_blank_names(db_session, normal_user):
@@ -305,3 +315,163 @@ def test_normalize_name_alias_delegates(db_session):
     """``AutoLabelService.normalize_name`` stays available as a delegating alias."""
     assert AutoLabelService.normalize_name("Foo_Bar  Baz") == normalize_tag_name("Foo_Bar  Baz")
     assert AutoLabelService.normalize_name("Foo_Bar  Baz") == "foo bar baz"
+
+
+# ---------------------------------------------------------------------------
+# Search-index metadata extraction
+# ---------------------------------------------------------------------------
+
+
+def test_indexed_document_carries_tags_applied_before_transcription(db_session, normal_user):
+    """Tags on a file reach the search document.
+
+    ``MediaFile`` declares ``file_tags``, never ``tags``; extracting through the
+    latter left every indexed transcript with an empty tags array, so
+    search-by-tag silently matched nothing.
+    """
+    media_file = _make_file(db_session, normal_user)
+    tag = _make_tag(db_session, f"pre-transcription-{_suffix()}")
+    media_file.file_tags.append(FileTag(tag_id=tag.id, source="manual"))
+    db_session.flush()
+
+    meta = extract_file_index_metadata(db_session, media_file, media_file.id)
+
+    assert meta["tag_names"] == [tag.name]
+
+
+def test_indexed_document_carries_collection_ids(db_session, normal_user):
+    """Collection membership reaches the search document (same class of bug)."""
+    media_file = _make_file(db_session, normal_user)
+    collection = Collection(name=f"coll-{_suffix()}", user_id=normal_user.id)
+    db_session.add(collection)
+    db_session.flush()
+    media_file.collection_memberships.append(CollectionMember(collection_id=collection.id))
+    db_session.flush()
+
+    meta = extract_file_index_metadata(db_session, media_file, media_file.id)
+
+    assert meta["collection_ids"] == [collection.id]
+
+
+# ---------------------------------------------------------------------------
+# The shared cache + search-refresh hook
+# ---------------------------------------------------------------------------
+
+
+class _RecordingTask:
+    """Stands in for the Celery task so the enqueued payload is observable."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[int]] = []
+
+    def delay(self, file_ids):  # noqa: ANN001,ANN202 - mirrors Task.delay
+        self.calls.append(list(file_ids))
+
+
+@pytest.fixture
+def recorded_reindex(monkeypatch):
+    """Capture what ``on_tags_changed`` hands to the partial-update task."""
+    from app.tasks import search_indexing_task
+
+    recorder = _RecordingTask()
+    monkeypatch.setattr(search_indexing_task, "update_file_tags_index", recorder)
+    return recorder
+
+
+def test_attaching_tag_enqueues_reindex_for_that_file(
+    client, db_session, normal_user, user_token_headers, recorded_reindex
+):
+    """The attach endpoint refreshes the file's search document."""
+    media_file = _make_file(db_session, normal_user)
+
+    response = client.post(
+        f"/api/tags/files/{media_file.uuid}/tags",
+        json={"name": f"attach-{_suffix()}"},
+        headers=user_token_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert recorded_reindex.calls == [[media_file.id]]
+
+
+def test_detaching_tag_enqueues_reindex(
+    client, db_session, normal_user, user_token_headers, recorded_reindex
+):
+    """Detach is a tag change too — without a refresh the index keeps the name."""
+    media_file = _make_file(db_session, normal_user)
+    tag = _make_tag(db_session, f"detach-{_suffix()}")
+    media_file.file_tags.append(FileTag(tag_id=tag.id, source="manual"))
+    db_session.flush()
+
+    response = client.delete(
+        f"/api/tags/files/{media_file.uuid}/tags/{tag.name}",
+        headers=user_token_headers,
+    )
+
+    assert response.status_code == 204, response.text
+    assert recorded_reindex.calls == [[media_file.id]]
+
+
+def test_auto_labeled_tag_enqueues_reindex(db_session, normal_user, recorded_reindex):
+    """The auto-labeler goes through the same hook as the human-driven paths."""
+    media_file = _make_file(db_session, normal_user)
+    tag = _make_tag(db_session, f"auto-{_suffix()}", source="auto_ai")
+
+    AutoLabelService(db_session)._add_tag_to_file(media_file, tag, 0.95)
+
+    assert recorded_reindex.calls == [[media_file.id]]
+
+
+def test_upload_path_enqueues_reindex(db_session, normal_user, recorded_reindex):
+    """Tags supplied at upload reach the index without waiting for a full reindex."""
+    media_file = _make_file(db_session, normal_user)
+
+    add_tags_to_file(db_session, media_file.id, [f"uploaded-{_suffix()}"])
+
+    assert recorded_reindex.calls == [[media_file.id]]
+
+
+def test_multi_file_mutation_enqueues_each_file_once(db_session, normal_user, recorded_reindex):
+    """A merge touching several files refreshes each exactly once, in one task.
+
+    The refresh is one task carrying the whole list — not the per-user reindex
+    coordinator, which self-skips under its lock on exactly this shape of merge.
+    """
+    first = _make_file(db_session, normal_user)
+    second = _make_file(db_session, normal_user)
+
+    affected = on_tags_changed(
+        db_session,
+        [first.id, second.id, first.id, second.id],
+        user_id=normal_user.id,
+    )
+
+    assert affected == [first.id, second.id]
+    assert recorded_reindex.calls == [[first.id, second.id]]
+
+
+@pytest.mark.xdist_group("tag_cache_global")
+def test_global_invalidation_clears_a_bystanders_cached_tag_list(
+    db_session, normal_user, other_user, recorded_reindex
+):
+    """Tags are global rows behind a per-user cache key.
+
+    Busting only the actor's key leaves every other user reading the old list
+    for the rest of its TTL. Needs the dev stack's Redis.
+    """
+    from app.services.redis_cache_service import redis_cache
+
+    if redis_cache.redis is None:
+        pytest.skip("Redis unreachable — this scenario asserts real cache eviction")
+
+    actor_key = f"cache:tags:{normal_user.id}"
+    bystander_key = f"cache:tags:{other_user.id}"
+    redis_cache.set(actor_key, [{"name": "stale"}], ttl=60)
+    redis_cache.set(bystander_key, [{"name": "stale"}], ttl=60)
+    assert redis_cache.get(bystander_key) is not None
+
+    media_file = _make_file(db_session, normal_user)
+    on_tags_changed(db_session, [media_file.id], user_id=normal_user.id)
+
+    assert redis_cache.get(actor_key) is None
+    assert redis_cache.get(bystander_key) is None, "another user's tag list stayed stale"

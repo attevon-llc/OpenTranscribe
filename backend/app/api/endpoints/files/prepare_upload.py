@@ -22,6 +22,7 @@ from app.models.media import FileTag
 from app.models.upload_batch import UploadBatch
 from app.schemas.media import PrepareUploadRequest
 from app.services.tag_service import InvalidTagNameError
+from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tag
 from app.utils import benchmark_timing
 from app.utils.file_hash import check_duplicate_by_hash
@@ -150,13 +151,7 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> None:
 
     db.flush()
 
-    # Bust the owning user's read-through tag cache. Best-effort.
-    try:
-        from app.services.redis_cache_service import redis_cache
-
-        redis_cache.invalidate_tags_for_file(db, file_id)
-    except Exception as e:
-        logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
+    on_tags_changed(db, [file_id])
 
 
 @router.post("/prepare", response_model=dict[str, Any])

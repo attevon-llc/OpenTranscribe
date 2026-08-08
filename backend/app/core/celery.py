@@ -184,8 +184,9 @@ celery_app.conf.update(
         "redaction.reindex_all": {"queue": CeleryQueues.REDACTION},
         # Embedding Queue - Search indexing with embedding model (concurrency=1)
         "index_transcript_search": {"queue": CeleryQueues.EMBEDDING},
-        # Access index updates are lightweight OpenSearch writes (no GPU/embedding needed)
+        # Access/tag index updates are lightweight OpenSearch writes (no GPU/embedding needed)
         "update_file_access_index": {"queue": CeleryQueues.UTILITY},
+        "update_file_tags_index": {"queue": CeleryQueues.UTILITY},
         # Utility Queue - Lightweight maintenance tasks (concurrency=8)
         "system.startup_recovery": {"queue": CeleryQueues.UTILITY},
         "system.recover_user_files": {"queue": CeleryQueues.UTILITY},

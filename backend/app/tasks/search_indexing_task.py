@@ -12,6 +12,55 @@ from app.utils import benchmark_timing
 logger = logging.getLogger(__name__)
 
 
+def extract_file_index_metadata(db: Any, media_file: Any, file_id: int) -> dict[str, Any]:
+    """Collect the per-file metadata a search document carries.
+
+    Must run while the caller's session is still open — every field below is
+    read off attached ORM state.
+
+    Tags and collections are read through the **association rows** that
+    ``MediaFile`` actually declares (``file_tags`` / ``collection_memberships``).
+    There is no ``.tags`` or ``.collections`` relationship: reading those names
+    yields nothing at all, which is how every transcript came to be indexed with
+    an empty tags array and no collection ids. ``reindex_task`` has always read
+    the association rows — this is the same extraction, so a live index and a
+    rebuilt one now agree.
+
+    Args:
+        db: Open database session owning ``media_file``.
+        media_file: The attached :class:`~app.models.media.MediaFile`.
+        file_id: Its integer primary key.
+
+    Returns:
+        Dict with ``title``, ``tag_names``, ``upload_time``, ``language``,
+        ``content_type``, ``duration``, ``file_size``, ``collection_ids``,
+        ``accessible_user_ids`` and ``organization_id``.
+    """
+    from app.services.permission_service import PermissionService
+
+    tag_names: list[str] = [ft.tag.name for ft in media_file.file_tags if ft.tag]
+    collection_ids: list[int] = [int(cm.collection_id) for cm in media_file.collection_memberships]
+
+    upload_time = (
+        (media_file.creation_date or media_file.upload_time).isoformat()
+        if media_file.creation_date or media_file.upload_time
+        else None
+    )
+
+    return {
+        "title": media_file.title or media_file.filename or f"File {file_id}",
+        "tag_names": tag_names,
+        "upload_time": upload_time,
+        "language": media_file.language or "en",
+        "content_type": media_file.content_type or "",
+        "duration": media_file.duration,
+        "file_size": media_file.file_size,
+        "collection_ids": collection_ids,
+        "accessible_user_ids": PermissionService.get_users_with_file_access(db, file_id),
+        "organization_id": media_file.organization_id,  # tenant scope (None = personal)
+    }
+
+
 @celery_app.task(
     bind=True,
     name="index_transcript_search",
@@ -45,7 +94,6 @@ def index_transcript_search_task(  # noqa: C901
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile
     from app.models.media import TranscriptSegment
-    from app.services.permission_service import PermissionService
     from app.services.search.indexing_service import TranscriptIndexingService
     from app.utils.task_utils import create_task_record
     from app.utils.task_utils import update_task_status
@@ -122,27 +170,11 @@ def index_transcript_search_task(  # noqa: C901
             # Extract per-file metadata from the MediaFile while the session
             # is still open — relationship access (tags, collections)
             # requires attached ORM state.
-            title = media_file.title or media_file.filename or f"File {file_id}"
+            meta = extract_file_index_metadata(db, media_file, file_id)
+            title = meta["title"]
             speaker_names = list(
                 {str(s["speaker"]) for s in segment_dicts if s["speaker"] != "Unknown"}
             )
-            tag_names: list[str] = []
-            if hasattr(media_file, "tags") and media_file.tags:
-                tag_names = [t.name for t in media_file.tags]
-            upload_time = (
-                (media_file.creation_date or media_file.upload_time).isoformat()
-                if media_file.creation_date or media_file.upload_time
-                else None
-            )
-            language = media_file.language or "en"
-            content_type = media_file.content_type or ""
-            duration = media_file.duration
-            file_size = media_file.file_size
-            collection_ids: list[int] = []
-            if hasattr(media_file, "collections") and media_file.collections:
-                collection_ids = [c.id for c in media_file.collections]
-            accessible_user_ids = PermissionService.get_users_with_file_access(db, file_id)
-            organization_id = media_file.organization_id  # tenant scope (None = personal)
             update_task_status(db, task_id, "in_progress", progress=0.4)
 
             doc_title = title  # captured before session close
@@ -167,15 +199,15 @@ def index_transcript_search_task(  # noqa: C901
             segments=segment_dicts,
             title=title,
             speakers=speaker_names,
-            tags=tag_names,
-            upload_time=upload_time,
-            language=language,
-            content_type=content_type,
-            duration=duration,
-            file_size=file_size,
-            collection_ids=collection_ids,
-            accessible_user_ids=accessible_user_ids,
-            organization_id=organization_id,
+            tags=meta["tag_names"],
+            upload_time=meta["upload_time"],
+            language=meta["language"],
+            content_type=meta["content_type"],
+            duration=meta["duration"],
+            file_size=meta["file_size"],
+            collection_ids=meta["collection_ids"],
+            accessible_user_ids=meta["accessible_user_ids"],
+            organization_id=meta["organization_id"],
         )
 
         total_ms = round((time.time() - total_start) * 1000)
@@ -308,6 +340,96 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
 
     logger.info(
         f"Access index update complete: {updated} chunks updated across "
+        f"{len(file_ids)} files, {errors} errors"
+    )
+    return {"status": "success", "updated": updated, "files": len(file_ids), "errors": errors}
+
+
+@celery_app.task(
+    name="update_file_tags_index",
+    priority=UtilityPriority.ROUTINE,
+    max_retries=3,
+    default_retry_delay=10,
+)
+def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
+    """Overwrite the ``tags`` field on the search documents for the given files.
+
+    Dispatched by ``services/tag_service.on_tags_changed`` from every path that
+    changes which tags a file carries, so filtering by tag and searching by tag
+    stay in agreement.
+
+    Deliberately *not* ``index_transcript_search`` (reloads every segment and
+    regenerates chunk embeddings on the GPU-adjacent embedding worker — the
+    wrong weight class for a metadata edit) and *not* ``reindex_transcripts``
+    (a per-user coordinator holding ``reindex_lock:{user_id}``, which would
+    no-op on exactly the large multi-file merges this matters for). This is a
+    lightweight ``update_by_query`` on the utility queue, same shape as
+    :func:`update_file_access_index`.
+
+    An empty tag list is written as an empty array rather than skipped —
+    detaching a file's last tag has to clear the indexed value.
+
+    Args:
+        file_ids: Media file integer IDs whose tags changed.
+
+    Returns:
+        Dict with update stats.
+    """
+    from app.core.config import settings
+    from app.db.session_utils import session_scope
+    from app.models.media import FileTag
+    from app.models.media import Tag
+    from app.services.opensearch_service import get_opensearch_client
+
+    if not file_ids:
+        return {"status": "skipped", "reason": "no_file_ids"}
+
+    client = get_opensearch_client()
+    if not client:
+        logger.warning("OpenSearch client not available, skipping tag index update")
+        return {"status": "skipped", "reason": "no_opensearch"}
+
+    index_name = settings.OPENSEARCH_CHUNKS_INDEX
+    updated = 0
+    errors = 0
+
+    for file_id in file_ids:
+        try:
+            with session_scope() as db:
+                tag_names = [
+                    name
+                    for (name,) in db.query(Tag.name)
+                    .join(FileTag, FileTag.tag_id == Tag.id)
+                    .filter(FileTag.media_file_id == file_id)
+                    .all()
+                ]
+
+            response = client.update_by_query(
+                index=index_name,
+                body={
+                    "query": {"term": {"file_id": file_id}},
+                    "script": {
+                        "source": "ctx._source.tags = params.tags",
+                        "lang": "painless",
+                        "params": {"tags": tag_names},
+                    },
+                },
+                refresh=True,
+                conflicts="proceed",
+            )
+
+            file_updated = response.get("updated", 0)
+            updated += file_updated
+            logger.debug(
+                f"Updated tags for file {file_id}: {file_updated} chunks, {len(tag_names)} tags"
+            )
+
+        except Exception as e:
+            errors += 1
+            logger.error(f"Failed to update tag index for file {file_id}: {e}")
+
+    logger.info(
+        f"Tag index update complete: {updated} chunks updated across "
         f"{len(file_ids)} files, {errors} errors"
     )
     return {"status": "success", "updated": updated, "files": len(file_ids), "errors": errors}

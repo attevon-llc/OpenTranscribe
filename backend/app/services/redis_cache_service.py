@@ -133,6 +133,24 @@ class RedisCacheService:
         self.delete_pattern(f"cache:tags:{user_id}")
         self._push_invalidation(user_id, "tags")
 
+    def invalidate_tags_global(self) -> int:
+        """Invalidate **every** user's cached tag list.
+
+        A ``tag`` row is global — one row is shared by all users, and
+        ``cache:tags:{user_id}`` only records how that user's files use it. So
+        renaming or merging a tag changes what every *other* user's cached list
+        should say, and busting only the actor's key leaves everyone else
+        reading the old name until ``TTL_TAGS`` expires.
+
+        No WebSocket push accompanies this: ``_push_invalidation`` addresses one
+        user and there is no broadcast channel. Other sessions see the change on
+        their next read, which is now guaranteed to be a miss.
+
+        Returns:
+            Number of cache keys deleted.
+        """
+        return self.delete_pattern("cache:tags:*")
+
     def invalidate_tags_for_file(self, db: Any, file_id: int) -> None:
         """Invalidate the owning user's tag + file caches for a file.
 

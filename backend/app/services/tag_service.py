@@ -18,6 +18,7 @@ accept or decline, never an automatic substitution.
 import difflib
 import logging
 import re
+from collections.abc import Iterable
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -25,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.core.constants import FUZZY_MATCH_THRESHOLD
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import OpenTranscribeError
+from app.models.media import MediaFile
 from app.models.media import Tag
 
 logger = logging.getLogger(__name__)
@@ -197,3 +199,84 @@ def resolve_or_create_tag(db: Session, name: str, *, source: str = TAG_SOURCE_MA
             logger.debug("Lost tag-insert race for %r, using the winning row", cleaned)
             return winner
         raise
+
+
+def _owner_ids(db: Session, file_ids: list[int]) -> set[int]:
+    """Resolve the owning user ids for a set of files in one query."""
+    if not file_ids:
+        return set()
+    rows = db.query(MediaFile.user_id).filter(MediaFile.id.in_(file_ids)).distinct().all()
+    return {int(owner) for (owner,) in rows if owner is not None}
+
+
+def on_tags_changed(
+    db: Session,
+    file_ids: Iterable[int] | None = None,
+    *,
+    user_id: int | None = None,
+) -> list[int]:
+    """Bust tag caches and refresh the search index after any tag mutation.
+
+    The single hook every tag-mutation path calls — the tag API (create,
+    attach, detach), the upload helper, and the auto-labeler. Two things happen
+    that no caller should have to remember:
+
+    1. **Every** user's cached tag list is dropped, not just the actor's. Tags
+       are global rows behind a per-user cache key, so a rename or merge makes
+       every other user's list wrong.
+    2. One partial-update task, carrying the whole affected-file list, refreshes
+       those files' search documents, so filtering by tag and searching by tag
+       can't drift apart. Same shape as the access-index updater; deliberately
+       not the per-user reindex coordinator, which self-skips under a lock on
+       exactly the large multi-file merges this exists for.
+
+    Best-effort throughout: neither Redis nor the broker being down may fail the
+    mutation that already committed.
+
+    Call this **after** the mutation commits where the caller controls the
+    transaction — the refresh task reads the tag rows back from its own session,
+    so an uncommitted change is invisible to it. The flush-only callers
+    (upload prepare, auto-labeling) commit moments later in the same request or
+    task; the task is idempotent and rewrites the whole array, so a re-run
+    always converges.
+
+    Args:
+        db: Database session, used only to resolve file owners.
+        file_ids: Files whose tag set changed. Duplicates are collapsed, so a
+            mutation touching one file many times still enqueues one refresh.
+            Empty for tag-only changes (creating a tag attaches it to nothing).
+        user_id: The acting user, when known — their file listings are busted
+            even if they own none of ``file_ids``.
+
+    Returns:
+        The deduplicated file ids a refresh was enqueued for.
+    """
+    affected: list[int] = []
+    seen: set[int] = set()
+    for raw in file_ids or ():
+        if raw is None:
+            continue
+        file_id = int(raw)
+        if file_id not in seen:
+            seen.add(file_id)
+            affected.append(file_id)
+
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_tags_global()
+        for owner_id in _owner_ids(db, affected) | ({user_id} if user_id is not None else set()):
+            redis_cache.invalidate_tags(owner_id)
+            redis_cache.invalidate_user_files(owner_id)
+    except Exception as e:
+        logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
+
+    if affected:
+        try:
+            from app.tasks.search_indexing_task import update_file_tags_index
+
+            update_file_tags_index.delay(affected)
+        except Exception as e:
+            logger.warning(f"Could not enqueue tag reindex for files {affected}: {e}")
+
+    return affected

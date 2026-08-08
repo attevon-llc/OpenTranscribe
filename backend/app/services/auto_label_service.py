@@ -27,6 +27,7 @@ from app.models.prompt import UserSetting
 from app.models.topic import TopicSuggestion
 from app.services.tag_service import names_are_similar
 from app.services.tag_service import normalize_tag_name
+from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tag
 from app.services.tag_service import suggest_similar_tag
 
@@ -268,15 +269,9 @@ class AutoLabelService:
             )
             self.db.add(file_tag)
             self.db.flush()
-            # Bust the owning user's read-through tag cache (auto-labeling is a
-            # back-door tag-mutation path that doesn't carry current_user).
-            try:
-                from app.services.redis_cache_service import redis_cache
-
-                redis_cache.invalidate_tags(int(media_file.user_id))
-                redis_cache.invalidate_user_files(int(media_file.user_id))
-            except Exception as e:
-                logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
+            # Auto-labeling is a back-door tag-mutation path that doesn't carry
+            # current_user, but the shared hook resolves the owner itself.
+            on_tags_changed(self.db, [int(media_file.id)], user_id=int(media_file.user_id))
         except IntegrityError:
             nested.rollback()
             logger.debug(f"Duplicate file_tag for file={media_file.id} tag={tag.id}, skipping")

@@ -67,7 +67,7 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Tenant/privacy hardening follow-ups (issue #262, migration v372)**: audit events now carry a nullable `organization_id` stamped at write time where the writer has tenant context (takedown/release, GDPR erasures, unredacted-view, prompt share/clone), and the org-admin audit read scopes on it — org-stamped events (including `user_id`-NULL failed logins) plus legacy un-stamped events attributed via member ids; other orgs' stamped events are never visible. Background imports capture the org at CREATION time instead of guessing from memberships: `watch_source.organization_id` (backfilled by v372) stamps every watch import, and playlist/URL placeholders receive the originating request's org through task kwargs (`resolve_owner_org_id` demoted to a documented last-resort for storage recovery). Remaining collection sub-surfaces (get/update/delete, share list/create/update/revoke, collection-media add/remove/list) are tenant-gated via `ctx.org_id`; group-targeted shares of an org collection now require every group member to belong to that org; org-context media adds reject cross-scope files. `SpeakerProfile` rows created via the API inherit the request's (or the speaker's) org. Collection member counts and the paginated collection-media list exclude quarantined files for non-admins. User-triggered re-diarization fires the before-dispatch access seam with a zero-hours reservation so a suspended/canceled cloud org can no longer burn GPU (402; community no-op, `CLOUD_SEAM_VERSION` unchanged).
 - **Speaker-cluster tenant scope (issue #262, migration v373)**: cross-video speaker clusters are now tenant-scoped like the rest of the speaker plane. `speaker_cluster.organization_id` (NULL = personal) is stamped at creation from the member speakers' file org and mirrored onto the OpenSearch centroid doc, so org files join org clusters and personal files join personal clusters — previously org-file speakers could never join ANY cluster (isolation-safe but degraded to per-speaker singletons). `batch_recluster` now partitions the Phase-2 similarity graph per tenant scope, so a member's org and personal recordings of the same voice are never merged into one cluster. The one-off tenant backfill stamps existing cluster rows + docs from their member speakers' file orgs (all-same-org rule; legacy mixed-scope clusters stay NULL, are counted in the summary, and dissolve into per-scope clusters on the next re-cluster), replacing the earlier strip-all-org cluster repair. Community edition: org is NULL everywhere, one partition, no org field on any doc — behavior unchanged.
 
-#### Authentication & identity (issues #353, #354, #355; migrations `v375`–`v379`)
+#### Authentication & identity (issues #353, #354, #355; migrations `v377`–`v383`)
 
 - **Generic OpenID Connect — any conforming provider, not one vendor (issue #353)**: endpoints are
   resolved from the provider's `.well-known/openid-configuration` when a **Discovery URL** is set,
@@ -114,7 +114,7 @@ This release also incorporates the substantial pipeline work that landed since v
   `pending` state with an admin queue at `GET`/`POST /api/admin/user-approvals`. An empty
   allow-list admits everyone, so upgrading changes nothing until an operator sets one. Refusals
   return the same generic 401 an unusable token gets, and are audited.
-- **IdP group mapping (`v376`)**: a `group_mapping` row binds one directory claim value —
+- **IdP group mapping (`v378`)**: a `group_mapping` row binds one directory claim value —
   an LDAP group DN or an OIDC role/group name — to an in-app `UserGroup`, to a role grant, or to
   both. Both directory paths already carried the caller's full group list and discarded everything
   but a single "is this an admin" bit. Applied at login for LDAP **and** OIDC, and on the periodic
@@ -123,10 +123,50 @@ This release also incorporates the substantial pipeline work that landed since v
   from any identity provider**, and a `super_admin` is never demoted by reconciliation either.
   `user_group_member.source` marks directory-derived membership, so reconciliation removes only
   what it added and a hand-added membership is never touched; the column defaults to `manual`, so
-  the default *is* the backfill. Super_admin API at `/api/admin/group-mappings`, including a
-  dry-run `POST /test` that resolves a claim list (or a real LDAP account) and reports matched vs
-  unmatched claims without writing anything. **No admin-panel screen yet — the API is the
-  interface.**
+  the default *is* the backfill. Super_admin API at `/api/admin/group-mappings`, with an admin
+  panel (Settings → Authentication → **Group mappings**, LDAP/OIDC sources — `proxy`-sourced
+  mappings are still API-only) and a dry-run `POST /test` that resolves a claim list (or a real
+  LDAP account) and reports matched vs unmatched claims without writing anything.
+- **Trusted-header (reverse-proxy) authentication (`auth_type='proxy'`)**: a front-line
+  authenticating proxy (oauth2-proxy, Authelia, Cloudflare Access) can assert an already-verified
+  identity in a header instead of the user presenting credentials to OpenTranscribe directly. One
+  shared trust module (`header_trust.py`, also used by PKI's header mode) decides whether to
+  believe the assertion: the **immediate socket peer**, never `X-Forwarded-For`, must be in a
+  configured CIDR allowlist, and an empty allowlist refuses every assertion rather than trusting
+  the network. An optional shared secret is compared in constant time, the role header is capped
+  at `admin` (never `super_admin`), and every refusal — including from an untrusted peer — is
+  audited. Settings → Authentication → **Trusted Header** configures it (previously API/`.env`
+  only).
+- **PKI trusted-proxy allowlist and header names are now genuinely DB-backed**: the Settings UI's
+  PKI panel has had "Trusted Proxies" and header-name fields since PKI shipped, but
+  `pki_authenticate()` only ever consulted a module-level list parsed from `.env` at process
+  start — a Settings UI save silently did nothing. `DynamicAuthSettings` gained the missing
+  `pki_trusted_proxies` / `pki_cert_header` / `pki_cert_dn_header` properties (the same DB > env
+  > default layering every other PKI field already had), so narrowing or widening the allowlist
+  through the UI now takes effect immediately, matching trusted-header auth's equivalent
+  `ProxyConfig.from_db` resolution.
+- **SAML 2.0 service-provider support (`auth_type='saml'`, `v383`)**: a fourth external identity
+  source (issue #35) via python3-saml — SP metadata at `GET /saml/metadata`, SP-initiated login
+  at `GET /saml/login`, and the IdP's own POST/redirect callback targets (`/saml/acs`, `/saml/sls`).
+  Signature verification is python3-saml's, never hand-rolled. Reuses the same admission control,
+  approval-state, account-linking and session machinery already built for OIDC — SAML's
+  `email_verified` is always treated as unasserted (no standard SAML claim for it), so an
+  email-match account link is refused unconditionally rather than being a togglable setting. IdP
+  group mapping and SP-initiated logout notifying the IdP are deliberately out of scope for this
+  release. Configurable end-to-end at Settings → Authentication → **SAML 2.0** (SP identity, SP
+  certificate/key, IdP identity, signing posture, attribute mapping, group admission) — previously
+  API/`.env` only.
+- **SCIM 2.0 provisioning (`/scim/v2`, RFC 7643/7644, `v382`)**: mounted at root rather than under
+  `/api` because RFC 7644 §3.1 fixes the base path and every connector appends `/Users`/`/Groups`
+  to it. Bearer-token authenticated against a hashed, revocable token a super_admin issues at
+  Settings → Users → SCIM Tokens (`/api/admin/scim-tokens`). Every write goes through the same
+  services the admin UI and directory sync already use — no SCIM call ever writes a role, and
+  `super_admin` is untouchable through it; `DELETE` and `active: false` both disable the account
+  and revoke its sessions rather than deleting the row, matching an IdP dropping someone from
+  scope rather than actually removing them. Filtering supports exactly
+  `<attribute> eq "<value>"` on the documented attributes; anything else is a clean
+  `400 invalidFilter`. Not rate-limited (a 256-bit token bursts hundreds of requests from a small
+  IdP egress pool by design).
 - **Directory sync and deprovisioning (LDAP)**: there was previously **no deprovisioning at all**.
   Sync ran only at login and only upward, so an account deleted or disabled in Active Directory
   kept a live row forever — and because refresh tokens rotate on every use, an actively-used
@@ -172,7 +212,7 @@ This release also incorporates the substantial pipeline work that landed since v
   server-side gate — and **an acknowledgment expires when the banner text changes**, compared
   against that config row's `updated_at`, because someone who accepted one classification notice
   has not accepted a later, stricter one.
-- **Session controls that actually apply (`v375`)**: idle timeout, absolute timeout and the
+- **Session controls that actually apply (`v377`)**: idle timeout, absolute timeout and the
   concurrent-session limit + policy were read from `.env` while the admin UI wrote the database,
   so the Session tab was inert. All three are DB-backed now and take effect without a restart. The
   panel also offered `oldest`/`newest`/`all` for the concurrency policy, none of which the backend

@@ -33,9 +33,13 @@ an attacker "that address exists and is privileged", which is exactly what the g
 is protecting.
 
 Operator remedy: link the account deliberately instead of by email coincidence —
-set the account's provider identifier (``ldap_uid`` / ``pki_subject_dn``) from the
-admin UI, or change one of the two addresses. That is a decision an administrator
-makes, not one an external directory makes on its own.
+``PUT /api/admin/users/{uuid}/link-identity`` (super_admin) sets the account's
+provider identifier (``oidc_subject`` / ``ldap_uid`` / ``pki_subject_dn``) directly,
+so the *next* login matches by that identifier and never reaches this branch at
+all. That is a decision an administrator makes, not one an external directory
+makes on its own — and it is also the fix for a source that can never assert
+``email_verified`` in the first place (Authentik hardcodes it ``false`` for every
+account; see the endpoint's docstring).
 """
 
 import logging

@@ -14,6 +14,7 @@
   import { user } from '../stores/auth';
   import { toastStore } from '../stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import LinkIdentityModal from './LinkIdentityModal.svelte';
   import { t } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
 
@@ -615,6 +616,25 @@
    */
   let pendingActionUuid = null;
 
+  /** Target for {@link LinkIdentityModal} (P1.3 — the account_linking operator remedy). */
+  let linkIdentityModalOpen = false;
+  /** @type {User|null} */
+  let linkIdentityTarget = null;
+
+  /** @param {User} targetUser */
+  function openLinkIdentityModal(targetUser) {
+    linkIdentityTarget = targetUser;
+    linkIdentityModalOpen = true;
+  }
+
+  function closeLinkIdentityModal() {
+    linkIdentityModalOpen = false;
+  }
+
+  function handleIdentityLinked() {
+    onRefresh();
+  }
+
   /**
    * Run an admin account action for one row, with the row's buttons disabled for
    * the duration and the backend's `detail` surfaced verbatim on failure.
@@ -1115,6 +1135,26 @@
                     </svg>
                   </button>
                   {/if}
+                  {#if isSuperAdmin && currentUser.role !== 'super_admin'}
+                  <!-- The account_linking operator remedy (P1.3): sets the
+                       provider's own identifier so a login that a source
+                       like Authentik (hardcodes email_verified: false)
+                       cannot link by email matches directly instead. Hidden
+                       entirely for a super_admin target — the backend
+                       refuses it unconditionally, that account is
+                       local-only by design. -->
+                  <button
+                    class="icon-button link-identity-button"
+                    disabled={pendingActionUuid === currentUser.uuid}
+                    on:click={() => openLinkIdentityModal(currentUser)}
+                    title={$t('userManagement.linkIdentityFor', { name: currentUser.full_name || currentUser.email })}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                  </button>
+                  {/if}
                   <button
                     class="icon-button recover-button"
                     on:click={() => onUserRecovery(currentUser.uuid)}
@@ -1225,6 +1265,14 @@
   on:confirm={handleConfirmModalConfirm}
   on:cancel={handleConfirmModalCancel}
   on:close={handleConfirmModalCancel}
+/>
+
+<!-- Link External Identity Modal (P1.3) -->
+<LinkIdentityModal
+  bind:isOpen={linkIdentityModalOpen}
+  targetUser={linkIdentityTarget}
+  on:linked={handleIdentityLinked}
+  on:close={closeLinkIdentityModal}
 />
 
 <!-- Password Reset Modal -->
@@ -1676,6 +1724,22 @@
   }
 
   .mfa-reset-button:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  /* Link external identity - teal */
+  .link-identity-button {
+    background-color: rgba(20, 184, 166, 0.1);
+    color: #14b8a6;
+  }
+
+  .link-identity-button:hover:not(:disabled) {
+    background-color: #14b8a6;
+    color: white;
+    transform: scale(1.05);
+  }
+
+  .link-identity-button:active:not(:disabled) {
     transform: scale(0.95);
   }
 

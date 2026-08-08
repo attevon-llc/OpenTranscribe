@@ -148,6 +148,25 @@ export class AdminApi {
     return response.data;
   }
 
+  /**
+   * The operator remedy for a source that cannot assert `email_verified`
+   * (Authentik hardcodes it `false` for every account) — see
+   * `auth/account_linking.py`. Sets the provider's own identifier on the
+   * account so the *next* login by that identity matches directly, rather
+   * than falling into (and being refused by) the automatic email-match path.
+   */
+  static async linkExternalIdentity(
+    userUuid: string,
+    provider: 'oidc' | 'ldap' | 'pki',
+    identifier: string
+  ): Promise<{ success: boolean; provider: string; identifier: string }> {
+    const response = await axiosInstance.put(`/admin/users/${userUuid}/link-identity`, {
+      provider,
+      identifier,
+    });
+    return response.data;
+  }
+
   // User Search
   static async searchUsers(params: {
     query?: string;

@@ -65,6 +65,8 @@ from app.schemas.admin import CacheConfig
 from app.schemas.admin import CacheConfigUpdate
 from app.schemas.admin import GarbageCleanupConfig
 from app.schemas.admin import GarbageCleanupConfigUpdate
+from app.schemas.admin import LinkExternalIdentityRequest
+from app.schemas.admin import LinkExternalIdentityResponse
 from app.schemas.admin import MediaSource
 from app.schemas.admin import MediaSourceCreate
 from app.schemas.admin import MediaSourcesList
@@ -1464,6 +1466,95 @@ def admin_change_user_role(
     audit_role_change(user, current_user, str(old_role), new_role, client_ip, user_agent)
 
     return {"success": True, "old_role": old_role, "new_role": new_role}
+
+
+#: Column each linkable provider's identifier lives on. Mirrors
+#: `auth/account_linking.py`'s lookup order (provider id first, email second) —
+#: setting this column is what makes a *subsequent* login match here instead of
+#: ever reaching the email-match branch that provider's `email_verified` posture
+#: might refuse.
+_LINK_IDENTITY_COLUMN = {
+    "oidc": "oidc_subject",
+    "ldap": "ldap_uid",
+    "pki": "pki_subject_dn",
+}
+
+
+@router.put("/users/{user_uuid}/link-identity", response_model=LinkExternalIdentityResponse)
+def admin_link_external_identity(
+    request: Request,
+    user_uuid: str,
+    payload: LinkExternalIdentityRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin_user),
+) -> LinkExternalIdentityResponse:
+    """Deliberately link an account to an external identity (P1.3).
+
+    The operator remedy `auth/account_linking.py` documents but that, until this
+    endpoint, did not exist: when an IdP cannot assert `email_verified` —
+    Authentik hardcodes it `false` for every account — the automatic email-match
+    link is refused, by design, and the login just fails. This is the explicit
+    alternative: a super_admin sets the provider's own identifier on the
+    account, so the identity resolves by that identifier on the very next login
+    and the email-match branch (and its refusal) is never reached at all.
+
+    Never for a `super_admin` target — that account is local-only by
+    architectural invariant, the break-glass account for exactly the IdP that
+    might be failing, and linking it to an external identity would make it
+    reachable through the login path it exists to survive.
+    """
+    client_ip, user_agent = _get_client_info(request)
+
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if str(user.role) == ROLE_SUPER_ADMIN:
+        raise HTTPException(
+            status_code=400,
+            detail="super_admin accounts are local-only and cannot be linked to an external identity",
+        )
+
+    column = _LINK_IDENTITY_COLUMN[payload.provider]
+    conflict = (
+        db.query(User)
+        .filter(getattr(User, column) == payload.identifier)
+        .filter(User.id != user.id)
+        .first()
+    )
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail=f"That {payload.provider} identifier is already linked to another account",
+        )
+
+    setattr(user, column, payload.identifier)
+    db.commit()
+
+    logger.info(
+        "super_admin %s linked %s identity %s to user %s",
+        current_user.email,
+        payload.provider,
+        payload.identifier,
+        user.email,
+    )
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_UPDATE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+        details={
+            "action": "link_external_identity",
+            "target_user": user_uuid,
+            "provider": payload.provider,
+        },
+    )
+
+    return LinkExternalIdentityResponse(
+        success=True, provider=payload.provider, identifier=payload.identifier
+    )
 
 
 # ============== MFA Management ==============

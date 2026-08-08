@@ -15,7 +15,9 @@
   import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
   import GalleryHeader from '$components/gallery/GalleryHeader.svelte';
   import GalleryGrid from '$components/gallery/GalleryGrid.svelte';
+  import BulkTagModal from '$components/gallery/BulkTagModal.svelte';
   import type { MediaFile, DurationRange, DateRange } from '$lib/types/media';
+  import type { BulkTagAction } from '$lib/types/tag';
 
   // Modal state
   let showUploadModal = false;
@@ -25,6 +27,10 @@
   let confirmModalTitle = '';
   let confirmModalMessage = '';
   let confirmCallback: (() => void) | null = null;
+
+  // Bulk tag modal state
+  let showBulkTagModal = false;
+  let bulkTagAction: BulkTagAction = 'add_tag';
 
   // Bulk reprocess modal state
   let showBulkReprocessModal = false;
@@ -709,6 +715,32 @@
     // Keep selection — user may want to perform additional actions
   }
 
+  // Bulk tagging — the Organize menu's add/remove entries.
+  // The uuids come straight from the shared selection; the tag names are whatever
+  // the selected files carry, which scopes the remove suggestions (the gallery
+  // listing omits per-file tags today, so this is usually empty and the modal
+  // falls back to offering every tag).
+  $: bulkTagFileUuids = Array.from(selectedFiles);
+  $: bulkTagPresentNames = files
+    .filter(f => selectedFiles.has(f.uuid))
+    .flatMap(f => f.tags ?? []);
+
+  function openBulkTagModal(action: BulkTagAction) {
+    if ($galleryState.selectedFiles.size === 0) return;
+    bulkTagAction = action;
+    showBulkTagModal = true;
+  }
+
+  function handleBulkTagApplied(event: CustomEvent<{ changed: number }>) {
+    // Nothing the gallery renders depends on tags, so a re-query is only owed
+    // when a tag filter is active — files can enter or leave that filtered set.
+    // Refetching unconditionally would reset pagination and lose the user's
+    // scroll position for no visible gain.
+    if (event.detail.changed > 0 && selectedTags.length > 0) {
+      throttledRefresh('bulk-tag', 300);
+    }
+  }
+
   // Bulk summarize selected files
   async function bulkSummarize() {
     const selected = $galleryState.selectedFiles;
@@ -1302,6 +1334,14 @@
       showCollectionsModal = true;
     });
 
+    const unsubscribeAddTags = galleryStore.onAddTagsTrigger(() => {
+      openBulkTagModal('add_tag');
+    });
+
+    const unsubscribeRemoveTags = galleryStore.onRemoveTagsTrigger(() => {
+      openBulkTagModal('remove_tag');
+    });
+
     const unsubscribeDeleteSelected = galleryStore.onDeleteSelectedTrigger(() => {
       deleteSelectedFiles();
     });
@@ -1339,6 +1379,8 @@
       unsubscribeUpload();
       unsubscribeCollections();
       unsubscribeAddToCollection();
+      unsubscribeAddTags();
+      unsubscribeRemoveTags();
       unsubscribeDeleteSelected();
       unsubscribeReprocess();
       unsubscribeSummarize();
@@ -1544,6 +1586,16 @@
   on:confirm={handleConfirmModalConfirm}
   on:cancel={handleConfirmModalCancel}
   on:close={handleConfirmModalCancel}
+/>
+
+<!-- Bulk Tag Modal -->
+<BulkTagModal
+  isOpen={showBulkTagModal}
+  action={bulkTagAction}
+  fileUuids={bulkTagFileUuids}
+  presentTagNames={bulkTagPresentNames}
+  on:applied={handleBulkTagApplied}
+  on:close={() => (showBulkTagModal = false)}
 />
 
 <!-- Bulk Selective Reprocess Modal -->

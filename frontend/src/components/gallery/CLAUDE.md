@@ -12,6 +12,7 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
 - `GalleryGrid.svelte` — switches between `VirtualGrid`/`VirtualList`; empty/skeleton/loading states.
 - `VirtualGrid.svelte` / `VirtualList.svelte` — virtualized renderers (thumbnail cache, prefetch).
 - `GalleryActionButtons.svelte` — bulk select/reprocess/delete toolbar (reads `galleryStore`).
+- `BulkTagModal.svelte` — adds or removes one tag across the selection (Organize menu).
 - `GallerySortDropdown.svelte`, `GalleryViewToggle.svelte`, `GalleryCountChip.svelte` — small controls.
 
 ## Conventions / patterns
@@ -31,3 +32,13 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   and refetches. Don't add client-side array filtering/sorting — emit a change event and let the
   page re-query.
 - Virtual renderers manage their own scroll windowing — keep `scrollContainer` wiring intact.
+- **The gallery listing carries no per-file tags.** `tags` lives on the `MediaFileDetail` schema,
+  not the `MediaFile` one the paginated list returns, so `file.tags` is undefined here even though
+  the TS type allows it. `BulkTagModal` therefore scopes its *remove* suggestions to the selection
+  only when something actually supplies them, and otherwise offers every tag and says so.
+- **Bulk tag results are outcomes, not booleans.** `already_present` / `not_present` are
+  *successful* no-ops; only `failed` is a failure. Report changed and unchanged separately, and
+  never let one refused file read as a failed batch.
+- **A supplied tag name may not be the applied one** — tags resolve by normalized-exact match, so
+  `Interview` applies the existing `interview` across the whole selection. Any surface that
+  submits a typed name must name the tag that was actually applied.

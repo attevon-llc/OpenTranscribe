@@ -72,6 +72,8 @@ export interface GalleryActions {
   triggerUpload: () => void;
   triggerCollections: () => void;
   triggerAddToCollection: () => void;
+  triggerAddTags: () => void;
+  triggerRemoveTags: () => void;
   triggerDeleteSelected: () => void;
   triggerReprocess: () => void;
   triggerSummarize: () => void;
@@ -123,6 +125,8 @@ function createGalleryStore() {
   const uploadTrigger = writable<number>(0);
   const collectionsTrigger = writable<number>(0);
   const addToCollectionTrigger = writable<number>(0);
+  const addTagsTrigger = writable<number>(0);
+  const removeTagsTrigger = writable<number>(0);
   const deleteSelectedTrigger = writable<number>(0);
   const reprocessTrigger = writable<number>(0);
   const summarizeTrigger = writable<number>(0);
@@ -257,6 +261,17 @@ function createGalleryStore() {
 
     triggerAddToCollection: () => {
       addToCollectionTrigger.update((n) => n + 1);
+    },
+
+    // Bulk tagging is two triggers, not one carrying a direction: the toolbar
+    // has two menu entries, and a single trigger would have to be reset between
+    // fires the way `exportTrigger` is.
+    triggerAddTags: () => {
+      addTagsTrigger.update((n) => n + 1);
+    },
+
+    triggerRemoveTags: () => {
+      removeTagsTrigger.update((n) => n + 1);
     },
 
     triggerDeleteSelected: () => {
@@ -409,6 +424,26 @@ function createGalleryStore() {
     onAddToCollectionTrigger: (callback: (value: number) => void) => {
       let hasInitialized = false;
       return addToCollectionTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onAddTagsTrigger: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return addTagsTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onRemoveTagsTrigger: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return removeTagsTrigger.subscribe((value) => {
         if (hasInitialized && value > 0) {
           callback(value);
         }

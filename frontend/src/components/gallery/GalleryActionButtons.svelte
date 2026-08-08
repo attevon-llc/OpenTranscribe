@@ -56,6 +56,8 @@
   function handleDeleteSelected() { galleryStore.triggerDeleteSelected(); }
   function handleCancelSelection() { galleryStore.clearSelection(); }
   function handleAddToCollection() { galleryStore.triggerAddToCollection(); closeAllMenus(); }
+  function handleAddTags() { galleryStore.triggerAddTags(); closeAllMenus(); }
+  function handleRemoveTags() { galleryStore.triggerRemoveTags(); closeAllMenus(); }
   function handleReprocess() { galleryStore.triggerReprocess(); closeAllMenus(); }
   function handleSummarize() { galleryStore.triggerSummarize(); closeAllMenus(); }
   function handleRedact() { galleryStore.triggerRedact(); closeAllMenus(); }
@@ -213,6 +215,31 @@
                 <line x1="9" y1="14" x2="15" y2="14"></line>
               </svg>
               {$t('gallery.bulk.addToCollection')}
+            </button>
+            <button
+              class="dropdown-item"
+              on:click={handleAddTags}
+              disabled={$selectedCount === 0}
+              title={$t('gallery.bulk.addTagTooltip')}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                <line x1="7" y1="7" x2="7.01" y2="7"></line>
+              </svg>
+              {$t('gallery.bulk.addTag')}
+            </button>
+            <button
+              class="dropdown-item"
+              on:click={handleRemoveTags}
+              disabled={$selectedCount === 0}
+              title={$t('gallery.bulk.removeTagTooltip')}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                <line x1="9" y1="15" x2="15" y2="9"></line>
+              </svg>
+              {$t('gallery.bulk.removeTag')}
             </button>
             <div class="dropdown-divider"></div>
             <button

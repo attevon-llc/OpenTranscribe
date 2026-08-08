@@ -1,10 +1,12 @@
 import logging
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import Request
 from fastapi import status
 from sqlalchemy import func
@@ -21,10 +23,20 @@ from app.models.media import Tag
 from app.models.user import User
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TagBase
+from app.schemas.media import TagImpact
+from app.schemas.media import TagMergeRequest
+from app.schemas.media import TagMutationResult
+from app.schemas.media import TagRenameRequest
 from app.schemas.media import TagWithCount
+from app.services.tag_operations import TagNotFoundError
+from app.services.tag_operations import delete_tags
+from app.services.tag_operations import merge_tags
+from app.services.tag_operations import preview_tag_impact
+from app.services.tag_operations import rename_tag
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tag
+from app.utils.uuid_helpers import get_by_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +50,26 @@ def _resolve_tag(db: Session, name: str) -> Tag:
     """
     try:
         return resolve_or_create_tag(db, name, source=TAG_SOURCE_MANUAL)
+    except InvalidTagNameError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Tag name is required",
+        ) from exc
+
+
+def _tag_ids(db: Session, tag_uuids: list[UUID]) -> list[int]:
+    """Resolve public tag UUIDs to internal ids, 404ing on the first unknown one."""
+    return [
+        get_by_uuid(db, Tag, tag_uuid, error_message="Tag not found").id for tag_uuid in tag_uuids
+    ]
+
+
+def _apply(operation, *args, **kwargs) -> TagMutationResult:
+    """Run a tag operation, translating its service errors into HTTP ones."""
+    try:
+        return TagMutationResult.model_validate(operation(*args, **kwargs))
+    except TagNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidTagNameError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -198,6 +230,89 @@ def cleanup_unused_tags(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error cleaning up unused tags: {str(e)}",
         ) from e
+
+
+@router.get("/impact", response_model=TagImpact)
+def get_tag_impact(
+    tag_uuids: list[UUID] = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Report what renaming, merging, or deleting these tags would touch.
+
+    Returns the caller-visible count **and** the global count separately: tags
+    are global rows, so an operation confirmed against the accessible number
+    alone would understate its own blast radius.
+    """
+    report = preview_tag_impact(
+        db, _tag_ids(db, tag_uuids), user_id=current_user.id, organization_id=ctx.org_id
+    )
+    return TagImpact.model_validate(report)
+
+
+@router.patch("/{tag_uuid}", response_model=TagMutationResult)
+def rename_tag_endpoint(
+    tag_uuid: UUID,
+    payload: TagRenameRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Rename a tag.
+
+    A new name that resolves to a *different* existing tag is a merge; the
+    response comes back with ``requires_confirmation`` and an impact preview and
+    nothing is applied until the caller retries with ``confirm_merge``. A case
+    variant of the tag's own name is a plain rename.
+    """
+    tag_id = get_by_uuid(db, Tag, tag_uuid, error_message="Tag not found").id
+    return _apply(
+        rename_tag,
+        db,
+        tag_id,
+        payload.name,
+        confirm_merge=payload.confirm_merge,
+        user_id=current_user.id,
+        organization_id=ctx.org_id,
+    )
+
+
+@router.post("/{tag_uuid}/merge", response_model=TagMutationResult)
+def merge_tags_endpoint(
+    tag_uuid: UUID,
+    payload: TagMergeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Fold the listed tags into the tag in the path, which survives."""
+    target_id = get_by_uuid(db, Tag, tag_uuid, error_message="Tag not found").id
+    return _apply(
+        merge_tags,
+        db,
+        target_id,
+        _tag_ids(db, payload.source_uuids),
+        user_id=current_user.id,
+        organization_id=ctx.org_id,
+    )
+
+
+@router.delete("", response_model=TagMutationResult)
+def delete_tags_endpoint(
+    tag_uuids: list[UUID] = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Delete one or more tags, returning the impact the delete realized."""
+    return _apply(
+        delete_tags,
+        db,
+        _tag_ids(db, tag_uuids),
+        user_id=current_user.id,
+        organization_id=ctx.org_id,
+    )
 
 
 @router.post("/files/{file_uuid}/tags", response_model=TagSchema)

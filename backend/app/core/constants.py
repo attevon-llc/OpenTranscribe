@@ -716,9 +716,17 @@ VALID_AUDIO_QUALITIES = list(AUDIO_QUALITY_OPTIONS.keys())
 DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD = 0.75
 FUZZY_MATCH_THRESHOLD = 0.85
 
-# Tag/collection source identifiers
+# Tag/collection source identifiers.
+#
+# ``TAG_SOURCE_BULK_GROUP`` belongs to *Collections* only — it is never a tag
+# origin, so tag code must not treat it as one. ``TAG_SOURCE_AI_ACCEPTED`` is
+# the human endorsement of an auto-labeled tag: a person merged another tag into
+# it (or otherwise vouched for it), so it is no longer merely machine-proposed.
+# ``Tag.source``/``FileTag.source`` are nullable and were never backfilled, so
+# NULL still means "predates auto-labeling" and orders as manual.
 TAG_SOURCE_MANUAL = "manual"
 TAG_SOURCE_AUTO_AI = "auto_ai"
+TAG_SOURCE_AI_ACCEPTED = "ai_accepted"
 TAG_SOURCE_BULK_GROUP = "bulk_group"
 
 # WebSocket notification types for auto-labeling

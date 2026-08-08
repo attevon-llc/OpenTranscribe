@@ -13,6 +13,11 @@ silently attaches the wrong tag — and nothing can split two tags back apart on
 combined. Only the auto-labeling path may chain suggest → apply automatically;
 on every path where a person supplied the name, a near match is a suggestion to
 accept or decline, never an automatic substitution.
+
+Rename, merge, delete, and the impact preview that fronts them live in
+:mod:`app.services.tag_operations` — this module stays the *resolution* half
+(one supplied name → one row) plus the shared :func:`on_tags_changed` hook that
+every tag mutation, here or there, calls.
 """
 
 import difflib
@@ -99,7 +104,7 @@ def names_are_similar(a: str, b: str, threshold: float = FUZZY_MATCH_THRESHOLD) 
     return difflib.SequenceMatcher(None, norm_a, norm_b).ratio() >= threshold
 
 
-def _lookup_existing_tag(db: Session, normalized: str, name: str) -> Tag | None:
+def lookup_existing_tag(db: Session, normalized: str, name: str) -> Tag | None:
     """Find a tag by normalized name, falling back to an exact name match.
 
     The fallback covers rows written before this service owned creation — the
@@ -180,7 +185,7 @@ def resolve_or_create_tag(db: Session, name: str, *, source: str = TAG_SOURCE_MA
     if not normalized:
         raise InvalidTagNameError(f"Tag name is empty after normalization: {name!r}")
 
-    existing = _lookup_existing_tag(db, normalized, cleaned)
+    existing = lookup_existing_tag(db, normalized, cleaned)
     if existing is not None:
         return existing
 
@@ -194,7 +199,7 @@ def resolve_or_create_tag(db: Session, name: str, *, source: str = TAG_SOURCE_MA
         # Another writer won the race. Roll back only the SAVEPOINT — never the
         # session — so the caller's pending work is untouched, then take theirs.
         nested.rollback()
-        winner = _lookup_existing_tag(db, normalized, cleaned)
+        winner = lookup_existing_tag(db, normalized, cleaned)
         if winner is not None:
             logger.debug("Lost tag-insert race for %r, using the winning row", cleaned)
             return winner

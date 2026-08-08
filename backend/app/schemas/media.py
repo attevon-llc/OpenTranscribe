@@ -557,6 +557,59 @@ class TagWithCount(Tag):
     usage_count: int = 0
 
 
+class TagImpactEntry(BaseModel):
+    """File counts for a single tag in a pending rename / merge / delete."""
+
+    uuid: UUID
+    name: str
+    accessible_file_count: int
+    total_file_count: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TagImpact(BaseModel):
+    """What a destructive tag operation would touch, before it acts.
+
+    Tags are **global** rows (no ``user_id``/``organization_id``, globally unique
+    name), so the two counts are deliberately separate: ``accessible_*`` is what
+    the caller can see, ``total_*`` is what the operation actually changes. A
+    confirmation built only from the accessible number would read "3 files" in
+    front of a delete that strips the tag from 500.
+    """
+
+    tags: list[TagImpactEntry] = []
+    accessible_file_count: int = 0
+    total_file_count: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TagRenameRequest(BaseModel):
+    """Rename a tag; ``confirm_merge`` accepts the merge when the name collides."""
+
+    name: str
+    confirm_merge: bool = False
+
+
+class TagMergeRequest(BaseModel):
+    """Fold one or more tags into the tag named in the path."""
+
+    source_uuids: list[UUID] = Field(..., min_length=1)
+
+
+class TagMutationResult(BaseModel):
+    """Outcome of a rename / merge / delete, always carrying the impact."""
+
+    tag: Tag | None = None
+    merged: bool = False
+    requires_confirmation: bool = False
+    deleted_uuids: list[UUID] = []
+    impact: TagImpact
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CommentBase(BaseModel):
     text: str
     timestamp: float | None = None

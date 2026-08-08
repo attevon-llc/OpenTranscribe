@@ -1,0 +1,176 @@
+/**
+ * API client for tags — the only place the SPA talks to the `/tags` rail.
+ *
+ * Shape follows `speakerClusters.ts` (flat exported functions) rather than the
+ * `GroupsApi` static-class shape: tags are consumed a call or two at a time by
+ * unrelated components (editor, filter sidebar, uploader, watch-source modal),
+ * so named imports keep each caller's dependency explicit and tree-shakeable.
+ *
+ * Transport and types only — filtering, sorting, and counting live on the
+ * server (`backend/app/services/tag_collisions.py`), never here.
+ */
+import axiosInstance from '../axios';
+import type {
+  BulkTagAction,
+  BulkTagActionResult,
+  Tag,
+  TagCleanupResult,
+  TagCollisionCluster,
+  TagImpact,
+  TagListFilters,
+  TagMutationResult,
+  TagRenameRequest,
+  TagReviewAction,
+  TagReviewResult,
+  TagWithCount,
+} from '$lib/types/tag';
+
+/**
+ * Build the repeated `tag_uuids=…&tag_uuids=…` query FastAPI expects for a
+ * `list[UUID] = Query(...)` parameter. Axios' default array serializer emits
+ * `tag_uuids[]=…`, which FastAPI rejects as a missing parameter.
+ */
+function tagUuidParams(tagUuids: string[], extra?: Record<string, string>): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const uuid of tagUuids) params.append('tag_uuids', uuid);
+  for (const [key, value] of Object.entries(extra ?? {})) params.set(key, value);
+  return params;
+}
+
+/**
+ * List tags with usage counts, most used first.
+ *
+ * The filters are server-side and combine (AND); omit them for the plain list.
+ */
+export async function listTags(filters: TagListFilters = {}): Promise<TagWithCount[]> {
+  const params: Record<string, boolean> = {};
+  if (filters.awaiting_review) params.awaiting_review = true;
+  if (filters.unused) params.unused = true;
+  if (filters.colliding) params.colliding = true;
+  const response = await axiosInstance.get('/tags', { params });
+  return response.data;
+}
+
+/** Create a tag (or return the existing one its name resolves to). */
+export async function createTag(name: string): Promise<Tag> {
+  const response = await axiosInstance.post('/tags', { name });
+  return response.data;
+}
+
+/** Attach a tag to a file by name, creating the tag if it does not exist. */
+export async function addTagToFile(fileUuid: string, name: string): Promise<Tag> {
+  const response = await axiosInstance.post(`/tags/files/${fileUuid}/tags`, { name });
+  return response.data;
+}
+
+/** Detach a tag from a file. The tag row itself survives. */
+export async function removeTagFromFile(fileUuid: string, tagName: string): Promise<void> {
+  await axiosInstance.delete(`/tags/files/${fileUuid}/tags/${encodeURIComponent(tagName)}`);
+}
+
+/** Tags no file the caller can see is carrying. */
+export async function listUnusedTags(): Promise<Tag[]> {
+  const response = await axiosInstance.get('/tags/unused');
+  return response.data;
+}
+
+/** Duplicate tags grouped into clusters, each with a preselected survivor. */
+export async function listTagCollisions(): Promise<TagCollisionCluster[]> {
+  const response = await axiosInstance.get('/tags/collisions');
+  return response.data;
+}
+
+/**
+ * Report what renaming, merging, or deleting these tags would touch, applying
+ * nothing. Carries the caller-accessible and global file counts separately.
+ */
+export async function getTagImpact(tagUuids: string[]): Promise<TagImpact> {
+  const response = await axiosInstance.get('/tags/impact', { params: tagUuidParams(tagUuids) });
+  return response.data;
+}
+
+/**
+ * Rename a tag.
+ *
+ * A new name resolving to a *different* existing tag is a merge: the result
+ * comes back with `requires_confirmation` and nothing is applied until the
+ * caller retries with `confirm_merge`.
+ */
+export async function renameTag(
+  tagUuid: string,
+  payload: TagRenameRequest
+): Promise<TagMutationResult> {
+  const response = await axiosInstance.patch(`/tags/${tagUuid}`, {
+    name: payload.name,
+    confirm_merge: payload.confirm_merge ?? false,
+  });
+  return response.data;
+}
+
+/** Fold `sourceUuids` into `targetUuid`, which survives. */
+export async function mergeTags(
+  targetUuid: string,
+  sourceUuids: string[]
+): Promise<TagMutationResult> {
+  const response = await axiosInstance.post(`/tags/${targetUuid}/merge`, {
+    source_uuids: sourceUuids,
+  });
+  return response.data;
+}
+
+/** Delete one or more tags, returning the impact the delete realized. */
+export async function deleteTags(tagUuids: string[]): Promise<TagMutationResult> {
+  const response = await axiosInstance.delete('/tags', { params: tagUuidParams(tagUuids) });
+  return response.data;
+}
+
+/** Report what accepting or rejecting these tags would do, applying nothing. */
+export async function getTagReviewImpact(
+  tagUuids: string[],
+  action: TagReviewAction
+): Promise<TagReviewResult> {
+  const response = await axiosInstance.get('/tags/review-impact', {
+    params: tagUuidParams(tagUuids, { action }),
+  });
+  return response.data;
+}
+
+/** Endorse auto-labeled tags so they stop awaiting review. Associations are untouched. */
+export async function acceptTags(tagUuids: string[]): Promise<TagReviewResult> {
+  const response = await axiosInstance.post('/tags/accept', { tag_uuids: tagUuids });
+  return response.data;
+}
+
+/**
+ * Remove the associations the auto-labeler created for these tags. The tag row
+ * goes only when no association is left, so hand-applied work survives.
+ */
+export async function rejectTags(tagUuids: string[]): Promise<TagReviewResult> {
+  const response = await axiosInstance.post('/tags/reject', { tag_uuids: tagUuids });
+  return response.data;
+}
+
+/** Delete every tag no file *anywhere* carries (admin only, deliberately global). */
+export async function cleanupUnusedTags(): Promise<TagCleanupResult> {
+  const response = await axiosInstance.delete('/tags/cleanup');
+  return response.data;
+}
+
+/**
+ * Attach or detach one tag across many files.
+ *
+ * Bulk tagging rides the files rail, not `/tags`. Each file reports its own
+ * `outcome`, so a partially-applied batch is described rather than failed.
+ */
+export async function bulkTagFiles(
+  fileUuids: string[],
+  action: BulkTagAction,
+  tagName: string
+): Promise<BulkTagActionResult[]> {
+  const response = await axiosInstance.post('/files/management/bulk-action', {
+    file_uuids: fileUuids,
+    action,
+    tag_name: tagName,
+  });
+  return response.data;
+}

@@ -18,6 +18,7 @@
     type Capabilities,
     type DirectoryListing,
   } from '$lib/api/watchSourcesApi';
+  import { listTags } from '$lib/api/tags';
 
   export let show = false;
   export let editingSource: WatchSource | null = null;
@@ -111,13 +112,10 @@
   onMount(() => {
     (async () => {
       try {
-        const [colRes, tagRes] = await Promise.all([
-          axiosInstance.get('/collections'),
-          axiosInstance.get('/tags'),
-        ]);
+        const [colRes, tags] = await Promise.all([axiosInstance.get('/collections'), listTags()]);
         availableCollections = colRes.data ?? [];
         colOptions = availableCollections.map((c) => ({ label: c.name, value: c.uuid }));
-        tagNames = (tagRes.data ?? []).map((t: { name: string }) => t.name);
+        tagNames = (tags ?? []).map((t) => t.name);
         mapEditingCollections();
       } catch {
         // Non-fatal: organize step still works with create-new.

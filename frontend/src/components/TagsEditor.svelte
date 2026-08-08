@@ -1,14 +1,13 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorStatus, getErrorCode } from '$lib/utils/apiError';
+  import { addTagToFile, createTag, listTags, removeTagFromFile } from '$lib/api/tags';
   import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
-  // Use the shared axios instance so auth token is always sent
 
-  type Tag = { uuid: string; name: string; source?: string; usage_count?: number };
+  type Tag = { uuid: string; name: string; source?: string | null; usage_count?: number };
   type AISuggestion = { name: string; confidence: number; rationale?: string };
 
   export let fileId = "";
@@ -58,17 +57,12 @@
   // Fetch all available tags
   async function fetchAllTags() {
     try {
-      // Use consistent URL format
-      const response = await axiosInstance.get('/tags');
+      const fetched = await listTags();
 
       // Ensure all tags have valid IDs before adding them to the allTags array
-      const validTags = (response.data || []).filter((tag: Tag) =>
-        tag && typeof tag === 'object' &&
-        tag.uuid !== undefined && tag.uuid !== null &&
-        tag.name !== undefined && tag.name !== null
+      allTags = (fetched || []).filter(
+        (tag) => tag && typeof tag === 'object' && !!tag.uuid && !!tag.name
       );
-
-      allTags = validTags;
     } catch (err: unknown) {
       console.error('[TagsEditor] Error fetching tags:', err);
       const status = getErrorStatus(err);
@@ -95,22 +89,11 @@
         throw new Error('Tag not found');
       }
 
-      // Prepare request payload
-      const payload = { name: tagToAdd.name };
-
-      // Send the payload as required by the backend API - must match the router configuration
-      const addTagUrl = `/tags/files/${fileId}/tags`;
-      const response = await axiosInstance.post(addTagUrl, payload);
-
-      // Use the response data from add_tag_to_file as the final tag object
-      const finalTag = response.data;
+      // Use the response from add_tag_to_file as the final tag object
+      const finalTag = await addTagToFile(fileId, tagToAdd.name);
 
       // Ensure the tag has a valid UUID and name
-      if (!finalTag ||
-          typeof finalTag.uuid === 'undefined' ||
-          finalTag.uuid === null ||
-          typeof finalTag.name === 'undefined' ||
-          finalTag.name === null) {
+      if (!finalTag || !finalTag.uuid || !finalTag.name) {
         console.error('[TagsEditor] Invalid tag received from server:', finalTag);
         throw new Error('Server returned an invalid tag');
       }
@@ -139,27 +122,18 @@
     try {
       // Creating tag and adding to file
 
-      // Step 1: Create the tag with proper payload format
-      const createPayload = { name: newTagInput.trim() };
-
-      const createResponse = await axiosInstance.post('/tags', createPayload);
-      const newTag = createResponse.data;
+      // Step 1: Create the tag
+      const newTag = await createTag(newTagInput.trim());
 
       // Ensure the tag has a valid UUID and name to prevent 'undefined' key errors
-      if (!newTag || typeof newTag.uuid === 'undefined') {
+      if (!newTag || !newTag.uuid) {
         console.error('[TagsEditor] Invalid tag received from server:', newTag);
         throw new Error('Server returned an invalid tag');
       }
 
       // Then add the tag to the file, similar to addTag but using the new tag data
-      const addTagUrl = `/tags/files/${fileId}/tags`;
-      const addPayload = { name: newTag.name };
-
-      const addResponse = await axiosInstance.post(addTagUrl, addPayload);
-
-      // Use the response data from add_tag_to_file as the final tag object
-      const finalTag = addResponse.data;
-      if (!finalTag || typeof finalTag.uuid === 'undefined') {
+      const finalTag = await addTagToFile(fileId, newTag.name);
+      if (!finalTag || !finalTag.uuid) {
         console.error('[TagsEditor] Invalid tag received after adding to file:', finalTag);
         throw new Error('Server returned an invalid tag after adding to file');
       }
@@ -218,13 +192,7 @@
         throw new Error('Tag not found');
       }
 
-      // IMPORTANT: The backend expects /tags/files/{file_id}/tags/{tag_name} due to router prefix configuration
-      const deleteUrl = `/tags/files/${fileId}/tags/${encodeURIComponent(tagToRemove.name)}`;
-      // Deleting tag
-
-      // Send the delete request
-      const response = await axiosInstance.delete(deleteUrl);
-      // Tag deleted successfully
+      await removeTagFromFile(fileId, tagToRemove.name);
 
       // Update the local tags array
       // Filter out the removed tag using a safe comparison

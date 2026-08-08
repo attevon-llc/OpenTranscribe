@@ -4,6 +4,7 @@
   import { DatePicker } from '@svelte-plugins/datepicker';
   import { format } from 'date-fns';
   import axiosInstance from '../lib/axios';
+  import { listTags } from '$lib/api/tags';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import CollectionsFilter from './CollectionsFilter.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
@@ -206,14 +207,7 @@
     errorTags = null;
 
     try {
-      allTags = await apiCache.getOrFetch(
-        cacheKey.tags(),
-        async () => {
-          const response = await axiosInstance.get('/tags');
-          return response.data;
-        },
-        CacheTTL.TAGS
-      );
+      allTags = await apiCache.getOrFetch(cacheKey.tags(), () => listTags(), CacheTTL.TAGS);
     } catch (err) {
       console.error('[FilterSidebar] Error fetching tags:', err);
       allTags = [];

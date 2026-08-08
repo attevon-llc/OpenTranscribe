@@ -12,8 +12,10 @@ from typing import Any
 from typing import TypedDict
 
 import httpx
-from jose import JWTError
-from jose import jwt
+from joserfc import jwt
+from joserfc.errors import JoseError
+from joserfc.jwk import KeySet
+from joserfc.jwt import JWTClaimsRegistry
 
 from app.auth.oidc.config import DEFAULT_ROLES_CLAIM
 from app.auth.oidc.config import OIDCConfig
@@ -136,42 +138,54 @@ def _normalize_roles(value: Any) -> list[str] | None:
 
 
 def _decode_token(token: str, jwks: dict, cfg: OIDCConfig, expected_issuer: str) -> dict | None:
-    """Verify *token* against the JWKS and return its claims, or None if invalid."""
-    jwt_options: dict[str, bool] = {}
-    decode_kwargs: dict[str, str] = {}
+    """Verify *token* against the JWKS and return its claims, or None if invalid.
 
-    if cfg.verify_audience:
-        jwt_options["verify_aud"] = True
-        audience = cfg.audience or cfg.client_id
-        decode_kwargs["audience"] = audience
-        logger.debug(f"Validating token audience against: {audience}")
-    else:
-        jwt_options["verify_aud"] = False
-
-    if cfg.verify_issuer:
-        jwt_options["verify_iss"] = True
-        decode_kwargs["issuer"] = expected_issuer
-        logger.debug(f"Validating token issuer against: {expected_issuer}")
-    else:
-        jwt_options["verify_iss"] = False
-
+    Two separate joserfc calls, deliberately: ``jwt.decode`` verifies the
+    signature and the algorithm allow-list only — unlike python-jose it does
+    **not** check ``exp``/``aud``/``iss`` on its own (confirmed empirically: an
+    expired token decodes without error). Claim validation is a second,
+    explicit step via :class:`JWTClaimsRegistry`, so ``exp`` is always
+    essential regardless of the admin's audience/issuer settings — an
+    expired-but-otherwise-valid token must never be accepted.
+    """
     algorithms = safe_signing_algorithms(ID_TOKEN_SIGNING_ALGORITHMS)
     if not algorithms:
         logger.error("No safe ID-token signing algorithm is configured — refusing the token")
         return None
 
     try:
-        payload: dict = jwt.decode(
-            token,
-            jwks,
-            algorithms=algorithms,
-            options=jwt_options,
-            **decode_kwargs,
-        )
-        return payload
-    except JWTError as e:
-        logger.warning(f"Invalid OIDC token (JWTError): {e}")
+        # `jwks` is `dict[str, Any]` (fetch_jwks's return type, cache-friendly);
+        # joserfc wants its own KeySetSerialization TypedDict shape. Runtime
+        # validation of the actual RFC 7517 structure happens inside
+        # import_key_set itself, which is what the except below is for.
+        keyset = KeySet.import_key_set(jwks)  # type: ignore[arg-type]
+    except JoseError as e:
+        logger.warning(f"Malformed JWKS (JoseError): {e}")
         return None
+
+    try:
+        token_obj = jwt.decode(token, keyset, algorithms=algorithms)
+    except JoseError as e:
+        logger.warning(f"Invalid OIDC token (JoseError): {e}")
+        return None
+
+    claims_options: dict[str, Any] = {"exp": {"essential": True}}
+    if cfg.verify_audience:
+        audience = cfg.audience or cfg.client_id
+        claims_options["aud"] = {"essential": True, "value": audience}
+        logger.debug(f"Validating token audience against: {audience}")
+    if cfg.verify_issuer:
+        claims_options["iss"] = {"essential": True, "value": expected_issuer}
+        logger.debug(f"Validating token issuer against: {expected_issuer}")
+
+    try:
+        JWTClaimsRegistry(**claims_options).validate(token_obj.claims)
+    except JoseError as e:
+        logger.warning(f"Invalid OIDC token claims (JoseError): {e}")
+        return None
+
+    payload: dict = token_obj.claims
+    return payload
 
 
 async def _roles_from_userinfo(access_token: str, cfg: OIDCConfig, endpoints: dict) -> list[str]:

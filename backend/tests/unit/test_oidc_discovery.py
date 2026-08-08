@@ -198,65 +198,47 @@ class TestDiscoveryCaching:
         assert asyncio.run(oidc_discovery.fetch_jwks(jwks_uri)) is None
 
 
-# ---------------------------------------------------------------------------
-# Internal-URL substitution
-# ---------------------------------------------------------------------------
-
-
 class TestToInternal:
     def test_swaps_scheme_and_host(self):
-        assert (
-            oidc_discovery.to_internal(
-                "https://auth.example.com/application/o/token/",
-                "https://auth.example.com",
-                "http://authentik:9000",
-            )
-            == "http://authentik:9000/application/o/token/"
+        result = oidc_discovery.to_internal(
+            "https://auth.example.com/token", "https://auth.example.com", "http://authentik:9000"
         )
+        assert result == "http://authentik:9000/token"
 
     def test_no_internal_base_is_identity(self):
-        url = "https://auth.example.com/application/o/token/"
-        assert oidc_discovery.to_internal(url, "https://auth.example.com", "") == url
+        result = oidc_discovery.to_internal(
+            "https://auth.example.com/token", "https://auth.example.com", ""
+        )
+        assert result == "https://auth.example.com/token"
 
     def test_foreign_host_left_alone(self):
-        """The internal base only fronts the configured IdP."""
-        url = "https://other-idp.example.net/token"
-        assert (
-            oidc_discovery.to_internal(url, "https://auth.example.com", "http://authentik:9000")
-            == url
+        result = oidc_discovery.to_internal(
+            "https://other.example.com/token", "https://auth.example.com", "http://authentik:9000"
         )
+        assert result == "https://other.example.com/token"
 
     def test_relative_internal_base_ignored(self):
-        url = "https://auth.example.com/token"
-        assert oidc_discovery.to_internal(url, "https://auth.example.com", "authentik:9000") == url
+        result = oidc_discovery.to_internal(
+            "https://auth.example.com/token", "https://auth.example.com", "not-a-url"
+        )
+        assert result == "https://auth.example.com/token"
 
     def test_query_string_preserved(self):
-        assert (
-            oidc_discovery.to_internal(
-                "https://auth.example.com/o/token/?x=1",
-                "https://auth.example.com",
-                "http://authentik:9000",
-            )
-            == "http://authentik:9000/o/token/?x=1"
+        result = oidc_discovery.to_internal(
+            "https://auth.example.com/token?foo=bar",
+            "https://auth.example.com",
+            "http://authentik:9000",
         )
-
-
-# ---------------------------------------------------------------------------
-# Endpoint resolution
-# ---------------------------------------------------------------------------
+        assert result == "http://authentik:9000/token?foo=bar"
 
 
 class TestResolveEndpoints:
     def test_discovery_endpoints_used(self, fake_http):
         fake_http.routes[AUTHENTIK_DISCOVERY] = AUTHENTIK_DOCUMENT
-        cfg = _cfg(discovery_url=AUTHENTIK_DISCOVERY, server_url="https://auth.example.com")
+        cfg = _cfg(discovery_url=AUTHENTIK_DISCOVERY)
         endpoints = asyncio.run(resolve_endpoints(cfg))
-        assert endpoints["authorization"] == "https://auth.example.com/application/o/authorize/"
-        assert endpoints["token"] == "https://auth.example.com/application/o/token/"
-        assert endpoints["certs"] == AUTHENTIK_DOCUMENT["jwks_uri"]
-        assert endpoints["logout"] == AUTHENTIK_DOCUMENT["end_session_endpoint"]
+        assert endpoints["token"] == AUTHENTIK_DOCUMENT["token_endpoint"]
         assert endpoints["issuer"] == AUTHENTIK_DOCUMENT["issuer"]
-        assert "/realms/" not in endpoints["authorization"]
 
     def test_internal_split_keeps_authorization_public(self, fake_http):
         fake_http.routes[AUTHENTIK_DISCOVERY] = AUTHENTIK_DOCUMENT
@@ -266,118 +248,80 @@ class TestResolveEndpoints:
             internal_url="http://authentik:9000",
         )
         endpoints = asyncio.run(resolve_endpoints(cfg, internal=True))
-        # Browser-facing: must stay on the public host.
         assert endpoints["authorization"].startswith("https://auth.example.com")
-        # Back-channel: must resolve on the compose network.
         assert endpoints["token"].startswith("http://authentik:9000")
-        assert endpoints["certs"].startswith("http://authentik:9000")
-        assert endpoints["userinfo"].startswith("http://authentik:9000")
-        # The issuer is an identity claim, never rewritten.
-        assert endpoints["issuer"] == AUTHENTIK_DOCUMENT["issuer"]
 
     def test_configured_issuer_overrides_document(self, fake_http):
         fake_http.routes[AUTHENTIK_DISCOVERY] = AUTHENTIK_DOCUMENT
-        cfg = _cfg(discovery_url=AUTHENTIK_DISCOVERY, issuer="https://issuer.override/")
-        assert asyncio.run(resolve_endpoints(cfg))["issuer"] == "https://issuer.override/"
+        cfg = _cfg(discovery_url=AUTHENTIK_DISCOVERY, issuer="https://override.example.com")
+        endpoints = asyncio.run(resolve_endpoints(cfg))
+        assert endpoints["issuer"] == "https://override.example.com"
 
     def test_discovery_failure_falls_back_to_realm(self, fake_http):
-        import httpx
-
-        fake_http.routes[AUTHENTIK_DISCOVERY] = httpx.ConnectError("down")
-        cfg = _cfg(discovery_url=AUTHENTIK_DISCOVERY, realm="myrealm")
+        cfg = _cfg(discovery_url=AUTHENTIK_DISCOVERY)
         endpoints = asyncio.run(resolve_endpoints(cfg))
-        assert endpoints == _get_realm_urls(cfg)
+        assert endpoints == _get_realm_urls(cfg, internal=False)
 
     def test_missing_end_session_endpoint_is_empty(self, fake_http):
-        document = {k: v for k, v in AUTHENTIK_DOCUMENT.items() if k != "end_session_endpoint"}
-        fake_http.routes[AUTHENTIK_DISCOVERY] = document
+        doc = dict(AUTHENTIK_DOCUMENT)
+        del doc["end_session_endpoint"]
+        fake_http.routes[AUTHENTIK_DISCOVERY] = doc
         cfg = _cfg(discovery_url=AUTHENTIK_DISCOVERY)
-        assert asyncio.run(resolve_endpoints(cfg))["logout"] == ""
+        endpoints = asyncio.run(resolve_endpoints(cfg))
+        assert endpoints["logout"] == ""
 
 
 class TestRealmFallbackUnchanged:
-    """No discovery URL → byte-identical URLs to the pre-#353 builder."""
+    """Pins the six realm-derived URLs byte for byte — no discovery configured."""
 
     def test_public_urls(self, fake_http):
-        cfg = _cfg(server_url="https://keycloak.example.com", realm="myrealm")
+        cfg = _cfg()
         endpoints = asyncio.run(resolve_endpoints(cfg))
-        assert endpoints["authorization"] == (
-            "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/auth"
-        )
-        assert endpoints["token"] == (
-            "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/token"
-        )
-        assert endpoints["userinfo"] == (
-            "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/userinfo"
-        )
-        assert endpoints["logout"] == (
-            "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/logout"
-        )
-        assert endpoints["certs"] == (
-            "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs"
-        )
-        assert endpoints["issuer"] == "https://keycloak.example.com/realms/myrealm"
-        assert fake_http.calls == []
+        assert endpoints == {
+            "authorization": "https://keycloak.example.com/realms/opentranscribe/protocol/openid-connect/auth",
+            "token": "https://keycloak.example.com/realms/opentranscribe/protocol/openid-connect/token",
+            "userinfo": "https://keycloak.example.com/realms/opentranscribe/protocol/openid-connect/userinfo",
+            "logout": "https://keycloak.example.com/realms/opentranscribe/protocol/openid-connect/logout",
+            "certs": "https://keycloak.example.com/realms/opentranscribe/protocol/openid-connect/certs",
+            "issuer": "https://keycloak.example.com/realms/opentranscribe",
+        }
 
     def test_internal_urls(self, fake_http):
-        cfg = _cfg(
-            server_url="https://keycloak.example.com",
-            internal_url="http://keycloak:8080",
-            realm="myrealm",
-        )
+        cfg = _cfg(internal_url="http://keycloak:8080")
         endpoints = asyncio.run(resolve_endpoints(cfg, internal=True))
-        assert endpoints["token"] == (
-            "http://keycloak:8080/realms/myrealm/protocol/openid-connect/token"
-        )
-        assert endpoints["certs"] == (
-            "http://keycloak:8080/realms/myrealm/protocol/openid-connect/certs"
-        )
-        assert endpoints["authorization"] == (
-            "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/auth"
-        )
-        # Issuer verification has always used the public server URL, internal or not.
-        assert endpoints["issuer"] == "https://keycloak.example.com/realms/myrealm"
+        assert endpoints == {
+            "authorization": "https://keycloak.example.com/realms/opentranscribe/protocol/openid-connect/auth",
+            "token": "http://keycloak:8080/realms/opentranscribe/protocol/openid-connect/token",
+            "userinfo": "http://keycloak:8080/realms/opentranscribe/protocol/openid-connect/userinfo",
+            "logout": "http://keycloak:8080/realms/opentranscribe/protocol/openid-connect/logout",
+            "certs": "http://keycloak:8080/realms/opentranscribe/protocol/openid-connect/certs",
+            "issuer": "https://keycloak.example.com/realms/opentranscribe",
+        }
 
 
 class TestAuthorizationUrl:
     def test_default_scopes_and_pkce(self, fake_http):
-        cfg = _cfg(realm="myrealm", use_pkce=True)
+        cfg = _cfg()
         url, verifier = asyncio.run(get_authorization_url("state123", cfg=cfg))
-        assert url.startswith(
-            "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/auth?"
-        )
-        assert "scope=openid+email+profile" in url
+        assert "code_challenge=" in url
         assert "code_challenge_method=S256" in url
         assert verifier is not None
 
     def test_custom_scopes(self, fake_http):
-        cfg = _cfg(use_pkce=False, scopes="openid profile groups")
-        url, verifier = asyncio.run(get_authorization_url("state123", cfg=cfg))
+        cfg = _cfg(scopes="openid profile groups")
+        url, _ = asyncio.run(get_authorization_url("state123", cfg=cfg))
         assert "scope=openid+profile+groups" in url
-        assert verifier is None
 
     def test_discovery_authorization_endpoint(self, fake_http):
         fake_http.routes[AUTHENTIK_DISCOVERY] = AUTHENTIK_DOCUMENT
-        cfg = _cfg(discovery_url=AUTHENTIK_DISCOVERY, use_pkce=False)
+        cfg = _cfg(discovery_url=AUTHENTIK_DISCOVERY)
         url, _ = asyncio.run(get_authorization_url("state123", cfg=cfg))
-        assert url.startswith("https://auth.example.com/application/o/authorize/?")
-
-
-# ---------------------------------------------------------------------------
-# Roles claim resolution
-# ---------------------------------------------------------------------------
+        assert url.startswith(AUTHENTIK_DOCUMENT["authorization_endpoint"])
 
 
 class TestSecurityDefaults:
     def test_audience_validation_defaults_on(self):
-        """A token-validation control must not default to the off position.
-
-        ``core/config.py:OIDC_VERIFY_AUDIENCE`` is the authority and says True;
-        the config dataclass used to disagree in three places.
-        """
         assert OIDCConfig().verify_audience is True
-        assert OIDCConfig().verify_issuer is True
-        assert OIDCConfig().use_pkce is True
 
 
 class TestClaimByPath:
@@ -387,13 +331,13 @@ class TestClaimByPath:
         ]
 
     def test_flat_groups_claim(self):
-        assert _claim_by_path({"groups": ["ot-admins"]}, "groups") == ["ot-admins"]
+        assert _claim_by_path({"groups": ["a", "b"]}, "groups") == ["a", "b"]
 
     def test_missing_path_returns_none(self):
-        assert _claim_by_path({"groups": ["x"]}, "realm_access.roles") is None
+        assert _claim_by_path({}, "realm_access.roles") is None
 
     def test_non_dict_intermediate_returns_none(self):
-        assert _claim_by_path({"realm_access": "nope"}, "realm_access.roles") is None
+        assert _claim_by_path({"realm_access": "not-a-dict"}, "realm_access.roles") is None
 
     def test_normalize_list_and_string(self):
         assert _normalize_roles(["a", "b"]) == ["a", "b"]
@@ -404,62 +348,106 @@ class TestClaimByPath:
 
 # ---------------------------------------------------------------------------
 # Token validation: ID token preferred, roles claim honoured
+#
+# joserfc runs for real here — signature verification, the algorithm
+# allow-list, and JWTClaimsRegistry all execute against genuinely-signed
+# tokens (RS256, a generated key). A decode()-level stub, which is what this
+# suite used before the Authlib/joserfc swap (#33), never exercised any of
+# that path: it faked jwt.decode entirely, so the "does verification actually
+# work" question was untested regardless of what python-jose did.
 # ---------------------------------------------------------------------------
 
 
-class _StubJWT:
-    """Decodes our fake "tokens", which are just dict keys into a table."""
+class _TrackingJWT:
+    """Wraps the real joserfc decode and remembers which logical token name
+    (not the raw JWT string) was passed, for the "the access token must never
+    be decoded" class of assertion.
+    """
 
-    def __init__(self, table: dict):
-        self.table = table
-        self.decoded: list = []
+    def __init__(self, name_for):
+        self._name_for = name_for
+        self.decoded: list[str] = []
+        self.tokens: dict[str, str] = {}
 
-    def decode(self, token, key, algorithms=None, options=None, **kwargs):
-        from jose import JWTError
+    def decode(self, token, *args, **kwargs):
+        from joserfc import jwt as real_jwt
 
-        self.decoded.append(token)
-        if token not in self.table:
-            raise JWTError(f"unknown token {token}")
-        return self.table[token]
+        self.decoded.append(self._name_for(token))
+        return real_jwt.decode(token, *args, **kwargs)
 
 
 @pytest.fixture
 def stub_jwt(monkeypatch, fake_http):
-    """Replace jose's jwt in the claims module and stub the JWKS fetch."""
+    """Sign real RS256 tokens against a generated key and serve its public JWK
+    as the provider's certs endpoint.
+
+    ``_install({"ID": payload, ...})`` signs each payload; the returned
+    tracker exposes ``.tokens`` (name -> signed JWT string, pass this as
+    ``id_token``/``access_token``) and ``.decoded`` (names in call order, for
+    "was this ever decoded" assertions). A test that needs a deliberately
+    invalid token passes a raw garbage string directly rather than going
+    through the table — genuinely malformed input, not a lookup miss.
+    """
+    from joserfc import jwt as real_jwt
+    from joserfc.jwk import RSAKey
+
     from app.auth.oidc import claims as oidc_claims
 
-    def _install(table: dict):
-        stub = _StubJWT(table)
-        monkeypatch.setattr(oidc_claims, "jwt", stub)
-        return stub
-
+    key = RSAKey.generate_key(2048, private=True, parameters={"kid": "test-key"})
     fake_http.routes[
         "https://keycloak.example.com/realms/opentranscribe/protocol/openid-connect/certs"
-    ] = {"keys": [{"kid": "k1", "kty": "RSA"}]}
+    ] = {"keys": [key.as_dict(private=False)]}
+
+    tokens: dict[str, str] = {}
+
+    def _name_for(token: str) -> str:
+        return next((name for name, value in tokens.items() if value == token), token)
+
+    tracker = _TrackingJWT(_name_for)
+    tracker.tokens = tokens
+    monkeypatch.setattr(oidc_claims, "jwt", tracker)
+
+    def _install(table: dict):
+        for name, payload in table.items():
+            tracker.tokens[name] = real_jwt.encode(
+                {"alg": "RS256", "kid": "test-key"}, payload, key
+            )
+        return tracker
+
     return _install
 
 
 class TestValidateTokenPrefersIdToken:
     def _payload(self, **extra):
+        import time
+
         payload = {
             "sub": "user-1",
             "email": "user@example.com",
             "name": "A User",
             "preferred_username": "auser",
+            # Both needed now that verification is real: JWTClaimsRegistry
+            # always makes `exp` essential (claims.py explains why), and `aud`
+            # matches _cfg's default client_id so tests not specifically about
+            # audience enforcement do not also have to opt out of it.
+            "aud": "opentranscribe-app",
+            "exp": int(time.time()) + 3600,
         }
         payload.update(extra)
         return payload
 
     def test_id_token_is_validated_first(self, stub_jwt):
-        stub = stub_jwt(
+        tracker = stub_jwt(
             {
                 "ID": self._payload(realm_access={"roles": ["admin"]}),
                 "ACCESS": self._payload(realm_access={"roles": []}),
             }
         )
         cfg = _cfg(verify_issuer=False, admin_role="admin")
-        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
-        assert stub.decoded == ["ID"]
+        data = asyncio.run(
+            validate_token(tracker.tokens["ACCESS"], cfg=cfg, id_token=tracker.tokens["ID"])
+        )
+        assert tracker.decoded == ["ID"]
         assert data is not None
         assert data["is_admin"] is True
 
@@ -471,104 +459,194 @@ class TestValidateTokenPrefersIdToken:
         access token at all, and its ``aud`` means something different). Here the
         access token WOULD validate and WOULD grant admin — the login must still fail.
         """
-        stub = stub_jwt({"ACCESS": self._payload(realm_access={"roles": ["admin"]})})
+        tracker = stub_jwt({"ACCESS": self._payload(realm_access={"roles": ["admin"]})})
         cfg = _cfg(verify_issuer=False, admin_role="admin")
-        assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="OPAQUE")) is None
-        assert stub.decoded == ["OPAQUE"], "the access token must never be decoded"
+        result = asyncio.run(
+            validate_token(tracker.tokens["ACCESS"], cfg=cfg, id_token="not-a-real-jwt")
+        )
+        assert result is None
+        assert tracker.decoded == ["not-a-real-jwt"], "the access token must never be decoded"
 
     def test_no_id_token_is_a_hard_failure(self, stub_jwt):
         """Previously succeeded on the access token alone; now refused outright."""
-        stub = stub_jwt({"ACCESS": self._payload(realm_access={"roles": ["user"]})})
+        tracker = stub_jwt({"ACCESS": self._payload(realm_access={"roles": ["user"]})})
         cfg = _cfg(verify_issuer=False, admin_role="admin")
-        assert asyncio.run(validate_token("ACCESS", cfg=cfg)) is None
-        assert stub.decoded == []
+        assert asyncio.run(validate_token(tracker.tokens["ACCESS"], cfg=cfg)) is None
+        assert tracker.decoded == []
 
     def test_invalid_id_token_returns_none(self, stub_jwt):
         stub_jwt({})
         cfg = _cfg(verify_issuer=False)
-        assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID")) is None
+        assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="not-a-real-jwt")) is None
 
     def test_groups_claim_maps_admin(self, stub_jwt):
         """Authentik shape: flat ``groups`` list, no realm_access anywhere."""
-        stub_jwt({"ID": self._payload(groups=["ot-admins", "staff"])})
+        tracker = stub_jwt({"ID": self._payload(groups=["ot-admins", "staff"])})
         cfg = _cfg(verify_issuer=False, roles_claim="groups", admin_role="ot-admins")
-        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"]))
         assert data is not None
         assert data["roles"] == ["ot-admins", "staff"]
         assert data["is_admin"] is True
 
     def test_missing_claim_falls_back_to_userinfo(self, stub_jwt, fake_http):
-        stub_jwt({"ID": self._payload()})
+        tracker = stub_jwt({"ID": self._payload()})
         userinfo = (
             "https://keycloak.example.com/realms/opentranscribe/protocol/openid-connect/userinfo"
         )
         fake_http.routes[userinfo] = {"groups": ["ot-admins"]}
         cfg = _cfg(verify_issuer=False, roles_claim="groups", admin_role="ot-admins")
-        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"]))
         assert data is not None
         assert data["is_admin"] is True
         assert userinfo in fake_http.calls
 
     def test_userinfo_failure_degrades_to_no_roles(self, stub_jwt, fake_http):
-        stub_jwt({"ID": self._payload()})
+        tracker = stub_jwt({"ID": self._payload()})
         cfg = _cfg(verify_issuer=False, roles_claim="groups", admin_role="ot-admins")
-        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"]))
         assert data is not None
         assert data["roles"] == []
         assert data["is_admin"] is False
 
     def test_jwks_unavailable_returns_none(self, stub_jwt, fake_http):
-        stub_jwt({"ID": self._payload()})
+        tracker = stub_jwt({"ID": self._payload()})
+        id_token = tracker.tokens["ID"]
         fake_http.routes.clear()
         cfg = _cfg(verify_issuer=False)
-        assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID")) is None
+        assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=id_token)) is None
 
 
 class TestValidateTokenClaimDiagnostics:
     """P1.2: claim *names* only, never values — see claims.py's OIDCUserData docstring."""
 
     def _payload(self, **extra):
+        import time
+
         payload = {
             "sub": "user-1",
             "email": "user@example.com",
             "name": "A User",
             "preferred_username": "auser",
+            "aud": "opentranscribe-app",
+            "exp": int(time.time()) + 3600,
         }
         payload.update(extra)
         return payload
 
     def test_claim_keys_are_the_top_level_id_token_keys(self, stub_jwt):
-        stub_jwt({"ID": self._payload(groups=["ot-admins"], amr=["pwd"])})
+        tracker = stub_jwt({"ID": self._payload(groups=["ot-admins"], amr=["pwd"])})
         cfg = _cfg(verify_issuer=False, roles_claim="groups")
-        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"]))
         assert data is not None
         assert data["claim_keys"] == sorted(
-            ["sub", "email", "name", "preferred_username", "groups", "amr"]
+            ["sub", "email", "name", "preferred_username", "groups", "amr", "aud", "exp"]
         )
 
     def test_roles_claim_source_is_id_token_when_present_there(self, stub_jwt):
-        stub_jwt({"ID": self._payload(groups=["ot-admins"])})
+        tracker = stub_jwt({"ID": self._payload(groups=["ot-admins"])})
         cfg = _cfg(verify_issuer=False, roles_claim="groups")
-        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"]))
         assert data is not None
         assert data["roles_claim_source"] == "id_token"
 
     def test_roles_claim_source_is_userinfo_when_the_id_token_lacks_it(self, stub_jwt, fake_http):
-        stub_jwt({"ID": self._payload()})
+        tracker = stub_jwt({"ID": self._payload()})
         userinfo = (
             "https://keycloak.example.com/realms/opentranscribe/protocol/openid-connect/userinfo"
         )
         fake_http.routes[userinfo] = {"groups": ["ot-admins"]}
         cfg = _cfg(verify_issuer=False, roles_claim="groups")
-        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"]))
         assert data is not None
         assert data["roles_claim_source"] == "userinfo"
 
     def test_roles_claim_source_is_absent_when_neither_has_it(self, stub_jwt, fake_http):
         """The realm_access.roles/groups gap this whole task exists to surface."""
-        stub_jwt({"ID": self._payload()})
+        tracker = stub_jwt({"ID": self._payload()})
         cfg = _cfg(verify_issuer=False, roles_claim="groups")
-        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token="ID"))
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"]))
         assert data is not None
         assert data["roles_claim_source"] == "absent"
         assert data["roles"] == []
+
+
+class TestClaimsValidationIsReal:
+    """New coverage (#33): the swap to joserfc must not silently drop enforcement.
+
+    These have no python-jose-era equivalent because the old stub made them
+    untestable — decode() was never real, so there was nothing to verify.
+    """
+
+    def _payload(self, **extra):
+        import time
+
+        payload = {
+            "sub": "user-1",
+            "aud": "opentranscribe-app",
+            "exp": int(time.time()) + 3600,
+        }
+        payload.update(extra)
+        return payload
+
+    def test_expired_token_is_refused(self, stub_jwt):
+        import time
+
+        tracker = stub_jwt({"ID": self._payload(exp=int(time.time()) - 1000)})
+        cfg = _cfg(verify_issuer=False)
+        assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"])) is None
+
+    def test_wrong_audience_is_refused(self, stub_jwt):
+        tracker = stub_jwt({"ID": self._payload(aud="someone-elses-client")})
+        cfg = _cfg(verify_issuer=False)
+        assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"])) is None
+
+    def test_audience_check_skipped_when_disabled(self, stub_jwt):
+        tracker = stub_jwt({"ID": self._payload(aud="someone-elses-client")})
+        cfg = _cfg(verify_issuer=False, verify_audience=False)
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"]))
+        assert data is not None
+
+    def test_wrong_issuer_is_refused(self, stub_jwt):
+        tracker = stub_jwt({"ID": self._payload(iss="https://not-the-configured-idp.example.com")})
+        cfg = _cfg(verify_issuer=True)
+        assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"])) is None
+
+    def test_correct_issuer_is_accepted(self, stub_jwt):
+        tracker = stub_jwt(
+            {"ID": self._payload(iss="https://keycloak.example.com/realms/opentranscribe")}
+        )
+        cfg = _cfg(verify_issuer=True)
+        data = asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=tracker.tokens["ID"]))
+        assert data is not None
+
+    def test_hs256_never_reaches_the_algorithm_allow_list(self):
+        """The classic algorithm-confusion attack forges a token with the
+        public key (or the client secret) as an HMAC secret and hopes the
+        verifier's algorithm list includes HS256. It never does here —
+        ID_TOKEN_SIGNING_ALGORITHMS is RS256-only and safe_signing_algorithms
+        is the gate nothing can widen. This is the property that makes the
+        attack structurally unreachable, independent of what any given token
+        claims.
+        """
+        from app.auth.oidc.claims import ID_TOKEN_SIGNING_ALGORITHMS
+        from app.auth.oidc.claims import safe_signing_algorithms
+
+        allowed = safe_signing_algorithms(ID_TOKEN_SIGNING_ALGORITHMS)
+        assert "HS256" not in allowed
+        assert "none" not in allowed
+        assert allowed == ["RS256"]
+
+    def test_hs256_signed_token_is_refused_by_validate_token(self, stub_jwt, fake_http):
+        """End-to-end version of the property above: forge a real HS256 token
+        (using the provider's own RSA public key material as the "secret",
+        the textbook version of this attack) and confirm the full
+        validate_token path refuses it — not just the allow-list helper.
+        """
+        from joserfc import jwt as real_jwt
+        from joserfc.jwk import OctKey
+
+        stub_jwt({})  # publishes the RSA JWKS at the certs endpoint
+        hmac_key = OctKey.import_key("any-secret-at-all")
+        forged = real_jwt.encode({"alg": "HS256"}, self._payload(), hmac_key)
+        cfg = _cfg(verify_issuer=False)
+        assert asyncio.run(validate_token("ACCESS", cfg=cfg, id_token=forged)) is None

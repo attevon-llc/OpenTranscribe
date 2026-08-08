@@ -17,6 +17,7 @@ export type SettingsSection =
   | 'asr-provider'
   | 'custom-vocabulary'
   | 'content-redaction'
+  | 'chat'
   | 'engine-settings'
   // System sections (visible to all users)
   | 'system-statistics'
@@ -28,8 +29,12 @@ export type SettingsSection =
   // 'admin-settings' and 'cache' are deliberately absent: neither has had a
   // render block in SettingsModal for some time, so deep-linking to them opened
   // an empty pane. Cache configuration lives inside the 'retention' panel.
+  // 'admin-settings' and 'cache' are deliberately absent: neither has had a
+  // render block in SettingsModal for some time, so deep-linking to them opened
+  // an empty pane. Cache configuration lives inside the 'retention' panel.
   | 'admin-users'
   | 'admin-task-health'
+  | 'chat-admin'
   | 'redaction-policy'
   | 'embedding-migration'
   | 'data-integrity'
@@ -66,6 +71,8 @@ const initialState: SettingsModalState = {
     'asr-provider': false,
     'custom-vocabulary': false,
     'content-redaction': false,
+    chat: false,
+    'chat-admin': false,
     'engine-settings': false,
     'system-statistics': false,
     billing: false,

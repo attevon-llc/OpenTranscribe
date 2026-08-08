@@ -63,9 +63,7 @@ describe('ActiveSessionsPanel', () => {
 
     render(ActiveSessionsPanel);
 
-    await waitFor(() =>
-      expect(screen.getByText('settings.sessions.empty')).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText('settings.sessions.empty')).toBeInTheDocument());
     expect(screen.getByText('settings.sessions.emptyDescription')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     // Nothing to sign out of, so the destructive action is unavailable.
@@ -79,9 +77,7 @@ describe('ActiveSessionsPanel', () => {
 
     render(ActiveSessionsPanel);
 
-    await waitFor(() =>
-      expect(screen.getByText('settings.sessions.empty')).toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.getByText('settings.sessions.empty')).toBeInTheDocument());
     expect(toastStore.error).not.toHaveBeenCalled();
   });
 

@@ -1,272 +1,77 @@
-"""v376 migration + detection-arm consistency (IdP group mapping).
+"""v376 (chat projects) schema consistency — issue #360.
 
-The alembic chain must contain v376 (revises v375), and the untracked-DB detection
-in ``app/db/migrations.py`` must recognize a v376-shape schema by **both** markers:
-the ``group_mapping`` table and ``user_group_member.source``. One without the other
-is not this revision — a mapping table with no provenance column would leave
-reconciliation unable to tell a directory-derived membership from a hand-added one,
-which is the difference between "revocation works" and "a sync wipes manual work".
-
-The substantive tests are the two CHECK constraints. ``ck_group_mapping_role_capped``
-is the database's half of the rule that ``super_admin`` is unreachable from any
-identity provider (the service enforces it too, but a code path can be bypassed and
-a constraint cannot), and ``ck_group_mapping_grants_something`` rejects a mapping
-that grants neither a group nor a role and would therefore be invisible dead config.
+Pins the two properties the DDL exists to guarantee and that a later refactor
+could plausibly break: ``chat_conversation.project_id`` is NULLABLE (so every
+pre-v376 conversation keeps working, ungrouped) and its FK is ON DELETE SET
+NULL (so deleting a project never destroys the threads inside it).
 """
 
 from __future__ import annotations
 
-import importlib.util
-import uuid as uuid_pkg
 from pathlib import Path
 
-import pytest
 from sqlalchemy import inspect
 from sqlalchemy import text
 
-#: These suites perform schema DDL (dropping a column or constraint to recreate the
-#: pre-revision shape). Postgres takes an ACCESS EXCLUSIVE lock for that, so they must
-#: not run beside other database tests — `--dist loadgroup` keeps a group on one worker.
-pytestmark = pytest.mark.xdist_group("migration_ddl")
 
-REVISION = "v376_idp_group_mapping"
-_REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
+def _versions_dir() -> Path:
+    return Path(__file__).resolve().parents[2] / "alembic" / "versions"
 
 
-def _revision_module():
-    """Load the revision file by path (``alembic/`` is not importable — see v374)."""
-    spec = importlib.util.spec_from_file_location(REVISION, _REVISION_PATH)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def test_revision_chains_onto_v375():
+    source = (_versions_dir() / "v376_add_chat_projects.py").read_text()
+    assert 'revision = "v376_add_chat_projects"' in source
+    assert 'down_revision = "v375_add_chat_tables"' in source
 
 
-def _new_group(conn) -> int:
-    """Create a throwaway ``user_group`` to hang mappings off; rolled back by the fixture."""
-    owner_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
-    if owner_id is None:
-        pytest.skip("no user rows to own a group")
-    new_id = conn.execute(
-        text(
-            "INSERT INTO user_group (uuid, name, owner_id) "
-            "VALUES (gen_random_uuid(), :n, :o) RETURNING id"
-        ),
-        {"n": f"v376_{uuid_pkg.uuid4().hex[:8]}", "o": owner_id},
-    ).scalar()
-    return int(new_id)
-
-
-def test_v376_revision_chain():
-    from alembic.script import ScriptDirectory
-
-    from app.db.migrations import get_alembic_config
-
-    config = get_alembic_config()
-    # alembic.ini's script_location is cwd-relative; pin it for the test runner.
-    backend_dir = Path(__file__).resolve().parents[2]
-    config.set_main_option("script_location", str(backend_dir / "alembic"))
-
-    scripts = ScriptDirectory.from_config(config)
-    rev = scripts.get_revision(REVISION)
-    assert rev.down_revision == "v375_harden_user_auth_invariants"
-
-    heads = set(scripts.get_heads())
-    assert len(heads) == 1
-    assert REVISION in heads or any(r.down_revision == REVISION for r in scripts.walk_revisions())
-
-
-def test_v376_migration_is_vendor_neutral():
-    """The seam guard greps for vendor nouns — the migration must stay generic."""
-    source = _REVISION_PATH.read_text()
-    # Nouns assembled from parts so this test file itself never trips the guard.
-    for vendor_noun in ("cl" + "erk", "str" + "ipe"):
-        assert vendor_noun not in source.lower()
+def test_ddl_is_idempotent():
+    """Every revision in this project must be safe to re-run."""
+    source = (_versions_dir() / "v376_add_chat_projects.py").read_text()
+    assert "CREATE TABLE IF NOT EXISTS chat_project" in source
+    assert source.count("IF NOT EXISTS") >= 4
 
 
 def test_detection_arm_returns_v376_on_current_schema(db_session):
-    """An untracked DB carrying v376's markers must never stamp EARLIER than v376."""
-    from tests.unit._migration_detection import assert_detected_at_or_after
-
-    conn = db_session.connection()
-    tables = inspect(conn).get_table_names()
-    assert_detected_at_or_after(conn, tables, REVISION)
-
-
-def test_detection_needs_both_markers(db_session):
-    """The mapping table alone is not this revision.
-
-    Modelled on v375's two-marker guard: a schema carrying only half the revision
-    must stamp lower so the missing DDL is still applied on upgrade.
-    """
+    """An untracked DB with chat_project stamps at v376."""
     from app.db.migrations import _detect_schema_version
 
     conn = db_session.connection()
-    conn.execute(text("ALTER TABLE user_group_member DROP COLUMN IF EXISTS source"))
     tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) != REVISION
-    db_session.rollback()
+    assert _detect_schema_version(conn, tables) == "v376_add_chat_projects"
 
 
-def test_group_mapping_table_and_membership_source_exist(db_session):
-    conn = db_session.connection()
-    assert "group_mapping" in set(inspect(conn).get_table_names())
-    columns = {c["name"] for c in inspect(conn).get_columns("user_group_member")}
-    assert "source" in columns
+def test_chat_project_table_exists(db_session):
+    tables = inspect(db_session.connection()).get_table_names()
+    assert "chat_project" in tables
 
 
-def test_existing_memberships_are_manual(db_session):
-    """Rows that predate v376 were added by a human and must stay untouchable."""
-    conn = db_session.connection()
-    non_manual = conn.execute(
-        text("SELECT count(*) FROM user_group_member WHERE source IS DISTINCT FROM 'manual'")
-    ).scalar()
-    assert non_manual == 0, (
-        "memberships that predate v376 must default to 'manual' so reconciliation "
-        "never removes hand-added work"
-    )
+def test_project_id_is_nullable(db_session):
+    """NULL = ungrouped, which is every conversation created before v376."""
+    columns = {
+        c["name"]: c for c in inspect(db_session.connection()).get_columns("chat_conversation")
+    }
+    assert "project_id" in columns
+    assert columns["project_id"]["nullable"] is True
 
 
-def test_membership_source_default_is_manual(db_session):
-    """A row inserted without naming ``source`` must not become directory-owned."""
-    conn = db_session.connection()
-    group_id = _new_group(conn)
-    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
-    source = conn.execute(
-        text(
-            "INSERT INTO user_group_member (uuid, group_id, user_id, role) "
-            "VALUES (gen_random_uuid(), :g, :u, 'member') RETURNING source"
-        ),
-        {"g": group_id, "u": user_id},
-    ).scalar()
-    assert source == "manual"
-    db_session.rollback()
+def test_project_fk_is_set_null_not_cascade(db_session):
+    """Deleting a project must leave its conversations behind, ungrouped.
 
-
-def test_grants_role_check_rejects_super_admin(db_session):
-    """The load-bearing rule: no identity provider may mint a super_admin.
-
-    The service refuses it too, but a service check protects one code path and a
-    CHECK constraint protects the database.
+    Asserted against the live catalog rather than the migration text: a later
+    revision could alter the constraint without touching v376's source.
     """
-    from sqlalchemy.exc import IntegrityError
-
-    conn = db_session.connection()
-    group_id = _new_group(conn)
-    with pytest.raises(IntegrityError):
-        conn.execute(
-            text(
-                "INSERT INTO group_mapping (uuid, source, claim_value, user_group_id, grants_role) "
-                "VALUES (gen_random_uuid(), 'ldap', :c, :g, 'super_admin')"
-            ),
-            {"c": f"CN=v376-{uuid_pkg.uuid4().hex[:8]},DC=example", "g": group_id},
-        )
-    db_session.rollback()
-
-
-def test_a_mapping_must_grant_something(db_session):
-    """Neither a group nor a role = invisible dead configuration."""
-    from sqlalchemy.exc import IntegrityError
-
-    conn = db_session.connection()
-    with pytest.raises(IntegrityError):
-        conn.execute(
-            text(
-                "INSERT INTO group_mapping (uuid, source, claim_value) "
-                "VALUES (gen_random_uuid(), 'ldap', :c)"
-            ),
-            {"c": f"CN=v376-{uuid_pkg.uuid4().hex[:8]},DC=example"},
-        )
-    db_session.rollback()
-
-
-def test_source_check_rejects_an_unknown_directory(db_session):
-    from sqlalchemy.exc import IntegrityError
-
-    conn = db_session.connection()
-    group_id = _new_group(conn)
-    with pytest.raises(IntegrityError):
-        conn.execute(
-            text(
-                "INSERT INTO group_mapping (uuid, source, claim_value, user_group_id) "
-                "VALUES (gen_random_uuid(), 'saml', :c, :g)"
-            ),
-            {"c": f"v376-{uuid_pkg.uuid4().hex[:8]}", "g": group_id},
-        )
-    db_session.rollback()
-
-
-def test_ldap_claim_uniqueness_is_case_insensitive(db_session):
-    """Two rows differing only in case would both match one AD group.
-
-    DNs are case-insensitive and ``ldap_auth._is_member_of_groups`` already compares
-    them lowercased, so the partial functional index is what keeps "one claim, one
-    answer" true for LDAP.
-    """
-    from sqlalchemy.exc import IntegrityError
-
-    conn = db_session.connection()
-    group_id = _new_group(conn)
-    dn = f"CN=v376-{uuid_pkg.uuid4().hex[:8]},OU=Groups,DC=example"
-    insert = text(
-        "INSERT INTO group_mapping (uuid, source, claim_value, user_group_id) "
-        "VALUES (gen_random_uuid(), 'ldap', :c, :g)"
-    )
-    conn.execute(insert, {"c": dn, "g": group_id})
-    with pytest.raises(IntegrityError):
-        conn.execute(insert, {"c": dn.upper(), "g": group_id})
-    db_session.rollback()
-
-
-def test_oidc_claim_uniqueness_is_case_sensitive(db_session):
-    """The mirror image: OIDC role strings are distinct identifiers, not DNs."""
-    conn = db_session.connection()
-    group_id = _new_group(conn)
-    role = f"v376-{uuid_pkg.uuid4().hex[:8]}"
-    insert = text(
-        "INSERT INTO group_mapping (uuid, source, claim_value, user_group_id) "
-        "VALUES (gen_random_uuid(), 'oidc', :c, :g)"
-    )
-    conn.execute(insert, {"c": role, "g": group_id})
-    conn.execute(insert, {"c": role.upper(), "g": group_id})
-    count = conn.execute(
-        text("SELECT count(*) FROM group_mapping WHERE lower(claim_value) = :c"),
-        {"c": role.lower()},
-    ).scalar()
-    assert count == 2
-    db_session.rollback()
-
-
-def test_deleting_the_group_cascades_the_mapping(db_session):
-    """A mapping to a deleted group would otherwise keep granting a role invisibly."""
-    conn = db_session.connection()
-    group_id = _new_group(conn)
-    conn.execute(
-        text(
-            "INSERT INTO group_mapping (uuid, source, claim_value, user_group_id, grants_role) "
-            "VALUES (gen_random_uuid(), 'oidc', :c, :g, 'admin')"
-        ),
-        {"c": f"v376-{uuid_pkg.uuid4().hex[:8]}", "g": group_id},
-    )
-    conn.execute(text("DELETE FROM user_group WHERE id = :g"), {"g": group_id})
-    remaining = conn.execute(
-        text("SELECT count(*) FROM group_mapping WHERE user_group_id = :g"), {"g": group_id}
-    ).scalar()
-    assert remaining == 0
-    db_session.rollback()
-
-
-def test_downgrade_mirrors_the_upgrade():
-    """Every object the upgrade creates has a guarded drop."""
-    module = _revision_module()
-    import inspect as py_inspect
-
-    down = py_inspect.getsource(module.downgrade)
-    for obj in (
-        "group_mapping",
-        "source",
-        "ck_user_group_member_source_valid",
-        "idx_user_group_member_user_source",
-    ):
-        assert obj in down
-    assert down.count("IF EXISTS") >= 4
+    row = db_session.execute(
+        text("""
+            SELECT rc.delete_rule
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+            JOIN information_schema.referential_constraints rc
+              ON tc.constraint_name = rc.constraint_name
+            WHERE tc.table_name = 'chat_conversation'
+              AND tc.constraint_type = 'FOREIGN KEY'
+              AND kcu.column_name = 'project_id'
+        """)
+    ).first()
+    assert row is not None, "no FK on chat_conversation.project_id"
+    assert row[0] == "SET NULL"

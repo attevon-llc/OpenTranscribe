@@ -78,6 +78,11 @@ class AuditEventType(StrEnum):
     PROMPT_UNSHARE = "prompt.unshare"
     PROMPT_CLONE = "prompt.clone"
 
+    # RAG chat events (metadata only — message content is NEVER audited)
+    CHAT_CONVERSATION_CREATE = "chat.conversation.create"
+    CHAT_CONVERSATION_DELETE = "chat.conversation.delete"
+    CHAT_MESSAGE_SEND = "chat.message.send"
+
     # Banner acknowledgment
     AUTH_BANNER_ACKNOWLEDGED = "auth.banner.acknowledged"
 

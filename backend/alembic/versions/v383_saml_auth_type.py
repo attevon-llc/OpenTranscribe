@@ -1,6 +1,6 @@
 """Add ``saml`` to the auth-type CHECK constraints and the SAML identity column.
 
-Companion to ``v378`` for a fourth external identity source (#35). SAML slots in as
+Companion to ``v380`` for a fourth external identity source (#35). SAML slots in as
 ``auth_type='saml'`` reusing the whole policy layer already built for OIDC — admission
 control, approval state, ``account_linking``, sessions, audit — so the marginal schema
 cost is exactly this: one CHECK value and one identity column.
@@ -15,20 +15,20 @@ COMMUNITY EDITION: a deployment that never configures SAML has no ``'saml'`` row
 the CHECK swap and column add are pure DDL and the new column starts NULL on every
 existing row.
 
-Revision ID: v381_saml_auth_type
-Revises: v380_scim_tokens
+Revision ID: v383_saml_auth_type
+Revises: v382_scim_tokens
 Create Date: 2026-08-07
 """
 
 from alembic import op
 
-revision = "v381_saml_auth_type"
-down_revision = "v380_scim_tokens"
+revision = "v383_saml_auth_type"
+down_revision = "v382_scim_tokens"
 branch_labels = None
 depends_on = None
 
 #: The auth types the database accepts after this revision. A superset of
-#: ``app.auth.constants.VALID_AUTH_TYPES`` by the same design v378 established.
+#: ``app.auth.constants.VALID_AUTH_TYPES`` by the same design v380 established.
 VALID_AUTH_TYPES_SQL = "'local', 'ldap', 'oidc', 'pki', 'proxy', 'saml'"
 PREVIOUS_AUTH_TYPES_SQL = "'local', 'ldap', 'oidc', 'pki', 'proxy'"
 
@@ -48,7 +48,7 @@ UPGRADE_SQL = f"""
 """
 
 DOWNGRADE_SQL = f"""
-    -- Any 'saml' rows are demoted to 'local' first — the v375 precedent for a value
+    -- Any 'saml' rows are demoted to 'local' first — the v377 precedent for a value
     -- the shrinking constraint no longer accepts. A downgrade that instead refused
     -- to run would strand every SAML user mid-rollback with no clean recovery path.
     UPDATE "user" SET auth_type = 'local' WHERE auth_type = 'saml';

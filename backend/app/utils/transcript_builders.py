@@ -8,14 +8,26 @@ summarization, and other transcript-processing tasks.
 import logging
 from typing import Any
 
+from app.core import constants as C  # noqa: N812
+
 logger = logging.getLogger(__name__)
 
 
-def _seg_text(segment, redaction_cfg=None) -> str:
+def mask_segment_text(segment, redaction_cfg=None) -> str:
     """Return a segment's text, masked when an enabled redaction config is supplied.
 
     Used to keep PII/profane content out of prompts sent to external LLM providers
     (``redact_before_llm``). Masking is read-time; the DB text is never modified.
+
+    **Fails closed.** A masking error yields ``REDACTION_LLM_FAILSAFE_TEXT``, not the
+    original text: callers pass a config precisely because this content must not
+    leave the deployment, and handing back the raw string on error would defeat the
+    setting at exactly the moment it matters. Losing one segment from a prompt
+    degrades a summary; leaking one segment is not recoverable.
+
+    Callers must obtain ``redaction_cfg`` from
+    ``services.redaction.llm_guard.resolve_llm_masking``, which is what guarantees
+    the cached spans this relies on actually exist.
     """
     text = str(segment.text or "")
     if redaction_cfg is None or not getattr(redaction_cfg, "enabled", False):
@@ -27,7 +39,7 @@ def _seg_text(segment, redaction_cfg=None) -> str:
             text, segment.redactions or [], segment.words, redaction_cfg, set()
         )
         return masked
-    except Exception:
+    except Exception:  # noqa: BLE001
         # FAIL CLOSED. This previously returned the raw text, which is the exact
         # outcome the function exists to prevent: redaction is enabled, so this
         # string is about to be put in a prompt for an EXTERNAL LLM provider, and
@@ -37,7 +49,7 @@ def _seg_text(segment, redaction_cfg=None) -> str:
             "Redaction masking failed for a segment; withholding its text rather than "
             "sending unmasked content to an external provider"
         )
-        return "[redacted — masking unavailable]"
+        return C.REDACTION_LLM_FAILSAFE_TEXT
 
 
 def get_speaker_name(segment) -> str:
@@ -65,7 +77,7 @@ def build_full_transcript(transcript_segments, redaction_cfg=None) -> str:
     for segment in transcript_segments:
         speaker_name = segment.speaker.name if segment.speaker else "Unknown"
         timestamp = f"[{int(segment.start_time // 60):02d}:{int(segment.start_time % 60):02d}]"
-        lines.append(f"{speaker_name}: {timestamp} {_seg_text(segment, redaction_cfg)}")
+        lines.append(f"{speaker_name}: {timestamp} {mask_segment_text(segment, redaction_cfg)}")
     return "\n" + "\n".join(lines)
 
 
@@ -74,20 +86,23 @@ def build_speaker_segments(
 ) -> list[dict[str, Any]]:
     """Build speaker segments data for LLM analysis.
 
+    Masking is applied *before* truncation, so the 200-character window can never
+    slice a mask open and expose the tail of a redacted span.
+
     Args:
         transcript_segments: List of TranscriptSegment ORM objects.
         limit: Maximum number of segments to include (default 50).
-        redaction_cfg: Effective redaction config. When enabled, segment text is
-            masked before it leaves for an external LLM provider
-            (``redact_before_llm``). This payload goes off-box exactly like
-            ``build_full_transcript``'s, so it needs the same masking.
+        redaction_cfg: Effective config from ``resolve_llm_masking``, or None when
+            the owner's policy does not require pre-LLM masking. This payload goes
+            off-box exactly like ``build_full_transcript``'s, so it needs the same
+            masking.
     """
     return [
         {
             "speaker_label": segment.speaker.name if segment.speaker else "Unknown",
             "start_time": segment.start_time,
             "end_time": segment.end_time,
-            "text": _seg_text(segment, redaction_cfg)[:200],
+            "text": mask_segment_text(segment, redaction_cfg)[:200],
         }
         for segment in transcript_segments[:limit]
     ]
@@ -130,7 +145,7 @@ def build_transcript_and_stats(
             full_transcript += " "
 
         timestamp = f"[{int(segment.start_time // 60):02d}:{int(segment.start_time % 60):02d}]"
-        full_transcript += f"{timestamp} {_seg_text(segment, redaction_cfg)}"
+        full_transcript += f"{timestamp} {mask_segment_text(segment, redaction_cfg)}"
 
     total_time = sum(stats["total_time"] for stats in speaker_stats.values())
     for stats in speaker_stats.values():

@@ -74,8 +74,9 @@ def create_upload(object_name: str, content_type: str | None) -> str:
     ``application/octet-stream`` object the media player will refuse to stream.
     """
     ensure_bucket_exists()
-    # minio-py declares the wider value type; dict is invariant, so annotating
-    # narrowly here is what made this a type error.
+    # Typed to minio-py's own header signature rather than dict[str, str]: it
+    # accepts repeated headers as a list/tuple, and dict is invariant in its
+    # value type, so the narrower annotation is rejected at the call below.
     headers: dict[str, str | list[str] | tuple[str]] = {
         "Content-Type": content_type or "application/octet-stream"
     }

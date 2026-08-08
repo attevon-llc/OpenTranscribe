@@ -40,15 +40,15 @@ Adds three columns to ``user``:
 COMMUNITY EDITION: no behaviour change on upgrade. The feature is off by default
 (``require_account_approval``), and with it off nothing is ever written ``'pending'``.
 
-Revision ID: v379_approval_state
-Revises: v378_oidc_identity_columns
+Revision ID: v381_approval_state
+Revises: v380_oidc_identity_columns
 Create Date: 2026-08-07
 """
 
 from alembic import op
 
-revision = "v379_approval_state"
-down_revision = "v378_oidc_identity_columns"
+revision = "v381_approval_state"
+down_revision = "v380_oidc_identity_columns"
 branch_labels = None
 depends_on = None
 

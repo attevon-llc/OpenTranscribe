@@ -28,6 +28,11 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 - `endpoints/scim/` — SCIM 2.0, also mounted at **root** (`/scim/v2`, RFC 7644 §3.1 fixes the
   base path). Bearer-token authenticated, not session-authenticated, and deliberately **not**
   rate limited; its errors are SCIM Error resources via `main.py`'s `SCIMError` handler.
+- `endpoints/chat/` — conversations, messages, export, projects, plus the user and admin
+  settings routers. **`projects.router` is included BEFORE `conversations.router`**: both live
+  under `/chat` and FastAPI matches in registration order, so `/chat/projects` would otherwise
+  be shadowed. The admin settings router requires `get_current_admin_user` on **both** GET and
+  PUT — the UI tab is cosmetic, that dependency is the authority.
 - `endpoints/files/` — the oversized files router split into a package (`upload`, `crud`,
   `filtering`, `streaming`, `subtitles`, `reprocess`, `url_processing`, `waveform`, …).
   `management.py` exports a second router mounted at the same `/files` prefix.

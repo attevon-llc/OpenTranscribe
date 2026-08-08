@@ -10,7 +10,7 @@ configured roles claim for OIDC — and until v0.5.0 everything but a single "is
 bit was discarded. **Group mapping** is what consumes the rest: a mapping binds one claim value
 to an in-app group, to a role grant, or to both.
 
-Added by migration `v376_idp_group_mapping`.
+Added by migration `v378_idp_group_mapping`.
 
 :::note API-only for now
 There is no admin-panel screen for group mappings yet. The endpoints below are the interface.

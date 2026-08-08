@@ -109,6 +109,21 @@ Configure auth via Admin UI (Settings → Authentication); DB config takes prece
 ./opentr.sh start dev --with-authentik-test  # an Authentik IdP to test OIDC against, localhost:9022 (bootstrap: admin@example.com/admin_password)
 ./opentr.sh start prod --build --with-pki    # PKI/mTLS at https://localhost:5182 (prod-only — Vite can't do mTLS)
 ```
+
+### Mock LLM (chat / AI features without a model)
+
+```bash
+./opentr.sh start dev --with-mock-llm        # OpenAI-compatible mock at http://mock-llm:5199/v1
+```
+
+Runs `scripts/mock-llm-server.py` on the app network so chat, summarization and
+topic extraction work with **no GPU, API key, or internet**. Only token generation
+is canned — retrieval, redaction masking, citations, SSE and usage recording all
+take their real paths. Scenario models drive the app's real error handling:
+`mock-gpt` (normal), `mock-echo` (returns the prompt it was given — assert what the
+app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`. Never start it as a
+bare host process: it binds 5199 and then blocks the container. Fixtures and the
+full table: `backend/tests/CLAUDE.md`.
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
 Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
 
@@ -188,6 +203,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Config, constants, celery wiring | `backend/app/core/CLAUDE.md` |
 | Shared backend helpers | `backend/app/utils/CLAUDE.md` |
 | Services overview, LLM features, yt-dlp ingestion | `backend/app/services/CLAUDE.md` |
+| RAG chat pipeline (retrieval, masking, prompting) | `backend/app/services/chat/CLAUDE.md` |
 | Pluggable ASR providers | `backend/app/services/asr/CLAUDE.md` |
 | Pluggable diarization providers | `backend/app/services/diarization/CLAUDE.md` |
 | OpenSearch indexing + neural/hybrid search | `backend/app/services/search/CLAUDE.md` |
@@ -198,6 +214,14 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Frontend SPA (+ 23 folder-level files) | `frontend/CLAUDE.md` |
 
 > **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. Full table: `backend/app/services/search/CLAUDE.md`.
+
+> **Chat retrieval trap (issue #52):** the `transcript_chunks` OpenSearch index stores
+> transcript text **UNREDACTED** — correct for search over your own words, but it means
+> any path sending chunk content to an LLM must first call
+> `services/chat/redactor.mask_chunks()`. Masking fails CLOSED (an unmaskable chunk
+> contributes nothing rather than going out raw). Equally: in chat scope resolution
+> `file_uuids=None` means "all accessible" while `file_uuids=[]` means "match nothing" —
+> inverting those leaks the whole library. Details: `backend/app/services/chat/CLAUDE.md`.
 
 ## Conventions
 

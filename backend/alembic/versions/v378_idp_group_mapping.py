@@ -19,7 +19,7 @@ This revision adds the two pieces of schema that close that gap.
     ``grants_role`` is capped at ``admin`` by ``ck_group_mapping_role_capped``.
     ``super_admin`` must stay unreachable from any IdP: it is the break-glass
     account for the very directory that might be failing, and the whole
-    ``role``/``is_superuser`` invariant (``v369``, hardened in ``v375``) exists to
+    ``role``/``is_superuser`` invariant (``v369``, hardened in ``v377``) exists to
     keep that one privilege local. The service layer enforces the same cap, but the
     CHECK is what makes it true of the database rather than of one code path.
 
@@ -45,15 +45,15 @@ nothing, and removes nothing (there are no directory-sourced memberships to
 remove). Legacy ``ldap_admin_groups`` / ``keycloak_admin_role`` promotion is
 unaffected and keeps working alongside mappings.
 
-Revision ID: v376_idp_group_mapping
-Revises: v375_harden_user_auth_invariants
+Revision ID: v378_idp_group_mapping
+Revises: v377_harden_user_auth_invariants
 Create Date: 2026-08-07
 """
 
 from alembic import op
 
-revision = "v376_idp_group_mapping"
-down_revision = "v375_harden_user_auth_invariants"
+revision = "v378_idp_group_mapping"
+down_revision = "v377_harden_user_auth_invariants"
 branch_labels = None
 depends_on = None
 

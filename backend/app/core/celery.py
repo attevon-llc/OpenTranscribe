@@ -112,6 +112,7 @@ celery_app = Celery(
         "app.tasks.opensearch_integrity_task",
         "app.tasks.search_indexing_task",
         "app.tasks.redaction_task",
+        "app.tasks.chat_retention",
         "app.tasks.thumbnail",
         "app.tasks.thumbnail_migration",
         "app.tasks.embedding_migration_v4",
@@ -361,6 +362,13 @@ celery_app.conf.update(
             # due — fully DB-driven, no beat restart when the schedule changes.
             "schedule": crontab(minute="*/5"),
             "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
+        },
+        "chat-retention-sweep": {
+            "task": "chat.retention_sweep",
+            # Daily at 04:10. A no-op unless an admin sets chat.retention_days
+            # above 0, so this costs one cheap settings read a day by default.
+            "schedule": crontab(minute=10, hour=4),
+            "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
         },
         "media-mirror-check-schedule": {
             "task": "backup.mirror_check_schedule",

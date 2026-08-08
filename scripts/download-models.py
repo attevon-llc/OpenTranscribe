@@ -485,6 +485,50 @@ def download_sentence_transformers():
         print_error(f"Failed to download sentence-transformers model: {e}")
         return {"sentence_transformers": {"status": "failed", "error": str(e)}}
 
+def download_chat_reranker():
+    """Download the cross-encoder used to rerank RAG chat retrieval results.
+
+    ~90MB, Apache 2.0. Loaded lazily on CPU in the backend container the first
+    time someone chats; pre-downloading keeps that first message fast and makes
+    offline/air-gapped deployments work. Chat degrades gracefully without it
+    (reranking simply switches off), so a failure here is not fatal.
+    """
+    print_header("Downloading Chat Reranker Model")
+
+    try:
+        from sentence_transformers import CrossEncoder
+
+        model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        cache_path = Path.home() / ".cache" / "huggingface"
+        cache_path.mkdir(parents=True, exist_ok=True)
+
+        print_info(f"Model: {model_name}")
+        print_info(f"Cache path: {cache_path}")
+        print_info("Loading cross-encoder (this will download if needed)...")
+
+        model = CrossEncoder(model_name, device="cpu", max_length=512)
+
+        # Score a trivial pair so a broken download surfaces here, not at runtime.
+        scores = model.predict([("what was decided", "we agreed to ship on Tuesday")])
+        print_info(f"  Test relevance score: {float(scores[0]):.4f}")
+
+        print_success(f"Chat reranker '{model_name}' downloaded successfully")
+
+        del model
+
+        return {
+            "chat_reranker": {
+                "model": model_name,
+                "path": str(cache_path),
+                "status": "downloaded",
+            }
+        }
+
+    except Exception as e:
+        print_error(f"Failed to download chat reranker: {e}")
+        return {"chat_reranker": {"status": "failed", "error": str(e)}}
+
+
 def download_speaker_attribute_models():
     """Download wav2vec2 gender classifier for speaker attribute detection.
 
@@ -907,6 +951,7 @@ def main():
     results.update(download_pyannote_models())
     results.update(download_nltk_data())
     results.update(download_sentence_transformers())
+    results.update(download_chat_reranker())
     results.update(download_speaker_attribute_models())
     results.update(download_opensearch_neural_models())
     results.update(download_redaction_models())

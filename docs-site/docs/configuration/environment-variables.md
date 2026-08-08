@@ -235,7 +235,7 @@ BACKEND_LITE_IMAGE=davidamacey/opentranscribe-backend-lite:latest
 ## LLM Integration
 
 ```bash
-LLM_PROVIDER=  # vllm, openai, anthropic, ollama, openrouter
+LLM_PROVIDER=  # vllm, openai, anthropic, ollama, openrouter, bedrock
 VLLM_BASE_URL=http://localhost:8012/v1
 VLLM_MODEL_NAME=mistralai/Mistral-7B-Instruct-v0.2
 VLLM_API_KEY=
@@ -243,13 +243,17 @@ OPENAI_API_KEY=
 OPENAI_MODEL_NAME=gpt-4o-mini
 OPENAI_BASE_URL=https://api.openai.com/v1
 ANTHROPIC_API_KEY=
-ANTHROPIC_MODEL_NAME=claude-3-haiku-20240307
+ANTHROPIC_MODEL_NAME=claude-haiku-4-5
 ANTHROPIC_BASE_URL=https://api.anthropic.com
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL_NAME=llama2:7b-chat
 OPENROUTER_API_KEY=
-OPENROUTER_MODEL_NAME=anthropic/claude-3-haiku
+OPENROUTER_MODEL_NAME=anthropic/claude-haiku-4.5
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+
+# Amazon Bedrock — no API key: boto3 uses the standard AWS credential chain
+BEDROCK_REGION=            # falls back to AWS_REGION / AWS_DEFAULT_REGION
+BEDROCK_MODEL_NAME=anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
 ## GPU Concurrent Processing

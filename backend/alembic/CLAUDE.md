@@ -9,7 +9,7 @@ authoring the revision file itself.
 
 ## Key files
 
-- `versions/` — 67 revisions, `v010_baseline` … head `v381_saml_auth_type`.
+- `versions/` — 69 revisions, `v010_baseline` … head `v383_saml_auth_type`.
 - `env.py` — builds the URL from `POSTGRES_*` env (`load_dotenv()`), `target_metadata =
   Base.metadata`. No `compare_type`, no naming convention.
 - `script.py.mako` — **stock alembic template**: it emits neither the `v###` id nor idempotent
@@ -29,7 +29,7 @@ authoring the revision file itself.
   Reason: the startup runner stamps *untracked* production DBs by schema fingerprint, so a
   revision routinely re-runs against a database that already has part of its changes. Read
   `v373` for the plain additive shape, `v371` for the guarded rename/backfill shape, and
-  `v374` for a data-splitting backfill, and `v377` for a **pure data migration with no
+  `v374` for a data-splitting backfill, and `v379` for a **pure data migration with no
   DDL at all** (its `RENAME_SQL` is a module-level constant so the consistency test can
   replay it against seeded rows; because it adds no schema, its detection arm keys on
   the *absence* of the old data rather than on a column).

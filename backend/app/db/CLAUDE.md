@@ -28,22 +28,36 @@ pending. `alembic upgrade head` by hand is **production-only**.
 5. Test both paths: `./opentr.sh reset dev` (full chain from scratch) **and** a
    rebuild-and-restart (migration applied on startup over an existing DB).
 
-Version context: `v367_add_cloud_seams`, `v369_superuser_role_invariant` (the
-`role`/`is_superuser` CHECK), `v374_add_tag_user_id` (per-user tag ownership),
-`v375_harden_user_auth_invariants` (auth-type CHECK + invitations),
-`v376_idp_group_mapping`, `v377_rename_keycloak_config_to_oidc` (a **data-only**
-revision — no DDL, so its detection arm keys on the *absence* of the retired config-key
-prefix), `v378_oidc_identity_columns` (`user.oidc_subject`,
+Version context: `v364_add_content_redaction`, `v365_add_prompt_shared_by`,
+`v366_add_watch_sources`, `v367_add_cloud_seams`, `v369_superuser_role_invariant`
+(the `role`/`is_superuser` CHECK), `v373_add_cluster_organization_id`,
+`v374_add_tag_user_id` (per-user tag ownership — the one revision so far that both
+backfills *and* splits rows, and that drops a pre-existing UNIQUE constraint),
+`v375_add_chat_tables`, `v376_add_chat_projects` (chat projects; note its FK is ON
+DELETE **SET NULL**, so deleting a project leaves its conversations ungrouped rather
+than destroying them), `v377_harden_user_auth_invariants` (auth-type CHECK +
+invitations), `v378_idp_group_mapping`, `v379_rename_keycloak_config_to_oidc` (a
+**data-only** revision — no DDL, so its detection arm keys on the *absence* of the
+retired config-key prefix), `v380_oidc_identity_columns` (`user.oidc_subject`,
 `user.oidc_refresh_token`, `refresh_token.oidc_id_token`, the `auth_type` value swap,
 and the removal of a duplicate CHECK that would otherwise have refused every OIDC
-login), `v379_approval_state` (`user.approval_status` NOT NULL DEFAULT
+login), `v381_approval_state` (`user.approval_status` NOT NULL DEFAULT
 `'approved'` + `approved_at`/`approved_by` + `ck_user_approval_status_valid`; its
 detection arm requires **both** the column and the CHECK, because the enforcement
 helpers read the column fail-safe and it is the constraint that keeps that sound),
-`v380_scim_tokens` (`scim_token` table + `group_mapping`'s `source`/membership CHECKs
-widened for `proxy`/`scim`), head currently `v381_saml_auth_type` (`auth_type` CHECK
-widened for `'saml'` + `user.saml_subject`, mirroring `v378`'s identity-column shape
+`v382_scim_tokens` (`scim_token` table + `group_mapping`'s `source`/membership CHECKs
+widened for `proxy`/`scim`), head currently `v383_saml_auth_type` (`auth_type` CHECK
+widened for `'saml'` + `user.saml_subject`, mirroring `v380`'s identity-column shape
 for a fourth provider).
+
+**Renumbering note (2026-08).** This auth-identity chain originally used v375-v381,
+branched off `v374_add_tag_user_id` independently of the RAG-chat chain
+(`v375_add_chat_tables`/`v376_add_chat_projects`, issue #52/#360) — both sides revised
+v374, producing two heads on merge. Reconciled by renumbering the auth chain to
+v377-v383 (after the chat chain) rather than renumbering chat's, since the chat chain
+had already reached production. Nothing about any revision's DDL changed — only the
+seven files' names and their `revision`/`down_revision` strings, and everything that
+referenced them (detection arms, consistency tests, this file).
 
 ## Gotchas
 
@@ -54,7 +68,7 @@ for a fourth provider).
   *different* engine/session that never held it. Concurrent backend replicas starting
   together can still race. Treat this as unfixed; if you touch it, hold one dedicated
   connection open for the whole run.
-- **`_detect_schema_version()` legitimately names the pre-`v378` column spellings.**
+- **`_detect_schema_version()` legitimately names the pre-`v380` column spellings.**
   Those probes describe the schema *as it was* at v031 and v170; they are the only
   possible fingerprints for those revisions. This file and `core/legacy_auth_env.py`
   are the two modules the OIDC naming invariant

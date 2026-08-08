@@ -1,6 +1,6 @@
 """Rename the OIDC identity columns and the ``auth_type`` value.
 
-The companion to ``v377``, which moved the *configuration*. This one moves the
+The companion to ``v379``, which moved the *configuration*. This one moves the
 *identity*, and it is not cosmetic:
 
 ``user.keycloak_id`` -> ``user.oidc_subject``
@@ -22,7 +22,7 @@ The companion to ``v377``, which moved the *configuration*. This one moves the
     concurrent-session cap already delete these rows.
 
 ``auth_type`` ``'keycloak'`` -> ``'oidc'``
-    User-visible in the admin Users table. ``ck_user_auth_type_valid`` (v375) and
+    User-visible in the admin Users table. ``ck_user_auth_type_valid`` (v377) and
     ``ck_user_invitation_auth_type_valid`` are dropped and re-added around the data
     update — and so is a **third** constraint that turned out to exist, the legacy
     ``users_auth_type_check``. See the note on ``_AUTH_TYPE_SWAP_TEMPLATE``: missing it
@@ -35,28 +35,28 @@ untidy: ``auth/utils.py:local_password_allowed`` keys off ``AUTH_TYPES_*``, so r
 left at ``'keycloak'`` with the constant renamed would lock every OIDC user out — and
 worse, ``api/endpoints/auth/mfa_tokens.py`` treats an unrecognised ``auth_type``
 specially, so the same rows would be **exempt from MFA**. That is precisely the hazard
-``v375`` was written to close.
+``v377`` was written to close.
 
 The new CHECK set is ``('local', 'ldap', 'oidc', 'pki', 'proxy')``. ``'proxy'`` has no
 implementation yet — ``auth/constants.VALID_AUTH_TYPES`` deliberately does not list
 it, so nothing offers or accepts it — but trusted-header authentication is the next
 phase, and swapping a CHECK constraint on a live ``user`` table is worth doing once
-rather than twice. ``tests/unit/test_v378_migration_consistency.py`` pins the
+rather than twice. ``tests/unit/test_v380_migration_consistency.py`` pins the
 subset relationship so the application constant can only ever be narrower.
 
 COMMUNITY EDITION: a deployment that never used OIDC has no ``'keycloak'`` rows and no
 non-NULL subject values; the renames are pure DDL and the new column starts NULL on
 every existing session.
 
-Revision ID: v378_oidc_identity_columns
-Revises: v377_rename_keycloak_config_to_oidc
+Revision ID: v380_oidc_identity_columns
+Revises: v379_rename_keycloak_config_to_oidc
 Create Date: 2026-08-07
 """
 
 from alembic import op
 
-revision = "v378_oidc_identity_columns"
-down_revision = "v377_rename_keycloak_config_to_oidc"
+revision = "v380_oidc_identity_columns"
+down_revision = "v379_rename_keycloak_config_to_oidc"
 branch_labels = None
 depends_on = None
 
@@ -114,16 +114,16 @@ RENAME_COLUMNS_SQL = """
 """
 
 #: The data half plus the CHECK swaps. Dropping the constraints before the UPDATE is
-#: mandatory: 'oidc' is not in the v375 constraint's value list, so the UPDATE would
+#: mandatory: 'oidc' is not in the v377 constraint's value list, so the UPDATE would
 #: be rejected row by row.
 #:
 #: ``users_auth_type_check`` is the load-bearing surprise here. ``user.auth_type``
-#: carries TWO check constraints that say the same thing: the v375
+#: carries TWO check constraints that say the same thing: the v377
 #: ``ck_user_auth_type_valid`` and a much older ``users_auth_type_check`` (created by
 #: ``v200``, re-asserted by ``v367``/``v371``, and still in ``database/init_db.sql``).
-#: Swapping only the v375 one leaves the legacy one refusing ``'oidc'``, which does
+#: Swapping only the v377 one leaves the legacy one refusing ``'oidc'``, which does
 #: not fail here — it fails later, at every single OIDC login, with a CheckViolation
-#: on JIT provisioning. It is dropped rather than re-added: v375 made
+#: on JIT provisioning. It is dropped rather than re-added: v377 made
 #: ``ck_user_auth_type_valid`` unconditional and closed, so the second constraint is a
 #: duplicate implementation of a rule that already has an owner, and keeping both in
 #: sync forever is exactly the trap that produced this note.
@@ -140,7 +140,7 @@ _AUTH_TYPE_SWAP_TEMPLATE = """
     UPDATE "user" SET auth_type = 'oidc' WHERE auth_type = 'keycloak';
     UPDATE user_invitation SET auth_type = 'oidc' WHERE auth_type = 'keycloak';
 
-    -- Anything still outside the new set would make the constraint unaddable. v375
+    -- Anything still outside the new set would make the constraint unaddable. v377
     -- established 'local' as the safe interpretation of an unrecognised value: it
     -- is the model default and the only one that does not silently exempt the
     -- account from MFA enrolment.
@@ -162,7 +162,7 @@ AUTH_TYPE_SWAP_SQL = _AUTH_TYPE_SWAP_TEMPLATE.format(types=VALID_AUTH_TYPES_SQL)
 #: of this bug (a second constraint nobody remembered) recurs if it is not pinned.
 LEGACY_AUTH_TYPE_CONSTRAINTS = ("users_auth_type_check",)
 
-#: Mirror image, back to the v375 value set.
+#: Mirror image, back to the v377 value set.
 DOWNGRADE_SQL = """
     ALTER TABLE "user" DROP CONSTRAINT IF EXISTS ck_user_auth_type_valid;
     ALTER TABLE user_invitation

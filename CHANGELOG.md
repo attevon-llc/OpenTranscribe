@@ -17,6 +17,45 @@ This release also incorporates the substantial pipeline work that landed since v
 
 ### Added
 
+#### AI Chat with RAG over your transcripts (issue #52)
+
+- **Chat is a first-class page** alongside Search and Speakers. Ask questions across your recordings and get answers grounded in what was actually said, streamed token by token, with numbered citations that deep-link to the exact timestamp in the player (`/files/{uuid}?t=`).
+- **Retrieval pipeline**: conversational query rewriting (expands "what about her?" into a standalone query) → hybrid BM25 + vector search over speaker-turn transcript chunks with RRF fusion → CPU cross-encoder reranking → round-robin diversity sampling so one long recording cannot crowd out the rest of a multi-file selection → short-lived retrieval cache. Every stage is an admin-tunable, DB-backed setting applied on the next message — **no new `.env` vars**.
+- **Ask about one person**: a **Speakers** scope filter that is exact rather than approximate — because transcripts are indexed as speaker turns, selecting a speaker retrieves only their own words, so "what did Dana commit to?" can never be answered from someone else's sentence *about* Dana. Speakers are an axis orthogonal to recordings/collections/tags (use together, or alone for "everything Dana said, anywhere"), and the model is told about the filter so it reports a person as out of scope rather than claiming they were never discussed.
+- **ChatGPT/Open WebUI interaction parity**: edit a question and re-answer from that point (later turns superseded, not deleted), regenerate, stop mid-stream, per-message and per-code-block copy, message timestamps, conversation export (Markdown or JSON with sources as deep links), archive/restore, date-grouped searchable history, per-conversation model switching with a smaller-context warning, token-usage panel, and keyboard shortcuts (`Cmd/Ctrl+Shift+O`, `Cmd/Ctrl+/`, `Escape` to stop).
+- **Scope by recordings, collections, or tags** — or leave it as "All transcripts". Collections and tags resolve to files at query time, so a recording added to a collection later is automatically in scope for existing conversations. The picker estimates context-window usage before you commit. The gallery gains a **"Chat with N"** bulk action that hands the selection straight to a scoped conversation.
+- **Optional transcript context**: any conversation can turn retrieval off and act as a plain assistant, with an unmistakable *Context off* chip so an ungrounded answer never looks like a grounded one. Four-layer system prompt (immutable base rules → per-user default from Settings → Chat → project → per-conversation) where every layer appends and none can replace the base rules.
+- **Redaction is honoured before the LLM**: the OpenSearch chunk index stores transcript text unredacted (correct for searching your own words), so retrieved excerpts are re-masked with full categories whenever the owner's or an admin-forced `redact_before_llm` policy applies — and masking **fails closed**, withholding a passage it cannot mask rather than sending it raw. Stored answers and citation snippets keep that masking.
+- **Prompt-injection hardening**: excerpts are delimited, the base rules state that excerpt content is data and never instructions, closing-tag sequences in transcript text are defused, and the prompt is assembled by concatenation only — never a format string over untrusted text.
+- **Abuse controls & audit**: 20/min per-IP, a configurable per-user hourly ceiling, and a concurrent-stream cap, all failing open on a Redis outage. Chat events (`chat.conversation.create/delete`, `chat.message.send`) join the audit trail with metadata only — **never message content**.
+- **Projects** (issue #360, migration `v376`): group conversations by client, recurring meeting or case. A project pins a **default transcript scope** every chat inside it inherits — so a project pinned to a client's collection searches that client's recordings without re-picking context — and a **project-level instruction layer** carrying standing background. Deleting a project **keeps its conversations** (`ON DELETE SET NULL`); they become ungrouped. `chat_conversation.project_id` is nullable, so every existing conversation is unaffected.
+- **Per-conversation answer length and focus** (issue #359): `max_tokens` and `top_p` alongside the existing creativity and model controls, behind an *Advanced* disclosure. The reply budget is resolved **before** the prompt is built, since prompt assembly reserves context for the answer; it is clamped to the model's window and any plan cap rather than failing the request. `top_p` is omitted entirely when unset, because some models reject sampling parameters outright.
+- **Per-user RAG preferences**: users can lower *Excerpts per answer* and turn *Rerank excerpts* off for their own chats. Both are **ceilings, never overrides** — applied after the tenant limit so a preference can only tighten what the administrator allows. Reranking is one-way: it can be switched off, never on when the admin has it off.
+- **Mock LLM provider for development and testing**: `./opentr.sh start dev --with-mock-llm` runs an OpenAI-compatible server on the app network so chat and AI features work without a GPU, an API key, or an internet connection. Scenario models (`mock-echo` returns the prompt it was given, `mock-error`, `mock-empty`, `mock-slow`) drive the app's real error paths, and the pytest fixtures fall back to a subprocess so CI needs no setup.
+- **LLM streaming** is new across the board: `LLMService.chat_completion_stream()` with parsers for OpenAI-style SSE, Anthropic events, and Ollama NDJSON, plus stop-generation, a first-token watchdog, and token accounting (estimated where a provider does not report usage).
+- **Optional retention**: `chat.retention_days` (default 0 = keep forever) with a daily beat sweep. Conversations join GDPR erasure in both the account and org-member paths.
+
+#### Amazon Bedrock provider
+
+- **New LLM provider: Amazon Bedrock**, via the unified **Converse / ConverseStream** API — one integration that reaches Claude, Nova, Llama and Mistral, rather than a per-vendor adapter. Set `BEDROCK_REGION` and `BEDROCK_MODEL_NAME`; there is deliberately **no API-key setting**, because boto3 resolves credentials through the standard AWS chain (instance role, task role, profile, environment), so an EC2/ECS/EKS deployment provisions no secret at all.
+- **Cross-region inference profiles** are handled for you: a bare foundation-model ID is prefixed with the geography derived from your region (`us.`, `eu.`, `apac.`), which lets AWS route around a saturated home region. An explicitly prefixed ID or a full inference-profile ARN is used verbatim, so you can pin an exact profile (for example one carrying cost-allocation tags).
+- **Tenant attribution**: each request carries `requestMetadata`, so Bedrock's own invocation logs can be reconciled against the usage records below rather than merely trusted.
+- Streaming, cancellation and error handling match every other provider. Bedrock reports throttling and server faults as *members of the event stream* rather than as raised exceptions — unhandled, those look like a silently truncated answer — so each is surfaced as a normal error.
+
+#### Usage tracking (all editions)
+
+- **New: see what you are using.** `GET /usage/me` returns totals and a per-model breakdown over a trailing window; `GET /usage/me/daily` returns the daily series behind a chart. This is a **core, open-source** feature — anyone paying an LLM bill has the same question a hosted tenant does.
+- One `usage_event` per assistant message, keyed on the message UUID so a retry cannot double-count. Usage is stored in **tokens, not currency** (provider-neutral, so a vendor price change does not invalidate stored history), and cost is derived at read time.
+- **Costs are labelled estimates, and unpriced is not free.** A model with no known rate reports tokens only and sets `cost_incomplete`, because a confident `$0.00` is a worse answer than an honest blank. Local runtimes (Ollama, vLLM) are reported as explicitly free — a distinct state. Amazon Bedrock is deliberately unpriced: it is AWS-operated with its own rate card, and pricing it from Anthropic's published rates would be confidently wrong.
+- **Prompt-cache tokens are tracked and priced separately** from ordinary input tokens throughout. Cache reads bill far below the uncached input rate and cache writes above it, so folding either into the input count would misprice every cache-enabled deployment.
+
+#### Per-tenant chat limits (cloud-edition seam)
+
+- Two new resolvers on `core.tenant_limits` — chat ceilings (messages/hour, concurrent streams, output tokens, retrieved chunks) and a model allowlist. Both default to community no-ops, so **the self-hosted edition is unchanged**: no limits, no model restriction.
+- A tenant limit can only ever **tighten** an operator's setting, never widen it. The model allowlist is enforced server-side, because the per-conversation model comes from a user-supplied setting.
+- New `chat.ungrounded` capability gates the *"use my transcripts: off"* toggle. Enabled everywhere by default — it has legitimate uses — and when disabled it **degrades to a grounded answer rather than rejecting the request**.
+- Migration `v374`; new capability key `chat.rag` (community default: on); 141 new i18n keys across all 8 locales.
+
 #### Open-core cloud seams & strict edition separation (PR #250)
 
 - **Vendor-clean extension seams**: the commercial managed edition now layers onto generic, open extension points — a pluggable external token-verifier registry with JIT provisioning onto generic `external_id`/`external_org_id` columns, transcription pipeline hooks (quota reservation before dispatch, usage metering on completion — no-ops in community), a capabilities/entitlements resolver, per-tenant retention/upload-limit resolvers, and a frontend `$lib/cloud` seam whose community version is an inert stub. **No vendor noun appears anywhere in the open-source backend or frontend source** — enforced by a `seam-guard` CI gate (grep over `backend/app` + `frontend/src`) and an import-linter contract. The paid UI (hosted-auth wrapper, billing/usage/team panels, quota stores, cloud i18n packs) lives in the commercial repo and is overlaid at cloud-image build time only.
@@ -367,6 +406,45 @@ This release also incorporates the substantial pipeline work that landed since v
 - **`docs/performance-whitepaper/` untracked** (main.tex + main.pdf): WIP pending human review; remains on disk and in `.gitignore`.
 
 ### Fixed
+
+#### Chat: bugs the E2E suite could not see until it had a model to talk to
+
+Wiring the mock LLM into `backend/tests/e2e/test_chat.py` made its streaming tests run for the first time — they had been self-skipping without a provider while the file still reported green. They immediately found three real defects:
+
+- **Editing a question did nothing.** `ChatThread` forwarded `regenerate` and `retry` up from `ChatMessage` but not `edit`, so the event died mid-chain: the editor closed, the question stayed as it was, and no request ever reached the backend.
+- **Stop leaked a concurrency slot.** Releasing the slot from the wrapping generator's `finally` does not survive Starlette tearing that generator down on client disconnect — exactly what Stop and a closed tab do — so two aborted generations consumed both slots and locked the user out of chat. The release now runs inside `stream_reply`'s own shielded `finally`, in its own `finally` so a failing finalisation cannot skip it.
+- **Concurrency slots could never recover.** The cap was a single counter whose TTL was refreshed on every acquire, so a slot leaked by a died-mid-stream request never aged out for an active user: usable concurrency degraded 2 → 1 → 0 permanently. Slots are now tracked individually and pruned by age, release is idempotent, and the stale-slot window is 5 minutes rather than 15. An upgraded deployment's legacy counter is retired on first contact — every sorted-set command against it raised `WRONGTYPE`, which the fail-open handler would have swallowed while silently disabling the cap.
+
+Also fixed: the E2E API session never sent a CSRF token, so every mutation returned 403 — which broke arranging test state *and* `cleanup_conversations`, meaning each run had been leaving its conversations behind in dev data.
+
+#### Chat: no LLM configured is no longer reported as a failure
+
+- **Topic extraction and summarization notified per file when no provider was configured.** Having no LLM is a deployment choice, not a task outcome, so a user who simply had not set one up got a warning on every recording for something they could not act on from a notification — burying real failures. Topic extraction was worse: it announced "Preparing AI analysis…" *before* checking for a provider, and that notification is progressive, so it sat unresolved until a second replaced it — two entries per file for work that never started. The availability check now runs before anything is announced. Summarization still records `summary_status = "not_configured"` for the file detail page; only the push notification is gone. A configured provider that errors or returns nothing still notifies.
+
+#### Chat: reranking no longer disables itself permanently
+
+- **One transient failure retired the reranker for the process lifetime.** `get_reranker` set its "attempted" flag *before* the load, so a container starting before its model-cache volume was mounted ran unranked retrieval for its whole life, signalled by a single warning. It now retries on a cooldown, so a cache that appears later is picked up without a restart.
+
+#### Chat settings and navigation
+
+- **Chat occupied two sidebar rows** in Settings ("Chat" and "Chat & RAG"), leaving users to guess which held the knob they wanted. They are now tabs behind one entry, user defaults first and platform tuning second. The admin tab is server-gated, not merely hidden.
+- **Global form CSS leaked into three chat surfaces**: checkboxes stretched to fill their row (733px in the settings modal), pushing labels to the far edge, and sidebar action icons collapsed to zero width inside inherited button padding, leaving shadow-only rectangles. Selected conversations also read as two colours in dark mode, where a global `button:hover` painted `rgba(255,255,255,0.1)` across only the title's width of a tinted row.
+- **Plural labels rendered as "12 source"** — the keys used i18next v3 `_plural` suffixes on a v25 install, which silently falls back to the singular. Migrated to `_one`/`_other` across all eight locales.
+- **The primary navigation kept a two-page shape.** Gallery appeared only when you were elsewhere, labelled "Back to Gallery", so the item set changed between routes and links shifted under the cursor; Gallery could never show an active state, and Search had no active binding at all. All four destinations are now permanent with `aria-current="page"`.
+
+#### Redact-before-LLM now fails closed on every path that reaches a provider
+
+- **`redact_before_llm` was inert on three of the four paths that send transcript text off-box.** Speaker identification passed no redaction config at all, `build_speaker_segments` sent raw `text[:200]`, and topic extraction sent raw text — so a user with the setting enabled still had unmasked transcript content posted to their provider. Summarization honoured the setting but swallowed config-resolution errors into "no policy".
+- **The dominant leak was structural, not a coding slip.** Redaction detection is dispatched from the *same* post-processing step that dispatches summarization, speaker ID and topic extraction, onto a *different* queue, with nothing ordering them. `mask_segment` called with an empty span list masks nothing and returns its input — so those tasks routinely "masked" a transcript whose spans were still NULL and sent it verbatim. The call site looked correct; only the file's `redaction_status` could reveal otherwise.
+- All four paths now resolve masking through a single guard (`services/redaction/llm_guard.py`) that gates on detection having completed, defers the task while a scan is in flight (dispatching one itself if the file was never scanned), and refuses to send when detection failed. `transcript_builders` fails closed — a masking error substitutes a placeholder, never the original text — and masks *before* truncating, so a 200-character window cannot slice a mask open.
+
+#### Chat answers were capped below the configured budget
+
+- `LLMConfig.response_tokens` was never assigned, so every request sent `max_tokens=4000` while callers — chat's prompt budget and summarization — reserved the *derived* value of up to 16,384. On a large-context model the prompt was under-filled by up to ~12k tokens of excerpts it had room for, and answers were capped lower than intended. The service now keeps the two in sync.
+
+#### Stale default models
+
+- The Anthropic default fell through to `claude-3-haiku-20240307` (deprecated) because no values file pins a model; it is now `claude-haiku-4-5`. `OPENROUTER_MODEL_NAME` likewise moves from `anthropic/claude-3-haiku` to `anthropic/claude-haiku-4.5` — note OpenRouter's slug uses a **dot** where the first-party ID uses dashes.
 
 #### Transcript and speaker curation now render a single source of segment data (issue #352, PR #356)
 
@@ -783,15 +861,15 @@ typed `MediaFileDetail` instead of `any`.
   acknowledgment recorded before the wording last changed no longer counts. Session idle and
   absolute timeouts do **not** retroactively invalidate anything: their columns are nullable and
   un-backfilled, treated as "no cap recorded", and stamped on each session's first rotation.
-- **Migrations `v376_idp_group_mapping`, `v377_rename_keycloak_config_to_oidc`,
-  `v378_oidc_identity_columns` and `v379` apply automatically on backend startup** (dev) or via
-  `alembic upgrade head` (production). `v377` moves the stored auth-config keys and carries the
+- **Migrations `v378_idp_group_mapping`, `v379_rename_keycloak_config_to_oidc`,
+  `v380_oidc_identity_columns` and `v381` apply automatically on backend startup** (dev) or via
+  `alembic upgrade head` (production). `v379` moves the stored auth-config keys and carries the
   ciphertext across **unchanged** — no decrypt/re-encrypt, so `ENCRYPTION_KEY` is not needed for
-  the rename. `v378` is a **single transaction** on purpose: a half-applied state would either
+  the rename. `v380` is a **single transaction** on purpose: a half-applied state would either
   lock out every OIDC user or exempt them from MFA enrolment. It also drops a duplicate
   `auth_type` CHECK constraint that had been re-asserted by three earlier revisions — one rule,
   one owner — and its consistency test pins that exactly one remains.
-- **Migration `v375_harden_user_auth_invariants` applies automatically on backend startup** (dev)
+- **Migration `v377_harden_user_auth_invariants` applies automatically on backend startup** (dev)
   or via `alembic upgrade head` (production). It makes `user.role` and `user.auth_type` NOT NULL and
   adds an `auth_type` CHECK. Rows carrying a NULL role are repaired to `user` with the superuser
   mirror recomputed, and an unrecognised `auth_type` is repaired to `local` — both backfills only

@@ -79,6 +79,9 @@ show_help() {
   echo "  --cpu                - CPU-only mode (local transcription, no GPU overlay)"
   echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
   echo "  --with-ldap-test     - Start LDAP test container (dev or prod; localhost:3890, UI :17170)"
+  echo "  --with-mock-llm      - Start mock LLM provider (localhost:5199) so chat/AI features"
+  echo "                         work without a GPU or API key. Models: mock-gpt, mock-echo,"
+  echo "                         mock-empty, mock-error, mock-slow"
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod; localhost:8180)"
   echo "  --with-authentik-test - Start Authentik test container (dev or prod; localhost:9022)"
   echo "  --with-watch         - Mount the host watch folder (WATCH_HOST_PATH, default ./watch) for auto-import"
@@ -136,6 +139,7 @@ show_help() {
   echo "  ./opentr.sh start dev --lite                 # Cloud-only ASR mode (no GPU)"
   echo "  ./opentr.sh start dev --cpu                  # Local CPU-only (skip GPU overlay)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
+  echo "  ./opentr.sh start dev --with-mock-llm        # Dev with a fake LLM for chat/AI testing"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
   echo "  ./opentr.sh start dev --with-authentik-test  # Dev with Authentik test container"
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
@@ -345,6 +349,9 @@ fresh_project_name() {
 # #347). docker-compose.keycloak.yml is absent on purpose: it declares no
 # container_name, so the project name already namespaces it.
 FRESH_LDAP_SERVICES=(lldap)
+# Mock LLM provider (--with-mock-llm). Isolated like every other aux overlay so
+# a fresh stack cannot collide with the main one on port 5199.
+FRESH_MOCK_LLM_SERVICES=(mock-llm)
 FRESH_SMB_SERVICES=(smb-test)
 FRESH_MONITORING_SERVICES=(prometheus grafana)
 
@@ -426,6 +433,9 @@ FRESH_AUTHENTIK_PORT_VARS=(
 FRESH_LDAP_PORT_VARS=(
   "LDAP_TEST_PORT=3890"         # lldap LDAP   → :3890
   "LDAP_TEST_UI_PORT=17170"     # lldap web UI → :17170
+)
+FRESH_MOCK_LLM_PORT_VARS=(
+  "MOCK_LLM_PORT=5199"          # mock LLM provider → :5199
 )
 FRESH_SMB_PORT_VARS=(
   "SMB_TEST_PORT=4450"          # samba → :445
@@ -752,6 +762,7 @@ start_app() {
   PULL_FLAG=""
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
+  WITH_MOCK_LLM_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
   WITH_AUTHENTIK_TEST_FLAG=""
   WITH_WATCH_FLAG=""
@@ -836,6 +847,10 @@ start_app() {
         WITH_LDAP_TEST_FLAG="--with-ldap-test"
         shift
         ;;
+      --with-mock-llm)
+        WITH_MOCK_LLM_FLAG="--with-mock-llm"
+        shift
+        ;;
       --with-keycloak-test)
         WITH_KEYCLOAK_TEST_FLAG="--with-keycloak-test"
         shift
@@ -918,6 +933,11 @@ start_app() {
       _port_vars+=("${FRESH_LDAP_PORT_VARS[@]}")
       _aux_services+=("${FRESH_LDAP_SERVICES[@]}")
       _aux_files+=("docker-compose.ldap-test.yml")
+    fi
+    if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
+      _port_vars+=("${FRESH_MOCK_LLM_PORT_VARS[@]}")
+      _aux_services+=("${FRESH_MOCK_LLM_SERVICES[@]}")
+      _aux_files+=("docker-compose.mock-llm.yml")
     fi
     if [ -n "$WITH_SMB_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_SMB_PORT_VARS[@]}")
@@ -1226,6 +1246,18 @@ start_app() {
       echo "   Import client certificate from: scripts/pki/test-certs/clients/"
     else
       echo "⚠️  --with-pki specified but docker-compose.pki.yml not found"
+    fi
+  fi
+
+  # Add mock LLM provider if requested
+  if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
+    if [ -f "docker-compose.mock-llm.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-llm.yml"
+      echo "🤖 Adding mock LLM provider (docker-compose.mock-llm.yml)"
+      echo "   From containers: http://mock-llm:5199/v1   From host: http://localhost:${MOCK_LLM_PORT:-5199}/v1"
+      echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
+    else
+      echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
     fi
   fi
 
@@ -1749,6 +1781,18 @@ reset_and_init() {
       echo "   Import client certificate from: scripts/pki/test-certs/clients/"
     else
       echo "⚠️  --with-pki specified but docker-compose.pki.yml not found"
+    fi
+  fi
+
+  # Add mock LLM provider if requested
+  if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
+    if [ -f "docker-compose.mock-llm.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-llm.yml"
+      echo "🤖 Adding mock LLM provider (docker-compose.mock-llm.yml)"
+      echo "   From containers: http://mock-llm:5199/v1   From host: http://localhost:${MOCK_LLM_PORT:-5199}/v1"
+      echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
+    else
+      echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
     fi
   fi
 

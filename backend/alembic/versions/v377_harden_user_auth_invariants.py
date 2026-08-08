@@ -92,15 +92,15 @@ database has no NULL roles and no unknown auth types, so both backfills are
 no-ops; the new tables are empty until an admin sends an invitation, and the new
 refresh-token columns start NULL on every existing session.
 
-Revision ID: v375_harden_user_auth_invariants
-Revises: v374_add_tag_user_id
+Revision ID: v377_harden_user_auth_invariants
+Revises: v376_add_chat_projects
 Create Date: 2026-08-07
 """
 
 from alembic import op
 
-revision = "v375_harden_user_auth_invariants"
-down_revision = "v374_add_tag_user_id"
+revision = "v377_harden_user_auth_invariants"
+down_revision = "v376_add_chat_projects"
 branch_labels = None
 depends_on = None
 

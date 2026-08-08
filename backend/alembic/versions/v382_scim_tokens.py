@@ -2,7 +2,7 @@
 
 Two changes ship together because the two features they belong to ship together, and
 because the alternative is swapping the same two CHECK constraints twice in one
-release. ``v378`` set the precedent deliberately: it pre-authorised ``'proxy'`` in
+release. ``v380`` set the precedent deliberately: it pre-authorised ``'proxy'`` in
 ``ck_user_auth_type_valid`` so trusted-header authentication would need no second
 constraint swap on a live ``user`` table. This revision does the remaining half.
 
@@ -37,15 +37,15 @@ COMMUNITY EDITION: no behaviour change on upgrade. ``scim_token`` starts empty, 
 with no token issued every ``/scim/v2/*`` request is a 401; ``proxy_enabled``
 defaults false.
 
-Revision ID: v380_scim_tokens
-Revises: v379_approval_state
+Revision ID: v382_scim_tokens
+Revises: v381_approval_state
 Create Date: 2026-08-07
 """
 
 from alembic import op
 
-revision = "v380_scim_tokens"
-down_revision = "v379_approval_state"
+revision = "v382_scim_tokens"
+down_revision = "v381_approval_state"
 branch_labels = None
 depends_on = None
 
@@ -55,7 +55,7 @@ depends_on = None
 MAPPING_SOURCES_SQL = "'ldap', 'oidc', 'proxy'"
 MEMBERSHIP_SOURCES_SQL = "'manual', 'scim', 'ldap', 'oidc', 'proxy'"
 
-#: The pre-v380 value sets, for ``downgrade``.
+#: The pre-v382 value sets, for ``downgrade``.
 OLD_MAPPING_SOURCES_SQL = "'ldap', 'oidc'"
 OLD_MEMBERSHIP_SOURCES_SQL = "'manual', 'ldap', 'oidc'"
 

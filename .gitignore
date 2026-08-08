@@ -26,6 +26,11 @@ PLANS/
 .env.development
 .env.test
 .env.*.local
+# Working copies of the environment file kept in the repo root. These hold REAL
+# secrets (HF token, KMS key, DB/Redis passwords) — never commit them.
+.app-variables
+.app-variables.*
+*.env.local
 
 # Release-test secrets (template at .env.test-secrets.example is committed)
 scripts/release-tests/.env.test-secrets

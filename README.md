@@ -92,6 +92,18 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Speaker Usage Counts**: See which speakers appear most frequently across your media library
 - **Hybrid Search Fixed**: Critical OpenSearch 3.4 compatibility fix — semantic/vector search now fully operational with dramatically improved result quality
 
+### 💬 **AI Chat (RAG) over your transcripts**
+- **Ask questions across your recordings**: answers grounded in what was actually said, streamed token by token, with numbered citations that deep-link to the exact moment in the player
+- **Scope a conversation** by recordings, collections, or tags — collections and tags resolve at query time, so a recording added later is automatically in scope
+- **Ask about one person**: a Speakers filter that is exact rather than approximate. Transcripts are indexed as speaker turns, so selecting a speaker retrieves only their own words — "what did Dana commit to?" can never be answered from someone else's sentence *about* Dana
+- **Familiar chat interactions**: edit a question and re-answer from that point, regenerate, stop mid-stream, copy, export to Markdown or JSON, archive, and a searchable conversation history
+- **Projects**: group conversations by client, meeting or case. A project pins the recordings its chats search and standing instructions they all inherit, so you stop re-picking context and re-typing background. Deleting a project keeps its conversations
+- **Per-conversation model choice**, creativity, answer length and focus — or turn transcript context off entirely to use the model as a plain assistant
+- **Instructions stack** rather than replace: built-in rules → your default → the project → this chat, and the built-in rules always win
+- **Redaction is honoured** — retrieved excerpts are re-masked before they reach a provider, and masking fails closed
+- **Usage visibility**: `GET /usage/me` shows tokens and estimated cost per model, so you can see what you are spending
+- **Test it without a model**: `./opentr.sh start dev --with-mock-llm` runs an OpenAI-compatible mock so chat works with no GPU, API key, or internet — including scenario models that exercise the real error paths
+
 ### 📊 **Analytics & Insights**
 - **Advanced Content Analysis**: Comprehensive speaker analytics including talk time, interruption detection, and turn-taking patterns
 - **Speaker Performance Metrics**: Speaking pace (WPM), question frequency, and conversation flow analysis
@@ -102,7 +114,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **BLUF Format Support**: Default Bottom Line Up Front structured summaries with action items
 - **Custom Summary Formats**: Create unlimited AI prompts with ANY JSON structure
 - **Flexible Schema Storage**: JSONB storage supporting multiple prompt types simultaneously
-- **Multi-Provider LLM Support**: Use local vLLM, OpenAI, Ollama, Claude, or OpenRouter for AI features
+- **Multi-Provider LLM Support**: Use local vLLM or Ollama, or OpenAI, Anthropic, OpenRouter, or **Amazon Bedrock** (AWS-native, no API key needed — credentials come from the IAM chain)
 - **Intelligent Section Processing**: Automatically handles transcripts of any length using section-by-section analysis
 - **Custom AI Prompts**: Create and manage custom summarization prompts for different content types
 - **LLM Configuration Management**: User-specific LLM settings with encrypted API key storage

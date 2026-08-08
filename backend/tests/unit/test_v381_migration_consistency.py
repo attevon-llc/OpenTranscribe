@@ -1,26 +1,40 @@
-"""v381 migration + detection-arm consistency (SAML auth-type CHECK + identity column).
+"""v381 migration + detection-arm consistency (account approval state).
 
-Same shape as ``test_v378_migration_consistency.py`` for the OIDC identity columns —
-the alembic chain must contain v381 (revises v380), and ``_detect_schema_version()``
-must key on **both** markers this revision adds — the widened
-``ck_user_auth_type_valid`` and ``user.saml_subject``. Half the revision is not the
-revision, the same reasoning v380 pinned for SCIM.
+The chain must contain v381 (revising v380), and ``_detect_schema_version()`` must
+key on **both** markers the revision adds — the ``user.approval_status`` column and
+the ``ck_user_approval_status_valid`` CHECK. Both, because the enforcement helpers
+(``app/auth/approval.is_pending`` / ``is_rejected``) read the column with a fail-safe
+default: an unrecognised value there is treated as neither pending nor rejected, i.e.
+it fails **open**. The constraint is what makes that read sound, so a database with
+the column and no constraint has not had this revision and must still receive it.
+
+The substantive test is :func:`test_existing_rows_are_approved_not_pending`. The
+whole upgrade story is the ``'approved'`` default: get it wrong and every account in
+every existing deployment is locked out behind a queue that only an administrator
+— who is also locked out — can clear.
 """
 
+# mypy: disable-error-code="arg-type"
+# This suite passes structural stand-ins (dict payloads, fake sessions, fake
+# users) to signatures declaring the real dataclasses. Declared once here
+# rather than as a cast at every call site — casts bury the assertion, and
+# widening a production signature to suit a test is worse.
 from __future__ import annotations
 
 import importlib.util
+import uuid as uuid_pkg
 from pathlib import Path
 
 import pytest
 from sqlalchemy import inspect
 from sqlalchemy import text
 
-#: Schema DDL (dropping a column/constraint to recreate the pre-revision shape)
-#: takes an ACCESS EXCLUSIVE lock — must not run beside other database tests.
+#: These suites perform schema DDL (dropping a column or constraint to recreate the
+#: pre-revision shape). Postgres takes an ACCESS EXCLUSIVE lock for that, so they must
+#: not run beside other database tests — `--dist loadgroup` keeps a group on one worker.
 pytestmark = pytest.mark.xdist_group("migration_ddl")
 
-REVISION = "v381_saml_auth_type"
+REVISION = "v381_approval_state"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
 
 
@@ -33,31 +47,27 @@ def _revision_module():
     return module
 
 
-def _check_clause(conn, name: str) -> str:
-    clause = conn.execute(
-        text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = :n"),
-        {"n": name},
-    ).scalar()
-    assert clause, f"{name} is missing"
-    return str(clause)
-
-
 def test_v381_revision_chain():
     from alembic.script import ScriptDirectory
 
     from app.db.migrations import get_alembic_config
 
     config = get_alembic_config()
+    # alembic.ini's script_location is cwd-relative; pin it for the test runner.
     backend_dir = Path(__file__).resolve().parents[2]
     config.set_main_option("script_location", str(backend_dir / "alembic"))
 
     scripts = ScriptDirectory.from_config(config)
     rev = scripts.get_revision(REVISION)
-    assert rev.down_revision == "v380_scim_tokens"
+    assert rev.down_revision == "v380_oidc_identity_columns"
+    assert len(set(scripts.get_heads())) == 1
 
-    heads = set(scripts.get_heads())
-    assert len(heads) == 1
-    assert REVISION in heads or any(r.down_revision == REVISION for r in scripts.walk_revisions())
+
+def test_v381_migration_is_vendor_neutral():
+    """The CI seam guard greps for the managed edition's vendor nouns."""
+    source = _REVISION_PATH.read_text()
+    for vendor_noun in ("cl" + "erk", "str" + "ipe"):
+        assert vendor_noun not in source.lower()
 
 
 def test_detection_arm_returns_v381_or_later_on_current_schema(db_session):
@@ -68,88 +78,149 @@ def test_detection_arm_returns_v381_or_later_on_current_schema(db_session):
     assert_detected_at_or_after(conn, tables, REVISION)
 
 
-@pytest.mark.parametrize(
-    ("table", "column"),
-    [
-        ("user", "saml_subject"),
-    ],
-)
-def test_detection_needs_every_marker(db_session, table, column):
-    """Dropping the marker column must stamp lower so the rest of the DDL still runs."""
+def test_detection_needs_the_column(db_session):
+    """Without the column the ladder must stamp lower so the DDL still runs."""
     from app.db.migrations import _detect_schema_version
 
     conn = db_session.connection()
-    conn.execute(text(f'ALTER TABLE "{table}" DROP COLUMN IF EXISTS {column}'))
+    conn.execute(text('ALTER TABLE "user" DROP COLUMN IF EXISTS approval_status CASCADE'))
     tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) != REVISION
+    assert _detect_schema_version(conn, tables) == "v380_oidc_identity_columns"
     db_session.rollback()
 
 
-def test_saml_subject_column_exists_and_is_unique(db_session):
+def test_detection_needs_the_check_constraint(db_session):
+    """The column alone is not the revision — see this module's docstring."""
+    from app.db.migrations import _detect_schema_version
+
     conn = db_session.connection()
-    user_columns = {c["name"] for c in inspect(conn).get_columns("user")}
-    assert "saml_subject" in user_columns
-
-    indexes = inspect(conn).get_indexes("user")
-    unique_on_subject = [
-        ix for ix in indexes if ix["column_names"] == ["saml_subject"] and ix["unique"]
-    ]
-    assert unique_on_subject, "saml_subject has no UNIQUE index"
+    conn.execute(text('ALTER TABLE "user" DROP CONSTRAINT IF EXISTS ck_user_approval_status_valid'))
+    tables = inspect(conn).get_table_names()
+    assert _detect_schema_version(conn, tables) == "v380_oidc_identity_columns"
+    db_session.rollback()
 
 
-def test_the_check_accepts_saml(db_session):
+def test_the_columns_exist_with_the_documented_shape(db_session):
     conn = db_session.connection()
-    clause = _check_clause(conn, "ck_user_auth_type_valid")
-    assert "'saml'" in clause
-    # Widened, not replaced — every value v378 pre-authorised must still be there.
-    for prior in ("'local'", "'ldap'", "'oidc'", "'pki'", "'proxy'"):
-        assert prior in clause
+    columns = {c["name"]: c for c in inspect(conn).get_columns("user")}
 
-    invitation_clause = _check_clause(conn, "ck_user_invitation_auth_type_valid")
-    assert "'saml'" in invitation_clause
+    assert columns["approval_status"]["nullable"] is False
+    assert "approved" in str(columns["approval_status"].get("default") or "")
+    assert columns["approved_at"]["nullable"] is True
+    assert columns["approved_by"]["nullable"] is True
 
 
-def test_a_saml_account_can_actually_be_written(db_session):
-    """The behavioural half: the constraint accepts the value, not just its text."""
+def test_approved_by_is_a_self_fk_that_does_not_cascade_deletes(db_session):
+    """Deleting the approving admin must not delete the accounts they approved."""
+    conn = db_session.connection()
+    rule = conn.execute(
+        text("SELECT confdeltype FROM pg_constraint WHERE conname = 'fk_user_approved_by'")
+    ).scalar()
+    assert rule == "n", f"expected ON DELETE SET NULL ('n'), got {rule!r}"
+
+
+def test_existing_rows_are_approved_not_pending(db_session):
+    """The entire upgrade story: nobody is locked out by taking this revision.
+
+    Recreates the pre-v381 shape (drop the column, let the revision add it back)
+    rather than counting un-approved rows in the live table. The counting version
+    was red whenever anybody had legitimately been rejected — which says nothing
+    about the migration, and made a shared test database a source of false
+    failures. Same trap as v377's grandfathering test.
+    """
+    conn = db_session.connection()
+    email = f"v381_upgrade_{uuid_pkg.uuid4().hex[:8]}@example.com"
+
+    conn.execute(
+        text(
+            'INSERT INTO "user" (email, hashed_password, is_active, is_superuser, '
+            "role, auth_type) VALUES (:e, 'x', true, false, 'user', 'local')"
+        ),
+        {"e": email},
+    )
+
+    # Back to the shape the revision expects to find.
+    conn.execute(text('ALTER TABLE "user" DROP CONSTRAINT IF EXISTS ck_user_approval_status_valid'))
+    conn.execute(text('ALTER TABLE "user" DROP COLUMN IF EXISTS approval_status'))
+
+    conn.execute(text(_revision_module().UPGRADE_SQL))
+
+    status = conn.execute(
+        text('SELECT approval_status FROM "user" WHERE email = :e'), {"e": email}
+    ).scalar()
+    assert status == "approved", (
+        "an account that predates v381 must land approved, or taking this revision "
+        "locks out the entire deployment behind an empty approval queue"
+    )
+    db_session.rollback()
+
+
+def test_the_check_refuses_an_unknown_status(db_session):
+    """The constraint is what keeps the fail-safe read in approval.py sound."""
+    from sqlalchemy.exc import IntegrityError
+
+    conn = db_session.connection()
+    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
+    with pytest.raises(IntegrityError):
+        conn.execute(
+            text('UPDATE "user" SET approval_status = :s WHERE id = :i'),
+            {"s": "maybe", "i": user_id},
+        )
+    db_session.rollback()
+
+
+@pytest.mark.parametrize("state", ["pending", "approved", "rejected"])
+def test_every_documented_state_can_actually_be_written(db_session, state):
+    """Asserting the constraint text is not enough — v380 learned that the hard way."""
     conn = db_session.connection()
     user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
     conn.execute(
-        text('UPDATE "user" SET auth_type = :t WHERE id = :i'), {"t": "saml", "i": user_id}
+        text('UPDATE "user" SET approval_status = :s WHERE id = :i'), {"s": state, "i": user_id}
     )
     assert (
-        conn.execute(text('SELECT auth_type FROM "user" WHERE id = :i'), {"i": user_id}).scalar()
-        == "saml"
+        conn.execute(
+            text('SELECT approval_status FROM "user" WHERE id = :i'), {"i": user_id}
+        ).scalar()
+        == state
     )
     db_session.rollback()
 
 
-def test_the_application_constant_is_a_subset_of_the_check():
-    """The database may be wider than the app; the app must never be wider than the DB.
-
-    A value the code can write but the CHECK rejects is an IntegrityError at COMMIT,
-    i.e. a 500 on a login. This is the up-to-date copy of the invariant
-    ``test_v378_migration_consistency.py`` used to pin — see that file's note on why
-    ownership moves to whichever revision most recently widened the constraint.
-    """
-    from app.auth.constants import AUTH_TYPE_SAML
-    from app.auth.constants import VALID_AUTH_TYPES
+def test_the_application_constant_matches_the_check():
+    """A value the code can write but the DB rejects is a 500 on an admin click."""
+    from app.auth.approval import VALID_APPROVAL_STATUSES
 
     module = _revision_module()
-    allowed = {part.strip().strip("'") for part in module.VALID_AUTH_TYPES_SQL.split(",")}
-    assert set(VALID_AUTH_TYPES) <= allowed
-    assert AUTH_TYPE_SAML in allowed
-    assert AUTH_TYPE_SAML in VALID_AUTH_TYPES
+    allowed = {part.strip().strip("'") for part in module.VALID_APPROVAL_STATUSES_SQL.split(",")}
+    assert set(VALID_APPROVAL_STATUSES) == allowed
 
 
-def test_saml_has_no_local_password_fallback():
-    """SAML groups with LDAP, not OIDC/PKI — an assertion has no local-credential
-    concept for a per-user allow_local_fallback flag to opt into."""
-    from app.auth.constants import AUTH_TYPE_SAML
-    from app.auth.constants import AUTH_TYPES_NO_LOCAL_FALLBACK
-    from app.auth.constants import AUTH_TYPES_SUPPORT_LOCAL_FALLBACK
+def test_rerunning_the_upgrade_is_a_no_op(db_session):
+    """The startup runner stamps by fingerprint, so a revision re-runs routinely."""
+    module = _revision_module()
+    conn = db_session.connection()
 
-    assert AUTH_TYPE_SAML in AUTH_TYPES_NO_LOCAL_FALLBACK
-    assert AUTH_TYPE_SAML not in AUTH_TYPES_SUPPORT_LOCAL_FALLBACK
+    conn.execute(text(module.UPGRADE_SQL))
+    conn.execute(text(module.CONSTRAINT_SQL))
+    conn.execute(text(module.UPGRADE_SQL))
+    conn.execute(text(module.CONSTRAINT_SQL))
+
+    assert (
+        conn.execute(
+            text(
+                "SELECT count(*) FROM pg_constraint WHERE conname = 'ck_user_approval_status_valid'"
+            )
+        ).scalar()
+        == 1
+    )
+    db_session.rollback()
+
+
+def test_the_index_backs_the_pending_queue(db_session):
+    """``GET /admin/user-approvals`` filters on a column that is almost all one value."""
+    conn = db_session.connection()
+    indexes = inspect(conn).get_indexes("user")
+    assert [ix for ix in indexes if ix["column_names"] == ["approval_status"]]
 
 
 def test_downgrade_mirrors_the_upgrade():
@@ -158,9 +229,13 @@ def test_downgrade_mirrors_the_upgrade():
 
     down = py_inspect.getsource(module.downgrade)
     assert "DOWNGRADE_SQL" in down
-    for obj in ("saml_subject", "ck_user_auth_type_valid"):
+    for obj in (
+        "approval_status",
+        "approved_at",
+        "approved_by",
+        "ck_user_approval_status_valid",
+        "fk_user_approved_by",
+        "ix_user_approval_status",
+    ):
         assert obj in module.DOWNGRADE_SQL
     assert "IF EXISTS" in module.DOWNGRADE_SQL
-    # A downgrade must not strand SAML rows against a shrinking constraint.
-    assert "auth_type = 'local'" in module.DOWNGRADE_SQL
-    assert "auth_type = 'saml'" in module.DOWNGRADE_SQL

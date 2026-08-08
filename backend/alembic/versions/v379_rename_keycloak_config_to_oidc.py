@@ -37,15 +37,15 @@ permanently, translated onto their ``OIDC_*`` counterparts by
 COMMUNITY EDITION: a deployment that never configured OIDC has no matching rows and
 this revision is a complete no-op.
 
-Revision ID: v377_rename_keycloak_config_to_oidc
-Revises: v376_idp_group_mapping
+Revision ID: v379_rename_keycloak_config_to_oidc
+Revises: v378_idp_group_mapping
 Create Date: 2026-08-07
 """
 
 from alembic import op
 
-revision = "v377_rename_keycloak_config_to_oidc"
-down_revision = "v376_idp_group_mapping"
+revision = "v379_rename_keycloak_config_to_oidc"
+down_revision = "v378_idp_group_mapping"
 branch_labels = None
 depends_on = None
 

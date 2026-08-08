@@ -71,13 +71,20 @@ def test_v374_migration_is_vendor_neutral():
         assert vendor_noun not in source.lower()
 
 
-def test_detection_arm_returns_v374_on_current_schema(db_session):
-    """An untracked DB carrying v374's markers must never stamp EARLIER than v374."""
-    from tests.unit._migration_detection import assert_detected_at_or_after
+def test_detection_arm_returns_v374_or_later_on_current_schema(db_session, revisions_at_or_after):
+    """An untracked DB with the current schema stamps at v374 or a later arm.
+
+    v374's arm was only the *answer* while v374 was head; v375 (RAG chat) now
+    sits above it, so the newest-first ladder correctly returns that instead.
+    What must never happen is falling BACK below v374 — that would re-stamp a
+    v374-shaped DB at v373 and replay v374's DDL. The precise post-v375
+    assertion lives in ``test_v375_migration_consistency.py``.
+    """
+    from app.db.migrations import _detect_schema_version
 
     conn = db_session.connection()
     tables = inspect(conn).get_table_names()
-    assert_detected_at_or_after(conn, tables, REVISION)
+    assert _detect_schema_version(conn, tables) in revisions_at_or_after(REVISION)
 
 
 def test_tag_user_id_column_and_indexes_exist(db_session):

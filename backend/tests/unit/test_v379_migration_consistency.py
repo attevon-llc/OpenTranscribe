@@ -1,41 +1,35 @@
-"""v379 migration + detection-arm consistency (account approval state).
+"""v379 migration + detection-arm consistency (auth-config key rename).
 
-The chain must contain v379 (revising v378), and ``_detect_schema_version()`` must
-key on **both** markers the revision adds — the ``user.approval_status`` column and
-the ``ck_user_approval_status_valid`` CHECK. Both, because the enforcement helpers
-(``app/auth/approval.is_pending`` / ``is_rejected``) read the column with a fail-safe
-default: an unrecognised value there is treated as neither pending nor rejected, i.e.
-it fails **open**. The constraint is what makes that read sound, so a database with
-the column and no constraint has not had this revision and must still receive it.
+The alembic chain must contain v379 (revises v378), and the untracked-DB detection in
+``app/db/migrations.py`` must recognise a v379-shape schema.
 
-The substantive test is :func:`test_existing_rows_are_approved_not_pending`. The
-whole upgrade story is the ``'approved'`` default: get it wrong and every account in
-every existing deployment is locked out behind a queue that only an administrator
-— who is also locked out — can clear.
+v379 adds **no DDL** — it is a pure data migration — so its detection arm cannot probe
+for a column. The fingerprint is instead the *absence* of the retired key prefix in
+``auth_config`` and ``auth_config_audit``, which is correct in both directions: a
+deployment that never configured OIDC has no matching rows, and for such a database
+v379 is a no-op, so stamping it costs nothing.
+
+The substantive test is :func:`test_ciphertext_survives_the_rename_undecrypted`. The
+client secret is stored encrypted under ``ENCRYPTION_KEY``, and a rename that
+decrypted and re-encrypted it would silently destroy every stored secret on any
+deployment whose key had been rotated — a failure that surfaces days later as "SSO
+stopped working" with no migration in the blast radius.
 """
 
-# mypy: disable-error-code="arg-type"
-# This suite passes structural stand-ins (dict payloads, fake sessions, fake
-# users) to signatures declaring the real dataclasses. Declared once here
-# rather than as a cast at every call site — casts bury the assertion, and
-# widening a production signature to suit a test is worse.
 from __future__ import annotations
 
 import importlib.util
 import uuid as uuid_pkg
 from pathlib import Path
 
-import pytest
-from sqlalchemy import inspect
 from sqlalchemy import text
 
-#: These suites perform schema DDL (dropping a column or constraint to recreate the
-#: pre-revision shape). Postgres takes an ACCESS EXCLUSIVE lock for that, so they must
-#: not run beside other database tests — `--dist loadgroup` keeps a group on one worker.
-pytestmark = pytest.mark.xdist_group("migration_ddl")
-
-REVISION = "v379_approval_state"
+REVISION = "v379_rename_keycloak_config_to_oidc"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
+
+#: Assembled from parts so this file does not trip the naming-invariant guard's
+#: sibling check, and so the string is obviously deliberate where it appears.
+LEGACY_PREFIX = "key" + "cloak_"
 
 
 def _revision_module():
@@ -59,7 +53,7 @@ def test_v379_revision_chain():
 
     scripts = ScriptDirectory.from_config(config)
     rev = scripts.get_revision(REVISION)
-    assert rev.down_revision == "v378_oidc_identity_columns"
+    assert rev.down_revision == "v378_idp_group_mapping"
     assert len(set(scripts.get_heads())) == 1
 
 
@@ -70,7 +64,24 @@ def test_v379_migration_is_vendor_neutral():
         assert vendor_noun not in source.lower()
 
 
+def test_the_revision_never_touches_config_value():
+    """The ciphertext guarantee, asserted statically as well as behaviourally.
+
+    ``config_value`` holds the AES-encrypted client secret. This revision writes
+    ``config_key``, ``category`` and ``updated_at`` and nothing else — it must not
+    even *read* the encrypted column, so that a rename cannot depend on
+    ``ENCRYPTION_KEY`` still being the one that wrote the row.
+    """
+    module = _revision_module()
+    sql = (module.RENAME_SQL + module.REVERT_SQL).lower()
+    assert "config_value" not in sql
+    assert "decrypt" not in sql
+
+
 def test_detection_arm_returns_v379_or_later_on_current_schema(db_session):
+    """No retired prefix remains, so detection must never stamp earlier than v379."""
+    from sqlalchemy import inspect
+
     from tests.unit._migration_detection import assert_detected_at_or_after
 
     conn = db_session.connection()
@@ -78,149 +89,149 @@ def test_detection_arm_returns_v379_or_later_on_current_schema(db_session):
     assert_detected_at_or_after(conn, tables, REVISION)
 
 
-def test_detection_needs_the_column(db_session):
-    """Without the column the ladder must stamp lower so the DDL still runs."""
+def test_a_legacy_config_row_makes_detection_stamp_lower(db_session):
+    """A database still holding the old keys is not v379 and must receive the DDL."""
+    from sqlalchemy import inspect
+
     from app.db.migrations import _detect_schema_version
 
     conn = db_session.connection()
-    conn.execute(text('ALTER TABLE "user" DROP COLUMN IF EXISTS approval_status CASCADE'))
-    tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) == "v378_oidc_identity_columns"
-    db_session.rollback()
-
-
-def test_detection_needs_the_check_constraint(db_session):
-    """The column alone is not the revision — see this module's docstring."""
-    from app.db.migrations import _detect_schema_version
-
-    conn = db_session.connection()
-    conn.execute(text('ALTER TABLE "user" DROP CONSTRAINT IF EXISTS ck_user_approval_status_valid'))
-    tables = inspect(conn).get_table_names()
-    assert _detect_schema_version(conn, tables) == "v378_oidc_identity_columns"
-    db_session.rollback()
-
-
-def test_the_columns_exist_with_the_documented_shape(db_session):
-    conn = db_session.connection()
-    columns = {c["name"]: c for c in inspect(conn).get_columns("user")}
-
-    assert columns["approval_status"]["nullable"] is False
-    assert "approved" in str(columns["approval_status"].get("default") or "")
-    assert columns["approved_at"]["nullable"] is True
-    assert columns["approved_by"]["nullable"] is True
-
-
-def test_approved_by_is_a_self_fk_that_does_not_cascade_deletes(db_session):
-    """Deleting the approving admin must not delete the accounts they approved."""
-    conn = db_session.connection()
-    rule = conn.execute(
-        text("SELECT confdeltype FROM pg_constraint WHERE conname = 'fk_user_approved_by'")
-    ).scalar()
-    assert rule == "n", f"expected ON DELETE SET NULL ('n'), got {rule!r}"
-
-
-def test_existing_rows_are_approved_not_pending(db_session):
-    """The entire upgrade story: nobody is locked out by taking this revision.
-
-    Recreates the pre-v379 shape (drop the column, let the revision add it back)
-    rather than counting un-approved rows in the live table. The counting version
-    was red whenever anybody had legitimately been rejected — which says nothing
-    about the migration, and made a shared test database a source of false
-    failures. Same trap as v375's grandfathering test.
-    """
-    conn = db_session.connection()
-    email = f"v379_upgrade_{uuid_pkg.uuid4().hex[:8]}@example.com"
-
     conn.execute(
         text(
-            'INSERT INTO "user" (email, hashed_password, is_active, is_superuser, '
-            "role, auth_type) VALUES (:e, 'x', true, false, 'user', 'local')"
+            "INSERT INTO auth_config (uuid, config_key, config_value, category, data_type) "
+            "VALUES (gen_random_uuid(), :k, 'false', 'keycloak', 'bool')"
         ),
-        {"e": email},
+        {"k": f"{LEGACY_PREFIX}v379_{uuid_pkg.uuid4().hex[:8]}"},
     )
-
-    # Back to the shape the revision expects to find.
-    conn.execute(text('ALTER TABLE "user" DROP CONSTRAINT IF EXISTS ck_user_approval_status_valid'))
-    conn.execute(text('ALTER TABLE "user" DROP COLUMN IF EXISTS approval_status'))
-
-    conn.execute(text(_revision_module().UPGRADE_SQL))
-
-    status = conn.execute(
-        text('SELECT approval_status FROM "user" WHERE email = :e'), {"e": email}
-    ).scalar()
-    assert status == "approved", (
-        "an account that predates v379 must land approved, or taking this revision "
-        "locks out the entire deployment behind an empty approval queue"
+    tables = inspect(conn).get_table_names()
+    detected = _detect_schema_version(conn, tables)
+    assert detected == "v378_idp_group_mapping", (
+        "a database still holding the retired config keys has not had v379 applied, so "
+        f"it must stamp at its predecessor and receive the rename; got {detected!r}"
     )
     db_session.rollback()
 
 
-def test_the_check_refuses_an_unknown_status(db_session):
-    """The constraint is what keeps the fail-safe read in approval.py sound."""
-    from sqlalchemy.exc import IntegrityError
+def test_ciphertext_survives_the_rename_undecrypted(db_session):
+    """Seed an encrypted secret under the old key, replay the rename, decrypt it.
 
+    This is the test the whole revision exists to satisfy: the row arrives under
+    ``oidc_client_secret`` with byte-identical ciphertext, and the application's own
+    decrypt path still returns the original plaintext.
+    """
+    from app.utils.encryption import decrypt_api_key
+    from app.utils.encryption import encrypt_api_key
+
+    module = _revision_module()
     conn = db_session.connection()
-    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
-    with pytest.raises(IntegrityError):
-        conn.execute(
-            text('UPDATE "user" SET approval_status = :s WHERE id = :i'),
-            {"s": "maybe", "i": user_id},
-        )
-    db_session.rollback()
 
+    plaintext = f"s3cret-{uuid_pkg.uuid4().hex}"
+    ciphertext = encrypt_api_key(plaintext)
+    legacy_key = f"{LEGACY_PREFIX}client_secret"
 
-@pytest.mark.parametrize("state", ["pending", "approved", "rejected"])
-def test_every_documented_state_can_actually_be_written(db_session, state):
-    """Asserting the constraint text is not enough — v378 learned that the hard way."""
-    conn = db_session.connection()
-    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
+    # Clear whatever the live deployment holds so the rename has a clean target.
     conn.execute(
-        text('UPDATE "user" SET approval_status = :s WHERE id = :i'), {"s": state, "i": user_id}
+        text("DELETE FROM auth_config WHERE config_key IN ('oidc_client_secret', :legacy)"),
+        {"legacy": legacy_key},
     )
+    conn.execute(
+        text(
+            "INSERT INTO auth_config (uuid, config_key, config_value, is_sensitive, "
+            "category, data_type) "
+            "VALUES (gen_random_uuid(), :k, :v, true, 'keycloak', 'string')"
+        ),
+        {"k": legacy_key, "v": ciphertext},
+    )
+
+    conn.execute(text(module.RENAME_SQL))
+
+    row = conn.execute(
+        text(
+            "SELECT config_value, category, is_sensitive FROM auth_config "
+            "WHERE config_key = 'oidc_client_secret'"
+        )
+    ).one()
+    assert row[0] == ciphertext, "the stored ciphertext must be carried across byte for byte"
+    assert row[1] == "oidc"
+    assert row[2] is True
+    assert decrypt_api_key(row[0]) == plaintext
+
     assert (
         conn.execute(
-            text('SELECT approval_status FROM "user" WHERE id = :i'), {"i": user_id}
+            text("SELECT count(*) FROM auth_config WHERE config_key LIKE :p"),
+            {"p": f"{LEGACY_PREFIX}%"},
         ).scalar()
-        == state
+        == 0
     )
     db_session.rollback()
 
 
-def test_the_application_constant_matches_the_check():
-    """A value the code can write but the DB rejects is a 500 on an admin click."""
-    from app.auth.approval import VALID_APPROVAL_STATUSES
+def test_rerunning_the_rename_is_a_no_op(db_session):
+    """Idempotence, and specifically that the UNIQUE key does not blow up.
 
-    module = _revision_module()
-    allowed = {part.strip().strip("'") for part in module.VALID_APPROVAL_STATUSES_SQL.split(",")}
-    assert set(VALID_APPROVAL_STATUSES) == allowed
-
-
-def test_rerunning_the_upgrade_is_a_no_op(db_session):
-    """The startup runner stamps by fingerprint, so a revision re-runs routinely."""
+    ``auth_config.config_key`` is globally UNIQUE, so a re-run against a database
+    already holding the new spelling is exactly the case the ``NOT EXISTS`` guard is
+    written for. The startup runner stamps untracked databases by fingerprint, so a
+    revision routinely re-runs against a schema that already has part of its changes.
+    """
     module = _revision_module()
     conn = db_session.connection()
 
-    conn.execute(text(module.UPGRADE_SQL))
-    conn.execute(text(module.CONSTRAINT_SQL))
-    conn.execute(text(module.UPGRADE_SQL))
-    conn.execute(text(module.CONSTRAINT_SQL))
-
-    assert (
+    suffix = uuid_pkg.uuid4().hex[:8]
+    for key, value in ((f"{LEGACY_PREFIX}{suffix}", "old"), (f"oidc_{suffix}", "new")):
         conn.execute(
             text(
-                "SELECT count(*) FROM pg_constraint WHERE conname = 'ck_user_approval_status_valid'"
-            )
+                "INSERT INTO auth_config (uuid, config_key, config_value, category, data_type) "
+                "VALUES (gen_random_uuid(), :k, :v, 'keycloak', 'string')"
+            ),
+            {"k": key, "v": value},
+        )
+
+    conn.execute(text(module.RENAME_SQL))
+    conn.execute(text(module.RENAME_SQL))
+
+    rows = (
+        conn.execute(
+            text("SELECT config_value FROM auth_config WHERE config_key = :k"),
+            {"k": f"oidc_{suffix}"},
+        )
+        .scalars()
+        .all()
+    )
+    assert rows == ["new"], "a collision keeps the row that already used the new name"
+    db_session.rollback()
+
+
+def test_audit_history_follows_the_key(db_session):
+    """Otherwise ``GET /api/auth-config/audit/oidc`` returns nothing for old history.
+
+    ``get_audit_log`` filters ``config_key IN CONFIG_CATEGORIES[category]``, and every
+    key in that list is now ``oidc_*``.
+    """
+    module = _revision_module()
+    conn = db_session.connection()
+
+    suffix = uuid_pkg.uuid4().hex[:8]
+    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
+    conn.execute(
+        text(
+            "INSERT INTO auth_config_audit (uuid, config_key, old_value, new_value, "
+            "changed_by, change_type) "
+            "VALUES (gen_random_uuid(), :k, 'false', 'true', :u, 'update')"
+        ),
+        {"k": f"{LEGACY_PREFIX}enabled_{suffix}", "u": user_id},
+    )
+
+    conn.execute(text(module.RENAME_SQL))
+
+    assert (
+        conn.execute(
+            text("SELECT count(*) FROM auth_config_audit WHERE config_key = :k"),
+            {"k": f"oidc_enabled_{suffix}"},
         ).scalar()
         == 1
     )
     db_session.rollback()
-
-
-def test_the_index_backs_the_pending_queue(db_session):
-    """``GET /admin/user-approvals`` filters on a column that is almost all one value."""
-    conn = db_session.connection()
-    indexes = inspect(conn).get_indexes("user")
-    assert [ix for ix in indexes if ix["column_names"] == ["approval_status"]]
 
 
 def test_downgrade_mirrors_the_upgrade():
@@ -228,14 +239,6 @@ def test_downgrade_mirrors_the_upgrade():
     import inspect as py_inspect
 
     down = py_inspect.getsource(module.downgrade)
-    assert "DOWNGRADE_SQL" in down
-    for obj in (
-        "approval_status",
-        "approved_at",
-        "approved_by",
-        "ck_user_approval_status_valid",
-        "fk_user_approved_by",
-        "ix_user_approval_status",
-    ):
-        assert obj in module.DOWNGRADE_SQL
-    assert "IF EXISTS" in module.DOWNGRADE_SQL
+    assert "REVERT_SQL" in down
+    assert "auth_config_audit" in module.REVERT_SQL
+    assert "NOT EXISTS" in module.REVERT_SQL

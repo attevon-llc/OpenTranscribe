@@ -237,3 +237,11 @@ subsystem, and put new subsystem detail **there**, not in this file.
 - Stay in scope: don't modify code unrelated to the task at hand.
 - Python imports go at the top **except** heavy optional deps (torch, pyannote.metrics, meeteval), which are imported inside the function so modules stay importable on CPU-only workers.
 - Settings that look like they need `.env` vars are often **DB-backed** `SystemSettings` with coded defaults in `backend/app/core/constants.py`, edited in the admin UI with no restart. Check before adding an env var.
+- **Worktree → branch → PR, never a local merge onto `master`.** Use a `.claude/worktrees/<name>`
+  git worktree for deep, issue/PR-scoped work. When it's done: commit and push *that branch* to
+  origin — nothing more. Build and test the branch **itself** (relocate its checkout — e.g.
+  remove the worktree and `git checkout <branch>` in the main repo — if it needs the main repo's
+  `.env`/tooling; don't create a separate local merge of it into `master` to test "how it looks
+  merged"). Only once the branch is fully green does a PR go open from it into `master`; `master`
+  changes **only** via that merged PR, never via a local `git merge <branch>` on `master` pushed
+  directly — that bypasses review and produces a merge commit nobody chose the message for.

@@ -1,22 +1,3 @@
-<script lang="ts" context="module">
-  /**
-   * Normalize a tag name the way the backend does
-   * (`app/services/tag_service.py::normalize_tag_name`): lowercase, hyphens and
-   * underscores become spaces, whitespace runs collapse, ends trimmed.
-   *
-   * Exported because the modal has to answer "which existing tag will this name
-   * resolve to?" *before* it can name the tag it is about to remove — the remove
-   * path deliberately never creates a tag, so it cannot ask the server.
-   */
-  export function normalizeTagName(name: string): string {
-    return name
-      .toLowerCase()
-      .replace(/[-_]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-</script>
-
 <script lang="ts">
   /**
    * Apply or strip one tag across the gallery selection.
@@ -46,6 +27,10 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import { bulkTagFiles, createTag, listTags } from '$lib/api/tags';
   import { getErrorMessage } from '$lib/utils/apiError';
+  // The modal has to answer "which existing tag will this name resolve to?"
+  // *before* it can name the tag it is about to remove — the remove path
+  // deliberately never creates a tag, so it cannot ask the server.
+  import { normalizeTagName } from '$lib/utils/tagName';
   import type { BulkTagAction, BulkTagActionResult } from '$lib/types/tag';
 
   export let isOpen = false;

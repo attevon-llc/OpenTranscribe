@@ -176,8 +176,6 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/tags/unused": _MAINTENANCE_OPS_REASON,
     "/api/tasks/system/fix-file/{file_uuid}": _MAINTENANCE_OPS_REASON,
     # --- exists, no admin UI panel over it yet (documented pattern) ---
-    "/api/admin/scim-tokens": _NO_ADMIN_PANEL_REASON,
-    "/api/admin/scim-tokens/{token_uuid}": _NO_ADMIN_PANEL_REASON,
     "/api/admin/auth-config/status": _NO_ADMIN_PANEL_REASON,
     "/api/admin/gdpr/erase-user/{user_uuid}": _NO_ADMIN_PANEL_REASON,
     "/api/org-admin/gdpr/erase-organization": _NO_ADMIN_PANEL_REASON,

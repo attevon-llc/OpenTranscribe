@@ -18,6 +18,11 @@ docs/performance-whitepaper/
 docs/research-paper/
 PLANS/
 
+# Working notes / handoffs / draft replies (issue #20/#14 close-out). These are
+# session scratch space, not shipped documentation — anything worth keeping
+# already lives in the corresponding GitHub issue, gist, or CHANGELOG entry.
+plans/
+
 # Environment variables
 .env
 .env.local

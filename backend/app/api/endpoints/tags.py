@@ -19,11 +19,11 @@ from app.api.endpoints.auth import get_current_active_user
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.db.base import get_db
 from app.models.media import FileTag
-from app.models.media import MediaFile
 from app.models.media import Tag
 from app.models.user import User
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TagBase
+from app.schemas.media import TagCollisionCluster as TagCollisionClusterSchema
 from app.schemas.media import TagImpact
 from app.schemas.media import TagMergeRequest
 from app.schemas.media import TagMutationResult
@@ -31,6 +31,9 @@ from app.schemas.media import TagRenameRequest
 from app.schemas.media import TagReviewRequest
 from app.schemas.media import TagReviewResult
 from app.schemas.media import TagWithCount
+from app.services.tag_collisions import find_tag_collisions
+from app.services.tag_collisions import list_tags_filtered
+from app.services.tag_collisions import list_unused_tag_rows
 from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import delete_tags
 from app.services.tag_operations import merge_tags
@@ -106,101 +109,103 @@ def create_tag(
 
 @router.get("", response_model=list[TagWithCount])
 def list_tags(
+    awaiting_review: bool = Query(
+        False, description="Only tags the auto-labeler created and nobody has reviewed"
+    ),
+    unused: bool = Query(False, description="Only tags no accessible file carries"),
+    colliding: bool = Query(
+        False, description="Only tags sharing a normalized name with another tag"
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """
-    List all available tags for the current user with usage counts, sorted by most used.
+    """List tags with usage counts, most used first, optionally narrowed.
+
+    Filtering, counting, and clustering live in ``services/tag_collisions.py``;
+    the filters combine (AND). Errors propagate — this used to return ``[]`` on
+    any exception, rendering a broken query as an install with no tags.
 
     Read-through cached in Redis (``cache:tags:{user_id}``) behind
-    ``READ_CACHE_ENABLED``. The endpoint takes no parameters, so a single
-    per-user key is exact FOR PERSONAL SCOPE. Org-context requests bypass the
-    cache entirely: the key is scope-blind and ``invalidate_tags`` deletes only
-    the exact per-user key, so caching org-scoped results would either leak
-    across scopes or go stale. Every tag/file-tag mutation path busts this key
-    (see the redaction audit in the Phase-8 commit body), so reads are always
-    fresh.
+    ``READ_CACHE_ENABLED`` **only for the unfiltered personal-scope request**:
+    the key carries neither the filters nor the scope, so caching either variant
+    would serve one request's answer to another. Every tag/file-tag mutation
+    path busts this key, so reads are always fresh.
     """
     from app.core.config import settings as app_settings
     from app.services.redis_cache_service import TTL_TAGS
     from app.services.redis_cache_service import redis_cache
 
+    filtered = awaiting_review or unused or colliding
     cache_key = f"cache:tags:{current_user.id}"
-    use_cache = app_settings.READ_CACHE_ENABLED and ctx.org_id is None
+    use_cache = app_settings.READ_CACHE_ENABLED and ctx.org_id is None and not filtered
 
     if use_cache:
         cached = redis_cache.get(cache_key)
         if cached is not None:
             return cached
 
-    try:
-        from sqlalchemy import select
+    entries = list_tags_filtered(
+        db,
+        user_id=current_user.id,
+        organization_id=ctx.org_id,
+        awaiting_review=awaiting_review,
+        unused=unused,
+        colliding=colliding,
+    )
+    tags_with_counts = [TagWithCount.model_validate(entry) for entry in entries]
 
-        from app.services.permission_service import PermissionService
-
-        # Get tags with usage counts for files accessible by this user
-        # (owned + shared, tenant-gated via ctx.org_id)
-        accessible_sq = PermissionService.get_accessible_file_ids_subquery(
-            db, current_user.id, organization_id=ctx.org_id
-        )
-        tag_counts = (
-            db.query(Tag, func.count(FileTag.id).label("usage_count"))
-            .outerjoin(FileTag)
-            .outerjoin(MediaFile)
-            .filter((MediaFile.id.in_(select(accessible_sq))) | (MediaFile.id.is_(None)))
-            .group_by(Tag.id)
-            .order_by(func.count(FileTag.id).desc(), Tag.name)
-            .all()
+    if use_cache:
+        # Cache the post-Pydantic dicts (never ORM objects).
+        redis_cache.set(
+            cache_key, [t.model_dump(mode="json") for t in tags_with_counts], ttl=TTL_TAGS
         )
 
-        # Convert to TagWithCount objects
-        tags_with_counts = []
-        for tag, count in tag_counts:
-            tags_with_counts.append(
-                TagWithCount(uuid=tag.uuid, name=tag.name, source=tag.source, usage_count=count)
-            )
-
-        if use_cache:
-            # Cache the post-Pydantic dicts (never ORM objects).
-            payload = [t.model_dump(mode="json") for t in tags_with_counts]
-            redis_cache.set(cache_key, payload, ttl=TTL_TAGS)
-
-        return tags_with_counts
-    except Exception as e:
-        logger.error(f"Error in list_tags: {e}")
-        # If there's an error, return an empty list
-        return []
+    return tags_with_counts
 
 
 @router.get("/unused", response_model=list[TagSchema])
 def list_unused_tags(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """
-    List unused tags that are not associated with any files
-    """
-    try:
-        # Find all tags that are not used in any files
-        # We use a subquery to find tag IDs that are in use
-        used_tag_ids = db.query(FileTag.tag_id).distinct().subquery()
+    """List tags no file the caller can see is carrying.
 
-        # Then find all tags not in that list
-        unused_tags = db.query(Tag).filter(~Tag.id.in_(used_tag_ids)).all()  # type: ignore[arg-type]
+    Scoped to the caller's accessible files, exactly like ``usage_count`` on the
+    tag list — the two used to disagree because this one counted usage globally.
+    Errors propagate rather than degrading to an empty list.
+    """
+    return list_unused_tag_rows(db, user_id=current_user.id, organization_id=ctx.org_id)
 
-        return unused_tags
-    except Exception as e:
-        logger.error(f"Error in list_unused_tags: {e}")
-        return []
+
+@router.get("/collisions", response_model=list[TagCollisionClusterSchema])
+def list_tag_collisions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Group duplicate tags into clusters, each with a preselected survivor.
+
+    Grouping is exact equality on the stored normalization, so repeated requests
+    over unchanged data return the same clusters in the same order; fuzzy near
+    matches come back as a separately ranked suggestion list and are never
+    cluster members. The pass calls ``refresh_stored_normalization`` first, so
+    this GET **does write** — deliberately, and by name.
+    """
+    clusters = find_tag_collisions(db, user_id=current_user.id, organization_id=ctx.org_id)
+    return [TagCollisionClusterSchema.model_validate(cluster) for cluster in clusters]
 
 
 @router.delete("/cleanup", response_model=dict[str, Any])
 def cleanup_unused_tags(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
 ):
-    """
-    Delete all unused tags to clean up the database
-    (Admin users only)
+    """Delete every tag no file anywhere carries (admin only).
+
+    Deliberately **global**, unlike ``GET /tags/unused``, which is scoped to what
+    the caller can see: this deletes rows, and a tag that merely looks unused to
+    one admin may be carrying someone else's files.
     """
     # Only allow admin users to perform this operation
     if not current_user.is_admin:

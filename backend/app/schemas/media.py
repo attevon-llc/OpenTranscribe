@@ -552,9 +552,54 @@ class Tag(TagBase, UUIDBaseSchema):
 
 
 class TagWithCount(Tag):
-    """Tag with usage count for filtering UI"""
+    """Tag with usage count for filtering UI.
+
+    ``usage_count`` is scoped to the files the caller can access, and the unused
+    filter is its exact complement — both read the same count, so a tag can
+    never report ``0`` here while being absent from ``/tags/unused``.
+    ``awaiting_review`` is shipped pre-computed so the SPA renders the badge
+    instead of re-deriving it from the origin string.
+    """
 
     usage_count: int = 0
+    awaiting_review: bool = False
+
+
+class TagClusterMember(Tag):
+    """A tag sharing its normalized name with the rest of its cluster.
+
+    ``suggested_survivor`` marks the highest-usage member, preselected by the
+    backend so the merge dialog opens on a decision rather than a blank choice.
+    """
+
+    usage_count: int = 0
+    suggested_survivor: bool = False
+
+
+class TagClusterSuggestion(Tag):
+    """A near match offered beside a cluster, never inside it.
+
+    Fuzzy similarity is non-transitive, so a suggestion is a prompt for a human,
+    not evidence of membership.
+    """
+
+    usage_count: int = 0
+    similarity: float = 0.0
+
+
+class TagCollisionCluster(BaseModel):
+    """Tags that normalize to one name, with the merge the backend recommends.
+
+    Grouping is exact equality on the stored normalization, so repeated requests
+    over unchanged data return the same clusters in the same order.
+    """
+
+    normalized_name: str
+    members: list[TagClusterMember] = []
+    suggested_survivor_uuid: UUID | None = None
+    suggestions: list[TagClusterSuggestion] = []
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TagImpactEntry(BaseModel):

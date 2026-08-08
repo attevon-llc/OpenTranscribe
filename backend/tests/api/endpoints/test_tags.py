@@ -8,6 +8,7 @@ came from a person, so a fuzzy hit may only be offered as a suggestion.
 
 import uuid as _uuid
 
+import pytest
 from fastapi import status
 
 
@@ -390,3 +391,177 @@ def test_review_endpoints_404_on_an_unknown_tag(client, user_token_headers, db_s
     for path in ("/api/tags/accept", "/api/tags/reject"):
         response = client.post(path, headers=user_token_headers, json={"tag_uuids": [unknown]})
         assert response.status_code == status.HTTP_404_NOT_FOUND, path
+
+
+# ---------------------------------------------------------------------------
+# Collisions and listing filters (R3, R11, R14)
+#
+# Clustering, suggestion ranking, and survivor preselection are covered in
+# tests/unit/test_tag_collisions.py; these assert the wiring — the query
+# parameters, the cluster shape on the wire, and that a broken read errors
+# instead of rendering an empty page.
+# ---------------------------------------------------------------------------
+
+
+def _raw_tag(db_session, name: str, *, normalized=..., source="manual"):
+    """Insert a tag row directly — the API has no path that writes a collision."""
+    from app.models.media import Tag
+    from app.services.tag_service import normalize_tag_name
+
+    stored = normalize_tag_name(name) if normalized is ... else normalized
+    tag = Tag(name=name, source=source, normalized_name=stored)
+    db_session.add(tag)
+    db_session.commit()
+    return tag
+
+
+def test_unused_listing_agrees_with_the_usage_count(
+    client, user_token_headers, db_session, normal_user, other_user
+):
+    """A tag whose only files are inaccessible reads as 0 *and* as unused.
+
+    ``/tags`` scoped ``usage_count`` to the caller's accessible files while
+    ``/tags/unused`` counted usage globally, so this tag reported ``0`` in one
+    place and was missing from the other.
+    """
+    from app.models.media import FileTag
+
+    tag = _create_tag(client, user_token_headers, f"foreign-{_uuid.uuid4().hex[:8]}")
+    hidden_file = _file_for(db_session, other_user)
+    tag_row = _raw_tag_row(db_session, tag["uuid"])
+    db_session.add(FileTag(media_file_id=hidden_file.id, tag_id=tag_row.id, source="manual"))
+    db_session.commit()
+
+    listed = client.get("/api/tags", headers=user_token_headers)
+    assert listed.status_code == status.HTTP_200_OK, listed.text
+    counts = {entry["uuid"]: entry["usage_count"] for entry in listed.json()}
+    assert counts[tag["uuid"]] == 0
+
+    unused = client.get("/api/tags/unused", headers=user_token_headers)
+    assert unused.status_code == status.HTTP_200_OK, unused.text
+    assert tag["uuid"] in {entry["uuid"] for entry in unused.json()}
+
+    filtered = client.get("/api/tags", headers=user_token_headers, params={"unused": True})
+    assert filtered.status_code == status.HTTP_200_OK, filtered.text
+    assert tag["uuid"] in {entry["uuid"] for entry in filtered.json()}
+
+
+def _raw_tag_row(db_session, tag_uuid: str):
+    from app.models.media import Tag
+
+    return db_session.query(Tag).filter(Tag.uuid == tag_uuid).one()
+
+
+def test_unused_filter_drops_a_tag_the_caller_uses(
+    client, user_token_headers, db_session, normal_user
+):
+    """The filter narrows — a tag on the caller's own file must not come back."""
+    from app.models.media import FileTag
+
+    tag = _create_tag(client, user_token_headers, f"inuse-{_uuid.uuid4().hex[:8]}")
+    media_file = _file_for(db_session, normal_user)
+    tag_row = _raw_tag_row(db_session, tag["uuid"])
+    db_session.add(FileTag(media_file_id=media_file.id, tag_id=tag_row.id, source="manual"))
+    db_session.commit()
+
+    response = client.get("/api/tags", headers=user_token_headers, params={"unused": True})
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    assert tag["uuid"] not in {entry["uuid"] for entry in response.json()}
+
+
+def test_awaiting_review_filter_returns_only_auto_labeled_tags(
+    client, user_token_headers, db_session
+):
+    suffix = _uuid.uuid4().hex[:8]
+    auto = _auto_tag(db_session, f"await-auto-{suffix}")
+    manual = _create_tag(client, user_token_headers, f"await-manual-{suffix}")
+    accepted = _raw_tag(db_session, f"await-accepted-{suffix}", source="ai_accepted")
+    legacy = _raw_tag(db_session, f"await-legacy-{suffix}", source=None)
+
+    response = client.get("/api/tags", headers=user_token_headers, params={"awaiting_review": True})
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    returned = {entry["uuid"] for entry in response.json()}
+    assert str(auto.uuid) in returned
+    assert manual["uuid"] not in returned
+    assert str(accepted.uuid) not in returned
+    assert str(legacy.uuid) not in returned
+
+
+def test_collisions_endpoint_ships_clusters_survivor_and_suggestions(
+    client, user_token_headers, db_session
+):
+    """Grouping, ranking, and preselection arrive pre-computed."""
+    suffix = _uuid.uuid4().hex[:8]
+    first = _raw_tag(db_session, f"q3-earnings-{suffix}")
+    second = _raw_tag(db_session, f"Q3 Earnings {suffix}")
+    near = _raw_tag(db_session, f"q4-earnings-{suffix}")
+    normalized = f"q3 earnings {suffix}"
+
+    response = client.get("/api/tags/collisions", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    clusters = [c for c in response.json() if c["normalized_name"] == normalized]
+    assert len(clusters) == 1
+    cluster = clusters[0]
+    assert {member["uuid"] for member in cluster["members"]} == {
+        str(first.uuid),
+        str(second.uuid),
+    }
+    assert cluster["suggested_survivor_uuid"] in {str(first.uuid), str(second.uuid)}
+    assert sum(member["suggested_survivor"] for member in cluster["members"]) == 1
+    assert str(near.uuid) in {s["uuid"] for s in cluster["suggestions"]}
+
+    repeat = client.get("/api/tags/collisions", headers=user_token_headers)
+    assert repeat.json() == response.json()
+
+
+def test_colliding_filter_narrows_the_tag_list(client, user_token_headers, db_session):
+    suffix = _uuid.uuid4().hex[:8]
+    first = _raw_tag(db_session, f"clash-{suffix}")
+    second = _raw_tag(db_session, f"CLASH-{suffix}")
+    alone = _create_tag(client, user_token_headers, f"solo-{suffix}")
+
+    response = client.get("/api/tags", headers=user_token_headers, params={"colliding": True})
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    returned = {entry["uuid"] for entry in response.json()}
+    assert {str(first.uuid), str(second.uuid)} <= returned
+    assert alone["uuid"] not in returned
+
+
+def _break_permission_scoping(monkeypatch):
+    """Make the accessible-files gate raise, the way a query bug would."""
+    from app.services.permission_service import PermissionService
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("accessible-file subquery is broken")
+
+    monkeypatch.setattr(PermissionService, "get_accessible_file_ids_subquery", staticmethod(_boom))
+
+
+def test_list_tags_surfaces_a_query_error(client, user_token_headers, db_session, monkeypatch):
+    """A broken read must error, not render an empty tag page.
+
+    The request carries a filter so it bypasses the read-through cache — a
+    cached hit would prove nothing about the query underneath.
+    """
+    _break_permission_scoping(monkeypatch)
+
+    with pytest.raises(RuntimeError):
+        client.get("/api/tags", headers=user_token_headers, params={"unused": True})
+
+
+def test_list_unused_tags_surfaces_a_query_error(
+    client, user_token_headers, db_session, monkeypatch
+):
+    """Same for the unused listing — an empty list is not an error report."""
+    _break_permission_scoping(monkeypatch)
+
+    with pytest.raises(RuntimeError):
+        client.get("/api/tags/unused", headers=user_token_headers)
+
+
+def test_collision_endpoints_require_authentication(client, db_session):
+    assert client.get("/api/tags/collisions").status_code == 401

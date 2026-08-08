@@ -41,6 +41,26 @@ def _revision_module():
     return module
 
 
+def _insert_user(conn) -> int:
+    """A user row owned by this test, not borrowed from ambient data.
+
+    ``SELECT id FROM "user" ORDER BY id LIMIT 1`` used to stand in for this —
+    it works against a dev database with real accounts, but CI's fresh Postgres
+    starts with zero rows, so ``user_id`` was ``None`` and the audit-row INSERT
+    below failed on ``changed_by``'s NOT NULL constraint instead of exercising
+    the rename this test is actually about.
+    """
+    email = f"v379_{uuid_pkg.uuid4().hex[:8]}@example.com"
+    new_id = conn.execute(
+        text(
+            'INSERT INTO "user" (email, hashed_password, is_active, is_superuser, '
+            "role, auth_type) VALUES (:e, 'x', true, false, 'user', 'local') RETURNING id"
+        ),
+        {"e": email},
+    ).scalar()
+    return int(new_id)
+
+
 def test_v379_revision_chain():
     from alembic.script import ScriptDirectory
 
@@ -212,7 +232,7 @@ def test_audit_history_follows_the_key(db_session):
     conn = db_session.connection()
 
     suffix = uuid_pkg.uuid4().hex[:8]
-    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
+    user_id = _insert_user(conn)
     conn.execute(
         text(
             "INSERT INTO auth_config_audit (uuid, config_key, old_value, new_value, "

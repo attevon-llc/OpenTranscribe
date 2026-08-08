@@ -32,7 +32,6 @@ import pyotp
 import pytest
 from fastapi import HTTPException
 from fastapi import Response
-from jose import jwt
 
 from app.api.endpoints.auth import login as login_module
 from app.api.endpoints.auth import mfa as mfa_module
@@ -48,6 +47,7 @@ from app.models.user import User
 from app.models.user_mfa import UserMFA
 from app.schemas.user import MFADisableRequest
 from app.schemas.user import MFAVerifySetupRequest
+from tests.jwt_compat import jwt
 
 USER_UUID = "019ec90a-1b2c-7def-8000-0000000000aa"
 
@@ -142,9 +142,7 @@ def _unwrap(func):
 
 
 def _decode(token: str) -> dict:
-    return cast(
-        dict, jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-    )
+    return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
 
 
 @pytest.fixture

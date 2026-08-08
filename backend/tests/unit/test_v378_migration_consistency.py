@@ -42,11 +42,27 @@ def _revision_module():
     return module
 
 
-def _new_group(conn) -> int:
+def _insert_user(conn) -> int:
+    """A user row owned by this test, not borrowed from ambient data.
+
+    ``SELECT id FROM "user" ORDER BY id LIMIT 1`` used to stand in for this —
+    it works against a dev database with real accounts, but CI's fresh Postgres
+    starts with zero rows until some other test happens to commit one first,
+    which makes whether this passes depend on test execution order.
+    """
+    email = f"v378_{uuid_pkg.uuid4().hex[:8]}@example.com"
+    new_id = conn.execute(
+        text(
+            'INSERT INTO "user" (email, hashed_password, is_active, is_superuser, '
+            "role, auth_type) VALUES (:e, 'x', true, false, 'user', 'local') RETURNING id"
+        ),
+        {"e": email},
+    ).scalar()
+    return int(new_id)
+
+
+def _new_group(conn, owner_id: int) -> int:
     """Create a throwaway ``user_group`` to hang mappings off; rolled back by the fixture."""
-    owner_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
-    if owner_id is None:
-        pytest.skip("no user rows to own a group")
     new_id = conn.execute(
         text(
             "INSERT INTO user_group (uuid, name, owner_id) "
@@ -130,14 +146,14 @@ def test_existing_memberships_are_manual(db_session):
 def test_membership_source_default_is_manual(db_session):
     """A row inserted without naming ``source`` must not become directory-owned."""
     conn = db_session.connection()
-    group_id = _new_group(conn)
-    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
+    owner_id = _insert_user(conn)
+    group_id = _new_group(conn, owner_id)
     source = conn.execute(
         text(
             "INSERT INTO user_group_member (uuid, group_id, user_id, role) "
             "VALUES (gen_random_uuid(), :g, :u, 'member') RETURNING source"
         ),
-        {"g": group_id, "u": user_id},
+        {"g": group_id, "u": owner_id},
     ).scalar()
     assert source == "manual"
     db_session.rollback()
@@ -152,7 +168,8 @@ def test_grants_role_check_rejects_super_admin(db_session):
     from sqlalchemy.exc import IntegrityError
 
     conn = db_session.connection()
-    group_id = _new_group(conn)
+    owner_id = _insert_user(conn)
+    group_id = _new_group(conn, owner_id)
     with pytest.raises(IntegrityError):
         conn.execute(
             text(
@@ -184,7 +201,8 @@ def test_source_check_rejects_an_unknown_directory(db_session):
     from sqlalchemy.exc import IntegrityError
 
     conn = db_session.connection()
-    group_id = _new_group(conn)
+    owner_id = _insert_user(conn)
+    group_id = _new_group(conn, owner_id)
     with pytest.raises(IntegrityError):
         conn.execute(
             text(
@@ -206,7 +224,8 @@ def test_ldap_claim_uniqueness_is_case_insensitive(db_session):
     from sqlalchemy.exc import IntegrityError
 
     conn = db_session.connection()
-    group_id = _new_group(conn)
+    owner_id = _insert_user(conn)
+    group_id = _new_group(conn, owner_id)
     dn = f"CN=v378-{uuid_pkg.uuid4().hex[:8]},OU=Groups,DC=example"
     insert = text(
         "INSERT INTO group_mapping (uuid, source, claim_value, user_group_id) "
@@ -221,7 +240,8 @@ def test_ldap_claim_uniqueness_is_case_insensitive(db_session):
 def test_oidc_claim_uniqueness_is_case_sensitive(db_session):
     """The mirror image: OIDC role strings are distinct identifiers, not DNs."""
     conn = db_session.connection()
-    group_id = _new_group(conn)
+    owner_id = _insert_user(conn)
+    group_id = _new_group(conn, owner_id)
     role = f"v378-{uuid_pkg.uuid4().hex[:8]}"
     insert = text(
         "INSERT INTO group_mapping (uuid, source, claim_value, user_group_id) "
@@ -240,7 +260,8 @@ def test_oidc_claim_uniqueness_is_case_sensitive(db_session):
 def test_deleting_the_group_cascades_the_mapping(db_session):
     """A mapping to a deleted group would otherwise keep granting a role invisibly."""
     conn = db_session.connection()
-    group_id = _new_group(conn)
+    owner_id = _insert_user(conn)
+    group_id = _new_group(conn, owner_id)
     conn.execute(
         text(
             "INSERT INTO group_mapping (uuid, source, claim_value, user_group_id, grants_role) "

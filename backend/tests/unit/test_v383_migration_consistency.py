@@ -10,6 +10,7 @@ revision, the same reasoning v382 pinned for SCIM.
 from __future__ import annotations
 
 import importlib.util
+import uuid as uuid_pkg
 from pathlib import Path
 
 import pytest
@@ -109,10 +110,29 @@ def test_the_check_accepts_saml(db_session):
     assert "'saml'" in invitation_clause
 
 
+def _insert_user(conn) -> int:
+    """A user row owned by this test, not borrowed from ambient data.
+
+    ``SELECT id FROM "user" ORDER BY id LIMIT 1`` used to stand in for this —
+    it works against a dev database with real accounts, but CI's fresh Postgres
+    starts with zero rows, so ``user_id`` was ``None`` and the assertion below
+    quietly compared against a no-op UPDATE instead of testing the constraint.
+    """
+    email = f"v383_{uuid_pkg.uuid4().hex[:8]}@example.com"
+    new_id = conn.execute(
+        text(
+            'INSERT INTO "user" (email, hashed_password, is_active, is_superuser, '
+            "role, auth_type) VALUES (:e, 'x', true, false, 'user', 'local') RETURNING id"
+        ),
+        {"e": email},
+    ).scalar()
+    return int(new_id)
+
+
 def test_a_saml_account_can_actually_be_written(db_session):
     """The behavioural half: the constraint accepts the value, not just its text."""
     conn = db_session.connection()
-    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
+    user_id = _insert_user(conn)
     conn.execute(
         text('UPDATE "user" SET auth_type = :t WHERE id = :i'), {"t": "saml", "i": user_id}
     )

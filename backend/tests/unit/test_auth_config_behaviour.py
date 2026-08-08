@@ -202,10 +202,9 @@ def test_mfa_issuer_name_reaches_the_qr_code(client, db_session, super_admin_use
 
 def test_mfa_token_lifetime_reaches_the_half_token(db_session, super_admin_user):
     """The half-token's exp must move with the saved value."""
-    from jose import jwt
-
     from app.api.endpoints.auth.mfa_tokens import _create_mfa_token
     from app.core.config import settings
+    from tests.jwt_compat import jwt
 
     save(db_session, super_admin_user, "mfa", {"mfa_token_expire_minutes": 17})
 

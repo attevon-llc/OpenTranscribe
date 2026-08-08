@@ -615,9 +615,8 @@ class TestTokenExpiration:
         """Expired access token is rejected."""
         # Create an expired token manually
 
-        from jose import jwt
-
         from app.core.config import settings
+        from tests.jwt_compat import jwt
 
         expired_payload = {
             "sub": str(uuid4()),

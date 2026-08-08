@@ -60,9 +60,8 @@ def refresh_token() -> str:
     from datetime import datetime
     from datetime import timedelta
 
-    from jose import jwt
-
     from app.core.config import settings
+    from tests.jwt_compat import jwt
 
     now = datetime.now(UTC)
     return jwt.encode(
@@ -85,9 +84,8 @@ def access_token() -> str:
 
 
 def _decode(token: str) -> dict:
-    from jose import jwt
-
     from app.core.config import settings
+    from tests.jwt_compat import jwt
 
     return jwt.decode(
         token,
@@ -130,9 +128,8 @@ class TestGetCurrentUserRejectsForeignTypes:
         from datetime import datetime
         from datetime import timedelta
 
-        from jose import jwt
-
         from app.core.config import settings
+        from tests.jwt_compat import jwt
 
         now = datetime.now(UTC)
         untyped = jwt.encode(

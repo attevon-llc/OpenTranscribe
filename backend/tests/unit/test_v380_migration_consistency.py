@@ -17,6 +17,7 @@ the UPDATE are one transaction.
 from __future__ import annotations
 
 import importlib.util
+import uuid as uuid_pkg
 from pathlib import Path
 
 import pytest
@@ -42,6 +43,25 @@ def _revision_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _insert_user(conn) -> int:
+    """A user row owned by this test, not borrowed from ambient data.
+
+    ``SELECT id FROM "user" ORDER BY id LIMIT 1`` used to stand in for this —
+    it works against a dev database with real accounts, but CI's fresh Postgres
+    starts with zero rows, so ``user_id`` was ``None`` and every assertion below
+    quietly compared against a no-op UPDATE instead of testing the constraint.
+    """
+    email = f"v380_{uuid_pkg.uuid4().hex[:8]}@example.com"
+    new_id = conn.execute(
+        text(
+            'INSERT INTO "user" (email, hashed_password, is_active, is_superuser, '
+            "role, auth_type) VALUES (:e, 'x', true, false, 'user', 'local') RETURNING id"
+        ),
+        {"e": email},
+    ).scalar()
+    return int(new_id)
 
 
 def _check_clause(conn, name: str) -> str:
@@ -195,7 +215,7 @@ def test_an_oidc_account_can_actually_be_written(db_session):
     duplicate. This writes the value.
     """
     conn = db_session.connection()
-    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
+    user_id = _insert_user(conn)
     conn.execute(
         text('UPDATE "user" SET auth_type = :t WHERE id = :i'), {"t": "oidc", "i": user_id}
     )
@@ -219,7 +239,7 @@ def test_an_unknown_auth_type_is_still_rejected(db_session):
     from sqlalchemy.exc import IntegrityError
 
     conn = db_session.connection()
-    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
+    user_id = _insert_user(conn)
     with pytest.raises(IntegrityError):
         conn.execute(
             text('UPDATE "user" SET auth_type = :t WHERE id = :i'),

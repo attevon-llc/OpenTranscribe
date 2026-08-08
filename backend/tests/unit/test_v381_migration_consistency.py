@@ -47,6 +47,25 @@ def _revision_module():
     return module
 
 
+def _insert_user(conn) -> int:
+    """A user row owned by this test, not borrowed from ambient data.
+
+    ``SELECT id FROM "user" ORDER BY id LIMIT 1`` used to stand in for this —
+    it works against a dev database with real accounts, but CI's fresh Postgres
+    starts with zero rows, so ``user_id`` was ``None`` and every assertion below
+    quietly compared against a no-op UPDATE instead of testing the constraint.
+    """
+    email = f"v381_{uuid_pkg.uuid4().hex[:8]}@example.com"
+    new_id = conn.execute(
+        text(
+            'INSERT INTO "user" (email, hashed_password, is_active, is_superuser, '
+            "role, auth_type) VALUES (:e, 'x', true, false, 'user', 'local') RETURNING id"
+        ),
+        {"e": email},
+    ).scalar()
+    return int(new_id)
+
+
 def test_v381_revision_chain():
     from alembic.script import ScriptDirectory
 
@@ -160,7 +179,7 @@ def test_the_check_refuses_an_unknown_status(db_session):
     from sqlalchemy.exc import IntegrityError
 
     conn = db_session.connection()
-    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
+    user_id = _insert_user(conn)
     with pytest.raises(IntegrityError):
         conn.execute(
             text('UPDATE "user" SET approval_status = :s WHERE id = :i'),
@@ -173,7 +192,7 @@ def test_the_check_refuses_an_unknown_status(db_session):
 def test_every_documented_state_can_actually_be_written(db_session, state):
     """Asserting the constraint text is not enough — v380 learned that the hard way."""
     conn = db_session.connection()
-    user_id = conn.execute(text('SELECT id FROM "user" ORDER BY id LIMIT 1')).scalar()
+    user_id = _insert_user(conn)
     conn.execute(
         text('UPDATE "user" SET approval_status = :s WHERE id = :i'), {"s": state, "i": user_id}
     )

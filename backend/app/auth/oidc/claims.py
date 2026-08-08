@@ -85,6 +85,17 @@ class OIDCUserData(TypedDict):
     #: Where ``roles`` actually came from: the ID token itself, the userinfo
     #: fallback (:func:`_roles_from_userinfo`), or neither.
     roles_claim_source: str
+    #: True when the provider signalled it withheld group membership rather
+    #: than the identity genuinely having none (Entra's groups-overage claim
+    #: shape). ``roles`` is ``[]`` either way; this is what makes the two
+    #: cases distinguishable to a caller deciding whether an empty list means
+    #: "admit with no elevated role" or "we could not find out — fail loudly."
+    groups_overage: bool
+    #: True when the token's issuer is a provider that structurally never
+    #: emits a groups claim at all (Google Workspace) — not a per-login
+    #: condition, a property of the provider, so it warrants the same loud
+    #: treatment as an overage even though ``_claim_names`` never appears.
+    groupless_provider: bool
     cert_dn: str | None
     cert_serial: str | None
     cert_issuer: str | None
@@ -135,6 +146,35 @@ def _normalize_roles(value: Any) -> list[str] | None:
     if isinstance(value, (list, tuple)):
         return [str(item) for item in value if isinstance(item, (str, int))]
     return None
+
+
+#: Google's two valid issuer spellings (oidc-conformance-plan.md §6). Google's
+#: discovery document has no groups claim in ``claims_supported`` at all — there
+#: is no scope or claim name that would ever populate one, unlike a provider
+#: that merely omitted a mapper.
+_GOOGLE_ISSUERS = frozenset({"https://accounts.google.com", "accounts.google.com"})
+
+
+def _is_google_issuer(issuer: str) -> bool:
+    return issuer in _GOOGLE_ISSUERS
+
+
+def _has_groups_overage(payload: dict, roles_claim: str) -> bool:
+    """Detect Entra ID's groups-overage shape.
+
+    Above 200 group memberships, Entra omits the ``groups`` claim entirely and
+    replaces it with the *aggregated/distributed claims* markers
+    ``_claim_names``/``_claim_sources`` (pointing at Graph) — plus, on some
+    token versions, a bare ``hasgroups: true``. Either shape means "this
+    identity's groups exist but were not included," which is a completely
+    different fact from "this identity has no groups": an RP that reads
+    ``groups`` naively sees zero groups for exactly its most-privileged users
+    (oidc-conformance-plan.md §6).
+    """
+    claim_names = payload.get("_claim_names")
+    if isinstance(claim_names, dict) and roles_claim.split(".")[0] in claim_names:
+        return True
+    return bool(payload.get("hasgroups"))
 
 
 def _decode_token(token: str, jwks: dict, cfg: OIDCConfig, expected_issuer: str) -> dict | None:
@@ -267,14 +307,36 @@ async def validate_token(
             f"{payload.get('preferred_username', 'unknown')}"
         )
 
+        roles_claim = cfg.roles_claim or DEFAULT_ROLES_CLAIM
         roles_claim_source = "id_token"
-        roles = _normalize_roles(_claim_by_path(payload, cfg.roles_claim or DEFAULT_ROLES_CLAIM))
+        roles = _normalize_roles(_claim_by_path(payload, roles_claim))
         if roles is None:
             roles_claim_source = "userinfo"
             roles = await _roles_from_userinfo(access_token, cfg, endpoints)
             if not roles:
                 roles_claim_source = "absent"
         is_admin = cfg.admin_role in roles
+
+        groups_overage = _has_groups_overage(payload, roles_claim)
+        groupless_provider = _is_google_issuer(expected_issuer)
+        if (groups_overage or groupless_provider) and not roles:
+            # Loud, not a silent empty list: cfg.admin_role may be sitting
+            # unmatched in a claim this login never actually saw, which would
+            # otherwise silently demote an admin on every login rather than
+            # only when their group membership genuinely changed.
+            logger.error(
+                "OIDC login for subject %s: the '%s' claim was withheld by the "
+                "provider (%s), not genuinely absent — roles/groups could not be "
+                "determined for this login. Group-based admission and "
+                "admin_role grants are unreliable until this is addressed "
+                "(Entra: request the claim via Graph, or reduce group count "
+                "below the overage threshold; Google: this provider has no "
+                "groups claim at all, so group-based admission/role config "
+                "must not be relied on here).",
+                payload.get("sub", "unknown"),
+                roles_claim,
+                "groups overage" if groups_overage else "no groups claim on this provider",
+            )
 
         cert_claims = _extract_certificate_claims(payload)
 
@@ -304,6 +366,8 @@ async def validate_token(
             roles=roles,
             claim_keys=sorted(str(k) for k in payload),
             roles_claim_source=roles_claim_source,
+            groups_overage=groups_overage,
+            groupless_provider=groupless_provider,
             cert_dn=cert_claims["cert_dn"],
             cert_serial=cert_claims["cert_serial"],
             cert_issuer=cert_claims["cert_issuer"],

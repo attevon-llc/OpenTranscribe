@@ -64,6 +64,14 @@ ADMISSION_REFUSED_ERROR_CODE = "OIDC_ADMISSION_REFUSED"
 REASON_BLOCKED = "blocked_group"
 #: ``reason`` recorded when the identity holds none of the required groups.
 REASON_NOT_ALLOWED = "not_in_allowed_groups"
+#: ``reason`` recorded when the provider withheld (Entra overage) or never
+#: emits (Google) a groups claim, and this deployment has a group-based
+#: allow/deny list configured. Distinct from ``REASON_NOT_ALLOWED``: this
+#: identity's actual group membership is unknown, not empty — admitting it
+#: would silently bypass the allow-list, and denying it under
+#: ``REASON_NOT_ALLOWED`` would misreport a config/provider problem as an
+#: ordinary access decision.
+REASON_GROUPS_UNKNOWN = "provider_withheld_groups"
 
 
 def parse_group_list(value: str | None) -> list[str]:
@@ -150,15 +158,54 @@ def assert_oidc_admission_permitted(
     from fastapi import HTTPException
     from fastapi import status
 
+    allowed_groups = getattr(cfg, "allowed_groups", "")
+    blocked_groups = getattr(cfg, "blocked_groups", "")
+    subject = str(oidc_data.get("oidc_subject") or "unknown")
+
+    # A group-based allow/deny list is configured, but this login's groups are
+    # not known — not empty, unknown (Entra overage or Google's total absence
+    # of a groups claim). Falling through to check_group_admission would treat
+    # "unknown" as "empty," which admits everyone when only blocked_groups is
+    # set (present ∩ blocked can never match nothing) and denies everyone when
+    # allowed_groups is set — either way, silently, on every single login from
+    # this provider, not just the ones that would genuinely be refused.
+    if (parse_group_list(allowed_groups) or parse_group_list(blocked_groups)) and (
+        oidc_data.get("groups_overage") or oidc_data.get("groupless_provider")
+    ):
+        logger.error(
+            "SECURITY: refusing OIDC admission for subject %s — allowed_groups/"
+            "blocked_groups is configured but this provider could not supply "
+            "group membership for this login (%s). Admitting would silently "
+            "bypass the allow-list; denying would silently lock out every user "
+            "from this provider while looking like an ordinary access refusal. "
+            "See app/auth/oidc/claims.py's groups_overage/groupless_provider "
+            "docstrings.",
+            subject,
+            "groups overage" if oidc_data.get("groups_overage") else "no groups claim",
+        )
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_LOGIN_FAILURE,
+            outcome=AuditOutcome.FAILURE,
+            username=str(oidc_data.get("email") or subject),
+            error_code=ADMISSION_REFUSED_ERROR_CODE,
+            details={
+                "auth_method": AUTH_TYPE_OIDC,
+                "reason": REASON_GROUPS_UNKNOWN,
+                "oidc_subject": subject,
+                "groups_overage": bool(oidc_data.get("groups_overage")),
+                "groupless_provider": bool(oidc_data.get("groupless_provider")),
+            },
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=failure_detail)
+
     reason = check_group_admission(
         oidc_data.get("roles") or [],
-        allowed_groups=getattr(cfg, "allowed_groups", ""),
-        blocked_groups=getattr(cfg, "blocked_groups", ""),
+        allowed_groups=allowed_groups,
+        blocked_groups=blocked_groups,
     )
     if reason is None:
         return
 
-    subject = str(oidc_data.get("oidc_subject") or "unknown")
     logger.warning(
         "SECURITY: refusing OIDC admission for subject %s (%s). Claim values: %s",
         subject,

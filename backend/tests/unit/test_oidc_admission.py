@@ -20,7 +20,9 @@ import pytest
 from fastapi import HTTPException
 
 from app.auth.oidc.admission import REASON_BLOCKED
+from app.auth.oidc.admission import REASON_GROUPS_UNKNOWN
 from app.auth.oidc.admission import REASON_NOT_ALLOWED
+from app.auth.oidc.admission import assert_oidc_admission_permitted
 from app.auth.oidc.admission import check_group_admission
 from app.auth.oidc.admission import parse_group_list
 from app.auth.oidc.config import OIDCConfig
@@ -43,6 +45,8 @@ def _claims(**overrides) -> dict:
         "username": subject,
         "is_admin": False,
         "roles": [],
+        "groups_overage": False,
+        "groupless_provider": False,
         "cert_dn": None,
         "cert_serial": None,
         "cert_issuer": None,
@@ -212,6 +216,64 @@ class TestProvisioningRefusesBeforeItWrites:
         user = sync_oidc_user_to_db(db_session, claims, self._cfg())
         assert user.oidc_subject == claims["oidc_subject"]
         db_session.rollback()
+
+
+class TestGroupsWithheldNotEmpty:
+    """Entra overage / Google's total absence of a groups claim (HANDOFF #40).
+
+    ``roles=[]`` is ambiguous on its own — a real user with no group memberships
+    looks identical to a provider that withheld them. ``groups_overage`` /
+    ``groupless_provider`` disambiguate, and when a group-based list is
+    configured this must fail loudly (a distinct reason, an ERROR-level log)
+    rather than silently falling through ``check_group_admission`` as if the
+    identity genuinely had zero groups.
+    """
+
+    def _cfg(self, **kwargs) -> OIDCConfig:
+        return OIDCConfig(enabled=True, client_id="transcribe", **kwargs)
+
+    def test_overage_is_refused_when_an_allow_list_is_configured(self):
+        claims = _claims(roles=[], groups_overage=True)
+        with pytest.raises(HTTPException) as exc:
+            assert_oidc_admission_permitted(
+                claims, self._cfg(allowed_groups="Transcribe-Users"), failure_detail="nope"
+            )
+        assert exc.value.status_code == 401
+
+    def test_groupless_provider_is_refused_when_a_block_list_is_configured(self):
+        claims = _claims(roles=[], groupless_provider=True)
+        with pytest.raises(HTTPException):
+            assert_oidc_admission_permitted(
+                claims, self._cfg(blocked_groups="Contractors"), failure_detail="nope"
+            )
+
+    def test_overage_with_no_lists_configured_is_admitted(self):
+        """Empty allow/deny lists mean 'no requirement' — withheld groups don't matter
+        if nothing depends on them. No raise == admitted."""
+        claims = _claims(roles=[], groups_overage=True)
+        assert_oidc_admission_permitted(claims, self._cfg(), failure_detail="nope")
+
+    def test_a_real_empty_roles_list_still_uses_the_ordinary_reason(self):
+        """Without the overage/groupless flag, empty roles is an ordinary refusal —
+        this behaviour must not change for every other provider."""
+        claims = _claims(roles=[])
+        with pytest.raises(HTTPException):
+            assert_oidc_admission_permitted(
+                claims, self._cfg(allowed_groups="Transcribe-Users"), failure_detail="nope"
+            )
+
+    def test_refusal_reason_is_distinct_from_not_allowed(self):
+        """The audit trail must say 'we couldn't tell', not 'this identity is refused' —
+        and the HTTP response must still be the generic, byte-identical detail (no
+        account-existence oracle), same as every other admission refusal."""
+        assert REASON_GROUPS_UNKNOWN != REASON_NOT_ALLOWED
+
+        claims = _claims(roles=[], groups_overage=True)
+        with pytest.raises(HTTPException) as exc:
+            assert_oidc_admission_permitted(
+                claims, self._cfg(allowed_groups="Transcribe-Users"), failure_detail="nope"
+            )
+        assert exc.value.detail == "nope"
 
 
 class TestTheAdminSettingReachesTheCheck:

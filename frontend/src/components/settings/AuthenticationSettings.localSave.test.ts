@@ -115,13 +115,13 @@ describe('Local auth tab — split save', () => {
     expect(screen.getByLabelText('settings.localAuth.lockoutDuration')).toHaveValue(20);
   });
 
-  it('fans the single form out to its four owning categories', async () => {
+  it('fans the single form out to its five owning categories', async () => {
     await renderLocalTab();
     await save();
 
-    expect(mockedUpdate).toHaveBeenCalledTimes(4);
+    expect(mockedUpdate).toHaveBeenCalledTimes(5);
     expect(new Set(mockedUpdate.mock.calls.map((call) => call[0]))).toEqual(
-      new Set(['local', 'password_policy', 'mfa', 'lockout'])
+      new Set(['local', 'password_policy', 'mfa', 'lockout', 'banner'])
     );
 
     // Each category receives exactly its own keys — the endpoint 400s on strays.
@@ -134,13 +134,23 @@ describe('Local auth tab — split save', () => {
       'require_email_verification',
     ]);
     expect(Object.keys(payloadFor('mfa') ?? {}).sort()).toEqual([
+      'mfa_backup_code_count',
       'mfa_enabled',
       'mfa_issuer_name',
       'mfa_required',
+      'mfa_token_expire_minutes',
     ]);
     expect(Object.keys(payloadFor('lockout') ?? {}).sort()).toEqual([
       'account_lockout_duration_minutes',
+      'account_lockout_enabled',
+      'account_lockout_max_duration_minutes',
+      'account_lockout_progressive',
       'account_lockout_threshold',
+    ]);
+    expect(Object.keys(payloadFor('banner') ?? {}).sort()).toEqual([
+      'login_banner_classification',
+      'login_banner_enabled',
+      'login_banner_text',
     ]);
     expect(Object.keys(payloadFor('password_policy') ?? {})).toHaveLength(7);
     expect(payloadFor('password_policy')).toMatchObject({

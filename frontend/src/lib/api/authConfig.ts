@@ -130,6 +130,27 @@ export interface PKIConfig {
   pki_allow_password_fallback: boolean;
 }
 
+/** Mirrors `backend/app/schemas/auth_config.py:ProxyAuthConfig` — same names, same order. */
+export interface ProxyConfig {
+  proxy_enabled: boolean;
+  /**
+   * Comma-separated IPs/CIDRs. Empty refuses every header-sourced assertion —
+   * same fail-closed shape as `PKIConfig.pki_trusted_proxies`.
+   */
+  proxy_trusted_proxies: string;
+  proxy_email_header: string;
+  proxy_name_header: string;
+  /** No default on the backend — an absent header means "manage no groups". */
+  proxy_groups_header: string;
+  proxy_groups_separator: string;
+  /** Empty = header-driven privilege is off. Capped at `admin` server-side. */
+  proxy_role_header: string;
+  /** Never sent by the API — `null` on the wire, `is_set` carries the signal. */
+  proxy_shared_secret?: string | null;
+  proxy_allowed_domains: string;
+  proxy_jit_provisioning: boolean;
+}
+
 export interface SessionConfig {
   jwt_access_token_expire_minutes: number;
   jwt_refresh_token_expire_days: number;
@@ -158,6 +179,7 @@ export const AUTH_CONFIG_CATEGORIES = [
   'ldap',
   'oidc',
   'pki',
+  'proxy',
   'banner',
 ] as const;
 

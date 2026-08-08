@@ -32,6 +32,7 @@
     ldap: 'settings.authentication.tab.ldap',
     oidc: 'settings.authentication.tab.oidc',
     pki: 'settings.authentication.tab.pki',
+    proxy: 'settings.authentication.tab.proxy',
     banner: 'settings.authAudit.category.banner',
   };
 

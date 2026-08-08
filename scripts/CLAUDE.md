@@ -57,9 +57,13 @@ Root `CLAUDE.md` points here for the mechanics. `.fresh/` is gitignored and full
 
 ### Aux test overlays under `--fresh` (issue #347)
 
-`--with-ldap-test` / `--with-smb-test` / `--with-monitoring` / `--with-keycloak-test` are fully
-isolated: ports via `FRESH_{LDAP,SMB,MONITORING,KEYCLOAK}_PORT_VARS`, container names via
-`FRESH_{LDAP,SMB,MONITORING}_SERVICES` fed into the generated overlay, volumes via the project name.
+`--with-ldap-test` / `--with-smb-test` / `--with-monitoring` / `--with-keycloak-test` /
+`--with-authentik-test` are fully isolated: ports via
+`FRESH_{LDAP,SMB,MONITORING,KEYCLOAK,AUTHENTIK}_PORT_VARS`, container names via
+`FRESH_{LDAP,SMB,MONITORING}_SERVICES` fed into the generated overlay, volumes via the project
+name. Keycloak and Authentik declare no `container_name` in their compose files (the compose
+project namespaces them automatically), so neither needs a `_SERVICES` entry — only ports and the
+aux-file record.
 
 - **`LDAP_TEST_PORT` / `LDAP_TEST_UI_PORT`, never `LDAP_PORT`.** `LDAP_PORT` is the *application's*
   LDAP client port (`.env` ships `LDAP_PORT=636`); offsetting it would repoint the app's LDAP config.

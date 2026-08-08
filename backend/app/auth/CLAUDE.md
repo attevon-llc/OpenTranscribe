@@ -324,6 +324,10 @@ someone else's product.
   container **recreate**, not `restart-backend`.
 - Local IdPs for testing: `--with-ldap-test` (LDAP :3890, UI :17170, `admin`/`admin_password`),
   `--with-keycloak-test` (a Keycloak to test OIDC against, :8180, `admin`/`admin`),
+  `--with-authentik-test` (an Authentik to test OIDC against, :9022, bootstrap
+  `admin@example.com`/`admin_password` — the `AUTHENTIK_BOOTSTRAP_*` env vars create
+  a working admin account non-interactively, unlike Keycloak's fixed admin/admin
+  baked into the image),
   `./opentr.sh start prod --build --with-pki`
   (mTLS at https://localhost:5182 — **prod-only, Vite can't do mTLS**). Client certs:
   `scripts/pki/test-certs/clients/*.p12`.

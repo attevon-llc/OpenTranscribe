@@ -72,7 +72,7 @@ show_help() {
   echo "  --port-offset N      - With --fresh: offset every published port by N (run side-by-side;"
   echo "                         remembered per deployment — pass --port-offset 0 to reset)."
   echo "                         Covers the --with-ldap-test/--with-smb-test/--with-monitoring/"
-  echo "                         --with-keycloak-test overlays too."
+  echo "                         --with-keycloak-test/--with-authentik-test overlays too."
   echo "  --seed-benchmark     - With --fresh: upload small benchmark media once healthy"
   echo "  --dry-run            - Print the compose files + command that WOULD run; start nothing"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
@@ -80,6 +80,7 @@ show_help() {
   echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
   echo "  --with-ldap-test     - Start LDAP test container (dev or prod; localhost:3890, UI :17170)"
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod; localhost:8180)"
+  echo "  --with-authentik-test - Start Authentik test container (dev or prod; localhost:9022)"
   echo "  --with-watch         - Mount the host watch folder (WATCH_HOST_PATH, default ./watch) for auto-import"
   echo "  --with-smb-test      - Start a Samba test share for watch-source testing (localhost:4450)"
   echo "  --with-monitoring    - Start Prometheus (:5186) + Grafana (:5185) observability stack"
@@ -136,6 +137,7 @@ show_help() {
   echo "  ./opentr.sh start dev --cpu                  # Local CPU-only (skip GPU overlay)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
+  echo "  ./opentr.sh start dev --with-authentik-test  # Dev with Authentik test container"
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
   echo "  ./opentr.sh start prod --build               # Production with local build (test before push)"
   echo "  ./opentr.sh start prod --build --with-pki    # Production with PKI (requires nginx)"
@@ -417,6 +419,9 @@ FRESH_PORT_VARS=(
 FRESH_KEYCLOAK_PORT_VARS=(
   "KEYCLOAK_PORT=8180"          # keycloak → :8080
   "STEP_CA_PORT=9000"           # step-ca  → :9000
+)
+FRESH_AUTHENTIK_PORT_VARS=(
+  "AUTHENTIK_PORT=9022"         # authentik-server → :9000
 )
 FRESH_LDAP_PORT_VARS=(
   "LDAP_TEST_PORT=3890"         # lldap LDAP   → :3890
@@ -748,6 +753,7 @@ start_app() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
+  WITH_AUTHENTIK_TEST_FLAG=""
   WITH_WATCH_FLAG=""
   WITH_SMB_TEST_FLAG=""
   WITH_MONITORING_FLAG=""
@@ -834,6 +840,10 @@ start_app() {
         WITH_KEYCLOAK_TEST_FLAG="--with-keycloak-test"
         shift
         ;;
+      --with-authentik-test)
+        WITH_AUTHENTIK_TEST_FLAG="--with-authentik-test"
+        shift
+        ;;
       --with-watch)
         WITH_WATCH_FLAG="--with-watch"
         shift
@@ -899,6 +909,10 @@ start_app() {
     if [ -n "$WITH_KEYCLOAK_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_KEYCLOAK_PORT_VARS[@]}")
       _aux_files+=("docker-compose.keycloak.yml")
+    fi
+    if [ -n "$WITH_AUTHENTIK_TEST_FLAG" ]; then
+      _port_vars+=("${FRESH_AUTHENTIK_PORT_VARS[@]}")
+      _aux_files+=("docker-compose.authentik.yml")
     fi
     if [ -n "$WITH_LDAP_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_LDAP_PORT_VARS[@]}")
@@ -1239,6 +1253,18 @@ start_app() {
     fi
   fi
 
+  # Add Authentik test container if requested
+  if [ -n "$WITH_AUTHENTIK_TEST_FLAG" ]; then
+    if [ -f "docker-compose.authentik.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.authentik.yml"
+      echo "🔐 Adding Authentik test container (docker-compose.authentik.yml)"
+      echo "   Authentik URL: http://localhost:${AUTHENTIK_PORT:-9022}"
+      echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin_password}"
+    else
+      echo "⚠️  --with-authentik-test specified but docker-compose.authentik.yml not found"
+    fi
+  fi
+
   # Add Watch Sources overlay if requested (mounts the host watch folder)
   if [ -n "$WITH_WATCH_FLAG" ]; then
     if [ -f "docker-compose.watch.yml" ]; then
@@ -1409,6 +1435,7 @@ reset_and_init() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
+  WITH_AUTHENTIK_TEST_FLAG=""
   WITH_WATCH_FLAG=""
   WITH_SMB_TEST_FLAG=""
   WITH_MONITORING_FLAG=""
@@ -1471,6 +1498,10 @@ reset_and_init() {
         ;;
       --with-keycloak-test)
         WITH_KEYCLOAK_TEST_FLAG="--with-keycloak-test"
+        shift
+        ;;
+      --with-authentik-test)
+        WITH_AUTHENTIK_TEST_FLAG="--with-authentik-test"
         shift
         ;;
       --with-watch)
@@ -1742,6 +1773,18 @@ reset_and_init() {
       echo "   Admin credentials: admin / admin"
     else
       echo "⚠️  --with-keycloak-test specified but docker-compose.keycloak.yml not found"
+    fi
+  fi
+
+  # Add Authentik test container if requested
+  if [ -n "$WITH_AUTHENTIK_TEST_FLAG" ]; then
+    if [ -f "docker-compose.authentik.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.authentik.yml"
+      echo "🔐 Adding Authentik test container (docker-compose.authentik.yml)"
+      echo "   Authentik URL: http://localhost:${AUTHENTIK_PORT:-9022}"
+      echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin_password}"
+    else
+      echo "⚠️  --with-authentik-test specified but docker-compose.authentik.yml not found"
     fi
   fi
 

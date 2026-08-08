@@ -14,6 +14,7 @@ AUTH_TYPE_PKI = "pki"
 # (app/auth/proxy/). The value was pre-authorised by v378's CHECK swap, so this phase
 # needed no second constraint change on a live "user" table.
 AUTH_TYPE_PROXY = "proxy"
+AUTH_TYPE_SAML = "saml"
 
 # All valid core auth types. Registry-based external providers (cloud edition)
 # define their own auth-type strings in the cloud layer and register via
@@ -28,6 +29,7 @@ VALID_AUTH_TYPES = [
     AUTH_TYPE_OIDC,
     AUTH_TYPE_PKI,
     AUTH_TYPE_PROXY,
+    AUTH_TYPE_SAML,
 ]
 
 # Version of the cloud-extension seam surface (verifier registry, pipeline
@@ -55,8 +57,11 @@ CLOUD_SEAM_VERSION = 3
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]
 
-# Auth types that never support local password (no local password stored)
-AUTH_TYPES_NO_LOCAL_FALLBACK = [AUTH_TYPE_LDAP]
+# Auth types that never support local password (no local password stored).
+# SAML groups with LDAP here rather than OIDC/PKI's opt-in fallback: an assertion
+# carries no local-credential concept, so there is nothing sensible for a per-user
+# allow_local_fallback flag to opt into.
+AUTH_TYPES_NO_LOCAL_FALLBACK = [AUTH_TYPE_LDAP, AUTH_TYPE_SAML]
 
 # JWT ``type`` claim values. Every token this app mints carries one, and every
 # consumer verifies the one it expects. Without that check a token minted for a

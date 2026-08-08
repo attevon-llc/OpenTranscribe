@@ -88,6 +88,11 @@ class User(Base):
     pki_subject_dn: Mapped[str | None] = mapped_column(
         String(512), unique=True, nullable=True, index=True
     )  # X.509 certificate DN
+    # The SAML assertion's NameID. Mirrors oidc_subject's caveat: unique per IdP
+    # entity, not globally — sound only while exactly one SAML IdP is configured.
+    saml_subject: Mapped[str | None] = mapped_column(
+        String(255), unique=True, nullable=True, index=True
+    )
 
     # PKI certificate metadata fields
     pki_serial_number: Mapped[str | None] = mapped_column(

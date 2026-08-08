@@ -9,7 +9,7 @@ authoring the revision file itself.
 
 ## Key files
 
-- `versions/` — 65 revisions, `v010_baseline` … head `v380_scim_tokens`.
+- `versions/` — 67 revisions, `v010_baseline` … head `v381_saml_auth_type`.
 - `env.py` — builds the URL from `POSTGRES_*` env (`load_dotenv()`), `target_metadata =
   Base.metadata`. No `compare_type`, no naming convention.
 - `script.py.mako` — **stock alembic template**: it emits neither the `v###` id nor idempotent

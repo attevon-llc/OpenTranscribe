@@ -737,6 +737,59 @@ class Settings(BaseSettings):
     OIDC_ALLOWED_GROUPS: str = os.getenv("OIDC_ALLOWED_GROUPS", "")
     OIDC_BLOCKED_GROUPS: str = os.getenv("OIDC_BLOCKED_GROUPS", "")
 
+    # ===== SAML 2.0 (#35) =====
+    # No retired spelling to honour here (this is the auth type's only name), so
+    # plain os.getenv throughout — unlike OIDC_*, none of these route through
+    # core/legacy_auth_env.py.
+    SAML_ENABLED: bool = os.getenv("SAML_ENABLED", "false").lower() == "true"
+    # Entity ID this SP identifies itself as. Also the default audience the IdP's
+    # assertion must be addressed to.
+    SAML_SP_ENTITY_ID: str = os.getenv("SAML_SP_ENTITY_ID", "")
+    # e.g. https://localhost:5173/api/auth/saml/acs — must match exactly what is
+    # registered with the IdP, or the assertion's Recipient/Destination check fails.
+    SAML_SP_ACS_URL: str = os.getenv("SAML_SP_ACS_URL", "")
+    SAML_SP_SLS_URL: str = os.getenv("SAML_SP_SLS_URL", "")
+    # SP signing/encryption key pair, PEM. Only required when
+    # SAML_SIGN_AUTHN_REQUESTS or SAML_WANT_ASSERTIONS_ENCRYPTED is on. Blank means
+    # this SP requests but does not itself sign or decrypt.
+    SAML_SP_X509_CERT: str = os.getenv("SAML_SP_X509_CERT", "")
+    SAML_SP_PRIVATE_KEY: str = os.getenv("SAML_SP_PRIVATE_KEY", "")
+    SAML_IDP_ENTITY_ID: str = os.getenv("SAML_IDP_ENTITY_ID", "")
+    SAML_IDP_SSO_URL: str = os.getenv("SAML_IDP_SSO_URL", "")
+    SAML_IDP_SLO_URL: str = os.getenv("SAML_IDP_SLO_URL", "")
+    # The IdP's signing certificate, PEM (no BEGIN/END lines required — sp.py
+    # strips them either way). This is what makes assertion verification real:
+    # python3-saml (never hand-rolled parsing) checks the assertion's signature
+    # against this, so an unset value must refuse to start SAML, not fall open.
+    SAML_IDP_X509_CERT: str = os.getenv("SAML_IDP_X509_CERT", "")
+    # OWASP-recommended posture: the IdP must sign what it asserts.
+    SAML_WANT_ASSERTIONS_SIGNED: bool = (
+        os.getenv("SAML_WANT_ASSERTIONS_SIGNED", "true").lower() == "true"
+    )
+    SAML_WANT_MESSAGES_SIGNED: bool = (
+        os.getenv("SAML_WANT_MESSAGES_SIGNED", "true").lower() == "true"
+    )
+    SAML_SIGN_AUTHN_REQUESTS: bool = (
+        os.getenv("SAML_SIGN_AUTHN_REQUESTS", "false").lower() == "true"
+    )
+    # Attribute names to read from the assertion. No standard covers this across
+    # IdPs — ADFS, Okta, and Azure AD SAML each ship different defaults — so these
+    # are configurable rather than hardcoded to one vendor's claim URIs, same
+    # reasoning as OIDC_ROLES_CLAIM.
+    SAML_EMAIL_ATTRIBUTE: str = os.getenv(
+        "SAML_EMAIL_ATTRIBUTE",
+        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+    )
+    SAML_NAME_ATTRIBUTE: str = os.getenv(
+        "SAML_NAME_ATTRIBUTE", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+    )
+    SAML_GROUPS_ATTRIBUTE: str = os.getenv("SAML_GROUPS_ATTRIBUTE", "groups")
+    SAML_ADMIN_GROUP: str = os.getenv("SAML_ADMIN_GROUP", "")
+    # Same semantics and same upgrade-safe empty-admits-everyone default as
+    # OIDC_ALLOWED_GROUPS/OIDC_BLOCKED_GROUPS.
+    SAML_ALLOWED_GROUPS: str = os.getenv("SAML_ALLOWED_GROUPS", "")
+    SAML_BLOCKED_GROUPS: str = os.getenv("SAML_BLOCKED_GROUPS", "")
+
     # ===== MFA Settings (FedRAMP IA-2) =====
     # MFA is disabled by default for air-gapped deployments
     MFA_ENABLED: bool = os.getenv("MFA_ENABLED", "false").lower() == "true"

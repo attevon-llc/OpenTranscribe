@@ -9,6 +9,8 @@ pydantic>=2.13.4
 pydantic-settings>=2.14.2
 # joserfc — see requirements.txt for why (#33, #34: replaces python-jose everywhere)
 joserfc>=1.7.4
+# SAML 2.0 SP support (#35) — see requirements.txt for why python3-saml.
+python3-saml>=1.16.0
 python-multipart>=0.0.32
 passlib[bcrypt]>=1.7.4
 bcrypt==3.2.2

@@ -339,6 +339,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "AND pg_get_constraintdef(oid) LIKE '%proxy%')"
     )
 
+    # v381 guards: the SAML auth-type CHECK widening and its identity column. Same
+    # two-marker reasoning as v380 — a schema carrying the column without the
+    # widened CHECK would refuse every SAML JIT provision on a CheckViolation.
+    has_saml_subject = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'saml_subject')"
+    )
+    has_saml_auth_type_check = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_user_auth_type_valid' "
+        "AND pg_get_constraintdef(oid) LIKE '%saml%')"
+    )
+
     # v377 guards: the auth-config data rename. This revision adds NO DDL, so there
     # is no column to probe — the fingerprint is the absence of the retired key
     # prefix in both config tables. A deployment that never configured OIDC has no
@@ -354,6 +367,32 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     )
 
     # Return the highest version stamp that matches (newest first)
+    # v381: SAML auth-type CHECK widening + user.saml_subject.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+        and has_user_approval_status
+        and has_approval_status_check
+        and has_scim_token
+        and has_proxy_group_source
+        and has_saml_subject
+        and has_saml_auth_type_check
+    ):
+        return "v381_saml_auth_type"
     # v380: SCIM provisioning tokens + 'proxy'/'scim' group sources.
     if (
         has_cloud_seams

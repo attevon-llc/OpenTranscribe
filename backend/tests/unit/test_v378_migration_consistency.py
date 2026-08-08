@@ -206,24 +206,12 @@ def test_an_oidc_account_can_actually_be_written(db_session):
     db_session.rollback()
 
 
-def test_the_application_constant_is_a_subset_of_the_check():
-    """The database may be wider than the app; the app must never be wider than the DB.
-
-    A value the code can write but the CHECK rejects is an IntegrityError at COMMIT,
-    i.e. a 500 on a login. The reverse is fine and was this revision's whole point:
-    'proxy' sat in the constraint one phase before ``app/auth/proxy/`` existed, so
-    trusted-header auth landed without a second constraint swap on a live table.
-    """
-    from app.auth.constants import AUTH_TYPE_PROXY
-    from app.auth.constants import VALID_AUTH_TYPES
-
-    module = _revision_module()
-    allowed = {part.strip().strip("'") for part in module.VALID_AUTH_TYPES_SQL.split(",")}
-    assert set(VALID_AUTH_TYPES) <= allowed
-    # Both directions now hold for 'proxy': the constraint allows it and the
-    # application produces it.
-    assert AUTH_TYPE_PROXY in allowed
-    assert AUTH_TYPE_PROXY in VALID_AUTH_TYPES
+#: The application-constant/CHECK subset invariant is now owned by
+#: ``test_v381_migration_consistency.py`` — v381 is the current head touching
+#: ``ck_user_auth_type_valid``, and the check only means something against
+#: whichever revision most recently defined the constraint's width. Keeping a copy
+#: here pinned to v378's now-superseded SQL would go stale on every future widening
+#: the same way this one just did when v381 added 'saml'.
 
 
 def test_an_unknown_auth_type_is_still_rejected(db_session):
@@ -235,7 +223,11 @@ def test_an_unknown_auth_type_is_still_rejected(db_session):
     with pytest.raises(IntegrityError):
         conn.execute(
             text('UPDATE "user" SET auth_type = :t WHERE id = :i'),
-            {"t": "saml", "i": user_id},
+            # A value that is not, and must never become, a real auth_type — unlike
+            # a real provider name, this one cannot go stale when the CHECK widens.
+            # Must fit auth_type's VARCHAR(20), or a DataError masks the intended
+            # CheckViolation.
+            {"t": "not-a-real-type", "i": user_id},
         )
     db_session.rollback()
 

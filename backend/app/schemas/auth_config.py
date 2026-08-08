@@ -249,6 +249,39 @@ class PKIConfig(_CategoryConfig):
     # has. Their stored rows are deleted by the same revision.
 
 
+class SAMLConfig(_CategoryConfig):
+    """SAML 2.0 configuration (#35).
+
+    Field order mirrors ``OIDCConfig``: enable flag, SP identity, IdP identity,
+    security posture, attribute mapping, then admission.
+    """
+
+    saml_enabled: bool = False
+    saml_sp_entity_id: str = ""
+    saml_sp_acs_url: str = ""
+    saml_sp_sls_url: str = ""
+    #: Public — safe to display. Only required when signing/encryption is on.
+    saml_sp_x509_cert: str = ""
+    saml_sp_private_key: str | None = None  # Sensitive
+    saml_idp_entity_id: str = ""
+    saml_idp_sso_url: str = ""
+    saml_idp_slo_url: str = ""
+    #: The IdP's own signing certificate — what makes assertion signature
+    #: verification real. Not sensitive (it is public key material the IdP itself
+    #: publishes), but required before SAML can be enabled at all.
+    saml_idp_x509_cert: str = ""
+    saml_want_assertions_signed: bool = True
+    saml_want_messages_signed: bool = True
+    saml_sign_authn_requests: bool = False
+    saml_email_attribute: str = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
+    saml_name_attribute: str = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+    saml_groups_attribute: str = "groups"
+    saml_admin_group: str = ""
+    #: Same empty-admits-everyone semantics as ``OIDCConfig.oidc_allowed_groups``.
+    saml_allowed_groups: str = ""
+    saml_blocked_groups: str = ""
+
+
 class ProxyAuthConfig(_CategoryConfig):
     """Trusted-header (reverse-proxy) configuration — ``auth_type='proxy'``.
 
@@ -365,6 +398,7 @@ CATEGORY_SCHEMAS: dict[str, type[_CategoryConfig]] = {
     "local": LocalAuthConfig,
     "ldap": LDAPConfig,
     "oidc": OIDCConfig,
+    "saml": SAMLConfig,
     "pki": PKIConfig,
     "proxy": ProxyAuthConfig,
     "password_policy": PasswordPolicyConfig,

@@ -31,6 +31,9 @@ pydantic-settings>=2.14.2
 # Not the authlib package itself — oidc/flow.py stays hand-rolled httpx; see
 # its module docstring for why the Authlib client wasn't worth adopting there.
 joserfc>=1.7.4
+# SAML 2.0 SP support (#35) — see requirements.txt for why python3-saml and not
+# hand-rolled XML parsing.
+python3-saml>=1.16.0
 python-multipart>=0.0.32
 passlib[bcrypt]>=1.7.4
 bcrypt==3.2.2

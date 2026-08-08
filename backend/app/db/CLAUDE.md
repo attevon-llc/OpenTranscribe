@@ -36,10 +36,14 @@ revision — no DDL, so its detection arm keys on the *absence* of the retired c
 prefix), `v378_oidc_identity_columns` (`user.oidc_subject`,
 `user.oidc_refresh_token`, `refresh_token.oidc_id_token`, the `auth_type` value swap,
 and the removal of a duplicate CHECK that would otherwise have refused every OIDC
-login), head currently `v379_approval_state` (`user.approval_status` NOT NULL DEFAULT
+login), `v379_approval_state` (`user.approval_status` NOT NULL DEFAULT
 `'approved'` + `approved_at`/`approved_by` + `ck_user_approval_status_valid`; its
 detection arm requires **both** the column and the CHECK, because the enforcement
-helpers read the column fail-safe and it is the constraint that keeps that sound).
+helpers read the column fail-safe and it is the constraint that keeps that sound),
+`v380_scim_tokens` (`scim_token` table + `group_mapping`'s `source`/membership CHECKs
+widened for `proxy`/`scim`), head currently `v381_saml_auth_type` (`auth_type` CHECK
+widened for `'saml'` + `user.saml_subject`, mirroring `v378`'s identity-column shape
+for a fourth provider).
 
 ## Gotchas
 

@@ -62,6 +62,15 @@ KNOWN_PUBLIC = {
     "/api/auth/oidc/login",
     "/api/auth/oidc/callback",
     "/api/auth/pki/authenticate",
+    # SAML SP endpoints. /metadata is fetched out-of-band by an IdP administrator
+    # (no secret in it — see saml.py's docstring); /login, /acs and /sls are the
+    # pre-authentication SSO round trip and the IdP's own POST/redirect targets,
+    # so a session dependency would make them unreachable, the same reasoning as
+    # the OIDC pair above.
+    "/api/auth/saml/metadata",
+    "/api/auth/saml/login",
+    "/api/auth/saml/acs",
+    "/api/auth/saml/sls",
     # Trusted-header sign-in. Pre-authentication by definition, and the credential
     # is the header an allowlisted reverse proxy put on the request — a session
     # dependency here would make it unreachable. The trust check is

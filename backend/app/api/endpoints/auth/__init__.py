@@ -101,6 +101,10 @@ from app.api.endpoints.auth.registration import confirm_password_reset_endpoint
 from app.api.endpoints.auth.registration import get_password_policy
 from app.api.endpoints.auth.registration import register
 from app.api.endpoints.auth.registration import request_password_reset_endpoint
+from app.api.endpoints.auth.saml import saml_acs
+from app.api.endpoints.auth.saml import saml_login
+from app.api.endpoints.auth.saml import saml_metadata
+from app.api.endpoints.auth.saml import saml_sls
 from app.api.endpoints.auth.sessions import get_active_sessions
 from app.api.endpoints.auth.sessions import logout
 from app.api.endpoints.auth.sessions import logout_all_sessions
@@ -117,6 +121,7 @@ from . import pki as _pki_module
 from . import profile as _profile_module
 from . import proxy as _proxy_module
 from . import registration as _registration_module
+from . import saml as _saml_module
 from . import sessions as _sessions_module
 
 router = APIRouter()
@@ -126,6 +131,7 @@ router.include_router(_invitations_module.router)
 router.include_router(_email_verification_module.router)
 router.include_router(_profile_module.router)
 router.include_router(_oidc_module.router)
+router.include_router(_saml_module.router)
 router.include_router(_pki_module.router)
 router.include_router(_proxy_module.router)
 router.include_router(_methods_module.router)

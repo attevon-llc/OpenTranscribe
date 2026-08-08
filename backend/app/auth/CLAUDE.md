@@ -1,17 +1,18 @@
-# app/auth — hybrid authentication (local · LDAP · OIDC · PKI · proxy)
+# app/auth — hybrid authentication (local · LDAP · OIDC · SAML · PKI · proxy)
 
 ## Purpose
 
 Multiple auth methods run **simultaneously**, selected per-user by `User.auth_type`
-(`local`, `ldap`, `oidc`, `pki`, `proxy` — `constants.py:VALID_AUTH_TYPES`, enforced by a DB
-CHECK, `v375`, value set swapped by `v378`). Configure in the Admin UI (Settings → Authentication):
-**DB `auth_config` wins over `.env`, which wins over the coded default**
-(`services/auth_config_service.py`). Endpoints live in the `api/endpoints/auth/` package +
-`auth_config.py`, not here.
+(`local`, `ldap`, `oidc`, `pki`, `proxy`, `saml` — `constants.py:VALID_AUTH_TYPES`, enforced by a
+DB CHECK, `v375`, value set swapped by `v378`, widened by `v381`). Configure in the Admin UI
+(Settings → Authentication): **DB `auth_config` wins over `.env`, which wins over the coded
+default** (`services/auth_config_service.py`). Endpoints live in the `api/endpoints/auth/`
+package + `auth_config.py`, not here.
 
 > There is **no `AUTH_TYPE` setting**. It appears in older docs and is described there as
 > informational; nothing ever read it. What methods are *available* is decided per-method by
-> `local_enabled` / `ldap_enabled` / `oidc_enabled` / `pki_enabled` / `proxy_enabled`.
+> `local_enabled` / `ldap_enabled` / `oidc_enabled` / `pki_enabled` / `proxy_enabled` /
+> `saml_enabled`.
 
 ## The identity-source model (issue #354)
 
@@ -160,6 +161,21 @@ that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
   token exchange, federated logout), `claims.py` (ID-token verification), `provisioning.py`
   (JIT), `admission.py` (group allow/deny — see above). It replaced a single ~900-line module
   named for one vendor.
+- `saml/` — SAML 2.0 SP support (#35), split the same way: `config.py` (`SAMLConfig`,
+  DB > .env > default), `sp.py` (the python3-saml settings/request bridge — **signature
+  verification is python3-saml's, never hand-rolled**), `assertion.py` (reads attributes off an
+  already-verified assertion into `SAMLUserData`), `admission.py` (reuses
+  `oidc.admission.check_group_admission` — the group-list syntax is protocol-agnostic),
+  `provisioning.py` (JIT). Endpoints (`api/endpoints/auth/saml.py`) are `GET /saml/metadata`
+  (public, no secret in it), `GET /saml/login` (SP-initiated), `POST /saml/acs` and
+  `GET|POST /saml/sls` — the latter two are the IdP's own POST/redirect targets, so unlike
+  OIDC's callback they finish with an HTTP redirect + cookies, not JSON for a `fetch()` caller.
+  **Deliberately narrower than OIDC's provisioning**: it does not extend
+  `services/idp_group_mapping_service`'s `group_mapping` table (that table's `source` column is
+  CHECK-constrained to a closed set — widening it is a separate, independently reviewable schema
+  change) or track `(NameID, SessionIndex)` per session, so SP-initiated logout only ends the
+  local session rather than also notifying the IdP. Both are documented follow-up scope, not
+  silent gaps.
 - `header_trust.py` — the trusted-peer allowlist, the immediate-peer resolver, the
   fail-closed refusal and the constant-time shared-secret compare. **Two callers: `proxy/`
   and `pki_auth`.** Do not add a third implementation.
@@ -167,7 +183,10 @@ that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
   DB > .env > default), `assertion.py` (trust, secret, admission, role cap),
   `provisioning.py` (JIT + reconciliation).
 - `account_linking.py` — **the single** "may this external identity take over an existing
-  account?" rule, used by LDAP, PKI and OIDC alike. Do not add a fourth.
+  account?" rule, used by LDAP, PKI, OIDC and SAML alike. Do not add a fifth. SAML always passes
+  `email_verified=False` (`saml/assertion.py:SAML_ASSERTS_EMAIL_VERIFIED`, matching PKI/LDAP) —
+  SAML has no standard "this address is verified" assertion, so an email-match link is refused
+  unconditionally rather than being an admin-togglable setting someone could open by mistake.
 - `approval.py` — the `approval_status` state machine and `initial_approval_status`, the one
   function every account-creation path asks "does this start pending?".
 - `roles.py` — the authorization contract (read this first, it's 35 lines).
@@ -331,6 +350,9 @@ someone else's product.
   `./opentr.sh start prod --build --with-pki`
   (mTLS at https://localhost:5182 — **prod-only, Vite can't do mTLS**). Client certs:
   `scripts/pki/test-certs/clients/*.p12`.
+  **No `--with-saml-test` container yet** — a local test IdP for SAML (SimpleSAMLphp or a
+  Keycloak SAML client) is deferred scope, matching the other providers' real-login E2E
+  verification round (task #20/#14) rather than shipped ahead of it.
 - Setup docs: `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md` (the old
   `docs/KEYCLOAK_SETUP.md` is a redirect stub — ~17 inbound links, including
   `scripts/test-all-auth.sh`, so don't delete it), and

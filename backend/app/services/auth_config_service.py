@@ -70,6 +70,7 @@ class AuthConfigService:
         "ldap_bind_password",
         "oidc_client_secret",
         "proxy_shared_secret",
+        "saml_sp_private_key",
     }
 
     #: Keys whose new value does NOT take effect until the process restarts.

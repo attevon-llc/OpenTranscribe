@@ -91,7 +91,7 @@ class TestConstants:
         # providers (cloud edition) are NOT enumerated here — they map onto the
         # generic external_id/external_org_id columns instead, and the cloud
         # layer widens the auth_type CHECK for its own provider.
-        assert VALID_AUTH_TYPES == ["local", "ldap", "oidc", "pki"]
+        assert VALID_AUTH_TYPES == ["local", "ldap", "oidc", "pki", "proxy", "saml"]
         assert "clerk" not in VALID_AUTH_TYPES
 
     def test_seam_version_present(self):

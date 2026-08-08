@@ -18,11 +18,6 @@ docs/performance-whitepaper/
 docs/research-paper/
 PLANS/
 
-# Working notes / handoffs / draft replies (issue #20/#14 close-out). These are
-# session scratch space, not shipped documentation — anything worth keeping
-# already lives in the corresponding GitHub issue, gist, or CHANGELOG entry.
-plans/
-
 # Environment variables
 .env
 .env.local
@@ -31,11 +26,6 @@ plans/
 .env.development
 .env.test
 .env.*.local
-# Working copies of the environment file kept in the repo root. These hold REAL
-# secrets (HF token, KMS key, DB/Redis passwords) — never commit them.
-.app-variables
-.app-variables.*
-*.env.local
 
 # Release-test secrets (template at .env.test-secrets.example is committed)
 scripts/release-tests/.env.test-secrets
@@ -236,8 +226,8 @@ nginx/ssl/*.key
 *.dmg
 *.AppImage
 
-# Archived releases
-releases/
+# Archived releases (root-level only; docs/releases/ is tracked)
+/releases/
 *.tar.gz
 *.zip
 *.rar
@@ -306,9 +296,6 @@ scripts/pki/test-certs/
 
 # Claude Code worktrees
 .claude/worktrees/
-
-# Claude Code personal project memory (never share; CLAUDE.md is the team file)
-CLAUDE.local.md
 test-results/
 
 # Watch Sources local mount (test/runtime media — issue #26)
@@ -316,4 +303,3 @@ test-results/
 
 # Fresh deployment generated compose overlays (opentr.sh --fresh)
 .fresh/
-backend/celerybeat-schedule*

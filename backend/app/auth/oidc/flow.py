@@ -1,4 +1,26 @@
-"""The authorization-code flow: PKCE, the authorization URL, token exchange, logout."""
+"""The authorization-code flow: PKCE, the authorization URL, token exchange, logout.
+
+**Deliberately still hand-rolled httpx, not Authlib's ``AsyncOAuth2Client`` (#33).**
+HANDOFF.md's mapping table listed this module as an Authlib target alongside
+``claims.py``; after implementing the claims.py swap and inspecting
+``AsyncOAuth2Client`` in detail, the two modules turned out not to carry the same
+risk/benefit shape and only one was worth doing.
+
+``claims.py`` verified signatures with python-jose, an unmaintained library with a
+history of algorithm-confusion CVEs — swapping the actual crypto library for a
+maintained one (joserfc) closes real exposure. This module does not verify anything
+cryptographically; PKCE generation and the token-exchange POST are RFC 7636-compliant,
+already covered by ``TestValidatePkceCodeVerifier``/``TestGeneratePkcePair``, and have
+no CVE history to escape. Swapping it for ``AsyncOAuth2Client`` would trade tested code
+for a wire-protocol behavior change with real regression risk against real IdPs — its
+default ``token_endpoint_auth_method`` is not necessarily the ``client_secret_post``
+body-encoding this module posts today, and it knows nothing about
+``OIDCStateStore`` (our own Redis-backed state, not Authlib's) or the internal/public
+URL split (``discovery.py``/``endpoints.py``) — all of which would need re-deriving on
+top of it for zero net simplification. ``discovery.py`` and ``endpoints.py`` are
+unchanged for the same reason: they carry the SSRF guard, TTL cache, and that URL
+split, none of which Authlib's own metadata loading knows about either.
+"""
 
 import base64
 import hashlib

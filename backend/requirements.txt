@@ -9,8 +9,10 @@ alembic>=1.18.5
 pydantic>=2.13.4
 pydantic-settings>=2.14.2
 python-jose[cryptography]>=3.5.0     # being phased out — see #34; not yet zero call sites
-authlib>=1.7.2                       # OIDC protocol client (PKCE, token exchange) — #33
-joserfc>=1.7.4                       # Authlib's own JOSE backend; authlib.jose is deprecated upstream
+# joserfc replaces python-jose in ID-token verification (#33). Not the
+# authlib package itself — oidc/flow.py stays hand-rolled httpx; see its
+# module docstring for why the Authlib client wasn't worth adopting there.
+joserfc>=1.7.4
 python-multipart>=0.0.32
 passlib[bcrypt]>=1.7.4
 bcrypt==3.2.2

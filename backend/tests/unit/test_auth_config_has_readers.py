@@ -138,7 +138,11 @@ _ALL_KEYS = sorted({key for keys in AuthConfigService.CONFIG_CATEGORIES.values()
 #:
 #: All of these live in ``auth/pki_auth.py``, which reads ``settings.PKI_*``
 #: directly for everything except ``pki_enabled`` / ``pki_admin_dns`` /
-#: ``pki_mode`` / ``pki_allow_password_fallback``. Bridging them is the same
+#: ``pki_mode`` / ``pki_allow_password_fallback`` / ``pki_cert_header`` /
+#: ``pki_cert_dn_header`` / ``pki_trusted_proxies`` (the latter three bridged: the
+#: Settings UI's "Trusted Proxies" field on the PKI panel saved to the DB but was
+#: silently never read back — ``pki_authenticate`` only consulted a module-level
+#: list parsed once from ``.env`` at import time). Bridging the rest is the same
 #: change made here for the password-policy and lockout planes: resolve through
 #: ``DynamicAuthSettings`` at the call site (``api/endpoints/auth/pki.py`` holds a
 #: session; ``pki_auth`` helpers do not and would use
@@ -146,12 +150,9 @@ _ALL_KEYS = sorted({key for keys in AuthConfigService.CONFIG_CATEGORIES.values()
 _NOT_YET_BRIDGED = {
     "pki_ca_cert_path": "auth/pki_auth.py reads settings.PKI_CA_CERT_PATH",
     "pki_verify_revocation": "auth/pki_auth.py reads settings.PKI_VERIFY_REVOCATION",
-    "pki_cert_header": "auth/pki_auth.py reads settings.PKI_CERT_HEADER",
-    "pki_cert_dn_header": "auth/pki_auth.py reads settings.PKI_CERT_DN_HEADER",
     "pki_ocsp_timeout_seconds": "auth/pki_auth.py reads settings.PKI_OCSP_TIMEOUT_SECONDS",
     "pki_crl_cache_seconds": "auth/pki_auth.py reads settings.PKI_CRL_CACHE_SECONDS",
     "pki_revocation_soft_fail": "auth/pki_auth.py reads settings.PKI_REVOCATION_SOFT_FAIL",
-    "pki_trusted_proxies": "auth/pki_auth.py reads settings.PKI_TRUSTED_PROXIES",
 }
 
 

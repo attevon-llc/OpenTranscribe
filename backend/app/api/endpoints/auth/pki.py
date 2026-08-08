@@ -74,6 +74,9 @@ def pki_login(request: Request, response: Response, db: Session = Depends(get_db
         request,
         admin_dns_config=auth_settings.pki_admin_dns,
         pki_mode=auth_settings.pki_mode,
+        trusted_proxies_config=auth_settings.pki_trusted_proxies,
+        cert_header=auth_settings.pki_cert_header,
+        cert_dn_header=auth_settings.pki_cert_dn_header,
     )
 
     # Lockout is keyed on the subject DN — the identity a PKI client is claiming, the
@@ -81,7 +84,11 @@ def pki_login(request: Request, response: Response, db: Session = Depends(get_db
     # fall back to the claimed DN header; unattributable failures (a bad certificate with
     # no DN header) share the "unknown" bucket, which only ever throttles further failures.
     subject_dn = pki_data["subject_dn"] if pki_data else None
-    lockout_identifier = subject_dn or extract_dn_from_headers(request) or "unknown"
+    lockout_identifier = (
+        subject_dn
+        or extract_dn_from_headers(request, auth_settings.pki_cert_dn_header)
+        or "unknown"
+    )
     is_locked, _unlock_at = check_and_record_attempt(
         lockout_identifier, success=pki_data is not None
     )

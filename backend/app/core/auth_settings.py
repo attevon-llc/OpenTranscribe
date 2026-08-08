@@ -364,6 +364,27 @@ class DynamicAuthSettings:
         """
         return self.get_bool("pki_allow_password_fallback", True)
 
+    @property
+    def pki_trusted_proxies(self) -> str:
+        """Comma-separated IPs/CIDRs permitted to assert PKI headers.
+
+        **Empty refuses every header-sourced assertion** — same fail-closed rule
+        as ``proxy_trusted_proxies``, implemented once in ``auth/header_trust.py``.
+        Passed into ``pki_auth.pki_authenticate`` per login so a Settings UI save
+        takes effect immediately, mirroring ``ProxyConfig.from_db``.
+        """
+        return self.get_str("pki_trusted_proxies", settings.PKI_TRUSTED_PROXIES)
+
+    @property
+    def pki_cert_header(self) -> str:
+        """Header carrying the URL-encoded PEM client certificate."""
+        return self.get_str("pki_cert_header", settings.PKI_CERT_HEADER)
+
+    @property
+    def pki_cert_dn_header(self) -> str:
+        """Header carrying the certificate's Distinguished Name."""
+        return self.get_str("pki_cert_dn_header", settings.PKI_CERT_DN_HEADER)
+
     # Trusted-header (reverse-proxy) Settings Properties
     #
     # Read by ``auth/proxy/config.py:ProxyConfig.from_db`` (per login) and by the

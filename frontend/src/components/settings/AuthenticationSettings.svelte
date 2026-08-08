@@ -417,17 +417,17 @@
   }
 
   /*
-   * Eight tabs no longer fit at every width. They scroll horizontally rather
-   * than wrap each label onto three lines ("PKI/Certifica te", "OID C"), which is
-   * what shrink-to-fit produced once the Group mappings tab was added.
+   * Ten tabs no longer fit on one row at every width. Wrap the row instead of
+   * scrolling it horizontally -- each .tab keeps white-space: nowrap so a label
+   * itself never breaks onto multiple lines ("PKI/Certifica te", "OID C" is what
+   * shrink-to-fit produced before this tab bar existed); only the row wraps.
    */
   .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     border-bottom: 1px solid var(--color-border);
     margin-bottom: 1rem;
-    overflow-x: auto;
-    scrollbar-width: thin;
   }
 
   .tab {
@@ -556,8 +556,15 @@
       grid-template-columns: 1fr;
     }
 
-    /* Still one scrolling row on mobile — wrapping eight tabs onto four lines
-       pushes the panel itself below the fold. */
+    /* One scrolling row on mobile — wrapping ten tabs onto four-plus lines
+       pushes the panel itself below the fold, unlike the two-row wrap at
+       desktop widths. */
+    .tabs {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
     .tab {
       min-height: 44px;
       text-align: center;

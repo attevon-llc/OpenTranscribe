@@ -11,6 +11,7 @@
   import AuthConfigAuditPanel from './AuthConfigAuditPanel.svelte';
   import AuthMailDesignation from './AuthMailDesignation.svelte';
   import GroupMappingSettings from './GroupMappingSettings.svelte';
+  import SCIMTokenSettings from './SCIMTokenSettings.svelte';
   import { getEmailConfigs, type EmailConfig } from '$lib/api/watchSourcesApi';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
@@ -108,6 +109,7 @@
     // Directory group → in-app group/role. `/admin/group-mappings` had five
     // working endpoints and no consumer, so the feature existed only as an API.
     { id: 'mappings', label: $t('settings.authentication.tab.mappings') },
+    { id: 'scim', label: $t('settings.authentication.tab.scim') },
     { id: 'session', label: $t('settings.authentication.tab.session') },
     // Which mailbox sends password resets, invitations and verification links.
     // It used to live only inside the Watch Sources panel, which is hidden when
@@ -390,6 +392,10 @@
           <!-- Self-contained: it owns its own load/save against
                /admin/group-mappings and does not share the auth-config payload. -->
           <GroupMappingSettings />
+        {:else if activeTab === 'scim'}
+          <!-- Self-contained CRUD over /admin/scim-tokens; not part of the
+               auth-config payload. -->
+          <SCIMTokenSettings />
         {:else if activeTab === 'session'}
           <SessionSettings
             config={configs.session || {}}

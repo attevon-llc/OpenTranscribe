@@ -41,7 +41,7 @@ _DESCRIPTIONS = {
     "cache_ttl_seconds": "Retrieval cache lifetime (0 disables)",
     "semantic_cache_enabled": "Reuse results for near-identical questions",
     "semantic_cache_threshold": "Cosine similarity required for a semantic cache hit",
-    "history_max_turns": "Prior turns replayed to the model",
+    "history_max_turns": "Prior exchanges (question + answer) replayed to the model",
     "messages_per_hour": "Per-user hourly message ceiling",
     "max_concurrent_streams": "Per-user simultaneous streaming replies",
     "retention_days": "Delete conversations older than N days (0 keeps forever)",

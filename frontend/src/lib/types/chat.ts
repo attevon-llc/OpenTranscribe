@@ -68,6 +68,13 @@ interface ChatMessageMetadata {
   chunks_used?: number;
   files_searched?: number | 'all';
   timings_ms?: Record<string, number>;
+  /**
+   * Excerpts were retrieved but none fit the context window, so the answer is
+   * NOT grounded in the user's recordings (issue #384). Persisted in
+   * `msg_metadata`, and set live from the `warning` frame, so the notice
+   * survives a reload rather than existing only for the streaming session.
+   */
+  context_dropped?: boolean;
 }
 
 export interface ChatMessage {
@@ -204,7 +211,17 @@ export interface ChatAdminSettings {
 
 type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'generating';
 
-type ChatErrorCode =
+/**
+ * Non-fatal conditions the server surfaces mid-turn.
+ *
+ * `context_dropped`: retrieval found excerpts but the prompt budget left room
+ * for none of them, so the answer is ungrounded. Reported rather than absorbed —
+ * an answer that reads as sourced when it is not is the failure this exists to
+ * prevent.
+ */
+export type ChatWarningCode = 'context_dropped';
+
+export type ChatErrorCode =
   | 'llm_unconfigured'
   | 'quota_exceeded'
   | 'rate_limited'
@@ -221,6 +238,7 @@ export type ChatStreamEvent =
     }
   | { type: 'status'; stage: StreamStage }
   | { type: 'sources'; citations: ChatSource[] }
+  | { type: 'warning'; code: ChatWarningCode; retrieved?: number }
   | { type: 'delta'; text: string }
   /**
    * A chunk of the model's separately-streamed reasoning/"thinking" text.

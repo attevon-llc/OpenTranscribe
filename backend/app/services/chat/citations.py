@@ -44,13 +44,31 @@ def build_citation(index: int, chunk: MaskedChunk) -> dict:
     }
 
 
-def build_offered_citations(chunks: list[MaskedChunk]) -> list[dict]:
-    """Citations for every excerpt offered to the model.
+def build_offered_citations(
+    chunks: list[MaskedChunk], excerpt_ids: list[int] | None = None
+) -> list[dict]:
+    """Citations for the excerpts that actually reached the prompt.
 
-    Sent as the ``sources`` SSE frame BEFORE generation so the UI can show what
-    is being consulted while the answer streams.
+    Sent as the ``sources`` SSE frame so the UI can show what is being consulted
+    while the answer streams.
+
+    ``excerpt_ids`` are the 1-based ids :func:`prompting.format_excerpts`
+    emitted. Passing them is what keeps the citation list and the prompt in
+    agreement: the excerpt budget can drop retrieved chunks, and citing a chunk
+    the model never saw presents an answer as sourced when it is not
+    (issue #384). ``None`` cites every chunk and is kept only for callers that
+    do no budgeting at all.
+
+    Args:
+        chunks: The masked chunks retrieval produced, in rank order.
+        excerpt_ids: 1-based ids of the chunks rendered into the prompt.
+
+    Returns:
+        One citation payload per rendered excerpt, in excerpt-id order.
     """
-    return [build_citation(i, chunk) for i, chunk in enumerate(chunks, start=1)]
+    if excerpt_ids is None:
+        return [build_citation(i, chunk) for i, chunk in enumerate(chunks, start=1)]
+    return [build_citation(i, chunks[i - 1]) for i in excerpt_ids if 1 <= i <= len(chunks)]
 
 
 def extract_used_citations(answer: str, offered: list[dict]) -> list[dict]:

@@ -190,6 +190,22 @@ function createChatStore() {
         }));
         break;
 
+      case 'warning':
+        // Folded into msg_metadata rather than kept as separate stream state, so
+        // ChatMessage has ONE render path: the same flag arrives on the
+        // persisted message when the thread is reloaded.
+        if (event.code === 'context_dropped') {
+          update((s) => ({
+            ...s,
+            messages: s.messages.map((m) =>
+              m.uuid === s.streamingMessageId
+                ? { ...m, msg_metadata: { ...(m.msg_metadata ?? {}), context_dropped: true } }
+                : m
+            ),
+          }));
+        }
+        break;
+
       case 'reasoning':
         update((s) => ({
           ...s,

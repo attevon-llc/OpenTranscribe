@@ -409,6 +409,89 @@ def test_send_streams_the_contract_frames_and_persists(client, auth_headers, stu
     assert messages[1]["status"] == "complete"
 
 
+def test_reasoning_streams_separately_and_persists_across_a_reload(
+    client, auth_headers, db_session
+):
+    """Full round trip: send → stream → persist → reload → reasoning still visible.
+
+    Reasoning must arrive as its own SSE frame (never mixed into ``delta``/the
+    final answer), and reloading the conversation afterwards must return it on
+    its own field too — the collapsible UI block has nothing to render from a
+    field that only existed during the live stream.
+    """
+    llm = _FakeLLM(
+        events=[
+            LLMStreamEvent(type="reasoning", text="Let me check the transcript. "),
+            LLMStreamEvent(type="reasoning", text="Tuesday looks right."),
+            LLMStreamEvent(type="delta", text="They agreed to ship on Tuesday."),
+            LLMStreamEvent(type="usage", prompt_tokens=100, completion_tokens=20),
+            LLMStreamEvent(type="done", finish_reason="stop"),
+        ]
+    )
+
+    @contextmanager
+    def _test_session_scope():
+        yield db_session
+        db_session.commit()
+
+    with (
+        patch("app.services.llm_service.LLMService.create_from_settings", return_value=llm),
+        patch("app.services.llm_service.LLMService.create_from_config_id", return_value=llm),
+        patch("app.services.chat.retrieval.retrieve_chunks", return_value=[]),
+        patch("app.db.session_utils.session_scope", _test_session_scope),
+    ):
+        conversation = _create(client, auth_headers)
+
+        with client.stream(
+            "POST",
+            f"/api/chat/conversations/{conversation['uuid']}/messages",
+            json={"content": "When do we ship?"},
+            headers=auth_headers,
+        ) as stream:
+            assert stream.status_code == 200
+            body = b"".join(stream.iter_bytes()).decode()
+
+    frames = _read_sse(SimpleNamespace(text=body))
+    reasoning_frames = [data for event, data in frames if event == "reasoning"]
+    delta_frames = [data for event, data in frames if event == "delta"]
+
+    assert reasoning_frames, "expected at least one reasoning frame"
+    assert "Let me check the transcript." in "".join(reasoning_frames)
+    assert "Tuesday looks right." in "".join(reasoning_frames)
+    # The reasoning text must never leak into a delta frame.
+    assert not any("Let me check" in d or "looks right" in d for d in delta_frames)
+
+    messages = client.get(
+        f"/api/chat/conversations/{conversation['uuid']}/messages", headers=auth_headers
+    ).json()["messages"]
+    assistant = messages[1]
+    assert assistant["content"] == "They agreed to ship on Tuesday."
+    assert assistant["reasoning_content"] == "Let me check the transcript. Tuesday looks right."
+    # And the answer itself must stay free of reasoning text.
+    assert "Let me check" not in assistant["content"]
+
+
+def test_reasoning_field_is_absent_for_an_ordinary_answer(client, auth_headers, stub_llm):
+    """Backward compatibility: a provider that never reasons must not grow the field."""
+    conversation = _create(client, auth_headers)
+
+    with client.stream(
+        "POST",
+        f"/api/chat/conversations/{conversation['uuid']}/messages",
+        json={"content": "What did the team decide?"},
+        headers=auth_headers,
+    ) as stream:
+        body = b"".join(stream.iter_bytes()).decode()
+
+    events = [event for event, _ in _read_sse(SimpleNamespace(text=body))]
+    assert "reasoning" not in events
+
+    messages = client.get(
+        f"/api/chat/conversations/{conversation['uuid']}/messages", headers=auth_headers
+    ).json()["messages"]
+    assert messages[1]["reasoning_content"] is None
+
+
 def test_first_exchange_titles_the_conversation(client, auth_headers, stub_llm):
     conversation = _create(client, auth_headers)
 

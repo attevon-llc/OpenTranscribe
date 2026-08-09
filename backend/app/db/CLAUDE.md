@@ -46,9 +46,12 @@ login), `v381_approval_state` (`user.approval_status` NOT NULL DEFAULT
 detection arm requires **both** the column and the CHECK, because the enforcement
 helpers read the column fail-safe and it is the constraint that keeps that sound),
 `v382_scim_tokens` (`scim_token` table + `group_mapping`'s `source`/membership CHECKs
-widened for `proxy`/`scim`), head currently `v383_saml_auth_type` (`auth_type` CHECK
+widened for `proxy`/`scim`), `v383_saml_auth_type` (`auth_type` CHECK
 widened for `'saml'` + `user.saml_subject`, mirroring `v380`'s identity-column shape
-for a fourth provider).
+for a fourth provider), head currently `v384_add_chat_reasoning_content` (nullable
+`chat_message.reasoning_content` — persists a provider's separately-streamed
+reasoning/"thinking" text for the collapsible reasoning display; single-marker
+revision, no CHECK involved).
 
 **Renumbering note (2026-08).** This auth-identity chain originally used v375-v381,
 branched off `v374_add_tag_user_id` independently of the RAG-chat chain

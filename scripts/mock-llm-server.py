@@ -41,16 +41,33 @@ MODEL_ID = "mock-gpt"
 # a failure mode by configuring a provider rather than by patching code — which
 # means the app exercises its REAL error handling, not a mocked branch.
 #
-#   mock-gpt    normal reply with [1]/[2] citations, markdown and a code block
-#   mock-echo   echoes the exact prompt it received; lets a test assert what the
-#               app actually sent (masking applied? prompt layers in order?)
-#   mock-empty  completes with no content — the "model returned nothing" path
-#   mock-error  HTTP 500 before any token — the provider_error path
-#   mock-slow   stalls past the first-token watchdog — the timeout path
-SCENARIOS = ("mock-gpt", "mock-echo", "mock-empty", "mock-error", "mock-slow")
+#   mock-gpt        normal reply with [1]/[2] citations, markdown and a code block
+#   mock-echo       echoes the exact prompt it received; lets a test assert what the
+#                   app actually sent (masking applied? prompt layers in order?)
+#   mock-empty      completes with no content — the "model returned nothing" path
+#   mock-error      HTTP 500 before any token — the provider_error path
+#   mock-slow       stalls past the first-token watchdog — the timeout path
+#   mock-reasoning  streams a reasoning phase (delta.reasoning_content, the vLLM
+#                   dialect this app's OpenAI-compatible parser reads) before the
+#                   same [1]/[2] answer as mock-gpt — exercises the collapsible
+#                   reasoning display end to end with no GPU or real model
+SCENARIOS = ("mock-gpt", "mock-echo", "mock-empty", "mock-error", "mock-slow", "mock-reasoning")
 
 # Long enough to trip DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S without hanging a suite.
 SLOW_FIRST_TOKEN_DELAY_S = 45
+
+# Streamed word-by-word, BEFORE the reply, on a separate wire field
+# (delta.reasoning_content) so it renders in the frontend's collapsible
+# "Thinking" block instead of the answer bubble. Deliberately mentions the
+# excerpts too, so a glance at the expanded block looks like real deliberation.
+REASONING_TEMPLATE = (
+    "The user is asking about **{topic}**. Let me look at what was actually "
+    "retrieved before answering.\n\n"
+    "Excerpt [1] sets up the context, and excerpt [2] adds a clarifying detail "
+    "that changes how I should phrase this. I don't see an explicit decision "
+    "recorded anywhere in what came back, so I should say that plainly instead "
+    "of guessing at one."
+)
 
 # Streamed word-by-word. Mentions [1]/[2] so the citation pipeline is exercised;
 # the backend maps those to the chunks it actually retrieved.
@@ -147,7 +164,16 @@ class Handler(BaseHTTPRequestHandler):
         else:
             text = REPLY_TEMPLATE.format(topic=_topic_from(messages))
 
+        reasoning = (
+            REASONING_TEMPLATE.format(topic=_topic_from(messages))
+            if model == "mock-reasoning"
+            else None
+        )
+
         if not body.get("stream"):
+            message: dict = {"role": "assistant", "content": text}
+            if reasoning:
+                message["reasoning_content"] = reasoning
             self._json(
                 {
                     "id": "mock-1",
@@ -156,7 +182,7 @@ class Handler(BaseHTTPRequestHandler):
                     "choices": [
                         {
                             "index": 0,
-                            "message": {"role": "assistant", "content": text},
+                            "message": message,
                             "finish_reason": "stop",
                         }
                     ],
@@ -186,6 +212,22 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         try:
+            if reasoning:
+                # Reasoning arrives BEFORE any answer content, on its own delta
+                # field — real reasoning-capable servers finish "thinking" before
+                # they start the answer, and the frontend's first-token watchdog
+                # must treat this phase as the model already having responded.
+                for token in re.findall(r"\S+\s*", reasoning):
+                    frame(
+                        {
+                            "id": "mock-1",
+                            "object": "chat.completion.chunk",
+                            "model": model,
+                            "choices": [{"index": 0, "delta": {"reasoning_content": token}}],
+                        }
+                    )
+                    time.sleep(0.02)
+
             for token in re.findall(r"\S+\s*", text):
                 frame(
                     {

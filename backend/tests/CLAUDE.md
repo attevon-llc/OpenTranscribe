@@ -155,6 +155,7 @@ by *configuring a provider* and the app runs its REAL error handling:
 | `mock-empty` | completes with no content |
 | `mock-error` | HTTP 500 before any token → `provider_error` frame |
 | `mock-slow` | stalls past the first-token watchdog |
+| `mock-reasoning` | streams `delta.reasoning_content` (a "thinking" phase) before the same `[1]`/`[2]` answer as `mock-gpt` — collapsible reasoning display |
 
 **CI needs no setup**: the subprocess fallback means `tests/unit/test_mock_llm_fixture.py`
 runs in the GitHub `backend-tests` job with no compose stack. Tests that need the

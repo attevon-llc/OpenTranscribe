@@ -112,6 +112,7 @@ describe('createSseParser', () => {
       'event: start\ndata: {"conversation_uuid":"c","user_message_uuid":"u","assistant_message_uuid":"a"}\n\n' +
         'event: status\ndata: {"stage":"retrieving"}\n\n' +
         'event: sources\ndata: {"citations":[{"id":1,"file_uuid":"f","title":"T","chunk_index":0,"start_time":10,"end_time":20,"speaker":"Dana","snippet":"s"}]}\n\n' +
+        'event: reasoning\ndata: {"text":"thinking..."}\n\n' +
         'event: delta\ndata: {"text":"answer"}\n\n' +
         'event: usage\ndata: {"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"estimated":false}\n\n' +
         'event: done\ndata: {"finish_reason":"stop","title":"A title"}\n\n'
@@ -121,12 +122,28 @@ describe('createSseParser', () => {
       'start',
       'status',
       'sources',
+      'reasoning',
       'delta',
       'usage',
       'done',
     ]);
     const sources = events[2] as { citations: unknown[] };
     expect(sources.citations).toHaveLength(1);
+  });
+
+  it('parses reasoning frames, distinct from delta', () => {
+    const { events, onEvent } = collect();
+    const parser = createSseParser(onEvent);
+
+    parser.push(
+      'event: reasoning\ndata: {"text":"considering the options"}\n\n' +
+        'event: delta\ndata: {"text":"the final answer"}\n\n'
+    );
+
+    expect(events).toEqual([
+      { type: 'reasoning', text: 'considering the options' },
+      { type: 'delta', text: 'the final answer' },
+    ]);
   });
 
   it('parses error frames with their code', () => {

@@ -1,8 +1,11 @@
 """Chat turn orchestration: retrieval → prompt → stream → persist.
 
 Emits the SSE frames the frontend consumes (``start``, ``status``, ``sources``,
-``delta``, ``usage``, ``done``, ``error``). The event names are a frozen contract
-shared with the frontend implementation.
+``delta``, ``reasoning``, ``usage``, ``done``, ``error``). The event names are a
+frozen contract shared with the frontend implementation. ``reasoning`` is shaped
+identically to ``delta`` (``{"text": ...}``) but carries a model's separately
+streamed reasoning/thinking content, rendered by the frontend in its own
+collapsed-by-default block rather than mixed into the answer.
 
 Threading model: everything except the SSE plumbing is synchronous (OpenSearch,
 SQLAlchemy, ``requests``), so the blocking stages run via Starlette's threadpool
@@ -115,6 +118,9 @@ class ChatTurn:
 
     def __init__(self) -> None:
         self.answer_parts: list[str] = []
+        # Separate from answer_parts so the collapsible reasoning block in the UI
+        # never gets reasoning tokens mixed into the rendered answer.
+        self.reasoning_parts: list[str] = []
         self.prompt_tokens: int | None = None
         self.completion_tokens: int | None = None
         # Cache tokens are priced differently from ordinary input tokens — reads far
@@ -134,6 +140,10 @@ class ChatTurn:
     @property
     def answer(self) -> str:
         return "".join(self.answer_parts)
+
+    @property
+    def reasoning(self) -> str:
+        return "".join(self.reasoning_parts)
 
     def status(self) -> str:
         if self.error:
@@ -479,6 +489,18 @@ class ChatService:
                         )
                     turn.answer_parts.append(event.text)
                     yield sse("delta", {"text": event.text})
+                elif event.type == "reasoning":
+                    # The model IS actively responding once reasoning starts, so this
+                    # satisfies the first-token watchdog exactly like an answer delta —
+                    # otherwise a reasoning-heavy response looks "stalled" and gets
+                    # killed by the timeout below while tokens are visibly arriving.
+                    if not got_first_token:
+                        got_first_token = True
+                        turn.metadata.setdefault("timings_ms", {})["first_token"] = int(
+                            (time.monotonic() - started) * 1000
+                        )
+                    turn.reasoning_parts.append(event.text)
+                    yield sse("reasoning", {"text": event.text})
                 elif event.type == "usage":
                     turn.prompt_tokens = event.prompt_tokens
                     turn.completion_tokens = event.completion_tokens
@@ -599,6 +621,7 @@ def _persist_reply(
             conversation_id=conversation_id,
             role=ROLE_ASSISTANT,
             content=turn.answer,
+            reasoning_content=turn.reasoning or None,
             citations=used_citations or None,
             msg_metadata=turn.metadata or None,
             prompt_tokens=turn.prompt_tokens,

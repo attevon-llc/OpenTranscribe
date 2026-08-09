@@ -12,6 +12,7 @@
   import CopyButton from '$components/ui/CopyButton.svelte';
   import ChatMarkdown from './ChatMarkdown.svelte';
   import ChatMessageMeta from './ChatMessageMeta.svelte';
+  import ChatReasoning from './ChatReasoning.svelte';
   import ChatSources from './ChatSources.svelte';
   import type { ChatMessage } from '$lib/types/chat';
 
@@ -113,6 +114,15 @@
         <p class="user-text">{message.content}</p>
       {/if}
     {:else}
+      {#if message.reasoning_content}
+        <ChatReasoning
+          content={message.reasoning_content}
+          streaming={Boolean(message.reasoningStreaming)}
+          startedAt={message.reasoningStartedAt}
+          durationMs={message.reasoningDurationMs}
+        />
+      {/if}
+
       {#if message.content}
         <ChatMarkdown content={message.content} {streaming} />
       {:else if !hasError}

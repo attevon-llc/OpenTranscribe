@@ -116,6 +116,7 @@ def _render_json(conversation, messages: list[ChatMessage]) -> str:
                 "uuid": str(m.uuid),
                 "role": m.role,
                 "content": m.content,
+                "reasoning_content": m.reasoning_content,
                 "citations": m.citations or [],
                 "provider": m.provider,
                 "model": m.model,

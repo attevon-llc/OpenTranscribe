@@ -15,7 +15,7 @@ import json
 
 import requests
 
-MODELS = ("mock-gpt", "mock-echo", "mock-empty", "mock-error", "mock-slow")
+MODELS = ("mock-gpt", "mock-echo", "mock-empty", "mock-error", "mock-slow", "mock-reasoning")
 
 
 def test_advertises_every_scenario_model(mock_llm_url):
@@ -70,6 +70,58 @@ def test_usage_is_reported_so_metering_can_be_exercised(mock_llm_completion):
     usage = mock_llm_completion("count my tokens")["body"]["usage"]
     assert usage["prompt_tokens"] > 0
     assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"]
+
+
+def test_reasoning_model_reports_reasoning_content_non_streamed(mock_llm_completion):
+    """The non-streaming shape carries reasoning too, matching a real provider."""
+    result = mock_llm_completion("what happened", model="mock-reasoning")
+    message = result["body"]["choices"][0]["message"]
+    assert message["reasoning_content"]
+    assert message["content"]  # the final answer is still there, separately
+
+
+def test_reasoning_streams_before_the_answer(mock_llm_url):
+    """Reasoning deltas arrive first, on their own field, then the answer.
+
+    Pins the ordering the frontend's collapsible block depends on: reasoning
+    must be distinguishable from — and precede — the final answer text.
+    """
+    response = requests.post(
+        f"{mock_llm_url}/chat/completions",
+        json={
+            "model": "mock-reasoning",
+            "messages": [{"role": "user", "content": "explain your thinking"}],
+            "stream": True,
+        },
+        stream=True,
+        timeout=60,
+    )
+    assert response.status_code == 200
+
+    reasoning_chunks: list[str] = []
+    content_chunks: list[str] = []
+    saw_content_before_reasoning_ended = False
+    reasoning_done = False
+    for raw in response.iter_lines(decode_unicode=True):
+        if not raw or not raw.startswith("data:"):
+            continue
+        payload = raw[5:].strip()
+        if payload == "[DONE]":
+            break
+        frame = json.loads(payload)
+        delta = (frame.get("choices") or [{}])[0].get("delta", {})
+        if delta.get("reasoning_content"):
+            if content_chunks:
+                saw_content_before_reasoning_ended = True
+            reasoning_chunks.append(delta["reasoning_content"])
+        elif delta.get("content"):
+            reasoning_done = True
+            content_chunks.append(delta["content"])
+
+    assert reasoning_chunks, "expected at least one reasoning_content chunk"
+    assert content_chunks, "expected the answer to still stream after reasoning"
+    assert reasoning_done
+    assert not saw_content_before_reasoning_ended
 
 
 def test_streaming_ends_with_usage_then_done(mock_llm_url):

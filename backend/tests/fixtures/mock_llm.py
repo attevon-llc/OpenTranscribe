@@ -21,13 +21,14 @@ backend container is the container, not the host.
 
 Scenario models (see the server for details):
 
-===============  =========================================================
-``mock-gpt``     normal reply with ``[1]``/``[2]`` citations and markdown
-``mock-echo``    echoes the prompt it received — assert what the app SENT
-``mock-empty``   completes with no content
-``mock-error``   HTTP 500 before any token
-``mock-slow``    stalls past the first-token watchdog
-===============  =========================================================
+==================  =======================================================
+``mock-gpt``        normal reply with ``[1]``/``[2]`` citations and markdown
+``mock-echo``       echoes the prompt it received — assert what the app SENT
+``mock-empty``      completes with no content
+``mock-error``      HTTP 500 before any token
+``mock-slow``       stalls past the first-token watchdog
+``mock-reasoning``  streams ``delta.reasoning_content`` before the answer
+==================  =======================================================
 """
 
 from __future__ import annotations

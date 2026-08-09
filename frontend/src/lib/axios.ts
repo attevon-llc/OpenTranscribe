@@ -3,7 +3,11 @@ import { isCloudEdition } from '$lib/edition';
 
 // Create axios instance with consistent base URL for all environments
 // This ensures the same behavior in development and production with nginx
-export const axiosInstance = axios.create({
+//
+// Import this as the default export (`import axiosInstance from '$lib/axios'`) —
+// that's the convention used by the vast majority of call sites. It is
+// intentionally NOT a named export to avoid knip's "duplicate export" flag.
+const axiosInstance = axios.create({
   baseURL: '/api',
   headers: {
     'Content-Type': 'application/json',

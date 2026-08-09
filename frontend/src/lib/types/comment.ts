@@ -4,7 +4,7 @@
  * Import via `$lib/types/comment`. `CommentSection.svelte` is still plain JS and
  * describes the same shape in JSDoc; keep the two in step until it is converted.
  */
-export interface CommentAuthor {
+interface CommentAuthor {
   uuid?: string;
   email?: string;
   full_name?: string;

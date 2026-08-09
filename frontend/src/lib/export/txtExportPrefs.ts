@@ -6,7 +6,7 @@
  * so a partial blob never drops a toggle.
  */
 
-export const TXT_PREF_KEY = 'opentranscribe.txtExportPrefs';
+const TXT_PREF_KEY = 'opentranscribe.txtExportPrefs';
 
 export function loadTxtPrefs(): { includeTimestamps: boolean; includeSpeakers: boolean } {
   try {

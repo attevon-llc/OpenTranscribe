@@ -15,8 +15,8 @@ import {
 import { uploadInParts, type MultipartPlan, type PutPart } from '$lib/services/multipartUploader';
 
 // Upload item types
-export type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
-export type UploadStatus =
+type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
+type UploadStatus =
   | 'queued'
   | 'preparing'
   | 'uploading'
@@ -88,7 +88,7 @@ const QUEUE_PROCESS_DELAY_MS = 100;
 const CONTROL_REQUEST_TIMEOUT_MS = 300000; // 5 minutes
 
 // Event types for upload lifecycle
-export type UploadEventType =
+type UploadEventType =
   | 'added'
   | 'started'
   | 'progress'
@@ -119,7 +119,7 @@ interface UploadResult {
  * as this type rather than an axios `CanceledError`, because `axios.isCancel`
  * means "the user cancelled" everywhere else in this file and suppresses retry.
  */
-export class UploadStalledError extends Error {
+class UploadStalledError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'UploadStalledError';

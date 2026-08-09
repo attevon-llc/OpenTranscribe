@@ -150,26 +150,3 @@ export const DEFAULT_EXTRACTION_CONFIG: AudioExtractionConfig = {
   channels: 1, // Mono
   maxFileSize: 2 * 1024 * 1024 * 1024, // 2GB (FFmpeg.wasm limit)
 };
-
-/**
- * User preferences for audio extraction
- */
-export interface AudioExtractionPreferences {
-  autoExtractLargeVideos: boolean; // Auto-extract videos >100MB
-  showExtractionModal: boolean; // Show modal before extraction
-  rememberChoice: boolean; // Remember user's choice
-  notificationPreference: 'detailed' | 'minimal'; // Notification verbosity
-}
-
-/**
- * Notification data for extraction progress
- */
-export interface ExtractionNotificationData {
-  extractionId: string;
-  fileName: string;
-  originalSize: number;
-  estimatedAudioSize: number;
-  compressionRatio: number;
-  stage: ExtractionProgress['stage'];
-  percentage: number;
-}

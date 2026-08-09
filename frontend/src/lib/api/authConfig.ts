@@ -1,7 +1,7 @@
 /**
  * API client for authentication configuration management.
  */
-import { axiosInstance } from '../axios';
+import axiosInstance from '../axios';
 
 export interface AuthConfigResponse {
   id: number;
@@ -222,7 +222,7 @@ export type AuthConfigCategory = (typeof AUTH_CONFIG_CATEGORIES)[number];
  * only value that delivers; `missing`/`disabled` mean the designation is
  * dangling and sends have silently fallen back to the env SMTP transport.
  */
-export type AuthMailStatus = 'not_designated' | 'active' | 'missing' | 'disabled';
+type AuthMailStatus = 'not_designated' | 'active' | 'missing' | 'disabled';
 
 /** Mirrors `backend/app/schemas/email_notification.py:AuthMailDesignationResponse`. */
 export interface AuthMailDesignation {

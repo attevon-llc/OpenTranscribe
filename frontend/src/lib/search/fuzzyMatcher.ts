@@ -20,7 +20,7 @@ export function normalizeText(value: string): string {
   return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
-export interface FuzzyKey {
+interface FuzzyKey {
   /** Dotted path into the item, e.g. `"label"` or `"keywords"`. */
   name: string;
   /** Relative weight; higher = more influential. Default 1. */
@@ -38,7 +38,7 @@ export interface FuzzyIndexOptions {
   limit?: number;
 }
 
-export interface FuzzyResult<T> {
+interface FuzzyResult<T> {
   item: T;
   /** fuse score: 0 = perfect, 1 = worst. */
   score: number;

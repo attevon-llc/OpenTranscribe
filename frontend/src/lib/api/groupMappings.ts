@@ -5,7 +5,7 @@
  * one directory claim (an LDAP group DN, an OIDC role/group value) and grants an
  * in-app group, a role, or both.
  */
-import { axiosInstance } from '../axios';
+import axiosInstance from '../axios';
 
 /** Mirrors `SOURCE_PATTERN` — the only two identity sources that assert groups. */
 export type GroupMappingSource = 'ldap' | 'oidc';
@@ -66,7 +66,7 @@ export interface MappingTestRequest {
   username?: string;
 }
 
-export interface MappingTestGroup {
+interface MappingTestGroup {
   uuid: string;
   name: string;
 }

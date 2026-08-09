@@ -10,7 +10,7 @@ import axiosInstance from '$lib/axios';
 
 const BASE = '/admin/backup';
 
-export interface OpenSearchSnapshotResult {
+interface OpenSearchSnapshotResult {
   status: string; // ok | skipped | unsupported | error
   error?: string | null;
   snapshot?: string | null;
@@ -19,20 +19,20 @@ export interface OpenSearchSnapshotResult {
   pruned?: string[] | null;
 }
 
-export interface OpenSearchSnapshotStatus {
+interface OpenSearchSnapshotStatus {
   reachable: boolean;
   repository_registered: boolean;
   last_snapshot?: string | null;
 }
 
-export interface RecoveryCompanionResult {
+interface RecoveryCompanionResult {
   status: string; // keys_included | readme_written | error
   filename?: string | null;
   path?: string | null;
   error?: string | null;
 }
 
-export interface BackupResult {
+interface BackupResult {
   ok: boolean;
   status: string;
   error?: string | null;

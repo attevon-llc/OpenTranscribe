@@ -5,7 +5,7 @@
  * plaintext token is returned once, by `create`, and never again -- the row stores
  * only a SHA-256 digest.
  */
-import { axiosInstance } from '../axios';
+import axiosInstance from '../axios';
 
 export interface ScimToken {
   uuid: string;

@@ -108,18 +108,3 @@ export interface SpeakerIdentificationResponse {
   file_id: string; // UUID
   speaker_count: number;
 }
-
-// UI-specific types
-export interface SummaryModalState {
-  isOpen: boolean;
-  loading: boolean;
-  error: string | null;
-  summary: SummaryData | null;
-}
-
-export interface SummaryTask {
-  task_id: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
-  progress?: number;
-  error_message?: string;
-}

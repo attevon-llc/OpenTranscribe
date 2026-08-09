@@ -4,7 +4,7 @@
 
 export type GroupRole = 'owner' | 'admin' | 'member';
 export type PermissionLevel = 'viewer' | 'editor';
-export type ShareTargetType = 'user' | 'group';
+type ShareTargetType = 'user' | 'group';
 
 export interface UserBrief {
   uuid: string;

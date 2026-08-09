@@ -25,7 +25,7 @@
 export const DEFAULT_STALL_TIMEOUT_MS = 120_000; // 2 minutes
 
 /** Body fully sent; server has this long to answer before we give up. */
-export const DEFAULT_FINALIZE_TIMEOUT_MS = 900_000; // 15 minutes
+const DEFAULT_FINALIZE_TIMEOUT_MS = 900_000; // 15 minutes
 
 export interface StallWatchdogOptions {
   /** Idle time tolerated while bytes are still in flight. */

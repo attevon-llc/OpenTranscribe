@@ -9,7 +9,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
 vi.mock('$lib/axios', () => ({
-  axiosInstance: { get: vi.fn() },
   default: { get: vi.fn() },
 }));
 
@@ -22,7 +21,7 @@ vi.mock('$stores/locale', () => ({
   },
 }));
 
-import { axiosInstance } from '$lib/axios';
+import axiosInstance from '$lib/axios';
 import LoginBanner from './LoginBanner.svelte';
 
 const BANNER = {

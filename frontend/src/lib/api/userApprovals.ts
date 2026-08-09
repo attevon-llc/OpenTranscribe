@@ -5,7 +5,7 @@
  * `require_account_approval` is on (a super_admin setting on the Authentication →
  * Local tab); an admin works the queue the setting produces.
  */
-import { axiosInstance } from '../axios';
+import axiosInstance from '../axios';
 
 /**
  * One account awaiting a decision.

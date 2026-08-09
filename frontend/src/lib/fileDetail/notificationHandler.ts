@@ -4,7 +4,7 @@ import type { Notification } from '$stores/websocket';
  * Translation function shape — matches the value of the `t` derived store
  * (`$t` inside the page): `(key, options?) => string`.
  */
-export type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
 
 /**
  * Context object the file-detail page passes into {@link handleFileNotification}.

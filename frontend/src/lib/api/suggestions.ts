@@ -95,10 +95,3 @@ export async function extractAISuggestions(
     force_regenerate: forceRegenerate,
   });
 }
-
-/**
- * Dismiss AI suggestions for a file
- */
-export async function dismissAISuggestions(fileId: string): Promise<void> {
-  await axiosInstance.post(`/files/${fileId}/suggestions/dismiss`);
-}

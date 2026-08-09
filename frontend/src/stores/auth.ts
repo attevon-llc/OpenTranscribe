@@ -35,7 +35,7 @@ export interface CertificateInfo {
 }
 
 // Define user interface
-export interface User {
+interface User {
   uuid: string;
   email: string;
   full_name: string;
@@ -99,7 +99,7 @@ export interface AuthMethods {
 }
 
 // Define auth store interface
-export interface AuthState {
+interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   ready: boolean;
@@ -195,7 +195,7 @@ export const token = derived(authStore, ($store) => $store.token);
 // toast would fire once per refused request, forever.
 // ---------------------------------------------------------------------------
 
-export type AccountLifecycleCode =
+type AccountLifecycleCode =
   | 'password_change_required'
   | 'account_expired'
   | 'banner_acknowledgment_required'
@@ -207,7 +207,7 @@ export type AccountLifecycleCode =
  * banner — different wording — so the UI must say the notice was updated rather
  * than present the refusal as a failure.
  */
-export type BannerAcknowledgmentReason = 'never_acknowledged' | 'banner_text_changed';
+type BannerAcknowledgmentReason = 'never_acknowledged' | 'banner_text_changed';
 
 export interface AccountLifecycleState {
   code: AccountLifecycleCode;
@@ -968,7 +968,7 @@ export interface MfaSetupData {
  * - `unavailable` — this account can never enrol here (external IdP owns the
  *                   second factor, or MFA is off system-wide). Not a retry.
  */
-export type MfaEnrollmentErrorKind = 'retry' | 'expired' | 'restart' | 'unavailable';
+type MfaEnrollmentErrorKind = 'retry' | 'expired' | 'restart' | 'unavailable';
 
 export interface MfaEnrollmentError {
   kind: MfaEnrollmentErrorKind;
@@ -1065,16 +1065,5 @@ export async function verifyMfaEnrollment(
   } catch (rawError: unknown) {
     console.error('auth.ts: MFA enrolment verification failed:', rawError);
     return { success: false, error: classifyEnrollmentError(rawError) };
-  }
-}
-
-// Fetch certificate info for PKI authenticated users
-export async function fetchCertificateInfo(): Promise<CertificateInfo | null> {
-  try {
-    const response = await axiosInstance.get('/auth/me/certificate');
-    return response.data;
-  } catch (error) {
-    console.error('Failed to fetch certificate info:', error);
-    return null;
   }
 }

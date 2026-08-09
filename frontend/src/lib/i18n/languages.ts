@@ -18,10 +18,6 @@ export const SUPPORTED_LANGUAGES: Language[] = [
 
 export const DEFAULT_LANGUAGE = 'en';
 
-export function getLanguageByCode(code: string): Language | undefined {
-  return SUPPORTED_LANGUAGES.find((lang) => lang.code === code);
-}
-
 export function isValidLanguageCode(code: string): boolean {
   return SUPPORTED_LANGUAGES.some((lang) => lang.code === code);
 }

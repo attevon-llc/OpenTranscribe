@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { t } from '$stores/locale';
-  import { axiosInstance } from '$lib/axios';
+  import axiosInstance from '$lib/axios';
 
   /**
    * The acknowledgment is being recorded server-side

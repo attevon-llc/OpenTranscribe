@@ -82,7 +82,7 @@ export interface ExportOptions {
  * @param comments - Raw comments data with timestamps
  * @returns Combined array of segments and comments in order
  */
-export function mergeCommentsWithTranscript(
+function mergeCommentsWithTranscript(
   segments: string[],
   commentLines: string[],
   transcriptData: ExportSegment[],
@@ -131,12 +131,7 @@ export function mergeCommentsWithTranscript(
  * @param times2 - Timestamps for second array
  * @returns Merged array in chronological order
  */
-export function mergeSortedArrays<T>(
-  arr1: T[],
-  arr2: T[],
-  times1: number[],
-  times2: number[]
-): T[] {
+function mergeSortedArrays<T>(arr1: T[], arr2: T[], times1: number[], times2: number[]): T[] {
   let merged = [];
   let i = 0,
     j = 0;

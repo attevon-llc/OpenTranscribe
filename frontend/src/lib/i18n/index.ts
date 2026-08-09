@@ -134,13 +134,3 @@ export function translateSpeakerLabel(name: string): string {
   // Return the original name if it's not a generic speaker label
   return name;
 }
-
-/**
- * Get the localized speaker label prefix (e.g., "SPEAKER", "HABLANTE", "LOCUTEUR")
- * Useful for creating new speaker labels in the user's language.
- */
-export function getSpeakerLabelPrefix(): string {
-  return i18next.t('speaker.labelPrefix');
-}
-
-export default i18next;

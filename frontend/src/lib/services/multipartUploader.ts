@@ -25,7 +25,7 @@ export interface MultipartPlan {
 }
 
 /** A part the backend has confirmed, as reported to `/files/complete`. */
-export interface CompletedPart {
+interface CompletedPart {
   part_number: number;
   etag: string;
 }

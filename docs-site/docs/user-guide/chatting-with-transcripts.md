@@ -9,12 +9,16 @@ actually said, with citations that jump to the exact moment in the player.
 
 **Chat** is a page in the main navigation, alongside Search and Speakers.
 
+![Chat empty state with suggested questions and conversation history](/img/screenshots/chat/01-chat-empty-state-suggestions.png)
+
 ## Your first conversation
 
 1. Open **Chat** and type a question.
 2. The assistant searches your transcripts, then streams an answer with numbered
    citations like `[1]`.
 3. Click any source card to open that recording **at that timestamp**.
+
+![Chat conversation with numbered citations and a source list](/img/screenshots/chat/02-chat-conversation-with-citations.png)
 
 By default it searches **everything you can access**. That works, but narrowing
 the scope makes answers noticeably more specific.
@@ -29,6 +33,8 @@ Use **Add context** above the composer. Four ways to narrow:
 | **Collections** | You want a whole project or client |
 | **Tags** | You organise by topic or status |
 | **Speakers** | You care about what specific people said |
+
+![Chat scope picker with recordings, collections, tags, and speakers tabs](/img/screenshots/chat/03-chat-scope-picker.png)
 
 Collections and tags are resolved **when you ask**, not when you select them — so
 a recording added to a collection later is automatically in scope for

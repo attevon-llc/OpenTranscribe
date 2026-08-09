@@ -125,14 +125,14 @@ OpenWhispr **does have real speaker diarization**, not a stub — but it's struc
 
 Comparing your 7 LLM providers against their 9 turns up three genuine gaps worth prioritizing, and several that aren't:
 
-| Provider | Verdict | Why |
-|---|---|---|
-| **Tinfoil** | **Add — highest priority** | Runs inference inside confidential-computing enclaves (TEEs) so not even the provider can see plaintext data — a cryptographic guarantee, not a policy promise. This is a better fit for *your* FIPS-140-3-aligned, FedRAMP-aligned enterprise/government positioning than it is for OpenWhispr's actual individual-user market. It would let compliance-sensitive customers get cloud-LLM speed/quality with a hard technical guarantee against provider-side exposure — strengthens a differentiator you already lead on rather than just closing a parity gap. |
-| **Gemini (Google)** | **Add** | You already integrate Google Cloud Speech for ASR but have no direct Google LLM path. Rounds out direct access to all three major labs (OpenAI/Anthropic/Google) instead of two, and Gemini's long-context models are a natural fit for your multi-section summarization stitching on long transcripts. |
-| **Groq** | **Add** | Not a model — an inference host (custom LPU silicon) running open models (Llama/Mixtral-class) at very low latency. Matters anywhere latency is user-visible: chat streaming, live-ish summarization. Your `openrouter` provider may already route to Groq-hosted models indirectly, but that's subject to OpenRouter's markup and routing choices, not a guaranteed low-latency path. |
-| Corti | Skip | Healthcare-vertical-specific (clinical note structuring, medical coding awareness) — only relevant if pursuing a healthcare vertical, which doesn't fit your current FedRAMP/government-leaning positioning. |
-| `enterprise` / `lan` | Skip | Conceptually already covered by your existing `custom` / `vllm` / `ollama` self-hosted-endpoint options. |
-| `openwhispr` | N/A | Their own hosted product, not a general-purpose provider pattern to borrow. |
+| Provider | Verdict | Issue | Why |
+|---|---|---|---|
+| **Tinfoil** | **Add — highest priority** | [#378](https://github.com/attevon-llc/OpenTranscribe/issues/378) | Runs inference inside confidential-computing enclaves (TEEs) so not even the provider can see plaintext data — a cryptographic guarantee, not a policy promise. This is a better fit for *your* FIPS-140-3-aligned, FedRAMP-aligned enterprise/government positioning than it is for OpenWhispr's actual individual-user market. It would let compliance-sensitive customers get cloud-LLM speed/quality with a hard technical guarantee against provider-side exposure — strengthens a differentiator you already lead on rather than just closing a parity gap. |
+| **Gemini (Google)** | **Add** | [#379](https://github.com/attevon-llc/OpenTranscribe/issues/379) (plain API) + [#382](https://github.com/attevon-llc/OpenTranscribe/issues/382) (Vertex AI, split out — see §11) | You already integrate Google Cloud Speech for ASR but have no direct Google LLM path. Rounds out direct access to all three major labs (OpenAI/Anthropic/Google) instead of two, and Gemini's long-context models are a natural fit for your multi-section summarization stitching on long transcripts. |
+| **Groq** | **Add** | [#380](https://github.com/attevon-llc/OpenTranscribe/issues/380) | Not a model — an inference host (custom LPU silicon) running open models (Llama/Mixtral-class) at very low latency. Matters anywhere latency is user-visible: chat streaming, live-ish summarization. Your `openrouter` provider may already route to Groq-hosted models indirectly, but that's subject to OpenRouter's markup and routing choices, not a guaranteed low-latency path. |
+| Corti | Skip | — | Healthcare-vertical-specific (clinical note structuring, medical coding awareness) — only relevant if pursuing a healthcare vertical, which doesn't fit your current FedRAMP/government-leaning positioning. |
+| `enterprise` / `lan` | Skip | — | Conceptually already covered by your existing `custom` / `vllm` / `ollama` self-hosted-endpoint options. |
+| `openwhispr` | N/A | — | Their own hosted product, not a general-purpose provider pattern to borrow. |
 
 ### Other capability gaps found while researching this (not provider-related)
 
@@ -230,6 +230,42 @@ Checked `openwhispr.com/pricing` directly (2026-08-09):
 
 ---
 
+## 11. Local and cloud model catalog — what they actually ship, model by model
+
+Pulled directly from `src/models/modelRegistryData.json` (structured registry: `localProviders`, `cloudProviders`, `enterpriseProviders`, `openwhisprCloudModels`), not from marketing copy.
+
+### Local models (6 families, all `.gguf` via llama.cpp, fetched on-demand from Hugging Face — see §5 for the download-on-first-use mechanism)
+
+| Family | Count | Size range | Notable |
+|---|---|---|---|
+| **Liquid AI** | 5 | 230M – 8B (MoE) | `LFM2.5-1.2B-Instruct` is their **recommended** default — "excellent instruction following." Also `LFM2.5-230M`/`350M` ("instant cleanup on modest hardware") and `LFM2.5-8B-A1B`, a MoE with only ~1.5B active params. Purpose-picked for *dictation cleanup* latency, not general chat. |
+| Qwen | 12 | 1.5B – 32B | Qwen3.5-9B-Q4_K_M is top recommended ("powerful hybrid model," 262K context) |
+| Gemma (Google) | 11 | 1B – 31B | Includes Google's official QAT (quantization-aware training) builds — smaller size, quality preserved; `gemma-4-e4b-it-qat` recommended |
+| Mistral | 3 | 7B – 12B | Mistral Nemo 12B recommended |
+| Meta Llama | 3 | 1B – 8B | Llama 3.2 3B recommended |
+| OpenAI OSS | 1 | 20B | `gpt-oss-20b-mxfp4`, recommended |
+
+**This is not a functional gap on our side.** Our local LLM path (`vllm`/`ollama`) already accepts any GGUF/HF model a user points it at, Liquid AI included — OpenWhispr's actual edge here is a curated download-picker UI (pick a model, it fetches the right quant automatically), not model access itself. What *is* missing: we have zero mentions of Liquid AI or LFM2 anywhere in `docs/` (verified by grep). Their design intent — small, fast, strong at instruction-following for lightweight tasks — maps well onto things like our redaction/tagging LLM calls or lighter chat scoping. Adding a "recommended local models" section to the Ollama/vLLM setup docs is cheap, closes a real awareness gap, and requires no code.
+
+### Cloud models, current line-up per provider
+
+- **OpenAI**: GPT-5.6 (Sol/Terra/Luna variants), 5.5, 5.2, 5-mini/nano, 4.1 family
+- **Anthropic**: Claude Opus 5, Sonnet 5, Fable 5, Haiku 4.5, plus older Opus/Sonnet 4.x
+- **Gemini**: 3.5 Flash, 3.1 Pro, 3 Flash, 2.5 Flash Lite, plus Gemma 4 hosted variants
+- **Groq**: Qwen3 32B, GPT-OSS 120B/20B, Llama 3.3 70B, Llama 3.1 8B, plus their own agentic "Compound"/"Compound Mini" models
+- **Tinfoil**: Kimi K2.6, GLM-5.2, GPT-OSS 120B, Gemma 4 31B
+- **Corti**: their own S1/S1-mini models (healthcare-specific — still a skip per §4)
+
+**Tinfoil model-provenance note, relevant to issue #378**: Kimi K2 is Moonshot AI's model and GLM-5 is Zhipu AI's — both Chinese labs' open-weight releases, running inside Tinfoil's confidential-computing enclaves alongside GPT-OSS and Gemma. Tinfoil's core value prop (data confidentiality via TEE attestation) is unaffected by this, but for a FIPS/FedRAMP-aligned product, model *provenance* — not just data confidentiality — may matter to some government/enterprise customers. Before shipping Tinfoil as a default option, confirm whether their API lets us pin/restrict to a specific model (e.g., GPT-OSS/Gemma only) rather than exposing their full catalog. Doesn't block the issue, just needs a decision during implementation.
+
+**Enterprise routing gap — resolved into two issues**: OpenWhispr's `enterpriseProviders` list includes `bedrock` (AWS), `azure` (Azure OpenAI), **and `vertex` (GCP Vertex AI)**. We already have Bedrock; we don't have Vertex AI, and it's architecturally distinct enough from a plain Gemini API key (IAM/ADC-based credentials, no stored secret, same shape as `BEDROCK`'s boto3 Converse pattern in `backend/app/services/llm_bedrock.py`) that it needed its own issue rather than folding into #379. Split as: **#379** now scoped to the plain Google AI Studio Gemini API (generic API-key provider, same pattern as `OPENAI`/`ANTHROPIC`), **#382** for Vertex AI as a new SDK-based provider mirroring `BEDROCK` exactly (own `SDK_PROVIDERS` entry, own `llm_vertex.py` module, ADC credential chain, no per-user API key).
+
+### One more structural note: OpenWhispr Cloud is itself a curated proxy, not a proprietary model
+
+`openwhisprCloudModels` (their own hosted tier definitions) routes "Fast" through Groq (Llama 3.3 70B / 3.1 8B) and "Balanced"/"Quality" through OpenRouter (Claude Sonnet 4.6/Opus 4.8, Gemini 2.5 Flash, GPT-4.1). Their paid cloud product has no model of its own — it's a curated, marked-up proxy over providers we're evaluating adding directly (Groq) or already have indirect access to (OpenRouter). Worth knowing if the pricing comparison in §10 ever comes up in a sales conversation — their Pro/Business tiers are largely priced access to the same underlying models available via API elsewhere.
+
+---
+
 ## Appendix: file/function citations for this report
 
 - Transcription: `src/helpers/whisperServer.js` (spawn, args, HTTP POST, `--no-timestamps` rationale), `src/helpers/audioManager.js` (`MediaRecorder` batch path, `AudioWorkletProcessor` streaming path), `src/helpers/ffmpegUtils.js` (WAV conversion), `scripts/download-whisper-cpp.js`.
@@ -244,3 +280,6 @@ Checked `openwhispr.com/pricing` directly (2026-08-09):
 - Video support gap: `src/components/notes/UploadAudioView.tsx:1433` (accept list), `src/helpers/urlAudioDownloader.js:929-930` (`-x --audio-format`), `src/helpers/audioStorage.js` (`.webm`-only storage); OpenTranscribe contrast: `backend/app/services/storage_recovery_service.py`, `backend/app/services/media_download_service.py`, `frontend/src/components/VideoPlayer.svelte`, `PlyrMiniPlayer.svelte`.
 - LLM provider inventory: `src/services/ai/inferenceProviders/*.ts` (OpenWhispr), `backend/app/services/llm_service.py:42` (`LLMProvider` enum, OpenTranscribe).
 - Other gaps: MCP/API absence verified by repo-wide grep of `backend/app` and `docs/`; live-ASR absence verified via `backend/app/api/websockets.py`; custom vocabulary confirmed via `backend/app/api/endpoints/custom_vocabulary.py`; existing tracked issues checked via `gh issue list --repo attevon-llc/OpenTranscribe` (#365 Recall.ai meeting capture, #366 NVIDIA Parakeet/Canary).
+- Model catalog (local + cloud, all providers, including Liquid AI/LFM2.5, Tinfoil's model list, and the `vertex`/`bedrock`/`azure` `enterpriseProviders` list): `src/models/modelRegistryData.json`. Confirmed no `docs/` mentions of "liquid" or "lfm2" on our side via repo-wide grep.
+- Bedrock-as-SDK-provider precedent used to scope the Vertex AI issue: `backend/app/services/llm_bedrock.py` (module docstring), `backend/app/services/llm_service.py:48,56` (`SDK_PROVIDERS`), `backend/app/core/config.py:923-930` (`BEDROCK_REGION`/`BEDROCK_MODEL_NAME` settings pattern).
+- Issues opened from this analysis: #378 (Tinfoil), #379 (Gemini — plain API), #380 (Groq), #382 (GCP Vertex AI — SDK-based, split from #379).

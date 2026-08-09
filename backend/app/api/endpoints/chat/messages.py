@@ -82,6 +82,7 @@ def _serialize_message(message: ChatMessage) -> dict:
         "uuid": str(message.uuid),
         "role": message.role,
         "content": message.content,
+        "reasoning_content": message.reasoning_content,
         "citations": message.citations,
         "msg_metadata": message.msg_metadata,
         "prompt_tokens": message.prompt_tokens,

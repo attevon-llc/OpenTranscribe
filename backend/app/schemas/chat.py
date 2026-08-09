@@ -136,6 +136,9 @@ class ChatMessageOut(BaseModel):
     uuid: str
     role: str
     content: str
+    # A provider's separately-streamed reasoning/"thinking" text (v384). None for
+    # user messages and for any assistant reply whose provider never streamed one.
+    reasoning_content: str | None = None
     citations: list[Citation] | None = None
     msg_metadata: dict[str, Any] | None = None
     prompt_tokens: int | None = None

@@ -197,6 +197,12 @@ class ChatMessage(Base):
     )
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # A provider's separately-streamed reasoning/"thinking" text (v384), persisted so
+    # it is still visible when a conversation is reloaded rather than only during the
+    # live stream. NULL for user messages and for any assistant reply whose provider
+    # never streamed reasoning at all — the UI's collapsible block only renders when
+    # this is non-empty.
+    reasoning_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     # [{id, file_uuid, title, chunk_index, start_time, end_time, speaker, snippet}]
     citations: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     # Diagnostics only — ids, counts and timings; never prompt/answer text.

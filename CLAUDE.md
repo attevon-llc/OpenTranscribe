@@ -121,7 +121,9 @@ topic extraction work with **no GPU, API key, or internet**. Only token generati
 is canned — retrieval, redaction masking, citations, SSE and usage recording all
 take their real paths. Scenario models drive the app's real error handling:
 `mock-gpt` (normal), `mock-echo` (returns the prompt it was given — assert what the
-app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`. Never start it as a
+app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`, `mock-reasoning`
+(streams a `delta.reasoning_content` "thinking" phase before the answer — exercises
+the collapsible reasoning display). Never start it as a
 bare host process: it binds 5199 and then blocks the container. Fixtures and the
 full table: `backend/tests/CLAUDE.md`.
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.

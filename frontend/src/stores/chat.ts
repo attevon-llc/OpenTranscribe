@@ -190,13 +190,43 @@ function createChatStore() {
         }));
         break;
 
+      case 'reasoning':
+        update((s) => ({
+          ...s,
+          messages: s.messages.map((m) => {
+            if (m.uuid !== s.streamingMessageId) return m;
+            return {
+              ...m,
+              reasoning_content: (m.reasoning_content ?? '') + event.text,
+              reasoningStreaming: true,
+              // Only set on the FIRST reasoning frame — later frames must not
+              // reset the clock, or a live elapsed counter never advances.
+              reasoningStartedAt: m.reasoningStartedAt ?? Date.now(),
+            };
+          }),
+        }));
+        break;
+
       case 'delta':
         setStatus('streaming');
         update((s) => ({
           ...s,
-          messages: s.messages.map((m) =>
-            m.uuid === s.streamingMessageId ? { ...m, content: m.content + event.text } : m
-          ),
+          messages: s.messages.map((m) => {
+            if (m.uuid !== s.streamingMessageId) return m;
+            // The first answer token ends the reasoning phase: freeze its
+            // elapsed time so the collapsed header can show "Thought for Ns"
+            // instead of continuing to tick once the model has moved on.
+            const endingReasoning = m.reasoningStreaming;
+            return {
+              ...m,
+              content: m.content + event.text,
+              reasoningStreaming: false,
+              reasoningDurationMs:
+                endingReasoning && m.reasoningStartedAt !== undefined
+                  ? Date.now() - m.reasoningStartedAt
+                  : m.reasoningDurationMs,
+            };
+          }),
         }));
         break;
 
@@ -229,14 +259,27 @@ function createChatStore() {
           ...s,
           messages: s.messages.map((m) => {
             if (m.uuid !== s.streamingMessageId) return m;
+            // Edge case: a turn that reasoned but never produced an answer (an
+            // error mid-reasoning, or a model that emitted only reasoning). No
+            // `delta` frame arrived to freeze the elapsed time, so do it here.
+            const reasoningDurationMs =
+              m.reasoningStreaming && m.reasoningStartedAt !== undefined
+                ? Date.now() - m.reasoningStartedAt
+                : m.reasoningDurationMs;
             // The server always sends `done`, even after an `error` frame. Only
             // clear the pending flag in that case — rewriting status to
             // 'complete' would erase the error text AND the Retry button,
             // leaving a blank bubble with no explanation.
             if (m.status === 'error' || m.status === 'cancelled') {
-              return { ...m, pending: false };
+              return { ...m, pending: false, reasoningStreaming: false, reasoningDurationMs };
             }
-            return { ...m, pending: false, status: 'complete' };
+            return {
+              ...m,
+              pending: false,
+              status: 'complete',
+              reasoningStreaming: false,
+              reasoningDurationMs,
+            };
           }),
           // The server names a conversation from its first question.
           conversations: event.title
@@ -256,11 +299,21 @@ function createChatStore() {
         update((s) => ({
           ...s,
           error: event.code,
-          messages: s.messages.map((m) =>
-            m.uuid === s.streamingMessageId
-              ? { ...m, status: 'error', error: event.message, pending: false }
-              : m
-          ),
+          messages: s.messages.map((m) => {
+            if (m.uuid !== s.streamingMessageId) return m;
+            const reasoningDurationMs =
+              m.reasoningStreaming && m.reasoningStartedAt !== undefined
+                ? Date.now() - m.reasoningStartedAt
+                : m.reasoningDurationMs;
+            return {
+              ...m,
+              status: 'error',
+              error: event.message,
+              pending: false,
+              reasoningStreaming: false,
+              reasoningDurationMs,
+            };
+          }),
         }));
         break;
     }
@@ -308,9 +361,20 @@ function createChatStore() {
         setStatus('aborted');
         update((s) => ({
           ...s,
-          messages: s.messages.map((m) =>
-            m.uuid === s.streamingMessageId ? { ...m, pending: false, status: 'cancelled' } : m
-          ),
+          messages: s.messages.map((m) => {
+            if (m.uuid !== s.streamingMessageId) return m;
+            const reasoningDurationMs =
+              m.reasoningStreaming && m.reasoningStartedAt !== undefined
+                ? Date.now() - m.reasoningStartedAt
+                : m.reasoningDurationMs;
+            return {
+              ...m,
+              pending: false,
+              status: 'cancelled',
+              reasoningStreaming: false,
+              reasoningDurationMs,
+            };
+          }),
         }));
       } else {
         setStatus('error');

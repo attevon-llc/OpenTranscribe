@@ -74,6 +74,13 @@ export interface ChatMessage {
   uuid: string;
   role: MessageRole;
   content: string;
+  /**
+   * A provider's separately-streamed reasoning/"thinking" text, rendered in its
+   * own collapsed-by-default block above `content` — never mixed into it. Absent
+   * or empty for user messages and for any assistant reply whose provider never
+   * streamed one.
+   */
+  reasoning_content?: string | null;
   citations?: ChatSource[] | null;
   msg_metadata?: ChatMessageMetadata | null;
   prompt_tokens?: number | null;
@@ -87,6 +94,19 @@ export interface ChatMessage {
   created_at?: string | null;
   /** Client-only: set while a message is being streamed or has not been reconciled. */
   pending?: boolean;
+  /**
+   * Client-only reasoning-stream bookkeeping, all ephemeral (never sent to or
+   * read back from the server on the same field names as the persisted one).
+   * `reasoningStreaming` is true from the first `reasoning` frame until the
+   * first `delta` frame (or `done`/`error`) ends the reasoning phase.
+   * `reasoningStartedAt` is a `Date.now()` timestamp for a live elapsed-time
+   * counter; `reasoningDurationMs` is frozen once the phase ends. Both are
+   * undefined for messages loaded from history — there is no live timing to
+   * replay, only the persisted text.
+   */
+  reasoningStreaming?: boolean;
+  reasoningStartedAt?: number;
+  reasoningDurationMs?: number;
 }
 
 export interface ConversationSettings {
@@ -202,6 +222,12 @@ export type ChatStreamEvent =
   | { type: 'status'; stage: StreamStage }
   | { type: 'sources'; citations: ChatSource[] }
   | { type: 'delta'; text: string }
+  /**
+   * A chunk of the model's separately-streamed reasoning/"thinking" text.
+   * Shaped identically to `delta` — same `{ text }` payload — but rendered in
+   * the UI's own collapsed-by-default block instead of the answer bubble.
+   */
+  | { type: 'reasoning'; text: string }
   | {
       type: 'usage';
       prompt_tokens: number;

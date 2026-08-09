@@ -73,7 +73,8 @@ torch==2.11.0
 torchaudio==2.11.0
 
 # =============================================================================
-# WhisperX 3.8.1 Dependencies (explicit since we install with --no-deps)
+# WhisperX / faster-whisper / GLiNER dependencies (explicit — all three are
+# installed with --no-deps from requirements-nodeps.txt, see that file for why)
 # Source: https://github.com/m-bain/whisperx/blob/main/pyproject.toml
 # =============================================================================
 # CTranslate2 - inference engine for Whisper
@@ -81,16 +82,22 @@ torchaudio==2.11.0
 # We use >=4.6.0 for cuDNN 9 support (required for CUDA 12.8)
 ctranslate2>=4.8.1,<5
 
-# faster-whisper - CTranslate2-based Whisper implementation
-# whisperx requires >=1.1.1
-faster-whisper>=1.2.1
+# faster-whisper's own dependencies (it's installed --no-deps; see
+# requirements-nodeps.txt): av>=11, tokenizers<1,>=0.13, tqdm (no version
+# constraint upstream). ctranslate2 and huggingface-hub above/below already
+# satisfy its other needs.
+av>=11
+tokenizers>=0.13,<1
+tqdm>=4.66
 
 # ML/Data processing
 # transformers>=5.0.0 needs huggingface-hub>=1.0.0, but whisperx (3.8.1 and current
 # 3.8.6) caps huggingface-hub<1.0.0, and gliner==0.2.28 caps transformers<5.14.0 -
 # capped here so Dependabot stops proposing an incompatible jump. Revisit once
 # whisperx ships a huggingface-hub>=1.0 compatible release.
-transformers>=4.48.0,<5.0.0
+# Floor raised to 4.51.3 (gliner's actual "requires_dist" floor) now that gliner
+# is also --no-deps below and no longer has pip enforcing that constraint for us.
+transformers>=4.51.3,<5.0.0
 huggingface-hub<1.0.0
 # pandas removed: only used by diarizer/speaker_assigner/reprocess, replaced with
 # DiarizeResult numpy dataclass. Saves ~72 MB. See app/transcription/diarize_result.py.
@@ -104,8 +111,15 @@ huggingface-hub<1.0.0
 onnx>=1.22.0
 # Pinned to the validated version (1.27.0) so --no-cache container builds and venv
 # setups are reproducible — an unpinned >= floor could resolve a newer release with
-# a different bundled CUDA at build time. onnxruntime-gpu and onnxruntime ship in
-# lockstep, so both pin to the same version.
+# a different bundled CUDA at build time. Both lines pin the same version so the
+# non-Linux/non-x86_64 CPU fallback below stays in lockstep with the GPU build.
+#
+# Nothing else in this file may depend on plain `onnxruntime` without a platform
+# marker: pip installs both packages side by side when something does (they write
+# into the same `onnxruntime/` import namespace, and whichever installs last wins
+# — silently dropping CUDAExecutionProvider). faster-whisper and gliner both have
+# an unconditional `onnxruntime` dependency upstream, which is exactly why both
+# are installed with --no-deps from requirements-nodeps.txt instead of from this file.
 onnxruntime-gpu==1.28.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 onnxruntime==1.28.0; sys_platform != 'linux' or platform_machine != 'x86_64'
 # NOTE: `tensorrt` was added during Phase 6.3 spike but removed 2026-04-23.
@@ -126,8 +140,8 @@ pyannote.audio @ git+https://github.com/davidamacey/pyannote-audio.git@gpu-optim
 # Required by pyannote/embedding model checkpoint (pickle dependency)
 omegaconf>=2.3.1
 
-# NOTE: whisperx==3.8.1 is installed separately in Dockerfile with --no-deps
-# to keep our version pins in requirements.txt authoritative
+# NOTE: whisperx==3.8.1 is installed separately from requirements-nodeps.txt
+# with --no-deps to keep our version pins in requirements.txt authoritative
 # =============================================================================
 
 # Supporting libraries
@@ -146,7 +160,14 @@ nltk>=3.9.4  # Required by whisperx>=3.7.6, also for SnowballStemmer
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
-deepgram-sdk>=7.4.0
+# deepgram-sdk<7.6.0 breaks under websockets>=15: DeepgramClient.listen.v1 eagerly imports
+# its streaming socket_client module even for our REST-only transcribe_file() call path, and
+# that module imports `websockets.legacy.client`, which imports `BINARY` from
+# `websockets.frames` — a symbol websockets removed in 15.0. Caught by
+# tests/unit/test_provider_sdk_compat.py::TestDeepgramSdkContract. 7.6.0 fixes it upstream
+# (same websockets>=12.0 floor, so it's the SDK's own import chain that changed, not a
+# websockets pin) — verified via a real import + client.listen.v1.media.transcribe_file check.
+deepgram-sdk>=7.6.0
 assemblyai>=0.64.25
 google-cloud-speech>=2.40.0
 azure-cognitiveservices-speech>=1.50.0
@@ -171,7 +192,9 @@ meeteval>=0.4.3
 presidio-analyzer>=2.2.363
 presidio-anonymizer>=2.2.355
 # GLiNER = small CPU zero-shot NER for names/addresses (plugs into Presidio).
-gliner>=0.2.27
+# Installed with --no-deps from requirements-nodeps.txt (gliner==0.2.28) — see the
+# onnxruntime comment above; its other real dependencies (torch, transformers,
+# huggingface_hub, sentencepiece, tqdm) are all already pinned elsewhere in this file.
 # detoxify = toxicity classification (segment-level). transformers (above) backs
 # the Tiny-Toxic-Detector / multilingual-toxic-xlm-roberta models.
 detoxify>=0.5.2

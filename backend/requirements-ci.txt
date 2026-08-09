@@ -88,7 +88,9 @@ sentence-transformers>=5.6.0
 nltk>=3.9.4
 
 # Cloud ASR provider SDKs (lazily imported)
-deepgram-sdk>=7.4.0
+# deepgram-sdk<7.6.0 breaks under websockets>=15 — see requirements.txt for the full
+# explanation. Caught by tests/unit/test_provider_sdk_compat.py.
+deepgram-sdk>=7.6.0
 assemblyai>=0.64.25
 google-cloud-speech>=2.40.0
 azure-cognitiveservices-speech>=1.50.0

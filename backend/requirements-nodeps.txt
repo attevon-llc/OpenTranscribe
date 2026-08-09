@@ -1,0 +1,24 @@
+# Packages that MUST be installed with `pip install --no-deps -r requirements-nodeps.txt`,
+# as a second step after `pip install -r requirements.txt` — in Docker AND in a local venv.
+# There is no such thing as "the Docker-only install step": if it's not expressible the same
+# way in both places, it doesn't belong in this project. See backend/CLAUDE.md.
+#
+# Why --no-deps at all: each package below has its own transitive dependency that would
+# otherwise conflict with a pin in requirements.txt if installed normally.
+#
+#   whisperx==3.8.1
+#     Keeps our own version pins (torch, ctranslate2, transformers, ...) in requirements.txt
+#     authoritative instead of letting whisperx's own floors override them.
+#
+#   faster-whisper==1.2.1, gliner==0.2.28
+#     Both declare an unconditional `onnxruntime` dependency upstream (no platform marker).
+#     requirements.txt pins `onnxruntime-gpu` (with a matching `onnxruntime` CPU fallback for
+#     non-Linux/non-x86_64 only) — a normal resolve of these two packages installs plain
+#     `onnxruntime` alongside it. Both packages write into the same `onnxruntime/` import
+#     namespace, and whichever installs last silently wins, dropping CUDAExecutionProvider
+#     with no error. --no-deps means WE own their transitive closure instead: their other
+#     real dependencies (av, tokenizers, tqdm, sentencepiece, transformers, huggingface-hub,
+#     ctranslate2, torch) are all pinned explicitly in requirements.txt already.
+whisperx==3.8.1
+faster-whisper==1.2.1
+gliner==0.2.28

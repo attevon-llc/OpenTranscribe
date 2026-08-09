@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first for better layer caching
-COPY requirements.txt .
+COPY requirements.txt requirements-nodeps.txt ./
 
 # Upgrade pip to latest version first (security fix for CVE-2025-8869)
 RUN pip install --user --no-cache-dir --upgrade pip
@@ -38,19 +38,11 @@ RUN pip install --user --no-cache-dir --upgrade pip
 # Use --user to install to /root/.local which we'll copy to final stage
 RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt
 
-# Install WhisperX with --no-deps to keep our version pins in requirements.txt
-# WhisperX 3.8.1 has native pyannote-audio>=4.0.0 support — no monkey patches needed
-# We still use --no-deps to prevent surprise dependency upgrades
-RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps whisperx==3.8.1
-
-# Force onnxruntime-gpu as the final resolver for the ``onnxruntime`` namespace.
-# Both ``onnxruntime-gpu`` and ``onnxruntime`` install Python files into
-# ``onnxruntime/``; whichever installs last wins. A plain ``pip uninstall
-# onnxruntime`` removes files shared with the GPU variant. Re-installing with
-# ``--force-reinstall`` after everything else puts the GPU module files back
-# and ensures CUDAExecutionProvider is available at runtime.
-RUN pip install --user --no-cache-dir --force-reinstall --no-deps \
-    "onnxruntime-gpu==1.26.0"
+# WhisperX, faster-whisper, and gliner all need --no-deps — see requirements-nodeps.txt
+# for why. This exact command is also what a local venv setup runs (see
+# backend/CLAUDE.md); it must never diverge into a Dockerfile-only inline install.
+# WhisperX 3.8.1 has native pyannote-audio>=4.0.0 support — no monkey patches needed.
+RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps -r requirements-nodeps.txt
 
 # Content redaction: Presidio needs a spaCy pipeline for tokenization. Use the small
 # English model (~12 MB) — PII NER is handled by GLiNER + Presidio's regex recognizers,

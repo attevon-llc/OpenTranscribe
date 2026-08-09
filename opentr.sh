@@ -82,6 +82,10 @@ show_help() {
   echo "  --with-mock-llm      - Start mock LLM provider (localhost:5199) so chat/AI features"
   echo "                         work without a GPU or API key. Models: mock-gpt, mock-echo,"
   echo "                         mock-empty, mock-error, mock-slow"
+  echo "  --with-llm-test      - Start a real GPU-backed LLM (vLLM, localhost:5195) for chat"
+  echo "                         testing against actual model output, not canned tokens."
+  echo "                         Default model: google/gemma-3-4b-it, GPU 2. See"
+  echo "                         docker-compose.llm-test.yml for the Ollama alternative."
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod; localhost:8180)"
   echo "  --with-authentik-test - Start Authentik test container (dev or prod; localhost:9022)"
   echo "  --with-watch         - Mount the host watch folder (WATCH_HOST_PATH, default ./watch) for auto-import"
@@ -140,6 +144,7 @@ show_help() {
   echo "  ./opentr.sh start dev --cpu                  # Local CPU-only (skip GPU overlay)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-mock-llm        # Dev with a fake LLM for chat/AI testing"
+  echo "  ./opentr.sh start dev --with-llm-test        # Dev with a real GPU-backed LLM (vLLM) for chat testing"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
   echo "  ./opentr.sh start dev --with-authentik-test  # Dev with Authentik test container"
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
@@ -763,6 +768,7 @@ start_app() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_MOCK_LLM_FLAG=""
+  WITH_LLM_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
   WITH_AUTHENTIK_TEST_FLAG=""
   WITH_WATCH_FLAG=""
@@ -849,6 +855,10 @@ start_app() {
         ;;
       --with-mock-llm)
         WITH_MOCK_LLM_FLAG="--with-mock-llm"
+        shift
+        ;;
+      --with-llm-test)
+        WITH_LLM_TEST_FLAG="--with-llm-test"
         shift
         ;;
       --with-keycloak-test)
@@ -1258,6 +1268,19 @@ start_app() {
       echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
     else
       echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
+    fi
+  fi
+
+  # Add real GPU-backed LLM test provider if requested
+  if [ -n "$WITH_LLM_TEST_FLAG" ]; then
+    if [ -f "docker-compose.llm-test.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.llm-test.yml"
+      echo "🧠 Adding real LLM test provider (docker-compose.llm-test.yml)"
+      echo "   vLLM — from containers: http://llm-test-vllm:8000/v1   from host: http://localhost:${LLM_TEST_PORT:-5195}/v1"
+      echo "   Model: ${LLM_TEST_MODEL:-google/gemma-3-4b-it}   GPU: ${LLM_TEST_GPU_DEVICE_ID:-2}"
+      echo "   Ollama alternative (not auto-started): docker compose ... --profile ollama up -d llm-test-ollama"
+    else
+      echo "⚠️  --with-llm-test specified but docker-compose.llm-test.yml not found"
     fi
   fi
 
@@ -1793,6 +1816,19 @@ reset_and_init() {
       echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
     else
       echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
+    fi
+  fi
+
+  # Add real GPU-backed LLM test provider if requested
+  if [ -n "$WITH_LLM_TEST_FLAG" ]; then
+    if [ -f "docker-compose.llm-test.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.llm-test.yml"
+      echo "🧠 Adding real LLM test provider (docker-compose.llm-test.yml)"
+      echo "   vLLM — from containers: http://llm-test-vllm:8000/v1   from host: http://localhost:${LLM_TEST_PORT:-5195}/v1"
+      echo "   Model: ${LLM_TEST_MODEL:-google/gemma-3-4b-it}   GPU: ${LLM_TEST_GPU_DEVICE_ID:-2}"
+      echo "   Ollama alternative (not auto-started): docker compose ... --profile ollama up -d llm-test-ollama"
+    else
+      echo "⚠️  --with-llm-test specified but docker-compose.llm-test.yml not found"
     fi
   fi
 

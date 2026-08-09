@@ -1,0 +1,94 @@
+# Real (non-mock) LLM provider for local chat/AI feature testing.
+#
+# docker-compose.mock-llm.yml cans token generation but exercises every other real
+# code path (retrieval, redaction masking, citations, SSE, usage recording). This
+# overlay is for the step beyond that: proving chat renders and reads correctly
+# against an actual model's real output, on a GPU.
+#
+# Two independent services — start whichever fits what you're testing:
+#
+#   vLLM (OpenAI-compatible, default with --with-llm-test):
+#     ./opentr.sh start dev --with-llm-test
+#     Settings -> AI: Provider "Custom (OpenAI-compatible)"
+#       Base URL (from containers): http://llm-test-vllm:8000/v1
+#       Base URL (from host):       http://localhost:${LLM_TEST_PORT:-5195}/v1
+#       Model: ${LLM_TEST_MODEL:-google/gemma-3-4b-it}
+#     Needs a HuggingFace token with access to the gated Gemma weights:
+#       HUGGING_FACE_HUB_TOKEN=<token> in .env (never commit it).
+#
+#   Ollama (opt-in via compose profile, not started by --with-llm-test alone):
+#     docker compose -f docker-compose.yml ... -f docker-compose.llm-test.yml --profile ollama up -d llm-test-ollama
+#     docker exec opentranscribe-llm-test-ollama ollama pull ${LLM_TEST_OLLAMA_MODEL:-gemma3:4b}   # first run only
+#     Settings -> AI: Provider "Ollama"
+#       Base URL (from containers): http://llm-test-ollama:11434
+#       Base URL (from host):       http://localhost:${LLM_TEST_OLLAMA_PORT:-5196}
+#       Model: ${LLM_TEST_OLLAMA_MODEL:-gemma3:4b}
+#
+# GPU: pinned to LLM_TEST_GPU_DEVICE_ID (default 2, an idle secondary GPU) so it never
+# contends with the transcription/diarization GPU (GPU_DEVICE_ID, default 0/1 per
+# deployment). Point it at the transcription GPU only if you know that GPU has spare
+# VRAM for the model you're loading.
+#
+# Not wired into --fresh isolation (scripts/CLAUDE.md, issue #347 pattern): a real
+# model load is GPU-heavy and meant for one deliberate manual test session at a time,
+# not routine parallel fresh/e2e stacks that could contend for the same GPU.
+services:
+  llm-test-vllm:
+    image: vllm/vllm-openai:${LLM_TEST_VLLM_TAG:-latest}
+    container_name: ${LLM_TEST_VLLM_CONTAINER_NAME:-opentranscribe-llm-test-vllm}
+    ipc: host
+    command: >
+      --model ${LLM_TEST_MODEL:-google/gemma-3-4b-it}
+      --served-model-name ${LLM_TEST_MODEL:-google/gemma-3-4b-it}
+      --gpu-memory-utilization ${LLM_TEST_VLLM_GPU_UTIL:-0.85}
+      --max-model-len ${LLM_TEST_VLLM_MAX_LEN:-32000}
+    environment:
+      HUGGING_FACE_HUB_TOKEN: "${HUGGING_FACE_HUB_TOKEN:-}"
+      CUDA_VISIBLE_DEVICES: "${LLM_TEST_GPU_DEVICE_ID:-2}"
+    volumes:
+      - llm_test_hf_cache:/root/.cache/huggingface
+    ports:
+      - "127.0.0.1:${LLM_TEST_PORT:-5195}:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ["${LLM_TEST_GPU_DEVICE_ID:-2}"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=3)"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 180s  # model download + load can take several minutes on first run
+    restart: unless-stopped
+
+  llm-test-ollama:
+    image: ollama/ollama:${LLM_TEST_OLLAMA_TAG:-latest}
+    container_name: ${LLM_TEST_OLLAMA_CONTAINER_NAME:-opentranscribe-llm-test-ollama}
+    profiles: ["ollama"]  # opt-in only; not started by --with-llm-test alone (see header)
+    environment:
+      CUDA_VISIBLE_DEVICES: "${LLM_TEST_GPU_DEVICE_ID:-2}"
+    volumes:
+      - llm_test_ollama_data:/root/.ollama
+    ports:
+      - "127.0.0.1:${LLM_TEST_OLLAMA_PORT:-5196}:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ["${LLM_TEST_GPU_DEVICE_ID:-2}"]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  llm_test_hf_cache:
+  llm_test_ollama_data:

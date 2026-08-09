@@ -104,7 +104,7 @@ show_help() {
   echo "                             (pass --nas on NAS/NVMe deployments; auto-detected"
   echo "                             from MINIO_NAS_PATH/POSTGRES_DATA_PATH/OPENSEARCH_DATA_PATH"
   echo "                             env vars). --no-deps protects postgres/minio/opensearch."
-  echo "  rebuild-frontend         - Rebuild frontend with code changes (--no-deps)"
+  echo "  rebuild-frontend         - Rebuild frontend + docs with code changes (--no-deps)"
   echo "  shell [service]     - Open a shell in a container"
   echo "  build               - Rebuild all containers without starting"
   echo ""
@@ -2365,12 +2365,31 @@ case "$1" in
 
     # --no-deps keeps postgres/minio/opensearch/redis containers exactly as
     # they were running. Only rebuild + recreate the services that actually
-    # consume backend code.
+    # consume backend code -- every service in docker-compose.override.yml
+    # built from `image: opentranscribe-backend:latest`. celery-redaction was
+    # missing from this list for a while: it shares the image but has its own
+    # entry, so it silently kept running stale code after every rebuild until
+    # something recreated it another way.
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES up -d --build --no-deps \
       backend celery-worker celery-download-worker celery-cpu-worker \
-      celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
-      celery-beat flower
+      celery-redaction celery-cloud-asr-worker celery-nlp-worker \
+      celery-embedding-worker celery-beat flower
+
+    # celery-worker-gpu-scaled (profile gpu-scale) and celery-worker-gpu-transcribe/
+    # -diarize (profile gpu-split) share the same image too, but are scale:0 /
+    # profile-gated -- only rebuild them if they're actually running, so a plain
+    # rebuild-backend never starts a GPU worker profile nobody activated.
+    for gpu_entry in "celery-worker-gpu-scaled:gpu-scale" "celery-worker-gpu-transcribe:gpu-split" "celery-worker-gpu-diarize:gpu-split"; do
+      gpu_service="${gpu_entry%%:*}"
+      gpu_profile="${gpu_entry##*:}"
+      container="${COMPOSE_PROJECT_NAME:-opentranscribe}-${gpu_service}"
+      if docker ps --filter "name=^${container}$" --filter "status=running" -q | grep -q .; then
+        echo "🎯 ${gpu_service} is active — rebuilding it too"
+        # shellcheck disable=SC2086
+        COMPOSE_PROFILES="$gpu_profile" docker compose $COMPOSE_FILES up -d --build --no-deps "$gpu_service"
+      fi
+    done
 
     # Fix pipeline_scratch volume permissions in case it was recreated.
     fix_pipeline_scratch_permissions
@@ -2379,11 +2398,14 @@ case "$1" in
     ;;
 
   rebuild-frontend)
-    echo "🔨 Rebuilding frontend service..."
-    # Frontend doesn't use NAS volumes, but keep --no-deps for symmetry
-    # with rebuild-backend so data containers are untouched.
-    docker compose up -d --build --no-deps frontend
-    echo "✅ Frontend service rebuilt successfully."
+    echo "🔨 Rebuilding frontend + docs services..."
+    # Frontend/docs don't use NAS volumes, but keep --no-deps for symmetry
+    # with rebuild-backend so data containers are untouched. docs rides along
+    # so the two never drift apart the way they did before this was added —
+    # a rebuilt frontend with a stale docs image looks fine until someone
+    # reads a stale changelog/auth-setup page for a feature that already shipped.
+    docker compose up -d --build --no-deps frontend docs
+    echo "✅ Frontend + docs services rebuilt successfully."
     ;;
 
   remove)
@@ -2637,20 +2659,22 @@ case "$1" in
           "${BENCH_VOLUME_PREFIX}_flower_bench_data" 2>/dev/null || true
 
         # Build and start bench stack on current branch.
-        # Build only the services needed for engine benchmarks — skip docs/frontend
-        # (they don't affect AI processing and docs has an MDX build step that can
-        # fail on unrelated content changes).
+        # Build the full backend service set (every worker sharing the backend
+        # image, so the bench stack never silently drifts from what
+        # rebuild-backend rebuilds) plus infra — skip docs/frontend (they don't
+        # affect AI processing and docs has an MDX build step that can fail on
+        # unrelated content changes).
         echo "🚀 Building bench stack from current branch (backend + infra only)..."
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE build \
           backend celery-worker celery-download-worker celery-cpu-worker \
-          celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
+          celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
           celery-beat flower
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE up -d --no-build \
           postgres redis minio opensearch \
           backend celery-worker celery-download-worker celery-cpu-worker \
-          celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
+          celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
           celery-beat flower
 
         echo ""

@@ -247,7 +247,8 @@ cmd_restart_backend() {
     # Build compose files (no gpu-scale for restart-backend)
     build_compose_files "false"
 
-    dc restart backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker flower
+    dc restart backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker \
+        celery-embedding-worker celery-redaction celery-cloud-asr-worker celery-beat flower
 
     print_success "Backend services restarted"
 }
@@ -282,7 +283,7 @@ cmd_health() {
     build_compose_files "false"
 
     # Check each service
-    local services=("postgres" "redis" "minio" "opensearch" "backend" "celery-worker" "celery-download-worker" "celery-cpu-worker" "celery-nlp-worker" "frontend" "flower" "docs")
+    local services=("postgres" "redis" "minio" "opensearch" "backend" "celery-worker" "celery-download-worker" "celery-cpu-worker" "celery-nlp-worker" "celery-embedding-worker" "celery-redaction" "celery-cloud-asr-worker" "celery-beat" "frontend" "flower" "docs")
 
     for service in "${services[@]}"; do
         if dc ps "$service" 2>/dev/null | grep -q "Up"; then

@@ -143,7 +143,8 @@ class AudioExtractionService {
       throw new Error(
         get(t)('extraction.errorFfmpegLoadFailed', {
           error: error instanceof Error ? error.message : String(error),
-        })
+        }),
+        { cause: error }
       );
     }
   }

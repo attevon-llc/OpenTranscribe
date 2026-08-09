@@ -106,7 +106,7 @@ export class LLMService {
       return response.data;
     } catch (error: unknown) {
       console.error('Error getting LLM providers:', error);
-      throw new Error(getErrorMessage(error, get(t)('llm.providersLoadFailed')));
+      throw new Error(getErrorMessage(error, get(t)('llm.providersLoadFailed')), { cause: error });
     }
   }
 

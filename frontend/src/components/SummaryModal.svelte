@@ -93,7 +93,8 @@
           throw new Error(
             $t('summary.loadFailedDetail', {
               error: getErrorMessage(summaryErr, $t('summary.loadFailed')),
-            })
+            }),
+            { cause: summaryErr }
           );
         }
       }

@@ -20,7 +20,7 @@
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
 fastapi>=0.136.3,<0.137
 uvicorn[standard]>=0.49.0
-websockets>=11.0.3
+websockets>=17.0.1
 sqlalchemy>=2.0.51
 alembic>=1.18.5
 pydantic>=2.13.4
@@ -36,7 +36,8 @@ joserfc>=1.7.4
 python3-saml>=1.16.0
 python-multipart>=0.0.32
 passlib[bcrypt]>=1.7.4
-bcrypt==3.2.2
+# See requirements.txt for why this can't go to bcrypt 5.0.0 (passlib incompatibility).
+bcrypt>=4.3.0,<5
 email-validator
 
 # Observability (Prometheus metrics + structured JSON logs) — CI imports app.main
@@ -56,20 +57,22 @@ httpx>=0.28.1
 python-dotenv>=1.2.2
 ldap3>=2.9.1
 slowapi>=0.1.10
-cryptography>=49.0.0
+cryptography>=50.0.0
 pyotp>=2.10.0
 qrcode[pil]>=8.2
 
 # AI/ML stack (CPU wheels via the extra index above)
 numpy>=2.1.0
-torch==2.8.0
-torchaudio==2.8.0
+# See requirements.txt for why 2.11.0 (not a newer torch) is the pinned pair.
+torch==2.11.0
+torchaudio==2.11.0
 ctranslate2>=4.8.1,<5
 faster-whisper>=1.2.1
-transformers>=4.48.0
+# See requirements.txt for why transformers is capped <5.0.0.
+transformers>=4.48.0,<5.0.0
 huggingface-hub<1.0.0
 onnx>=1.22.0
-onnxruntime==1.27.0
+onnxruntime==1.28.0
 omegaconf>=2.3.1
 
 # Supporting libraries
@@ -85,7 +88,9 @@ sentence-transformers>=5.6.0
 nltk>=3.9.4
 
 # Cloud ASR provider SDKs (lazily imported)
-deepgram-sdk>=7.4.0
+# deepgram-sdk<7.6.0 breaks under websockets>=15 — see requirements.txt for the full
+# explanation. Caught by tests/unit/test_provider_sdk_compat.py.
+deepgram-sdk>=7.6.0
 assemblyai>=0.64.25
 google-cloud-speech>=2.40.0
 azure-cognitiveservices-speech>=1.50.0

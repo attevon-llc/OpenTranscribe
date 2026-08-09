@@ -164,6 +164,79 @@ def test_websocket_auth_accepts_active_user_with_valid_token(monkeypatch):
     assert ws_module._try_authenticate_token("tok", db) is cast("User", active)
 
 
+@pytest.mark.asyncio
+async def test_websocket_endpoint_survives_session_close(db_session, normal_user, monkeypatch):
+    """Regression test: websocket_endpoint() itself must survive its own auth check.
+
+    websocket_endpoint() used to take ``db: Session = Depends(get_db)`` at the function
+    level. For an HTTP route that dependency is released right after the response, but
+    for a WebSocket route FastAPI only releases it when the handler *returns* — i.e. not
+    until the client disconnects, which can be hours later. That held a pooled DB
+    connection (and, worse, an uncommitted transaction — the auth query was never
+    committed) open for the connection's entire lifetime, which is exactly what let a
+    long-lived socket's leftover transaction block a schema migration waiting on the
+    same table (found via live traffic during the v0.5.0 dependency-upgrade session).
+
+    The fix scopes DB access to just the auth check via ``session_scope()``, which
+    commits and closes immediately. But that commit expires every attribute on the
+    returned ORM object by SQLAlchemy's default ``expire_on_commit``, and the only
+    attribute touched afterward (``user.id``, for ``manager.connect`` and
+    ``manager.disconnect``) then raised ``DetachedInstanceError`` on the now-closed
+    session — caught live, not by any existing test. The fix for *that* is
+    ``db.expunge(user)`` before each auth block exits/commits.
+
+    Calls the real ``websocket_endpoint()`` directly with a minimal fake ``WebSocket``
+    (driving it through Starlette's actual ASGI ``TestClient.websocket_connect`` hit an
+    unrelated, unexplained clean disconnect — nothing in this codebase tests the real
+    ``/ws`` route end-to-end yet, and chasing that was out of scope for this fix). This
+    still exercises the unmodified function body end to end, so removing either
+    ``db.expunge(user)`` call reintroduces the exact crash and fails this test.
+    """
+    import contextlib
+    from unittest.mock import AsyncMock
+
+    from fastapi import WebSocketDisconnect
+    from sqlalchemy.orm import Session
+
+    from app.api import websockets as ws_module
+    from app.core.security import create_access_token
+
+    # session_scope() normally opens its own SessionLocal() connection, which can't see
+    # normal_user (created on the test's savepoint-isolated db_session, never really
+    # committed). A session bound to db_session's own connection shares that same
+    # transaction/savepoint — so it CAN see normal_user — while still being a distinct
+    # Session object that can be genuinely committed and closed, the same way the real
+    # session_scope() is. That distinction matters here: DetachedInstanceError only
+    # fires once a session is truly gone, not merely committed, and db_session itself
+    # can't be closed without breaking the rest of the fixture/test machinery.
+    @contextlib.contextmanager
+    def _fake_session_scope():
+        scoped = Session(bind=db_session.connection())
+        try:
+            yield scoped
+            scoped.commit()
+        finally:
+            scoped.close()
+
+    monkeypatch.setattr(ws_module, "session_scope", _fake_session_scope)
+    # Not exercising Redis pub/sub here — irrelevant to the DB session bug, and a real
+    # subscribe attempt against an unreachable Redis would just add unrelated noise.
+    monkeypatch.setattr(ws_module, "setup_redis", lambda: None)
+
+    token = create_access_token(normal_user.uuid)
+
+    fake_ws = AsyncMock()
+    fake_ws.cookies = {"access_token": token}
+    # Ends the message loop immediately via the same path a real client disconnect
+    # takes, exercising manager.disconnect(websocket, user.id) too — the second of the
+    # two user.id accesses that follow the auth check.
+    fake_ws.receive_text = AsyncMock(side_effect=WebSocketDisconnect())
+
+    # No exception — especially no DetachedInstanceError — means both auth-block
+    # expunges are doing their job.
+    await ws_module.websocket_endpoint(fake_ws)
+
+
 # ── A0.8: startup assertions ─────────────────────────────────────────────────────
 
 

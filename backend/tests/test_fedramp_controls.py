@@ -172,6 +172,18 @@ class TestLoginBannerAcknowledgmentAC8:
     proceeding.
     """
 
+    # get_login_banner() resolves login_banner_* via auth_settings.get_bool(), which is
+    # DB > .env > coded default (app/api/endpoints/auth/methods.py). Patching
+    # settings.LOGIN_BANNER_ENABLED only moves the .env layer and is silently ignored
+    # whenever a real login_banner_enabled row already exists in auth_config — which it
+    # does on any environment where the banner was ever configured through the admin UI.
+    # These tests write the DB row directly (the same path AuthConfigService.set_config
+    # takes for a real admin change) so they exercise the precedence the endpoint actually
+    # implements and pass independent of ambient DB state. Serialized to one xdist worker
+    # like test_auth_config_integration.py, since both write the same shared
+    # login_banner_* rows and racing UPDATEs against them can deadlock under -n auto.
+    pytestmark = pytest.mark.xdist_group("auth_config")
+
     def test_login_banner_config_exists(self):
         """Verify login banner configuration settings exist."""
         from app.core.config import settings
@@ -180,29 +192,65 @@ class TestLoginBannerAcknowledgmentAC8:
         assert hasattr(settings, "LOGIN_BANNER_TEXT")
         assert hasattr(settings, "LOGIN_BANNER_CLASSIFICATION")
 
-    def test_get_login_banner_when_disabled(self, client):
+    def test_get_login_banner_when_disabled(self, client, db_session, admin_user):
         """Test banner endpoint returns disabled state when banner is off."""
-        with patch("app.core.config.settings.LOGIN_BANNER_ENABLED", False):
-            response = client.get("/api/auth/banner")
-            assert response.status_code == 200
-            data = response.json()
-            assert data["enabled"] is False
+        from app.services.auth_config_service import AuthConfigService
 
-    def test_get_login_banner_when_enabled(self, client):
+        AuthConfigService.set_config(
+            db=db_session,
+            key="login_banner_enabled",
+            value=False,
+            is_sensitive=False,
+            category="banner",
+            user_id=admin_user.id,
+            data_type="bool",
+        )
+
+        response = client.get("/api/auth/banner")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["enabled"] is False
+
+    def test_get_login_banner_when_enabled(self, client, db_session, admin_user):
         """Test banner endpoint returns banner content when enabled."""
+        from app.services.auth_config_service import AuthConfigService
+
         test_banner_text = "This is a US Government system. Unauthorized access prohibited."
         test_classification = "UNCLASSIFIED"
 
-        with (
-            patch("app.core.config.settings.LOGIN_BANNER_ENABLED", True),
-            patch("app.core.config.settings.LOGIN_BANNER_TEXT", test_banner_text),
-            patch("app.core.config.settings.LOGIN_BANNER_CLASSIFICATION", test_classification),
-        ):
-            response = client.get("/api/auth/banner")
-            assert response.status_code == 200
-            data = response.json()
-            assert data["enabled"] is True
-            assert data["requires_acknowledgment"] is True
+        AuthConfigService.set_config(
+            db=db_session,
+            key="login_banner_enabled",
+            value=True,
+            is_sensitive=False,
+            category="banner",
+            user_id=admin_user.id,
+            data_type="bool",
+        )
+        AuthConfigService.set_config(
+            db=db_session,
+            key="login_banner_text",
+            value=test_banner_text,
+            is_sensitive=False,
+            category="banner",
+            user_id=admin_user.id,
+        )
+        AuthConfigService.set_config(
+            db=db_session,
+            key="login_banner_classification",
+            value=test_classification,
+            is_sensitive=False,
+            category="banner",
+            user_id=admin_user.id,
+        )
+
+        response = client.get("/api/auth/banner")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["enabled"] is True
+        assert data["requires_acknowledgment"] is True
+        assert data["text"] == test_banner_text
+        assert data["classification"] == test_classification
 
     def test_banner_acknowledgment_requires_authentication(self, client):
         """Test that banner acknowledgment requires authentication."""

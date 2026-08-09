@@ -14,7 +14,11 @@ engine) · `app/utils` (shared helpers) · `app/middleware`.
 ## Commands
 
 Prefer running inside the container (`./opentr.sh shell backend`). The host venv at
-`backend/venv/` exists for pre-commit, mypy, ruff, bandit, and pytest outside Docker.
+`backend/venv/` exists for pre-commit, mypy, ruff, bandit, and pytest outside Docker. It needs a
+two-step install: `pip install -r requirements.txt` then `pip install --no-deps -r
+requirements-nodeps.txt` — see that file's header. This is the same two-step sequence
+`Dockerfile.prod` runs; there is no Dockerfile-only install step for this project. If a package
+is only ever installed inside the image, it belongs in one of these two files instead.
 
 `alembic upgrade head` is **production-only** — dev applies migrations automatically on
 backend startup via `app/db/migrations.py`.

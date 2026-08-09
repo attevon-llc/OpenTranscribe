@@ -139,7 +139,7 @@ Skill: `.claude/skills/docker-build-push/SKILL.md` (multi-arch requires `USE_REM
 
 Alembic runs automatically on dev backend startup — `alembic upgrade head` is production-only.
 
-Host venv for pre-commit / mypy / ruff / bandit / pytest outside Docker lives at `backend/venv/` and already exists. If it doesn't: `cd backend && python3.11 -m venv venv && source venv/bin/activate && pip install -r requirements.txt pre-commit mypy ruff bandit`.
+Host venv for pre-commit / mypy / ruff / bandit / pytest outside Docker lives at `backend/venv/` and already exists. If it doesn't: `cd backend && python3.11 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && pip install --no-deps -r requirements-nodeps.txt && pip install pre-commit mypy ruff bandit`. The `requirements-nodeps.txt` step is mandatory, not optional — it installs whisperx/faster-whisper/gliner, and skipping it leaves the venv without a working ASR/redaction stack. This is the exact two-step install `Dockerfile.prod` runs; see `requirements-nodeps.txt`'s header for why those three packages need `--no-deps`.
 
 ### Pre-commit / lint hooks
 

@@ -2,6 +2,23 @@
 
 Uses faster_whisper.decode_audio() which is the same function WhisperX
 calls internally via whisperx.load_audio().
+
+This is the ONLY audio-loading path in the app for a reason: torchcodec (a
+transitive dependency pulled in by pyannote.audio's audio I/O layer) cannot
+load its native library in this environment — its GPU decoder needs CUDA
+13's libnvrtc.so.13, but torch here is built against cu128 (CUDA 12.8).
+torchaudio.load() defaults to the torchcodec backend as of the torchaudio
+version pinned here, so it raises RuntimeError on any call. decode_audio()
+never touches torchcodec (it shells out via PyAV/ffmpeg), and everywhere
+this app calls pyannote's Pipeline it passes an already-loaded
+`{"waveform": tensor, "sample_rate": ...}` dict (see diarizer.py) rather
+than a file path — pyannote's own file-path-based `Audio().get_duration()`
+telemetry path is the other place that reaches for torchcodec, and dict
+inputs skip it entirely. Verified empirically: faster-whisper transcription,
+pyannote diarization (via a dict input, matching diarizer.py exactly), and
+GLiNER redaction NER all run correctly end-to-end on GPU in this
+environment. Do not add a torchaudio.load() call or pass a raw file path
+into a pyannote Pipeline — either will hit the broken torchcodec backend.
 """
 
 import logging

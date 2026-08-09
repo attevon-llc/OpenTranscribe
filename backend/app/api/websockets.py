@@ -5,7 +5,6 @@ import logging
 
 import redis.asyncio as redis
 from fastapi import APIRouter
-from fastapi import Depends
 from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
 from redis.exceptions import RedisError
@@ -13,10 +12,10 @@ from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy.orm import Session
 
 from app.auth.token_service import token_service
+from app.db.session_utils import session_scope
 
 from ..core.config import settings
 from ..core.security import verify_token
-from ..db.base import get_db
 from ..models.user import User
 
 # Set up logging
@@ -267,7 +266,7 @@ def _try_authenticate_token(
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)):
+async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint with first-message authentication.
 
     Authentication flow:
@@ -276,6 +275,17 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
     3. If no cookie, wait up to 10 s for a first-message ``authenticate`` frame.
     4. On success, register the connection and proceed with the normal
        message loop; on failure, close with an appropriate error code.
+
+    Deliberately does NOT take ``db: Session = Depends(get_db)``: a WebSocket route's
+    injected dependencies stay open for the *whole connection*, not just one
+    request/response like HTTP — and this connection can live for hours. DB access is
+    only needed for the few-millisecond auth check below, so each attempt opens its own
+    short-lived ``session_scope()`` instead. Holding a session open for the connection's
+    full lifetime left an idle, uncommitted transaction checked out of the pool for as
+    long as the socket stayed connected: wasted a pool slot, silently discarded any
+    write from the external-auth user-sync path (``get_db``'s cleanup only closes, which
+    rolls back — it never commits), and could block a schema migration waiting on the
+    same table for as long as any client stayed connected.
     """
     # Initialize Redis subscriber if not already running
     setup_redis()
@@ -288,7 +298,16 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
     # 1. Try cookie-based auth
     token = websocket.cookies.get("access_token")
     if token:
-        user = _try_authenticate_token(token, db, websocket)
+        with session_scope() as db:
+            user = _try_authenticate_token(token, db, websocket)
+            # session_scope() commits on exit, which expires every attribute on `user`
+            # (SQLAlchemy's default expire_on_commit) — the only attribute touched after
+            # this block is user.id, which must survive the session closing. Expunge
+            # BEFORE the block exits/commits so the already-loaded columns stay readable
+            # on the now-detached instance; expunging after commit would be too late,
+            # since expiry already happened.
+            if user is not None:
+                db.expunge(user)
 
     # 2. If no cookie auth, wait for first-message authentication
     if not user:
@@ -298,7 +317,10 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
             if data.get("type") != "authenticate" or not data.get("token"):
                 await websocket.close(code=4001, reason="Authentication required")
                 return
-            user = _try_authenticate_token(data["token"], db, websocket)
+            with session_scope() as db:
+                user = _try_authenticate_token(data["token"], db, websocket)
+                if user is not None:
+                    db.expunge(user)
             if not user:
                 await websocket.close(code=4003, reason="Invalid token")
                 return

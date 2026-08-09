@@ -1,11 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import i18next from 'i18next';
-import {
-  DEFAULT_LANGUAGE,
-  isValidLanguageCode,
-  SUPPORTED_LANGUAGES,
-  type Language,
-} from '$lib/i18n/languages';
+import { DEFAULT_LANGUAGE, isValidLanguageCode, SUPPORTED_LANGUAGES } from '$lib/i18n/languages';
 
 // Get initial locale (mirrors theme.js pattern)
 const getInitialLocale = (): string => {
@@ -103,4 +98,4 @@ export const t = derived(locale, () => {
 });
 
 // Export supported languages for UI
-export { SUPPORTED_LANGUAGES, type Language };
+export { SUPPORTED_LANGUAGES };

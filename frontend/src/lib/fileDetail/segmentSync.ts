@@ -25,7 +25,7 @@ export const MAX_SEGMENT_PAGE_SIZE = 2000;
  * payload carries many more fields (timestamps, redactions, confidence, …) that must be
  * preserved untouched.
  */
-export interface SegmentLike {
+interface SegmentLike {
   uuid?: string;
   speaker_id?: string | null;
   speaker_label?: string | null;
@@ -73,7 +73,7 @@ type SegmentMapper = (segment: SegmentLike) => SegmentLike | null;
  * Absence of `transcript_segments` is preserved — the route renders the transcript column
  * behind `{#if file && file.transcript_segments}`, and an empty array is truthy.
  */
-export function mapFileSegments<T extends SegmentBearingFile>(file: T, mapper: SegmentMapper): T {
+function mapFileSegments<T extends SegmentBearingFile>(file: T, mapper: SegmentMapper): T {
   if (!file) return file;
   const segments = file.transcript_segments;
   if (!Array.isArray(segments)) return { ...file };

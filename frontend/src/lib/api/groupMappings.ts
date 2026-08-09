@@ -66,7 +66,7 @@ export interface MappingTestRequest {
   username?: string;
 }
 
-export interface MappingTestGroup {
+interface MappingTestGroup {
   uuid: string;
   name: string;
 }

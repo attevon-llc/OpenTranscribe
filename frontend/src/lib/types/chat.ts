@@ -9,9 +9,9 @@
 
 export type SearchMode = 'hybrid' | 'semantic' | 'keyword';
 
-export type MessageRole = 'user' | 'assistant';
+type MessageRole = 'user' | 'assistant';
 
-export type MessageStatus = 'streaming' | 'complete' | 'error' | 'cancelled' | 'superseded';
+type MessageStatus = 'streaming' | 'complete' | 'error' | 'cancelled' | 'superseded';
 
 /**
  * Retrieval scope.
@@ -60,7 +60,7 @@ export interface ChatSource {
 }
 
 /** Diagnostics attached to an assistant message (ids/counts only). */
-export interface ChatMessageMetadata {
+interface ChatMessageMetadata {
   rewritten_query?: string;
   retrieved?: number;
   reranked?: number;
@@ -202,9 +202,9 @@ export interface ChatAdminSettings {
 
 // --- SSE frame contract (must match services/chat/service.py) ----------------
 
-export type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'generating';
+type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'generating';
 
-export type ChatErrorCode =
+type ChatErrorCode =
   | 'llm_unconfigured'
   | 'quota_exceeded'
   | 'rate_limited'

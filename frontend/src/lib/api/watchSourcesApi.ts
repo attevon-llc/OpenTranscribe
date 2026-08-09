@@ -12,10 +12,10 @@ export type SourceType = 'local' | 's3' | 'smb';
 export type EmailProvider = 'smtp' | 'm365' | 'exchange';
 
 /** Observer mode a source actually ended up with (issue #294). */
-export type FsEventsMode = 'native' | 'polling' | 'error' | 'unavailable';
+type FsEventsMode = 'native' | 'polling' | 'error' | 'unavailable';
 
 /** Observer selection policy (global admin setting). */
-export type FsEventsPolicy = 'auto' | 'native' | 'polling' | 'off';
+type FsEventsPolicy = 'auto' | 'native' | 'polling' | 'off';
 
 /**
  * Live FS-watching status published by the beat supervisor.
@@ -24,7 +24,7 @@ export type FsEventsPolicy = 'auto' | 'native' | 'polling' | 'off';
  * scan is the only mechanism — the status key expires on its own if the beat
  * container stops, so this never claims a watcher that is not running.
  */
-export interface FsEventsStatus {
+interface FsEventsStatus {
   mode: FsEventsMode;
   active: boolean;
   detail?: string | null;
@@ -132,7 +132,7 @@ export type WatchSourceUpdate = Partial<
   Omit<WatchSourceCreate, 'source_type' | 'assign_to_user_uuid'>
 >;
 
-export interface WatchSourceFile {
+interface WatchSourceFile {
   uuid: string;
   remote_path: string;
   filename: string;
@@ -150,7 +150,7 @@ export interface WatchSourceFile {
   created_at?: string | null;
 }
 
-export interface WatchSourceFilesList {
+interface WatchSourceFilesList {
   files: WatchSourceFile[];
   total: number;
   page: number;
@@ -178,7 +178,7 @@ export interface ScanResult {
   task_id?: string | null;
 }
 
-export interface DirectoryEntry {
+interface DirectoryEntry {
   name: string;
   path: string;
 }
@@ -262,7 +262,7 @@ export interface EmailConfigCreate {
 
 export type EmailConfigUpdate = Partial<Omit<EmailConfigCreate, 'provider'>>;
 
-export interface EmailLinkCreate {
+interface EmailLinkCreate {
   email_config_uuid: string;
   additional_recipients?: string | null;
   notify_on_success?: boolean;

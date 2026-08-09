@@ -2,7 +2,7 @@
  * TypeScript types for speaker clustering and global speaker management.
  */
 
-export interface GenderComposition {
+interface GenderComposition {
   male_count: number;
   female_count: number;
   unknown_count: number;

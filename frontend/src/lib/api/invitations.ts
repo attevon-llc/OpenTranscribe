@@ -23,7 +23,7 @@ export type AuthType = 'local' | 'ldap' | 'oidc' | 'pki';
 export const AUTH_TYPES: readonly AuthType[] = ['local', 'ldap', 'oidc', 'pki'] as const;
 
 /** Server-computed lifecycle state — render it, never recompute from dates. */
-export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
+type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
 
 /** Non-secret facts about an invitation, for the holder of its token. */
 export interface InvitationLookup {

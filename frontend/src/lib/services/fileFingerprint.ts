@@ -29,7 +29,7 @@ import murmur from 'murmurhash3js-revisited';
 export const SAMPLE_SIZE = 16 * 1024;
 
 /** Files smaller than this are fingerprinted in full rather than sampled. */
-export const SAMPLE_THRESHOLD = 128 * 1024;
+const SAMPLE_THRESHOLD = 128 * 1024;
 
 /**
  * Raised when the source bytes could not be read (file moved or deleted after

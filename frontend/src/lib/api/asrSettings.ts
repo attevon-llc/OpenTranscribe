@@ -16,7 +16,7 @@ export type ASRProvider =
   | 'gladia'
   | 'pyannote';
 
-export type ASRConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
+type ASRConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
 
 export interface LocalWhisperModel {
   id: string;

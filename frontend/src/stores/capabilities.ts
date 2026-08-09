@@ -15,7 +15,7 @@
 import { writable } from 'svelte/store';
 import axiosInstance from '$lib/axios';
 
-export type CapabilityAudience = 'user' | 'team' | 'org_admin' | 'platform';
+type CapabilityAudience = 'user' | 'team' | 'org_admin' | 'platform';
 
 export interface CapabilitiesState {
   edition: 'community' | 'cloud';

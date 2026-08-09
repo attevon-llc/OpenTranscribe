@@ -74,15 +74,6 @@ export interface Segment {
 }
 
 /**
- * Result of a merge operation for a single speaker
- */
-export interface MergeResult {
-  speaker: Speaker;
-  success: boolean;
-  error?: string;
-}
-
-/**
  * Response from the merge speakers API
  */
 export interface MergeSpeakersResponse {

@@ -7,7 +7,7 @@
 
 import axiosInstance from '../axios';
 
-export type RedactionStyle = 'label' | 'asterisks' | 'first_letter' | 'blur';
+type RedactionStyle = 'label' | 'asterisks' | 'first_letter' | 'blur';
 
 /** A user's redaction preferences. */
 export interface RedactionSettings {

@@ -45,3 +45,12 @@ class LLMServiceError(OpenTranscribeError):
 
 class MigrationError(OpenTranscribeError):
     """Data migration failures."""
+
+
+class EmailDeliveryError(OpenTranscribeError):
+    """A transactional email could not be handed to a mail transport.
+
+    Raised by ``services/email_service.py``. Callers on an anti-enumeration path
+    (password reset, verification resend) must absorb it — see that module.
+    The message is scrubbed of email addresses so it is safe to surface.
+    """

@@ -36,7 +36,7 @@ api/
 │   ├── admin.py               # Admin operations + /admin/profile-embeddings/repair
 │   ├── asr_settings.py        # ASR provider management + local model set/restart
 │   ├── auth.py                # Authentication (all 4 methods + MFA + lockout + password policy)
-│   ├── auth_config.py         # Auth provider configuration (LDAP/Keycloak/PKI settings)
+│   ├── auth_config.py         # Auth provider configuration (LDAP/OIDC/PKI settings)
 │   ├── comments.py            # Comment system
 │   ├── custom_vocabulary.py   # Per-user custom vocabulary
 │   ├── embedding_migration.py # Speaker embedding migration endpoints

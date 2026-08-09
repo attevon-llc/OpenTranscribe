@@ -14,6 +14,10 @@
   import TasksGrid from '$components/fileStatus/TasksGrid.svelte';
   import FileDetailModal from '$components/fileStatus/FileDetailModal.svelte';
 
+  // Flower exposes task arguments (file/user IDs) and worker topology, so the
+  // entry is admin-only. Cosmetic only — nginx auth_request is the real gate.
+  $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
+
   // Component state
   let loading = false;
   let error: any = null;
@@ -372,16 +376,18 @@
         </svg>
       </span>
 
-      <button
-        class="flower-btn"
-        on:click={openFlowerDashboard}
-        title={$t('fileStatus.flowerTooltip')}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-        </svg>
-        {$t('nav.flowerDashboard')}
-      </button>
+      {#if isAdmin}
+        <button
+          class="flower-btn"
+          on:click={openFlowerDashboard}
+          title={$t('fileStatus.flowerTooltip')}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          {$t('nav.flowerDashboard')}
+        </button>
+      {/if}
 
       {#if fileStatus?.has_problems}
         <button

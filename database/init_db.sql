@@ -24,8 +24,9 @@ CREATE TABLE IF NOT EXISTS "user" (
     auth_type VARCHAR(20) DEFAULT 'local' NOT NULL,
     allow_local_fallback BOOLEAN NOT NULL DEFAULT FALSE,
     ldap_uid VARCHAR(255) UNIQUE NULL,
-    keycloak_id VARCHAR(255) UNIQUE NULL,
-    keycloak_refresh_token TEXT NULL,
+    -- OIDC `sub` claim: unique per ISSUER, not globally (renamed in v378).
+    oidc_subject VARCHAR(255) UNIQUE NULL,
+    oidc_refresh_token TEXT NULL,
     pki_subject_dn VARCHAR(512) UNIQUE NULL,
     -- FedRAMP compliance fields
     password_hash_version VARCHAR(20) DEFAULT 'bcrypt',
@@ -36,11 +37,15 @@ CREATE TABLE IF NOT EXISTS "user" (
     banner_acknowledged_at TIMESTAMP WITH TIME ZONE NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT users_auth_type_check CHECK (auth_type IN ('local', 'ldap', 'keycloak', 'pki'))
+    -- v378 removed the duplicate `users_auth_type_check` that used to live here;
+    -- `ck_user_auth_type_valid` (v375) is the single owner of this rule, and its
+    -- value set is ('local','ldap','oidc','pki','proxy').
+    CONSTRAINT ck_user_auth_type_valid
+        CHECK (auth_type IN ('local', 'ldap', 'oidc', 'pki', 'proxy'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_ldap_uid ON "user" (ldap_uid);
-CREATE INDEX IF NOT EXISTS idx_user_keycloak_id ON "user" (keycloak_id);
+CREATE INDEX IF NOT EXISTS idx_user_oidc_subject ON "user" (oidc_subject);
 CREATE INDEX IF NOT EXISTS idx_user_pki_subject_dn ON "user" (pki_subject_dn);
 
 -- User MFA table (FedRAMP IA-2 Multi-Factor Authentication)
@@ -69,6 +74,9 @@ CREATE TABLE IF NOT EXISTS refresh_token (
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     revoked_at TIMESTAMP WITH TIME ZONE NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    -- Encrypted OIDC ID token, kept server-side (never in a cookie) so RP-initiated
+    -- logout has an `id_token_hint`. Dies with the session row. (v378)
+    oidc_id_token TEXT NULL,
     user_agent VARCHAR(512) NULL,
     ip_address VARCHAR(45) NULL
 );

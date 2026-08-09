@@ -47,6 +47,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name='user' AND column_name='auth_type')"
     )
+    # NOTE ON THE RETIRED SPELLING IN THIS FILE. Every probe below describes a
+    # schema *as it was at some past revision*, so the pre-v378 column names are the
+    # correct — and only possible — fingerprints for those revisions. This file and
+    # core/legacy_auth_env.py are the two modules under backend/app permitted to name
+    # the old provider at all; see tests/unit/test_oidc_naming_invariant.py.
     has_keycloak_pki = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name='user' AND column_name='keycloak_id')"
@@ -271,19 +276,272 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'tag' AND column_name = 'user_id')"
     )
 
-    # v375 guard: the RAG chat tables (issue #52).
+    # v375/v376 guards: the RAG chat tables + chat projects (issue #52/#360).
     has_chat_tables = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
         "WHERE table_name = 'chat_conversation')"
     )
-
-    # v376 guard: chat projects (issue #360). The table is the marker; the
-    # nullable chat_conversation.project_id lands in the same revision.
     has_chat_projects = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'chat_project')"
     )
 
+    # v377 guard (formerly v375 on this branch, renumbered — see NOTE ON THE
+    # RENUMBERING below): the auth_type CHECK plus the invitation table. The
+    # constraint alone was the marker while the revision only hardened the user
+    # columns; it now also creates user_invitation / email_verification_token and
+    # the user.email_verified columns, so a DB that has the constraint but not
+    # the tables predates the extension and must NOT be stamped v377 — it would
+    # never receive the new DDL.
+    has_auth_type_check = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_user_auth_type_valid')"
+    )
+    has_user_invitation = "user_invitation" in tables
+
+    # v378 guards (formerly v376): IdP group mapping. BOTH markers are required —
+    # the mapping table is useless without user_group_member.source (reconciliation
+    # could not tell a directory-derived membership from a hand-added one and would
+    # either never revoke or wipe manual work), so a DB carrying only one of them
+    # predates the revision and must still receive its DDL.
+    has_group_mapping = "group_mapping" in tables
+    has_membership_source = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user_group_member' AND column_name = 'source')"
+    )
+
+    # v380 guards (formerly v378): the OIDC identity rename. THREE markers, all
+    # required — the revision is a single transaction, so a schema carrying only
+    # part of it is a hand-edited database and must stamp lower and receive the
+    # whole thing.
+    has_oidc_subject = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'oidc_subject')"
+    )
+    has_oidc_user_refresh_token = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'oidc_refresh_token')"
+    )
+    has_session_id_token = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'refresh_token' AND column_name = 'oidc_id_token')"
+    )
+
+    # v381 guard (formerly v379): administrator approval of newly provisioned
+    # accounts. TWO markers. The column alone is not the revision: without
+    # ck_user_approval_status_valid an unrecognised value reads as neither pending
+    # nor rejected, so the gate in api/endpoints/auth/dependencies.py fails OPEN —
+    # which is precisely the state a database must not be stamped as already having.
+    has_user_approval_status = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'approval_status')"
+    )
+    has_approval_status_check = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_user_approval_status_valid')"
+    )
+
+    # v382 guards (formerly v380): SCIM tokens and the widened group-source CHECKs.
+    # TWO markers, because the revision does two things and a schema carrying only
+    # one of them is hand-edited: with the table but not the widened CHECK, every
+    # proxy login and every SCIM group write would fail on a CheckViolation, which
+    # is the sort of thing a re-run must be able to repair.
+    has_scim_token = "scim_token" in tables
+    has_proxy_group_source = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_group_mapping_source_valid' "
+        "AND pg_get_constraintdef(oid) LIKE '%proxy%')"
+    )
+
+    # v383 guards (formerly v381): the SAML auth-type CHECK widening and its
+    # identity column. Same two-marker reasoning as v382 — a schema carrying the
+    # column without the widened CHECK would refuse every SAML JIT provision on a
+    # CheckViolation.
+    has_saml_subject = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'saml_subject')"
+    )
+    has_saml_auth_type_check = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_user_auth_type_valid' "
+        "AND pg_get_constraintdef(oid) LIKE '%saml%')"
+    )
+
+    # v379 guard (formerly v377): the auth-config data rename. This revision adds
+    # NO DDL, so there is no column to probe — the fingerprint is the absence of
+    # the retired key prefix in both config tables. A deployment that never
+    # configured OIDC has no matching rows either way, which is correct: v379 is
+    # a no-op there, so stamping it costs nothing and re-running it costs nothing.
+    has_legacy_oidc_config_keys = (
+        has_auth_config
+        and "auth_config_audit" in tables
+        and _check_exists(
+            "SELECT EXISTS(SELECT 1 FROM auth_config WHERE config_key LIKE 'keycloak\\_%' "
+            "UNION ALL SELECT 1 FROM auth_config_audit WHERE config_key LIKE 'keycloak\\_%')"
+        )
+    )
+
+    # NOTE ON THE RENUMBERING. This branch's auth chain originally used v375-v381,
+    # branching off v374_add_tag_user_id independently of mainline's
+    # v375_add_chat_tables/v376_add_chat_projects (issue #52/#360) — both sides
+    # revised v374, producing two heads. Reconciled by renumbering this branch's
+    # seven revisions to v377-v383 (after master's chat chain) rather than
+    # renumbering master's, since master's chain had already reached production.
+    # Every revision id, detection arm, test file and doc reference below reflects
+    # the NEW numbers; nothing about the schema DDL itself changed.
+
     # Return the highest version stamp that matches (newest first)
+    # v383: SAML auth-type CHECK widening + user.saml_subject.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+        and has_user_approval_status
+        and has_approval_status_check
+        and has_scim_token
+        and has_proxy_group_source
+        and has_saml_subject
+        and has_saml_auth_type_check
+    ):
+        return "v383_saml_auth_type"
+    # v382: SCIM provisioning tokens + 'proxy'/'scim' group sources.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+        and has_user_approval_status
+        and has_approval_status_check
+        and has_scim_token
+        and has_proxy_group_source
+    ):
+        return "v382_scim_tokens"
+    # v381: administrator approval state on user.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+        and has_user_approval_status
+        and has_approval_status_check
+    ):
+        return "v381_approval_state"
+    # v380: OIDC identity columns and the auth_type value rename.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+    ):
+        return "v380_oidc_identity_columns"
+    # v379: auth_config / auth_config_audit keys renamed to the oidc_ prefix.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+    ):
+        return "v379_rename_keycloak_config_to_oidc"
+    # v378: directory groups drive in-app groups and privileges.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+    ):
+        return "v378_idp_group_mapping"
+    # v377: user auth invariants (role NOT NULL + auth_type CHECK) and the
+    # invitation / email-verification schema.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+    ):
+        return "v377_harden_user_auth_invariants"
     # v376: chat projects (chat_project table + chat_conversation.project_id).
     if (
         has_cloud_seams

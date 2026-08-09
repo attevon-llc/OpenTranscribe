@@ -26,11 +26,6 @@ PLANS/
 .env.development
 .env.test
 .env.*.local
-# Working copies of the environment file kept in the repo root. These hold REAL
-# secrets (HF token, KMS key, DB/Redis passwords) — never commit them.
-.app-variables
-.app-variables.*
-*.env.local
 
 # Release-test secrets (template at .env.test-secrets.example is committed)
 scripts/release-tests/.env.test-secrets
@@ -127,6 +122,8 @@ notebooks/
 
 # Celery
 celerybeat-schedule
+celerybeat-schedule-shm
+celerybeat-schedule-wal
 celerybeat.pid
 
 # Node.js
@@ -231,8 +228,8 @@ nginx/ssl/*.key
 *.dmg
 *.AppImage
 
-# Archived releases
-releases/
+# Archived releases (root-level only; docs/releases/ is tracked)
+/releases/
 *.tar.gz
 *.zip
 *.rar
@@ -301,9 +298,6 @@ scripts/pki/test-certs/
 
 # Claude Code worktrees
 .claude/worktrees/
-
-# Claude Code personal project memory (never share; CLAUDE.md is the team file)
-CLAUDE.local.md
 test-results/
 
 # Watch Sources local mount (test/runtime media — issue #26)

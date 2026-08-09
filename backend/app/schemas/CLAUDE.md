@@ -52,6 +52,34 @@ Request/response shaping and validation only; logic lives in `app/services`. 25 
   transcriptionSettings, downloadSettings, prompts). `TranscriptSegment` has two competing TS copies
   (`stores/transcriptStore.ts:3`, `lib/utils/scrollbarCalculations.ts:6`).
 
+## `auth_config.py` is not documentation — it is the write contract
+
+The per-category models at the bottom of `auth_config.py` are the **allow-list, type contract
+and bounds** that `PUT /admin/auth-config/{category}` validates against, the source of
+`AuthConfigService.CONFIG_CATEGORIES`, and the source of the coded default a malformed stored
+value falls back to. They were dead code while the write path accepted a bare `dict[str, Any]`.
+
+- `_CategoryConfig` sets `extra="forbid"`, which is what turns a typo'd key
+  (`oidc_verify_audiance`) into a 400 instead of a row stored forever and read by nothing.
+- **Every field must have a default** — the write path validates *partial* payloads, so a
+  required field would make an unrelated single-field save fail.
+- **No config key may appear in two categories.** `auth_config.config_key` is globally UNIQUE,
+  so a key claimed by two tabs lands in whichever wrote it first and then goes missing from the
+  other tab's GET. `tests/unit/test_auth_config_validation.py` pins both invariants.
+- `CROSS_FIELD_KEYS` + `_check_cross_field_rules` reject combinations that are individually
+  valid but jointly incoherent (`allow_registration` while `local_enabled` is off). The caller
+  merges the payload over the *current effective* values first, so the rejected state cannot be
+  assembled one save at a time.
+- `CATEGORY_SCHEMAS` iteration order is the admin UI's tab order. Add a category in exactly one
+  place.
+- `AuthConfigResponse.is_set` is how a sensitive key is reported: `config_value` is always
+  `None` on the wire. **Do not reintroduce a `***REDACTED***` placeholder** — the panel bound it
+  into the password field and the next save encrypted it over the real secret.
+- `group_mapping.py` and `invitation.py` enforce their own invariants at the wire edge as well
+  as in the service and the database, because each layer is reachable without the others:
+  `grants_role` is regex-capped at `user|admin`, and a mapping must grant a group, a role, or
+  both.
+
 ## Gotchas
 
 - **The hybrid-ID rule (`base.py:26-30`) is broken in exactly two places.** `auth_config.py:36,50`

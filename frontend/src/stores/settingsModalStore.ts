@@ -26,16 +26,20 @@ export type SettingsSection =
   | 'usage'
   | 'team'
   // Admin sections
+  // 'admin-settings' and 'cache' are deliberately absent: neither has had a
+  // render block in SettingsModal for some time, so deep-linking to them opened
+  // an empty pane. Cache configuration lives inside the 'retention' panel.
+  // 'admin-settings' and 'cache' are deliberately absent: neither has had a
+  // render block in SettingsModal for some time, so deep-linking to them opened
+  // an empty pane. Cache configuration lives inside the 'retention' panel.
   | 'admin-users'
   | 'admin-task-health'
   | 'chat-admin'
-  | 'admin-settings'
   | 'redaction-policy'
   | 'embedding-migration'
   | 'data-integrity'
   | 'retention'
   | 'backup'
-  | 'cache'
   | 'media-sources'
   | 'watch-sources'
   // Super Admin sections
@@ -76,13 +80,11 @@ const initialState: SettingsModalState = {
     team: false,
     'admin-users': false,
     'admin-task-health': false,
-    'admin-settings': false,
     'redaction-policy': false,
     'embedding-migration': false,
     'data-integrity': false,
     retention: false,
     backup: false,
-    cache: false,
     'media-sources': false,
     'watch-sources': false,
     authentication: false,

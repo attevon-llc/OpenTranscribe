@@ -141,7 +141,17 @@ server {
     }
 
     # Flower dashboard (Celery task monitoring)
-    location /flower/ {
+    # ^~ so the SPA's static-asset regex locations can never steal Flower's own
+    # .js/.css (the bug class that broke the docs container).
+    location ^~ /flower/ {
+        # Admin-only. The subrequest hits the backend, which authenticates the
+        # httpOnly session cookie and answers 200 for admin/super_admin, 401
+        # otherwise. Flower exposes task names and arguments (file and user IDs)
+        # plus worker topology, so it must not be readable by every logged-in
+        # user — and the Basic-Auth injection below would otherwise hand the
+        # dashboard to anyone who can load the origin.
+        auth_request /api/auth/flower-authz;
+
         proxy_pass http://flower:5555/flower/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;

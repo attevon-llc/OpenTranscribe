@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -121,3 +122,34 @@ class EmailTestResponse(BaseModel):
 
     success: bool
     message: str
+
+
+class AuthMailDesignationUpdate(BaseModel):
+    """Designate the config that carries transactional auth mail.
+
+    An empty string (or ``null``) clears the designation, which is a legitimate
+    choice meaning "use the ``SMTP_*`` env transport".
+    """
+
+    config_uuid: str | None = Field(
+        default=None,
+        description="UUID of an existing, enabled email config; empty clears the designation",
+    )
+
+
+class AuthMailDesignationResponse(BaseModel):
+    """The designation plus whether it still resolves.
+
+    ``config_uuid`` alone cannot tell the UI whether auth mail works: the row may
+    have been deleted or disabled after it was designated. ``status`` /
+    ``resolves`` carry that, and ``env_smtp_configured`` says whether the
+    fallback transport exists at all.
+    """
+
+    config_uuid: str | None = None
+    config_name: str | None = None
+    provider: str | None = None
+    is_enabled: bool | None = None
+    resolves: bool = False
+    status: Literal["not_designated", "active", "missing", "disabled"]
+    env_smtp_configured: bool = False

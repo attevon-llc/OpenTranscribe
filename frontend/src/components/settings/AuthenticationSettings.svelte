@@ -1,13 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { AuthConfigApi } from '$lib/api/authConfig';
+  import { AuthConfigApi, type AuthMethodTestResponse } from '$lib/api/authConfig';
   import LDAPSettings from './LDAPSettings.svelte';
-  import KeycloakSettings from './KeycloakSettings.svelte';
+  import OIDCSettings from './OIDCSettings.svelte';
   import PKISettings from './PKISettings.svelte';
+  import ProxySettings from './ProxySettings.svelte';
+  import SAMLSettings from './SAMLSettings.svelte';
   import LocalAuthSettings from './LocalAuthSettings.svelte';
   import SessionSettings from './SessionSettings.svelte';
+  import AuthConfigAuditPanel from './AuthConfigAuditPanel.svelte';
+  import AuthMailDesignation from './AuthMailDesignation.svelte';
+  import GroupMappingSettings from './GroupMappingSettings.svelte';
+  import SCIMTokenSettings from './SCIMTokenSettings.svelte';
+  import { getEmailConfigs, type EmailConfig } from '$lib/api/watchSourcesApi';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { firstRunWizardStore } from '$stores/firstRunWizardStore';
 
   let activeTab = 'local';
   let loading = false;
@@ -15,32 +23,155 @@
   let hasUnsavedChanges = false;
   let backendNotReady = false; // Backend is fully implemented
 
+  /**
+   * The Local tab renders one form, but its fields belong to FOUR backend
+   * categories. `PUT /admin/auth-config/{category}` validates against a
+   * per-category schema and 400s on unknown keys, so the whole form cannot be
+   * PUT to `local`.
+   *
+   * This is also a correctness fix, not just an accommodation:
+   * `password_require_digit`, `mfa_issuer_name` and the `account_lockout_*` pair
+   * were never in `local`, so sending them there filed them under a category
+   * their own tab could not read.
+   *
+   * Deliberately omitted: the legacy aliases `password_require_numbers`,
+   * `mfa_issuer`, `max_login_attempts` and `lockout_duration_minutes`. The
+   * `local` schema still accepts them, but nothing on the backend reads them.
+   */
+  const LOCAL_TAB_CATEGORY_KEYS: Record<string, string[]> = {
+    // `require_email_verification` and `require_account_approval` both live in
+    // `local` beside `allow_registration` — together the four are "who may get an
+    // account here". Both were enforced by the backend with no control anywhere in
+    // the product, so neither could be turned on.
+    local: [
+      'local_enabled',
+      'allow_registration',
+      'require_email_verification',
+      'require_account_approval'
+    ],
+    password_policy: [
+      'password_min_length',
+      'password_require_uppercase',
+      'password_require_lowercase',
+      'password_require_digit',
+      'password_require_special',
+      'password_max_age_days',
+      'password_history_count'
+    ],
+    mfa: [
+      'mfa_enabled',
+      'mfa_required',
+      'mfa_issuer_name',
+      'mfa_backup_code_count',
+      'mfa_token_expire_minutes'
+    ],
+    lockout: [
+      'account_lockout_enabled',
+      'account_lockout_threshold',
+      'account_lockout_duration_minutes',
+      'account_lockout_progressive',
+      'account_lockout_max_duration_minutes'
+    ],
+    // FedRAMP AC-8 — enforced at login (`get_current_active_user` refuses until
+    // acknowledged), not just displayed, so it belongs beside the other controls
+    // that gate access rather than off in its own tab for 3 fields.
+    banner: ['login_banner_enabled', 'login_banner_text', 'login_banner_classification']
+  };
+
+  /**
+   * Flatten the Local tab's four source categories into the single object the
+   * panel renders. Loading only `configs.local` would paint coded defaults over
+   * everything the other three categories have stored.
+   *
+   * Picking by key (rather than spreading whole categories) also keeps stale
+   * alias rows still sitting in `local` from reappearing in the form.
+   */
+  function collectLocalTabConfig(all: Record<string, any>): Record<string, any> {
+    const merged: Record<string, any> = {};
+    for (const [category, keys] of Object.entries(LOCAL_TAB_CATEGORY_KEYS)) {
+      const stored = all[category] || {};
+      for (const key of keys) {
+        if (stored[key] !== undefined) merged[key] = stored[key];
+      }
+    }
+    return merged;
+  }
+
+  $: localTabConfig = collectLocalTabConfig(configs);
+
   $: tabs = [
     { id: 'local', label: $t('settings.authentication.tab.local') },
     { id: 'ldap', label: $t('settings.authentication.tab.ldap') },
-    { id: 'keycloak', label: $t('settings.authentication.tab.keycloak') },
+    { id: 'oidc', label: $t('settings.authentication.tab.oidc') },
     { id: 'pki', label: $t('settings.authentication.tab.pki') },
-    { id: 'session', label: $t('settings.authentication.tab.session') }
+    { id: 'proxy', label: $t('settings.authentication.tab.proxy') },
+    { id: 'saml', label: $t('settings.authentication.tab.saml') },
+    // Directory group → in-app group/role. `/admin/group-mappings` had five
+    // working endpoints and no consumer, so the feature existed only as an API.
+    { id: 'mappings', label: $t('settings.authentication.tab.mappings') },
+    { id: 'scim', label: $t('settings.authentication.tab.scim') },
+    { id: 'session', label: $t('settings.authentication.tab.session') },
+    // Which mailbox sends password resets, invitations and verification links.
+    // It used to live only inside the Watch Sources panel, which is hidden when
+    // the `watch_sources` capability is off — leaving the setting unreachable on
+    // those editions even though its endpoint stayed live. It belongs here.
+    { id: 'mail', label: $t('settings.authentication.tab.mail') },
+    // Reads auth_config_audit (Postgres) — a different source from the "Audit
+    // Log" section, which streams security events out of OpenSearch and carries
+    // no configuration changes.
+    { id: 'audit', label: $t('settings.authentication.tab.audit') }
   ];
+
+  /**
+   * Email configurations for the auth-mail tab. Both this list and the
+   * designation endpoint are super_admin, the same tier as this whole panel,
+   * so no extra gating is needed here. A failed fetch yields an empty list —
+   * the designation panel then offers only "not designated", which is the
+   * honest state when no configuration can be read.
+   */
+  let emailConfigs: EmailConfig[] = [];
+  let emailConfigsLoaded = false;
+
+  async function loadEmailConfigs() {
+    emailConfigs = await getEmailConfigs().catch(() => []);
+    emailConfigsLoaded = true;
+  }
 
   onMount(async () => {
     await loadConfigs();
   });
+
+  // Fetched lazily: most visits to this panel never open the mail tab.
+  $: if (activeTab === 'mail' && !emailConfigsLoaded) loadEmailConfigs();
 
   // Transform array of config objects to key-value dictionary
   function transformConfigArray(configArray: any[]): Record<string, any> {
     if (!Array.isArray(configArray)) return configArray || {};
     const result: Record<string, any> = {};
     for (const item of configArray) {
-      if (item.config_key && item.config_value !== undefined) {
+      if (!item.config_key) continue;
+
+      // A sensitive key always arrives with config_value === null — the API never
+      // sends a secret or a placeholder standing in for one. `is_set` is the only
+      // signal that a value exists, so it has to survive the flattening or the
+      // panels have to infer it from the null, which is weaker.
+      result[`${item.config_key}_is_set`] = item.is_set === true;
+
+      if (item.config_value !== undefined && item.config_value !== null) {
         // Convert string values to appropriate types
         let value = item.config_value;
         if (item.data_type === 'bool') {
           value = value === 'true' || value === true;
         } else if (item.data_type === 'int') {
-          value = parseInt(value, 10) || 0;
+          // `|| 0` would coerce a legitimate stored 0 — parse, then fall back.
+          const parsed = parseInt(value, 10);
+          value = Number.isNaN(parsed) ? 0 : parsed;
         }
         result[item.config_key] = value;
+      } else if (item.config_value === null) {
+        // Preserve the null so a panel can distinguish "secret stored, withheld"
+        // from "key absent entirely".
+        result[item.config_key] = null;
       }
     }
     return result;
@@ -75,6 +206,58 @@
     }
   }
 
+  /**
+   * Save the Local tab by fanning the form out to its four owning categories.
+   *
+   * Each category is an independent request, so a partial failure is real and is
+   * reported as such — claiming blanket success would leave the admin believing
+   * a setting landed when the server rejected it.
+   */
+  async function handleLocalSave(config: Record<string, any>) {
+    const targets = Object.entries(LOCAL_TAB_CATEGORY_KEYS)
+      .map(([category, keys]) => {
+        const payload: Record<string, any> = {};
+        for (const key of keys) {
+          if (config[key] !== undefined) payload[key] = config[key];
+        }
+        return { category, payload };
+      })
+      .filter((target) => Object.keys(target.payload).length > 0);
+
+    const results = await Promise.allSettled(
+      targets.map((target) => AuthConfigApi.updateCategory(target.category, target.payload))
+    );
+
+    const failed: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error(`Failed to save ${targets[index].category} config:`, result.reason);
+        failed.push(targets[index].category);
+      }
+    });
+
+    if (failed.length === 0) {
+      toastStore.success($t('settings.authentication.localConfigSaved'));
+      hasUnsavedChanges = false;
+    } else {
+      // Leave hasUnsavedChanges set: something in the form did not reach the server.
+      toastStore.error(
+        $t('settings.authentication.configSavePartialFailure', { categories: failed.join(', ') })
+      );
+    }
+
+    await loadConfigs();
+  }
+
+  /**
+   * P1.2: what the OIDC test actually discovered — `claims_supported` and
+   * whether the configured roles claim is advertised. Kept here (not inside
+   * `OIDCSettings`) because the panel only learns of the result through the
+   * `test` event it dispatches; a Svelte event has no return channel back to
+   * its own dispatcher, so the result has to come back down as a prop.
+   */
+  let oidcTestResult: AuthMethodTestResponse | undefined = undefined;
+
   async function handleTestConnection(category: string, config: Record<string, any>) {
     try {
       const result = await AuthConfigApi.testConnection(category, config);
@@ -82,6 +265,9 @@
         toastStore.success(result.message);
       } else {
         toastStore.error(result.message);
+      }
+      if (category === 'oidc') {
+        oidcTestResult = result;
       }
       return result;
     } catch (error) {
@@ -99,6 +285,11 @@
 <div class="auth-settings">
   <div class="settings-header">
     <h2>{$t('settings.authentication.heading')}</h2>
+    <!-- HANDOFF #28: the guided first-run flow must be re-runnable from here
+         for a super_admin who skipped it. -->
+    <button class="btn btn-secondary rerun-wizard-button" on:click={() => firstRunWizardStore.requestReopen()}>
+      {$t('settings.authentication.rerunWizardButton')}
+    </button>
   </div>
 
   {#if backendNotReady}
@@ -116,9 +307,9 @@
         </div>
 
         <div class="config-method">
-          <h4>{$t('settings.authentication.method.keycloak')}</h4>
-          <code>KEYCLOAK_ENABLED=true</code>
-          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/KEYCLOAK_SETUP.md" target="_blank" rel="noopener noreferrer">KEYCLOAK_SETUP.md</a></p>
+          <h4>{$t('settings.authentication.method.oidc')}</h4>
+          <code>OIDC_ENABLED=true</code>
+          <p>{$t('settings.authentication.seeDoc')} <a href="https://github.com/davidamacey/OpenTranscribe/blob/main/docs/OIDC_SETUP.md" target="_blank" rel="noopener noreferrer">OIDC_SETUP.md</a></p>
         </div>
 
         <div class="config-method">
@@ -157,8 +348,8 @@
       <div class="tab-content">
         {#if activeTab === 'local'}
           <LocalAuthSettings
-            config={configs.local || {}}
-            on:save={(e) => handleSave('local', e.detail)}
+            config={localTabConfig}
+            on:save={(e) => handleLocalSave(e.detail)}
             on:change={handleChange}
           />
         {:else if activeTab === 'ldap'}
@@ -168,11 +359,13 @@
             on:test={(e) => handleTestConnection('ldap', e.detail)}
             on:change={handleChange}
           />
-        {:else if activeTab === 'keycloak'}
-          <KeycloakSettings
-            config={configs.keycloak || {}}
-            on:save={(e) => handleSave('keycloak', e.detail)}
-            on:test={(e) => handleTestConnection('keycloak', e.detail)}
+        {:else if activeTab === 'oidc'}
+          <OIDCSettings
+            config={configs.oidc || {}}
+            secretIsSet={configs.oidc?.oidc_client_secret_is_set}
+            testResult={oidcTestResult}
+            on:save={(e) => handleSave('oidc', e.detail)}
+            on:test={(e) => handleTestConnection('oidc', e.detail)}
             on:change={handleChange}
           />
         {:else if activeTab === 'pki'}
@@ -181,12 +374,42 @@
             on:save={(e) => handleSave('pki', e.detail)}
             on:change={handleChange}
           />
+        {:else if activeTab === 'proxy'}
+          <ProxySettings
+            config={configs.proxy || {}}
+            sharedSecretIsSet={configs.proxy?.proxy_shared_secret_is_set}
+            on:save={(e) => handleSave('proxy', e.detail)}
+            on:change={handleChange}
+          />
+        {:else if activeTab === 'saml'}
+          <SAMLSettings
+            config={configs.saml || {}}
+            privateKeyIsSet={configs.saml?.saml_sp_private_key_is_set}
+            on:save={(e) => handleSave('saml', e.detail)}
+            on:change={handleChange}
+          />
+        {:else if activeTab === 'mappings'}
+          <!-- Self-contained: it owns its own load/save against
+               /admin/group-mappings and does not share the auth-config payload. -->
+          <GroupMappingSettings />
+        {:else if activeTab === 'scim'}
+          <!-- Self-contained CRUD over /admin/scim-tokens; not part of the
+               auth-config payload. -->
+          <SCIMTokenSettings />
         {:else if activeTab === 'session'}
           <SessionSettings
             config={configs.session || {}}
             on:save={(e) => handleSave('session', e.detail)}
             on:change={handleChange}
           />
+        {:else if activeTab === 'mail'}
+          {#if emailConfigsLoaded}
+            <AuthMailDesignation configs={emailConfigs} />
+          {:else}
+            <div class="loading">{$t('settings.authentication.loadingConfig')}</div>
+          {/if}
+        {:else if activeTab === 'audit'}
+          <AuthConfigAuditPanel />
         {/if}
       </div>
     {/if}
@@ -211,14 +434,27 @@
     font-weight: 600;
   }
 
+  .rerun-wizard-button {
+    margin-left: auto;
+  }
+
+  /*
+   * Ten tabs no longer fit on one row at every width. Wrap the row instead of
+   * scrolling it horizontally -- each .tab keeps white-space: nowrap so a label
+   * itself never breaks onto multiple lines ("PKI/Certifica te", "OID C" is what
+   * shrink-to-fit produced before this tab bar existed); only the row wraps.
+   */
   .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     border-bottom: 1px solid var(--color-border);
     margin-bottom: 1rem;
   }
 
   .tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
     padding: 0.5rem 1rem;
     background: none;
     border: none;
@@ -338,17 +574,21 @@
   }
 
   @media (max-width: 768px) {
-    .tabs {
-      flex-wrap: wrap;
-    }
-
     .config-methods {
       grid-template-columns: 1fr;
     }
 
+    /* One scrolling row on mobile — wrapping ten tabs onto four-plus lines
+       pushes the panel itself below the fold, unlike the two-row wrap at
+       desktop widths. */
+    .tabs {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
     .tab {
       min-height: 44px;
-      flex: 1;
       text-align: center;
     }
   }

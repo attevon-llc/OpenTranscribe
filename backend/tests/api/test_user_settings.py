@@ -280,9 +280,20 @@ def test_transcription_reset(client, user_token_headers):
     assert "default_settings" in resp.json()
 
 
-def test_transcription_system_defaults_no_auth(client):
-    """system-defaults is intentionally unauthenticated (config only, no user data)."""
+def test_transcription_system_defaults_requires_auth(client):
+    """The route is authenticated, despite a docstring that long claimed otherwise.
+
+    It carries ``Depends(get_current_active_user)``; the previous version of this
+    test asserted 200 for an anonymous caller and had been failing. Pinning the
+    implemented behaviour rather than loosening the gate: the payload is only
+    configuration, but nothing indicates the dependency was added by accident.
+    """
     resp = client.get(f"{_BASE}/transcription/system-defaults")
+    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_transcription_system_defaults_shape(client, user_token_headers):
+    resp = client.get(f"{_BASE}/transcription/system-defaults", headers=user_token_headers)
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
     assert "min_speakers" in data

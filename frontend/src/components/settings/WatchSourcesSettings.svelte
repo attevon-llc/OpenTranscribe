@@ -31,6 +31,9 @@
   } from '$lib/api/watchSourcesApi';
 
   $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
+  // Which config carries password resets and invitations is a deployment-wide
+  // credential decision, so it sits one tier above managing the configs.
+  $: isSuperAdmin = $user?.role === 'super_admin';
 
   let loading = true;
   let saving = false;
@@ -77,7 +80,11 @@
     try {
       capabilities = await getCapabilities();
       await loadSources();
-      if (isAdmin) {
+      // Email configs and the global watch settings are super_admin endpoints
+      // (`get_current_active_superuser`). Fetching them as a plain admin only
+      // produced two swallowed 403s and a panel that looked empty rather than
+      // forbidden, so don't ask for them unless the tier is right.
+      if (isSuperAdmin) {
         emailConfigs = await getEmailConfigs().catch(() => []);
         globalSettings = await getGlobalSettings().catch(() => null);
       }
@@ -348,8 +355,8 @@
     </div>
   {/if}
 
-  {#if isAdmin}
-    <!-- Email notification configs -->
+  {#if isSuperAdmin}
+    <!-- Email notification configs (super_admin tier) -->
     <div class="section-head admin-section">
       <div class="email-heading">
         <h4>{$t('settings.emailNotifications.heading')}</h4>

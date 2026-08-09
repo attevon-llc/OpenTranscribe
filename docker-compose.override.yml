@@ -158,8 +158,10 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       # Flower only needs persistent DB storage, not hot-reload source code.
-      # Using flower_data:/app (not ./backend:/app) avoids /app mount conflict.
-      - flower_data:/app
+      # Mounted at /app/temp, never /app: a named volume over the image's code
+      # directory is seeded once and then pins Flower to stale code forever.
+      # See docker-compose.yml for why it isn't a new top-level path.
+      - flower_data:/app/temp
 
   docs:
     image: opentranscribe-docs:latest

@@ -9,7 +9,7 @@ authoring the revision file itself.
 
 ## Key files
 
-- `versions/` — 62 revisions, `v010_baseline` … head `v376_add_chat_projects`.
+- `versions/` — 69 revisions, `v010_baseline` … head `v383_saml_auth_type`.
 - `env.py` — builds the URL from `POSTGRES_*` env (`load_dotenv()`), `target_metadata =
   Base.metadata`. No `compare_type`, no naming convention.
 - `script.py.mako` — **stock alembic template**: it emits neither the `v###` id nor idempotent
@@ -29,9 +29,10 @@ authoring the revision file itself.
   Reason: the startup runner stamps *untracked* production DBs by schema fingerprint, so a
   revision routinely re-runs against a database that already has part of its changes. Read
   `v373` for the plain additive shape, `v371` for the guarded rename/backfill shape, and
-  `v374` for a data-splitting backfill (its `BACKFILL_SQL` is a module-level constant so the
-  consistency test can replay it against seeded rows — the `DO $$` block is written to be
-  re-runnable, which is also what makes it idempotent).
+  `v374` for a data-splitting backfill, and `v379` for a **pure data migration with no
+  DDL at all** (its `RENAME_SQL` is a module-level constant so the consistency test can
+  replay it against seeded rows; because it adds no schema, its detection arm keys on
+  the *absence* of the old data rather than on a column).
 - `downgrade()` mirrors with `DROP … IF EXISTS`. Repair revisions may deliberately implement
   only the additive half — say so in the docstring (see `v371`).
 - Docstring first: **why**, which deployments are affected, and what "community edition"
@@ -46,9 +47,11 @@ authoring the revision file itself.
   column/table/constraint unique to the revision. Skip it and untracked DBs are mis-stamped to
   the previous version and never get your DDL.
 - Pair the revision with a consistency test modelled on
-  `tests/unit/test_v37{2,3}_migration_consistency.py`: asserts `down_revision`, that the
-  revision is head, vendor-neutrality, and that `_detect_schema_version()` returns it against
-  the live post-migration schema.
+  `tests/unit/test_v37{7,8}_migration_consistency.py`: asserts `down_revision`, that the
+  revision is head, vendor-neutrality, and — via
+  `tests/unit/_migration_detection.assert_detected_at_or_after` — that
+  `_detect_schema_version()` never stamps the live schema *earlier* than this revision.
+  Do not write `== REVISION`: it goes red the day the next revision lands.
 - The known `pg_advisory_lock(42)` race in the startup runner is documented in
   `app/db/CLAUDE.md` — unfixed, don't re-diagnose it here.
 

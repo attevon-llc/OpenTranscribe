@@ -1,3 +1,9 @@
+# mypy: disable-error-code="arg-type"
+# This suite passes structural stand-ins (fake sessions, fake users, namespace
+# requests) to signatures that declare Session/User/Request, and indexes
+# HTTPException.detail, which is typed str while every lifecycle gate raises an
+# object. Declared once here rather than as a cast at every call site — casts
+# bury the assertion, and widening a production signature to suit a test is worse.
 import os
 import socket
 import sys
@@ -145,6 +151,23 @@ def _skip_celery_dispatch():
     fake_result.id = "test-task-id"
     with patch("celery.app.task.Task.apply_async", return_value=fake_result):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _clear_process_auth_cache():
+    """Isolate the process-wide auth-config cache between tests.
+
+    ``app.core.auth_settings`` caches effective auth config for the whole
+    process, and under ``TESTING`` a cache generation never ages out (see
+    ``_process_cache_ttl``) — deliberately, so a value primed from the test's own
+    savepointed session survives the test. That makes clearing it here the thing
+    that keeps one test's ``account_lockout_threshold=3`` out of the next test.
+    """
+    from app.core.auth_settings import clear_process_auth_settings_cache
+
+    clear_process_auth_settings_cache()
+    yield
+    clear_process_auth_settings_cache()
 
 
 @pytest.fixture(scope="function")

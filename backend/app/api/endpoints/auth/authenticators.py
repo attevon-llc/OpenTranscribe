@@ -12,9 +12,14 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.auth.constants import AUTH_TYPE_LOCAL
+from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.direct_auth import direct_authenticate_user
+from app.auth.email_verification import assert_email_verified_for_local_login
 from app.auth.ldap_auth import ldap_authenticate
 from app.auth.ldap_auth import sync_ldap_user_to_db
+from app.auth.roles import ROLE_SUPER_ADMIN
+from app.auth.utils import mask_identifier
+from app.core.auth_settings import get_auth_settings
 from app.core.security import authenticate_user
 from app.models.user import User
 
@@ -187,11 +192,18 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
         username: Username to authenticate
         password: Password to verify
 
+    Both branches end in ``assert_email_verified_for_local_login``: when the
+    deployment sets ``require_email_verification``, an unverified address does
+    not get a session. This is the only consumer of that setting — it was a
+    declared auth-config key with no reader anywhere before v375. It is applied
+    here, on the local-password path, so LDAP/OIDC/PKI logins (whose address is
+    asserted by the provider) are untouched.
+
     Returns:
         Tuple of (uuid_str, user_data) if successful, None otherwise
 
     Raises:
-        HTTPException: If user is inactive
+        HTTPException: If user is inactive or their email is unverified
     """
     # Try direct auth first
     user_data = direct_authenticate_user(username, password)
@@ -199,6 +211,7 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
         logger.info(f"Direct authentication successful for local user: {username}")
         user_uuid_str = _ensure_user_uuid(db, user_data)
         _check_user_active(user_data, username)
+        assert_email_verified_for_local_login(db, user_uuid_str)
         return user_uuid_str, user_data
 
     # Fall back to ORM-based auth
@@ -214,7 +227,50 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
             detail="Inactive user account",
         )
 
+    assert_email_verified_for_local_login(db, str(user.uuid))
+
     return str(user.uuid), _build_user_data(user)
+
+
+def _local_auth_permitted(db: Session, user: User | None) -> bool:
+    """Whether *user* may authenticate with a local password on this deployment.
+
+    Two deployment-level switches, both DB-backed (admin UI > .env > default):
+
+    * ``local_enabled`` — may accounts holding a local password authenticate at all.
+    * ``pki_allow_password_fallback`` — a **ceiling over the per-user**
+      ``User.allow_local_fallback`` for PKI accounts: effective permission is
+      ``per-user AND this``. The per-user flag stays the precise control; this is
+      how a deployment turns password fallback off for every PKI account at once
+      without editing them individually. Before this, the key was stored, typed,
+      and read by nothing.
+
+    An active ``super_admin`` is always permitted regardless of either — see the
+    call site for why that break-glass exemption has to exist. It applies to the
+    PKI ceiling for the same reason it applies to ``local_enabled``: auth
+    configuration is super_admin-gated, so the account that could undo a
+    misconfiguration must not be locked out by it.
+
+    Args:
+        db: Database session, used to resolve the DB-backed settings.
+        user: The resolved account, or None when the identifier matched nobody.
+
+    Returns:
+        True when a local password may be accepted for this account.
+    """
+    if user is not None and user.is_active and user.role == ROLE_SUPER_ADMIN:
+        return True
+
+    auth_settings = get_auth_settings(db)
+
+    if (
+        user is not None
+        and str(user.auth_type or "") == AUTH_TYPE_PKI
+        and not auth_settings.pki_allow_password_fallback
+    ):
+        return False
+
+    return bool(auth_settings.local_enabled)
 
 
 def _authenticate_production_user(
@@ -249,6 +305,24 @@ def _authenticate_production_user(
         local_user.auth_type == AUTH_TYPE_LOCAL
         or getattr(local_user, "allow_local_fallback", False)
     )
+
+    # Deployment-level identity-source policy. There was NO such check: /token
+    # always accepted a local password, so an LDAP- or OIDC-owned deployment could
+    # not actually turn local authentication off — the intended auth method was
+    # advisory only. LDAP is unaffected because it authenticates below, through
+    # the same form.
+    #
+    # An active super_admin is always exempt. That is the documented break-glass
+    # account (docs/AUTH_DEPLOYMENT_GUIDE.md): auth configuration is super_admin
+    # -gated, so without the exemption a deployment that disabled local auth while
+    # its IdP was misconfigured would have no way back in.
+    if can_use_local_auth and not _local_auth_permitted(db, local_user):
+        logger.info(
+            "Local password authentication is disabled for %s; deferring to the "
+            "configured identity provider",
+            mask_identifier(username),
+        )
+        can_use_local_auth = False
 
     # If user can use local auth, try it first
     if can_use_local_auth:

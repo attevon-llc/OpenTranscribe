@@ -1,7 +1,3 @@
----
-description: Cut an OpenTranscribe release — version bump, CHANGELOG, annotated tag, multi-arch image build/push, and a published (never draft) GitHub release. Follows docs/RELEASE_PROCESS.md.
----
-
 # OpenTranscribe Release Assistant
 
 You are helping to create a new release for OpenTranscribe. Follow the complete release process documented in `docs/RELEASE_PROCESS.md`.
@@ -26,7 +22,7 @@ Execute each phase in order. Mark items complete as you go.
 - [ ] Build and test frontend container: `docker build --pull --no-cache -t davidamacey/opentranscribe-frontend:latest -f frontend/Dockerfile.prod frontend/`
 - [ ] Build and test backend container: `docker build --pull --no-cache -t davidamacey/opentranscribe-backend:latest -f backend/Dockerfile.prod backend/`
 - [ ] Run security scans with Trivy and Grype (full output, all severities)
-- [ ] Verify all tests pass
+- [ ] Run the full local gate: `./scripts/run-integration-tests.sh` (ungated suite + all RUN_*-gated security suites, both FIPS modes, integration-marked) and the e2e smoke (`./scripts/e2e/run-e2e-smoke.sh`)
 - [ ] Commit any remaining code changes on the feature branch
 
 ### Phase 2: Version Bump (ALL files must be updated)
@@ -92,7 +88,7 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
 
 - [ ] Checkout master: `git checkout master`
 - [ ] Pull latest: `git pull origin master`
-- [ ] Squash merge: `git merge --squash <branch-name>`
+- [ ] Merge with a merge commit (history is a documentation artifact — NEVER squash): `git merge --no-ff <branch-name>`
 - [ ] Commit with detailed release message (include summary, highlights, changes, files)
 - [ ] Create annotated tag: `git tag -a vX.Y.Z -m "message"`
 - [ ] Push master: `git push origin master`
@@ -139,14 +135,14 @@ EOF
 
 ### Phase 6: Deployment
 
-- [ ] User runs: `./scripts/docker-build-push.sh`
+- [ ] User runs: `USE_REMOTE_BUILDER=true ./scripts/docker-build-push.sh` (multi-arch; without the remote builder ARM64 falls back to QEMU, 2–3 h vs ~20 min)
 - [ ] Verify images on Docker Hub
 - [ ] Run final security scans
 
 ## Important Reminders
 
 1. **Version files**: ALL four files must be updated - missing any causes inconsistency
-2. **Squash merge**: Always use `--squash` to keep master history clean
+2. **Merge commits**: Always merge with `--no-ff` — each commit is a documentation artifact; NEVER squash (squash-merging also breaks git's merged-branch detection, see the stranded-looking chore/cpu-mode-safe-defaults incident)
 3. **Annotated tags**: Use `git tag -a` not `git tag` for proper release tags
 4. **Blog post**: Required for major/minor releases, recommended for security patches
 5. **CHANGELOG**: Required for ALL releases

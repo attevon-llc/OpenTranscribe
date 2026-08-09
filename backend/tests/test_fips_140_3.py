@@ -17,7 +17,8 @@ import hashlib
 import os
 
 import pytest
-from jose import jwt
+
+from tests.jwt_compat import jwt
 
 # Skip all tests - FIPS 140-3 upgrade in development
 pytestmark = pytest.mark.skipif(

@@ -1,11 +1,31 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { register, login } from "$stores/auth";
+  import { onMount } from 'svelte';
+  import { register, login, getAuthMethods } from "$stores/auth";
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import Spinner from '$components/ui/Spinner.svelte';
 
   // Import logo asset for proper Vite processing
   import logoBanner from '../../assets/logo-banner.png';
+
+  // Self-registration is a deployment setting. Probe it before rendering the
+  // form: without this the user fills every field and the backend answers 403.
+  let registrationAllowed = false;
+  let checkingRegistration = true;
+
+  onMount(() => {
+    (async () => {
+      const methods = await getAuthMethods();
+      registrationAllowed = methods.allow_registration;
+      checkingRegistration = false;
+
+      if (!registrationAllowed) {
+        toastStore.error($t('auth.registrationDisabled'));
+        goto('/login', { replaceState: true });
+      }
+    })();
+  });
 
   // Form data
   let username = "";
@@ -89,6 +109,11 @@
 
 <div class="auth-container">
   <div class="auth-card">
+    {#if checkingRegistration}
+      <div class="registration-check">
+        <Spinner size="small" />
+      </div>
+    {:else if registrationAllowed}
     <div class="auth-header">
       <div class="auth-logo">
         <img src={logoBanner} alt="OpenTranscribe" class="logo-banner" />
@@ -248,6 +273,7 @@
         </p>
       </div>
     </form>
+    {/if}
   </div>
 </div>
 
@@ -269,6 +295,12 @@
     width: 100%;
     max-width: 400px;
     padding: 2rem;
+  }
+
+  .registration-check {
+    display: flex;
+    justify-content: center;
+    padding: 2rem 0;
   }
 
   .auth-header {

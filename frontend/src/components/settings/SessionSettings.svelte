@@ -13,7 +13,8 @@
     session_idle_timeout_minutes: config.session_idle_timeout_minutes ?? 30,
     session_absolute_timeout_minutes: config.session_absolute_timeout_minutes ?? 480,
     max_concurrent_sessions: config.max_concurrent_sessions ?? 5,
-    concurrent_session_policy: config.concurrent_session_policy ?? 'oldest'
+    // MUST be one of the two literals the backend accepts — see `sessionPolicies`.
+    concurrent_session_policy: config.concurrent_session_policy ?? 'terminate_oldest'
   };
 
   let saving = false;
@@ -25,7 +26,7 @@
       session_idle_timeout_minutes: config.session_idle_timeout_minutes ?? 30,
       session_absolute_timeout_minutes: config.session_absolute_timeout_minutes ?? 480,
       max_concurrent_sessions: config.max_concurrent_sessions ?? 5,
-      concurrent_session_policy: config.concurrent_session_policy ?? 'oldest'
+      concurrent_session_policy: config.concurrent_session_policy ?? 'terminate_oldest'
     };
   }
 
@@ -39,10 +40,20 @@
     setTimeout(() => saving = false, 500);
   }
 
+  /**
+   * The only two values the backend understands, verbatim:
+   * `SessionConfig.concurrent_session_policy` is
+   * `Literal["terminate_oldest", "reject"]` (backend/app/schemas/auth_config.py)
+   * and `auth_settings.concurrent_session_policy` compares against those strings.
+   *
+   * This panel used to offer `oldest` / `newest` / `all`, none of which matched —
+   * so whichever radio an admin picked, the concurrent-session limit enforced
+   * nothing at all. `all` is gone because it has no backend meaning; inventing a
+   * third option only recreates the same silent no-op.
+   */
   const sessionPolicies = [
-    { value: 'oldest', labelKey: 'settings.session.policyOldestLabel', descKey: 'settings.session.policyOldestDesc' },
-    { value: 'newest', labelKey: 'settings.session.policyNewestLabel', descKey: 'settings.session.policyNewestDesc' },
-    { value: 'all', labelKey: 'settings.session.policyAllLabel', descKey: 'settings.session.policyAllDesc' }
+    { value: 'terminate_oldest', labelKey: 'settings.session.policyOldestLabel', descKey: 'settings.session.policyOldestDesc' },
+    { value: 'reject', labelKey: 'settings.session.policyRejectLabel', descKey: 'settings.session.policyRejectDesc' }
   ];
 
   function formatDuration(minutes: number): string {
@@ -71,8 +82,17 @@
   <div class="section">
     <h3>{$t('settings.session.tokenLifetimes')}</h3>
 
+    <!-- The two token lifetimes are the ONLY keys in this panel the API marks
+         `requires_restart: true` (AuthConfigService.RESTART_REQUIRED_KEYS):
+         app/auth/cookies.py reads them at import time to size the session
+         cookies, so a live change would desynchronise cookie and token expiry.
+         Everything below is enforced against `refresh_token` rows per request
+         and really is live. -->
     <div class="form-group">
-      <label for="jwt_access_token_expire_minutes">{$t('settings.session.accessTokenLifetime')}</label>
+      <label for="jwt_access_token_expire_minutes">
+        {$t('settings.session.accessTokenLifetime')}
+        <span class="restart-badge">{$t('settings.session.restartRequired')}</span>
+      </label>
       <div class="input-with-preview">
         <input
           id="jwt_access_token_expire_minutes"
@@ -88,7 +108,10 @@
     </div>
 
     <div class="form-group">
-      <label for="jwt_refresh_token_expire_days">{$t('settings.session.refreshTokenLifetime')}</label>
+      <label for="jwt_refresh_token_expire_days">
+        {$t('settings.session.refreshTokenLifetime')}
+        <span class="restart-badge">{$t('settings.session.restartRequired')}</span>
+      </label>
       <div class="input-with-preview">
         <input
           id="jwt_refresh_token_expire_days"
@@ -109,6 +132,7 @@
         <li>{$t('settings.session.tokenInfo1')}</li>
         <li>{$t('settings.session.tokenInfo2')}</li>
         <li>{$t('settings.session.tokenInfo3')}</li>
+        <li>{$t('settings.session.restartRequiredHelp')}</li>
       </ul>
     </div>
   </div>
@@ -297,6 +321,21 @@
     margin-top: 0.25rem;
     font-size: 0.75rem;
     color: var(--color-text-tertiary);
+  }
+
+  .restart-badge {
+    display: inline-block;
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.45rem;
+    border: 1px solid var(--color-warning-border);
+    border-radius: 999px;
+    background: var(--color-warning-bg);
+    color: var(--color-warning-text);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    vertical-align: middle;
   }
 
   .token-info {

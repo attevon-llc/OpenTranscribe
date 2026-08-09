@@ -46,7 +46,7 @@ def _identity(**overrides: Any) -> ExternalIdentity:
     defaults: dict[str, Any] = {
         # Core-permitted auth_type: core's user.auth_type CHECK only allows the
         # built-in types; the registry/JIT seam is provider-agnostic regardless.
-        "provider": "keycloak",
+        "provider": "oidc",
         "external_id": f"user_{uuid.uuid4().hex[:12]}",
         "email": f"cap-test-{uuid.uuid4().hex[:8]}@example.com",
         "full_name": "Cap Tester",

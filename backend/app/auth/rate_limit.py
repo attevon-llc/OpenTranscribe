@@ -25,29 +25,48 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _get_redis_storage() -> str | None:
+def _record_degradation(control: str, fallback: str) -> None:
+    """Count a security control running without its shared state store.
+
+    Imported lazily and never allowed to raise — a broken metrics backend must not be
+    able to turn into a failed request. Same contract as
+    ``lockout._record_degradation`` / ``token_service._record_degradation``.
+
+    Args:
+        control: The security control that degraded.
+        fallback: What it used instead (``local`` = per-process approximation).
     """
-    Get Redis storage URI for rate limiting.
+    try:
+        from app.core.metrics import security_state_degraded_total
+
+        security_state_degraded_total.labels(control=control, fallback=fallback).inc()
+    except Exception:  # pragma: no cover - metrics must never break a request
+        logger.debug("Could not record security degradation metric", exc_info=True)
+
+
+def _redis_reachable() -> bool:
+    """Probe Redis once, for the startup log line only.
+
+    The result deliberately does **not** decide the limiter's storage — see
+    ``_create_limiter``.
 
     Returns:
-        Redis URI string if available, None otherwise.
+        True if Redis answered a PING.
     """
     try:
         import redis
 
-        # Build Redis URL from settings
-        redis_url = settings.REDIS_URL
-
-        # Test connection
-        client = redis.from_url(redis_url, socket_timeout=2)
+        client = redis.from_url(settings.REDIS_URL, socket_timeout=2)
         client.ping()
         logger.info("Rate limiter using Redis backend: %s", settings.REDIS_HOST)
-        return redis_url
+        return True
     except Exception as e:
         logger.warning(
-            "Redis unavailable for rate limiting, falling back to memory storage: %s", str(e)
+            "Redis unreachable at rate-limiter startup; limiting will run per-process "
+            "until it recovers: %s",
+            str(e),
         )
-        return None
+        return False
 
 
 def _get_key_func() -> Callable[[Request], str]:
@@ -69,6 +88,13 @@ def _get_key_func() -> Callable[[Request], str]:
         # app (issue #284 A0.5).
         from app.utils.client_ip import resolve_client_ip
 
+        # slowapi flips this flag when the shared store is unreachable and again when
+        # it recovers. Reading it here (a bool, on the one function that runs for every
+        # rate-limited request) is what makes the degraded window visible in Prometheus
+        # instead of only in a log line nobody alerts on.
+        if getattr(limiter, "_storage_dead", False):
+            _record_degradation("rate_limit", "local")
+
         return resolve_client_ip(request)
 
     return key_func
@@ -78,21 +104,52 @@ def _create_limiter() -> Limiter:
     """
     Create and configure the rate limiter instance.
 
-    Uses Redis backend if available, otherwise falls back to in-memory storage.
+    The limiter is **always** pointed at Redis, and slowapi's own in-memory fallback
+    is enabled so a Redis outage degrades to per-process counting and then recovers.
+
+    This used to probe Redis once, at import, and pass ``storage_uri=None`` — i.e.
+    ``memory://`` — if that single probe failed. Because the module-level ``limiter``
+    is bound into every ``@limiter.limit(...)`` decorator at import time, that choice
+    was permanent for the process lifetime: a Redis blip during startup left the whole
+    replica counting requests in its own memory forever, so N replicas behind a load
+    balancer meant N x the configured auth rate limit and no shared throttle at all.
+
+    With a real ``storage_uri``, slowapi marks the storage dead on the first failed
+    operation, serves the same route limits from ``MemoryStorage``, and re-checks the
+    backend on an exponential backoff (``Limiter.__should_check_backend``), clearing
+    the flag as soon as Redis answers. That is the library's own re-probe — preferred
+    over bolting a second one onto its internals.
 
     Returns:
         Configured Limiter instance.
     """
-    storage_uri = _get_redis_storage()
+    _redis_reachable()
 
-    limiter = Limiter(
-        key_func=_get_key_func(),
-        storage_uri=storage_uri,
-        enabled=settings.RATE_LIMIT_ENABLED,
-        default_limits=[],  # No default limits; applied per-endpoint
-        headers_enabled=True,  # Add rate limit headers to responses
-        strategy="fixed-window",  # Simple fixed window strategy
-    )
+    kwargs = {
+        "key_func": _get_key_func(),
+        "enabled": settings.RATE_LIMIT_ENABLED,
+        "default_limits": [],  # No default limits; applied per-endpoint
+        "headers_enabled": True,  # Add rate limit headers to responses
+        "strategy": "fixed-window",  # Simple fixed window strategy
+        # Without this, a dead storage raises out of the limiter instead of degrading;
+        # with it and an empty fallback list, slowapi re-evaluates the route's OWN
+        # limits against in-memory storage, so limits stay enforced while degraded.
+        "in_memory_fallback_enabled": True,
+    }
+
+    try:
+        # Building the storage does NOT connect (limits is lazy), so an unreachable
+        # Redis lands here happily and degrades at first use. This only catches a
+        # genuinely unusable URI or a missing redis client library.
+        limiter = Limiter(storage_uri=settings.REDIS_URL, **kwargs)  # type: ignore[arg-type]
+    except Exception as e:
+        logger.error(
+            "Cannot build a Redis-backed rate limiter (%s); falling back to per-process "
+            "counting. Rate limits will NOT be shared across replicas.",
+            e,
+        )
+        _record_degradation("rate_limit", "local")
+        limiter = Limiter(**kwargs)  # type: ignore[arg-type]
 
     if not settings.RATE_LIMIT_ENABLED:
         logger.info("Rate limiting is DISABLED via configuration")

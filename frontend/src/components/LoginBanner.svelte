@@ -3,7 +3,20 @@
   import { t } from '$stores/locale';
   import { axiosInstance } from '$lib/axios';
 
-  export let onAcknowledge: () => void = () => {};
+  /**
+   * The acknowledgment is being recorded server-side
+   * (`POST /auth/banner/acknowledge`). Disables both actions so a double click
+   * cannot fire two writes.
+   */
+  export let pending: boolean = false;
+  /** Why the last acknowledgment attempt failed. Empty when there is nothing to say. */
+  export let errorMessage: string = '';
+  /**
+   * The user already accepted a banner, but the wording has since changed and the
+   * server expired that consent (`reason: "banner_text_changed"`). Saying so is
+   * the difference between "the notice was updated" and "this is broken".
+   */
+  export let noticeUpdated: boolean = false;
 
   const dispatch = createEventDispatcher();
 
@@ -38,11 +51,14 @@
 
   function handleAcknowledge() {
     dispatch('acknowledge');
-    onAcknowledge();
   }
 
+  // Declining is the parent's business: it ends the session and returns to a
+  // clean login page. `window.location.href = 'about:blank'` used to live here,
+  // and modern browsers commonly block it — leaving the user staring at the
+  // banner with no feedback at all.
   function handleDecline() {
-    window.location.href = 'about:blank';
+    dispatch('decline');
   }
 </script>
 
@@ -58,6 +74,11 @@
 
       <div class="banner-content">
         <h2>{$t('loginBanner.title')}</h2>
+
+        {#if noticeUpdated}
+          <p class="notice-updated" role="status">{$t('loginBanner.noticeUpdated')}</p>
+        {/if}
+
         <div class="banner-text">
           {banner.text}
         </div>
@@ -65,14 +86,18 @@
         <p class="legal-notice">
           {$t('loginBanner.consentText')}
         </p>
+
+        {#if errorMessage}
+          <p class="banner-error" role="alert">{errorMessage}</p>
+        {/if}
       </div>
 
       <div class="banner-actions">
-        <button class="btn-decline" on:click={handleDecline}>
+        <button class="btn-decline" on:click={handleDecline} disabled={pending}>
           {$t('loginBanner.decline')}
         </button>
-        <button class="btn-acknowledge" on:click={handleAcknowledge}>
-          {$t('loginBanner.acknowledge')}
+        <button class="btn-acknowledge" on:click={handleAcknowledge} disabled={pending}>
+          {pending ? $t('loginBanner.acknowledging') : $t('loginBanner.acknowledge')}
         </button>
       </div>
 
@@ -142,6 +167,29 @@
     font-style: italic;
   }
 
+  /* The card is deliberately light in both themes (a paper notice), so these
+     two use fixed colours chosen for contrast on white rather than theme vars. */
+  .notice-updated {
+    margin: 0 0 16px;
+    padding: 12px 16px;
+    border-left: 4px solid #b45309;
+    border-radius: 4px;
+    background: #fef3c7;
+    color: #7c2d12;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  .banner-error {
+    margin: 16px 0 0;
+    padding: 12px 16px;
+    border-left: 4px solid #b91c1c;
+    border-radius: 4px;
+    background: #fee2e2;
+    color: #7f1d1d;
+    font-size: 0.875rem;
+  }
+
   .banner-actions {
     display: flex;
     gap: 16px;
@@ -167,5 +215,11 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
+  }
+
+  .btn-acknowledge:disabled,
+  .btn-decline:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 </style>

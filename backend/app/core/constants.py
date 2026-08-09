@@ -233,7 +233,9 @@ SEARCH_DEFAULT_PAGE_SIZE = 20
 SEARCH_MAX_PAGE_SIZE = 100
 SEARCH_MAX_SNIPPETS_PER_FILE = 10  # Top occurrences per file (reduces memory/latency)
 SEARCH_MAX_SEMANTIC_SNIPPETS_PER_FILE = 2  # Display limit for card view (deprecated)
-SEARCH_HYBRID_MIN_SCORE = 0.01
+# SEARCH_HYBRID_MIN_SCORE lives in config.Settings (env-tunable, default 0.005) —
+# hybrid_search_service reads settings.SEARCH_HYBRID_MIN_SCORE. A same-named
+# constant here was dead and shadowed the real value when tuning.
 SEARCH_CACHE_TTL_SECONDS = 300
 SEARCH_CACHE_MAX_SIZE = 256
 
@@ -455,6 +457,27 @@ WATCH_FS_EVENTS_MODES = ("auto", "native", "polling", "off")
 # higher = cheaper on a large or network-mounted tree.
 DEFAULT_WATCH_FS_EVENTS_POLL_SECONDS = 15
 
+# Transactional auth email (password reset / invitation / verification / security
+# notice). The transport is DB-backed: a super_admin designates ONE of the shared
+# EmailNotificationConfig rows — the same admin-UI-managed, AES-256-GCM-encrypted
+# smtp/m365/exchange stack watch-source notifications use — and auth mail goes out
+# through it. The designation is a SystemSettings key rather than a column so it
+# needs no migration and no restart.
+#
+# Empty default = nothing is designated, and app/services/email_service.py falls
+# back to the SMTP_* env vars. It deliberately does NOT auto-pick a config: those
+# rows are created for specific notification purposes, and mailing password resets
+# out of an unrelated mailbox leaks the deployment's auth mail through it.
+AUTH_EMAIL_CONFIG_SETTING_KEY = "email.auth_config_uuid"
+DEFAULT_AUTH_EMAIL_CONFIG_UUID = ""
+
+# The coded default of settings.FRONTEND_URL, restated here because it is a value
+# to REJECT rather than to use: it is set in none of the 23 compose files, so a
+# deployment that configures mail but not FRONTEND_URL would mail every user a
+# credential link pointing at their own machine. email_service refuses to send
+# such a link once a real transport exists.
+DEFAULT_FRONTEND_URL = "http://localhost:5173"
+
 # Scheduled database backups (Feature C, issue: data-loss incident).
 # DB-backed via SystemSettings (admin-UI managed, no beat restart). Coded defaults
 # here are the single source of truth — there are NO backup .env vars. The ONLY
@@ -506,6 +529,26 @@ DEFAULT_BACKUP_MIRROR_S3_REGION = ""
 DEFAULT_BACKUP_MIRROR_S3_BUCKET = ""  # target bucket (must already exist)
 DEFAULT_BACKUP_MIRROR_S3_PREFIX = "opentranscribe-media/"  # key prefix within the bucket
 DEFAULT_BACKUP_MIRROR_S3_ACCESS_KEY_ID = ""
+
+# Directory reconciliation / deprovisioning (LDAP).
+# DB-backed via SystemSettings (admin-UI managed, no beat restart). Coded defaults
+# here are the single source of truth — there are NO directory-sync .env vars; the
+# directory connection itself reuses the existing LDAP auth config.
+# SystemSettings keys: directory_sync.enabled / directory_sync.schedule /
+# directory_sync.dry_run / directory_sync.max_disables_per_run /
+# directory_sync.last_run_at / directory_sync.last_result.
+#
+# Defaults are deliberately the timid ones. The sweep DISABLES accounts, so
+# shipping it on-by-default would let a first-boot LDAP misconfiguration lock a
+# whole deployment out before anyone saw a log line. Enabled=False + dry_run=True
+# means an operator must opt in twice — once to run it, once to let it act.
+DEFAULT_DIRECTORY_SYNC_ENABLED = False  # opt-in: disables accounts
+DEFAULT_DIRECTORY_SYNC_SCHEDULE = "0 4 * * *"  # cron: daily 04:00 UTC, after the backups
+DEFAULT_DIRECTORY_SYNC_DRY_RUN = True  # report what WOULD be disabled, change nothing
+# Blast radius per pass. A directory that answers "gone" for everyone (wrong
+# search_base, wrong group DN) is indistinguishable from mass offboarding, so the
+# cap is what stops one bad config from disabling the deployment in a single run.
+DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN = 10
 
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
 DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)

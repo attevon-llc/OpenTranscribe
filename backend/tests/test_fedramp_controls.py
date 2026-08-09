@@ -590,16 +590,26 @@ class TestAtomicLockoutMechanism:
         assert isinstance(is_locked, bool)
 
     def test_check_and_record_attempt_atomic_redis(self):
-        """Test that Redis implementation uses atomic operations."""
+        """Test that the Redis implementation uses a genuinely atomic operation.
+
+        This used to assert that the source mentioned ``pipeline`` and ``watch``.
+        Both strings were present and the code was still NOT atomic: ``WATCH`` was
+        issued on a pooled connection while ``pipeline(True)`` acquired a different
+        one, so the transaction guarded nothing and two concurrent failed logins
+        could both write the same attempt count. It is now a server-side
+        compare-and-set script, so assert on that instead.
+        """
         import inspect
 
         from app.auth import lockout
 
         source = inspect.getsource(lockout)
 
-        # Should use Redis WATCH/pipeline for atomic operations
-        assert "pipeline" in source, "Should use Redis pipeline for atomic operations"
-        assert "watch" in source.lower(), "Should use Redis WATCH for optimistic locking"
+        assert "_CAS_LUA" in source, "Should use a compare-and-set Lua script"
+        assert "register_script" in source or "eval" in source, (
+            "The CAS script must actually be executed server-side"
+        )
+        assert hasattr(lockout, "_cas_write"), "Conditional write helper should exist"
 
     def test_check_and_record_attempt_atomic_memory(self):
         """Test that in-memory implementation uses thread locking."""

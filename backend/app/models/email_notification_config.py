@@ -5,6 +5,26 @@ configuration (SMTP / Microsoft 365 Graph / Exchange on-prem) with secrets
 AES-256-GCM encrypted. ``WatchSourceEmail`` is the junction linking a watch
 source to one or more email configs, with per-link recipient overrides and
 success/error toggles.
+
+These rows are **deployment-wide super_admin infrastructure**, not user-owned:
+``created_by`` records who added the row, and the whole CRUD surface in
+``api/endpoints/watch_sources.py`` is gated on ``get_current_active_superuser``.
+
+One row may additionally be designated to carry **transactional auth mail**
+(password reset, invitation, address verification, security notice). That
+designation lives in the ``SystemSettings`` key ``email.auth_config_uuid``
+(``core/constants.py: AUTH_EMAIL_CONFIG_SETTING_KEY``) rather than in a column
+here — it is a property of the deployment, not of the provider, so encoding it as
+a column would mean a migration plus a "only one row may be true" invariant with
+no DB constraint able to express it. Resolution lives in
+``services/email_service.load_auth_mail_config``; the designation is written and
+validated in ``services/auth_mail_config_service`` and exposed at
+``PUT /api/admin/auth-config/email/designation``.
+
+The CRUD routes **refuse** (409) to delete or disable the designated row, since
+either would silently reroute password resets to the ``SMTP_*`` env transport —
+unset in every stock deployment. Should the row vanish another way, the read path
+degrades to that env transport with an error log, never to a different config.
 """
 
 import uuid as uuid_pkg

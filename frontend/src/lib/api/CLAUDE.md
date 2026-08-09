@@ -13,7 +13,14 @@ call these functions, not `axios` directly.
 - `transcriptionSettings.ts`, `asrSettings.ts`, `llmSettings.ts`, `prompts.ts`, `userSettings.ts`,
   `redactionSettings.ts`, `downloadSettings.ts`, `audioExtractionSettings.ts`,
   `organizationContext.ts`, `speakerAttributeSettings.ts`, `mediaSourcesApi.ts`, `suggestions.ts`,
-  `groups.ts`, `sharing.ts`, `admin.ts`, `adminSettings.ts`, `authConfig.ts`, `transcripts.ts`.
+  `groups.ts`, `sharing.ts`, `admin.ts`, `adminSettings.ts`, `authConfig.ts`, `invitations.ts`,
+  `transcripts.ts`, `groupMappings.ts`, `userApprovals.ts`. `authConfig.ts` covers
+  `/admin/auth-config/*` including the auth-mail designation and the config audit log;
+  `invitations.ts` covers `/auth/invitations/*` (create/list/revoke are admin, lookup/accept are
+  public); `groupMappings.ts` covers `/admin/group-mappings/*` (super_admin — note `GrantableRole`
+  is `user|admin` only, never `super_admin`); `userApprovals.ts` covers `/admin/user-approvals/*`
+  (admin) and exports `isAlreadyDecided`, the 409 "somebody else decided this first" test that
+  callers must surface rather than swallow.
 
 ## Conventions / patterns
 

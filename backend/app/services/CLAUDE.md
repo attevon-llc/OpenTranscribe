@@ -30,6 +30,49 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `storage_backend.py` (**see below**), `subtitle_service.py`, `formatting_service.py`.
 - **Ops** — backup/recovery, cleanup, migration lock+progress, task detection/filtering/recovery,
   system settings, usage, GDPR erasure.
+- **Identity / account security** — see below. `auth_config_service.py` (DB > .env > coded
+  default, AES-256-GCM at rest), `account_security_service.py`,
+  `idp_group_mapping_service.py`, `directory_sync_service.py`, `auth_mail_config_service.py`,
+  `scim_service.py` + `scim_token_service.py` (the SCIM 2.0 write path and its credential).
+  The auth *methods* themselves live in `app/auth/` (its own CLAUDE.md), not here.
+
+## Identity services — the single-implementation rules
+
+Five modules, each of which exists to be the **only** implementation of its rule. Adding a
+second is the specific failure mode they were written to prevent.
+
+- **`account_security_service.py`** — every credential or privilege change goes through it:
+  it applies the password policy and reuse history, **revokes sessions**, and writes the audit
+  event. Those three used to be applied inconsistently across `users.py` / `admin.py` /
+  `password_reset.py`. Note the two revocation entry points are split by contract —
+  `revoke_all_user_tokens_in_transaction` (commits nothing, propagates) vs
+  `revoke_all_user_tokens` (best-effort, commits, unsafe mid-transaction).
+- **`idp_group_mapping_service.py`** — `resolve_grants` + `reconcile_user` turn a directory's
+  claim list into in-app group membership and a role. Three callers share it: login
+  (`auth/ldap_auth.py`, `auth/oidc/provisioning.py`, `auth/proxy/provisioning.py`) and the
+  sweep below. `reconcile_memberships=False` / `apply_role=False` exist for the proxy path,
+  where an absent groups header and an unset role header both mean "the source asserts
+  nothing" — reconciling against that would strip memberships and demote admins. **`super_admin` is
+  refused before anything is persisted** (`assert_grantable_role`) *and* by
+  `ck_group_mapping_role_capped`; a `super_admin` is never demoted here either. Only
+  directory-sourced memberships are ever removed. A privilege change revokes sessions.
+- **`directory_sync_service.py`** — the periodic LDAP reconciliation/deprovisioning pass.
+  Fail closed on *ambiguity*, not on error: "the directory says gone" acts, "I could not ask"
+  aborts the pass. Never touches `super_admin` or `local` accounts, disables rather than
+  deletes, and is bounded by `directory_sync.max_disables_per_run`. **Disabling without
+  revoking would leave the refresh token rotating**, so it revokes too. Settings are six
+  `SystemSettings` rows (`directory_sync.*`, defaults in `core/constants.py`) — there are no
+  directory-sync `.env` vars, no endpoint, and no admin panel.
+- **`auth_mail_config_service.py`** — which `EmailNotificationConfig` carries transactional auth
+  mail (`SystemSettings` key `email.auth_config_uuid`). The read half is
+  `email_service.load_auth_mail_config`. A designation naming a missing or disabled row is
+  rejected at **write** time, and deleting/disabling the designated row is refused — the read
+  path degrades quietly enough that a bad designation would only surface as undelivered password
+  resets.
+- **`scim_service.py`** — every write `/scim/v2` performs. Deactivation revokes sessions,
+  `super_admin` is untouchable, roles are never written at all, and `DELETE /Users/{id}` is a
+  soft-disable. `scim_token_service.py` owns the credential: SHA-256 at rest, revoked and
+  expiry checked on the same read that finds the row, revocation one-way.
 
 `README.md` in this directory is the older long-form tour; it drifts — trust the code.
 

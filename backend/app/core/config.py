@@ -6,6 +6,10 @@ from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
+from app.core.legacy_auth_env import oidc_bool_env
+from app.core.legacy_auth_env import oidc_env
+from app.core.legacy_auth_env import oidc_int_env
+
 _config_logger = logging.getLogger(__name__)
 
 
@@ -80,29 +84,29 @@ def _validate_ldap_settings(settings: "Settings") -> None:
         )
 
 
-def _validate_keycloak_settings(settings: "Settings") -> None:
-    """Validate Keycloak/OIDC configuration when Keycloak authentication is enabled.
+def _validate_oidc_settings(settings: "Settings") -> None:
+    """Validate OIDC configuration when OIDC authentication is enabled.
 
     Args:
         settings: The Settings instance to validate.
 
     Raises:
-        ValueError: If KEYCLOAK_ENABLED is true but required Keycloak fields are missing.
+        ValueError: If OIDC_ENABLED is true but required OIDC fields are missing.
     """
-    if not settings.KEYCLOAK_ENABLED:
+    if not settings.OIDC_ENABLED:
         return
 
-    missing_keycloak = []
-    if not settings.KEYCLOAK_SERVER_URL:
-        missing_keycloak.append("KEYCLOAK_SERVER_URL")
-    if not settings.KEYCLOAK_CLIENT_ID:
-        missing_keycloak.append("KEYCLOAK_CLIENT_ID")
-    if not settings.KEYCLOAK_CALLBACK_URL:
-        missing_keycloak.append("KEYCLOAK_CALLBACK_URL")
-    if missing_keycloak:
+    missing_oidc = []
+    if not settings.OIDC_SERVER_URL:
+        missing_oidc.append("OIDC_SERVER_URL")
+    if not settings.OIDC_CLIENT_ID:
+        missing_oidc.append("OIDC_CLIENT_ID")
+    if not settings.OIDC_CALLBACK_URL:
+        missing_oidc.append("OIDC_CALLBACK_URL")
+    if missing_oidc:
         raise ValueError(
-            f"KEYCLOAK_ENABLED=true but the following required settings are missing: "
-            f"{', '.join(missing_keycloak)}"
+            f"OIDC_ENABLED=true but the following required settings are missing: "
+            f"{', '.join(missing_oidc)}"
         )
 
 
@@ -164,6 +168,31 @@ class Settings(BaseSettings):
     # is the door in front of every per-user cost (issue #284 A0.11). Set false when an
     # external IdP owns identity, or when accounts should be admin-provisioned.
     ALLOW_OPEN_REGISTRATION: bool = os.getenv("ALLOW_OPEN_REGISTRATION", "true").lower() == "true"
+
+    # Whether a newly provisioned account must be approved by an administrator
+    # before it can use anything. Applies to self-registration AND to every
+    # just-in-time account an external IdP creates (app/auth/approval.py).
+    #
+    # Defaults FALSE so an upgrade changes nothing: with it off, accounts are
+    # created 'approved' exactly as before. DB-backed override: auth_config
+    # `require_account_approval` (Settings -> Authentication -> Local).
+    REQUIRE_ACCOUNT_APPROVAL: bool = (
+        os.getenv("REQUIRE_ACCOUNT_APPROVAL", "false").lower() == "true"
+    )
+
+    # Whether accounts holding a local password may sign in at all. Turn this off
+    # when an external IdP (LDAP / OIDC / PKI) is the authoritative identity source
+    # and nobody should be able to authenticate against a password stored here.
+    #
+    # It does NOT hide the username/password form — LDAP authenticates through the
+    # same form — and it never applies to an active super_admin, which is the
+    # documented break-glass account (docs/AUTH_DEPLOYMENT_GUIDE.md). Both are
+    # deliberate: without the first, disabling local auth would break LDAP login;
+    # without the second, a misconfiguration would lock every administrator out of
+    # the very screen needed to undo it.
+    #
+    # DB-backed override: auth_config `local_enabled` (Settings -> Authentication).
+    LOCAL_AUTH_ENABLED: bool = os.getenv("LOCAL_AUTH_ENABLED", "true").lower() == "true"
 
     # SSRF egress policy for user-supplied endpoint URLs (issue #284 A0.1/A0.10).
     # Self-hosted Ollama/vLLM on a private LAN is a legitimate setup, so a single-tenant
@@ -569,7 +598,7 @@ class Settings(BaseSettings):
         import warnings
 
         _validate_ldap_settings(self)
-        _validate_keycloak_settings(self)
+        _validate_oidc_settings(self)
         _validate_pki_settings(self)
 
         # Warn if using the default JWT_SECRET_KEY
@@ -654,32 +683,112 @@ class Settings(BaseSettings):
     # Attribute to check for group membership (default: memberOf for AD)
     LDAP_GROUP_ATTR: str = os.getenv("LDAP_GROUP_ATTR", "memberOf")
 
-    # ===== OIDC/Keycloak Configuration =====
-    KEYCLOAK_ENABLED: bool = os.getenv("KEYCLOAK_ENABLED", "false").lower() == "true"
-    KEYCLOAK_SERVER_URL: str = os.getenv("KEYCLOAK_SERVER_URL", "")  # e.g., http://localhost:8180
-    # Internal URL for backend-to-Keycloak communication (Docker networking)
-    # If not set, falls back to KEYCLOAK_SERVER_URL
-    KEYCLOAK_INTERNAL_URL: str = os.getenv("KEYCLOAK_INTERNAL_URL", "")
-    KEYCLOAK_REALM: str = os.getenv("KEYCLOAK_REALM", "opentranscribe")
-    KEYCLOAK_CLIENT_ID: str = os.getenv("KEYCLOAK_CLIENT_ID", "")
-    KEYCLOAK_CLIENT_SECRET: str = os.getenv("KEYCLOAK_CLIENT_SECRET", "")
-    KEYCLOAK_CALLBACK_URL: str = os.getenv(
-        "KEYCLOAK_CALLBACK_URL", ""
-    )  # e.g., http://localhost:5174/api/auth/keycloak/callback
-    KEYCLOAK_ADMIN_ROLE: str = os.getenv(
-        "KEYCLOAK_ADMIN_ROLE", "admin"
-    )  # Keycloak role that grants admin access
-    KEYCLOAK_TIMEOUT: int = _int_env("KEYCLOAK_TIMEOUT", 30)
+    # ===== OpenID Connect =====
+    # Every one of these also resolves from its historical vendor-prefixed spelling,
+    # which takes precedence when both are set — see core/legacy_auth_env.py, the one
+    # module that still names it. Deployments never have to edit their .env.
+    OIDC_ENABLED: bool = oidc_bool_env("OIDC_ENABLED", False)
+    OIDC_SERVER_URL: str = oidc_env("OIDC_SERVER_URL")  # e.g., http://localhost:8180
+    # Internal URL for backend-to-provider communication (Docker networking).
+    # If not set, falls back to OIDC_SERVER_URL.
+    OIDC_INTERNAL_URL: str = oidc_env("OIDC_INTERNAL_URL")
+    OIDC_REALM: str = oidc_env("OIDC_REALM", "opentranscribe")
+    OIDC_CLIENT_ID: str = oidc_env("OIDC_CLIENT_ID")
+    OIDC_CLIENT_SECRET: str = oidc_env("OIDC_CLIENT_SECRET")
+    # e.g. http://localhost:5173/login — the SPA route, not a backend path.
+    OIDC_CALLBACK_URL: str = oidc_env("OIDC_CALLBACK_URL")
+    # Role/group value in the token that grants admin access.
+    OIDC_ADMIN_ROLE: str = oidc_env("OIDC_ADMIN_ROLE", "admin")
+    OIDC_TIMEOUT: int = oidc_int_env("OIDC_TIMEOUT", 30)
     # OIDC Security: Enable audience (aud) claim validation (OWASP recommended)
     # Default to True for security - validates tokens are intended for this client
-    KEYCLOAK_VERIFY_AUDIENCE: bool = os.getenv("KEYCLOAK_VERIFY_AUDIENCE", "true").lower() == "true"
+    OIDC_VERIFY_AUDIENCE: bool = oidc_bool_env("OIDC_VERIFY_AUDIENCE", True)
     # Expected audience claim value (usually the client ID)
-    KEYCLOAK_AUDIENCE: str = os.getenv("KEYCLOAK_AUDIENCE", "")
+    OIDC_AUDIENCE: str = oidc_env("OIDC_AUDIENCE")
     # Enable PKCE (Proof Key for Code Exchange) for OAuth 2.1 compliance
-    KEYCLOAK_USE_PKCE: bool = os.getenv("KEYCLOAK_USE_PKCE", "true").lower() == "true"
+    OIDC_USE_PKCE: bool = oidc_bool_env("OIDC_USE_PKCE", True)
     # Enable issuer (iss) claim validation (OWASP recommended)
-    # Validates that the token was issued by the expected Keycloak realm
-    KEYCLOAK_VERIFY_ISSUER: bool = os.getenv("KEYCLOAK_VERIFY_ISSUER", "true").lower() == "true"
+    OIDC_VERIFY_ISSUER: bool = oidc_bool_env("OIDC_VERIFY_ISSUER", True)
+
+    # ===== Generic OIDC discovery (issue #353) =====
+    # Without a discovery URL the endpoints are built from OIDC_SERVER_URL +
+    # "/realms/<realm>/...", which is a single vendor's URL shape — Authentik and most
+    # other providers 404 on it. Set a discovery URL and every endpoint (plus the
+    # issuer) is read from the provider's own metadata document instead; the realm
+    # form stays as the fallback so existing realm-based deployments are unaffected.
+    OIDC_DISCOVERY_URL: str = oidc_env("OIDC_DISCOVERY_URL")
+    OIDC_ISSUER: str = oidc_env("OIDC_ISSUER")
+    # Dotted path to the claim carrying group/role membership. Realm-shaped
+    # providers: realm_access.roles (the default). Authentik/Okta: groups. Entra ID:
+    # roles. Getting this wrong is silent — everyone logs in and nobody is an admin.
+    OIDC_ROLES_CLAIM: str = oidc_env("OIDC_ROLES_CLAIM", "realm_access.roles")
+    OIDC_SCOPES: str = oidc_env("OIDC_SCOPES", "openid email profile")
+
+    # ===== OIDC admission control =====
+    # Semicolon-delimited group/role values read from OIDC_ROLES_CLAIM, mirroring
+    # LDAP_USER_GROUPS. EMPTY ALLOW-LIST ADMITS EVERYONE — that is today's behaviour
+    # and the upgrade-safe default, not an oversight. Without it, pointing this at a
+    # corporate tenant gives every identity in the directory an account on first
+    # login (auth/oidc/admission.py). Blocked wins over allowed.
+    #
+    # Plain os.getenv, not oidc_env: these names are new, so there is no retired
+    # spelling to honour (core/legacy_auth_env.py owns that translation and its
+    # alias map is the closed list of variables that ever had one).
+    OIDC_ALLOWED_GROUPS: str = os.getenv("OIDC_ALLOWED_GROUPS", "")
+    OIDC_BLOCKED_GROUPS: str = os.getenv("OIDC_BLOCKED_GROUPS", "")
+
+    # ===== SAML 2.0 (#35) =====
+    # No retired spelling to honour here (this is the auth type's only name), so
+    # plain os.getenv throughout — unlike OIDC_*, none of these route through
+    # core/legacy_auth_env.py.
+    SAML_ENABLED: bool = os.getenv("SAML_ENABLED", "false").lower() == "true"
+    # Entity ID this SP identifies itself as. Also the default audience the IdP's
+    # assertion must be addressed to.
+    SAML_SP_ENTITY_ID: str = os.getenv("SAML_SP_ENTITY_ID", "")
+    # e.g. https://localhost:5173/api/auth/saml/acs — must match exactly what is
+    # registered with the IdP, or the assertion's Recipient/Destination check fails.
+    SAML_SP_ACS_URL: str = os.getenv("SAML_SP_ACS_URL", "")
+    SAML_SP_SLS_URL: str = os.getenv("SAML_SP_SLS_URL", "")
+    # SP signing/encryption key pair, PEM. Only required when
+    # SAML_SIGN_AUTHN_REQUESTS or SAML_WANT_ASSERTIONS_ENCRYPTED is on. Blank means
+    # this SP requests but does not itself sign or decrypt.
+    SAML_SP_X509_CERT: str = os.getenv("SAML_SP_X509_CERT", "")
+    SAML_SP_PRIVATE_KEY: str = os.getenv("SAML_SP_PRIVATE_KEY", "")
+    SAML_IDP_ENTITY_ID: str = os.getenv("SAML_IDP_ENTITY_ID", "")
+    SAML_IDP_SSO_URL: str = os.getenv("SAML_IDP_SSO_URL", "")
+    SAML_IDP_SLO_URL: str = os.getenv("SAML_IDP_SLO_URL", "")
+    # The IdP's signing certificate, PEM (no BEGIN/END lines required — sp.py
+    # strips them either way). This is what makes assertion verification real:
+    # python3-saml (never hand-rolled parsing) checks the assertion's signature
+    # against this, so an unset value must refuse to start SAML, not fall open.
+    SAML_IDP_X509_CERT: str = os.getenv("SAML_IDP_X509_CERT", "")
+    # OWASP-recommended posture: the IdP must sign what it asserts.
+    SAML_WANT_ASSERTIONS_SIGNED: bool = (
+        os.getenv("SAML_WANT_ASSERTIONS_SIGNED", "true").lower() == "true"
+    )
+    SAML_WANT_MESSAGES_SIGNED: bool = (
+        os.getenv("SAML_WANT_MESSAGES_SIGNED", "true").lower() == "true"
+    )
+    SAML_SIGN_AUTHN_REQUESTS: bool = (
+        os.getenv("SAML_SIGN_AUTHN_REQUESTS", "false").lower() == "true"
+    )
+    # Attribute names to read from the assertion. No standard covers this across
+    # IdPs — ADFS, Okta, and Azure AD SAML each ship different defaults — so these
+    # are configurable rather than hardcoded to one vendor's claim URIs, same
+    # reasoning as OIDC_ROLES_CLAIM.
+    SAML_EMAIL_ATTRIBUTE: str = os.getenv(
+        "SAML_EMAIL_ATTRIBUTE",
+        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+    )
+    SAML_NAME_ATTRIBUTE: str = os.getenv(
+        "SAML_NAME_ATTRIBUTE", "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
+    )
+    SAML_GROUPS_ATTRIBUTE: str = os.getenv("SAML_GROUPS_ATTRIBUTE", "groups")
+    SAML_ADMIN_GROUP: str = os.getenv("SAML_ADMIN_GROUP", "")
+    # Same semantics and same upgrade-safe empty-admits-everyone default as
+    # OIDC_ALLOWED_GROUPS/OIDC_BLOCKED_GROUPS.
+    SAML_ALLOWED_GROUPS: str = os.getenv("SAML_ALLOWED_GROUPS", "")
+    SAML_BLOCKED_GROUPS: str = os.getenv("SAML_BLOCKED_GROUPS", "")
 
     # ===== MFA Settings (FedRAMP IA-2) =====
     # MFA is disabled by default for air-gapped deployments
@@ -695,10 +804,23 @@ class Settings(BaseSettings):
     # TOTP verification window (number of time steps before/after to accept)
     # 1 = allow 1 step before/after for clock drift (±30 seconds)
     TOTP_VALID_WINDOW: int = _int_env("TOTP_VALID_WINDOW", 1)
-    # Require Redis for MFA token blacklist (fail-secure mode)
-    # When true, MFA verification fails if Redis is unavailable
-    # When false, logs warning but allows MFA (reduced replay protection)
-    MFA_REQUIRE_REDIS: bool = os.getenv("MFA_REQUIRE_REDIS", "false").lower() == "true"
+    # Require Redis for MFA replay protection (fail-secure mode).
+    # Redis is the only place the "this TOTP code / this MFA half-token was already
+    # used" claim lives. With this off, a Redis outage silently downgrades MFA to
+    # replayable: _consume_totp_code accepts a replayed code and the half-token
+    # blacklist check answers "not used". Defaulting it off therefore made the whole
+    # replay defence fail OPEN in production.
+    # Default follows the hardened posture (never ENVIRONMENT == "production" —
+    # see app/core/CLAUDE.md): fail closed in a real deployment, stay permissive in
+    # dev/test where a stack without Redis must still log in. An explicit env value
+    # always wins over the default.
+    MFA_REQUIRE_REDIS: bool = (
+        os.getenv(
+            "MFA_REQUIRE_REDIS",
+            "false" if is_relaxed_environment(ENVIRONMENT) else "true",
+        ).lower()
+        == "true"
+    )
 
     # ===== PKI/X.509 Certificate Configuration =====
     PKI_ENABLED: bool = os.getenv("PKI_ENABLED", "false").lower() == "true"
@@ -737,6 +859,31 @@ class Settings(BaseSettings):
     # Only accept PKI certificate headers from these IPs
     # Example: "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     PKI_TRUSTED_PROXIES: str = os.getenv("PKI_TRUSTED_PROXIES", "")
+
+    # ===== Trusted-header (reverse-proxy) Configuration =====
+    # An authenticating reverse proxy asserts the identity in a header. Everything
+    # here is also settable in the admin UI (category "proxy"), which wins; these are
+    # the .env fallbacks and, for PROXY_ENABLED/PROXY_TRUSTED_PROXIES, what the
+    # startup guard in main.py can see before a database session exists.
+    PROXY_ENABLED: bool = os.getenv("PROXY_ENABLED", "false").lower() == "true"
+    # Comma-separated IPs/CIDRs allowed to assert identity headers. EMPTY MEANS
+    # REFUSE EVERY ASSERTION — the fail-closed state the feature is built around.
+    PROXY_TRUSTED_PROXIES: str = os.getenv("PROXY_TRUSTED_PROXIES", "")
+    PROXY_EMAIL_HEADER: str = os.getenv("PROXY_EMAIL_HEADER", "X-Forwarded-Email")
+    PROXY_NAME_HEADER: str = os.getenv("PROXY_NAME_HEADER", "X-Forwarded-User")
+    # No default: a groups header drives in-app group membership, so reading one
+    # nobody configured would hand a proxy privilege it was never granted.
+    PROXY_GROUPS_HEADER: str = os.getenv("PROXY_GROUPS_HEADER", "")
+    PROXY_GROUPS_SEPARATOR: str = os.getenv("PROXY_GROUPS_SEPARATOR", ",")
+    # Opt-in, and capped at 'admin' by app/auth/proxy/assertion.py. Empty = off.
+    PROXY_ROLE_HEADER: str = os.getenv("PROXY_ROLE_HEADER", "")
+    # Optional defence in depth: a constant-time-compared value the proxy must send
+    # in X-OpenTranscribe-Proxy-Secret, so an allowlisted-but-misconfigured proxy is
+    # not by itself sufficient for takeover.
+    PROXY_SHARED_SECRET: str = os.getenv("PROXY_SHARED_SECRET", "")
+    # Comma-separated email domain allowlist. Empty admits every domain.
+    PROXY_ALLOWED_DOMAINS: str = os.getenv("PROXY_ALLOWED_DOMAINS", "")
+    PROXY_JIT_PROVISIONING: bool = os.getenv("PROXY_JIT_PROVISIONING", "true").lower() == "true"
 
     # Quick access defaults for common providers
     VLLM_BASE_URL: str = os.getenv("VLLM_BASE_URL", "http://localhost:8012/v1")

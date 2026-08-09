@@ -3,242 +3,218 @@ sidebar_label: PKI / X.509 Certificates
 sidebar_position: 4
 ---
 
-# PKI/X.509 Certificate Authentication Setup
+# PKI / X.509 certificate authentication
 
-This guide covers setting up PKI (Public Key Infrastructure) certificate-based authentication with OpenTranscribe.
+Users authenticate with an X.509 client certificate instead of a password. Common in
+government and military deployments (CAC/PIV), and anywhere mutual TLS is already in place.
 
-## Overview
+Configure it at **Settings → Authentication → PKI** (super_admin); values are stored in
+`auth_config` and take effect without a restart, with the `PKI_*` environment variables as a
+bootstrap seed and fallback.
 
-PKI authentication allows users to authenticate using X.509 client certificates instead of passwords. This is commonly used in:
-- Government and military environments (CAC/PIV cards)
-- Enterprise environments with certificate-based security
-- High-security deployments requiring mutual TLS
-
-> **v0.4.0 Change**: PKI configuration is now managed via the Super Admin UI (Settings → Authentication → PKI/X.509). Settings are stored encrypted (AES-256-GCM) in the database. Environment variables continue to work as a fallback seed.
->
-> **OCSP/CRL**: v0.4.0 adds OCSP and CRL checking. Configure via Admin UI for real-time or periodic revocation checking.
->
-> **Super admin password fallback**: Even when PKI is the only enabled auth method, the super admin account can always authenticate with a password. This ensures emergency access if PKI infrastructure fails.
-
-## How It Works
+## How it works
 
 ```
- Client (with cert)  ────▶  Nginx (mTLS termination)  ────▶  OpenTranscribe Backend
-         │                          │                                    │
-    Client Cert               Extract DN/Cert                   Validate & Auth
-    Presented                 Pass via Headers                  Create User
+ Client (with cert)  ──▶  Reverse proxy (mTLS termination)  ──▶  OpenTranscribe backend
+        │                          │                                      │
+   presents cert            validates against CA,                  re-validates,
+                            forwards cert and/or DN                 authenticates
+                            in headers                              or provisions
 ```
 
-1. Client presents X.509 certificate during TLS handshake
-2. Nginx validates certificate against CA
-3. Nginx extracts certificate info and passes via headers
-4. Backend authenticates user based on certificate DN
-5. User is created/updated in database
+The reverse proxy terminates mTLS. It is what vouches for the headers it forwards — which is
+why the trust configuration below is not optional.
 
-## Quick Start: API Testing (No Browser)
+## Trust configuration — read this first
 
-### Step 1: Generate Test Certificates
+:::danger `PKI_TRUSTED_PROXIES` is required whenever PKI is enabled
+Header-sourced PKI authentication is **refused outright** when no trusted proxy is allow-listed.
+A hardened deployment additionally refuses to *start*.
+
+Previously a forwarded DN was accepted from any source with only a warning, and a DN header
+alone could authenticate without a certificate ever being parsed. Set
+`pki_trusted_proxies` to the address the backend sees the reverse proxy arrive from, e.g.
+`127.0.0.1,10.0.0.0/8`. Single addresses and CIDR ranges are both accepted.
+:::
+
+A DN header is trusted **only** when it arrives from a configured proxy, or alongside a
+certificate this process has itself validated.
+
+`pki_mode` decides how much the proxy is trusted to do:
+
+| `pki_mode` | Meaning |
+|---|---|
+| `header` *(default)* | A trusted proxy terminates mTLS and forwards the certificate and/or its DN |
+| `mutual_tls` | Same transport, but a bare DN assertion is **refused** even from a trusted proxy — the full certificate must be forwarded so this application validates it itself |
+
+:::note Changed in v0.5.0
+`pki_mode` used to be `direct` / `broker` / `hybrid` in the schema and `header` / `mutual_tls`
+in the admin UI, so no value could match and **every save of the PKI tab was rejected**; no
+backend code branched on it either way. It is now `header` | `mutual_tls`, and `pki_auth.py`
+reads it.
+
+`pki_support_cac` and `pki_support_piv` were **removed** (migration `v375` deletes their stored
+rows). They gated nothing: both the DoD CAC and the PIV CN formats are parsed for every
+certificate, unconditionally, and always have been.
+:::
+
+## Configuration reference
+
+| Field | Config key | Default |
+|---|---|---|
+| Enabled | `pki_enabled` | `false` |
+| CA certificate path | `pki_ca_cert_path` | — |
+| Certificate header | `pki_cert_header` | `X-Client-Cert` |
+| DN header | `pki_cert_dn_header` | `X-Client-Cert-DN` |
+| Trusted proxies | `pki_trusted_proxies` | — (**required when enabled**) |
+| Mode | `pki_mode` | `header` |
+| Admin DNs | `pki_admin_dns` | — |
+| Verify revocation | `pki_verify_revocation` | `false` |
+| Revocation soft-fail | `pki_revocation_soft_fail` | `false` |
+| OCSP timeout (s) | `pki_ocsp_timeout_seconds` | `5` (1–120) |
+| CRL cache (s) | `pki_crl_cache_seconds` | `3600` (1–604800) |
+| Allow password fallback | `pki_allow_password_fallback` | `true` |
+
+`pki_admin_dns` is a `|`-separated list of full subject DNs that should receive `admin`. DN
+matching is exact and case-sensitive — copy the string straight out of the certificate.
+
+### Revocation checking
+
+Turn on `pki_verify_revocation` and OpenTranscribe checks each presented certificate:
+
+- **OCSP** first, using the responder URL from the certificate's own Authority Information
+  Access extension. Real-time; results are cached per serial with LRU eviction.
+- **CRL** as the cross-check, downloaded from the certificate's CRL distribution points and
+  cached for `pki_crl_cache_seconds`.
+
+There is no separate "OCSP responder URL" or "CRL endpoint" setting — both come from the
+certificate, which is what those extensions are for.
+
+**`pki_revocation_soft_fail` decides what happens when revocation status cannot be
+determined** (responder unreachable, no CRL published). It defaults to `false` — *hard fail*,
+reject the certificate. Set it to `true` only if you accept that an outage at your CA makes
+revoked certificates usable.
+
+### Password fallback
+
+`pki_allow_password_fallback` is a **deployment ceiling** over the per-user
+`User.allow_local_fallback` flag: effective permission is *per-user AND this*. It defaults to
+`true`, so it adds no restriction on upgrade — the per-user flag already defaults to off and
+remains the precise control. Setting it to `false` turns password fallback off for every `pki`
+account at once without editing them individually.
+
+**An active `super_admin` is exempt from both.** Auth configuration is super_admin-gated, so
+the account that could undo a misconfiguration must not be locked out by it. Note the exemption
+only helps if that account actually *has* a password path: `auth_type='local'`, or `pki` with
+`allow_local_fallback` set. Document that credential somewhere safe — in a PKI-only deployment
+it is the only non-certificate way in.
+
+### MFA
+
+A PKI user bypasses local MFA **only when they authenticated with their certificate**. If they
+fall back to a local password, MFA still applies.
+
+## Development and testing
+
+### API-level (no browser)
 
 ```bash
 ./scripts/pki/setup-test-pki.sh
 ```
 
-This creates:
-- Root CA at `scripts/pki/test-certs/ca/ca.crt`
-- Client certificates for: testuser, admin, john.doe, jane.smith
-- PKCS12 files for browser import (password: `changeit`)
-
-### Step 2: Configure OpenTranscribe
+Creates a root CA at `scripts/pki/test-certs/ca/ca.crt`, client certificates for `testuser`,
+`admin`, `john.doe` and `jane.smith`, and `.p12` files for browser import (password `changeit`).
 
 ```bash
-PKI_ENABLED=true
-PKI_CA_CERT_PATH=/mnt/nvm/repos/transcribe-app/scripts/pki/test-certs/ca/ca.crt
-PKI_VERIFY_REVOCATION=false
-PKI_CERT_HEADER=X-Client-Cert
-PKI_CERT_DN_HEADER=X-Client-Cert-DN
-PKI_ADMIN_DNS=emailAddress=admin@example.com,CN=Admin User,OU=Users,O=OpenTranscribe Admins,L=Arlington,ST=Virginia,C=US
-```
+./scripts/pki/test-pki-auth.sh admin      # gets admin
+./scripts/pki/test-pki-auth.sh testuser   # gets user
 
-### Step 3: Test via API
-
-```bash
-# Using the test script
-./scripts/pki/test-pki-auth.sh admin      # Gets admin role
-./scripts/pki/test-pki-auth.sh testuser   # Gets user role
-
-# Or manually with curl (simulates what Nginx does)
+# or by hand, simulating what the proxy does
 ADMIN_DN=$(openssl x509 -in scripts/pki/test-certs/clients/admin.crt -noout -subject | sed 's/subject=//')
-
 curl -X POST http://localhost:5174/api/auth/pki/authenticate \
-  -H "Content-Type: application/json" \
   -H "X-Client-Cert-DN: $ADMIN_DN"
 ```
 
-## Browser-Based PKI Testing (Requires Nginx mTLS)
+This only works with `pki_trusted_proxies` covering the address the request arrives from.
+`POST /api/auth/pki/authenticate` is rate-limited and lockout-tracked like every other auth
+route — it mints real access and refresh tokens.
 
-**IMPORTANT:** PKI authentication requires production mode (`--with-pki`) because it needs nginx with mTLS to verify client certificates. Dev mode (Vite dev server) cannot handle client certificate verification.
+### Browser-based (requires nginx mTLS)
 
-### Step 1: Generate Test Certificates
-
-```bash
-./scripts/pki/setup-test-pki.sh
-```
-
-### Step 2: Enable PKI
-
-**Admin UI (recommended):**
-1. Log in as super_admin
-2. Navigate to Settings → Authentication → PKI/X.509
-3. Enable PKI, set CA Certificate Path, optionally configure OCSP/CRL
-
-**Environment variables (fallback):**
-```bash
-PKI_ENABLED=true
-PKI_CA_CERT_PATH=/app/scripts/pki/test-certs/ca/ca.crt
-PKI_VERIFY_REVOCATION=false
-PKI_CERT_HEADER=X-Client-Cert
-PKI_CERT_DN_HEADER=X-Client-Cert-DN
-PKI_ADMIN_DNS=emailAddress=admin@example.com,CN=Admin User,OU=Users,O=OpenTranscribe Admins,L=Arlington,ST=Virginia,C=US
-```
-
-### Step 3: Start with PKI Overlay
+:::warning Production mode only
+Browser PKI needs nginx to verify the client certificate. The Vite dev server cannot do mTLS,
+so `./opentr.sh start dev` cannot be used for it.
+:::
 
 ```bash
-# Production mode with PKI (test before push)
-./opentr.sh start prod --build --with-pki
-
-# Production mode with PKI (Docker Hub images)
-./opentr.sh start prod --with-pki
+./opentr.sh start prod --build --with-pki   # build local code first
+./opentr.sh start prod --with-pki           # or use published images
 ```
 
-### Step 4: Import Certificate to Browser
+Import a `.p12` from `scripts/pki/test-certs/clients/` (password `changeit`) and open
+**https://localhost:5182**.
 
-Import one of the `.p12` files from `scripts/pki/test-certs/clients/`:
-
-**macOS:**
-```bash
-security import scripts/pki/test-certs/clients/admin.p12 -k ~/Library/Keychains/login.keychain-db -P changeit -A
-```
-
-Then in **Keychain Access**: find the private key → Right-click → Get Info → Access Control → "Allow all applications to access this item"
-
-**Windows/Linux Chrome:**
-Settings → Privacy and security → Security → Manage certificates → Import → Select `admin.p12` → Password: `changeit`
-
-**Firefox:**
-Settings → Privacy & Security → Certificates → View Certificates → Your Certificates → Import
-
-### Step 5: Access via HTTPS
-
-Open: **https://localhost:5182**
-
-- Accept the self-signed certificate warning
-- Click "Sign in with Certificate"
-- Browser will prompt you to select a certificate
-- Select the imported certificate
-
-### Available Test Users
+- **macOS**:
+  `security import scripts/pki/test-certs/clients/admin.p12 -k ~/Library/Keychains/login.keychain-db -P changeit -A`,
+  then in Keychain Access set the private key's Access Control to allow all applications.
+- **Chrome (Windows/Linux)**: Settings → Privacy and security → Security → Manage certificates
+  → Import.
+- **Firefox**: Settings → Privacy & Security → Certificates → View Certificates → Your
+  Certificates → Import.
 
 | Certificate | Email | Role |
-|-------------|-------|------|
-| admin.p12 | admin@example.com | Admin |
-| testuser.p12 | testuser@example.com | User |
-| john.doe.p12 | john.doe@example.com | User |
-| jane.smith.p12 | jane.smith@example.com | User |
+|---|---|---|
+| `admin.p12` | admin@example.com | admin |
+| `testuser.p12` | testuser@example.com | user |
+| `john.doe.p12` | john.doe@example.com | user |
+| `jane.smith.p12` | jane.smith@example.com | user |
 
-Password for all `.p12` files: `changeit`
+## Smart cards (CAC / PIV)
 
-## Production Configuration
-
-### Using Enterprise CA
-
-Configure via the Admin UI (Settings → Authentication → PKI/X.509) for encrypted storage:
+1. Install the card-reader drivers.
+2. Configure the browser's PKCS#11 module.
+3. Insert the card before navigating to the login page.
 
 ```bash
-PKI_ENABLED=true
-PKI_CA_CERT_PATH=/etc/ssl/certs/enterprise-ca.crt
-PKI_VERIFY_REVOCATION=true
-PKI_CERT_HEADER=X-Client-Cert
-PKI_CERT_DN_HEADER=X-Client-Cert-DN
-PKI_ADMIN_DNS=CN=Admin1,OU=IT,O=Company,C=US|CN=Admin2,OU=IT,O=Company,C=US
-```
-
-### OCSP Revocation Checking (Recommended)
-
-OCSP provides real-time certificate revocation status:
-
-| Setting | Description | Example |
-|---------|-------------|---------|
-| **Enable OCSP** | Turn on OCSP checking | `true` |
-| **OCSP Responder URL** | Your CA's OCSP endpoint | `http://ocsp.pki.company.com` |
-
-Configure via Admin UI: Settings → Authentication → PKI/X.509 → Enable OCSP.
-
-### CRL Revocation Checking (Alternative)
-
-CRL downloads and caches a list of revoked certificates, refreshed periodically:
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| **Enable CRL** | Turn on CRL checking | `false` |
-| **CRL Endpoint URL** | CRL distribution point | `http://pki.company.com/crl` |
-| **CRL Refresh Hours** | How often to refresh | `24` |
-
-**OCSP vs CRL:**
-- OCSP: Real-time check on every login — revocation takes effect immediately
-- CRL: Periodic check — revocation takes effect within the refresh interval (up to 24 hours)
-- Both can be enabled simultaneously for defence-in-depth
-
-## Smart Card / CAC / PIV Support
-
-For DoD CAC or PIV card authentication:
-
-1. Ensure card reader drivers are installed
-2. Browser must have PKCS#11 module configured
-3. Insert smart card before navigating to login page
-
-```bash
-# Chrome CAC setup (Linux)
+# Chrome on Linux
 sudo apt install opensc opensc-pkcs11
 # Settings → Privacy → Security → Manage certificates → Security Devices
 # Add: /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
 ```
 
+Both the DoD CAC and PIV common-name formats are parsed for every certificate; there is nothing
+to enable.
+
+## Account linking
+
+A certificate whose subject DN matches no account, but whose email matches an existing one, is
+only linked when the source asserts that address is verified — and **never** to a `super_admin`.
+See [Account linking](./overview#account-linking).
+
+## Production checklist
+
+- [ ] `pki_trusted_proxies` set to the proxy address the backend sees
+- [ ] `pki_mode` chosen deliberately (`mutual_tls` if a bare DN must never be enough)
+- [ ] `pki_ca_cert_path` points at your enterprise CA, mounted into the backend container
+- [ ] `pki_verify_revocation=true` with `pki_revocation_soft_fail=false`
+- [ ] `pki_admin_dns` populated with exact subject DNs
+- [ ] A documented break-glass `super_admin` credential
+- [ ] Certificate renewal planned before expiry
+- [ ] CA private key protected — its compromise means fraudulent certificates
+
 ## Troubleshooting
 
-**"PKI authentication is not enabled"**
-- Verify PKI is enabled in Settings → Authentication → PKI/X.509
-- Database config takes precedence — an explicit `enabled=false` overrides .env
-
-**"Invalid or missing client certificate"**
-- Verify certificate is imported in browser
-- Check Nginx is passing headers correctly
-- Verify certificate is not expired
-
-**"Certificate not accepted"**
-- Verify CA certificate matches issuer
-- Check certificate validity dates
-- Ensure certificate has correct key usage extensions
-
-### Verify Certificate Chain
+| Symptom | Check |
+|---|---|
+| "PKI authentication is not enabled" | Settings → Authentication → PKI. Database configuration overrides `.env` |
+| Every certificate is refused with no parse attempt | `pki_trusted_proxies` is empty, so header-sourced auth is refused |
+| A DN header alone is refused from a trusted proxy | `pki_mode` is `mutual_tls`; forward the full certificate |
+| "Invalid or missing client certificate" | Certificate imported in the browser, proxy forwarding the headers, certificate not expired |
+| "Certificate not accepted" | CA matches the issuer, validity dates, key-usage extensions |
+| Valid certificate refused when the CA is unreachable | `pki_verify_revocation` is on and `pki_revocation_soft_fail` is `false` — that is the intended behaviour |
 
 ```bash
-# Verify certificate against CA
-openssl verify -CAfile ca.crt user.crt
-
-# View certificate details
-openssl x509 -in user.crt -text -noout
-
-# Check certificate DN format
-openssl x509 -in user.crt -subject -noout
+openssl verify -CAfile ca.crt user.crt   # chain
+openssl x509 -in user.crt -text -noout   # details
+openssl x509 -in user.crt -subject -noout # DN, for pki_admin_dns
 ```
-
-## Security Considerations
-
-1. **CA Security**: Protect your CA private key — compromise of the CA allows issuing fraudulent certificates
-2. **Certificate Revocation**: Enable OCSP or CRL checking in production
-3. **Certificate Lifecycle**: Plan for certificate renewal before expiry
-4. **Key Storage**: Use hardware tokens (CAC, PIV, YubiKey) for high-security environments
-5. **DN Validation**: DN matching is case-sensitive and exact — copy DN strings directly from certificate details
-6. **Super Admin Fallback**: Ensure the super admin password is documented in a secure location; it is the only non-PKI access path when PKI-only mode is active
-7. **mTLS Requirement**: PKI authentication requires NGINX with mTLS (`--with-pki` flag); dev mode cannot use PKI

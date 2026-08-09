@@ -12,10 +12,13 @@ All operations are idempotent (safe to run multiple times).
 
 import logging
 import secrets
+from datetime import UTC
+from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.approval import APPROVAL_APPROVED
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import role_implies_superuser
 from app.core.security import get_password_hash
@@ -68,6 +71,9 @@ def _ensure_admin_user(db: Session) -> None:
     every boot with no env gate, so any public deployment shipped with a known
     super-admin credential. A hardened deployment instead gets ``INITIAL_ADMIN_EMAIL``
     with ``INITIAL_ADMIN_PASSWORD``, or a generated password logged once at startup.
+
+    Repairing an existing account whose derived mirror drifted is
+    :func:`_heal_superuser_mirror`'s job, not this function's.
     """
     email, password, generated = _resolve_bootstrap_admin()
 
@@ -86,6 +92,22 @@ def _ensure_admin_user(db: Session) -> None:
             hashed_password=get_password_hash(password),
             role=ROLE_SUPER_ADMIN,
             is_superuser=role_implies_superuser(ROLE_SUPER_ADMIN),
+            # System-created: there is no inbox to prove control of, and an
+            # unverified bootstrap admin is the one account a
+            # require_email_verification deployment could strand.
+            email_verified=True,
+            # Password expiry keys off this column. Leaving it NULL made the
+            # bootstrap admin indistinguishable from an account whose password
+            # age is unknown, which is the one account that must never be locked
+            # out by an expiry rule.
+            password_changed_at=datetime.now(UTC),
+            # NEVER pending, whatever require_account_approval says. This is the
+            # break-glass account, and only a signed-in administrator can clear
+            # an approval queue — a deployment whose sole administrator is IN the
+            # queue is a deployment nobody can get into. Written explicitly rather
+            # than left to the column default so the guarantee is visible here.
+            approval_status=APPROVAL_APPROVED,
+            approved_at=datetime.now(UTC),
         )
         db.add(user)
         db.commit()
@@ -101,15 +123,40 @@ def _ensure_admin_user(db: Session) -> None:
             )
         else:
             logger.info("Created bootstrap admin user: %s (super_admin)", email)
-    elif user.role != ROLE_SUPER_ADMIN and user.is_superuser:
-        # Self-heal a legacy default admin (role='admin' + is_superuser=True),
-        # which could not reach the super_admin-gated surfaces. Idempotent.
-        user.role = ROLE_SUPER_ADMIN
-        user.is_superuser = True
-        db.commit()
-        logger.info("Promoted legacy default admin %s to super_admin", email)
     else:
         logger.debug("Admin user already exists")
+
+
+def _heal_superuser_mirror(db: Session) -> None:
+    """Repair any row where ``is_superuser`` disagrees with ``role``.
+
+    ``is_superuser`` is a derived mirror of ``role == super_admin`` (see
+    ``app.auth.roles``). Deployments seeded before ``role`` existed carry the legacy
+    shape ``role='admin' + is_superuser=True``, which cannot reach the
+    super_admin-gated surfaces (Settings → Authentication). The repair is keyed on
+    the *shape*, not on the bootstrap email — an operator whose admin account uses
+    a different address was previously left stuck.
+
+    The role is promoted to match the flag rather than the flag cleared: the flag is
+    the privilege those deployments actually granted. Idempotent, and never creates
+    an account — only the derived mirror is repaired.
+    """
+    legacy_superusers = (
+        db.query(User).filter(User.is_superuser.is_(True), User.role != ROLE_SUPER_ADMIN).all()
+    )
+    if not legacy_superusers:
+        return
+
+    for user in legacy_superusers:
+        logger.info(
+            "Promoting legacy superuser %s (role=%s) to %s",
+            user.email,
+            user.role,
+            ROLE_SUPER_ADMIN,
+        )
+        user.role = ROLE_SUPER_ADMIN
+        user.is_superuser = role_implies_superuser(ROLE_SUPER_ADMIN)
+    db.commit()
 
 
 def _admin_exists(db: Session) -> bool:
@@ -206,6 +253,9 @@ def init_db(db: Session) -> None:
     Idempotent — safe to call on every startup.
     Creates admin user, default tags, and system prompts if missing.
     """
+    # Repair legacy superuser rows before the bootstrap check, so it sees roles that
+    # already agree with their is_superuser mirror.
+    _heal_superuser_mirror(db)
     _ensure_admin_user(db)
     _ensure_default_tags(db)
     _ensure_system_prompts(db)

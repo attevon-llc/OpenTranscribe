@@ -8,6 +8,12 @@ A0.11 — `/register` was the only auth route with no rate limiter, while creati
 accounts that are immediately active and GPU-capable.
 """
 
+# mypy: disable-error-code="attr-defined"
+# This suite passes structural stand-ins (fake sessions, fake users, namespace
+# requests) to signatures that declare Session/User/Request, and indexes
+# HTTPException.detail, which is typed str while every lifecycle gate raises an
+# object. Declared once here rather than as a cast at every call site — casts
+# bury the assertion, and widening a production signature to suit a test is worse.
 from __future__ import annotations
 
 import inspect
@@ -139,11 +145,41 @@ def test_register_is_rate_limited():
 
 
 def test_open_registration_can_be_disabled():
+    """The gate is DB-backed with the env var as fallback.
+
+    It used to read ``settings.ALLOW_OPEN_REGISTRATION`` directly, which meant the
+    admin UI's self-registration toggle wrote a DB key nothing consumed — an LDAP
+    deployment reported users could still self-register with the switch off (#354).
+    The endpoint now goes through ``get_auth_settings(db).allow_registration``,
+    which resolves DB > env > default.
+    """
     from app.api.endpoints import auth as auth_module
+    from app.core.auth_settings import DynamicAuthSettings
     from app.core.config import settings
 
     assert hasattr(settings, "ALLOW_OPEN_REGISTRATION")
-    assert "ALLOW_OPEN_REGISTRATION" in inspect.getsource(auth_module.register)
+    source = inspect.getsource(auth_module.register)
+    assert "allow_registration" in source
+    assert "settings.ALLOW_OPEN_REGISTRATION" not in source, (
+        "the endpoint must not bypass the DB-backed setting"
+    )
+    # ...and the env var must still be the fallback the property reads.
+    assert "ALLOW_OPEN_REGISTRATION" in inspect.getsource(
+        DynamicAuthSettings.allow_registration.fget
+    )
+
+
+def test_allow_registration_env_var_is_mapped_for_migration():
+    """``ENV_TO_CONFIG_MAPPING`` is what lets an env value seed the DB key.
+
+    Its absence is the reason the admin toggle could never take effect.
+    """
+    from app.services.auth_config_service import AuthConfigService
+
+    assert AuthConfigService.ENV_TO_CONFIG_MAPPING["ALLOW_OPEN_REGISTRATION"] == (
+        "allow_registration"
+    )
+    assert AuthConfigService.env_var_for("allow_registration") == "ALLOW_OPEN_REGISTRATION"
 
 
 def test_open_registration_defaults_on_for_self_host():

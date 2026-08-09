@@ -37,7 +37,7 @@ The OpenTranscribe database is designed around media files, users, and AI-powere
 - `password_history.py` — Password history tracking for reuse prevention
 - `refresh_token.py` — Refresh token management (rotation)
 - `password_reset.py` — Password reset token tracking
-- `auth_config.py` — Authentication provider configuration (LDAP/Keycloak/PKI settings)
+- `auth_config.py` — Authentication provider configuration (LDAP/OIDC/PKI settings)
 
 ### User Settings & Configuration
 - `user_llm_settings.py` — Per-user LLM provider settings with encrypted API keys

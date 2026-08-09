@@ -15,10 +15,12 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError
+from app.core.exceptions import EmailDeliveryError
 from app.core.exceptions import LLMServiceError
 from app.core.exceptions import OpenTranscribeError
 from app.core.exceptions import SearchIndexError
 from app.core.exceptions import StorageError
+from app.core.legacy_auth_env import deprecated_oidc_env_names
 from app.core.logging_config import configure_logging
 from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
@@ -68,12 +70,24 @@ def _validate_production_secrets():
         )
         raise ValueError("Insecure ENCRYPTION_KEY in production environment")
 
-    # Warn about Keycloak audience validation disabled in production
-    if is_production and settings.KEYCLOAK_ENABLED and not settings.KEYCLOAK_VERIFY_AUDIENCE:
+    # Warn about OIDC audience validation disabled in production
+    if is_production and settings.OIDC_ENABLED and not settings.OIDC_VERIFY_AUDIENCE:
         logger.warning(
-            "SECURITY WARNING: KEYCLOAK_VERIFY_AUDIENCE is disabled in production! "
+            "SECURITY WARNING: OIDC_VERIFY_AUDIENCE is disabled in production! "
             "This allows tokens intended for other clients to be accepted. "
-            "Set KEYCLOAK_VERIFY_AUDIENCE=true and configure KEYCLOAK_AUDIENCE for proper token validation."
+            "Set OIDC_VERIFY_AUDIENCE=true and configure OIDC_AUDIENCE for proper token validation."
+        )
+
+    # One line, once, naming the retired environment-variable spellings still in use.
+    # They keep working permanently (core/legacy_auth_env.py); this only tells the
+    # operator that a provider-neutral canonical name now exists.
+    deprecated_env = deprecated_oidc_env_names()
+    if deprecated_env:
+        logger.warning(
+            "DEPRECATED: %s still use the pre-rename environment-variable names. "
+            "They continue to work and take precedence, but the canonical spelling is "
+            "OIDC_* (see docs/OIDC_SETUP.md).",
+            ", ".join(deprecated_env),
         )
 
     # Enforce PKI trusted proxies in production, warn in development
@@ -91,6 +105,32 @@ def _validate_production_secrets():
                 "Configure PKI_TRUSTED_PROXIES with your reverse proxy IP addresses "
                 "(e.g., '127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')."
             )
+
+    # Same rule for trusted-header authentication, and for the same reason: a header
+    # nobody vouched for is an attacker-supplied string, and PROXY_ROLE_HEADER can
+    # turn one into an admin session. The runtime path fails closed as well
+    # (auth/header_trust.py refuses every assertion with an empty allowlist) — this
+    # guard is what makes the misconfiguration visible at boot rather than as a
+    # silent, total authentication outage.
+    #
+    # It reads .env only. A deployment that enables proxy auth *solely* in the admin
+    # UI is not visible here, because Settings is built before any database session
+    # exists; the runtime refusal is what covers that case, and the admin UI's own
+    # cross-field validation is where the warning belongs.
+    if settings.PROXY_ENABLED and not settings.PROXY_TRUSTED_PROXIES:
+        if is_production:
+            logger.critical(
+                "PROXY_ENABLED=true but PROXY_TRUSTED_PROXIES is empty! "
+                "Any client could inject identity headers. Refusing to start."
+            )
+            raise ValueError(
+                "PROXY_TRUSTED_PROXIES must be set when PROXY_ENABLED=true in production"
+            )
+        logger.warning(
+            "SECURITY WARNING: PROXY_ENABLED=true but PROXY_TRUSTED_PROXIES is empty. "
+            "Every header-sourced assertion will be REFUSED until you configure the "
+            "reverse proxy's addresses (e.g. '10.0.0.0/8,172.16.0.0/12')."
+        )
 
     # Check Redis password in production
     if is_production and not settings.REDIS_PASSWORD:
@@ -776,14 +816,37 @@ async def lifespan(app: FastAPI):
                 await task
 
 
+def _resolve_docs_urls() -> tuple[str | None, str | None, str | None]:
+    """Resolve the OpenAPI schema, Swagger UI, and ReDoc URLs.
+
+    Swagger UI is anonymously reachable wherever it is mounted (nginx proxies
+    ``/api/`` straight through), and it enumerates the whole admin/auth attack
+    surface. A hardened deployment therefore publishes none of the three; set
+    ``ENABLE_API_DOCS=true`` to opt back in.
+
+    Returns:
+        The three URLs, or ``(None, None, None)`` when the docs are disabled.
+    """
+    opted_in = os.getenv("ENABLE_API_DOCS", "").strip().lower() in ("1", "true", "yes")
+    if settings.is_hardened and not opted_in:
+        return None, None, None
+    return (
+        f"{settings.API_PREFIX}/openapi.json",
+        f"{settings.API_PREFIX}/docs",
+        f"{settings.API_PREFIX}/redoc",
+    )
+
+
+_openapi_url, _swagger_url, _redoc_url = _resolve_docs_urls()
+
 # Create FastAPI app with lifespan and consistent routing configuration
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Audio transcription and analysis API",
     version=APP_VERSION,
-    openapi_url=f"{settings.API_PREFIX}/openapi.json",
-    docs_url=f"{settings.API_PREFIX}/docs",
-    redoc_url=f"{settings.API_PREFIX}/redoc",
+    openapi_url=_openapi_url,
+    docs_url=_swagger_url,
+    redoc_url=_redoc_url,
     lifespan=lifespan,
     # Disable redirect_slashes to prevent 307 redirects that expose Docker internal hostnames
     # Routes should be defined with "" (not "/") to match paths without trailing slash
@@ -846,6 +909,7 @@ async def handle_app_error(request, exc: OpenTranscribeError):
         StorageError: 503,
         SearchIndexError: 503,
         LLMServiceError: 502,
+        EmailDeliveryError: 503,
     }
     status = status_map.get(type(exc), 500)
     return JSONResponse(
@@ -867,6 +931,17 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # typ
 from app.api.endpoints.metrics import router as metrics_router  # noqa: E402
 
 app.include_router(metrics_router)
+
+# SCIM 2.0 provisioning, mounted at ROOT rather than under API_PREFIX: RFC 7644 §3.1
+# fixes the base path, and every IdP connector appends "/Users" to whatever base URL
+# it is given. Its errors must be SCIM Error resources, not FastAPI's {"detail": ...},
+# or an administrator reading their connector log sees an opaque status code.
+from app.api.endpoints.scim import router as scim_router  # noqa: E402
+from app.api.endpoints.scim.errors import SCIMError  # noqa: E402
+from app.api.endpoints.scim.errors import scim_error_handler  # noqa: E402
+
+app.include_router(scim_router)
+app.add_exception_handler(SCIMError, scim_error_handler)
 
 
 # Health check endpoint

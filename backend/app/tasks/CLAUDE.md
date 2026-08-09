@@ -23,6 +23,13 @@ indexing → WebSocket notification.
   alive; must stay in `celery_app`'s `include=` list.
 - `recovery.py` / `recovery_tasks.py` — `system.startup_recovery` and the periodic
   `cleanup.health_check` reclaim files stuck in PROCESSING with no live Celery task.
+- `directory_sync_task.py` — LDAP reconciliation/deprovisioning, **cpu** queue.
+  `directory.sync_check_schedule` runs from beat every 15 min, reads the DB-stored cron
+  (`directory_sync.schedule`), and dispatches `directory.sync_run` when due — so changing the
+  schedule needs **no beat restart**. It claims the window by stamping
+  `directory_sync.last_run_at` *before* dispatch, and the run itself takes a Redis lock, so a
+  double tick cannot start two passes. Policy and safety rules live in
+  `services/directory_sync_service.py`; this module is only the scheduling shell.
 
 ## Conventions / patterns
 

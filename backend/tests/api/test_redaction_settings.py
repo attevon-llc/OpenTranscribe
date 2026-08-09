@@ -36,7 +36,7 @@ def test_get_policy_unauthorized(client):
 def test_get_policy_non_admin_forbidden(client, user_token_headers):
     resp = client.get(_ADMIN, headers=user_token_headers)
     assert resp.status_code == status.HTTP_403_FORBIDDEN
-    assert resp.json()["detail"] == "Not enough permissions"
+    assert resp.json()["detail"].startswith("Not enough permissions")
 
 
 def test_update_policy_non_admin_forbidden(client, user_token_headers):
@@ -121,8 +121,8 @@ def test_user_defaults_endpoint_shape(client, user_token_headers):
 # ---------------------------------------------------------------------------
 
 
-def test_get_policy_admin_shape(client, admin_token_headers):
-    resp = client.get(_ADMIN, headers=admin_token_headers)
+def test_get_policy_admin_shape(client, super_admin_token_headers):
+    resp = client.get(_ADMIN, headers=super_admin_token_headers)
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
     for key in (
@@ -139,34 +139,36 @@ def test_get_policy_admin_shape(client, admin_token_headers):
         assert key in data
 
 
-def test_update_policy_empty_body_is_400(client, admin_token_headers):
-    resp = client.post(f"{_ADMIN}/update", json={}, headers=admin_token_headers)
+def test_update_policy_empty_body_is_400(client, super_admin_token_headers):
+    resp = client.post(f"{_ADMIN}/update", json={}, headers=super_admin_token_headers)
     assert resp.status_code == status.HTTP_400_BAD_REQUEST
     assert resp.json()["detail"] == "No fields provided to update"
 
 
-def test_update_policy_bool_round_trip(client, admin_token_headers):
-    resp = client.post(f"{_ADMIN}/update", json={"force_pii": True}, headers=admin_token_headers)
+def test_update_policy_bool_round_trip(client, super_admin_token_headers):
+    resp = client.post(
+        f"{_ADMIN}/update", json={"force_pii": True}, headers=super_admin_token_headers
+    )
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["force_pii"] is True
-    assert client.get(_ADMIN, headers=admin_token_headers).json()["force_pii"] is True
+    assert client.get(_ADMIN, headers=super_admin_token_headers).json()["force_pii"] is True
 
 
-def test_update_policy_list_round_trip(client, admin_token_headers):
+def test_update_policy_list_round_trip(client, super_admin_token_headers):
     resp = client.post(
         f"{_ADMIN}/update",
         json={"force_custom_words": ["banned1", "banned2"]},
-        headers=admin_token_headers,
+        headers=super_admin_token_headers,
     )
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["force_custom_words"] == ["banned1", "banned2"]
 
 
-def test_update_policy_float_round_trip(client, admin_token_headers):
+def test_update_policy_float_round_trip(client, super_admin_token_headers):
     resp = client.post(
         f"{_ADMIN}/update",
         json={"force_toxicity_threshold": 0.9},
-        headers=admin_token_headers,
+        headers=super_admin_token_headers,
     )
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["force_toxicity_threshold"] == 0.9
@@ -178,33 +180,33 @@ def test_update_policy_float_round_trip(client, admin_token_headers):
 
 
 def test_force_pii_surfaces_in_user_locked_categories(
-    client, admin_token_headers, user_token_headers
+    client, super_admin_token_headers, user_token_headers
 ):
     """Admin force_pii → the user's /defaults locks the 'pii' category."""
-    client.post(f"{_ADMIN}/update", json={"force_pii": True}, headers=admin_token_headers)
+    client.post(f"{_ADMIN}/update", json={"force_pii": True}, headers=super_admin_token_headers)
     defaults = client.get(f"{_USER}/defaults", headers=user_token_headers).json()
     assert "pii" in defaults["locked_categories"]
 
 
 def test_force_export_redacted_surfaces_as_export_locked(
-    client, admin_token_headers, user_token_headers
+    client, super_admin_token_headers, user_token_headers
 ):
     client.post(
         f"{_ADMIN}/update",
         json={"force_export_redacted": True},
-        headers=admin_token_headers,
+        headers=super_admin_token_headers,
     )
     defaults = client.get(f"{_USER}/defaults", headers=user_token_headers).json()
     assert defaults["export_locked"] is True
 
 
 def test_force_redact_before_llm_surfaces_as_locked(
-    client, admin_token_headers, user_token_headers
+    client, super_admin_token_headers, user_token_headers
 ):
     client.post(
         f"{_ADMIN}/update",
         json={"force_redact_before_llm": True},
-        headers=admin_token_headers,
+        headers=super_admin_token_headers,
     )
     defaults = client.get(f"{_USER}/defaults", headers=user_token_headers).json()
     assert defaults["redact_before_llm_locked"] is True

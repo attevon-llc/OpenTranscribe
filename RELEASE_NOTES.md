@@ -4,8 +4,9 @@
   Review this file, then run the `gh release create` command at the bottom
   to publish. Nothing is published until that command runs.
 
-  Referenced by: docs/RELEASE_PLAN_v0.4.0.md (Step 4 — Publish GitHub Release).
-  This file is temporary; archive or delete it after release.
+  This file is temporary; archive or delete it after release. (v0.4.0 shipped on
+  2026-03-22 and v0.4.1 on 2026-04-14, so this draft is already superseded by the
+  published releases and by CHANGELOG.md.)
 
   This file mirrors the v0.4.0 section of CHANGELOG.md — if you edit
   CHANGELOG.md after reading this, update this file too.

@@ -1,9 +1,8 @@
 """Edition capabilities / entitlements (cloud-edition seam).
 
 Server-driven feature gating: the backend decides which feature surfaces
-exist; the frontend renders only what `GET /system/capabilities` returns, and
-gated endpoints 404 when a capability is off — UI hiding is cosmetic, the
-backend gate is the authority.
+exist and the frontend renders only what ``GET /system/capabilities``
+returns.
 
 Community/self-hosted default: **everything ON** (zero behavior change).
 The commercial cloud edition replaces the resolver via
@@ -15,6 +14,41 @@ paid tier). Capability KEYS are generic core vocabulary; the cloud
 Rule: every gate — backend dependency, beat schedule, frontend tab — reads
 the same capability key. Never sprinkle ``if edition == "cloud"`` in feature
 code.
+
+What a capability actually enforces today
+-----------------------------------------
+The keys below are declared in one map but are **not** all enforced to the
+same depth. Read this before assuming a key protects anything:
+
+1. **Server-enforced** — wired to a ``require_capability`` router dependency
+   in ``app/api/router.py``; disabling one makes every route under that
+   router 404, so the UI gate is genuinely cosmetic:
+   ``watch_sources``, ``organizations``, ``auth.config_ui``,
+   ``llm.user_settings``, ``asr.user_providers``, ``engine.settings``.
+
+2. **UI-only vocabulary** — read *only* by ``SettingsModal.svelte`` to hide a
+   settings panel. The underlying endpoints stay fully reachable, so this is
+   presentation, not authorization: ``recording``, ``exports``,
+   ``transcription.prefs``, ``vocab.user``, ``prompts.user``,
+   ``redaction.user``, ``sharing.teams``, ``redaction.policy``, ``billing``,
+   ``usage_dashboard``, ``users.local_admin``, ``system.hardware_stats``,
+   ``audit.logs``, and the ``admin.*`` platform panels.
+
+3. **Declared but unread** — no router, no task, no UI reads these yet.
+   Setting ``upload: False`` or ``search: False`` changes nothing at all:
+   ``upload``, ``url_ingest``, ``search``, ``comments``,
+   ``collections.shared``, ``speakers.shared``, ``prompts.shared``,
+   ``org.defaults``, ``asr.model_selection``, ``llm.byok``.
+
+Tiers 2 and 3 are a to-do list, not a contract. A key becomes authoritative
+only when a router (or task/beat) reads it — attaching one is a behavior
+change and needs its own review.
+
+``tests/unit/test_capability_contract.py`` pins the frontend's ``cap:``
+strings as a subset of ``COMMUNITY_CAPABILITIES``: the two maps previously
+drifted in opposite directions, and because unknown keys fail **closed**
+here but **open** in the frontend store, the drift was invisible until a key
+was finally declared.
 """
 
 import logging
@@ -73,18 +107,27 @@ COMMUNITY_CAPABILITIES: dict[str, bool] = {
     "usage_dashboard": False,
     "organizations": False,  # member/seat management surface
     "org.defaults": False,  # org-level default settings/policies
+    "llm.byok": False,  # bring-your-own LLM key (cloud tier-gated extra)
     "redaction.policy": True,  # enforcement floor (org admin in cloud; operator here)
     # -- platform (staff / self-host operator config & ops) ----------------------
-    "auth.config_ui": True,  # LDAP/Keycloak/PKI admin configuration UI
+    "auth.config_ui": True,  # LDAP/OIDC/PKI admin configuration UI
     "users.local_admin": True,  # local user CRUD admin UI
     "asr.model_selection": True,  # admin local-model pinning UI
     "engine.settings": True,  # diarization/boundary tuning admin panel
     "system.hardware_stats": True,  # GPU/CPU stats, benchmarks
+    "audit.logs": True,  # audit log viewer (super-admin)
+    "admin.data_integrity": True,  # orphaned-record / storage reconciliation panel
+    "admin.retention": True,  # file retention + derived-media cache policy
+    "admin.backup": True,  # scheduled database backups
+    "admin.search_indexing": True,  # reindex / embedding-model management
+    "admin.embedding_migration": True,  # embedding migration + consistency panel
+    "admin.task_health": True,  # stuck-task recovery / queue health panel
 }
 
-# Every capability key MUST be classified (tested). The frontend uses this to
-# place surfaces in the right area (user settings / team / org admin /
-# platform admin) — and to render nothing at all for roles below the audience.
+# Every capability key MUST be classified, and the two maps must carry the
+# SAME key set (both pinned by tests). The frontend uses this to place
+# surfaces in the right area (user settings / team / org admin / platform
+# admin) — and to render nothing at all for roles below the audience.
 CAPABILITY_AUDIENCE: dict[str, str] = {
     "upload": AUDIENCE_USER,
     "recording": AUDIENCE_USER,
@@ -109,14 +152,20 @@ CAPABILITY_AUDIENCE: dict[str, str] = {
     "usage_dashboard": AUDIENCE_ORG_ADMIN,
     "organizations": AUDIENCE_ORG_ADMIN,
     "org.defaults": AUDIENCE_ORG_ADMIN,
+    "llm.byok": AUDIENCE_ORG_ADMIN,
     "redaction.policy": AUDIENCE_ORG_ADMIN,
     "auth.config_ui": AUDIENCE_PLATFORM,
     "users.local_admin": AUDIENCE_PLATFORM,
     "asr.model_selection": AUDIENCE_PLATFORM,
     "engine.settings": AUDIENCE_PLATFORM,
     "system.hardware_stats": AUDIENCE_PLATFORM,
-    # Cloud-only tier-gated extras (resolver-added)
-    "llm.byok": AUDIENCE_ORG_ADMIN,
+    "audit.logs": AUDIENCE_PLATFORM,
+    "admin.data_integrity": AUDIENCE_PLATFORM,
+    "admin.retention": AUDIENCE_PLATFORM,
+    "admin.backup": AUDIENCE_PLATFORM,
+    "admin.search_indexing": AUDIENCE_PLATFORM,
+    "admin.embedding_migration": AUDIENCE_PLATFORM,
+    "admin.task_health": AUDIENCE_PLATFORM,
 }
 
 # Resolver signature: (request | None) -> capability dict. The request is

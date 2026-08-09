@@ -95,7 +95,7 @@ Run `./opentr.sh` with no arguments for full usage. The ones you'll reach for:
 ./opentr.sh start dev --dry-run              # print compose files + command, start nothing
 ```
 
-`--fresh` refuses to start when any port it needs is already bound (it offers `--port-offset N`) and generates a gitignored `.fresh/<name>.yml` overlay that re-pins every service to `otfresh-<name>-*`. `--port-offset` works by exporting the `*_PORT` vars the compose files already read — never by overlaying a second `ports:` list, which compose would append (issue #343). The offset is remembered in `.fresh/<name>.offset`. The `--with-ldap-test` / `--with-smb-test` / `--with-monitoring` / `--with-keycloak-test` overlays are isolated too (issue #347) — names, ports, and volumes all move — and the overlays used are recorded in `.fresh/<name>.aux`. `--with-watch` / `--with-backup` are **not**: they bind live host directories, and `opentr.sh` warns. Details: `scripts/CLAUDE.md`.
+`--fresh` refuses to start when any port it needs is already bound (it offers `--port-offset N`) and generates a gitignored `.fresh/<name>.yml` overlay that re-pins every service to `otfresh-<name>-*`. `--port-offset` works by exporting the `*_PORT` vars the compose files already read — never by overlaying a second `ports:` list, which compose would append (issue #343). The offset is remembered in `.fresh/<name>.offset`. The `--with-ldap-test` / `--with-smb-test` / `--with-monitoring` / `--with-keycloak-test` / `--with-authentik-test` overlays are isolated too (issue #347) — names, ports, and volumes all move — and the overlays used are recorded in `.fresh/<name>.aux`. `--with-watch` / `--with-backup` are **not**: they bind live host directories, and `opentr.sh` warns. Details: `scripts/CLAUDE.md`.
 
 **NAS overlay** (non-fresh `start`): auto-detected from `.env`, announced with a `💾 NAS overlay AUTO-LOADED` banner; `--no-nas` suppresses, `--nas` opts in explicitly. When active it writes a `.opentranscribe-live-data` marker into each bind dir — **if you see that marker, you are looking at live data; do not delete.** Full map: `docs-site/docs/operations/fresh-deployments.md`.
 
@@ -105,7 +105,8 @@ Configure auth via Admin UI (Settings → Authentication); DB config takes prece
 
 ```bash
 ./opentr.sh start dev --with-ldap-test       # LDAP at localhost:3890, UI :17170 (admin/admin_password)
-./opentr.sh start dev --with-keycloak-test   # Keycloak at localhost:8180 (admin/admin)
+./opentr.sh start dev --with-keycloak-test   # a Keycloak IdP to test OIDC against, localhost:8180 (admin/admin)
+./opentr.sh start dev --with-authentik-test  # an Authentik IdP to test OIDC against, localhost:9022 (bootstrap: admin@example.com/admin_password)
 ./opentr.sh start prod --build --with-pki    # PKI/mTLS at https://localhost:5182 (prod-only — Vite can't do mTLS)
 ```
 
@@ -124,7 +125,7 @@ app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`. Never start it as
 bare host process: it binds 5199 and then blocks the container. Fixtures and the
 full table: `backend/tests/CLAUDE.md`.
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
-Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/KEYCLOAK_SETUP.md`.
+Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
 
 ### Multi-GPU worker scaling (optional)
 
@@ -236,3 +237,11 @@ subsystem, and put new subsystem detail **there**, not in this file.
 - Stay in scope: don't modify code unrelated to the task at hand.
 - Python imports go at the top **except** heavy optional deps (torch, pyannote.metrics, meeteval), which are imported inside the function so modules stay importable on CPU-only workers.
 - Settings that look like they need `.env` vars are often **DB-backed** `SystemSettings` with coded defaults in `backend/app/core/constants.py`, edited in the admin UI with no restart. Check before adding an env var.
+- **Worktree → branch → PR, never a local merge onto `master`.** Use a `.claude/worktrees/<name>`
+  git worktree for deep, issue/PR-scoped work. When it's done: commit and push *that branch* to
+  origin — nothing more. Build and test the branch **itself** (relocate its checkout — e.g.
+  remove the worktree and `git checkout <branch>` in the main repo — if it needs the main repo's
+  `.env`/tooling; don't create a separate local merge of it into `master` to test "how it looks
+  merged"). Only once the branch is fully green does a PR go open from it into `master`; `master`
+  changes **only** via that merged PR, never via a local `git merge <branch>` on `master` pushed
+  directly — that bypasses review and produces a merge commit nobody chose the message for.

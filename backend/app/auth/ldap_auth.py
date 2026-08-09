@@ -7,6 +7,8 @@ Configuration is loaded from database first, falling back to environment variabl
 
 import logging
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TypedDict
 
@@ -18,15 +20,28 @@ from ldap3.core.exceptions import LDAPBindError
 from ldap3.core.exceptions import LDAPException
 from sqlalchemy.exc import IntegrityError
 
+from app.auth.account_linking import assert_email_link_permitted
 from app.auth.constants import AUTH_TYPE_LDAP
 from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
+from app.auth.roles import ROLE_ADMIN
+from app.auth.roles import ROLE_USER
+from app.auth.roles import role_implies_superuser
 from app.core.config import settings as env_settings
 
 logger = logging.getLogger(__name__)
 
 # Re-export for backwards compatibility
 LDAP_NO_PASSWORD = EXTERNAL_AUTH_NO_PASSWORD
+
+#: Whether an LDAP directory asserts that a user's ``mail`` value is a *verified*
+#: address. It does not, and nothing in LDAP or AD can: ``mail`` is an ordinary
+#: writable attribute with no verification semantics, and in a self-service directory
+#: the user owns it. The "source asserts the address verified" guard therefore fails
+#: closed for LDAP, so email-match linking is always refused. Accounts already carrying
+#: an ``ldap_uid`` are unaffected, and so is a new LDAP user whose address collides
+#: with no existing account.
+LDAP_ASSERTS_EMAIL_VERIFIED = False
 
 
 @dataclass(frozen=True)
@@ -210,11 +225,23 @@ def _bind_service_account(cfg: LdapConfig, server: Server) -> Connection | None:
         return None
 
 
-def _search_ldap_user(cfg: LdapConfig, bind_conn: Connection, username: str, ldap_username: str):
+def _search_ldap_user(
+    cfg: LdapConfig,
+    bind_conn: Connection,
+    username: str,
+    ldap_username: str,
+    extra_attributes: list[str] | None = None,
+):
     """Search for user in LDAP by username or email.
 
     Handles LDAP servers that don't support certain attributes (e.g., memberOf)
     by retrying without the unsupported attribute.
+
+    ``extra_attributes`` are requested alongside the configured ones but kept OUT
+    of ``base_attributes`` on purpose: the invalid-attribute retry below falls back
+    to ``base_attributes``, so an optional attribute a given server doesn't know
+    (``userAccountControl`` on OpenLDAP/LLDAP) degrades to "not returned" instead
+    of failing the whole search.
     """
     base_attributes = [cfg.username_attr, cfg.email_attr, cfg.name_attr]
 
@@ -222,6 +249,8 @@ def _search_ldap_user(cfg: LdapConfig, bind_conn: Connection, username: str, lda
     attributes = list(base_attributes)
     if cfg.group_attr:
         attributes.append(cfg.group_attr)
+    if extra_attributes:
+        attributes.extend(extra_attributes)
 
     # Search by username attribute first
     search_filter = cfg.user_search_filter.format(username=_escape_ldap_filter(ldap_username))
@@ -588,22 +617,32 @@ def ldap_authenticate(username: str, password: str, db=None) -> LdapUserData | N
         _close_connection(bind_conn, "service")
 
 
-def _create_ldap_user(db, username: str, email: str, ldap_data: LdapUserData):
-    """Create a new user from LDAP data."""
+def _create_ldap_user(db, username: str, email: str, ldap_data: LdapUserData, *, is_admin: bool):
+    """Create a new user from LDAP data.
+
+    Args:
+        is_admin: The *effective* admin signal — the legacy ``admin_users`` /
+            ``admin_groups`` rule OR-ed with any ``group_mapping`` that grants
+            ``admin``. Computed by :func:`sync_ldap_user_to_db`.
+    """
+    from app.auth.approval import initial_approval_status
     from app.models.user import User
 
     logger.info(f"Creating new user from LDAP: {username} ({email})")
+    # External IdPs grant at most 'admin'; super_admin is local-only.
+    role = ROLE_ADMIN if is_admin else ROLE_USER
     user = User(
         email=email,
         full_name=ldap_data["full_name"] or email.split("@")[0],
         hashed_password=LDAP_NO_PASSWORD,
         auth_type=AUTH_TYPE_LDAP,
         ldap_uid=username,
-        role="admin" if ldap_data["is_admin"] else "user",
+        role=role,
         is_active=True,
-        # External IdPs grant at most 'admin'; super_admin is local-only, and
-        # is_superuser mirrors (role == super_admin) — so it is always False here.
-        is_superuser=False,
+        is_superuser=role_implies_superuser(role),
+        # Same rule as OIDC JIT: the directory authenticated them, it did not
+        # decide this deployment wants them. 'approved' unless the setting is on.
+        approval_status=initial_approval_status(db),
     )
     db.add(user)
 
@@ -622,7 +661,15 @@ def _create_ldap_user(db, username: str, email: str, ldap_data: LdapUserData):
 
 
 def _update_ldap_user(db, user, username: str, email: str, ldap_data: LdapUserData):
-    """Update an existing LDAP user's data."""
+    """Update an existing LDAP user's profile fields.
+
+    Privilege is deliberately NOT decided here. Promotion and demotion used to be
+    copy-pasted into this function, :func:`_convert_local_user_to_ldap` and both
+    OIDC equivalents, each with its own super_admin guard and none of them
+    revoking sessions. It now lives in
+    ``services/idp_group_mapping_service.reconcile_user``, which
+    :func:`sync_ldap_user_to_db` calls for every login.
+    """
     logger.info(f"Updating existing LDAP user: {username} ({email})")
 
     if email and email != user.email:
@@ -634,19 +681,6 @@ def _update_ldap_user(db, user, username: str, email: str, ldap_data: LdapUserDa
     user.full_name = ldap_data["full_name"] or user.full_name
     user.ldap_uid = username
     user.auth_type = AUTH_TYPE_LDAP
-
-    if ldap_data["is_admin"]:
-        # External IdPs grant at most 'admin'; never demote a local super_admin.
-        if user.role not in ("admin", "super_admin"):
-            logger.info(f"Promoting LDAP user {username} to admin")
-            user.role = "admin"
-        user.is_superuser = user.role == "super_admin"
-    elif user.role == "admin":
-        logger.info(
-            f"Demoting LDAP user {username} from admin (removed from LDAP admin_users/admin_groups)"
-        )
-        user.role = "user"
-        user.is_superuser = False
 
     db.commit()
     return user
@@ -668,19 +702,10 @@ def _convert_local_user_to_ldap(db, user, username: str, email: str, ldap_data: 
     user.email = email
     user.full_name = ldap_data["full_name"] or user.full_name
 
-    if ldap_data["is_admin"]:
-        if user.role != "admin":
-            logger.info(f"Promoting converted LDAP user {username} to admin")
-        user.role = "admin"
-        user.is_superuser = True
-    elif user.role == "admin":
-        logger.info(
-            f"Demoting converted LDAP user {username} from admin "
-            "(not in LDAP admin_users/admin_groups)"
-        )
-        user.role = "user"
-        user.is_superuser = False
-
+    # Privilege is applied by reconcile_user after this returns — see
+    # _update_ldap_user's docstring. (Setting role='admin' with is_superuser=True
+    # here used to violate ck_user_superuser_matches_role (v369) and 500 the
+    # commit, locking every LDAP-admin local user out of conversion.)
     db.commit()
     return user
 
@@ -688,20 +713,60 @@ def _convert_local_user_to_ldap(db, user, username: str, email: str, ldap_data: 
 def sync_ldap_user_to_db(db, ldap_data: LdapUserData):
     """Create or update a user in the database from LDAP data.
 
-    Handles creating new users, updating existing LDAP users,
-    converting local users to LDAP, and race conditions.
+    Handles creating new users, updating existing LDAP users, converting local
+    users to LDAP, and race conditions — and then reconciles the account's group
+    memberships and privilege against the configured ``group_mapping`` rows
+    (``v376``). Before that, ``ldap_data["groups"]`` was collected on every login
+    and thrown away: ``is_admin`` was the only bit that survived, so a directory
+    group could never become an OpenTranscribe sharing group.
+
+    With no mappings configured this behaves exactly as it did before: the grant
+    set is empty, no membership changes, and the legacy ``admin_users`` /
+    ``admin_groups`` rule alone decides ``admin``.
+
+    Lookup is ``ldap_uid`` first, then email. The email fallback links a directory
+    identity to a **pre-existing** account, so it goes through
+    ``account_linking.assert_email_link_permitted`` — see that module for the rule,
+    why a refusal fails the login instead of creating a second account, and the
+    operator remedy.
+
+    Raises:
+        HTTPException: 401, when an email-matched link is refused. Deliberately the
+            same response ``_authenticate_ldap_user`` gives for a bad password, so a
+            refusal is not an oracle for "this address exists".
     """
+    from app.models.group import MAPPING_SOURCE_LDAP
     from app.models.user import User
+    from app.services.idp_group_mapping_service import reconcile_user
+    from app.services.idp_group_mapping_service import resolve_grants
 
     username = ldap_data["username"]
     email = ldap_data["email"]
+    groups = ldap_data.get("groups") or []
 
     user = db.query(User).filter(User.ldap_uid == username).first()
     if not user:
+        # The email fallback links a directory identity to a PRE-EXISTING account,
+        # so it is gated. An account already carrying this ``ldap_uid`` was linked
+        # deliberately at some earlier point and is not re-litigated.
         user = db.query(User).filter(User.email == email).first()
+        if user:
+            assert_email_link_permitted(
+                user,
+                provider=AUTH_TYPE_LDAP,
+                source_identifier=username,
+                email_verified=LDAP_ASSERTS_EMAIL_VERIFIED,
+                failure_detail="Incorrect username or password",
+                failure_headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    # Resolved before the row is written so a brand-new account is created at the
+    # right role instead of being created and then immediately promoted.
+    grants = resolve_grants(db, MAPPING_SOURCE_LDAP, groups)
+    is_admin = bool(ldap_data["is_admin"]) or grants.grants_admin
 
     if not user:
-        user = _create_ldap_user(db, username, email, ldap_data)
+        user = _create_ldap_user(db, username, email, ldap_data, is_admin=is_admin)
     elif user.auth_type == AUTH_TYPE_LOCAL:
         logger.warning(
             f"SECURITY: Converting local user {email} to LDAP auth. "
@@ -712,5 +777,175 @@ def sync_ldap_user_to_db(db, ldap_data: LdapUserData):
     else:
         user = _update_ldap_user(db, user, username, email, ldap_data)
 
+    reconcile_user(
+        db,
+        user,
+        MAPPING_SOURCE_LDAP,
+        groups,
+        legacy_admin=bool(ldap_data["is_admin"]),
+        reason="idp_login",
+    )
+
     db.refresh(user)
     return user
+
+
+# =============================================================================
+# Directory reconciliation (read-only probes for deprovisioning)
+# =============================================================================
+#
+# Login-time sync is upward-only: it can create and promote, and it can refuse a
+# login, but nothing ever walks the accounts that STOPPED logging in. These two
+# helpers give the periodic sweep in ``services/directory_sync_service.py`` a
+# read-only way to ask "is this identity still there?" without a second LDAP
+# client — they reuse the same config, bind and search path as authentication.
+
+
+class LdapDirectoryUnavailableError(Exception):
+    """The directory could not be consulted, so nothing may be concluded from it.
+
+    Deliberately distinct from "the directory says this user is gone". A caller
+    that deprovisions accounts MUST treat this as "do nothing": disabling every
+    LDAP user because the server was down for a minute is far worse than the
+    stale-account window it would be closing.
+    """
+
+
+#: The directory answered and the account is present, enabled and still entitled.
+DIRECTORY_PRESENT = "present"
+#: The directory answered and holds no entry for this account.
+DIRECTORY_ABSENT = "absent"
+#: The entry exists but Active Directory flags it as a disabled account.
+DIRECTORY_DISABLED = "disabled"
+#: The entry exists but is no longer in any of the configured ``user_groups``.
+DIRECTORY_NOT_ENTITLED = "not_entitled"
+
+#: ``userAccountControl`` ADS_UF_ACCOUNTDISABLE bit. AD keeps disabled accounts as
+#: live entries, so presence alone would never notice an offboarded user.
+AD_UF_ACCOUNT_DISABLE = 0x0002
+_UAC_ATTR = "userAccountControl"
+
+
+@dataclass(frozen=True)
+class LdapProbe:
+    """One directory answer about one account.
+
+    ``groups`` and ``is_admin`` are what let the periodic sweep reconcile group
+    mappings and privilege, not just deprovision. ``is_admin`` is evaluated with
+    the same :func:`_is_ldap_admin` rule login uses — without it the sweep would
+    see "no admin signal" for every account promoted via ``admin_groups`` and
+    demote the entire admin population on its first pass.
+
+    Both are empty for any status other than :data:`DIRECTORY_PRESENT`: a user the
+    directory does not have, or has disabled, asserts no memberships.
+    """
+
+    status: str
+    groups: tuple[str, ...] = ()
+    is_admin: bool = False
+
+
+@contextmanager
+def ldap_directory_session(cfg: LdapConfig) -> Iterator[Connection]:
+    """Yield a service-account-bound connection, or raise ``LdapDirectoryUnavailableError``.
+
+    Args:
+        cfg: Resolved LDAP configuration (DB > .env > defaults).
+
+    Yields:
+        A bound ``Connection`` usable for read-only searches.
+
+    Raises:
+        LdapDirectoryUnavailableError: The server is unreachable or the service account
+            cannot bind. Never raised to mean "user not found".
+    """
+    conn: Connection | None = None
+    try:
+        conn = _bind_service_account(cfg, _get_ldap_server(cfg))
+    except LDAPException as e:
+        raise LdapDirectoryUnavailableError(f"LDAP bind failed: {type(e).__name__}: {e}") from e
+    except Exception as e:  # noqa: BLE001 - any failure here means "could not ask"
+        raise LdapDirectoryUnavailableError(
+            f"LDAP connection failed: {type(e).__name__}: {e}"
+        ) from e
+
+    if conn is None:
+        raise LdapDirectoryUnavailableError("LDAP service account bind returned no connection")
+
+    try:
+        yield conn
+    finally:
+        _close_connection(conn, "directory-sync")
+
+
+def _is_ad_account_disabled(user_entry) -> bool:
+    """Return True only when AD positively reports the ACCOUNTDISABLE bit.
+
+    An absent or unparseable ``userAccountControl`` means "this server doesn't
+    publish account state" — reported as *not* disabled, because a missing answer
+    must never be read as a reason to deprovision.
+    """
+    if _UAC_ATTR not in user_entry:
+        return False
+    raw = user_entry[_UAC_ATTR].value
+    if raw is None:
+        return False
+    try:
+        return bool(int(raw) & AD_UF_ACCOUNT_DISABLE)
+    except (TypeError, ValueError):
+        logger.debug(f"Unparseable {_UAC_ATTR} value {raw!r}; treating account as enabled")
+        return False
+
+
+def probe_ldap_user(
+    cfg: LdapConfig, bind_conn: Connection, ldap_uid: str, email: str = ""
+) -> LdapProbe:
+    """Ask the directory about one account, without authenticating as it.
+
+    Args:
+        cfg: Resolved LDAP configuration.
+        bind_conn: Connection from :func:`ldap_directory_session`.
+        ldap_uid: The stored ``User.ldap_uid``.
+        email: The stored email, used for the same fallback search login uses.
+
+    Returns:
+        An :class:`LdapProbe` whose ``status`` is one of ``DIRECTORY_PRESENT`` /
+        ``DIRECTORY_ABSENT`` / ``DIRECTORY_DISABLED`` / ``DIRECTORY_NOT_ENTITLED``,
+        carrying the account's groups and admin signal when it is present.
+
+    Raises:
+        LdapDirectoryUnavailableError: The search itself failed. The account's state is
+            unknown and the caller must not act on it.
+    """
+    ldap_username = ldap_uid.split("@")[0] if "@" in ldap_uid else ldap_uid
+    try:
+        user_entry = _search_ldap_user(
+            cfg, bind_conn, email or ldap_uid, ldap_username, extra_attributes=[_UAC_ATTR]
+        )
+    except LDAPException as e:
+        raise LdapDirectoryUnavailableError(f"LDAP search failed: {type(e).__name__}: {e}") from e
+
+    if not user_entry:
+        return LdapProbe(DIRECTORY_ABSENT)
+
+    if _is_ad_account_disabled(user_entry):
+        return LdapProbe(DIRECTORY_DISABLED)
+
+    user_groups = _get_user_groups(cfg, user_entry)
+
+    # Same entitlement rule login enforces, so the sweep can never disable an
+    # account that would still be allowed to log in.
+    try:
+        entitled = _check_group_access(cfg, bind_conn, user_entry.entry_dn, user_groups, ldap_uid)
+    except LDAPException as e:
+        raise LdapDirectoryUnavailableError(
+            f"LDAP group check failed: {type(e).__name__}: {e}"
+        ) from e
+
+    if not entitled:
+        return LdapProbe(DIRECTORY_NOT_ENTITLED)
+
+    is_admin = _is_ldap_admin(
+        cfg, ldap_username, user_groups, bind_conn=bind_conn, user_dn=user_entry.entry_dn
+    )
+    return LdapProbe(DIRECTORY_PRESENT, tuple(user_groups), is_admin)

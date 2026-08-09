@@ -17,7 +17,7 @@
  * Clear all user-specific state across the app.
  *
  * Call this from `auth.ts` logout() and at the start of any login flow
- * (local, Keycloak callback, PKI, MFA) so the new user starts clean.
+ * (local, OIDC callback, PKI, MFA) so the new user starts clean.
  *
  * Preserves:
  * - Theme (user preference)

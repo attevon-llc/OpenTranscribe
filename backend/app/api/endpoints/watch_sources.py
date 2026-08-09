@@ -20,8 +20,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+
+# Deployment configuration is the super_admin tier: this router
+# holds SMTP/S3/SMB credentials for automated import.
+from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.auth import get_current_admin_user
 from app.core.config import settings
 from app.db.base import get_db
 from app.models.email_notification_config import EmailNotificationConfig
@@ -48,6 +51,8 @@ from app.schemas.watch_source import WatchSourceResponse
 from app.schemas.watch_source import WatchSourcesList
 from app.schemas.watch_source import WatchSourceStats
 from app.schemas.watch_source import WatchSourceUpdate
+from app.services.auth_mail_config_service import IN_USE_MESSAGE
+from app.services.auth_mail_config_service import is_designated
 from app.utils.encryption import encrypt_api_key
 
 logger = logging.getLogger(__name__)
@@ -273,7 +278,7 @@ def test_multipart_regex(
 @router.get("/settings")
 def get_global_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     from app.services import watch_settings_service
 
@@ -284,7 +289,7 @@ def get_global_settings(
 def update_global_settings(
     payload: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     from app.services import watch_settings_service
 
@@ -340,7 +345,7 @@ def _email_to_response(cfg: EmailNotificationConfig) -> dict:
 @router.get("/email-configs", response_model=EmailConfigsList)
 def list_email_configs(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     configs = db.query(EmailNotificationConfig).order_by(EmailNotificationConfig.name).all()
     return {"configs": [_email_to_response(c) for c in configs]}
@@ -350,7 +355,7 @@ def list_email_configs(
 def create_email_config(
     data: EmailConfigCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     cfg = EmailNotificationConfig(
         uuid=uuid_pkg.uuid4(),
@@ -388,7 +393,7 @@ def update_email_config(
     config_uuid: str,
     data: EmailConfigUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     cfg = (
         db.query(EmailNotificationConfig)
@@ -398,6 +403,11 @@ def update_email_config(
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
     payload = data.model_dump(exclude_unset=True)
+    # Disabling the designated auth mailer silently routes password resets to the
+    # env SMTP transport, which is unset in every stock deployment — so it stops
+    # them altogether, visible only as an ERROR log. Refuse and name the remedy.
+    if payload.get("is_enabled") is False and is_designated(db, str(cfg.uuid)):
+        raise HTTPException(status_code=409, detail=IN_USE_MESSAGE)
     secret_map = {
         "smtp_password": "encrypted_smtp_password",
         "m365_client_secret": "encrypted_m365_client_secret",
@@ -418,7 +428,7 @@ def update_email_config(
 def delete_email_config(
     config_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     cfg = (
         db.query(EmailNotificationConfig)
@@ -427,6 +437,9 @@ def delete_email_config(
     )
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
+    # Same reasoning as the disable guard, plus the row itself is unrecoverable.
+    if is_designated(db, str(cfg.uuid)):
+        raise HTTPException(status_code=409, detail=IN_USE_MESSAGE)
     db.delete(cfg)
     db.commit()
     return {"success": True}
@@ -436,7 +449,7 @@ def delete_email_config(
 def test_email_config(
     config_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> EmailTestResponse:
     from app.services import watch_email_service
 

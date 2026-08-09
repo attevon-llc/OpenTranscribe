@@ -129,6 +129,7 @@ celery_app = Celery(
         "app.tasks.embedding_consistency_repair",
         "app.tasks.recovery_tasks",
         "app.tasks.backup_tasks",
+        "app.tasks.directory_sync_task",
     ],
 )
 
@@ -292,6 +293,10 @@ celery_app.conf.update(
         # bulk object I/O → download queue (NEVER the gpu queue).
         "backup.mirror_check_schedule": {"queue": CeleryQueues.UTILITY},
         "backup.mirror_run": {"queue": CeleryQueues.DOWNLOAD},
+        # Directory reconciliation / LDAP deprovisioning: LDAP searches + small DB
+        # writes. CPU queue — never gpu.
+        "directory.sync_check_schedule": {"queue": CeleryQueues.CPU},
+        "directory.sync_run": {"queue": CeleryQueues.CPU},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -371,6 +376,15 @@ celery_app.conf.update(
             # offset from the backup check so both never contend on the same tick.
             "schedule": crontab(minute="2-59/5"),
             "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
+        },
+        "directory-sync-check-schedule": {
+            "task": "directory.sync_check_schedule",
+            # Same DB-driven due-check pattern: the cron the operator actually
+            # configures lives in SystemSettings, so this tick only asks "is it
+            # due yet?". Quarter-hourly at odd minutes, offset from every other
+            # scheduled job. This is the ONLY beat entry that touches User rows.
+            "schedule": crontab(minute="7,22,37,52"),
+            "options": {"queue": CeleryQueues.CPU, "priority": 8},  # CPUPriority.MAINTENANCE
         },
     },
 )

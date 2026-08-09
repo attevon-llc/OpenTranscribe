@@ -31,88 +31,33 @@ from cryptography.x509.oid import ExtensionOID
 
 from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
+from app.auth.header_trust import header_assertion_permitted
+from app.auth.header_trust import header_source_is_trusted
+from app.auth.header_trust import immediate_peer_ip as _get_pki_client_ip
+from app.auth.header_trust import (
+    ip_in_networks as _is_pki_trusted_proxy,  # noqa: F401  # re-export: the PKI suite's membership tests import this name
+)
+from app.auth.header_trust import parse_trusted_proxies
+from app.auth.roles import ELEVATED_ROLES
+from app.auth.roles import ROLE_ADMIN
+from app.auth.roles import ROLE_USER
+from app.auth.roles import role_implies_superuser
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 # ===== Trusted Proxy Validation =====
+#
+# There is no PKI-specific trust machinery any more. `auth/header_trust.py` owns the
+# allowlist parser, the immediate-peer resolver and the fail-closed refusal, and
+# `auth/proxy/` — trusted-header authentication for an email rather than a subject DN
+# — calls exactly the same functions. The names below are bindings, kept because they
+# are what this module's own callers and its test suite refer to.
 
 
 def _parse_pki_trusted_proxies(trusted_proxies_str: str) -> list:
-    """
-    Parse trusted proxies configuration string into a list of IP networks.
-
-    Args:
-        trusted_proxies_str: Comma-separated list of IPs or CIDR ranges
-
-    Returns:
-        List of parsed IP networks
-    """
-    import ipaddress
-
-    if not trusted_proxies_str:
-        return []
-
-    networks = []
-    for proxy in trusted_proxies_str.split(","):
-        proxy = proxy.strip()
-        if not proxy:
-            continue
-        try:
-            # Try parsing as a network (CIDR notation)
-            if "/" in proxy:
-                networks.append(ipaddress.ip_network(proxy, strict=False))
-            else:
-                # Single IP - convert to /32 or /128 network
-                ip = ipaddress.ip_address(proxy)
-                if isinstance(ip, ipaddress.IPv4Address):
-                    networks.append(ipaddress.ip_network(f"{proxy}/32"))
-                else:
-                    networks.append(ipaddress.ip_network(f"{proxy}/128"))
-        except ValueError as e:
-            logger.warning(f"Invalid PKI trusted proxy address '{proxy}': {e}")
-    return networks
-
-
-def _is_pki_trusted_proxy(client_ip: str, trusted_networks: list) -> bool:
-    """
-    Check if an IP address is in the list of trusted proxy networks.
-
-    Args:
-        client_ip: IP address to check
-        trusted_networks: List of trusted IP networks
-
-    Returns:
-        True if the IP is trusted, False otherwise
-    """
-    import ipaddress
-
-    if not trusted_networks:
-        return False
-
-    try:
-        ip = ipaddress.ip_address(client_ip)
-        for network in trusted_networks:
-            if ip in network:
-                return True
-    except ValueError:
-        logger.warning(f"Invalid IP address format: {client_ip}")
-    return False
-
-
-def _get_pki_client_ip(request) -> str:
-    """
-    Get the client IP from a request.
-
-    Args:
-        request: FastAPI Request object
-
-    Returns:
-        Client IP address or "unknown"
-    """
-    if hasattr(request, "client") and request.client:
-        return request.client.host or "unknown"
-    return "unknown"
+    """Parse ``PKI_TRUSTED_PROXIES`` into IP networks (see ``auth/header_trust``)."""
+    return parse_trusted_proxies(trusted_proxies_str, label="PKI trusted proxy")
 
 
 # Parse trusted proxies at module load time for efficiency
@@ -270,7 +215,7 @@ def extract_display_name_from_gov_dn(subject_dn: str) -> str:
             return f"{first.title()} {middle.upper()}. {last.title()}"
         return f"{first.title()} {last.title()}"
 
-    # Keycloak X.509 / government space-separated format:
+    # IdP-brokered X.509 / government space-separated format:
     # "LastName FirstName emailusername" (three space-separated tokens)
     # The third token is the email username (no @domain) used for account lookup.
     parts = cn.split()
@@ -1016,7 +961,7 @@ def _check_revocation(cert: x509.Certificate) -> tuple[bool, str]:
         return (True, "Revocation check failed (hard-fail)")
 
 
-def extract_certificate_from_headers(request) -> str | None:
+def extract_certificate_from_headers(request, cert_header: str | None = None) -> str | None:
     """
     Extract client certificate from request headers.
 
@@ -1025,29 +970,37 @@ def extract_certificate_from_headers(request) -> str | None:
 
     Args:
         request: FastAPI Request object
+        cert_header: Header name to read (DB-backed ``auth_settings.pki_cert_header``
+            takes precedence over ``.env``). Falls back to ``settings.PKI_CERT_HEADER``
+            when not supplied, e.g. for callers with no DB session.
 
     Returns:
         PEM-encoded certificate string or None
     """
-    cert_header = request.headers.get(settings.PKI_CERT_HEADER)
-    if not cert_header:
+    header_name = cert_header or settings.PKI_CERT_HEADER
+    cert_value = request.headers.get(header_name)
+    if not cert_value:
         return None
 
     # Nginx URL-encodes the certificate
-    return unquote(cert_header)
+    return unquote(cert_value)
 
 
-def extract_dn_from_headers(request) -> str | None:
+def extract_dn_from_headers(request, cert_dn_header: str | None = None) -> str | None:
     """
     Extract Distinguished Name from headers (if Nginx provides it).
 
     Args:
         request: FastAPI Request object
+        cert_dn_header: Header name to read (DB-backed ``auth_settings.pki_cert_dn_header``
+            takes precedence over ``.env``). Falls back to ``settings.PKI_CERT_DN_HEADER``
+            when not supplied, e.g. for callers with no DB session.
 
     Returns:
         DN string or None
     """
-    result = request.headers.get(settings.PKI_CERT_DN_HEADER)
+    header_name = cert_dn_header or settings.PKI_CERT_DN_HEADER
+    result = request.headers.get(header_name)
     return str(result) if result is not None else None
 
 
@@ -1204,42 +1157,66 @@ def _is_pki_admin(subject_dn: str, admin_dns_config: str | None = None) -> bool:
     return normalized_subject in admin_dns
 
 
-def _validate_pki_headers_source(request) -> bool | None:
+def _pki_header_source_is_trusted(request, networks: list | None = None) -> bool:
     """
-    Validate that PKI headers come from a trusted proxy.
+    Whether the peer that delivered this request may assert PKI headers.
+
+    One rule, shared with trusted-header (``proxy``) authentication and implemented
+    once in ``auth/header_trust.py``: the immediate peer must be in the configured
+    ``PKI_TRUSTED_PROXIES`` allowlist, and an empty allowlist trusts nobody.
 
     Args:
         request: FastAPI Request object
+        networks: DB-resolved trusted-proxy networks (``auth_settings.pki_trusted_proxies``,
+            parsed by the caller). Falls back to the module-level global — parsed from
+            ``.env`` at import time — when not supplied, e.g. for callers with no DB
+            session. The module global stays patchable in tests via that fallback.
+
+    Returns:
+        True if the immediate peer is a configured trusted proxy
+    """
+    effective_networks = networks if networks is not None else _pki_trusted_proxy_networks
+    return header_source_is_trusted(request, effective_networks)
+
+
+def _validate_pki_headers_source(
+    request,
+    networks: list | None = None,
+    cert_header: str | None = None,
+    cert_dn_header: str | None = None,
+) -> bool | None:
+    """
+    Validate that PKI headers come from a trusted proxy.
+
+    PKI headers are only meaningful when a reverse proxy terminated mTLS and vouched
+    for them. An unvouched header set is just an attacker-supplied string, and a DN
+    listed in ``PKI_ADMIN_DNS`` would mint an admin session from it — so the
+    empty-allowlist case FAILS CLOSED, unconditionally. ``main.py`` already refuses to
+    start in a hardened environment with ``PKI_ENABLED`` and no allowlist; this is the
+    defence in depth behind that guard, so a relaxed developer stack cannot be spoofed
+    by accident either.
+
+    Args:
+        request: FastAPI Request object
+        networks: DB-resolved trusted-proxy networks, see ``_pki_header_source_is_trusted``.
+        cert_header: DB-resolved cert header name, see ``extract_certificate_from_headers``.
+        cert_dn_header: DB-resolved DN header name, see ``extract_dn_from_headers``.
 
     Returns:
         True if valid/allowed, False if headers from untrusted source, None to continue
     """
-    client_ip = _get_pki_client_ip(request)
-    has_pki_headers = request.headers.get(settings.PKI_CERT_HEADER) or request.headers.get(
-        settings.PKI_CERT_DN_HEADER
+    has_pki_headers = bool(
+        request.headers.get(cert_header or settings.PKI_CERT_HEADER)
+        or request.headers.get(cert_dn_header or settings.PKI_CERT_DN_HEADER)
     )
-
-    if _pki_trusted_proxy_networks:
-        if not _is_pki_trusted_proxy(client_ip, _pki_trusted_proxy_networks):
-            if has_pki_headers:
-                logger.warning(
-                    f"PKI certificate headers received from untrusted IP {client_ip}. "
-                    "This may indicate header injection attempt. "
-                    f"Configure PKI_TRUSTED_PROXIES to include legitimate proxy IPs."
-                )
-                return False
-            # No PKI headers present, allow for fallback to other auth methods
-            logger.debug(f"No PKI headers from IP {client_ip}, no trusted proxy validation needed")
-        return True
-
-    # No trusted proxies configured - log warning about potential risk
-    if has_pki_headers:
-        logger.warning(
-            "SECURITY: PKI_TRUSTED_PROXIES not configured. PKI headers accepted from any source. "
-            "This allows potential header injection attacks. "
-            "Configure PKI_TRUSTED_PROXIES with your reverse proxy IP addresses."
-        )
-    return True
+    effective_networks = networks if networks is not None else _pki_trusted_proxy_networks
+    return header_assertion_permitted(
+        request,
+        effective_networks,
+        asserted=has_pki_headers,
+        method="PKI certificate",
+        setting_name="PKI_TRUSTED_PROXIES",
+    )
 
 
 def _handle_revocation_check(cert: x509.Certificate | None) -> bool | None:
@@ -1279,6 +1256,9 @@ def _extract_user_info_from_request(
     request,
     cert: x509.Certificate | None,
     cert_pem: str | None,
+    require_certificate: bool = False,
+    networks: list | None = None,
+    cert_dn_header: str | None = None,
 ) -> tuple[str, str, str] | None:
     """
     Extract user info (subject_dn, common_name, email) from request.
@@ -1287,14 +1267,54 @@ def _extract_user_info_from_request(
         request: FastAPI Request object
         cert: Parsed certificate (may be None)
         cert_pem: PEM-encoded certificate string (may be None)
+        require_certificate: ``pki_mode == "mutual_tls"``. Refuses a DN header
+            that is not accompanied by the certificate itself, even from a
+            trusted proxy — see below.
+        networks: DB-resolved trusted-proxy networks, see ``_pki_header_source_is_trusted``.
+        cert_dn_header: DB-resolved DN header name, see ``extract_dn_from_headers``.
 
     Returns:
         Tuple of (subject_dn, common_name, email) or None if extraction fails
     """
     # Try to get DN directly from header (more efficient)
-    subject_dn = extract_dn_from_headers(request)
+    subject_dn = extract_dn_from_headers(request, cert_dn_header)
 
     if subject_dn:
+        # pki_mode == "mutual_tls": the proxy's word is not enough. In "header"
+        # mode a trusted proxy may vouch for a DN it validated, which is one
+        # trusted component away from the evidence; in "mutual_tls" mode the
+        # certificate must be forwarded so THIS process parses it, checks its
+        # validity window and (optionally) its revocation status. That is the
+        # whole difference between the two modes, and the reason the setting is
+        # worth having at all.
+        if cert is None and require_certificate:
+            logger.error(
+                "Refusing DN-only PKI authentication from %s: pki_mode is 'mutual_tls', "
+                "which requires the client certificate itself (configure the proxy to "
+                "forward it in the PKI_CERT_HEADER).",
+                _get_pki_client_ip(request),
+            )
+            return None
+
+        # The DN header is a *claim*, not evidence. It is trustworthy in exactly two cases:
+        #
+        # 1. A certificate was also presented. `pki_authenticate` has already parsed it and
+        #    rejected it if it is outside its validity window, so by the time we get here
+        #    the identity is backed by a certificate we checked. The header DN still wins
+        #    over the certificate's rfc4514 form because the proxy emits the canonical
+        #    string deployments configure PKI_ADMIN_DNS with.
+        # 2. No certificate, but the request came from a configured trusted proxy — the
+        #    component that terminated mTLS and is therefore vouching for the DN.
+        #
+        # Anything else is an unverified string from an unauthenticated peer, and
+        # `_is_pki_admin` would happily grant admin on it.
+        if cert is None and not _pki_header_source_is_trusted(request, networks):
+            logger.error(
+                "Refusing DN-only PKI authentication from untrusted peer "
+                f"{_get_pki_client_ip(request)}: no certificate was presented and no "
+                "trusted proxy vouched for the DN header."
+            )
+            return None
         common_name, email = _parse_dn_components(subject_dn)
         return (subject_dn, common_name, email)
 
@@ -1309,7 +1329,36 @@ def _extract_user_info_from_request(
     return None
 
 
-def pki_authenticate(request, admin_dns_config: str | None = None) -> PKIUserData | None:
+#: The only two PKI transports this module implements. ``pki_mode`` is validated
+#: against the same pair in ``schemas/auth_config.py``; an unrecognised stored
+#: value is treated as ``header``, the pre-existing behaviour.
+PKI_MODE_HEADER = "header"
+PKI_MODE_MUTUAL_TLS = "mutual_tls"
+
+#: Whether the address in ``PKIUserData["email"]`` is a *verified* address that may be
+#: used to take over a pre-existing account. It is not, and the reason is visible in
+#: ``_extract_user_info_from_request``: whenever a DN header is present — the deployed
+#: ``header`` mode, and even ``mutual_tls`` — the address is parsed out of that header
+#: string with ``_parse_dn_components``, so it is a value the proxy supplied, not one
+#: this process read out of a certificate. Nothing downstream records which of the two
+#: extraction paths produced it, so the guard fails closed for both. Accounts already
+#: carrying a ``pki_subject_dn`` are unaffected, and so is a new PKI user whose address
+#: collides with no existing account.
+#:
+#: Turning this into a genuine per-identity signal (rather than a constant) means
+#: carrying "this address came from the validated certificate's SAN" through
+#: ``PKIUserData`` — a deliberate change, not a default.
+PKI_ASSERTS_EMAIL_VERIFIED = False
+
+
+def pki_authenticate(
+    request,
+    admin_dns_config: str | None = None,
+    pki_mode: str | None = None,
+    trusted_proxies_config: str | None = None,
+    cert_header: str | None = None,
+    cert_dn_header: str | None = None,
+) -> PKIUserData | None:
     """
     Authenticate user via X.509 client certificate.
 
@@ -1318,9 +1367,25 @@ def pki_authenticate(request, admin_dns_config: str | None = None) -> PKIUserDat
 
     ``admin_dns_config`` carries the DB-backed admin DN list (admin UI takes
     precedence over .env); without it the PKI_ADMIN_DNS env setting is used.
+    ``trusted_proxies_config``, ``cert_header`` and ``cert_dn_header`` are the same
+    kind of DB-backed override, mirroring ``ProxyConfig.from_db`` for trusted-header
+    (``proxy``) authentication — without them the module falls back to whatever
+    ``.env`` had at import time.
 
     Args:
         request: FastAPI Request object
+        admin_dns_config: DB-backed ``pki_admin_dns`` value, if available.
+        pki_mode: ``header`` (default) or ``mutual_tls``. In ``mutual_tls`` the
+            certificate itself must be forwarded — a DN header alone is refused
+            even from a trusted proxy. Until this parameter existed, ``pki_mode``
+            was a stored string no code read.
+        trusted_proxies_config: DB-backed ``auth_settings.pki_trusted_proxies``
+            value, if available. Passing this is what makes a Settings UI change
+            to the trusted-proxy allowlist take effect without a process restart —
+            without it, only the ``PKI_TRUSTED_PROXIES`` env value (parsed once at
+            import) is enforced, no matter what is saved to the database.
+        cert_header: DB-backed ``auth_settings.pki_cert_header`` value, if available.
+        cert_dn_header: DB-backed ``auth_settings.pki_cert_dn_header`` value, if available.
 
     Returns:
         PKIUserData with certificate metadata or None if authentication fails
@@ -1329,12 +1394,21 @@ def pki_authenticate(request, admin_dns_config: str | None = None) -> PKIUserDat
     # which checks the database setting first, then falls back to env.
     # We skip the env-only check here to support database-driven config.
 
+    networks = (
+        parse_trusted_proxies(trusted_proxies_config, label="PKI trusted proxy")
+        if trusted_proxies_config is not None
+        else None
+    )
+
     # Validate that PKI headers come from trusted proxies
-    if _validate_pki_headers_source(request) is False:
+    if _validate_pki_headers_source(request, networks, cert_header, cert_dn_header) is False:
         return None
 
-    # Extract certificate from headers - needed for revocation checking
-    cert_pem = extract_certificate_from_headers(request)
+    # Extract certificate from headers - needed for revocation checking.
+    # ORDER IS LOAD-BEARING: the certificate is parsed and its validity window checked
+    # BEFORE `_extract_user_info_from_request` is allowed to trust the DN header. A DN
+    # header sent alongside an expired certificate must not short-circuit that check.
+    cert_pem = extract_certificate_from_headers(request, cert_header)
     cert = None
     cert_metadata: dict | None = None
 
@@ -1378,7 +1452,14 @@ def pki_authenticate(request, admin_dns_config: str | None = None) -> PKIUserDat
         return None  # Revocation check failed or certificate revoked
 
     # Extract user information from request
-    user_info = _extract_user_info_from_request(request, cert, cert_pem)
+    user_info = _extract_user_info_from_request(
+        request,
+        cert,
+        cert_pem,
+        require_certificate=pki_mode == PKI_MODE_MUTUAL_TLS,
+        networks=networks,
+        cert_dn_header=cert_dn_header,
+    )
     if user_info is None:
         return None
 
@@ -1421,6 +1502,7 @@ def _create_pki_user(db, pki_data: PKIUserData):
     """
     from sqlalchemy.exc import IntegrityError
 
+    from app.auth.approval import initial_approval_status
     from app.models.user import User
 
     subject_dn = pki_data["subject_dn"]
@@ -1449,6 +1531,8 @@ def _create_pki_user(db, pki_data: PKIUserData):
         pki_not_after = datetime.fromisoformat(not_after_str)
 
     fingerprint = pki_data.get("fingerprint")
+    # External IdPs grant at most 'admin'; super_admin is local-only.
+    role = ROLE_ADMIN if pki_data["is_admin"] else ROLE_USER
     user = User(
         email=email,
         full_name=pki_data["common_name"] or email.split("@")[0],
@@ -1464,10 +1548,12 @@ def _create_pki_user(db, pki_data: PKIUserData):
         pki_not_before=pki_not_before,
         pki_not_after=pki_not_after,
         pki_fingerprint_sha256=fingerprint.replace(":", "") if fingerprint else None,
-        role="admin" if pki_data["is_admin"] else "user",
+        role=role,
         is_active=True,
-        # External IdPs grant at most 'admin'; is_superuser mirrors super_admin.
-        is_superuser=False,
+        is_superuser=role_implies_superuser(role),
+        # Same rule as the LDAP and OIDC JIT paths: holding a certificate the CA
+        # issued is not the same as this deployment wanting an account here.
+        approval_status=initial_approval_status(db),
     )
     db.add(user)
 
@@ -1546,15 +1632,15 @@ def _update_pki_user(db, user, pki_data: PKIUserData):
     # Update admin role based on PKI_ADMIN_DNS list
     if pki_data["is_admin"]:
         # External IdPs grant at most 'admin'; never demote a local super_admin.
-        if user.role not in ("admin", "super_admin"):
+        if user.role not in ELEVATED_ROLES:
             logger.info(f"Promoting PKI user {subject_dn} to admin")
-            user.role = "admin"
-        user.is_superuser = user.role == "super_admin"
-    elif user.role == "admin":
+            user.role = ROLE_ADMIN
+        user.is_superuser = role_implies_superuser(user.role)
+    elif user.role == ROLE_ADMIN:
         # Demote if user was admin but no longer in PKI_ADMIN_DNS
         logger.info(f"Demoting PKI user {subject_dn} from admin (removed from PKI_ADMIN_DNS)")
-        user.role = "user"
-        user.is_superuser = False
+        user.role = ROLE_USER
+        user.is_superuser = role_implies_superuser(user.role)
 
     db.commit()
     return user
@@ -1618,15 +1704,15 @@ def _convert_local_user_to_pki(db, user, pki_data: PKIUserData):
     # Update admin role based on PKI_ADMIN_DNS list
     if pki_data["is_admin"]:
         # External IdPs grant at most 'admin'; never demote a local super_admin.
-        if user.role not in ("admin", "super_admin"):
+        if user.role not in ELEVATED_ROLES:
             logger.info(f"Promoting converted PKI user {subject_dn} to admin")
-            user.role = "admin"
-        user.is_superuser = user.role == "super_admin"
-    elif user.role == "admin":
+            user.role = ROLE_ADMIN
+        user.is_superuser = role_implies_superuser(user.role)
+    elif user.role == ROLE_ADMIN:
         # Demote if user was admin locally but not in PKI_ADMIN_DNS
         logger.info(f"Demoting converted PKI user {subject_dn} from admin (not in PKI_ADMIN_DNS)")
-        user.role = "user"
-        user.is_superuser = False
+        user.role = ROLE_USER
+        user.is_superuser = role_implies_superuser(user.role)
 
     db.commit()
     return user
@@ -1643,6 +1729,12 @@ def sync_pki_user_to_db(db, pki_data: PKIUserData):
     - Admin role promotion and demotion based on PKI_ADMIN_DNS
     - Race conditions when multiple concurrent logins occur
 
+    Lookup is ``pki_subject_dn`` first, then email. The email fallback links a
+    certificate to a **pre-existing** account, so it goes through
+    ``account_linking.assert_email_link_permitted`` — see that module for the rule,
+    why a refusal fails the login instead of creating a second account, and the
+    operator remedy.
+
     Args:
         db: Database session
         pki_data: User data from certificate
@@ -1652,7 +1744,11 @@ def sync_pki_user_to_db(db, pki_data: PKIUserData):
 
     Raises:
         ValueError: If user cannot be created or found after race condition
+        HTTPException: 401, when an email-matched link is refused. Deliberately the
+            same response the PKI login endpoint returns for an invalid certificate,
+            so a refusal is not an oracle for "this address exists".
     """
+    from app.auth.account_linking import assert_email_link_permitted
     from app.auth.constants import AUTH_TYPE_LOCAL
     from app.models.user import User
 
@@ -1662,7 +1758,19 @@ def sync_pki_user_to_db(db, pki_data: PKIUserData):
     # Check if user exists by pki_subject_dn first (most specific)
     user = db.query(User).filter(User.pki_subject_dn == subject_dn).first()
     if not user and email:
+        # The email fallback links this certificate to a PRE-EXISTING account, so it
+        # is gated. An account already carrying this subject DN was linked
+        # deliberately at some earlier point and is not re-litigated.
         user = db.query(User).filter(User.email == email).first()
+        if user:
+            assert_email_link_permitted(
+                user,
+                provider=AUTH_TYPE_PKI,
+                source_identifier=subject_dn,
+                email_verified=PKI_ASSERTS_EMAIL_VERIFIED,
+                failure_detail="Invalid or missing client certificate",
+                failure_headers={"WWW-Authenticate": "Certificate"},
+            )
 
     if not user:
         user = _create_pki_user(db, pki_data)

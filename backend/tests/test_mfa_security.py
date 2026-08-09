@@ -21,7 +21,7 @@ from uuid import uuid4
 import pyotp
 import pytest
 from fastapi import HTTPException
-from jose import jwt
+from tests.jwt_compat import jwt
 
 # Skip all tests - MFA security tests need review
 pytestmark = pytest.mark.skipif(

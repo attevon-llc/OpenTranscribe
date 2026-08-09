@@ -69,7 +69,7 @@ def get_user_certificate_info(
     Get certificate information for the current user.
 
     Returns certificate metadata for users who authenticated via PKI (X.509)
-    or via Keycloak with X.509 certificate authentication.
+    or via an OIDC provider brokering X.509 certificate authentication.
 
     For non-PKI users, returns has_certificate: false.
 

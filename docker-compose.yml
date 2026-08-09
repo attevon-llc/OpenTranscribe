@@ -793,7 +793,7 @@ services:
       --port=5555
       --url_prefix=${FLOWER_URL_PREFIX:-flower}
       --persistent=True
-      --db=/app/flower.db
+      --db=/app/temp/flower.db
       --broker=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
       --max_tasks=10000
       --natural_time=True
@@ -829,8 +829,16 @@ services:
       retries: 3
       start_period: 30s
     volumes:
-      # Flower only needs persistent database for monitoring, not AI models
-      - flower_data:/app
+      # Flower only needs somewhere writable for its event DB, not AI models.
+      # MUST NOT be mounted at /app: that is the image's application code
+      # directory. Docker seeds an empty named volume from the image on first
+      # use, so mounting there pinned Flower to that one code snapshot forever —
+      # every later rebuild/image pull was silently ignored.
+      # /app/temp (already this container's TEMP_DIR) is used rather than a new
+      # top-level path because Docker creates a *missing* mount point root-owned,
+      # and the image runs as non-root appuser — a fresh volume at e.g. /data is
+      # not writable, so --persistent=True would fail on startup.
+      - flower_data:/app/temp
 
   docs:
     container_name: opentranscribe-docs

@@ -51,7 +51,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "**/alembic/**" = ["S608"]
 
 [tool.ruff.lint.mccabe]
-# Auth functions (login, LDAP, Keycloak, PKI) are inherently complex.
+# Auth functions (login, LDAP, OIDC, PKI) are inherently complex.
 # 16 is standard for auth-heavy codebases.
 max-complexity = 16
 

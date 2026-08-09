@@ -58,7 +58,7 @@ app/
 ├── auth/                  # Authentication & Authorization
 │   ├── direct_auth.py    # Local password auth
 │   ├── ldap_auth.py      # LDAP/Active Directory
-│   ├── keycloak_auth.py  # OIDC/Keycloak
+│   ├── oidc/            # OpenID Connect (config, discovery, flow, claims, provisioning)
 │   ├── pki_auth.py       # PKI/X.509 certificate auth
 │   ├── mfa.py            # TOTP multi-factor auth (RFC 6238)
 │   ├── password_policy.py # Password strength enforcement
@@ -316,7 +316,7 @@ redis = get_redis()
 ### Supported Authentication Methods
 - **Local (Direct)**: Username/password with bcrypt hashing
 - **LDAP/Active Directory**: Enterprise directory integration (`ldap_auth.py`)
-- **OIDC/Keycloak**: OpenID Connect with external identity providers (`keycloak_auth.py`)
+- **OIDC**: OpenID Connect with any conforming identity provider (`auth/oidc/`)
 - **PKI/X.509**: Certificate-based authentication for high-security environments (`pki_auth.py`)
 - **MFA/TOTP**: RFC 6238 compliant; compatible with Google Authenticator, Authy, etc.
 

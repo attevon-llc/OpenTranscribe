@@ -1,7 +1,10 @@
-"""Multi-provider email notifications for Watch Sources.
+"""Multi-provider email delivery for DB-backed ``EmailNotificationConfig`` rows.
 
-Separate from the password-reset ``email_service`` (single dev SMTP): this
-supports per-config providers, selected by ``EmailNotificationConfig.provider``:
+This is the deployment's real mail stack. Watch-source notifications are its
+original caller; ``email_service`` now delegates auth mail (password reset,
+invitation, verification, security notice) here too whenever a super_admin has
+designated a config for it. Providers are selected by
+``EmailNotificationConfig.provider``:
 
   - ``smtp``     — stdlib ``smtplib`` with STARTTLS (587) or implicit SSL (465).
   - ``m365``     — Microsoft Graph ``sendMail`` via an MSAL client-credentials
@@ -32,19 +35,24 @@ logger = logging.getLogger(__name__)
 _GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
 _GRAPH_SENDMAIL = "https://graph.microsoft.com/v1.0/users/{sender}/sendMail"
 
+#: Default socket timeout. Fine for a background scan notification; auth mail
+#: passes a shorter one because it blocks the thread servicing a login/reset.
+DEFAULT_TIMEOUT = 30
+
 
 def send_email(
     config: EmailNotificationConfig,
     recipients: list[str],
     subject: str,
     html_body: str,
+    timeout: int = DEFAULT_TIMEOUT,
 ) -> tuple[bool, str]:
     """Send an HTML email via the config's provider. Returns ``(ok, message)``."""
     if not recipients:
         return False, "No recipients"
     try:
         if config.provider in ("smtp", "exchange"):
-            return _send_smtp(config, recipients, subject, html_body)
+            return _send_smtp(config, recipients, subject, html_body, timeout)
         if config.provider == "m365":
             return _send_m365(config, recipients, subject, html_body)
         return False, f"Unknown email provider: {config.provider}"
@@ -97,17 +105,23 @@ def _smtp_params(
     return host, port, use_tls, username, password
 
 
-def _smtp_connect(host: str, port: int, use_tls: bool) -> smtplib.SMTP:
+def _smtp_connect(
+    host: str, port: int, use_tls: bool, timeout: int = DEFAULT_TIMEOUT
+) -> smtplib.SMTP:
     if port == 465:
-        return smtplib.SMTP_SSL(host, port, timeout=30, context=ssl.create_default_context())
-    smtp = smtplib.SMTP(host, port, timeout=30)
+        return smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context())
+    smtp = smtplib.SMTP(host, port, timeout=timeout)
     if use_tls:
         smtp.starttls(context=ssl.create_default_context())
     return smtp
 
 
 def _send_smtp(
-    config: EmailNotificationConfig, recipients: list[str], subject: str, html: str
+    config: EmailNotificationConfig,
+    recipients: list[str],
+    subject: str,
+    html: str,
+    timeout: int = DEFAULT_TIMEOUT,
 ) -> tuple[bool, str]:
     host, port, use_tls, username, password = _smtp_params(config)
     if not host:
@@ -119,7 +133,7 @@ def _send_smtp(
     msg["To"] = ", ".join(recipients)
     msg.attach(MIMEText(html, "html"))
 
-    smtp = _smtp_connect(host, port, use_tls)
+    smtp = _smtp_connect(host, port, use_tls, timeout)
     try:
         if username and password:
             smtp.login(username, password)

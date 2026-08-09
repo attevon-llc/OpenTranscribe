@@ -12,18 +12,27 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from sqlalchemy import and_
+from sqlalchemy import false as sa_false
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
+from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
+from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.lockout import unlock_account as lockout_unlock_account
+from app.auth.password_history import add_password_to_history
+from app.auth.password_history import check_password_against_history
+from app.auth.password_policy import password_expiry_cutoff
+from app.auth.rate_limit import get_auth_rate_limit
+from app.auth.rate_limit import limiter
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
@@ -56,6 +65,8 @@ from app.schemas.admin import CacheConfig
 from app.schemas.admin import CacheConfigUpdate
 from app.schemas.admin import GarbageCleanupConfig
 from app.schemas.admin import GarbageCleanupConfigUpdate
+from app.schemas.admin import LinkExternalIdentityRequest
+from app.schemas.admin import LinkExternalIdentityResponse
 from app.schemas.admin import MediaSource
 from app.schemas.admin import MediaSourceCreate
 from app.schemas.admin import MediaSourcesList
@@ -76,6 +87,11 @@ from app.schemas.user import AdminPasswordResetRequest
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.services import system_settings_service
+from app.services.account_security_service import assert_password_auth_possible
+from app.services.account_security_service import audit_password_change
+from app.services.account_security_service import audit_role_change
+from app.services.account_security_service import enforce_password_policy
+from app.services.account_security_service import revoke_all_sessions
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -1191,22 +1207,24 @@ def _reload_protected_media_providers():
 
 
 # ============== Super Admin Role Verification ==============
-
-
-def get_current_super_admin_user(
-    current_user: User = Depends(get_current_admin_user),
-) -> User:
-    """Verify user has super_admin role."""
-    if current_user.role != "super_admin":
-        raise HTTPException(status_code=403, detail="Super admin access required")
-    return current_user
+#
+# Re-exported for backwards compatibility with the ~20 call sites in this module.
+# The definition lives in api/endpoints/auth/dependencies.py alongside
+# get_current_user / get_current_admin_user — it was declared here AND in
+# auth_config.py, each re-implementing the same check with its own "super_admin"
+# string literal instead of roles.ROLE_SUPER_ADMIN. Three copies of an
+# authorization rule is three chances for one of them to drift.
+get_current_super_admin_user = get_current_active_superuser
 
 
 # ============== Account Management (FedRAMP AC-2) ==============
 
 
 @router.post("/users/{user_uuid}/reset-password")
+@limiter.limit(get_auth_rate_limit())
 def admin_reset_user_password(
+    request: Request,
+    response: Response,
     user_uuid: str,
     request_body: AdminPasswordResetRequest,
     db: Session = Depends(get_db),
@@ -1216,26 +1234,38 @@ def admin_reset_user_password(
 
     Security: Password is passed in request body (not query parameter) to prevent
     exposure in server logs, browser history, and HTTP referrer headers.
+
+    This path used to skip every control its sibling in ``users.py`` applies: it
+    set a hash on ANY account regardless of ``auth_type`` (planting a local
+    password on a directory-managed row), bypassed the password policy and the
+    reuse history in both directions, and left the target's existing sessions
+    alive — so an admin resetting a compromised account did not actually evict
+    the attacker.
     """
+    client_ip, user_agent = _get_client_info(request)
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.hashed_password = get_password_hash(request_body.new_password)  # type: ignore[assignment]
+    assert_password_auth_possible(user)
+    enforce_password_policy(request_body.new_password, user)
+
+    if not check_password_against_history(db, user.id, request_body.new_password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password has been used recently. Please choose a different password.",
+        )
+
+    new_hash = get_password_hash(request_body.new_password)
+    user.hashed_password = new_hash  # type: ignore[assignment]
     user.must_change_password = request_body.force_change  # type: ignore[assignment]
     user.password_changed_at = datetime.now(UTC)  # type: ignore[assignment]
+    add_password_to_history(db, user.id, new_hash)
+    revoke_all_sessions(db, user, reason="admin password reset")
     db.commit()
 
-    audit_logger.log(
-        event_type=AuditEventType.ADMIN_USER_UPDATE,
-        user_id=current_user.id,
-        username=str(current_user.email),
-        outcome=AuditOutcome.SUCCESS,
-        details={
-            "action": "password_reset",
-            "target_user": user_uuid,
-            "force_change": request_body.force_change,
-        },
+    audit_password_change(
+        user, current_user, client_ip, user_agent, forced=request_body.force_change
     )
 
     return {"success": True}
@@ -1247,13 +1277,30 @@ def admin_unlock_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Admin unlock of locked account."""
+    """Admin unlock of a locked account — the true inverse of ``/lock``.
+
+    Two different things can stop a user signing in, and this endpoint clears
+    both:
+
+    * the **failed-login lockout** (progressive, per-identifier, in Redis), and
+    * ``is_active = False``, which is what ``/lock`` sets.
+
+    It previously cleared only the first, so an account locked by an admin could
+    not be unlocked by the paired endpoint at all — the only way back was
+    ``PUT /users/{uuid}`` with ``is_active``. Two endpoints named lock/unlock
+    that are not inverses is a trap, not an API.
+    """
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Use the lockout manager to unlock the account
+    # Use the lockout manager to clear the failed-login lockout
     unlocked = lockout_unlock_account(str(user.email))
+
+    was_disabled = not bool(user.is_active)
+    if was_disabled:
+        user.is_active = True  # type: ignore[assignment]
+        db.commit()
 
     audit_logger.log(
         event_type=AuditEventType.AUTH_ACCOUNT_UNLOCK,
@@ -1264,10 +1311,11 @@ def admin_unlock_account(
             "target_user": user_uuid,
             "unlocked_by": "admin",
             "was_locked": unlocked,
+            "was_disabled": was_disabled,
         },
     )
 
-    return {"success": True, "was_locked": unlocked}
+    return {"success": True, "was_locked": unlocked, "was_disabled": was_disabled}
 
 
 @router.post("/users/{user_uuid}/lock")
@@ -1283,6 +1331,9 @@ def admin_lock_account(
         raise HTTPException(status_code=404, detail="User not found")
 
     user.is_active = False  # type: ignore[assignment]
+    # Locking an account that keeps a live refresh token is not a lock: token
+    # rotation would carry the session past the lock for its full lifetime.
+    revoke_all_sessions(db, user, reason="account locked by admin")
     db.commit()
 
     audit_logger.log(
@@ -1381,12 +1432,14 @@ def admin_get_user_sessions(
 
 @router.put("/users/{user_uuid}/role")
 def admin_change_user_role(
+    request: Request,
     user_uuid: str,
     new_role: str = Query(..., description="New role for the user (user, admin, super_admin)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
 ):
     """Change user role. Only super_admin can promote to super_admin."""
+    client_ip, user_agent = _get_client_info(request)
     if new_role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
 
@@ -1397,25 +1450,111 @@ def admin_change_user_role(
     if str(user.uuid) == str(current_user.uuid):
         raise HTTPException(status_code=400, detail="Cannot change your own role")
 
+    from app.api.endpoints.users import _assert_not_last_super_admin
+
+    _assert_not_last_super_admin(db, user, new_role)
+
     old_role = user.role
     user.role = new_role  # type: ignore[assignment]
     # Keep is_superuser in sync with role (derived; v369 CHECK enforces it).
     user.is_superuser = role_implies_superuser(new_role)
+    # A role change is usually a reaction to something; the target's existing
+    # sessions must not outlive it.
+    revoke_all_sessions(db, user, reason="role change")
     db.commit()
 
+    audit_role_change(user, current_user, str(old_role), new_role, client_ip, user_agent)
+
+    return {"success": True, "old_role": old_role, "new_role": new_role}
+
+
+#: Column each linkable provider's identifier lives on. Mirrors
+#: `auth/account_linking.py`'s lookup order (provider id first, email second) —
+#: setting this column is what makes a *subsequent* login match here instead of
+#: ever reaching the email-match branch that provider's `email_verified` posture
+#: might refuse.
+_LINK_IDENTITY_COLUMN = {
+    "oidc": "oidc_subject",
+    "ldap": "ldap_uid",
+    "pki": "pki_subject_dn",
+}
+
+
+@router.put("/users/{user_uuid}/link-identity", response_model=LinkExternalIdentityResponse)
+def admin_link_external_identity(
+    request: Request,
+    user_uuid: str,
+    payload: LinkExternalIdentityRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin_user),
+) -> LinkExternalIdentityResponse:
+    """Deliberately link an account to an external identity (P1.3).
+
+    The operator remedy `auth/account_linking.py` documents but that, until this
+    endpoint, did not exist: when an IdP cannot assert `email_verified` —
+    Authentik hardcodes it `false` for every account — the automatic email-match
+    link is refused, by design, and the login just fails. This is the explicit
+    alternative: a super_admin sets the provider's own identifier on the
+    account, so the identity resolves by that identifier on the very next login
+    and the email-match branch (and its refusal) is never reached at all.
+
+    Never for a `super_admin` target — that account is local-only by
+    architectural invariant, the break-glass account for exactly the IdP that
+    might be failing, and linking it to an external identity would make it
+    reachable through the login path it exists to survive.
+    """
+    client_ip, user_agent = _get_client_info(request)
+
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if str(user.role) == ROLE_SUPER_ADMIN:
+        raise HTTPException(
+            status_code=400,
+            detail="super_admin accounts are local-only and cannot be linked to an external identity",
+        )
+
+    column = _LINK_IDENTITY_COLUMN[payload.provider]
+    conflict = (
+        db.query(User)
+        .filter(getattr(User, column) == payload.identifier)
+        .filter(User.id != user.id)
+        .first()
+    )
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail=f"That {payload.provider} identifier is already linked to another account",
+        )
+
+    setattr(user, column, payload.identifier)
+    db.commit()
+
+    logger.info(
+        "super_admin %s linked %s identity %s to user %s",
+        current_user.email,
+        payload.provider,
+        payload.identifier,
+        user.email,
+    )
     audit_logger.log(
-        event_type=AuditEventType.ADMIN_ROLE_CHANGE,
+        event_type=AuditEventType.ADMIN_USER_UPDATE,
+        outcome=AuditOutcome.SUCCESS,
         user_id=current_user.id,
         username=str(current_user.email),
-        outcome=AuditOutcome.SUCCESS,
+        source_ip=client_ip,
+        user_agent=user_agent,
         details={
+            "action": "link_external_identity",
             "target_user": user_uuid,
-            "old_role": old_role,
-            "new_role": new_role,
+            "provider": payload.provider,
         },
     )
 
-    return {"success": True, "old_role": old_role, "new_role": new_role}
+    return LinkExternalIdentityResponse(
+        success=True, provider=payload.provider, identifier=payload.identifier
+    )
 
 
 # ============== MFA Management ==============
@@ -1437,6 +1576,9 @@ def admin_reset_user_mfa(
         mfa_settings.totp_enabled = False  # type: ignore[assignment]
         mfa_settings.totp_secret = None  # type: ignore[assignment]
         mfa_settings.backup_codes = []  # type: ignore[assignment]
+        # Dropping the second factor must not leave sessions that were minted
+        # while it was still in force.
+        revoke_all_sessions(db, user, reason="admin MFA reset")
         db.commit()
 
     audit_logger.log(
@@ -1515,12 +1657,18 @@ def get_account_status_report(
     current_user: User = Depends(get_current_admin_user),
 ):
     """Account status summary for compliance reporting."""
-    # Consolidate 3 User COUNT queries into 1 using FILTER clauses
-    expiry_threshold = datetime.now(UTC) - timedelta(days=settings.PASSWORD_MAX_AGE_DAYS)
+    # Consolidate 3 User COUNT queries into 1 using FILTER clauses.
+    # The expiry cutoff comes from the password policy rather than a local
+    # timedelta(PASSWORD_MAX_AGE_DAYS): this report reimplemented the rule that
+    # password_policy already owns, so with PASSWORD_POLICY_ENABLED=false it kept
+    # reporting expired passwords that nothing would ever act on. A None cutoff
+    # means expiry is not enforced, so nothing is expired.
+    expiry_threshold = password_expiry_cutoff()
+    expired_filter = User.password_changed_at < expiry_threshold if expiry_threshold else sa_false()
     user_row = db.query(
         func.count().label("total"),
         func.count().filter(User.is_active.is_(True)).label("active"),
-        func.count().filter(User.password_changed_at < expiry_threshold).label("pwd_expired"),
+        func.count().filter(expired_filter).label("pwd_expired"),
     ).one()
 
     # MFA is a separate table, so one more query

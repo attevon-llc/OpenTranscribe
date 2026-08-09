@@ -7,15 +7,21 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.login import record_successful_login
 from app.auth.audit import audit_logger
 from app.auth.direct_auth import create_access_token as direct_create_token
+from app.auth.lockout import check_and_record_attempt
+from app.auth.pki_auth import extract_dn_from_headers
 from app.auth.pki_auth import pki_authenticate
 from app.auth.pki_auth import sync_pki_user_to_db
+from app.auth.rate_limit import get_auth_rate_limit
+from app.auth.rate_limit import limiter
 from app.auth.token_service import token_service
 from app.core.auth_settings import get_auth_settings
 from app.core.config import settings
@@ -29,12 +35,28 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/pki/authenticate", response_model=Token)
-def pki_login(request: Request, db: Session = Depends(get_db)):
+@limiter.limit(get_auth_rate_limit())
+def pki_login(request: Request, response: Response, db: Session = Depends(get_db)):
     """
     Authenticate via X.509 client certificate.
 
     The reverse proxy (Nginx) must be configured to pass the client
     certificate information via headers (X-Client-Cert or X-Client-Cert-DN).
+
+    Rate limited and lockout-tracked like every other auth route: this mints access and
+    refresh tokens, so leaving it unthrottled made it the cheapest brute-force surface in
+    the app (an attacker who can reach the backend directly can retry DN guesses forever).
+
+    Args:
+        request: FastAPI request object (required by the rate limiter)
+        db: Database session
+
+    Returns:
+        JSONResponse with access/refresh tokens, plus httpOnly auth cookies
+
+    Raises:
+        HTTPException: 400 if PKI is disabled or the user is inactive, 401 if the
+            certificate is invalid/missing or the identity is locked out
     """
     # Check database settings first, then fall back to .env
     auth_settings = get_auth_settings(db)
@@ -48,7 +70,45 @@ def pki_login(request: Request, db: Session = Depends(get_db)):
 
     client_ip, user_agent = _get_client_info(request)
 
-    pki_data = pki_authenticate(request, admin_dns_config=auth_settings.pki_admin_dns)
+    pki_data = pki_authenticate(
+        request,
+        admin_dns_config=auth_settings.pki_admin_dns,
+        pki_mode=auth_settings.pki_mode,
+        trusted_proxies_config=auth_settings.pki_trusted_proxies,
+        cert_header=auth_settings.pki_cert_header,
+        cert_dn_header=auth_settings.pki_cert_dn_header,
+    )
+
+    # Lockout is keyed on the subject DN — the identity a PKI client is claiming, the
+    # analogue of the username on /token. On failure the verified DN is unavailable, so we
+    # fall back to the claimed DN header; unattributable failures (a bad certificate with
+    # no DN header) share the "unknown" bucket, which only ever throttles further failures.
+    subject_dn = pki_data["subject_dn"] if pki_data else None
+    lockout_identifier = (
+        subject_dn
+        or extract_dn_from_headers(request, auth_settings.pki_cert_dn_header)
+        or "unknown"
+    )
+    is_locked, _unlock_at = check_and_record_attempt(
+        lockout_identifier, success=pki_data is not None
+    )
+
+    if is_locked:
+        logger.warning("PKI authentication blocked for locked identity")
+        audit_logger.log_login_failure(
+            username=lockout_identifier,
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="ACCOUNT_LOCKED",
+            auth_method="pki",
+        )
+        # Same response as an invalid certificate, so a locked DN is not distinguishable.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing client certificate",
+            headers={"WWW-Authenticate": "Certificate"},
+        )
+
     if not pki_data:
         logger.warning("PKI authentication failed - invalid or missing certificate")
         # Log PKI login failure
@@ -96,6 +156,11 @@ def pki_login(request: Request, db: Session = Depends(get_db)):
         user_agent=user_agent,
         auth_method="pki",
     )
+
+    # Every successful auth path stamps last_login_at. It was written by NOTHING,
+    # so the admin user list showed null forever and every inactive-account
+    # control (FedRAMP AC-2(3)) had no data to work from.
+    record_successful_login(db, user)
 
     logger.info(f"PKI authentication successful for user: {pki_data['subject_dn']}")
 

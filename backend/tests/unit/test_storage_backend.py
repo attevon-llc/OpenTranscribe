@@ -15,6 +15,12 @@ so its boto3 client is mocked. **Nothing here proves OpenTranscribe works agains
 S3; it proves we ask for the right thing.**
 """
 
+# mypy: disable-error-code="union-attr"
+# This suite passes structural stand-ins (fake sessions, fake users, namespace
+# requests) to signatures that declare Session/User/Request, and indexes
+# HTTPException.detail, which is typed str while every lifecycle gate raises an
+# object. Declared once here rather than as a cast at every call site — casts
+# bury the assertion, and widening a production signature to suit a test is worse.
 from __future__ import annotations
 
 import datetime

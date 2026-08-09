@@ -50,7 +50,7 @@ Auth method configuration is stored in the database (Admin UI → Settings → A
 
 **Configuration Guides:**
 - [LDAP Authentication](LDAP_AUTH.md) - Active Directory setup
-- [Keycloak/OIDC Setup](KEYCLOAK_SETUP.md) - OAuth 2.0 SSO
+- [OpenID Connect Setup](OIDC_SETUP.md) - OAuth 2.0 / OIDC SSO
 - [PKI Authentication](PKI_SETUP.md) - Certificate authentication
 - [Security Overview](SECURITY.md) - Security features and FedRAMP compliance
 - [Testing Checklist](TESTING_CHECKLIST.md) - Authentication verification

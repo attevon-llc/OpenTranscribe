@@ -5,288 +5,256 @@ title: Authentication & Security
 
 # Authentication & Security
 
-OpenTranscribe includes enterprise-grade authentication and security features to meet organizational security requirements and compliance standards.
+OpenTranscribe's authentication system is built around one idea: **the deployment decides where
+identity lives, and the product enforces that decision everywhere.** Six identity sources run
+simultaneously, all configured from a single admin surface, all stored encrypted in the
+database, all changeable without a restart.
 
-## Authentication Flow
+This page is the tour. The setup guides live under
+[Authentication](../authentication/overview).
+
+## Authentication flow
 
 ```mermaid
 flowchart TD
-    Login([Login Request]) --> RateLimit{Rate Limit\nCheck}
-    RateLimit -->|Exceeded| Block([429 Too Many Requests])
-    RateLimit -->|OK| Lockout{Account\nLockout Check}
-    Lockout -->|Locked| Denied([Account Locked])
-    Lockout -->|OK| AuthType{AUTH_TYPE\nConfig}
+    Login([Login request]) --> RateLimit{Rate limit}
+    RateLimit -->|exceeded| Block([429])
+    RateLimit -->|ok| Lockout{Account lockout}
+    Lockout -->|locked| Denied([401 - same error as bad password])
+    Lockout -->|ok| Source{Identity source<br/>for this account}
 
-    AuthType -->|local| Bcrypt[Bcrypt Password\nVerification]
-    AuthType -->|ldap| LDAP[LDAP Bind\nto Directory]
-    AuthType -->|keycloak| OIDC[OIDC Redirect\n& Token Exchange]
-    AuthType -->|pki| PKI[X.509 Certificate\nVerification via Nginx]
+    Source -->|local| Policy{local_enabled?<br/>super_admin exempt}
+    Source -->|ldap| LDAP[Bind to directory]
+    Source -->|oidc| OIDC[Authorization code + PKCE<br/>ID token verified]
+    Source -->|saml| SAML[Assertion verified<br/>python3-saml]
+    Source -->|pki| PKI[X.509 via trusted proxy]
+    Source -->|proxy| Proxy[Trusted-header assertion]
 
-    Bcrypt --> MFA{MFA\nEnabled?}
-    LDAP --> MapUser[Map/Provision\nLocal User] --> MFA
-    OIDC --> MapUser2[Map/Provision\nLocal User] --> JWT
-    PKI --> ExtractCN[Extract CN\nfrom Certificate] --> JWT
+    Policy -->|no| Denied
+    Policy -->|yes| Pwd[Verify password hash]
 
-    MFA -->|Yes| TOTP[Verify TOTP\nCode]
-    MFA -->|No| JWT
-    TOTP -->|Valid| JWT
-    TOTP -->|Invalid| Failed
+    Pwd --> MFA
+    LDAP --> Reconcile[Provision / link<br/>reconcile groups + role] --> MFA
+    OIDC --> Reconcile
+    SAML --> Reconcile
+    PKI --> Reconcile
+    Proxy --> Reconcile
 
-    JWT[Issue JWT Access Token\n+ Refresh Token]
-    JWT --> Audit[Audit Log Entry]
-    Audit --> Success([Authenticated])
+    MFA{MFA required<br/>for this login?}
+    MFA -->|enrolled| TOTP[Verify TOTP]
+    MFA -->|required, not enrolled| Enroll[Enrolment-scoped half-token]
+    MFA -->|no| Session
+    TOTP -->|valid| Session
+    Enroll --> Session
 
-    Bcrypt -->|Failed| Failed[Increment\nFailed Attempts]
-    Failed --> Audit2[Audit Log Entry]
-    Audit2 --> Rejected([401 Unauthorized])
+    Session[Issue access token + refresh-token session row]
+    Session --> Gate{Account-lifecycle gate}
+    Gate -->|awaiting approval| G0([403 account_pending_approval])
+    Gate -->|expired| G1([403 account_expired])
+    Gate -->|banner unacknowledged| G2([403 banner_acknowledgment_required])
+    Gate -->|must change password| G3([403 password_change_required])
+    Gate -->|clear| Success([Authenticated])
+
+    Session --> Audit[Audit log entry]
 ```
 
-## Authentication Methods
+The lifecycle gate runs on **every authenticated request**, not just at login, so a flag set
+while a session is live takes effect immediately.
 
-### Local Authentication
-Default authentication using PostgreSQL-stored credentials:
-- Username/password authentication
-- Self-registration or admin-created accounts
-- JWT-based session management
+## Identity sources
 
-### LDAP/Active Directory
-Integrate with existing directory services:
-- Hybrid authentication (local + LDAP users)
-- Auto-provisioning on first login
-- Role mapping via `LDAP_ADMIN_USERS`
-- Support for Active Directory and OpenLDAP
+### Local passwords
+PostgreSQL-stored credentials with a full password policy. Accounts arrive by
+self-registration (when enabled), by an admin invitation, or by admin creation.
 
-### OIDC/Keycloak
-Single Sign-On via OpenID Connect:
-- Integration with Keycloak identity server
-- Support for identity federation
-- Social login via Keycloak (Google, GitHub, etc.)
-- Role synchronization
-- **Federated logout** (New in v0.4.0): When a user logs out of OpenTranscribe, their Keycloak session is also terminated via the OIDC end-session endpoint, ensuring consistent session state across the identity provider
+### LDAP / Active Directory
+Auto-provisioning on first login, group-based admission control, admin mapping, and a periodic
+sweep that **deprovisions** accounts the directory has removed — disabling them *and* revoking
+their sessions.
 
-### PKI/X.509 Certificates
-Certificate-based authentication:
-- Mutual TLS authentication via Nginx
-- CAC/PIV smart card support
-- No passwords required
-- Government/military environment support
-- **Super admin password fallback** (New in v0.4.0): PKI-authenticated super admin accounts can optionally retain local password authentication as a fallback, ensuring administrative access even if certificate infrastructure is unavailable. Controlled via the `pki_allow_password_fallback` configuration setting
+### OpenID Connect
+Any conforming provider — Keycloak, Authentik, Authelia, Okta, Entra ID, Auth0, Zitadel —
+discovered from its `.well-known/openid-configuration`. Authorization-code flow with PKCE,
+ID-token-only validation, and RP-initiated logout using an ID token kept on the session row
+rather than in a cookie.
 
-## Security Features
+### SAML 2.0
+Service-provider role for IdPs that only speak SAML (ADFS, Shibboleth, Okta-classic). Assertion
+parsing and signature verification are `python3-saml`'s, never hand-rolled; email-match account
+linking is refused unconditionally because SAML has no standard "address verified" claim.
 
-### Multi-Factor Authentication (MFA)
-TOTP-based second factor authentication:
-- Compatible with Google Authenticator, Authy, etc.
-- QR code setup for easy enrollment
-- One-time backup codes for recovery
-- Per-user enablement
+### PKI / X.509
+Mutual TLS terminated at the reverse proxy, CAC/PIV common-name parsing, OCSP and CRL
+revocation checking, and a fail-closed trusted-proxy allowlist.
 
-### Password Policies
-FedRAMP IA-5 compliant password requirements:
-- Configurable minimum length (default: 12)
-- Character complexity (uppercase, lowercase, digits, special)
-- Password history tracking (prevent reuse)
-- Password expiration with grace period
-- Common pattern detection
+### Trusted-header (reverse proxy)
+For a reverse proxy (oauth2-proxy, Authelia, Cloudflare Access) that already authenticates the
+user and asserts identity in a request header. Shares its trusted-peer allowlist and fail-closed
+refusal logic with PKI's header mode; a per-request consistency check revokes a session outright
+if a trusted peer later asserts a different identity for it.
 
-### Account Lockout
-NIST AC-7 compliant account protection:
-- Lock after configurable failed attempts
-- Progressive lockout durations
-- Admin unlock capability
-- Automatic expiration
+## The identity-source model
 
-### Rate Limiting
-Protection against brute force attacks:
-- Per-IP rate limiting
-- Configurable limits for auth and API endpoints
-- Redis-backed for distributed deployments
-- Trusted proxy support
+Enabling an external provider is only half of "our IdP owns identity". Three more controls
+decide whether anything else can still get in:
 
-### Audit Logging
-FedRAMP AU-2/AU-3 compliant logging:
-- Structured JSON or CEF format
-- All authentication events captured
-- Optional OpenSearch integration
-- Request ID correlation
+| Control | Scope |
+|---|---|
+| `local_enabled` | May accounts holding a local password authenticate at all |
+| `allow_registration` | May anyone create their own account |
+| per-user `auth_type` + `allow_local_fallback` | Which source owns *this* account, and whether it may also use a password |
 
-### Session Management
-Secure session handling:
-- JWT token-based sessions
-- Refresh token rotation
-- Concurrent session limits
-- Session revocation
+`allow_registration` cannot be true while `local_enabled` is false — self-registration mints
+local-password accounts that could never sign in — and the API refuses the combination even if
+you try to assemble it one save at a time.
 
-## Super Admin Configuration UI
+**An active `super_admin` with a password path is exempt from the deployment's own
+identity-source policy.** Auth configuration is super_admin-gated, so without that exemption a
+deployment that disabled local login while its IdP was misconfigured would have no way back in.
 
-OpenTranscribe provides an intuitive web-based interface for managing authentication methods:
+## Privilege tiers
 
-**Access:** Settings → Authentication (admin-only)
+Three roles, with one dividing rule:
 
-**Features:**
-- Enable/disable authentication methods without restart
-- Configure provider-specific settings (LDAP, Keycloak, PKI)
-- Store and manage API keys and credentials securely
-- Support hybrid authentication (enable multiple methods simultaneously)
-- Real-time configuration validation
+> **Anything that changes how the deployment runs, or stores infrastructure credentials, is
+> `super_admin`. Anything that manages users and their content is `admin`.**
 
-**Storage:**
-- All configuration is stored securely in the database (`auth_config` table)
-- Sensitive values (API keys, passwords) encrypted with AES-256-GCM
-- Configuration changes take effect immediately—no restart required
-- Full audit trail of configuration changes
+| Tier | Covers |
+|---|---|
+| `user` | Own content, own settings, own MFA |
+| `admin` | User accounts, tasks, search and speaker maintenance, data integrity, retention |
+| `super_admin` | Authentication config, role changes, audit log, ASR provider, engine settings, backups, media mirror, watch sources, redaction policy |
 
-**Hybrid Authentication:**
-You can enable multiple authentication methods at the same time. Users can log in using any enabled method:
-- Local (username/password) + LDAP (directory service)
-- Local + Keycloak (SSO)
-- Local + PKI (certificate-based)
-- Any combination of the four methods
+`user.role` is the sole authorization truth; `is_superuser` is a derived mirror enforced by a
+database CHECK constraint. Creating another `super_admin` is a UI action (Settings → Users →
+Role), it is audited, and the last one cannot be demoted or deleted.
 
-## Configuration Storage
+**External identity providers grant at most `admin`.** `super_admin` is local-only — it is the
+break-glass account for exactly the IdP that is failing.
 
-### Database-Driven Configuration
+:::warning Changed in v0.5.0
+ASR provider, Engine configuration, Backups, Media Mirror, Watch sources and Redaction policy
+moved from `admin` to `super_admin`. Promote anyone who administers them.
+:::
 
-Authentication configuration is stored securely in the database, eliminating the need for environment variables:
+## Group mapping
 
-**Storage Location:** `auth_config` table in PostgreSQL
+Directory groups map onto in-app groups and an optional role grant capped at `admin`. Applied
+at login for LDAP, OIDC and trusted-header (proxy) sign-ins, and on the periodic sweep for LDAP
+only. Directory-derived memberships are marked as such, so reconciliation removes only what it
+added — a hand-added membership is never touched. The admin panel (Settings → Authentication →
+Group mappings) covers LDAP and OIDC; a proxy-sourced mapping is created via the API. See
+[IdP group mapping](../authentication/groups).
 
-**Encryption:** Sensitive values protected with AES-256-GCM cipher
-- API keys and passwords encrypted at rest
-- Encryption keys derived from application master secret
-- Automatic encryption/decryption on read/write
+## Account lifecycle
 
-**Multi-Method Support:**
-Enable any combination of authentication methods:
-- Enable local authentication for self-registered users
-- Add LDAP to authenticate against your Active Directory
-- Add Keycloak for enterprise SSO integration
-- Add PKI for high-security certificate-based auth
+| Feature | What it does |
+|---|---|
+| **Invitations** | Admin names an address, role and `auth_type`; the invitee proves control of the address and picks their own credential. Single-use, hashed, expiring tokens |
+| **Email verification** | Gates local password login only; the IdP owns address verification for external accounts |
+| **Forced password change** | Confines the account to the password-change endpoint until it clears. Set by an admin reset, or automatically at `password_max_age_days` |
+| **Account expiry** | Time-boxes an account; past the instant, every request is refused with no exempt route |
+| **Login-banner acknowledgment** | Server-enforced (FedRAMP AC-8), and an acknowledgment expires when the banner text changes |
+| **Directory deprovisioning** | Disables and revokes sessions for accounts the directory removed |
 
-All enabled methods work together—users can authenticate using any method you've configured.
+| **Approval queue** | With `require_account_approval` on, a newly provisioned account (self-registered or JIT) lands `pending` until an administrator releases it |
 
-**Admin-Only Access:**
-- Configuration UI accessible only to super administrators
-- Regular users cannot modify authentication settings
-- All configuration changes are audit logged
+Each refusal carries a machine-readable `detail.code` (`account_expired`,
+`banner_acknowledgment_required`, `password_change_required`, `account_pending_approval`,
+`account_rejected`) so clients branch on a contract rather than on English prose.
 
-**No Restart Required:**
-Configuration changes take effect immediately. There is no need to restart services when modifying authentication settings through the admin UI.
+**Admission control** is a separate question from authentication: `ldap_user_groups` for LDAP,
+`oidc_allowed_groups` / `oidc_blocked_groups` for OIDC, and `require_account_approval` for
+everything. An empty allow-list admits everyone, so upgrading changes nothing until you set one.
 
-## Design Rationale
+## Sessions
 
-### Why Hybrid Authentication?
+**A session *is* a refresh-token row.** There is one session store, not two.
 
-Enterprise environments frequently require multiple authentication methods operating simultaneously. A government agency may need PKI/CAC for most users while retaining local accounts for service accounts and emergency access. An enterprise deploying Active Directory may also need Keycloak for federated partners. OpenTranscribe's hybrid model supports any combination of its four methods concurrently, so organizations do not need to choose a single provider.
+- Short-lived JWT access token plus a long-lived refresh token, **rotated on every use**
+  (OAuth 2.1); the old identifier is revoked in the same call.
+- **Idle** and **absolute** timeouts, plus a **concurrent-session limit** with a
+  `terminate_oldest` or `reject` policy. Hitting the cap is audited either way.
+- Revocation reaches stateless access tokens through a per-user epoch, so "log out everywhere"
+  is not weaker than "log out".
+- Changing a credential or a privilege revokes sessions — including role changes driven by a
+  directory.
+- Users manage their own sessions in Settings → Profile; admins can list and revoke another
+  user's.
 
-### Database-Driven Configuration vs. Environment Variables
+## Multi-factor authentication
 
-Early versions relied exclusively on `.env` variables for authentication settings. This created operational friction: changing an LDAP bind password or enabling a new auth method required restarting the backend service. The current database-driven approach (`auth_config` table) enables runtime reconfiguration through the admin UI with zero downtime. Environment variables are retained as a secondary override for backward compatibility and initial bootstrapping of new deployments.
+TOTP (RFC 6238) with one-time backup codes. **`mfa_required` is enforced at the server**: an
+unenrolled user receives an enrolment-scoped half-token that authorizes only the two setup
+endpoints, so an API client that ignores the hint gets nothing. Every token carries a purpose
+claim that every consumer verifies. PKI, OIDC and SAML users bypass local MFA only when they
+used their native method; a proxy-authenticated user bypasses it always, since the proxy is
+expected to own authentication itself.
 
-### Credential Encryption
+## Password policy, lockout, rate limiting
 
-All sensitive values stored in the `auth_config` table (LDAP bind passwords, Keycloak client secrets, API keys) are encrypted at rest using **AES-256-GCM** with 96-bit random nonces and 128-bit authentication tags. Encryption keys are derived from the application master secret via PBKDF2-SHA256 with 600,000 iterations. The encrypted format uses a versioned prefix (`v3:salt:nonce:ciphertext+tag`) to support transparent algorithm upgrades. This approach satisfies NIST SP 800-132 key derivation requirements and FedRAMP SC-28 (Protection of Information at Rest).
+FedRAMP IA-5 password policy (length, complexity, history up to 100, expiry), progressive
+NIST AC-7 account lockout keyed on a canonical identifier per account, and per-IP rate limiting
+on the authentication routes resolved through the trusted-proxy chain.
 
-### Security Audit Findings
+## Configuration storage
 
-A comprehensive security audit identified several authentication-related improvements that have been incorporated:
+**Where**: the `auth_config` table. **Precedence**: database → environment variable → coded
+default. **Encryption**: sensitive values with AES-256-GCM (96-bit nonce, 128-bit tag), keys
+derived from the application master secret with PBKDF2-SHA256 at 600,000 iterations, versioned
+prefix for transparent algorithm upgrades. Satisfies NIST SP 800-132 and FedRAMP SC-28.
 
-- **PKI trusted proxy enforcement**: When PKI is enabled in production, `PKI_TRUSTED_PROXIES` must be configured or the backend refuses to start, preventing certificate header injection attacks (CWE-287)
-- **Keycloak audience validation**: Audience verification is enabled by default to prevent token confusion attacks when multiple Keycloak clients share a realm
-- **PKI revocation checking**: Revocation soft-fail defaults to `false` in production, ensuring revoked certificates are properly rejected when OCSP/CRL services are available
-- **Default secret detection**: The backend validates that critical secrets (`JWT_SECRET_KEY`, `ENCRYPTION_KEY`) are not using insecure defaults before starting in production mode
+Two properties worth knowing:
+
+- **Secrets never leave the API.** A sensitive key returns `config_value: null` plus an `is_set`
+  flag. There is deliberately no `***REDACTED***` placeholder — the panel used to bind it into
+  the password field, and the next save encrypted the placeholder over the real secret.
+- **Writes are validated against a per-category schema.** An unknown or typo'd key is a 400, not
+  a row stored forever and read by nothing.
+
+Every configuration change is recorded in `auth_config_audit` **with the account that made it**,
+visible at Settings → Authentication → Audit.
+
+## Transactional auth email
+
+Password resets, invitations and verification links need a mail transport. One
+`EmailNotificationConfig` row is *designated* to carry authentication mail (super_admin);
+clearing the designation falls back to the `SMTP_*` environment transport. A designation naming
+a missing or disabled row is rejected at write time, and deleting or disabling the designated
+row is refused while it holds the designation — a silent failure here means undelivered password
+resets.
 
 ## Compliance
 
-OpenTranscribe's security features support compliance with:
+| Standard | Control | Implementation |
+|---|---|---|
+| FedRAMP | IA-2 | MFA (server-enforced), PKI |
+| FedRAMP | IA-5(1) | Password policy, history, expiry → forced change |
+| FedRAMP | AC-2 / AC-2(3) | Invitations, expiry, deprovisioning, `last_login_at` |
+| FedRAMP | AC-8 | Login banner with enforced acknowledgment |
+| FedRAMP | AC-10 | Concurrent-session limit, audited |
+| FedRAMP | AC-12 | Rotation, revocation, idle + absolute timeouts |
+| FedRAMP | AU-2 / AU-3 | Audit logging |
+| FedRAMP | SC-12 / SC-13 / SC-28 | PBKDF2 derivation, AES-256-GCM, HS512 JWTs, encrypted at rest |
+| NIST 800-53 | AC-7 | Progressive account lockout |
 
-| Standard | Controls | Features |
-|----------|----------|----------|
-| FedRAMP | IA-2 | MFA, PKI authentication |
-| FedRAMP | IA-5 | Password policies, PBKDF2-SHA256 (600k iterations) |
-| FedRAMP | AU-2/AU-3 | Audit logging |
-| FedRAMP | SC-12 | PBKDF2 cryptographic key derivation |
-| FedRAMP | SC-13 | AES-256-GCM encryption, HS512 JWT signing |
-| FedRAMP | SC-28 | Encrypted credentials at rest |
-| FedRAMP | AC-8 | Classification banners, system use notification |
-| NIST 800-53 | AC-7 | Account lockout |
+### FIPS 140-3
 
-### FIPS 140-3 Support
+- Password hashing: PBKDF2-SHA256, 600,000 iterations (NIST SP 800-132)
+- Data encryption: AES-256-GCM
+- JWT signing: HMAC-SHA512
+- Token hashing: SHA-512
+- Transparent auto-upgrade of legacy hashes on login, with dual verification during transition
 
-For federal and high-security deployments, OpenTranscribe supports FIPS 140-3 compliant cryptographic operations:
+Enable with `FIPS_VERSION=140-3`. Details in `docs/FIPS_140_3_COMPLIANCE.md`.
 
-- **Password hashing**: PBKDF2-SHA256 with 600,000 iterations (NIST SP 800-132 / OWASP 2023)
-- **Data encryption**: AES-256-GCM (replacing legacy Fernet/AES-128-CBC)
-- **JWT signing**: HMAC-SHA512 (replacing legacy HS256)
-- **Token hashing**: SHA-512
-- **Migration**: Transparent auto-upgrade of legacy hashes on user login with dual-verification during transition
+## Next steps
 
-Enable via `FIPS_VERSION=140-3` in `.env`. See the FIPS 140-3 Compliance Guide for detailed configuration.
-
-## Quick Start
-
-### Configure via Super Admin UI (Recommended)
-
-1. **Access the Admin Panel:**
-   - Log in as a super administrator
-   - Navigate to Settings → Authentication
-
-2. **Enable Authentication Methods:**
-   - Toggle authentication methods on/off as needed
-   - Enter provider-specific configuration:
-     - **Local Auth:** No configuration needed (always available)
-     - **LDAP/Active Directory:** Server URL, bind DN, user search base
-     - **Keycloak:** Realm URL, client ID, client secret
-     - **PKI:** Certificate validation settings
-
-3. **Enable Security Features:**
-   - Multi-Factor Authentication (MFA)
-   - Password Policies
-   - Account Lockout Protection
-   - Audit Logging
-
-4. **Save and Test:**
-   - Configuration takes effect immediately
-   - Test login with each enabled method
-
-### Configuration Scenarios
-
-**Small Team (Local Only):**
-- Local authentication sufficient for teams < 50 people
-- Admin creates accounts or enable self-registration
-- Optional MFA for additional security
-
-**Enterprise Directory (LDAP):**
-- Enable Local + LDAP for hybrid authentication
-- Users log in with Active Directory credentials
-- Local accounts available for service accounts/admins
-
-**Enterprise SSO (Keycloak):**
-- Enable Local + Keycloak for federated identity
-- Users single sign-on via corporate identity provider
-- Supports social login and multi-factor authentication
-
-**High Security (PKI Certificates):**
-- Enable Local + PKI for certificate-based authentication
-- CAC/PIV smart card support for government/military
-- No passwords required, client certificate verified by nginx
-
-### Environment Variables (Optional)
-
-Most configuration is managed through the admin UI. Optional environment variables for advanced deployment scenarios:
-
-```bash
-# Default authentication method (if not configured via UI)
-AUTH_TYPE=local
-
-# Optional: Pre-seed initial configuration
-# These are only used if auth_config table is empty
-LDAP_SERVER_URL=ldap://ldap.example.com:389
-LDAP_SEARCH_BASE=ou=users,dc=example,dc=com
-```
-
-## Next Steps
-
-- [Authentication Overview](../authentication/overview.md) - Detailed configuration
-- [Environment Variables](../configuration/environment-variables.md) - Full configuration reference
-- [FAQ](../faq.md) - Common questions
+- [Authentication overview](../authentication/overview) — the identity-source model, tiers,
+  lifecycle, and the full configuration reference
+- [LDAP](../authentication/ldap) · [OIDC](../authentication/oidc) ·
+  [SAML](../authentication/saml) · [PKI](../authentication/pki) ·
+  [Trusted-header (proxy)](../authentication/proxy) ·
+  [Group mapping](../authentication/groups)
+- [Admin panel](../user-guide/admin-panel.md)
+- [Environment variables](../configuration/environment-variables.md)

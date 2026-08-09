@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean
 from sqlalchemy import DateTime
+from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
@@ -61,28 +62,37 @@ class User(Base):
     )  # "user", "admin", or "super_admin" (authorization source of truth)
     auth_type: Mapped[str] = mapped_column(
         String, default="local", nullable=False
-    )  # "local", "ldap", "keycloak", "pki"
+    )  # "local", "ldap", "oidc", "pki" — see auth/constants.VALID_AUTH_TYPES
     allow_local_fallback: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )  # When True: user can authenticate via password even if auth_type != 'local'
     ldap_uid: Mapped[str | None] = mapped_column(
         String, nullable=True, unique=True, index=True
     )  # sAMAccountName from AD
-    keycloak_id: Mapped[str | None] = mapped_column(
+    # The OIDC ``sub`` claim. Named for what it is: ``sub`` is unique **per issuer**,
+    # not globally, so the column is a subject identifier and not an account id. The
+    # UNIQUE index is safe only while exactly one provider is configured — supporting
+    # several simultaneously means keying on ``(issuer, subject)``.
+    oidc_subject: Mapped[str | None] = mapped_column(
         String(255), unique=True, nullable=True, index=True
-    )  # Keycloak subject ID
+    )
     external_id: Mapped[str | None] = mapped_column(
         String(255), unique=True, nullable=True, index=True
     )  # External IdP subject id
     external_org_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )  # Last-seen external org — convenience only, never authorization authority
-    keycloak_refresh_token: Mapped[str | None] = mapped_column(
+    oidc_refresh_token: Mapped[str | None] = mapped_column(
         Text, nullable=True
-    )  # Encrypted KC refresh token for federated logout
+    )  # Encrypted provider refresh token, for federated logout
     pki_subject_dn: Mapped[str | None] = mapped_column(
         String(512), unique=True, nullable=True, index=True
     )  # X.509 certificate DN
+    # The SAML assertion's NameID. Mirrors oidc_subject's caveat: unique per IdP
+    # entity, not globally — sound only while exactly one SAML IdP is configured.
+    saml_subject: Mapped[str | None] = mapped_column(
+        String(255), unique=True, nullable=True, index=True
+    )
 
     # PKI certificate metadata fields
     pki_serial_number: Mapped[str | None] = mapped_column(
@@ -129,6 +139,32 @@ class User(Base):
     banner_acknowledged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )  # Login banner ack
+
+    # Administrator admission of a newly provisioned account (v379). Distinct from
+    # is_active on purpose: deactivation revokes an account that was once usable,
+    # approval gates one that never has been. 'approved' is the column default, so
+    # every pre-existing row and every path that does not opt in is unaffected.
+    # See app/auth/approval.py.
+    approval_status: Mapped[str] = mapped_column(
+        String(20), default="approved", server_default="approved", nullable=False, index=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The administrator who decided. Self-referential FK with no relationship: the
+    # column is only ever read for display, and a relationship on "user" would be
+    # the third pair of FKs needing an explicit foreign_keys= on both sides.
+    approved_by: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Proof that THIS deployment sent mail to `email` and someone holding it came
+    # back. Gates local login when the `require_email_verification` auth-config
+    # key is on (app/auth/email_verification.py) — that key had no reader at all
+    # before v375. Not to be confused with ExternalIdentity.email_verified, which
+    # records an IdP's assertion about an address (app/auth/external_sync.py).
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

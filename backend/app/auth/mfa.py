@@ -33,6 +33,7 @@ import pyotp
 import qrcode
 from passlib.context import CryptContext
 
+from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
@@ -218,12 +219,18 @@ class MFAService:
         Args:
             secret: Base32-encoded TOTP secret
             email: User's email address (used as account name)
-            issuer_name: Name of the issuer (defaults to settings.MFA_ISSUER_NAME)
+            issuer_name: Name of the issuer. Callers holding a request session
+                should pass ``get_auth_settings(db).mfa_issuer_name`` so the
+                value is exactly what was last saved; omitting it resolves the
+                same setting through the process-wide layer, which is up to one
+                cache generation behind. It used to fall back to
+                ``settings.MFA_ISSUER_NAME`` — .env only — so an admin could edit
+                the issuer, see it save, and watch the QR code never change.
 
         Returns:
             str: otpauth:// URI for QR code generation
         """
-        issuer = issuer_name or settings.MFA_ISSUER_NAME
+        issuer = issuer_name or get_process_auth_settings().mfa_issuer_name
         algorithm = get_totp_algorithm()
         totp = pyotp.TOTP(
             secret,
@@ -371,12 +378,17 @@ class MFAService:
         (0, O, I, 1, L) for readability.
 
         Args:
-            count: Number of backup codes to generate (defaults to settings.MFA_BACKUP_CODE_COUNT)
+            count: Number of backup codes to generate. Callers holding a request
+                session should pass ``get_auth_settings(db).mfa_backup_code_count``;
+                omitting it resolves the same setting through the process-wide
+                layer. It used to fall back to ``settings.MFA_BACKUP_CODE_COUNT``
+                — .env only — and the enrolment endpoint called it with no
+                argument, so the admin's value was never used.
 
         Returns:
             list[str]: List of plaintext backup codes formatted as XXXX-XXXX
         """
-        num_codes = count or settings.MFA_BACKUP_CODE_COUNT
+        num_codes = count or get_process_auth_settings().mfa_backup_code_count
         codes = []
 
         for _ in range(num_codes):

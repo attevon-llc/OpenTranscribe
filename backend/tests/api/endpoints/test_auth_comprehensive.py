@@ -6,7 +6,7 @@ This test module covers:
 3. Admin endpoints (password reset, session management, account lock/unlock)
 4. Super admin role enforcement
 5. Rate limiting and account lockout
-6. Other auth methods (LDAP, Keycloak, PKI) with mocking
+6. Other auth methods (LDAP, OIDC, PKI) with mocking
 """
 
 from datetime import UTC
@@ -17,6 +17,19 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+
+
+def _csrf_headers(client) -> dict[str, str]:
+    """Double-submit header for a cookie-carrying client.
+
+    ``/api/auth/token/refresh`` is no longer CSRF-exempt: it mints a new session
+    from the refresh cookie alone, which is precisely what a forged cross-site
+    request would target. ``TestClient`` keeps the login's cookie jar, so it
+    presents as a browser and has to submit the token like one.
+    """
+    csrf = client.cookies.get("csrf_token")
+    return {"X-CSRF-Token": csrf} if csrf else {}
+
 
 # ============== Login/Logout Workflow Tests ==============
 
@@ -126,6 +139,7 @@ class TestTokenRefresh:
         refresh_response = client.post(
             "/api/auth/token/refresh",
             json={"refresh_token": refresh_token},
+            headers=_csrf_headers(client),
         )
         assert refresh_response.status_code == 200
         new_tokens = refresh_response.json()
@@ -139,6 +153,7 @@ class TestTokenRefresh:
         response = client.post(
             "/api/auth/token/refresh",
             json={"refresh_token": "invalid.token.here"},
+            headers=_csrf_headers(client),
         )
         assert response.status_code == 401
 
@@ -157,6 +172,7 @@ class TestTokenRefresh:
         refresh_response = client.post(
             "/api/auth/token/refresh",
             json={"refresh_token": old_refresh_token},
+            headers=_csrf_headers(client),
         )
         assert refresh_response.status_code == 200
 
@@ -164,6 +180,7 @@ class TestTokenRefresh:
         second_refresh = client.post(
             "/api/auth/token/refresh",
             json={"refresh_token": old_refresh_token},
+            headers=_csrf_headers(client),
         )
         assert second_refresh.status_code == 401
 
@@ -323,7 +340,7 @@ class TestSuperAdminEndpoints:
         user_uuid = str(normal_user.uuid)
         response = client.post(
             f"/api/admin/users/{user_uuid}/reset-password",
-            json={"new_password": "newPassword123", "force_change": True},
+            json={"new_password": "Reset-Password-9!x", "force_change": True},
             headers=super_admin_token_headers,
         )
         assert response.status_code == 200
@@ -333,7 +350,7 @@ class TestSuperAdminEndpoints:
         # Verify password was changed - try logging in with new password
         login_response = client.post(
             "/api/auth/token",
-            data={"username": normal_user.email, "password": "newPassword123"},
+            data={"username": normal_user.email, "password": "Reset-Password-9!x"},
         )
         assert login_response.status_code == 200
 
@@ -342,7 +359,7 @@ class TestSuperAdminEndpoints:
         user_uuid = str(normal_user.uuid)
         response = client.post(
             f"/api/admin/users/{user_uuid}/reset-password",
-            json={"new_password": "newPassword123", "force_change": True},
+            json={"new_password": "Reset-Password-9!x", "force_change": True},
             headers=admin_token_headers,
         )
         assert response.status_code == 403
@@ -509,26 +526,26 @@ class TestLDAPAuthentication:
 
 
 @pytest.mark.skip(reason="Placeholder — needs real mocked auth flow implementation")
-class TestKeycloakAuthentication:
-    """Test Keycloak/OIDC authentication with mocking."""
+class TestOIDCAuthentication:
+    """Test OIDC authentication with mocking."""
 
     @pytest.fixture
-    def mock_keycloak_settings(self):
-        """Mock Keycloak settings."""
-        with patch("app.auth.keycloak_auth.settings") as mock_settings:
-            mock_settings.KEYCLOAK_ENABLED = True
-            mock_settings.KEYCLOAK_SERVER_URL = "https://keycloak.example.com"
-            mock_settings.KEYCLOAK_REALM = "myrealm"
-            mock_settings.KEYCLOAK_CLIENT_ID = "myclient"
-            mock_settings.KEYCLOAK_CLIENT_SECRET = "mysecret"
+    def mock_oidc_settings(self):
+        """Mock OIDC settings."""
+        with patch("app.auth.oidc.config.env_settings") as mock_settings:
+            mock_settings.OIDC_ENABLED = True
+            mock_settings.OIDC_SERVER_URL = "https://idp.example.com"
+            mock_settings.OIDC_REALM = "myrealm"
+            mock_settings.OIDC_CLIENT_ID = "myclient"
+            mock_settings.OIDC_CLIENT_SECRET = "mysecret"
             yield mock_settings
 
-    def test_keycloak_authorization_url_generation(self, mock_keycloak_settings):
-        """Test Keycloak authorization URL generation."""
+    def test_oidc_authorization_url_generation(self, mock_oidc_settings):
+        """Test OIDC authorization URL generation."""
 
         # This would test URL generation
         # The actual implementation may need adjustment based on the code
-        assert mock_keycloak_settings.KEYCLOAK_ENABLED is True
+        assert mock_oidc_settings.OIDC_ENABLED is True
 
 
 @pytest.mark.skip(reason="Placeholder — needs real mocked auth flow implementation")
@@ -598,9 +615,8 @@ class TestTokenExpiration:
         """Expired access token is rejected."""
         # Create an expired token manually
 
-        from jose import jwt
-
         from app.core.config import settings
+        from tests.jwt_compat import jwt
 
         expired_payload = {
             "sub": str(uuid4()),
@@ -718,6 +734,7 @@ class TestFullAuthenticationFlow:
         refresh_response = client.post(
             "/api/auth/token/refresh",
             json={"refresh_token": refresh_token},
+            headers=_csrf_headers(client),
         )
         assert refresh_response.status_code == 200
         new_tokens = refresh_response.json()

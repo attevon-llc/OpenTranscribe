@@ -72,7 +72,12 @@ const sidebars: SidebarsConfig = {
       label: 'Authentication',
       items: [
         'authentication/overview',
-        // Detailed guides are in main docs/ folder, linked from overview
+        'authentication/ldap',
+        'authentication/oidc',
+        'authentication/saml',
+        'authentication/pki',
+        'authentication/proxy',
+        'authentication/groups',
       ],
     },
     {

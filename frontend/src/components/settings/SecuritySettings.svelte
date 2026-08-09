@@ -5,6 +5,7 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { copyToClipboard } from '$lib/utils/clipboard';
   import { getAuthMethods, user as userStore } from '$stores/auth';
   import CertificateInfo from './CertificateInfo.svelte';
 
@@ -153,8 +154,7 @@
 
   function copyBackupCodes() {
     const codesText = backupCodes.join('\n');
-    navigator.clipboard.writeText(codesText);
-    toastStore.success($t('settings.security.codesCopied'));
+    copyToClipboard(codesText, () => toastStore.success($t('settings.security.codesCopied')));
   }
 
   function downloadBackupCodes() {

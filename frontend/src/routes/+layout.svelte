@@ -59,6 +59,18 @@
   // session to the login route, which renders the remedy. See $stores/auth.
   $: lifecycleHold = $accountLifecycle !== null;
 
+  // The onMount auth guard below only reaches its `if (isAuth) { llmStatusStore.initialize() }`
+  // branch on a page LOAD/refresh where a session cookie already exists. A client-side login
+  // (no full page reload — the normal path through /login) never re-runs onMount, so nothing
+  // ever calls it: Chat and every other isLLMAvailable-gated surface stays stuck on
+  // "unavailable" until the user manually refreshes the tab. Watching the reactive store instead
+  // covers every sign-in path (password, OIDC, PKI, MFA verify, ...) with one definition;
+  // initialize() itself deduplicates concurrent/repeat calls, so this is safe to also fire
+  // alongside the onMount call on a fresh page load.
+  $: if ($isAuthenticated) {
+    llmStatusStore.initialize();
+  }
+
   // Classification banner state
   let bannerEnabled = false;
   let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';

@@ -3,6 +3,7 @@
   import { t } from '$stores/locale';
   import type { SAMLConfig } from '$lib/api/authConfig';
   import { toastStore } from '$stores/toast';
+  import { copyToClipboard } from '$lib/utils/clipboard';
 
   export let config: Partial<SAMLConfig> = {};
 
@@ -92,12 +93,11 @@
 
   async function copyMetadataUrl() {
     if (!metadataUrl) return;
-    try {
-      await navigator.clipboard.writeText(metadataUrl);
-      toastStore.success($t('settings.saml.metadataUrlCopied'));
-    } catch {
-      toastStore.error($t('settings.saml.metadataUrlCopyFailed'));
-    }
+    await copyToClipboard(
+      metadataUrl,
+      () => toastStore.success($t('settings.saml.metadataUrlCopied')),
+      () => toastStore.error($t('settings.saml.metadataUrlCopyFailed'))
+    );
   }
 </script>
 

@@ -552,6 +552,11 @@
     height: 32px;
     border: none;
     border-radius: 6px;
+    /* form-elements.css's bare `button` rule sets a drop-shadow that survives
+       unless cleared here — without this, light mode shows an empty shadowed
+       box instead of a plain icon button (the shadow all but disappears
+       against the dark-mode background, which is why it only showed there). */
+    box-shadow: none;
     background: none;
     color: var(--text-secondary);
     cursor: pointer;
@@ -561,6 +566,22 @@
   .gear:hover {
     background-color: var(--button-hover);
     color: var(--text-color);
+  }
+
+  /* The icon's width/height HTML attributes are presentation attributes, not
+     CSS - a flex item can compute their used width as 0 before intrinsic SVG
+     sizing resolves. Pin size via CSS so the icon is never invisible
+     regardless of browser/layout timing (same fix as ChatComposer's send icon). */
+  .hamburger svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  .gear svg {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
   }
 
   .hamburger {

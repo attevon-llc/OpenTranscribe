@@ -17,6 +17,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
+  import { copyToClipboard } from '$lib/utils/clipboard';
   import {
     setupMfaEnrollment,
     verifyMfaEnrollment,
@@ -114,8 +115,7 @@
   }
 
   function copyCodes() {
-    navigator.clipboard.writeText(backupCodes.join('\n'));
-    toastStore.success($t('auth.mfaEnroll.codesCopied'));
+    copyToClipboard(backupCodes.join('\n'), () => toastStore.success($t('auth.mfaEnroll.codesCopied')));
   }
 
   function downloadCodes() {

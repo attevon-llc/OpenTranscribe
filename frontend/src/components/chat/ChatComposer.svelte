@@ -220,6 +220,15 @@
     color: var(--background-color);
   }
 
+  /* The icon's own width/height HTML attributes are presentation attributes, not CSS - a
+     flex item can compute their used width as 0 before intrinsic SVG sizing resolves.
+     Pin size via CSS so the icon is never invisible regardless of browser/layout timing. */
+  .send-button svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
   .composer-footer {
     display: flex;
     justify-content: space-between;

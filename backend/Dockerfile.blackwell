@@ -17,7 +17,7 @@
 #   (Then reference in docker-compose.blackwell.yml)
 # =============================================================================
 
-FROM nvcr.io/nvidia/pytorch:25.01-py3
+FROM nvcr.io/nvidia/pytorch:26.07-py3
 
 # Bake the release version into the image so /health and /system/stats report
 # it without a repo checkout or env plumbing (version.py: file -> env -> unknown).

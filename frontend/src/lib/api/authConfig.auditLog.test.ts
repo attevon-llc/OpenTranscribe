@@ -10,6 +10,11 @@ import { AuthConfigApi, AUTH_CONFIG_AUDIT_MAX_LIMIT } from './authConfig';
 
 const get = vi.mocked(axiosInstance.get);
 
+/** axios 1.19's generic `params` type no longer collapses to `any` under `vi.mocked` inference. */
+function requestParams(callIndex: number): { limit: number; offset: number } {
+  return get.mock.calls[callIndex][1]?.params as { limit: number; offset: number };
+}
+
 describe('AuthConfigApi.getAuditLog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -27,18 +32,18 @@ describe('AuthConfigApi.getAuditLog', () => {
   it('clamps an over-large page to the server ceiling instead of 422-ing', async () => {
     await AuthConfigApi.getAuditLog('oidc', 100000);
 
-    expect(get.mock.calls[0][1]?.params.limit).toBe(AUTH_CONFIG_AUDIT_MAX_LIMIT);
+    expect(requestParams(0).limit).toBe(AUTH_CONFIG_AUDIT_MAX_LIMIT);
   });
 
   it('clamps non-positive limits and offsets', async () => {
     await AuthConfigApi.getAuditLog('pki', 0, -5);
 
-    expect(get.mock.calls[0][1]?.params).toEqual({ limit: 1, offset: 0 });
+    expect(requestParams(0)).toEqual({ limit: 1, offset: 0 });
   });
 
   it('passes the offset through for paging', async () => {
     await AuthConfigApi.getAuditLog('session', 50, 150);
 
-    expect(get.mock.calls[0][1]?.params).toEqual({ limit: 50, offset: 150 });
+    expect(requestParams(0)).toEqual({ limit: 50, offset: 150 });
   });
 });

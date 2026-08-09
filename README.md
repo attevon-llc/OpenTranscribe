@@ -261,7 +261,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### **Infrastructure**
 - **PostgreSQL** - Reliable relational database with JSONB support for flexible schemas
-- **MinIO** - S3-compatible object storage
+- **MinIO** - S3-compatible object storage (default, self-hosted)
+- **Native AWS S3 Backend** - Optional `STORAGE_BACKEND=s3` targets a real S3 (or S3-compatible) endpoint directly, with SigV4 signing and IAM-role credentials (no static keys required) for AWS-native deployments
 - **OpenSearch 3.4.0** - Full-text and neural search engine with Apache Lucene 10
   - Native neural search for advanced semantic capabilities
   - 9.5x faster vector search performance
@@ -289,7 +290,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 Run this one-liner to download and set up OpenTranscribe using our pre-built Docker Hub images:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 Then follow the on-screen instructions. The setup script will:
@@ -304,10 +305,10 @@ Then follow the on-screen instructions. The setup script will:
 
 ```bash
 # Piped install
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
 
 # Unattended / CI equivalent
-OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 The CPU-only choice is persisted to `.env` as `FORCE_CPU_MODE=true` so subsequent `./opentranscribe.sh start`/`restart` calls continue to skip the GPU overlay automatically.
@@ -340,7 +341,7 @@ Access the web interface at http://localhost:5173
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/davidamacey/OpenTranscribe.git
+   git clone https://github.com/attevon-llc/OpenTranscribe.git
    cd OpenTranscribe
 
    # Make utility script executable
@@ -371,8 +372,8 @@ Access the web interface at http://localhost:5173
    - 🌐 **Web Interface**: http://localhost:5173
    - 📚 **API Documentation**: http://localhost:5174/docs
    - 🌺 **Task Monitor**: http://localhost:5175/flower
-   - 🔍 **Search Engine**: http://localhost:9200
-   - 📁 **File Storage**: http://localhost:9091
+   - 🔍 **Search Engine**: http://localhost:5180 (OpenSearch, loopback-only)
+   - 📁 **File Storage**: http://localhost:5179 (MinIO console, loopback-only)
    - 📖 **Documentation**: http://localhost:5183/docs/
    - 📈 **Prometheus**: http://localhost:5186 (with `--with-monitoring`)
    - 📊 **Grafana**: http://localhost:5185 (with `--with-monitoring`)
@@ -397,8 +398,8 @@ Two independent scaling modes are available — choose based on your hardware an
 
 **Option A — GPU Scale** (multiple parallel pipelines on one GPU):
 ```bash
-# Configure in .env
-GPU_SCALE_ENABLED=true      # Enable multi-GPU scaling
+# The --gpu-scale flag is what enables scaling — GPU_SCALE_ENABLED in .env does
+# NOT turn it on (it only affects which GPU the system-stats display queries).
 GPU_SCALE_DEVICE_ID=2       # Which GPU to use (default: 2)
 GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
 
@@ -880,7 +881,7 @@ Add your token to the environment configuration:
 **For Production Installation:**
 ```bash
 # The setup script will prompt you for your token
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 **For Manual Installation:**
@@ -1005,7 +1006,7 @@ pytest backend/tests/e2e/test_visual_regression.py -v   # screenshot baselines
 ```
 
 ### **Contributing**
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
 ## 🔍 Troubleshooting
 
@@ -1051,7 +1052,7 @@ sudo chmod -R 755 ./models
 - The latest setup script automatically creates directories with correct permissions
 - Re-run the one-line installer for new deployments:
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
   ```
 
 **Why This Happens:**
@@ -1258,9 +1259,9 @@ The AGPL-3.0 license ensures that:
   - [PKI/X.509 Setup](docs/PKI_SETUP.md) - Certificate-based authentication (CAC/PIV)
 - 🛠️ **API Reference**: http://localhost:5174/docs (when running)
 - 🌺 **Task Monitor**: http://localhost:5175/flower (when running)
-- 🤝 **Contributing**: [Contribution guidelines](CONTRIBUTING.md)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/yourusername/OpenTranscribe/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/yourusername/OpenTranscribe/discussions)
+- 🤝 **Contributing**: [Contribution guidelines](docs/CONTRIBUTING.md)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/attevon-llc/OpenTranscribe/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/attevon-llc/OpenTranscribe/discussions)
 
 ---
 

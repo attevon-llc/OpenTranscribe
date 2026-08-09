@@ -170,7 +170,7 @@ OpenTranscribe applies diarization boundary correction to fix speaker mislabelin
 
 ### Can OpenTranscribe redact PII, profanity, or toxic content?
 
-Yes. Content redaction detects PII, profanity, and toxic/offensive words and masks them with `[CATEGORY]` placeholders at every display and export surface. Masking is a read-time transform -- the full original transcript is always kept in the database. It is a per-user feature, **on by default** (Settings → Content Redaction), with an admin enforcement floor (Redaction Policy) that can force categories on and mandate censored exports for all users. See [Content Redaction](./features/content-redaction.md).
+Yes. Content redaction detects PII, profanity, and toxic/offensive words and masks them with `[CATEGORY]` placeholders at every display and export surface. Masking is a read-time transform -- the full original transcript is always kept in the database. It is a per-user feature, **off by default (opt-in)** (Settings → Content Redaction), with an admin enforcement floor (Redaction Policy) that can force categories on and mandate censored exports for all users. See [Content Redaction](./features/content-redaction.md).
 
 ### How many speakers can it detect?
 

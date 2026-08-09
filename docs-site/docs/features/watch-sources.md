@@ -40,6 +40,11 @@ delete-after-import if you ask it to).
 - **Multi-part stitching.** Recordings split by a dropped connection (e.g.
   `meeting_P001.mp4`, `meeting_P002.mp4`, …) are detected by a configurable pattern, grouped
   within a time window, and rejoined into a single file with ffmpeg before transcription.
+- **Near-instant pickup for local folders (optional).** Scheduled polling is always the safety
+  net, but a local folder can also be watched for filesystem events, so a new recording is
+  picked up seconds after it lands rather than at the next scan. An administrator opts in
+  globally; the watcher automatically falls back to polling on mounts that don't forward change
+  notifications into the container (network shares, Docker Desktop for macOS/Windows).
 - **Auto-organize.** Apply tags and collections to every imported file — pick from existing
   ones or create new.
 - **Email notifications (experimental).** Optionally send a scan-summary email via SMTP,
@@ -54,7 +59,15 @@ UI are complete, but **test your setup before relying on it** for production ale
 
 Everything is managed from **Settings → Watch Sources**. Each user manages their own sources;
 administrators additionally get an "All Sources" view, the shared email-notification configs,
-and the global tuning knobs. The only deployment-time setting is the physical folder mount —
+and the global tuning knobs.
+
+:::note Changed in v0.5.0
+The shared email-notification configs and the global tuning knobs (Global Settings panel) now
+require the **super_admin** role rather than `admin`. Managing your own sources is unaffected —
+that stays open to every user.
+:::
+
+The only deployment-time setting is the physical folder mount —
 see the [Watch Sources user guide](../user-guide/watch-sources.md) to get started.
 
 ## Imported files

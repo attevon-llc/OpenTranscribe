@@ -2,7 +2,7 @@
 
 > **Scope**: Finished-product transcription applications sold to non-developer end users. Pure API providers (Deepgram, AssemblyAI, Gladia, etc.) are covered separately in `cloud-asr-market-research.md`.
 >
-> **Last updated**: May 2026. Pricing and funding figures are point-in-time; verify against current vendor pages before using in sales or investor contexts.
+> **Last updated**: August 2026 (competitor baseball cards refreshed May 2026; OpenTranscribe capability sections below refreshed August 2026 for the pending v0.5.0 release). Pricing and funding figures are point-in-time; verify against current vendor pages before using in sales or investor contexts. OpenTranscribe-specific claims are grounded in `CHANGELOG.md` (Unreleased / v0.5.0) and subsystem `CLAUDE.md` files in this repository as of this pass.
 
 ---
 
@@ -330,6 +330,61 @@ OpenTranscribe's diarization (PyAnnote + acoustic re-check, -32% WSER boundary c
 
 ---
 
+## Beyond Diarization: What Shipped Since This Table Was Built
+
+The baseball cards above were compiled around diarization and core transcription capability. Four
+more OpenTranscribe capabilities have since shipped (targeted for the v0.5.0 release) that change
+several of the "Gaps / limitations" bullets above from settled facts into open questions worth a
+fresh look. Each capability below is grounded in `CHANGELOG.md` — none of it is aspirational.
+
+### AI chat / RAG over your transcript archive
+
+OpenTranscribe now ships a first-class **Chat** page: ask a question scoped to one recording, a
+collection, a tag, a specific speaker, or the whole library, and get a streamed answer with numbered
+citations that deep-link to the exact timestamp in the player. Retrieval is hybrid BM25 + vector
+search over speaker-turn transcript chunks with reciprocal-rank fusion and cross-encoder reranking,
+and any retrieved excerpt is re-masked against the owner's or an admin-forced redaction policy before
+it reaches the LLM — failing closed, so an unmaskable passage is withheld rather than sent raw.
+*(TODO for a human to verify: Otter.ai markets an "AI Chat" feature and Fireflies markets "AskFred" —
+both appear from public descriptions to be per-meeting or limited-scope Q&A rather than archive-wide,
+citation-linked RAG, but this needs a direct feature check against current plans before asserting a
+gap either way.)*
+
+### Enterprise authentication breadth
+
+Local accounts, LDAP (with group sync and deprovisioning), generic OIDC (discovery-based, so it
+targets Okta / Entra ID / Auth0 / Authentik / Authelia / Zitadel rather than one vendor's URL shape),
+SAML 2.0, PKI/mTLS client-certificate authentication, trusted-header reverse-proxy auth
+(oauth2-proxy / Authelia / Cloudflare Access), TOTP-based MFA, and SCIM 2.0 provisioning (RFC
+7643/7644) all ship in the same open-source build, usable in combination (e.g., SAML for staff, PKI
+for machine accounts) with directory-group-to-role mapping layered over any of them. *(TODO for a
+human to verify: most Tier 3 competitors likely offer SAML-based SSO on a top enterprise tier;
+whether any also ship SCIM provisioning or PKI/mTLS client-cert auth is unconfirmed and should be
+checked before claiming this as a unique gap.)*
+
+### Watch-source auto-ingestion
+
+Point OpenTranscribe at a local mounted folder, an S3-compatible bucket, or an SMB/CIFS network
+share, and new media is picked up automatically, deduplicated across three layers (within a source,
+across sources, and against files already ingested by manual upload or URL import — all by content
+fingerprint), stitched back together if it arrived as split parts from a dropped recording
+connection, and run through the full transcription/diarization pipeline with no user action.
+*(TODO for a human to verify: some competitors integrate with Dropbox/Google Drive via Zapier;
+whether any offer native folder/bucket watching with content-hash dedup is unconfirmed.)*
+
+### Content redaction (PII / profanity / toxicity)
+
+Detects sensitive or offensive content once, caches the findings, and masks it with `[CATEGORY]`
+placeholders at every display and export surface — the original transcript is always retained, and
+masking is applied as a read-time transform. Detectors cover PII (Presidio + spaCy NER, optional
+GLiNER), profanity/custom wordlists, and toxicity (English + multilingual). Per-user opt-out is the
+default, with an admin enforcement floor that can force categories on and mandate censored exports.
+*(TODO for a human to verify: Verbit and Rev serve legal/compliance buyers and may offer comparable
+redaction as part of their human-review workflow — worth checking before claiming this as a unique
+OpenTranscribe capability.)*
+
+---
+
 ## Self-Hosting Availability
 
 | Company | Self-hosting |
@@ -375,6 +430,8 @@ Self-hosting is a genuine gap in the finished-product market. Organizations with
 
 5. **Pricing range is wide**: Entry tier spans from free (Otter, Fireflies, Rev 45 min) to ~$52–$80/seat/month (Trint). Per-minute pricing ranges from $0.25/min AI (Rev) to $1.99/min human (Rev) to $0.17/min ($10/hr, Sonix).
 
+6. **The self-hosted option no longer trades away enterprise/compliance features to get there**: enterprise authentication breadth (LDAP/OIDC/SAML/PKI/SCIM/MFA), content redaction, and RAG chat over the full transcript archive now ship in the same open-source build, at zero per-seat cost. Historically, "self-hosted" implied fewer features than the polished SaaS incumbents; that trade-off is narrower than it used to be for OpenTranscribe specifically (see "Beyond Diarization" above) — though the TODOs flagged there still need a human to confirm exactly how narrow, competitor by competitor.
+
 ---
 
-*Sources: Company websites, TechCrunch Series E coverage (Verbit Nov 2021), Tracxn, Crunchbase, Sonix competitor review pages (April 2026), brasstranscripts.com Otter pricing analysis (2025), guideflow.com transcription tools comparison (April 2026). ARR and employee count figures are point-in-time from funding-round announcements and may be materially different today.*
+*Sources: Company websites, TechCrunch Series E coverage (Verbit Nov 2021), Tracxn, Crunchbase, Sonix competitor review pages (April 2026), brasstranscripts.com Otter pricing analysis (2025), guideflow.com transcription tools comparison (April 2026). ARR and employee count figures are point-in-time from funding-round announcements and may be materially different today. OpenTranscribe capability claims are sourced from `CHANGELOG.md` and subsystem `CLAUDE.md` files in this repository (verified August 2026).*

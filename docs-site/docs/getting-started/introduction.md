@@ -25,10 +25,11 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 - Multi-language support with optional translation to English (requires `large-v3` model)
 - 40x+ realtime speed on GPU (`large-v3-turbo` default, 6x faster than `large-v2`)
 - Support for audio (MP3, WAV, FLAC, M4A) and video (MP4, MOV, AVI, MKV)
-- Cloud ASR providers: Deepgram, AssemblyAI, OpenAI, Google, AWS, Azure, Speechmatics, Gladia
+- Cloud ASR providers: Deepgram, AssemblyAI, OpenAI, Google, AWS, Azure, Speechmatics, Gladia, pyannote.ai
 
 ### Smart Speaker Management
 - Automatic speaker diarization using PyAnnote.audio
+- Diarization boundary correction — word-boundary smoothing (default on) and an optional acoustic re-check reduce speaker mislabeling at turn boundaries
 - Cross-video speaker recognition with voice fingerprinting
 - LLM-enhanced speaker identification
 - Global speaker profiles that persist across transcriptions
@@ -36,10 +37,16 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 
 ### AI-Powered Features
 - LLM summarization with BLUF (Bottom Line Up Front) format
-- Support for multiple LLM providers (OpenAI, Claude, vLLM, Ollama, OpenRouter)
+- **AI Chat (RAG)** — ask questions across your library and get answers grounded in what was actually said, with citations that jump to the exact moment in the recording
+- Support for multiple LLM providers (OpenAI, Anthropic, Amazon Bedrock, vLLM, Ollama, OpenRouter)
 - Custom AI prompts for different content types
 - Intelligent section-by-section processing for unlimited transcript lengths
 - Speaker analytics and interaction patterns
+- Usage tracking — token counts and estimated cost per model for every AI feature
+
+### Automated Ingestion & Privacy
+- **Watch Sources** — auto-import new recordings from local folders, S3 buckets, or SMB shares, with content-fingerprint deduplication and optional multi-part stitching
+- **Content Redaction** — opt-in detection and masking of PII, profanity, and toxic language at read time, with an admin-configurable enforcement floor for compliance
 
 ### Search & Discovery
 - Hybrid search combining BM25 keyword and neural semantic search via OpenSearch ML Commons
@@ -69,7 +76,7 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 - **Offline capable** - works in airgapped environments
 
 ### Enterprise Security
-- **Multiple authentication methods** - Local, LDAP/AD, OIDC/Keycloak, PKI/X.509
+- **Multiple authentication methods** - Local, LDAP/AD, OpenID Connect (any conforming provider), SAML 2.0, PKI/X.509, and trusted-header (reverse proxy) — all can run simultaneously
 - **Multi-factor authentication** - TOTP-based MFA with backup codes
 - **Password policies** - Configurable complexity, history, and expiration
 - **Audit logging** - FedRAMP-compliant structured logging

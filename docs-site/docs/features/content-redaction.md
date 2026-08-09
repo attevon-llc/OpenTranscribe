@@ -13,7 +13,7 @@ Redaction is a *read-time* transform — masking is applied when the transcript 
 or exported, never by destroying data. An authorized owner can always toggle back to the
 original (unless an administrator has forced a category for compliance).
 
-Redaction is **opt-out (off by default)** — it adds a moderation scan after transcription
+Redaction is **opt-in (off by default)** — it adds a moderation scan after transcription
 and delays the transcript display until the scan completes, so each user enables it
 explicitly in **Settings → Content Redaction** (administrators can force it for everyone).
 Detection only runs for users who have it enabled.
@@ -204,7 +204,7 @@ languages are shown in **Settings → Content Redaction**.
 
 ### Per-user (Settings → Content Redaction)
 
-On by default. Each user controls, for their **own** uploads:
+Off by default (opt-in). Each user controls, for their **own** uploads:
 
 - Enable/disable redaction and individual detectors
 - Which categories to redact (profanity, PII, toxicity, custom)

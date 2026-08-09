@@ -102,7 +102,7 @@ unavailable.
 Email delivery has not yet been verified against a live provider — test before relying on it.
 :::
 
-Administrators can add reusable email configurations under **Settings → Watch Sources → Email
+Super admins can add reusable email configurations under **Settings → Watch Sources → Email
 Notifications**, then link them to a source. Click the info (ⓘ) icon for setup guidance:
 
 - **SMTP (Gmail, Outlook, Yahoo, …)** — host, port, username, password. If your account uses
@@ -118,7 +118,12 @@ Use **Test** on a saved email config to validate the connection.
 
 ## Admin: global settings
 
-Administrators see a **Global Settings** panel:
+:::note Changed in v0.5.0
+The Global Settings panel and the email-notification configs above now require the
+**super_admin** role rather than `admin`. Managing your own watch sources is unaffected.
+:::
+
+Super admins see a **Global Settings** panel:
 
 - **Watch Sources enabled** — master on/off.
 - **File stability wait (seconds)** — files modified within this many seconds are treated as

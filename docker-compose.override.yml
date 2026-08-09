@@ -24,6 +24,17 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      # Exclude the host's backend/venv/ (docs: `backend/CLAUDE.md`) from the container's
+      # view: every backend-image service already has its own venv baked in at
+      # /home/appuser/.local (Dockerfile.prod), so the host one is never used here. Without
+      # this, `pip install` (or even routine .pyc bytecode writes from running pytest
+      # against that venv) into backend/venv looks like a source change to `backend`'s
+      # `uvicorn --reload` watcher, forcing a full app reload — which can abandon any
+      # in-flight WebSocket connection's DB session mid-transaction, leaking an
+      # idle-in-transaction Postgres connection that then blocks schema migrations and
+      # anything else touching the same table. Same fix as `frontend`'s /app/node_modules
+      # exclusion below.
+      - /app/venv
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload  # Enable hot reload
     environment:
@@ -46,6 +57,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
@@ -60,6 +72,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
 
@@ -72,6 +85,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
 
   celery-redaction:
     image: opentranscribe-backend:latest
@@ -82,6 +96,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
 
@@ -94,6 +109,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
 
   celery-nlp-worker:
     image: opentranscribe-backend:latest
@@ -104,6 +120,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
 
   celery-embedding-worker:
     image: opentranscribe-backend:latest
@@ -114,6 +131,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
 
   celery-beat:
@@ -125,6 +143,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
 
   frontend:
     image: opentranscribe-frontend:latest
@@ -184,6 +203,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
@@ -202,6 +222,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
@@ -218,6 +239,7 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data

@@ -4,7 +4,6 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 vi.mock('$lib/axios', () => {
   const axiosInstance = { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() };
   return {
-    axiosInstance,
     default: axiosInstance,
     isRequestCancelled: () => false,
   };

@@ -1,7 +1,7 @@
 /**
  * API client for authentication configuration management.
  */
-import { axiosInstance } from '../axios';
+import axiosInstance from '../axios';
 
 export interface AuthConfigResponse {
   id: number;

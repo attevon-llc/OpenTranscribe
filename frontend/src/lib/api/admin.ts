@@ -1,7 +1,7 @@
 /**
  * Admin API client for user and account management.
  */
-import { axiosInstance } from '../axios';
+import axiosInstance from '../axios';
 import type { AuthType } from './invitations';
 
 export interface UserSession {

@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('$lib/axios', () => {
   const axiosInstance = { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() };
-  return { axiosInstance, default: axiosInstance };
+  return { default: axiosInstance };
 });
 
-import { axiosInstance } from '$lib/axios';
+import axiosInstance from '$lib/axios';
 import { AuthConfigApi, AUTH_CONFIG_AUDIT_MAX_LIMIT } from './authConfig';
 
 const get = vi.mocked(axiosInstance.get);

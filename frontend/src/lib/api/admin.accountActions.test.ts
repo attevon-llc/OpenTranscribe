@@ -7,10 +7,10 @@ vi.mock('$lib/axios', () => {
     put: vi.fn(),
     delete: vi.fn(),
   };
-  return { axiosInstance, default: axiosInstance };
+  return { default: axiosInstance };
 });
 
-import { axiosInstance } from '$lib/axios';
+import axiosInstance from '$lib/axios';
 import { AdminApi } from './admin';
 
 const post = vi.mocked(axiosInstance.post);

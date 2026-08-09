@@ -40,6 +40,18 @@ against what a real network does — frames split mid-line, CRLF, multi-line
 `data:`, keepalive comments, and unknown events from a newer backend (ignored,
 not fatal).
 
+**A new server frame is invisible until you add it to the parser's `known`
+list.** That forward-compatibility rule silently drops anything unrecognised, so
+a backend-only change ships a frame nobody ever sees. Frames today: `start`,
+`status`, `sources`, `warning`, `delta`, `usage`, `done`, `error`.
+
+`warning` (`{code, retrieved}`, issue #384) reports that retrieval found excerpts
+but none fit the model's context window — the answer is NOT grounded in the
+user's recordings. The store folds it into `msg_metadata.context_dropped` rather
+than holding separate stream state, so `ChatMessage` has **one** render path and
+the notice survives a reload; the server persists the same flag on the message
+row. `sources` now carries only the excerpts that actually reached the prompt.
+
 Raw fetch bypasses the axios interceptors, so CSRF (`getCsrfToken()`) and the
 one-shot 401 refresh are handled explicitly in that module.
 

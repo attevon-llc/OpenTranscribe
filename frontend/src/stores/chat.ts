@@ -12,6 +12,7 @@
 
 import { get, writable } from 'svelte/store';
 import { goto } from '$app/navigation';
+import { generateId } from '$lib/utils/ids';
 
 import * as chatApi from '$lib/api/chatApi';
 import { canTransition } from '$lib/utils/chatStateMachine';
@@ -266,7 +267,7 @@ function createChatStore() {
   }
 
   function appendOptimisticTurn(text: string): string {
-    const assistantLocalId = `local-assistant-${crypto.randomUUID()}`;
+    const assistantLocalId = generateId('local-assistant');
     update((s) => ({
       ...s,
       error: null,
@@ -274,7 +275,7 @@ function createChatStore() {
       messages: [
         ...s.messages,
         {
-          uuid: `local-user-${crypto.randomUUID()}`,
+          uuid: generateId('local-user'),
           role: 'user',
           content: text,
           pending: true,
@@ -545,7 +546,7 @@ function createChatStore() {
       if (index === -1) return;
 
       setStatus('submitting');
-      const assistantLocalId = `local-assistant-${crypto.randomUUID()}`;
+      const assistantLocalId = generateId('local-assistant');
       update((s) => ({
         ...s,
         error: null,
@@ -624,7 +625,7 @@ function createChatStore() {
       });
 
       setStatus('submitting');
-      const assistantLocalId = `local-assistant-${crypto.randomUUID()}`;
+      const assistantLocalId = generateId('local-assistant');
       update((s) => ({
         ...s,
         messages: [

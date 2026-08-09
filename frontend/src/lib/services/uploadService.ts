@@ -203,7 +203,7 @@ class UploadService {
 
     // Generate a shared batch UUID when uploading 2+ files together
     // so they are linked as a batch for downstream topic grouping
-    const batchId = files.length >= 2 ? crypto.randomUUID() : undefined;
+    const batchId = files.length >= 2 ? generateId() : undefined;
 
     files.forEach((file) => {
       const id = this.addUpload(

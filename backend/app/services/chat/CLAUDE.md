@@ -50,6 +50,20 @@ An empty resolved scope means **match nothing**, not match everything —
 `retrieve_chunks` returns `[]` for `file_uuids == []` and `None` means
 "all accessible". Getting that backwards leaks the whole library.
 
+**All three axes resolve against ACCESSIBLE files, not owned ones.** Explicit
+files go through `get_file_by_uuid_with_permission`, collections through
+`PermissionService.get_accessible_collection_ids`, and tags through
+`get_accessible_file_ids_subquery` — the same sharing rule
+`endpoints/tags.py:_visible_to` uses. Tags were owner-only until #385, so
+scoping a chat by a tag spanning shared recordings silently dropped them and the
+model answered confidently from the remainder. Don't write a fourth sharing rule
+here; if an axis needs one, it is already wrong. Tag names are unique **per
+owner**, so matching by name deliberately spans every user's tag row — that is
+what lets a sharee's `atlas` scope reach the owner's atlas-tagged recording.
+Unlike collections, tags have **no admin bypass**: a uuid is a deliberate pick, a
+tag name is a wide net, and a tenant-wide one would resolve tags the admin's own
+picker never shows them.
+
 ## Prompt assembly is concatenation-only
 
 Never `str.format` / `Template` / f-string over chunk content or user text. A
@@ -110,6 +124,37 @@ because the cross-encoder may not be installed on that deployment.
 `resolve_answer_tokens` (in `service.py`) does the same for the reply budget and
 is resolved **before** `build_messages`, which reserves context for the answer —
 raising `max_tokens` afterwards would let prompt + answer overrun the window.
+
+## The excerpt budget is a hard ceiling, and citations follow it
+
+Three rules that only hold together (issues #384, #386, #387):
+
+1. **`format_excerpts` never exceeds `budget_chars`.** The loop used to be unable
+   to break on iteration one, so the first excerpt was emitted whole however
+   large — the overrun then surfaced provider-side (a 400, or silent truncation)
+   rather than as a local guard, and `LLMConfig.max_tokens` is user-declared and
+   never discovered, so nothing downstream catches it. A first excerpt that does
+   not fit is trimmed at a sentence boundary and tagged `truncated="true"` (base
+   rule 8 tells the model what that means); below
+   `_MIN_TRUNCATED_EXCERPT_CHARS` it is skipped instead of shown as a fragment.
+2. **`format_excerpts` returns the excerpt IDS it emitted, not a count**, and
+   `service.py` builds the `sources` frame from those ids. The frame used to go
+   out immediately after retrieval — before the budget existed — so the UI could
+   render clickable citations for excerpts the model never saw: an answer that
+   reads as sourced but is grounded in nothing. **Assemble the prompt first, then
+   emit `sources`.** `tests/unit/test_chat_sources_frame.py` drives the real
+   generator and pins `len(offered_citations) == chunks_used`.
+3. **When retrieval found chunks and the budget fit none of them**, the turn sets
+   `msg_metadata.context_dropped` and emits a `warning` frame
+   (`{"code": "context_dropped", "retrieved": N}`). Answering anyway behind a
+   normal-looking reply is the failure this exists to prevent. Adding a frame
+   means adding it to `chatStream.ts`'s `known` list too, or the client drops it
+   as an unknown future event.
+
+`history_max_turns` counts **turn pairs** on both sides — `_history_for_prompt`
+fetches `max_turns * 2` rows and `build_messages` slices
+`history[-(max_turns * 2):]`. They disagreed until #386, which halved the
+advertised conversation depth and threw away half of every fetch.
 
 ## Concurrency slots leak if you release them in the wrong place
 

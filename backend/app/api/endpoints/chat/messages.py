@@ -98,7 +98,15 @@ def _serialize_message(message: ChatMessage) -> dict:
 
 
 def _history_for_prompt(db: Session, conversation_id: int, max_turns: int) -> list[dict[str, str]]:
-    """Recent completed turns, oldest first. Superseded/errored turns are skipped."""
+    """Recent completed turns, oldest first. Superseded/errored turns are skipped.
+
+    ``max_turns`` counts **turn pairs** (a question and its answer), matching the
+    ``chat.history_max_turns`` setting name and its admin-UI label — hence the
+    ``* 2`` row limit. ``build_messages`` slices to the same unit; when it read
+    the value as individual messages instead, half of what was fetched here was
+    thrown away every turn and the setting delivered half the depth it promised
+    (issue #386).
+    """
     rows = (
         db.query(ChatMessage)
         .filter(

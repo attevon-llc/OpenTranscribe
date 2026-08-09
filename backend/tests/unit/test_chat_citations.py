@@ -87,3 +87,53 @@ def test_bracketed_non_citations_are_ignored():
     offered = build_offered_citations([_masked(0)])
     used = extract_used_citations("They said [inaudible] and [crosstalk].", offered)
     assert used == []
+
+
+# ---------------------------------------------------------------------------
+# Citations must describe the prompt, not the retrieval result (issue #384)
+# ---------------------------------------------------------------------------
+
+
+def test_offered_citations_are_limited_to_the_excerpts_that_reached_the_prompt():
+    """The excerpt budget can drop retrieved chunks; citations must drop with them.
+
+    Offering a citation for a chunk the model was never given presents the answer
+    as sourced when it is not — the "fabricated sources" failure mode.
+    """
+    chunks = [_masked(i) for i in range(5)]
+    offered = build_offered_citations(chunks, [1, 2])
+
+    assert [c["id"] for c in offered] == [1, 2]
+    assert [c["file_uuid"] for c in offered] == ["file-0", "file-1"]
+
+
+def test_offered_citations_follow_excerpt_ids_not_list_position():
+    """Ids are assigned over the INPUT list, so a skipped chunk leaves a gap.
+
+    A citation card must deep-link to the recording behind the id the model was
+    shown, not to whatever happens to sit at that position in the offered list.
+    """
+    chunks = [_masked(i) for i in range(5)]
+    offered = build_offered_citations(chunks, [2, 4])
+
+    assert [c["id"] for c in offered] == [2, 4]
+    assert [c["file_uuid"] for c in offered] == ["file-1", "file-3"]
+
+
+def test_no_excerpts_reaching_the_prompt_offers_no_citations():
+    chunks = [_masked(i) for i in range(3)]
+    assert build_offered_citations(chunks, []) == []
+
+
+def test_out_of_range_excerpt_ids_are_ignored():
+    """Defensive: an id with no chunk behind it must never index out of bounds."""
+    chunks = [_masked(0)]
+    assert [c["id"] for c in build_offered_citations(chunks, [1, 7, 0])] == [1]
+
+
+def test_extracted_citations_cannot_exceed_what_was_offered():
+    """A model citing [3] when 2 excerpts were sent gets that marker dropped."""
+    offered = build_offered_citations([_masked(i) for i in range(5)], [1, 2])
+    used = extract_used_citations("Per [1] and [3] and [5].", offered)
+
+    assert [c["id"] for c in used] == [1]

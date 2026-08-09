@@ -213,6 +213,11 @@
     text-align: left;
     background: none;
     border: none;
+    /* form-elements.css's bare `button` rule also sets border-radius and a
+       drop-shadow; unset border/background alone still leaves those two
+       painting a rounded card behind the title in light mode. */
+    border-radius: 0;
+    box-shadow: none;
     padding: 0.5rem 0.35rem;
     color: var(--text-color);
     font-size: 0.85rem;

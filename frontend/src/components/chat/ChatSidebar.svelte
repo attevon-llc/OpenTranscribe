@@ -318,6 +318,9 @@
     margin-left: -0.4rem;
     border: none;
     border-radius: 5px;
+    /* form-elements.css's bare `button` rule sets a drop-shadow that isn't
+       cleared by border/background alone (see ConversationListItem.svelte). */
+    box-shadow: none;
     background: none;
     color: var(--text-secondary);
     font-size: 0.74rem;

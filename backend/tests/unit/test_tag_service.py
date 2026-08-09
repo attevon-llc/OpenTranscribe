@@ -27,6 +27,7 @@ from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Tag
+from app.models.topic import TopicSuggestion
 from app.services.auto_label_service import AutoLabelService
 from app.services.tag_service import MAX_TAG_NAME_LENGTH
 from app.services.tag_service import InvalidTagNameError
@@ -412,13 +413,36 @@ def test_detaching_tag_enqueues_reindex(
     assert recorded_reindex.calls == [[media_file.id]]
 
 
-def test_auto_labeled_tag_enqueues_reindex(db_session, normal_user, recorded_reindex):
-    """The auto-labeler goes through the same hook as the human-driven paths."""
+def test_auto_labeled_tags_enqueue_one_reindex_for_the_file(
+    db_session, normal_user, recorded_reindex
+):
+    """The auto-labeler goes through the same hook as the human-driven paths.
+
+    Once for the whole batch, not once per applied tag: the hook drops **every**
+    user's cached tag list (a keyspace-wide operation) and enqueues a refresh
+    that rewrites the same document, so two tags on one file is one file's worth
+    of work, not two.
+    """
     media_file = _make_file(db_session, normal_user)
-    tag = _make_tag(db_session, f"auto-{_suffix()}", source="auto_ai")
+    suggestion = TopicSuggestion(
+        media_file_id=media_file.id,
+        user_id=normal_user.id,
+        suggested_tags=[
+            {"name": f"auto-alpha-{_suffix()}", "confidence": 0.95},
+            {"name": f"zeta-bravo-{_suffix()}", "confidence": 0.95},
+        ],
+        suggested_collections=[],
+    )
+    db_session.add(suggestion)
+    db_session.flush()
 
-    AutoLabelService(db_session)._add_tag_to_file(media_file, tag, 0.95)
+    result = AutoLabelService(db_session).auto_apply_suggestions(
+        media_file=media_file,
+        suggestion=suggestion,
+        user_id=normal_user.id,
+    )
 
+    assert len(result["auto_applied_tags"]) == 2
     assert recorded_reindex.calls == [[media_file.id]]
 
 

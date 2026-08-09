@@ -393,17 +393,32 @@ def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
     updated = 0
     errors = 0
 
-    for file_id in file_ids:
-        try:
-            with session_scope() as db:
-                tag_names = [
-                    name
-                    for (name,) in db.query(Tag.name)
-                    .join(FileTag, FileTag.tag_id == Tag.id)
-                    .filter(FileTag.media_file_id == file_id)
-                    .all()
-                ]
+    # One grouped query for the whole batch: a 500-file merge used to open 500
+    # sessions and issue 500 round trips for what is a single join.
+    tags_by_file: dict[int, list[str]] = {}
+    try:
+        with session_scope() as db:
+            rows = (
+                db.query(FileTag.media_file_id, Tag.name)
+                .join(Tag, FileTag.tag_id == Tag.id)
+                .filter(FileTag.media_file_id.in_(file_ids))
+                .all()
+            )
+        for tagged_file_id, name in rows:
+            if tagged_file_id is None:
+                continue
+            tags_by_file.setdefault(int(tagged_file_id), []).append(name)
+        pending_ids = file_ids
+    except Exception as e:
+        # The per-file version counted a failed lookup as that file's error and
+        # carried on; with one query the whole batch fails together.
+        logger.error(f"Failed to load tag names for {len(file_ids)} file(s): {e}")
+        errors = len(file_ids)
+        pending_ids = []
 
+    for file_id in pending_ids:
+        try:
+            tag_names = tags_by_file.get(int(file_id), [])
             response = client.update_by_query(
                 index=index_name,
                 body={
@@ -414,7 +429,6 @@ def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
                         "params": {"tags": tag_names},
                     },
                 },
-                refresh=True,
                 conflicts="proceed",
             )
 
@@ -427,6 +441,14 @@ def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
         except Exception as e:
             errors += 1
             logger.error(f"Failed to update tag index for file {file_id}: {e}")
+
+    # One refresh for the batch instead of a forced segment refresh per file;
+    # the writes are still visible by the time the task returns.
+    if updated:
+        try:
+            client.indices.refresh(index=index_name)
+        except Exception as e:
+            logger.warning(f"Tag index refresh failed after {updated} update(s): {e}")
 
     logger.info(
         f"Tag index update complete: {updated} chunks updated across "

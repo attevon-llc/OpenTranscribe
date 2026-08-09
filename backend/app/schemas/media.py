@@ -667,12 +667,14 @@ class TagReviewEntry(BaseModel):
     ``outcome`` is ``accepted``, ``rejected``, or ``not_applicable`` — the tag
     list allows multi-select across filters, so a selection routinely mixes
     auto-labeled tags with hand-created ones and the ineligible members are
-    reported rather than failing the call.
+    reported rather than failing the call. The three values are the
+    ``REVIEW_*`` constants in ``services/tag_review.py``, spelled out here
+    rather than imported because a schema must not depend on a service.
     """
 
     uuid: UUID
     name: str
-    outcome: str
+    outcome: Literal["accepted", "rejected", "not_applicable"]
     removed_association_count: int = 0
     retained_association_count: int = 0
     tag_removed: bool = False

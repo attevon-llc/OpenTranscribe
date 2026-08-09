@@ -49,10 +49,12 @@ from app.models.media import FileTag
 from app.models.media import Tag
 from app.models.watch_source import WatchSource
 from app.services.tag_service import InvalidTagNameError
+from app.services.tag_service import accessible_file_ids_subquery
 from app.services.tag_service import clean_tag_name
 from app.services.tag_service import lookup_existing_tag
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import on_tags_changed
+from app.services.tag_service import stored_normalized_name
 
 logger = logging.getLogger(__name__)
 
@@ -173,13 +175,27 @@ def lock_tags(db: Session, tag_ids: Iterable[int]) -> dict[int, Tag]:
     return {row.id: row for row in rows}
 
 
-def _accessible_file_ids_subquery(db: Session, user_id: int, organization_id: int | None):
-    """Build the caller's accessible-file subquery (same gate as ``GET /tags``)."""
-    from app.services.permission_service import PermissionService
+def _affected_file_ids(db: Session, tag_ids: Sequence[int]) -> list[int]:
+    """Return the distinct files carrying any of these tags, for the reindex hook.
 
-    return PermissionService.get_accessible_file_ids_subquery(
-        db, user_id, organization_id=organization_id
-    )
+    The null guard is not decorative: ``file_tag.media_file_id`` is nullable, and
+    a ``None`` in the list would reach the search-refresh task as a file id.
+
+    Args:
+        db: Database session.
+        tag_ids: Tags whose associations are about to change.
+
+    Returns:
+        The distinct, non-null media file ids.
+    """
+    return [
+        file_id
+        for (file_id,) in db.query(FileTag.media_file_id)
+        .filter(FileTag.tag_id.in_(list(tag_ids)))
+        .distinct()
+        .all()
+        if file_id is not None
+    ]
 
 
 def preview_tag_impact(
@@ -217,7 +233,7 @@ def preview_tag_impact(
         return TagImpactReport()
 
     tags = {tag.id: tag for tag in db.query(Tag).filter(Tag.id.in_(ordered)).all()}
-    accessible_sq = select(_accessible_file_ids_subquery(db, user_id, organization_id))
+    accessible_sq = select(accessible_file_ids_subquery(db, user_id, organization_id))
     scope = [FileTag.tag_id.in_(ordered)]
     if association_source is not None:
         scope.append(FileTag.source == association_source)
@@ -426,21 +442,14 @@ def merge_tags(
         return TagMutationOutcome(impact=impact, tag=target)
 
     doomed = [locked[i] for i in doomed_ids]
-    affected_file_ids = [
-        file_id
-        for (file_id,) in db.query(FileTag.media_file_id)
-        .filter(FileTag.tag_id.in_(doomed_ids))
-        .distinct()
-        .all()
-        if file_id is not None
-    ]
+    affected_file_ids = _affected_file_ids(db, doomed_ids)
 
     _reassign_associations(db, target, doomed_ids)
 
     if target.source == TAG_SOURCE_AUTO_AI:
         target.source = TAG_SOURCE_AI_ACCEPTED
 
-    rewrite_stored_tag_names(db, {_normalized_of(tag) for tag in doomed}, target.name)
+    rewrite_stored_tag_names(db, {stored_normalized_name(tag) for tag in doomed}, target.name)
 
     deleted_uuids = [tag.uuid for tag in doomed]
     for tag in doomed:
@@ -450,11 +459,6 @@ def merge_tags(
 
     on_tags_changed(db, affected_file_ids, user_id=user_id)
     return TagMutationOutcome(impact=impact, tag=target, merged=True, deleted_uuids=deleted_uuids)
-
-
-def _normalized_of(tag: Tag) -> str:
-    """Return a tag's stored normalized form, recomputing it when legacy-NULL."""
-    return tag.normalized_name or normalize_tag_name(tag.name)
 
 
 def rename_tag(
@@ -510,15 +514,8 @@ def rename_tag(
         )
 
     impact = preview_tag_impact(db, [tag.id], user_id=user_id, organization_id=organization_id)
-    old_normalized = _normalized_of(tag)
-    affected_file_ids = [
-        file_id
-        for (file_id,) in db.query(FileTag.media_file_id)
-        .filter(FileTag.tag_id == tag.id)
-        .distinct()
-        .all()
-        if file_id is not None
-    ]
+    old_normalized = stored_normalized_name(tag)
+    affected_file_ids = _affected_file_ids(db, [tag.id])
 
     tag.name = cleaned
     tag.normalized_name = normalized
@@ -565,16 +562,9 @@ def delete_tags(
 
     doomed = [locked[tag_id] for tag_id in wanted]
     impact = preview_tag_impact(db, wanted, user_id=user_id, organization_id=organization_id)
-    affected_file_ids = [
-        file_id
-        for (file_id,) in db.query(FileTag.media_file_id)
-        .filter(FileTag.tag_id.in_(wanted))
-        .distinct()
-        .all()
-        if file_id is not None
-    ]
+    affected_file_ids = _affected_file_ids(db, wanted)
 
-    rewrite_stored_tag_names(db, {_normalized_of(tag) for tag in doomed}, None)
+    rewrite_stored_tag_names(db, {stored_normalized_name(tag) for tag in doomed}, None)
 
     db.query(FileTag).filter(FileTag.tag_id.in_(wanted)).delete(synchronize_session=False)
     deleted_uuids = [tag.uuid for tag in doomed]

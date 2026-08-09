@@ -48,8 +48,9 @@ from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import lock_tags
 from app.services.tag_operations import preview_tag_impact
 from app.services.tag_operations import rewrite_stored_tag_names
-from app.services.tag_service import normalize_tag_name
+from app.services.tag_service import is_awaiting_review
 from app.services.tag_service import on_tags_changed
+from app.services.tag_service import stored_normalized_name
 
 logger = logging.getLogger(__name__)
 
@@ -112,16 +113,6 @@ class TagReviewReport:
     retained_association_count: int = 0
     deleted_uuids: list[uuid_pkg.UUID] = field(default_factory=list)
     applied: bool = False
-
-
-def _awaiting_review(tag: Tag) -> bool:
-    """Report whether a tag is still the auto-labeler's to endorse or reject.
-
-    NULL and ``manual`` are human origins; ``ai_accepted`` already left the
-    review set, so endorsing it again is a no-op the caller should be told about
-    rather than a silent success.
-    """
-    return tag.source == TAG_SOURCE_AUTO_AI
 
 
 def _association_split(db: Session, tag_ids: Sequence[int]) -> dict[int, tuple[int, int]]:
@@ -198,7 +189,7 @@ def _build_report(
 
     for tag in tags:
         auto_count, other_count = split.get(tag.id, (0, 0))
-        if not _awaiting_review(tag):
+        if not is_awaiting_review(tag):
             entries.append(
                 TagReviewEntry(
                     uuid=tag.uuid,
@@ -305,7 +296,7 @@ def accept_tags(
         db, tags, action=REVIEW_ACTION_ACCEPT, user_id=user_id, organization_id=organization_id
     )
 
-    accepted = [tag for tag in tags if _awaiting_review(tag)]
+    accepted = [tag for tag in tags if is_awaiting_review(tag)]
     for tag in accepted:
         tag.source = TAG_SOURCE_AI_ACCEPTED
     db.flush()
@@ -364,25 +355,31 @@ def reject_tags(
     deleted_uuids: list[uuid_pkg.UUID] = []
     doomed_normalized: set[str] = set()
 
-    for tag in tags:
-        entry = by_uuid[tag.uuid]
-        if entry.outcome != REVIEW_REJECTED:
-            continue
+    # One select and one delete across the whole set, the same way merge and
+    # delete already do it — a rejected multi-select used to issue a pair of
+    # statements per tag. The rows are regrouped by tag afterwards so the
+    # per-tag accounting, and the order files reach the reindex hook in, are
+    # exactly what the per-tag loop produced.
+    rejected = [tag for tag in tags if by_uuid[tag.uuid].outcome == REVIEW_REJECTED]
+    rejected_ids = [tag.id for tag in rejected]
 
-        affected_file_ids.extend(
-            file_id
-            for (file_id,) in db.query(FileTag.media_file_id)
-            .filter(FileTag.tag_id == tag.id, FileTag.source == TAG_SOURCE_AUTO_AI)
-            .distinct()
-            .all()
-            if file_id is not None
-        )
-        db.query(FileTag).filter(
-            FileTag.tag_id == tag.id, FileTag.source == TAG_SOURCE_AUTO_AI
-        ).delete(synchronize_session=False)
+    if rejected_ids:
+        auto_scope = [FileTag.tag_id.in_(rejected_ids), FileTag.source == TAG_SOURCE_AUTO_AI]
+        files_by_tag: dict[int, list[int]] = {}
+        for tag_id, file_id in (
+            db.query(FileTag.tag_id, FileTag.media_file_id).filter(*auto_scope).distinct().all()
+        ):
+            if tag_id is None or file_id is None:
+                continue
+            files_by_tag.setdefault(int(tag_id), []).append(file_id)
+        for tag in rejected:
+            affected_file_ids.extend(files_by_tag.get(tag.id, []))
 
-        if entry.tag_removed:
-            doomed_normalized.add(tag.normalized_name or normalize_tag_name(tag.name))
+        db.query(FileTag).filter(*auto_scope).delete(synchronize_session=False)
+
+    for tag in rejected:
+        if by_uuid[tag.uuid].tag_removed:
+            doomed_normalized.add(stored_normalized_name(tag))
             deleted_uuids.append(tag.uuid)
             db.delete(tag)
 

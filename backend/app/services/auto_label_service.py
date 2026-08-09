@@ -146,6 +146,13 @@ class AutoLabelService:
         suggested_tags = suggestion.suggested_tags or []
         suggested_collections = suggestion.suggested_collections or []
 
+        # Files whose tag set actually changed. Accumulated across the whole
+        # call and flushed through ``on_tags_changed`` once, after the commit
+        # below — the hook drops every user's cached tag list and enqueues a
+        # search refresh, so calling it per applied tag re-did that work T times
+        # for what is one file of change.
+        retagged_file_ids: list[int] = []
+
         # Auto-apply tags
         if apply_tags:
             for tag_data in suggested_tags:
@@ -161,7 +168,8 @@ class AutoLabelService:
 
                 try:
                     tag = self._get_or_create_tag_with_dedup(name)
-                    self._add_tag_to_file(media_file, tag, confidence)
+                    if self._add_tag_to_file(media_file, tag, confidence):
+                        retagged_file_ids.append(int(media_file.id))
                     result["auto_applied_tags"].append(name)
                 except Exception as e:
                     logger.warning(f"Failed to auto-apply tag '{name}': {e}")
@@ -198,6 +206,11 @@ class AutoLabelService:
         except Exception:
             self.db.rollback()
             raise
+
+        if retagged_file_ids:
+            # Auto-labeling is a back-door tag-mutation path that doesn't carry
+            # current_user, but the shared hook resolves the owner itself.
+            on_tags_changed(self.db, retagged_file_ids, user_id=int(media_file.user_id))
 
         logger.info(
             f"Auto-applied {len(result['auto_applied_tags'])} tags and "
@@ -249,15 +262,22 @@ class AutoLabelService:
                 return existing_collection
             raise
 
-    def _add_tag_to_file(self, media_file: MediaFile, tag: Tag, confidence: float) -> None:
-        """Add a tag to a file if not already present."""
+    def _add_tag_to_file(self, media_file: MediaFile, tag: Tag, confidence: float) -> bool:
+        """Add a tag to a file if not already present.
+
+        Returns:
+            True when a new association was written. The caller accumulates the
+            file ids and calls ``on_tags_changed`` once for the whole batch;
+            doing it here meant a global cache bust and a reindex enqueue per
+            tag, all of them describing the same single file.
+        """
         existing = (
             self.db.query(FileTag)
             .filter(FileTag.media_file_id == media_file.id, FileTag.tag_id == tag.id)
             .first()
         )
         if existing:
-            return
+            return False
 
         try:
             nested = self.db.begin_nested()
@@ -269,12 +289,11 @@ class AutoLabelService:
             )
             self.db.add(file_tag)
             self.db.flush()
-            # Auto-labeling is a back-door tag-mutation path that doesn't carry
-            # current_user, but the shared hook resolves the owner itself.
-            on_tags_changed(self.db, [int(media_file.id)], user_id=int(media_file.user_id))
+            return True
         except IntegrityError:
             nested.rollback()
             logger.debug(f"Duplicate file_tag for file={media_file.id} tag={tag.id}, skipping")
+            return False
 
     def _add_file_to_collection(
         self, media_file: MediaFile, collection: Collection, confidence: float

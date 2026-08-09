@@ -42,6 +42,9 @@ TTL_FILES = 120  # 2 minutes
 TTL_STATUS = 60  # 1 minute
 TTL_COLLECTIONS = 300
 
+#: Keys per ``SCAN`` round trip, and the largest ``DELETE`` argument batch.
+_SCAN_BATCH = 500
+
 
 class RedisCacheService:
     """Thin wrapper around Redis for API response caching.
@@ -106,14 +109,35 @@ class RedisCacheService:
             logger.debug(f"Cache SET error for {key}: {e}")
 
     def delete_pattern(self, pattern: str) -> int:
-        """Delete all keys matching a glob pattern. Returns count deleted."""
+        """Delete every key matching a glob pattern. Returns count deleted.
+
+        Two things this deliberately avoids:
+
+        * **``KEYS`` on a fully-specified key.** Most callers here pass no
+          wildcard at all (``cache:tags:{user_id}``, ``cache:status:{user_id}``)
+          — those go straight to ``DELETE``.
+        * **``KEYS`` at all.** It is O(keyspace) *and* blocks the whole
+          instance, which on this deployment also carries the Celery broker, so
+          a tag merge could stall task delivery. ``SCAN`` walks the keyspace in
+          cursor-sized bites instead.
+        """
         client = self.redis
         if client is None:
             return 0
         try:
-            keys = client.keys(pattern)
-            if keys:
-                return int(client.delete(*keys))
+            if not any(token in pattern for token in "*?["):
+                return int(client.delete(pattern))
+
+            deleted = 0
+            batch: list[str] = []
+            for key in client.scan_iter(match=pattern, count=_SCAN_BATCH):
+                batch.append(key)
+                if len(batch) >= _SCAN_BATCH:
+                    deleted += int(client.delete(*batch))
+                    batch = []
+            if batch:
+                deleted += int(client.delete(*batch))
+            return deleted
         except Exception as e:
             logger.debug(f"Cache DELETE error for {pattern}: {e}")
         return 0

@@ -51,11 +51,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.constants import FUZZY_MATCH_THRESHOLD
-from app.core.constants import TAG_SOURCE_AUTO_AI
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import FileTag
 from app.models.media import Tag
+from app.services.tag_service import accessible_file_ids_subquery
+from app.services.tag_service import is_awaiting_review
 from app.services.tag_service import normalize_tag_name
 
 logger = logging.getLogger(__name__)
@@ -171,13 +172,7 @@ def accessible_usage_counts(
     Returns:
         ``{tag_id: file_count}``, omitting tags with no accessible file.
     """
-    from app.services.permission_service import PermissionService
-
-    accessible_sq = select(
-        PermissionService.get_accessible_file_ids_subquery(
-            db, user_id, organization_id=organization_id
-        )
-    )
+    accessible_sq = select(accessible_file_ids_subquery(db, user_id, organization_id))
     rows = (
         db.query(FileTag.tag_id, func.count(distinct(FileTag.media_file_id)))
         .filter(FileTag.media_file_id.in_(accessible_sq))
@@ -187,31 +182,34 @@ def accessible_usage_counts(
     return {int(tag_id): int(count) for tag_id, count in rows if tag_id is not None}
 
 
-def _is_awaiting_review(tag: Tag) -> bool:
-    """Report whether a tag is still the auto-labeler's to accept or reject.
-
-    ``manual``, ``ai_accepted``, and legacy NULL are all human origins.
-    """
-    return tag.source == TAG_SOURCE_AUTO_AI
-
-
-def _clustered_tags(db: Session) -> dict[str, list[Tag]]:
+def _clustered_tags(db: Session) -> tuple[dict[str, list[Tag]], list[Tag]]:
     """Group tags by stored normalized name, keeping only the collisions.
 
     Repairs the stored normalization first — grouping on a column nothing keeps
     true would miss the legacy rows this pass exists to surface.
+
+    Returns:
+        The collision clusters, and the full tag list the grouping was built
+        from (in ``Tag.id`` order). The list is handed back rather than
+        discarded because the suggestions pass needs exactly the same rows in
+        exactly the same order, and re-querying it was a third full-table scan
+        per request.
     """
     refresh_stored_normalization(db)
 
+    all_tags = db.query(Tag).order_by(Tag.id).all()
     grouped: dict[str, list[Tag]] = {}
-    for tag in db.query(Tag).order_by(Tag.id).all():
+    for tag in all_tags:
         normalized = tag.normalized_name or ""
         if not normalized:
             # A name with no usable characters cannot name a duplicate of
             # anything; grouping the empties together would invent a cluster.
             continue
         grouped.setdefault(normalized, []).append(tag)
-    return {normalized: tags for normalized, tags in grouped.items() if len(tags) > 1}
+    return (
+        {normalized: tags for normalized, tags in grouped.items() if len(tags) > 1},
+        all_tags,
+    )
 
 
 def _member_sort_key(tag: Tag, usage: dict[int, int]) -> tuple[int, str, int]:
@@ -284,12 +282,11 @@ def find_tag_collisions(
         Clusters ordered by normalized name, each with its members ordered by
         usage and its highest-usage member preselected as the survivor.
     """
-    clusters = _clustered_tags(db)
+    clusters, all_tags = _clustered_tags(db)
     if not clusters:
         return []
 
     usage = accessible_usage_counts(db, user_id=user_id, organization_id=organization_id)
-    all_tags = db.query(Tag).order_by(Tag.id).all()
 
     built: list[TagCollisionCluster] = []
     for normalized in sorted(clusters):
@@ -327,7 +324,8 @@ def colliding_tag_ids(db: Session) -> set[int]:
     The same pass :func:`find_tag_collisions` uses, so the ``colliding`` list
     filter and the cluster view can never disagree about who is a duplicate.
     """
-    return {tag.id for tags in _clustered_tags(db).values() for tag in tags}
+    clusters, _all_tags = _clustered_tags(db)
+    return {tag.id for tags in clusters.values() for tag in tags}
 
 
 def list_tags_filtered(
@@ -364,7 +362,7 @@ def list_tags_filtered(
     entries: list[TagListEntry] = []
     for tag in db.query(Tag).order_by(Tag.name).all():
         count = usage.get(tag.id, 0)
-        if awaiting_review and not _is_awaiting_review(tag):
+        if awaiting_review and not is_awaiting_review(tag):
             continue
         if unused and count:
             continue
@@ -376,7 +374,7 @@ def list_tags_filtered(
                 name=tag.name,
                 source=tag.source,
                 usage_count=count,
-                awaiting_review=_is_awaiting_review(tag),
+                awaiting_review=is_awaiting_review(tag),
             )
         )
 

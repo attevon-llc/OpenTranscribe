@@ -15,11 +15,18 @@ leak check). No real GPU worker or Redis is exercised.
 
 from __future__ import annotations
 
+import pytest
 from fastapi import status
 
 from app.services.system_settings_service import get_setting
 
 _BASE = "/api/admin/engine-settings"
+
+# This file and test_engine_settings.py both write engine.boundary_* keys through the
+# same POST /update endpoint with no coordination between them — under `-n auto` two
+# workers inserting overlapping keys in different orders can deadlock on the
+# system_settings_key_key unique index (issue #389).
+pytestmark = pytest.mark.xdist_group("engine_system_settings")
 
 
 # ---------------------------------------------------------------------------

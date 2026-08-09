@@ -104,6 +104,7 @@ markers = [
     "integration: integration tests requiring running dev environment",
     "gpu: tests requiring a physical GPU — deselected from the fast suite, run by the gate",
     "models: tests requiring ML model weights (Presidio/GLiNER/toxicity) — skipped in fast CI",
+    "ddl_exclusive: performs schema DDL (DROP/ALTER TABLE) needing full DB-wide exclusivity, not just self-consistency — see tests/conftest.py's advisory-lock isolation (issue #389)",
 ]
 norecursedirs = ["tests/e2e"]
 

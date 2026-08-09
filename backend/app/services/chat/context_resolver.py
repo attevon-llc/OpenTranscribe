@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
@@ -111,16 +112,41 @@ def _resolve_collections(db: Session, ctx: RequestContext, collection_uuids: lis
 
 
 def _resolve_tags(db: Session, ctx: RequestContext, tag_names: list[str]) -> set[str]:
-    """Expand tags to the caller's own files carrying them."""
+    """Expand tags to every file the caller can READ that carries them.
+
+    Routed through ``get_accessible_file_ids_subquery`` — the same sharing rule
+    ``endpoints/tags.py:_visible_to`` and every owner-scoped listing use, which
+    already covers owned files plus collections shared directly and via groups,
+    and applies the tenant gate. This axis used to filter on
+    ``MediaFile.user_id == ctx.user.id`` while ``_resolve_collections`` honoured
+    sharing, so scoping a chat by a tag spanning shared recordings silently
+    dropped them and the model answered from the remainder with no signal that
+    anything had been excluded (issue #385).
+
+    Tag names are unique **per owner**, so matching by name deliberately spans
+    every user's tag row: the sharee's "atlas" scope must reach the owner's
+    atlas-tagged recording they were given access to.
+
+    Unlike ``_resolve_collections`` there is no admin bypass. A collection or an
+    explicit file is named by uuid; a tag name is a wide net, and giving admins a
+    tenant-wide one here would resolve tags their own tag picker
+    (``_visible_to``) never shows them. Admins do keep the quarantine visibility
+    ``_visible_files_query`` grants.
+    """
     if not tag_names:
         return set()
 
+    from app.services.permission_service import PermissionService
+
+    accessible_files = PermissionService.get_accessible_file_ids_subquery(
+        db, ctx.user.id, organization_id=ctx.org_id
+    )
     rows = (
         _visible_files_query(db, ctx)
         .join(FileTag, FileTag.media_file_id == MediaFile.id)
         .join(Tag, Tag.id == FileTag.tag_id)
         .filter(Tag.name.in_(tag_names))
-        .filter(MediaFile.user_id == ctx.user.id)
+        .filter(MediaFile.id.in_(select(accessible_files)))
         .all()
     )
     return {str(row[0]) for row in rows}

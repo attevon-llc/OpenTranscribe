@@ -108,9 +108,9 @@ Audio download still in progress and **flaky** — not scored in this sweep. Wil
 
 ```bash
 # copy a sample pair in (NAS isn't mounted in the worker)
-docker cp /mnt/nas/datasets/diarization-boundary/earnings21-refs/earnings21/media/<id>.mp3 \
+docker cp /mnt/nas/ai/datasets/diarization-boundary/earnings21-refs/earnings21/media/<id>.mp3 \
   <worker>:/tmp/earnings21/<id>.mp3
-docker cp /mnt/nas/datasets/diarization-boundary/earnings21-refs/earnings21/transcripts/nlp_references/<id>.nlp \
+docker cp /mnt/nas/ai/datasets/diarization-boundary/earnings21-refs/earnings21/transcripts/nlp_references/<id>.nlp \
   <worker>:/tmp/earnings21/<id>.nlp
 
 docker compose exec celery-worker python /app/scripts/score_earnings21_cpwer.py \

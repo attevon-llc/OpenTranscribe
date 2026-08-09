@@ -1427,7 +1427,7 @@ start_app() {
     echo "- GPU transcribe worker: docker compose logs -f celery-worker-gpu-transcribe"
     echo "- GPU diarize worker: docker compose logs -f celery-worker-gpu-diarize"
   elif [ -n "$LITE_FLAG" ]; then
-    echo "- Cloud ASR worker logs: docker compose logs -f celery-cloud-worker"
+    echo "- Cloud ASR worker logs: docker compose logs -f celery-cloud-asr-worker"
   else
     echo "- Celery worker logs: docker compose logs -f celery-worker"
   fi

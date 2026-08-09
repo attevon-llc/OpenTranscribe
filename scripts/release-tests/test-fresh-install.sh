@@ -258,7 +258,7 @@ phase_03_pin_local_image() {
         cp_inject_labels "$target/docker-compose.prod.yml" "$TEST_LABEL"
         cp_pin_image_tag "$target/docker-compose.prod.yml" backend "$LOCAL_IMAGE_TAG"
         cp_pin_image_tag "$target/docker-compose.prod.yml" frontend "$LOCAL_IMAGE_TAG"
-        for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
+        for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-redaction celery-cloud-asr-worker celery-beat flower; do
             cp_pin_image_tag "$target/docker-compose.prod.yml" "$svc" "$LOCAL_IMAGE_TAG" 2>/dev/null || true
         done
         gr_ok "pull_policy=always, image tag pinned to Hub :${LOCAL_IMAGE_TAG}"
@@ -267,7 +267,7 @@ phase_03_pin_local_image() {
         cp_inject_labels "$target/docker-compose.prod.yml" "$TEST_LABEL"
         cp_pin_image_tag "$target/docker-compose.prod.yml" backend "$LOCAL_IMAGE_TAG"
         cp_pin_image_tag "$target/docker-compose.prod.yml" frontend "$LOCAL_IMAGE_TAG"
-        for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
+        for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-redaction celery-cloud-asr-worker celery-beat flower; do
             cp_pin_image_tag "$target/docker-compose.prod.yml" "$svc" "$LOCAL_IMAGE_TAG" 2>/dev/null || true
         done
         gr_ok "image tag pinned to :${LOCAL_IMAGE_TAG}, pull_policy=never, label injected"

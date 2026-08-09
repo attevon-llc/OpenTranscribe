@@ -250,7 +250,7 @@ phase_03_prepare_v033_compose() {
     cp_force_pull_policy "$stage/docker-compose.prod.yml" always
     cp_pin_image_tag "$stage/docker-compose.prod.yml" backend "$FROM_VERSION"
     cp_pin_image_tag "$stage/docker-compose.prod.yml" frontend "$FROM_VERSION"
-    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
+    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-redaction celery-cloud-asr-worker celery-beat flower; do
         cp_pin_image_tag "$stage/docker-compose.prod.yml" "$svc" "$FROM_VERSION" 2>/dev/null || true
     done
 
@@ -473,7 +473,7 @@ phase_07_swap_to_new() {
     cp_force_pull_policy "$stage_after/docker-compose.prod.yml" never
     cp_pin_image_tag "$stage_after/docker-compose.prod.yml" backend "$LOCAL_IMAGE_TAG"
     cp_pin_image_tag "$stage_after/docker-compose.prod.yml" frontend "$LOCAL_IMAGE_TAG"
-    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
+    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-redaction celery-cloud-asr-worker celery-beat flower; do
         cp_pin_image_tag "$stage_after/docker-compose.prod.yml" "$svc" "$LOCAL_IMAGE_TAG" 2>/dev/null || true
     done
 

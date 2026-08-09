@@ -1,11 +1,14 @@
 """Chat turn orchestration: retrieval → prompt → stream → persist.
 
 Emits the SSE frames the frontend consumes (``start``, ``status``, ``sources``,
-``delta``, ``reasoning``, ``usage``, ``done``, ``error``). The event names are a
-frozen contract shared with the frontend implementation. ``reasoning`` is shaped
-identically to ``delta`` (``{"text": ...}``) but carries a model's separately
-streamed reasoning/thinking content, rendered by the frontend in its own
-collapsed-by-default block rather than mixed into the answer.
+``warning``, ``delta``, ``reasoning``, ``usage``, ``done``, ``error``). The event
+names are a frozen contract shared with the frontend implementation.
+``reasoning`` is shaped identically to ``delta`` (``{"text": ...}``) but carries a
+model's separately streamed reasoning/thinking content, rendered by the frontend
+in its own collapsed-by-default block rather than mixed into the answer.
+
+``sources`` is emitted only once the excerpt budget is known, and lists only the
+excerpts that actually reached the prompt — see the comment at its yield site.
 
 Threading model: everything except the SSE plumbing is synchronous (OpenSearch,
 SQLAlchemy, ``requests``), so the blocking stages run via Starlette's threadpool
@@ -432,11 +435,6 @@ class ChatService:
                     yield frame
                 turn.metadata.update(meta)
 
-                turn.offered_citations = citations_mod.build_offered_citations(masked)
-                yield sse("sources", {"citations": turn.offered_citations})
-
-            yield sse("status", {"stage": "generating"})
-
             # Resolve the answer budget BEFORE building the prompt: build_messages
             # reserves context for the reply, so raising max_tokens after the fact
             # would let prompt + answer overrun the window.
@@ -447,7 +445,12 @@ class ChatService:
                 context_window=llm.user_context_window,
             )
 
-            messages, chunks_used = build_messages(
+            # The prompt is assembled BEFORE the `sources` frame goes out, and the
+            # frame carries only the excerpts that survived the budget. Emitting
+            # it earlier meant the UI could render clickable citations for
+            # excerpts the model was never given — an answer that looks sourced
+            # but is not grounded in the cited material (issue #384).
+            messages, excerpt_ids = build_messages(
                 system_prompt=system_prompt,
                 chunks=masked,
                 history=history,
@@ -456,7 +459,32 @@ class ChatService:
                 response_tokens=answer_tokens,
                 max_history_turns=settings.history_max_turns,
             )
+            chunks_used = len(excerpt_ids)
             turn.metadata["chunks_used"] = chunks_used
+
+            if use_context:
+                turn.offered_citations = citations_mod.build_offered_citations(masked, excerpt_ids)
+                yield sse("sources", {"citations": turn.offered_citations})
+
+                if masked and not excerpt_ids:
+                    # Retrieval found material and the budget left no room for any
+                    # of it. Say so rather than answering ungrounded behind a
+                    # normal-looking reply.
+                    turn.metadata["context_dropped"] = True
+                    logger.warning(
+                        "Chat turn %s dropped all %d retrieved excerpts: no room in "
+                        "the %d-token context window after %d reserved answer tokens",
+                        assistant_message_uuid,
+                        len(masked),
+                        llm.user_context_window,
+                        answer_tokens,
+                    )
+                    yield sse(
+                        "warning",
+                        {"code": "context_dropped", "retrieved": len(masked)},
+                    )
+
+            yield sse("status", {"stage": "generating"})
 
             kwargs: dict[str, Any] = {"max_tokens": answer_tokens}
             if temperature is not None:

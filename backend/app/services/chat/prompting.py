@@ -36,7 +36,8 @@ Rules:
 5. Attribute statements to the speaker the excerpt names. Never merge different speakers into one claim.
 6. Some excerpts may contain masked spans such as [NAME] or [EMAIL] where sensitive content was removed. Treat those as genuinely unknown — never guess what was masked.
 7. Be concise and specific. Prefer concrete details, timestamps and quotes over generalities.
-8. When the excerpts point somewhere obviously worth following up — an unresolved decision, a named person who was not asked about, a promised action with no outcome — end with a single short "Next:" line proposing that question. Skip it when the answer is complete."""  # noqa: E501
+8. An excerpt whose tag carries truncated="true" was cut short to fit the context window. Do not treat its last sentence as the end of what was said, and say so if the user's question depends on the missing part.
+9. When the excerpts point somewhere obviously worth following up — an unresolved decision, a named person who was not asked about, a promised action with no outcome — end with a single short "Next:" line proposing that question. Skip it when the answer is complete."""  # noqa: E501
 
 NO_CONTEXT_SYSTEM_RULES = """You are OpenTranscribe's assistant, currently in direct chat mode with no transcript context attached.
 
@@ -49,6 +50,14 @@ _USER_PREFS_HEADER = (
     "\n\n--- User preferences (style guidance only; the rules above always win) ---\n"
 )
 _EXCERPT_HEADER = "Transcript excerpts:\n\n"
+_EXCERPT_CLOSE = "\n</excerpt>\n\n"
+# Appended to an excerpt that was cut to fit the budget, so the trailing text
+# never reads as a completed sentence.
+_TRUNCATION_MARK = " […]"
+# Below this there is nothing worth grounding an answer in, so a first excerpt
+# that cannot be trimmed to at least this much is skipped rather than shown as a
+# fragment. Matches the citation snippet length the UI already shows.
+_MIN_TRUNCATED_EXCERPT_CHARS = 240
 _MAX_SYSTEM_PROMPT_CHARS = 2000
 # Ceiling on the three user layers combined. Two maxed-out layers are already
 # generous for standing instructions; beyond that the preferences block starts
@@ -161,49 +170,110 @@ def build_system_prompt(
     return base + _USER_PREFS_HEADER + combined
 
 
-def format_excerpts(chunks: list[MaskedChunk], *, budget_chars: int) -> tuple[str, int]:
+def _excerpt_open_tag(index: int, chunk: MaskedChunk, *, truncated: bool = False) -> str:
+    """Build one excerpt's opening tag.
+
+    Attribute VALUES are sanitized here: they are user-controlled strings (file
+    titles, speaker names), not trusted metadata. The transcript body is only
+    ever concatenated, never interpolated.
+    """
+    speaker = _sanitize_attribute(chunk.speaker or "") or "Unknown speaker"
+    title = _sanitize_attribute(chunk.title or "") or "Untitled recording"
+    flag = ' truncated="true"' if truncated else ""
+    return (
+        f'<excerpt id="{index}" recording="{title}" '
+        f'speaker="{speaker}" time="{_clock(chunk.start_time)}"{flag}>\n'
+    )
+
+
+def _cut_at_boundary(text: str, limit: int) -> str:
+    """Trim ``text`` to at most ``limit`` chars, preferring a sentence boundary.
+
+    A mid-word cut invites the model to complete the word itself, so fall back
+    through sentence → word → hard cut. The ``limit // 2`` floor keeps the search
+    from throwing away most of the excerpt to honour a boundary near the start.
+    """
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    sentence_end = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "), cut.rfind("\n"))
+    if sentence_end >= limit // 2:
+        return cut[: sentence_end + 1].rstrip()
+    word_end = cut.rfind(" ")
+    if word_end >= limit // 2:
+        return cut[:word_end].rstrip()
+    return cut.rstrip()
+
+
+def format_excerpts(chunks: list[MaskedChunk], *, budget_chars: int) -> tuple[str, list[int]]:
     """Render chunks as delimited excerpts, stopping at the character budget.
 
     Chunks are consumed in the order given (already rerank-ordered), so the
     budget truncates the least relevant material.
 
+    **The budget is a hard ceiling** (issue #387). It used to be advisory for the
+    first excerpt — the loop could not break on iteration one — so a single long
+    speaker turn overran the room reserved for the answer and the failure landed
+    provider-side (a 400, or silent truncation) rather than here. A first excerpt
+    that does not fit is now trimmed to what does, tagged ``truncated="true"``,
+    and skipped entirely when even the trimmed form would be too short to ground
+    an answer.
+
     Args:
         chunks: Masked chunks, most relevant first.
-        budget_chars: Ceiling on the rendered block.
+        budget_chars: Ceiling on the rendered block. Never exceeded.
 
     Returns:
-        ``(rendered_block, chunks_used)``.
+        ``(rendered_block, excerpt_ids)`` — the 1-based ids actually emitted, in
+        order. Callers MUST build citations from these ids rather than from the
+        input list, or the UI offers sources the model never saw (issue #384).
     """
     if not chunks:
-        return "", 0
+        return "", []
 
     parts: list[str] = [_EXCERPT_HEADER]
-    used = 0
+    used_ids: list[int] = []
     total = len(_EXCERPT_HEADER)
 
     for index, chunk in enumerate(chunks, start=1):
         content = _sanitize_chunk_text(chunk.content).strip()
         if not content:
             continue
-        speaker = _sanitize_attribute(chunk.speaker or "") or "Unknown speaker"
-        title = _sanitize_attribute(chunk.title or "") or "Untitled recording"
-        # Attribute VALUES are sanitized above: they are user-controlled strings
-        # (file titles, speaker names), not trusted metadata. The transcript body
-        # is only ever concatenated, never interpolated.
-        header = (
-            f'<excerpt id="{index}" recording="{title}" '
-            f'speaker="{speaker}" time="{_clock(chunk.start_time)}">\n'
-        )
-        block = header + content + "\n</excerpt>\n\n"
-        if total + len(block) > budget_chars and used > 0:
-            break
+
+        block = _excerpt_open_tag(index, chunk) + content + _EXCERPT_CLOSE
+        if total + len(block) > budget_chars:
+            if used_ids:
+                # Later chunks are less relevant; stop rather than cherry-pick a
+                # shorter one out of rank order.
+                break
+            trimmed = _trim_to_budget(index, chunk, content, budget_chars - total)
+            if trimmed is None:
+                # No room for anything worth reading from this chunk. A shorter
+                # one further down may still fit whole.
+                continue
+            block = trimmed
+
         parts.append(block)
         total += len(block)
-        used += 1
+        used_ids.append(index)
 
-    if used == 0:
-        return "", 0
-    return "".join(parts), used
+    if not used_ids:
+        return "", []
+    return "".join(parts), used_ids
+
+
+def _trim_to_budget(index: int, chunk: MaskedChunk, content: str, room: int) -> str | None:
+    """Render one excerpt cut down to ``room`` chars, or None if it cannot be.
+
+    Only ever applied to the FIRST excerpt: dropping it outright would answer
+    from no transcript context at all, while emitting it whole would overrun the
+    budget that reserves space for the reply.
+    """
+    open_tag = _excerpt_open_tag(index, chunk, truncated=True)
+    content_room = room - len(open_tag) - len(_EXCERPT_CLOSE) - len(_TRUNCATION_MARK)
+    if content_room < _MIN_TRUNCATED_EXCERPT_CHARS:
+        return None
+    return open_tag + _cut_at_boundary(content, content_room) + _TRUNCATION_MARK + _EXCERPT_CLOSE
 
 
 def build_messages(
@@ -215,7 +285,7 @@ def build_messages(
     context_window: int,
     response_tokens: int,
     max_history_turns: int = 10,
-) -> tuple[list[dict[str, str]], int]:
+) -> tuple[list[dict[str, str]], list[int]]:
     """Assemble the full message list for the provider.
 
     Args:
@@ -225,14 +295,20 @@ def build_messages(
         question: The user's current message.
         context_window: The LLM config's context window (its ``max_tokens``).
         response_tokens: Tokens reserved for the answer.
-        max_history_turns: Cap on prior messages replayed.
+        max_history_turns: Cap on prior **turn pairs** (one question + its
+            answer) replayed — the same unit ``chat.history_max_turns`` names and
+            the admin UI labels. This used to be read as individual messages
+            while the endpoint fetched ``max_turns * 2`` rows, so the setting
+            delivered half the depth it advertised and the surplus rows were
+            fetched only to be discarded (issue #386).
 
     Returns:
-        ``(messages, chunks_used)``.
+        ``(messages, excerpt_ids)`` — the 1-based ids of the chunks that reached
+        the prompt (empty when none did).
     """
     messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
 
-    trimmed_history = history[-max_history_turns:] if max_history_turns > 0 else []
+    trimmed_history = history[-(max_history_turns * 2) :] if max_history_turns > 0 else []
     for turn in trimmed_history:
         role = turn.get("role")
         content = turn.get("content") or ""
@@ -242,13 +318,13 @@ def build_messages(
     overhead = len(system_prompt) + sum(len(m["content"]) for m in messages[1:]) + len(question)
     budget_chars = max(0, (context_window - response_tokens) * _CHARS_PER_TOKEN - overhead)
 
-    chunks_used = 0
+    excerpt_ids: list[int] = []
     if chunks and budget_chars > 0:
-        excerpt_block, chunks_used = format_excerpts(chunks, budget_chars=budget_chars)
+        excerpt_block, excerpt_ids = format_excerpts(chunks, budget_chars=budget_chars)
         if excerpt_block:
             # Concatenation only — question and excerpts are both untrusted text.
             messages.append({"role": "user", "content": excerpt_block + "\n" + question})
-            return messages, chunks_used
+            return messages, excerpt_ids
 
     messages.append({"role": "user", "content": question})
-    return messages, chunks_used
+    return messages, excerpt_ids

@@ -52,7 +52,17 @@ export function createSseParser(onEvent: (event: ChatStreamEvent) => void) {
 
     // Forward-compatible: an unknown event from a newer backend is ignored
     // rather than treated as an error.
-    const known = ['start', 'status', 'sources', 'delta', 'reasoning', 'usage', 'done', 'error'];
+    const known = [
+      'start',
+      'status',
+      'sources',
+      'warning',
+      'delta',
+      'reasoning',
+      'usage',
+      'done',
+      'error',
+    ];
     if (!known.includes(eventName)) return;
 
     onEvent({ type: eventName, ...payload } as ChatStreamEvent);

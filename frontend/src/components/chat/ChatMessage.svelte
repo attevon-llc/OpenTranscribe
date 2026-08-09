@@ -78,6 +78,10 @@
   $: hasError = message.status === 'error';
   $: wasCancelled = message.status === 'cancelled';
   $: sources = message.citations ?? [];
+  // Retrieval found excerpts but none fit the context window, so this answer is
+  // not grounded in the user's recordings (issue #384). Shown above the sources
+  // block because it changes how the answer should be read.
+  $: contextDropped = Boolean(message.msg_metadata?.context_dropped);
   $: timestamp = formatTimestamp(message.created_at);
   $: canEdit = isUser && !message.pending;
 </script>
@@ -137,6 +141,12 @@
 
       {#if wasCancelled}
         <p class="cancelled-note">{$t('chat.message.aborted')}</p>
+      {/if}
+
+      {#if contextDropped}
+        <p class="context-warning" data-testid="chat-context-dropped">
+          {$t('chat.message.contextDropped')}
+        </p>
       {/if}
 
       <ChatSources {sources} />
@@ -264,6 +274,18 @@
     border: 1px solid rgba(var(--error-color-rgb, 220, 53, 69), 0.25);
     color: var(--error-color, #dc3545);
     font-size: 0.85rem;
+  }
+
+  .context-warning {
+    margin: 0.5rem 0 0;
+    padding: 0.6rem 0.75rem;
+    border-radius: 8px;
+    /* Theme-provided pair — light/dark parity is handled in theme.css. */
+    background-color: var(--warning-bg);
+    border: 1px solid var(--warning-border);
+    color: var(--text-color);
+    font-size: 0.82rem;
+    line-height: 1.45;
   }
 
   .cancelled-note {

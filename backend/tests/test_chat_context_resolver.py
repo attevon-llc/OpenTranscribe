@@ -24,6 +24,7 @@ from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Tag
+from app.models.sharing import CollectionShare
 from app.schemas.chat import ChatScope
 from app.services.chat.context_resolver import count_scope_files
 from app.services.chat.context_resolver import resolve_scope_file_uuids
@@ -193,13 +194,182 @@ def test_tag_expands_to_the_callers_own_tagged_files(db_session, normal_user):
     assert resolved == [str(tagged.uuid)]
 
 
-def test_tag_does_not_reach_another_users_files(db_session, normal_user, other_user):
+def test_tag_does_not_reach_an_unshared_file_of_another_user(db_session, normal_user, other_user):
     theirs = _make_file(db_session, other_user)
     tag = Tag(uuid=uuid_pkg.uuid4(), name=f"shared-{uuid_pkg.uuid4().hex[:6]}")
     db_session.add(tag)
     db_session.commit()
     db_session.add(FileTag(media_file_id=theirs.id, tag_id=tag.id))
     db_session.commit()
+
+    resolved = _resolved(db_session, _ctx(normal_user), ChatScope(tag_names=[tag.name]))
+
+    assert resolved == []
+
+
+# ---------------------------------------------------------------------------
+# Tag scope honours sharing, exactly as collection scope does (issue #385)
+# ---------------------------------------------------------------------------
+
+
+def _share_collection(db, collection, *, owner, with_user=None, with_group=None):
+    db.add(
+        CollectionShare(
+            uuid=uuid_pkg.uuid4(),
+            collection_id=collection.id,
+            shared_by_id=owner.id,
+            target_type="user" if with_user is not None else "group",
+            target_user_id=with_user.id if with_user is not None else None,
+            target_group_id=with_group.id if with_group is not None else None,
+            permission="viewer",
+        )
+    )
+    db.commit()
+
+
+def _collection_with(db, owner, media, *, name="Shared"):
+    collection = Collection(uuid=uuid_pkg.uuid4(), name=name, user_id=owner.id)
+    db.add(collection)
+    db.commit()
+    db.add(CollectionMember(collection_id=collection.id, media_file_id=media.id))
+    db.commit()
+    return collection
+
+
+def _tagged(db, media, name):
+    """Attach ``name`` to ``media``, reusing the owner's existing tag row.
+
+    ``uq_tag_user_name`` makes a tag name unique PER OWNER, so two of an owner's
+    files carrying the same tag share one row — which is exactly what
+    ``_get_or_create_tag`` does in production.
+    """
+    tag = db.query(Tag).filter(Tag.name == name, Tag.user_id == media.user_id).first()
+    if tag is None:
+        tag = Tag(uuid=uuid_pkg.uuid4(), name=name, user_id=media.user_id)
+        db.add(tag)
+        db.commit()
+    db.add(FileTag(media_file_id=media.id, tag_id=tag.id))
+    db.commit()
+    return tag
+
+
+def test_tag_scope_reaches_a_file_shared_with_the_caller(db_session, normal_user, other_user):
+    """The #385 regression.
+
+    ``_resolve_collections`` honoured sharing while ``_resolve_tags`` filtered to
+    ``MediaFile.user_id == caller``, so a tag spanning shared recordings silently
+    dropped them and the model answered from the remainder — with no error, no
+    warning, and nothing in ``msg_metadata`` distinguishing "the tag matched
+    nothing" from "the tag matched files you were not allowed to see".
+    """
+    theirs = _make_file(db_session, other_user, title="Atlas kickoff")
+    tag = _tagged(db_session, theirs, f"atlas-{uuid_pkg.uuid4().hex[:6]}")
+    collection = _collection_with(db_session, other_user, theirs)
+    _share_collection(db_session, collection, owner=other_user, with_user=normal_user)
+
+    resolved = _resolved(db_session, _ctx(normal_user), ChatScope(tag_names=[tag.name]))
+
+    assert resolved == [str(theirs.uuid)]
+
+
+def test_tag_scope_reaches_a_file_shared_via_a_group(db_session, normal_user, other_user):
+    """Group shares are the same grant; the subquery covers both branches."""
+    from app.models.group import UserGroup
+    from app.models.group import UserGroupMember
+
+    group = UserGroup(uuid=uuid_pkg.uuid4(), name="Team", owner_id=other_user.id)
+    db_session.add(group)
+    db_session.commit()
+    db_session.add(
+        UserGroupMember(uuid=uuid_pkg.uuid4(), group_id=group.id, user_id=normal_user.id)
+    )
+    db_session.commit()
+
+    theirs = _make_file(db_session, other_user, title="Group shared")
+    tag = _tagged(db_session, theirs, f"team-{uuid_pkg.uuid4().hex[:6]}")
+    collection = _collection_with(db_session, other_user, theirs)
+    _share_collection(db_session, collection, owner=other_user, with_group=group)
+
+    resolved = _resolved(db_session, _ctx(normal_user), ChatScope(tag_names=[tag.name]))
+
+    assert resolved == [str(theirs.uuid)]
+
+
+def test_tag_scope_unions_owned_and_shared_files(db_session, normal_user, other_user):
+    """A tag applied on both sides of a share resolves to both recordings.
+
+    Tag names are unique PER OWNER, so the two rows are distinct tags with the
+    same name — matching by name across owners is what makes a sharee's scope
+    reach the owner's tagged recording.
+    """
+    name = f"atlas-{uuid_pkg.uuid4().hex[:6]}"
+
+    mine = _make_file(db_session, normal_user, title="Mine")
+    _tagged(db_session, mine, name)
+
+    theirs = _make_file(db_session, other_user, title="Theirs")
+    _tagged(db_session, theirs, name)
+    collection = _collection_with(db_session, other_user, theirs)
+    _share_collection(db_session, collection, owner=other_user, with_user=normal_user)
+
+    resolved = _resolved(db_session, _ctx(normal_user), ChatScope(tag_names=[name]))
+
+    assert set(resolved) == {str(mine.uuid), str(theirs.uuid)}
+
+
+def test_tag_scope_still_excludes_a_file_whose_share_does_not_cover_it(
+    db_session, normal_user, other_user
+):
+    """Sharing ONE collection must not open every tagged file of that owner."""
+    name = f"atlas-{uuid_pkg.uuid4().hex[:6]}"
+
+    shared_file = _make_file(db_session, other_user, title="Shared")
+    _tagged(db_session, shared_file, name)
+    collection = _collection_with(db_session, other_user, shared_file)
+    _share_collection(db_session, collection, owner=other_user, with_user=normal_user)
+
+    private_file = _make_file(db_session, other_user, title="Private")
+    _tagged(db_session, private_file, name)
+
+    resolved = _resolved(db_session, _ctx(normal_user), ChatScope(tag_names=[name]))
+
+    assert resolved == [str(shared_file.uuid)]
+
+
+def test_tag_scope_matches_collection_scope_for_the_same_shared_file(
+    db_session, normal_user, other_user
+):
+    """The two axes must agree — the asymmetry itself was the defect."""
+    theirs = _make_file(db_session, other_user, title="Atlas kickoff")
+    tag = _tagged(db_session, theirs, f"atlas-{uuid_pkg.uuid4().hex[:6]}")
+    collection = _collection_with(db_session, other_user, theirs)
+    _share_collection(db_session, collection, owner=other_user, with_user=normal_user)
+
+    ctx = _ctx(normal_user)
+    by_tag = _resolved(db_session, ctx, ChatScope(tag_names=[tag.name]))
+    by_collection = _resolved(db_session, ctx, ChatScope(collection_uuids=[str(collection.uuid)]))
+
+    assert by_tag == by_collection == [str(theirs.uuid)]
+
+
+def test_tag_scope_excludes_a_quarantined_shared_file(db_session, normal_user, other_user):
+    """Quarantine outranks sharing; it is invisible to everyone but admins."""
+    theirs = _make_file(db_session, other_user, quarantined=True, title="Quarantined")
+    tag = _tagged(db_session, theirs, f"atlas-{uuid_pkg.uuid4().hex[:6]}")
+    collection = _collection_with(db_session, other_user, theirs)
+    _share_collection(db_session, collection, owner=other_user, with_user=normal_user)
+
+    resolved = _resolved(db_session, _ctx(normal_user), ChatScope(tag_names=[tag.name]))
+
+    assert resolved == []
+
+
+def test_tag_scope_excludes_a_shared_file_that_is_not_finished(db_session, normal_user, other_user):
+    """Retrieval has nothing to search until transcription completes."""
+    theirs = _make_file(db_session, other_user, status="processing", title="In flight")
+    tag = _tagged(db_session, theirs, f"atlas-{uuid_pkg.uuid4().hex[:6]}")
+    collection = _collection_with(db_session, other_user, theirs)
+    _share_collection(db_session, collection, owner=other_user, with_user=normal_user)
 
     resolved = _resolved(db_session, _ctx(normal_user), ChatScope(tag_names=[tag.name]))
 

@@ -112,6 +112,7 @@ describe('createSseParser', () => {
       'event: start\ndata: {"conversation_uuid":"c","user_message_uuid":"u","assistant_message_uuid":"a"}\n\n' +
         'event: status\ndata: {"stage":"retrieving"}\n\n' +
         'event: sources\ndata: {"citations":[{"id":1,"file_uuid":"f","title":"T","chunk_index":0,"start_time":10,"end_time":20,"speaker":"Dana","snippet":"s"}]}\n\n' +
+        'event: warning\ndata: {"code":"context_dropped","retrieved":3}\n\n' +
         'event: reasoning\ndata: {"text":"thinking..."}\n\n' +
         'event: delta\ndata: {"text":"answer"}\n\n' +
         'event: usage\ndata: {"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"estimated":false}\n\n' +
@@ -122,6 +123,7 @@ describe('createSseParser', () => {
       'start',
       'status',
       'sources',
+      'warning',
       'reasoning',
       'delta',
       'usage',
@@ -129,6 +131,18 @@ describe('createSseParser', () => {
     ]);
     const sources = events[2] as { citations: unknown[] };
     expect(sources.citations).toHaveLength(1);
+  });
+
+  it('parses the warning frame the server sends when context was dropped', () => {
+    // Issue #384: retrieval found excerpts but none fit the prompt budget. The
+    // parser must forward this rather than treat it as an unknown future event,
+    // or the user reads an ungrounded answer as a normal one.
+    const { events, onEvent } = collect();
+    const parser = createSseParser(onEvent);
+
+    parser.push('event: warning\ndata: {"code":"context_dropped","retrieved":4}\n\n');
+
+    expect(events[0]).toEqual({ type: 'warning', code: 'context_dropped', retrieved: 4 });
   });
 
   it('parses reasoning frames, distinct from delta', () => {

@@ -128,7 +128,7 @@ def test_no_context_mode_uses_the_no_transcript_rules():
 
 def test_excerpts_are_numbered_and_delimited():
     block, used = format_excerpts([_chunk("We shipped on Tuesday.")], budget_chars=10_000)
-    assert used == 1
+    assert used == [1]
     assert '<excerpt id="1"' in block
     assert "</excerpt>" in block
     assert "We shipped on Tuesday." in block
@@ -155,7 +155,7 @@ def test_chunk_with_format_braces_survives_verbatim():
     """Proves the prompt is concatenated, not str.format'ed."""
     hostile = "budget was {evil} and {0} and {system_prompt}"
     block, used = format_excerpts([_chunk(hostile)], budget_chars=10_000)
-    assert used == 1
+    assert used == [1]
     assert "{evil}" in block
     assert "{system_prompt}" in block
 
@@ -163,21 +163,79 @@ def test_chunk_with_format_braces_survives_verbatim():
 def test_excerpt_budget_truncates_least_relevant_first():
     chunks = [_chunk(f"chunk number {i} " + "word " * 100) for i in range(10)]
     block, used = format_excerpts(chunks, budget_chars=1200)
-    assert 0 < used < 10
+    assert 0 < len(used) < 10
     assert "chunk number 0" in block  # most relevant kept
     assert "chunk number 9" not in block  # least relevant dropped
 
 
-def test_at_least_one_excerpt_survives_a_tiny_budget():
-    """A single oversized chunk is better than no context at all."""
-    _block, used = format_excerpts([_chunk("word " * 5000)], budget_chars=50)
-    assert used == 1
+def test_oversized_first_excerpt_is_truncated_to_fit_the_budget():
+    """Issue #387: the budget is a ceiling, including for the FIRST excerpt.
+
+    ``format_excerpts`` used to be unable to break on iteration one, so a single
+    long speaker turn was emitted whole and overran the room reserved for the
+    answer — a provider-side 400 or silent truncation instead of a local guard.
+    """
+    budget = 2000
+    block, used = format_excerpts([_chunk("word " * 5000)], budget_chars=budget)
+
+    assert used == [1]
+    assert len(block) <= budget
+    # The model must be told the excerpt is a fragment, or it will treat the cut
+    # as the end of what the speaker said.
+    assert 'truncated="true"' in block
+    assert block.rstrip().endswith("</excerpt>")
+
+
+def test_truncated_excerpt_keeps_the_wrapper_intact():
+    """Cutting mid-excerpt must not lose the closing tag or the delimiters."""
+    block, used = format_excerpts([_chunk("word " * 5000)], budget_chars=2000)
+
+    assert used == [1]
+    assert block.count("<excerpt ") == 1
+    assert block.count("</excerpt>") == 1
+
+
+def test_a_budget_too_small_for_any_usable_excerpt_emits_nothing():
+    """Better no context than a fragment too short to ground anything.
+
+    The caller distinguishes this from "nothing was retrieved" and surfaces it
+    (issue #384) rather than answering as if the excerpts had been read.
+    """
+    block, used = format_excerpts([_chunk("word " * 5000)], budget_chars=50)
+
+    assert used == []
+    assert block == ""
+
+
+def test_first_excerpt_that_cannot_be_trimmed_yields_to_a_shorter_one():
+    """A tiny budget skips the oversized leader rather than abandoning the turn.
+
+    300 chars leaves less than ``_MIN_TRUNCATED_EXCERPT_CHARS`` of room once the
+    excerpt wrapper is paid for, so chunk 1 cannot be trimmed into anything worth
+    reading — but chunk 2 still fits whole.
+    """
+    chunks = [_chunk("word " * 5000), _chunk("short answer")]
+    block, used = format_excerpts(chunks, budget_chars=300)
+
+    assert used == [2]
+    assert "short answer" in block
+    assert len(block) <= 300
+
+
+@pytest.mark.parametrize("budget", [400, 900, 2000, 5000, 20_000])
+def test_rendered_block_never_exceeds_the_budget(budget):
+    """The invariant across every budget: the ceiling holds."""
+    chunks = [_chunk("word " * 800) for _ in range(20)]
+    block, _used = format_excerpts(chunks, budget_chars=budget)
+    assert len(block) <= budget
 
 
 def test_empty_chunks_are_skipped():
     """Chunks emptied by fail-closed masking must not render as blank excerpts."""
     block, used = format_excerpts([_chunk(""), _chunk("real content")], budget_chars=10_000)
-    assert used == 1
+    # Excerpt ids track the INPUT list, so the surviving chunk keeps id 2 — the
+    # citation the UI renders must point at the chunk the model actually saw.
+    assert used == [2]
     assert "real content" in block
 
 
@@ -199,7 +257,7 @@ def test_build_messages_puts_system_first_and_question_last():
     assert messages[-1]["role"] == "user"
     assert "What happened?" in messages[-1]["content"]
     assert "context text" in messages[-1]["content"]
-    assert used == 1
+    assert used == [1]
 
 
 def test_build_messages_replays_history_in_order():
@@ -219,20 +277,58 @@ def test_build_messages_replays_history_in_order():
     assert messages[1]["content"] == "first question"
 
 
-def test_build_messages_truncates_history_to_max_turns():
-    history = [{"role": "user", "content": f"turn {i}"} for i in range(30)]
+def test_build_messages_keeps_max_turns_worth_of_exchanges():
+    """Issue #386: ``max_history_turns`` counts turn PAIRS, not messages.
+
+    The endpoint fetches ``max_turns * 2`` rows; this sliced ``max_turns``
+    messages off the end, so ``history_max_turns = 10`` delivered 5 exchanges and
+    the surplus rows were fetched only to be thrown away.
+    """
+    history = []
+    for i in range(30):
+        history.append({"role": "user", "content": f"question {i}"})
+        history.append({"role": "assistant", "content": f"answer {i}"})
+
     messages, _ = build_messages(
         system_prompt="SYS",
         chunks=[],
         history=history,
         question="now",
-        context_window=8192,
+        context_window=128000,
         response_tokens=1000,
         max_history_turns=4,
     )
-    # system + 4 history + question
-    assert len(messages) == 6
-    assert messages[1]["content"] == "turn 26"
+
+    replayed = messages[1:-1]
+    # 4 exchanges = 8 messages, alternating and ending on the assistant's reply.
+    assert len(replayed) == 8
+    assert [m["role"] for m in replayed] == ["user", "assistant"] * 4
+    assert replayed[0]["content"] == "question 26"
+    assert replayed[-1]["content"] == "answer 29"
+
+
+def test_build_messages_history_matches_what_the_endpoint_fetches():
+    """The two halves of the setting must agree on the unit.
+
+    ``_history_for_prompt`` limits to ``max_turns * 2`` rows. Nothing it fetches
+    should be discarded here, or the setting silently under-delivers again.
+    """
+    max_turns = 6
+    fetched = []
+    for i in range(max_turns * 2):
+        fetched.append({"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"})
+
+    messages, _ = build_messages(
+        system_prompt="SYS",
+        chunks=[],
+        history=fetched,
+        question="now",
+        context_window=128000,
+        response_tokens=1000,
+        max_history_turns=max_turns,
+    )
+
+    assert len(messages[1:-1]) == len(fetched)
 
 
 def test_build_messages_drops_malformed_history_entries():
@@ -264,7 +360,7 @@ def test_no_context_mode_sends_no_excerpts():
         context_window=8192,
         response_tokens=1000,
     )
-    assert used == 0
+    assert used == []
     assert messages[-1]["content"] == "Hello"
     assert "<excerpt" not in "".join(m["content"] for m in messages)
 
@@ -283,7 +379,7 @@ def test_build_messages_respects_varied_context_windows(window):
     prompt_chars = sum(len(m["content"]) for m in messages)
     # 4 chars/token budgeting, generously bounded.
     assert prompt_chars <= window * 4
-    assert used >= 1
+    assert len(used) >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +434,7 @@ def test_closing_tag_cannot_survive_case_folding_length_changes(prefix_len):
     )
     block, used = format_excerpts([_chunk(hostile)], budget_chars=100_000)
 
-    assert used == 1
+    assert used == [1]
     # The security property is STRUCTURAL: only the wrapper we emitted may parse
     # as a tag. The injected words survive as inert text, which is fine — real
     # transcripts can contain any words.

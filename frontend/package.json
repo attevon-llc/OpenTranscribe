@@ -16,7 +16,6 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "setup-fonts": "node scripts/download-fonts.js",
-    "test:offline": "node scripts/serve-offline.js",
     "pretest": "svelte-kit sync",
     "test": "vitest run",
     "test:watch": "vitest",

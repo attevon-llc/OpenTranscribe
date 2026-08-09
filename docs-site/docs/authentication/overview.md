@@ -339,10 +339,38 @@ endpoint at **`/scim/v2`** — mounted at the application root, not under `/api`
 §3.1 fixes the base path and every connector appends `/Users` / `/Groups` to it itself.
 
 Authentication is a bearer token (`scim_token`, hashed at rest) issued and revoked by a
-super_admin at `/api/admin/scim-tokens`. A SCIM connector cannot create or touch a `super_admin`,
-and cannot write a role; group membership it creates is tagged `source='scim'`, which is shielded
-from directory-sync reconciliation and vice versa. See `backend/app/auth/CLAUDE.md` for the
-filter/PATCH surface that is actually supported.
+super_admin at **Settings → Authentication → SCIM** (`/api/admin/scim-tokens`). A SCIM connector
+cannot create or touch a `super_admin`, and cannot write a role; group membership it creates is
+tagged `source='scim'`, which is shielded from directory-sync reconciliation and vice versa.
+
+### Filter support
+
+Exactly one filter shape is implemented: `<attribute> eq "<value>"`, on `userName` or
+`externalId` for `/Users`, and on `displayName` for `/Groups`. Anything else — `co`, `sw`,
+boolean `and`/`or`, or a filter on any other attribute — is refused with `400 invalidFilter`
+rather than silently ignored or partially applied. A partial filter implementation would return
+a result set a connector then acts on as though it were complete, which is worse than refusing
+outright.
+
+### Not rate-limited, deliberately
+
+Every other authenticated surface in OpenTranscribe carries a per-IP rate limit. `/scim/v2` does
+not: the credential is 256 random bits rather than a guessable password, an IdP synchronizes an
+entire directory from a small pool of egress IPs and can legitimately burst hundreds of requests
+in a short window, and a per-IP limit would throttle the tenant's own directory sync rather than
+an attacker. No SCIM handler carries the rate-limiter decorator.
+
+### Soft-disable semantics
+
+Both `PATCH .../Users/{id}` with `active: false` and `DELETE .../Users/{id}` **disable the
+account and revoke its sessions** — neither one deletes it. `DELETE` is a soft-disable, not a
+hard delete: a connector dropping someone from its assignment scope (removed from an Okta app
+group, for example) must not erase their transcripts, only their access. Re-adding the same
+identity to the connector's scope re-enables the same account rather than minting a duplicate.
+
+See `backend/app/auth/CLAUDE.md` for the exact `PATCH` surface that is supported — it is a
+closed, explicitly documented list; an unsupported path is `400 invalidPath`, never a silent
+200 for a change that did not happen.
 
 ## Compliance
 

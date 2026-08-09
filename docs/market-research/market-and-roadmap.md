@@ -2,7 +2,8 @@
 
 > **Single reference document.** Combines all market research, benchmark data, competitive analysis, Recall.ai positioning, current technical capabilities, and the feature roadmap into one place. Detailed baseball cards live in `cloud-asr-market-research.md` and `competitor-landscape.md`. Benchmark raw data in `BENCHMARK_RESULTS.md` and `diarization-boundary-results/cloud-comparison.md`.
 >
-> **Last updated**: May 2026.
+> **Last updated**: August 2026 (refreshed for the pending v0.5.0 release — see the "Shipped since the
+> roadmap below was written" callout and the capability table for what changed since May 2026).
 
 ---
 
@@ -175,6 +176,11 @@ PyAnnote optimization fork (`davidamacey/pyannote-audio@gpu-optimizations`):
 - **115× CPU RAM reduction**: 58.8GB → 39MB for a 4.7hr/21-speaker file
 - Apple Silicon (MPS): 1.17× faster, native FFT, same memory safety
 
+**Multi-GPU deployments**: `./opentr.sh start dev --gpu-scale` runs N parallel Celery workers against
+one tunable GPU (`GPU_SCALE_WORKERS`), and a separate `--gpu-split` overlay routes transcription and
+diarization to two different GPUs. Both are deployment options additive to the single-GPU numbers
+above — no separate benchmark figures for multi-GPU throughput are published here.
+
 ---
 
 ## What OpenTranscribe Has That Nobody Else Does
@@ -183,8 +189,11 @@ PyAnnote optimization fork (`davidamacey/pyannote-audio@gpu-optimizations`):
 |---|---|---|
 | **Self-hosted / on-premises** | ✗ zero options | **✓ only option in market** |
 | Pluggable ASR backend (10 providers) | ✗ | **✓** |
+| Pluggable diarization backend | ✗ | **✓ (local PyAnnote, pyannote.ai cloud, or ASR-integrated)** |
 | GPU-local transcription + diarization | ✗ | **✓ (WhisperX + PyAnnote fork)** |
+| Multi-GPU worker scaling | ✗ | **✓ (`--gpu-scale` / `--gpu-split` overlays)** |
 | Best-in-class diarization accuracy | Partial | **✓ 0.27% WSER, beats all cloud providers** |
+| Boundary-correction smoother (turn-seam speaker errors) | ✗ | **✓ −32% relative WSER, default on, DB/UI-tunable** |
 | 100+ language transcription | Partial (Otter EN-only) | **✓ (WhisperX)** |
 | Cross-file semantic search | Basic or none | **✓ (OpenSearch + embeddings)** |
 | URL ingestion (yt-dlp, 1,800+ platforms) | ✗ | **✓** |
@@ -192,47 +201,73 @@ PyAnnote optimization fork (`davidamacey/pyannote-audio@gpu-optimizations`):
 | HIPAA/air-gap compatible | ✗ | **✓ by design** |
 | Open source (AGPL) | ✗ all proprietary | **✓** |
 | Multi-provider LLM summarization | ✗ | **✓ (12 output languages)** |
-| RAG / chat over transcript archive | ✗ | **planned — #52** |
-| Watch folder / auto-ingest | ✗ | **planned — #26** |
+| RAG / chat over transcript archive, with citations | ✗ | **✓ shipped — issue #52 (v0.5.0)** |
+| Watch folder / bucket auto-ingest (local / S3 / SMB) | ✗ | **✓ shipped — issue #26 (v0.5.0)** |
+| Content redaction (PII / profanity / toxicity) | unconfirmed — see note | **✓ shipped — read-time masking + admin policy floor (v0.5.0)** |
+| Enterprise auth breadth (LDAP + OIDC + SAML + PKI/mTLS + proxy header + MFA + SCIM, one build) | unconfirmed — see note | **✓ shipped (v0.5.0)** |
+| Usage/cost tracking (tokens + estimated cost, per model) | unconfirmed — see note | **✓ shipped — `GET /usage/me` (v0.5.0)** |
 | Live transcription + diarization | ✓ Otter/Fireflies/Grain | **planned — #69** |
 | Meeting bot capture | ✓ Otter/Fireflies/Grain | **planned via Recall.ai** |
+
+> Rows marked **unconfirmed** are ones this table previously scored as a flat "✗" for every
+> competitor without a per-vendor source check. That blanket scoring is not being repeated here — a
+> human should verify current enterprise-tier auth options (SAML SSO is plausible on a top plan;
+> SCIM/PKI less so) and any compliance-redaction tooling before re-asserting a gap in either
+> direction.
 
 ---
 
 ## Roadmap — GitHub Issues Mapped to Market Gaps
 
-### Priority 1 — Category-defining features (build first)
+### Shipped since this roadmap was first written
 
-**Recall.ai Integration** *(new issue needed)*
+**#52 — AI Chat / RAG over Transcripts — SHIPPED (v0.5.0).** Delivered as described below and then
+some: per-file/collection/tag/speaker scoping, redaction-aware masking before any excerpt reaches an
+LLM (fails closed), streamed answers with timestamp-linked citations, searchable conversation
+history, and per-conversation model switching. Full feature list: `CHANGELOG.md` → "AI Chat with RAG
+over your transcripts (issue #52)".
+
+**#26 — Watch Folder / Automatic Bucket Processing — SHIPPED (v0.5.0).** Local mounted folder,
+S3-compatible bucket, and SMB/CIFS share sources (not Google Drive, which was in the original issue
+scope but did not ship), three-layer content-hash dedup, multi-part recording stitching, and
+event-driven near-real-time local-folder watching alongside the scheduled-scan safety net.
+
+**#78 — Admin-Controlled Prompt Sharing — SHIPPED.** Clone-into-your-own-library, creator
+attribution, popularity ranking by actual usage count, and a full audit trail.
+
+**Content redaction (PII / profanity / toxicity) — SHIPPED, not originally on this roadmap.**
+Read-time masking across every display/export surface, per-user opt-out, and an admin enforcement
+floor that can force categories on. Strengthens the "Priority 1: Privacy-first enterprise" segment
+below independently of formal #98 certification.
+
+**Enterprise authentication breadth — SHIPPED, not originally on this roadmap.** LDAP, generic OIDC,
+SAML 2.0, PKI/mTLS, trusted-header reverse-proxy auth, TOTP MFA, and SCIM 2.0 provisioning, usable in
+combination. Directly relevant to the procurement requirements that gate the "Privacy-first
+enterprise" segment.
+
+### Priority 1 — Category-defining features still open
+
+**Recall.ai Integration** *(issue #365 — plan + gist published, not started)*
 Register as an ingestion source alongside yt-dlp. Webhook receiver → Celery task → existing pipeline. Enables passive meeting capture. No core pipeline changes needed. Positions OT as self-hosted Fireflies/Otter Teams replacement. Recall.ai cost: \$0.70/hr meeting captured.
-
-**#52 — AI Chat / RAG over Transcripts**
-Ask questions across your entire archive: *"Who mentioned the budget?"* *"Summarize every meeting with Sarah."* No competitor in Tier 3 has this. AssemblyAI offers LeMUR as a raw API but with no UI. This is the feature that transforms OpenTranscribe from a transcription tool into an **organizational memory system** — a fundamentally different and more defensible product category. Enabled by the existing OpenSearch embedding layer. The architecture is already built; this is wiring a chat UI to it.
-
-**#26 — Watch Folder / Automatic Bucket Processing**
-Auto-ingest from local path, NFS, S3 bucket, Google Drive. Makes OT passive for organizations with existing recording workflows (broadcast, call centers, court reporters). No competitor offers this. Pairs with Recall.ai for a fully zero-touch pipeline.
 
 ### Priority 2 — Competitive parity (close remaining gaps)
 
-**#69 — Live Transcription + Real-time Speaker Identification**
+**#69 — Live Transcription + Real-time Speaker Identification** *(client-first plan published, not started)*
 Direct microphone/stream input with live diarization. Closes the last feature gap vs. Otter/Fireflies/Grain. Recall.ai integration is the lower-complexity path to live meeting capture; #69 adds direct mic input for in-person scenarios.
 
-**#98 — HIPAA / SOC 2 / GDPR Certification**
-Self-hosting handles data residency technically. Formal certifications handle enterprise procurement contractually. Without these badges, healthcare and legal buyers cannot sign regardless of technical capability. Unlocks the highest-value TAM segment.
+**#98 — HIPAA / SOC 2 / GDPR Certification** *(10-workpackage plan published, not started)*
+Self-hosting handles data residency technically, and the auth/redaction capabilities shipped above address several of the technical controls a SOC 2/HIPAA audit looks for. Formal certification still handles enterprise procurement contractually — without the badge, healthcare and legal buyers cannot sign regardless of technical capability. Unlocks the highest-value TAM segment.
 
 ### Priority 3 — Platform depth (stickiness and expansion)
 
-**#48 — Apple Silicon (MLX-Whisper or whisper.cpp)**
-Native Mac deployment for prosumer self-hosters. Mac Studios are common in media production and podcasting. Removes GPU barrier for non-Linux deployments. Already partially supported via MPS PyAnnote optimization.
+**#48 — Apple Silicon (MLX-Whisper or whisper.cpp)** *(3-track plan published, not started)*
+Native Mac deployment for prosumer self-hosters. Mac Studios are common in media production and podcasting. Removes GPU barrier for non-Linux deployments. Already partially supported via MPS PyAnnote optimization and hybrid mode's CPU-transcription/MPS-diarization split (auto-activates on macOS).
 
 **#20 — Analytics Dashboard**
-Talk time by speaker, activity over time, topic frequency. Adds team account stickiness and gives managers the reporting that Fireflies/Grain sell as a premium feature.
+Talk time by speaker, activity over time, topic frequency, rolled up across the whole library. Per-file speaker analytics (talk time, interruptions, turn-taking) already exist; #20 is the cross-library dashboard. Adds team account stickiness and gives managers the reporting that Fireflies/Grain sell as a premium feature.
 
 **#46 — Transcript Version Control**
 Edit tracking for journalism/legal workflows where an audit trail matters. Differentiates from Sonix/Trint in the media and legal verticals.
-
-**#78 — Admin-Controlled Prompt Sharing**
-Shared prompt library for teams. Makes OT stickier in multi-user deployments where prompt standardization matters (legal templates, interview frameworks, research codebooks).
 
 ---
 
@@ -241,7 +276,7 @@ Shared prompt library for teams. Makes OT stickier in multi-user deployments whe
 ### 1. Privacy-first enterprise (largest TAM, immediate)
 Healthcare, legal, government, defense, financial services. Every cloud competitor is disqualified by data residency requirements. OpenTranscribe is the only viable option.
 - **Message**: *Your recordings stay on your servers. Full stop.*
-- **Unlock**: HIPAA/SOC 2 cert (#98) for procurement. Technically ready today.
+- **Unlock**: Enterprise authentication (LDAP/OIDC/SAML/PKI/SCIM/MFA) and content redaction (PII/toxicity/profanity, admin-enforced) are live today. Formal HIPAA/SOC 2 certification (#98) is what remains for procurement sign-off — self-hosting plus these controls addresses much of the *technical* substance a compliance audit checks for, but the badge itself is not yet in hand.
 - **Price point**: Replace \$52–\$80/seat/month Trint or \$29–\$39/seat/month Fireflies Enterprise with a one-time deployment.
 
 ### 2. Media and journalism (strong match, live today)
@@ -255,9 +290,9 @@ Trint is the incumbent at \$52–\$80/seat/month, cloud-only, no semantic search
 - **Unlock**: Recall.ai integration or #69 (live transcription).
 
 ### 4. Researchers and academics (now, low friction)
-Qualitative researchers, oral historians, ethnographers with hundreds of hours of interview audio. Sonix charges \$10/hr and has no cross-file search. OpenTranscribe costs nothing after deployment; RAG (#52) makes it category-defining for this use case.
+Qualitative researchers, oral historians, ethnographers with hundreds of hours of interview audio. Sonix charges \$10/hr and has no cross-file search. OpenTranscribe costs nothing after deployment, and RAG chat (#52, shipped in v0.5.0) makes it category-defining for this use case.
 - **Message**: *Transcribe your entire archive, then have a conversation with it.*
-- **Unlock**: #52 (RAG/chat).
+- **Unlock**: Live today.
 
 ### 5. Developers and technical teams (ongoing, community-driven)
 Evaluate all 10 ASR providers against their own audio. Reference implementation for voice AI applications.
@@ -302,6 +337,11 @@ All figures verified against hand-labeled reference data and published in `docs/
 - **115× CPU RAM reduction** vs stock PyAnnote for long files (58.8GB → 39MB)
 - Pipeline runs on **2,317 MB VRAM** — deployable on consumer GPUs (RTX 3060 and up)
 - Apple Silicon support via PyAnnote MPS fork: **1.17× faster** than CPU on Mac Studio M2 Max
+- **Boundary-correction smoother** (issue #193 — a separate benchmark, on a separate hand-labeled
+  clip, from the 6-provider comparison above; the two figures should not be added together):
+  **−32% relative WSER** and speaker-label "islands" reduced 82→15, pure-CPU post-processing,
+  default on. An experimental GPU acoustic re-check adds a further **~−15% WSER** atop the smoother
+  for ~1.9s of added processing per 10-minute file, default off.
 
 ---
 

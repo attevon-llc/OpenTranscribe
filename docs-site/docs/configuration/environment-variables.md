@@ -177,13 +177,38 @@ The OpenSearch ML Commons plugin enables vector embeddings and semantic search:
 - **Configuration**: Database-driven via Admin UI
 - **Fallback**: Full-text search if neural search disabled
 
+### AWS OpenSearch Service (SigV4 auth + managed embeddings)
+
+By default OpenSearch is reached with basic auth (username/password), which is what the
+bundled OpenSearch container and most self-hosted clusters expect. A managed **Amazon
+OpenSearch Service** domain with an IAM access policy instead requires SigV4-signed requests:
+
+```bash
+# Authentication mode
+OPENSEARCH_AUTH=basic  # basic (default, unchanged) or sigv4
+
+# SigV4 signing -- used only when OPENSEARCH_AUTH=sigv4
+OPENSEARCH_AWS_REGION=     # empty falls back to AWS_REGION
+OPENSEARCH_AWS_SERVICE=es  # es (managed domain, default) or aoss (OpenSearch Serverless)
+
+# Embedding mode
+OPENSEARCH_EMBEDDING_MODE=local  # local (default, unchanged) or managed
+OPENSEARCH_NEURAL_MODEL_ID=      # pre-registered ML Commons model id -- used when OPENSEARCH_EMBEDDING_MODE=managed
+```
+
+`OPENSEARCH_AUTH=sigv4` signs every OpenSearch client with the AWS credential chain and forces
+TLS. `OPENSEARCH_EMBEDDING_MODE=managed` adopts a model the domain already hosts
+(`OPENSEARCH_NEURAL_MODEL_ID`) instead of mutating ML Commons cluster settings and registering a
+model by URL -- operations a managed AWS domain does not permit and which otherwise make neural
+search fail to initialize there.
+
 ## Cloud ASR Providers
 
 Configure cloud-based speech recognition as an alternative to local GPU processing.
 
 ```bash
 # ASR Provider Selection
-ASR_PROVIDER=local  # local, deepgram, assemblyai, openai, google, azure, aws, speechmatics, gladia
+ASR_PROVIDER=local  # local, deepgram, assemblyai, openai, google, azure, aws, speechmatics, gladia, pyannote
 
 # Deepgram
 DEEPGRAM_API_KEY=
@@ -219,6 +244,10 @@ SPEECHMATICS_MODEL=standard
 # Gladia
 GLADIA_API_KEY=
 GLADIA_MODEL=standard
+
+# pyannote.ai (STT orchestration — transcription + premium diarization in one API call)
+PYANNOTE_API_KEY=
+PYANNOTE_MODEL=parakeet  # or: whisper-large-v3-turbo
 
 # Cloud ASR Options
 CLOUD_ASR_EXTRACT_EMBEDDINGS=true  # Extract speaker embeddings locally for cross-file matching
@@ -309,6 +338,60 @@ FLOWER_URL_PREFIX=flower  # URL prefix (must match nginx proxy_pass path)
 ```
 
 Flower provides industry-standard Celery task monitoring with persistent task history, queue visibility, and worker status. Access at `http://localhost:5175/flower` (or via NGINX at `/flower/`).
+
+## Object Storage
+
+OpenTranscribe stores uploaded media in an S3-compatible bucket. `STORAGE_BACKEND=minio` (the
+bundled, self-hosted MinIO container) is the default and remains fully backward compatible; a
+native AWS S3 backend is also available for cloud deployments.
+
+```bash
+# Storage Backend Selection
+STORAGE_BACKEND=minio  # minio (default, self-hosted) or s3 (native AWS S3 / S3-compatible)
+```
+
+### MinIO (default)
+
+```bash
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
+MINIO_HOST=localhost
+MINIO_PORT=9000
+MINIO_SECURE=false
+MINIO_PUBLIC_URL=  # browser-facing origin for presigned URLs; empty keeps the default /s3 proxy path
+```
+
+### Native AWS S3 (`STORAGE_BACKEND=s3`)
+
+```bash
+STORAGE_BACKEND=s3
+S3_REGION=us-east-1               # falls back to AWS_REGION
+S3_ENDPOINT_URL=                  # set for an S3-compatible provider other than AWS; empty resolves to s3.<region>.amazonaws.com
+S3_USE_IAM_ROLE=true              # default: AWS credential chain (env / EKS-IRSA web identity / ECS task role / EC2 instance metadata)
+AWS_ACCESS_KEY_ID=                # only used when S3_USE_IAM_ROLE=false
+AWS_SECRET_ACCESS_KEY=            # only used when S3_USE_IAM_ROLE=false
+S3_CONFIGURE_BUCKET_CORS=false    # opt-in: apply a browser-upload CORS policy (boto3; minio-py has no CORS API)
+```
+
+`S3_USE_IAM_ROLE=true` (the default) needs no static keys -- credentials come from the standard
+AWS provider chain with automatic rotation. Set `S3_USE_IAM_ROLE=false` to sign with static
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` instead. The same object storage client (`minio.Minio`)
+drives both backends; switching `STORAGE_BACKEND` changes endpoint/credential/addressing
+construction, not the call sites.
+
+### Presigned URLs and large uploads (both backends)
+
+```bash
+STORAGE_PUBLIC_URL=               # backend-agnostic alias for MINIO_PUBLIC_URL; empty keeps the /s3 proxy path on MinIO and leaves native S3 URLs untouched
+PRESIGNED_URL_MAX_SECONDS=21600   # 6h default -- a presigned URL cannot outlive the credentials that signed it (IAM-role STS sessions expire well inside 24h)
+MULTIPART_THRESHOLD_MB=512        # objects at/above this size use browser-side multipart upload
+```
+
+:::note S3 vs MinIO single-PUT ceiling
+MinIO accepts a single-PUT object up to 5 TiB. AWS S3 rejects a single PUT above 5 GiB
+(`EntityTooLarge`), so on `STORAGE_BACKEND=s3` an upload above that size always goes through the
+multipart path regardless of `MULTIPART_THRESHOLD_MB`.
+:::
 
 ## Storage Encryption
 

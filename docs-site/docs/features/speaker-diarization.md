@@ -289,6 +289,23 @@ OpenTranscribe's independent diarization provider architecture allows routing di
 - When pyannote.ai is selected, speaker diarization is sent to the cloud API while transcription remains local
 - Falls back to local diarization if the cloud service is unavailable
 
+### Diarization Source
+
+A per-user setting — **Settings → Transcription** (`transcription_diarization_source`,
+backed by `UserDiarizationSettings`) — decides where a file's speaker labels actually come
+from. It takes four values:
+
+| Value | Behavior |
+|---|---|
+| **`provider`** (default) | No separate diarization pass runs — OpenTranscribe uses the speaker labels the ASR provider itself returned with the transcript. This is what matters when you're transcribing with a **cloud ASR provider**: it stays out of the way and accepts that provider's own diarization rather than layering PyAnnote on top of it. |
+| **`pyannote`** | Diarization is sent to the pyannote.ai cloud API described above, running in parallel with transcription and merged into the result afterward. |
+| **`local`** | Diarization runs through OpenTranscribe's own on-box PyAnnote pipeline described earlier on this page, via a reprocessing pass rather than the provider integration above. |
+| **`off`** | No diarization at all — the transcript is produced without speaker labels. |
+
+An unrecognized value, or `pyannote` selected without an API key configured, is refused with an
+error rather than silently falling back to local diarization — unlike ASR provider selection,
+which does degrade to a local model automatically.
+
 ### Speaker Verification Status
 
 Track identification confidence:

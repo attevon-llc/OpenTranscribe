@@ -238,7 +238,7 @@ excerpts data rather than instructions.
 ## Requirements
 
 Chat needs a language model. Configure a provider in **Settings → AI** — OpenAI,
-Anthropic, OpenRouter, or a self-hosted vLLM / Ollama endpoint. Until one is
+Anthropic, OpenRouter, Amazon Bedrock, or a self-hosted vLLM / Ollama endpoint. Until one is
 configured, the chat page shows a setup prompt instead of a composer.
 
 Retrieval uses the same OpenSearch index that powers search, so recordings must

@@ -160,6 +160,9 @@ default**, so once you save a panel the stored value wins.
 | **LDAP** | Directory connection, search base, bind credentials, attribute mapping, admission and admin groups |
 | **OIDC** | Any OpenID Connect provider — discovery URL, client ID/secret, callback, roles claim, token-validation controls |
 | **PKI** | X.509 settings, CA path, trusted proxies, mode, revocation checking |
+| **SAML** | SAML 2.0 service provider — IdP metadata/entity ID, ACS/SLS endpoint settings, attribute mapping, admission groups (same group-list syntax as OIDC) |
+| **Mappings** | Bind LDAP/OIDC group claims to an in-app group and/or a role grant, with a dry-run tester ([IdP group mapping](../authentication/groups)) |
+| **SCIM** | Bearer tokens for SCIM 2.0 provisioning from an IdP — create, view status, and revoke (see [SCIM Provisioning](#scim-provisioning) below) |
 | **Session** | Token lifetimes, idle and absolute session timeouts, concurrent-session limit and policy |
 | **Audit** | Who changed which auth setting, and when |
 
@@ -202,6 +205,35 @@ rows themselves live in **Settings → Watch Sources → Email configurations**;
 back to the `SMTP_*` environment transport. A designation naming a missing or disabled
 configuration is rejected when you save it, and deleting or disabling the designated row is
 refused while it holds the designation.
+
+### SCIM Provisioning
+
+The **SCIM** tab manages the bearer tokens that authenticate an identity provider's SCIM 2.0
+push provisioning against `/scim/v2` — this is the only place tokens are created, viewed, or
+revoked. See [SCIM 2.0 provisioning](../authentication/overview#scim-20-provisioning) for the
+protocol-level detail.
+
+| Field | Description |
+|-------|--------------|
+| **Name** | A label to tell tokens apart (e.g. "Okta production") |
+| **Expires** | Optional expiry date; leave blank for a token that never expires |
+| **Status** | Active or Revoked |
+| **Last used** | Timestamp of the most recent SCIM request authenticated with this token |
+
+Click **Add Token** to create one. The plaintext token is shown exactly once, immediately after
+creation — only its SHA-256 digest is stored, so if it's lost there is no way to retrieve it,
+only to revoke it and create a replacement.
+
+**Rotating a token** means creating a new one, updating the directory's SCIM connector to use
+it, and then revoking the old one — there is no in-place "regenerate" that keeps the same token
+row. Revocation is one-way and immediate: every SCIM request bearing that token is refused from
+that point on.
+
+A SCIM connector authenticated this way can create, update, and deactivate user accounts, but it
+can never create or modify a `super_admin`, and it can never write a role directly — group
+membership it creates is tagged `source='scim'`, kept separate from LDAP/OIDC directory-sync
+reconciliation. Deactivating a user (`active: false` or `DELETE`) disables the account and
+revokes its sessions without deleting it or its transcripts.
 
 ## Security Settings
 

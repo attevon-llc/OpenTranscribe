@@ -181,6 +181,61 @@ The migration runs through the Admin UI:
 Embedding migration can take significant time depending on the number of speakers and media files. Plan accordingly and run during a maintenance window.
 :::
 
+### Breaking Changes (v0.5.0)
+
+These affect operators upgrading to v0.5.0 regardless of whether you call the REST API
+directly.
+
+#### Six deployment-configuration panels now require `super_admin`, not `admin`
+
+**ASR provider**, **Engine configuration**, **Backups**, **Media Mirror**, **Watch sources**,
+and the **Redaction policy** floor now require the `super_admin` role instead of `admin`. They
+configure how the deployment runs, and several store infrastructure credentials (S3 keys, SMB
+passwords, SMTP passwords) that a team-level admin has no reason to read or replace.
+
+:::danger ACTION REQUIRED if a plain `admin` manages any of those six panels
+Promote that account to `super_admin` (Settings → Users → Role → Super Admin) **before
+upgrading**, or hand the work to an existing super admin. Nothing else changes tier: user
+accounts, tasks, search, and speaker maintenance stay at `admin`. Creating additional super
+admins from the UI is new in this release — the role selector previously offered only `user`
+and `admin`.
+:::
+
+#### The OIDC surface is renamed — configuration keys, routes, and the admin tab
+
+Config keys are now `oidc_*`, the admin tab is **OIDC**, and the routes are
+`/api/auth/oidc/login` and `/api/auth/oidc/callback`. No identity provider needs
+reconfiguring (the registered redirect URI still points at the SPA's `/login` page), and every
+`KEYCLOAK_*` environment variable keeps working permanently — the legacy spelling even wins
+when both are set. Stored database configuration is renamed automatically by migration `v377`.
+
+What does break: a script that writes `PUT /api/admin/auth-config/keycloak`, reads a
+`keycloak_*` key out of `GET /api/admin/auth-config`, or calls
+`/api/auth/keycloak/{login,callback}` directly. `GET /api/auth/methods` now reports `"oidc"`
+in `methods`; its `keycloak_enabled` field is retained for one minor release so a cached SPA
+bundle keeps rendering the SSO button, then removed.
+
+#### `POST /api/auth/token/refresh` now requires the CSRF header for cookie-authenticated clients
+
+Minting a new session from the refresh cookie alone is no longer CSRF-exempt — that's exactly
+what a forged cross-site request would target. Browsers are unaffected; the SPA already
+double-submits the token, and the CSRF cookie's lifetime was extended to match the refresh
+cookie's. **A non-browser API client that sends cookies must now also send `X-CSRF-Token`**;
+clients using `Authorization: Bearer` are exempt as before.
+
+#### `PKI_TRUSTED_PROXIES` is now required whenever PKI is enabled
+
+Header-sourced PKI authentication is refused when no trusted proxy is allow-listed, instead of
+being accepted with a warning. Hardened deployments already refused to *start* in that
+configuration, so this only changes development and evaluation stacks that enabled PKI through
+the admin UI. Set it to the address the backend sees the reverse proxy arrive from.
+
+#### `GET /api/auth/methods` no longer always advertises `local`
+
+`methods` previously contained `"local"` unconditionally. It now reflects `local_enabled`, so a
+deployment whose identity lives entirely in an external IdP reports only the methods it
+actually accepts. The response also gained `local_enabled` and `allow_registration` fields.
+
 ### Breaking API Changes
 
 These only affect you if you call the OpenTranscribe REST API directly — from a script,

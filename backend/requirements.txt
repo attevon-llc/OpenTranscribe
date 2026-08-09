@@ -3,7 +3,7 @@
 # Cap until the observability middleware adapts to the new routing.
 fastapi>=0.136.3,<0.137
 uvicorn[standard]>=0.49.0
-websockets>=11.0.3
+websockets>=17.0.1
 sqlalchemy>=2.0.51
 alembic>=1.18.5
 pydantic>=2.13.4
@@ -22,7 +22,11 @@ joserfc>=1.7.4
 python3-saml>=1.16.0
 python-multipart>=0.0.32
 passlib[bcrypt]>=1.7.4
-bcrypt==3.2.2
+# bcrypt>=5.0.0 removed the __about__ shim passlib 1.7.4 (unmaintained since 2020)
+# reads to detect the backend version, hard-breaking bcrypt_sha256/bcrypt verification
+# with "password cannot be longer than 72 bytes" for every password (pyca/bcrypt #1079,
+# #1082). 4.3.0 is the last 4.x release and keeps the compat shim.
+bcrypt>=4.3.0,<5
 email-validator
 
 # Observability (Prometheus metrics + structured JSON logs)
@@ -49,7 +53,7 @@ ldap3>=2.9.1
 slowapi>=0.1.10
 
 # PKI/X.509 Certificate Authentication
-cryptography>=49.0.0
+cryptography>=50.0.0
 
 # MFA/TOTP Authentication (FedRAMP IA-2)
 pyotp>=2.10.0
@@ -60,9 +64,13 @@ qrcode[pil]>=8.2
 numpy>=2.1.0
 
 # PyTorch with CUDA 12.8 support (CVE-2025-32434 fixed in 2.6.0+)
+# 2.11.0 is the newest matched torch/torchaudio pair on the cu128 index (torch has
+# continued past it to 2.12/2.13 on cu129/cu130, but torchaudio stopped releasing
+# at 2.11.0 everywhere - it's in maintenance mode and no longer version-locked to
+# torch, so this is genuinely the latest usable pair without a CUDA index migration).
 --extra-index-url https://download.pytorch.org/whl/cu128
-torch==2.8.0
-torchaudio==2.8.0
+torch==2.11.0
+torchaudio==2.11.0
 
 # =============================================================================
 # WhisperX 3.8.1 Dependencies (explicit since we install with --no-deps)
@@ -78,7 +86,11 @@ ctranslate2>=4.8.1,<5
 faster-whisper>=1.2.1
 
 # ML/Data processing
-transformers>=4.48.0
+# transformers>=5.0.0 needs huggingface-hub>=1.0.0, but whisperx (3.8.1 and current
+# 3.8.6) caps huggingface-hub<1.0.0, and gliner==0.2.28 caps transformers<5.14.0 -
+# capped here so Dependabot stops proposing an incompatible jump. Revisit once
+# whisperx ships a huggingface-hub>=1.0 compatible release.
+transformers>=4.48.0,<5.0.0
 huggingface-hub<1.0.0
 # pandas removed: only used by diarizer/speaker_assigner/reprocess, replaced with
 # DiarizeResult numpy dataclass. Saves ~72 MB. See app/transcription/diarize_result.py.
@@ -94,8 +106,8 @@ onnx>=1.22.0
 # setups are reproducible — an unpinned >= floor could resolve a newer release with
 # a different bundled CUDA at build time. onnxruntime-gpu and onnxruntime ship in
 # lockstep, so both pin to the same version.
-onnxruntime-gpu==1.27.0; sys_platform == 'linux' and platform_machine == 'x86_64'
-onnxruntime==1.27.0; sys_platform != 'linux' or platform_machine != 'x86_64'
+onnxruntime-gpu==1.28.0; sys_platform == 'linux' and platform_machine == 'x86_64'
+onnxruntime==1.28.0; sys_platform != 'linux' or platform_machine != 'x86_64'
 # NOTE: `tensorrt` was added during Phase 6.3 spike but removed 2026-04-23.
 # ORT's TensorrtExecutionProvider hit rebuild storms on pyannote's variable
 # input shapes — 2 min CPU saturation, 0% GPU usage, no inference. Microbench

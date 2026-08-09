@@ -19,7 +19,10 @@ from sqlalchemy import text
 
 #: Schema DDL (dropping a column/constraint to recreate the pre-revision shape)
 #: takes an ACCESS EXCLUSIVE lock — must not run beside other database tests.
-pytestmark = pytest.mark.xdist_group("migration_ddl")
+#: That alone only protects against other `migration_ddl` tests; `ddl_exclusive` makes
+#: `db_session` take a DB-wide advisory lock so this group can't deadlock against an
+#: unrelated worker's ordinary DML either (issue #389).
+pytestmark = [pytest.mark.xdist_group("migration_ddl"), pytest.mark.ddl_exclusive]
 
 REVISION = "v383_saml_auth_type"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"

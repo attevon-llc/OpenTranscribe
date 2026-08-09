@@ -6,10 +6,19 @@ key and be reflected on the subsequent GET with ``source == "db"``. Uses the rea
 ``db_session`` fixture with savepoint rollback — no mocks for the data layer.
 """
 
+import pytest
+
 from app.services.system_settings_service import get_setting
 
 _BASE = "/api/admin/engine-settings"
 _DB_KEY = "engine.boundary_smoothing_enabled"
+
+# This file and test_engine_settings_endpoints.py both write engine.boundary_* keys
+# through the same POST /update endpoint with no coordination between them — under
+# `-n auto` two workers inserting overlapping keys in different orders can deadlock on
+# the system_settings_key_key unique index (issue #389, same mechanism as
+# test_backup_metrics.py's "backup_system_settings" group).
+pytestmark = pytest.mark.xdist_group("engine_system_settings")
 
 
 class TestEngineSettingsBoundarySmoothing:

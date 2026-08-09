@@ -22,7 +22,12 @@ from sqlalchemy import text
 #: These suites perform schema DDL (dropping a column or constraint to recreate the
 #: pre-revision shape). Postgres takes an ACCESS EXCLUSIVE lock for that, so they must
 #: not run beside other database tests — `--dist loadgroup` keeps a group on one worker.
-pytestmark = pytest.mark.xdist_group("migration_ddl")
+#: That alone only protects against other `migration_ddl` tests; `ddl_exclusive` makes
+#: `db_session` take a DB-wide advisory lock so this group can't deadlock against an
+#: unrelated worker's ordinary DML either (issue #389 — dropping `scim_token` also
+#: needs ACCESS EXCLUSIVE on `user`, since `scim_token.created_by` references it and
+#: dropping the table drops the FK's enforcement trigger defined on `user` too).
+pytestmark = [pytest.mark.xdist_group("migration_ddl"), pytest.mark.ddl_exclusive]
 
 REVISION = "v382_scim_tokens"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"

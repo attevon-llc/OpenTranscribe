@@ -13,6 +13,8 @@ Generation (RAG)**: rather than sending whole transcripts to a language model,
 OpenTranscribe searches your library for the passages most relevant to your
 question and gives the model only those, along with instructions to cite them.
 
+![Chat empty state with suggested questions and conversation history](/img/screenshots/chat/01-chat-empty-state-suggestions.png)
+
 ## What it is good for
 
 The feature earns its keep on questions that would otherwise mean re-listening:
@@ -39,6 +41,8 @@ To narrow it, use **Add context**, which offers four ways to select:
 | **Collections** | You want a whole project or client. Membership is resolved at query time, so recordings added to the collection later are automatically in scope. |
 | **Tags** | You organise by topic or status rather than by folder. |
 | **Speakers** | You care about what specific people said. |
+
+![Chat scope picker with recordings, collections, tags, and speakers tabs](/img/screenshots/chat/03-chat-scope-picker.png)
 
 ### Asking about one person
 
@@ -175,6 +179,8 @@ prose, so a citation always points where it claims to point.
 
 If the excerpts do not contain the answer, the assistant is instructed to say so
 rather than guess.
+
+![Chat conversation with numbered citations, source list, and expandable Details](/img/screenshots/chat/02-chat-conversation-with-citations.png)
 
 ## Working with a conversation
 

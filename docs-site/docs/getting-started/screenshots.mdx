@@ -306,6 +306,54 @@ Once applied, tags and collections appear in their respective sections with easy
 
 ---
 
+## AI Chat (RAG)
+
+<div style={{textAlign: "center", margin: "2rem 0"}}>
+  <Img src="/img/opentranscribe-chat-workflow.gif" alt="OpenTranscribe AI Chat Workflow" style={{maxWidth: "100%", width: "800px", borderRadius: "8px", boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)"}} />
+  <p style={{marginTop: "1rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Chat workflow: ask a question → narrow the scope with Add context → get a grounded, cited answer.</p>
+</div>
+
+### Ask Your Recordings Anything
+
+<div style={{marginBottom: "2rem"}}>
+  <Img src="/img/screenshots/chat/01-chat-empty-state-suggestions.png" alt="Chat empty state with suggested questions" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Chat is a first-class page alongside Search and Speakers. Suggested starter questions and a date-grouped conversation history sit beside the composer.</p>
+</div>
+
+<div style={{marginBottom: "2rem"}}>
+  <Img src="/img/screenshots/chat/01-chat-empty-state-suggestions-light-mode.png" alt="Chat empty state in light mode" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>The same empty state in light mode.</p>
+</div>
+
+Ask a question in plain language and the assistant searches your transcripts for
+the passages most relevant to it, rather than sending whole recordings to a
+language model.
+
+### Choosing What to Chat About
+
+<div style={{marginBottom: "2rem"}}>
+  <Img src="/img/screenshots/chat/03-chat-scope-picker.png" alt="Chat scope picker with recordings, collections, tags, and speakers tabs" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>"Add context" narrows a conversation to specific recordings, a collection, a set of tags, or one speaker's own words — or leave it as "All transcripts".</p>
+</div>
+
+By default a conversation searches everything you can access. Narrowing the
+scope to the recordings that actually matter makes answers noticeably more
+specific — and the **Speakers** tab retrieves only one person's own turns,
+never a sentence in which someone else merely mentions them.
+
+### Grounded Answers with Citations
+
+<div style={{marginBottom: "2rem"}}>
+  <Img src="/img/screenshots/chat/02-chat-conversation-with-citations.png" alt="Chat conversation with numbered citations and source list" style={{maxWidth: "100%", width: "700px", borderRadius: "4px"}} />
+  <p style={{marginTop: "0.5rem", fontStyle: "italic", color: "var(--ifm-color-emphasis-600)"}}>Every answer that uses your transcripts cites them with numbered markers and lists the sources underneath, with an expandable "Details" view. Clicking a source jumps to that exact moment in the player.</p>
+</div>
+
+Answers stream in token by token and cite the exact recording, speaker, and
+timestamp they came from. If the retrieved excerpts don't contain the answer,
+the assistant says so rather than guessing.
+
+---
+
 ## Organization & Filtering
 
 ### Gallery with Filters

@@ -87,6 +87,14 @@ TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-password}"
 
 # Test media: directory of small real media files (mp3/m4a/wav/mp4) to upload.
 TEST_MEDIA_DIR="${TEST_MEDIA_DIR:-/mnt/nvm/opentranscribe-test-runs/test-media}"
+# Upper bound on a single test media file.
+#
+# This was a hardcoded 5M, which quietly excluded every realistic sample: real
+# multi-speaker material is tens of megabytes, so the harness was only ever
+# transcribing short single-speaker clips and never exercised diarization on
+# anything resembling production input. The cap exists to bound run time, not
+# to keep files small for their own sake — so it is a knob, and a generous one.
+TEST_MEDIA_MAX_SIZE="${TEST_MEDIA_MAX_SIZE:-100M}"
 
 DO_CLEANUP=0
 DO_FORCE=0
@@ -460,10 +468,15 @@ phase_05_seed_data() {
     local media_files=()
     while IFS= read -r f; do
         media_files+=("$f")
+    # SORTED, then take the first two. `find` alone returns directory order,
+    # which is arbitrary — so without the sort, WHICH files get seeded varies
+    # between runs on the same machine. Phase 11 then cannot reliably reserve
+    # an unseeded file, and the "new data post-upgrade" assertion would
+    # silently degrade to re-uploading something already present.
     done < <(find "$TEST_MEDIA_DIR" -maxdepth 1 -type f \
                 \( -iname "*.mp3" -o -iname "*.m4a" -o -iname "*.mp4" \
                    -o -iname "*.wav" -o -iname "*.flac" -o -iname "*.ogg" \) \
-                -size -5M | head -2)
+                 -size "-$TEST_MEDIA_MAX_SIZE" | sort | head -2)
     (( ${#media_files[@]} > 0 )) || gr_die "no media files in $TEST_MEDIA_DIR (need 1-2 small audio/video files)"
 
     local file_ids=()
@@ -478,6 +491,10 @@ phase_05_seed_data() {
         ac_wait_for_file_status "$fid" 1800
     done
     printf '%s\n' "${file_ids[@]}" > "$TEST_ROOT/seeded-file-ids.txt"
+    # Recorded so phase 11 can pick a file that was NOT seeded here. If it
+    # re-uploaded a seeded file, a pass could come from pre-upgrade state
+    # rather than from the upgraded stack doing new work.
+    printf '%s\n' "${media_files[@]##*/}" > "$TEST_ROOT/seeded-media-names.txt"
     gr_ok "seeded $(wc -l < "$TEST_ROOT/seeded-file-ids.txt") files"
 }
 
@@ -912,7 +929,98 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
         hit_wait=$((hit_wait + 10))
     done
     as_assert_ge "hybrid search returns hits post-upgrade" "$hits" 1
+}
 
+# ─── Phase 11: does the upgraded stack still do its JOB? ────────────────────
+#
+# Everything up to here proves the OLD data survived and the new code answers
+# HTTP. Neither proves the upgraded deployment can still process NEW work —
+# and that is the failure a user actually notices. The paths this exercises are
+# the ones an upgrade is most likely to break and the assertions above cannot
+# see: Celery workers picking up a task under the new image, the ASR model
+# loading against a possibly-changed cache layout, the OpenSearch index
+# accepting writes under the new mapping, and the new row satisfying the
+# migrated schema's constraints rather than merely the old rows doing so.
+#
+# A migration that leaves existing rows intact but makes every INSERT fail is
+# a complete upgrade failure that phases 06-10 would report as a clean pass.
+phase_11_new_data_post_upgrade() {
+    API_BASE="${API_BASE:-http://localhost:${TEST_BACKEND_PORT}/api}"
+    export API_BASE
+    TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
+    export TEST_REPORT_FILE
+
+    ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD" || {
+        as_record FAIL "login to upgraded stack for new-data test"
+        return 0
+    }
+
+    # Deliberately a DIFFERENT file from the ones phase 05 seeded, so a pass
+    # cannot come from re-reading pre-upgrade state.
+    local seeded="$TEST_ROOT/seeded-media-names.txt"
+    local new_media=""
+    while IFS= read -r f; do
+        if [[ -f "$seeded" ]] && grep -Fxq "${f##*/}" "$seeded"; then
+            continue
+        fi
+        new_media="$f"; break
+    done < <(find "$TEST_MEDIA_DIR" -maxdepth 1 -type f \
+                \( -iname "*.mp3" -o -iname "*.m4a" -o -iname "*.mp4" \
+                   -o -iname "*.wav" -o -iname "*.flac" -o -iname "*.ogg" \) \
+                 -size "-$TEST_MEDIA_MAX_SIZE" | sort)
+
+    if [[ -z "$new_media" ]]; then
+        as_record SKIP "new upload post-upgrade" "no suitable media in $TEST_MEDIA_DIR"
+        return 0
+    fi
+
+    local fid
+    if ! fid=$(ac_upload_file "$new_media"); then
+        as_record FAIL "new upload accepted post-upgrade" "$(basename "$new_media")"
+        return 0
+    fi
+    as_record PASS "new upload accepted post-upgrade" "$(basename "$new_media") uuid=$fid"
+
+    # The real proof: a task queued AFTER the upgrade runs to completion under
+    # the new image. This is what exercises the workers, the ASR stack and the
+    # post-migration INSERT path.
+    if ac_wait_for_file_status "$fid" 1800; then
+        as_record PASS "NEW transcription completed on upgraded stack" "$fid"
+    else
+        as_record FAIL "NEW transcription completed on upgraded stack" \
+            "file $fid did not reach completed within 1800s"
+        return 0
+    fi
+
+    local seg_count
+    seg_count=$(ac_get_segments "$fid" 2>/dev/null | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print(0); sys.exit()
+print(len(d) if isinstance(d, list) else len(d.get("segments") or []))
+' 2>/dev/null || echo 0)
+    as_assert_ge "NEW transcript has segments" "$seg_count" 1
+
+    # And the new content must be reachable through search — proving the
+    # upgraded stack INDEXED it, not merely stored it.
+    local new_hits=0 waited=0
+    while [ "$waited" -lt 300 ]; do
+        new_hits=$(ac_search "the" 2>/dev/null | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
+' 2>/dev/null || echo 0)
+        [ "$new_hits" -ge 1 ] && break
+        sleep 10
+        waited=$((waited + 10))
+    done
+    as_assert_ge "NEW content indexed and searchable post-upgrade" "$new_hits" 1
+}
+
+phase_12_summary() {
+    TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
     as_summary | tee -a "$TEST_REPORT_FILE"
     {
         echo ""
@@ -940,6 +1048,8 @@ phase 07 phase_07_swap_to_new
 phase 08 phase_08_start_new
 phase 09 phase_09_snapshot_post
 phase 10 phase_10_assert_and_report
+phase 11 phase_11_new_data_post_upgrade
+phase 12 phase_12_summary
 
 echo
 echo "Done. Report: $TEST_ROOT/REPORT.md"

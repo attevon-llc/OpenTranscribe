@@ -277,6 +277,13 @@ gr_cleanup() {
         done
     fi
 
+    # 3b. Remove stock-NAMED resources this run is recorded as owning.
+    # These carry production names and so are invisible to the label filters
+    # above — the installer's compose project has no idea it is under test.
+    # Without this the run leaves its database behind and the NEXT fresh
+    # install silently inherits it (issue #408).
+    gr_cleanup_owned_stock_resources
+
     # 4. Remove TEST_ROOT contents — but only if TEST_ROOT is still within the allowed area
     if [[ -n "${TEST_ROOT:-}" && -d "$TEST_ROOT" ]]; then
         local resolved
@@ -340,9 +347,9 @@ gr_check_stale_stock_volumes() {
 
     gr_log "OT_RELEASE_TEST_RESET_VOLUMES=1 — verifying each volume is not live data"
     for vol in "${found[@]}"; do
-        local mp
-        mp=$(docker volume inspect "$vol" --format '{{.Mountpoint}}' 2>/dev/null || echo "")
-        if [[ -n "$mp" && -e "$mp/.opentranscribe-live-data" ]]; then
+        # Probed from inside a container: the Mountpoint is root-owned, so a
+        # host-side test silently reports "no marker" for every volume.
+        if gr_volume_has_live_marker "$vol"; then
             gr_die "$vol carries the .opentranscribe-live-data marker — REFUSING to remove it.
            This is a live deployment's storage, not release-test residue."
         fi
@@ -356,6 +363,171 @@ gr_check_stale_stock_volumes() {
     done
 }
 
+# ─── Ownership stamp for stock-named resources (issue #408, part 2) ─────────
+#
+# Detecting a stale volume on the NEXT run is only half the fix; it still leaves
+# the residue behind. Cleanup has to remove it — but the volume carries a
+# production name, so "remove anything called opentranscribe_postgres_data" is
+# precisely the rule that must never exist here.
+#
+# The invariant that makes this safe: gr_check_stale_stock_volumes has already
+# run and either found NO stock volumes or removed them under an explicit
+# opt-in. So at the moment preflight completes, every stock volume is absent,
+# and any that exists afterwards was created BY THIS RUN. We record that fact
+# while it is still true, rather than inferring it later from a name.
+#
+# The stamp lives outside TEST_ROOT because gr_cleanup deletes TEST_ROOT, and a
+# standalone `--cleanup` invocation needs to read it after the fact.
+GR_OWNED_STAMP="${GR_OWNED_STAMP:-/mnt/nvm/opentranscribe-test-runs/.owned-stock-resources}"
+
+# Does this volume carry the live-data marker?
+#
+# It must be read from INSIDE a container. A volume's Mountpoint is under the
+# Docker root (here /mnt/nas/docker/volumes/...), which is root-owned 0755, so
+# an unprivileged `[[ -e "$mp/.opentranscribe-live-data" ]]` cannot stat it and
+# returns false — indistinguishable from "no marker". The self-test caught this
+# doing precisely the wrong thing: it deleted a volume that WAS marked live.
+#
+# Returns 0 = marker present (or undetermined). FAILS CLOSED: if docker cannot
+# tell us, we claim the marker is there, because the cost of a false positive
+# is a volume left behind and the cost of a false negative is data loss.
+gr_volume_has_live_marker() {
+    local vol="$1" rc
+    docker run --rm -v "$vol:/probe:ro" alpine \
+        test -e /probe/.opentranscribe-live-data >/dev/null 2>&1
+    rc=$?
+    case "$rc" in
+        0) return 0 ;;   # marker present
+        1) return 1 ;;   # ran cleanly, no marker
+        *)               # could not run the probe at all
+           gr_warn "could not probe $vol for the live-data marker (docker rc=$rc) — assuming it IS live"
+           return 0 ;;
+    esac
+}
+
+gr_stamp_owned_resources() {
+    local proj="${GR_STOCK_PROJECT:-opentranscribe}"
+    local dir
+    dir="$(dirname "$GR_OWNED_STAMP")"
+    mkdir -p "$dir" 2>/dev/null || { gr_warn "cannot write ownership stamp in $dir"; return 0; }
+
+    {
+        echo "# Written by gr_stamp_owned_resources at preflight."
+        echo "# Every stock volume below was verified ABSENT immediately before"
+        echo "# this run started, so anything now bearing the name belongs to the"
+        echo "# test and cleanup may remove it. Delete this file and cleanup will"
+        echo "# refuse to touch stock-named resources at all."
+        echo "scenario=${TEST_SCENARIO:-unknown}"
+        echo "test_root=${TEST_ROOT:-unknown}"
+        local vol
+        for vol in "${GR_PROTECTED_VOLUMES[@]}"; do
+            echo "volume=${proj}_${vol}"
+        done
+        echo "network=${proj}_default"
+    } > "$GR_OWNED_STAMP"
+
+    gr_ok "recorded test ownership of stock-named resources"
+}
+
+# ─── The repo's own .env is never a test artifact ───────────────────────────
+#
+# Every .env the harness writes lives under TEST_ROOT (the staged install dirs)
+# or is the gitignored .env.test-secrets. The repo's own .env — which carries
+# the live deployment's credentials and NAS paths — must come out of a release
+# test byte-identical.
+#
+# That is an easy claim to make and an easy one to be wrong about, so it is
+# measured rather than asserted: fingerprint before, verify after, fail loudly
+# on any difference.
+GR_REPO_ENV="${GR_REPO_ENV:-/mnt/nvm/repos/transcribe-app/.env}"
+GR_REPO_ENV_FINGERPRINT=""
+
+gr_fingerprint_repo_env() {
+    if [[ -f "$GR_REPO_ENV" ]]; then
+        GR_REPO_ENV_FINGERPRINT="$(sha256sum "$GR_REPO_ENV" | awk '{print $1}')"
+        gr_ok "fingerprinted repo .env (must be unchanged at exit)"
+    else
+        GR_REPO_ENV_FINGERPRINT="absent"
+        gr_log "no repo .env to fingerprint"
+    fi
+    # Checked on EVERY exit path, not just the happy one — a scenario that dies
+    # halfway is exactly when a stray write is most likely and least expected.
+    # The trap clears itself first so gr_die's exit cannot re-enter it.
+    trap 'trap - EXIT; gr_assert_repo_env_untouched' EXIT
+}
+
+gr_assert_repo_env_untouched() {
+    [[ -n "$GR_REPO_ENV_FINGERPRINT" ]] || return 0
+
+    local now
+    if [[ -f "$GR_REPO_ENV" ]]; then
+        now="$(sha256sum "$GR_REPO_ENV" | awk '{print $1}')"
+    else
+        now="absent"
+    fi
+
+    if [[ "$now" != "$GR_REPO_ENV_FINGERPRINT" ]]; then
+        gr_die "the repo's .env CHANGED during this release test.
+           before: $GR_REPO_ENV_FINGERPRINT
+           after:  $now
+           A release test must never write to the live deployment's .env.
+           Restore it from git or your backup before starting the stack."
+    fi
+    gr_ok "repo .env unchanged"
+}
+
+# Remove ONLY resources this run is recorded as owning. Three independent
+# conditions must all hold for each removal, because the name alone proves
+# nothing:
+#   1. the ownership stamp lists it (verified absent at preflight),
+#   2. it carries no .opentranscribe-live-data marker,
+#   3. no container is currently using it.
+gr_cleanup_owned_stock_resources() {
+    if [[ ! -f "$GR_OWNED_STAMP" ]]; then
+        gr_log "no ownership stamp — leaving stock-named resources untouched"
+        return 0
+    fi
+
+    local vol net users
+    while IFS= read -r line; do
+        case "$line" in
+            volume=*)
+                vol="${line#volume=}"
+                docker volume inspect "$vol" >/dev/null 2>&1 || continue
+
+                if gr_volume_has_live_marker "$vol"; then
+                    gr_warn "refusing to remove $vol — carries the live-data marker"
+                    continue
+                fi
+
+                users=$(docker ps -a --filter "volume=$vol" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')
+                if [[ -n "${users// /}" ]]; then
+                    gr_warn "refusing to remove $vol — still used by: ${users% }"
+                    continue
+                fi
+
+                if docker volume rm "$vol" >/dev/null 2>&1; then
+                    gr_ok "removed test-owned volume $vol"
+                fi
+                ;;
+            network=*)
+                net="${line#network=}"
+                docker network inspect "$net" >/dev/null 2>&1 || continue
+                users=$(docker network inspect "$net" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "")
+                if [[ -n "${users// /}" ]]; then
+                    gr_warn "refusing to remove network $net — still has: ${users% }"
+                    continue
+                fi
+                if docker network rm "$net" >/dev/null 2>&1; then
+                    gr_ok "removed test-owned network $net"
+                fi
+                ;;
+        esac
+    done < "$GR_OWNED_STAMP"
+
+    rm -f "$GR_OWNED_STAMP"
+}
+
 gr_preflight() {
     gr_require_vars
     gr_check_project_name
@@ -363,6 +535,8 @@ gr_preflight() {
     gr_check_volume_names
     gr_check_container_names
     gr_check_stale_stock_volumes
+    gr_stamp_owned_resources
+    gr_fingerprint_repo_env
     gr_check_ports_free
     gr_check_disk_space 80 10
     gr_confirmation_gate

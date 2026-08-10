@@ -73,6 +73,10 @@ TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-password}"
 # multipart upload — this exercises the same code path a real user uses when
 # dragging a file into the UI. Files in this dir are NOT committed to git.
 TEST_MEDIA_DIR="${TEST_MEDIA_DIR:-/mnt/nvm/opentranscribe-test-runs/test-media}"
+# See the matching note in test-upgrade.sh: the old hardcoded 5M excluded every
+# realistic multi-speaker sample, so diarization was never exercised on
+# production-like input. Bounds run time; not a smallness requirement.
+TEST_MEDIA_MAX_SIZE="${TEST_MEDIA_MAX_SIZE:-100M}"
 
 # Cleanup mode
 DO_CLEANUP=0
@@ -450,7 +454,7 @@ phase_06_api_smoke() {
         done < <(find "$TEST_MEDIA_DIR" -maxdepth 1 -type f \
                     \( -iname "*.mp3" -o -iname "*.m4a" -o -iname "*.mp4" \
                        -o -iname "*.wav" -o -iname "*.flac" -o -iname "*.ogg" \) \
-                    -size -5M | head -2)
+                    -size "-$TEST_MEDIA_MAX_SIZE" | head -2)
         if (( ${#media_files[@]} == 0 )); then
             as_record FAIL "no media files found in $TEST_MEDIA_DIR (need at least one .mp3/.m4a/.wav/.mp4 under 5 MB)"
         else

@@ -439,11 +439,45 @@ export async function initAuth() {
   }
 }
 
+/**
+ * Certificate metadata for a PKI-authenticated user.
+ *
+ * Fetched separately from `/auth/me` because `GET /auth/me` returns the `User`
+ * schema and this data lives on a dedicated endpoint. Failure is non-fatal: the
+ * certificate panel simply stays hidden, exactly as it does for a user who did
+ * not authenticate with a client certificate.
+ */
+async function fetchCertificateInfo(): Promise<CertificateInfo | undefined> {
+  try {
+    const { data } = await axiosInstance.get('/auth/me/certificate');
+    return data?.has_certificate ? data : undefined;
+  } catch {
+    // Never let this break sign-in. A deployment with PKI disabled, an older
+    // backend, or a transient failure all mean the same thing to the UI: no
+    // certificate to show.
+    return undefined;
+  }
+}
+
 // Fetch current user info from API
 export async function fetchUserInfo() {
   try {
     const response = await axiosInstance.get('/auth/me');
     const userData = response.data;
+
+    // Hydrate `user.certificate`, which CertificateInfo.svelte renders from.
+    //
+    // That component and its `certificate?: CertificateInfo` field already
+    // existed and SecuritySettings.svelte already mounted it — but nothing ever
+    // populated the field, so `GET /api/auth/me/certificate` had no caller and
+    // the panel rendered nothing for every PKI user. Dead surface caught by
+    // tests/unit/test_route_has_a_caller.py; see issue #398.
+    //
+    // Only for users who actually authenticated with a certificate, so a
+    // password/OIDC login pays nothing for it.
+    if (userData?.auth_type === 'pki') {
+      userData.certificate = await fetchCertificateInfo();
+    }
 
     authStore.setUser(userData);
     return userData;

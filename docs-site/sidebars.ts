@@ -119,6 +119,7 @@ const sidebars: SidebarsConfig = {
         'developer-guide/rag-chat',
         'developer-guide/contributing',
         'developer-guide/testing',
+        'developer-guide/releasing',
       ],
     },
     'faq',

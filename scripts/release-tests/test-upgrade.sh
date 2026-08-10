@@ -811,8 +811,19 @@ PY
     ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD" || true
     local code
 
+    # Docs are a security surface, not a liveness check: a hardened deployment
+    # publishes none of /api/docs, /api/redoc, /api/openapi.json. 404 is the
+    # CORRECT answer for a real install, so assert whichever the deployment is
+    # configured for. Same correction as the fresh-install scenario.
+    local docs_enabled
+    docs_enabled=$(grep -E '^ENABLE_API_DOCS=' "$TEST_ROOT/after/.env" 2>/dev/null \
+        | cut -d= -f2 | tr -d ' "' | tr '[:upper:]' '[:lower:]' || true)
     code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_BACKEND_PORT}/api/docs")
-    as_assert_http "API docs reachable post-upgrade" 200 "$code"
+    if [[ "$docs_enabled" == "true" || "$docs_enabled" == "1" || "$docs_enabled" == "yes" ]]; then
+        as_assert_http "API docs reachable post-upgrade (opted in)" 200 "$code"
+    else
+        as_assert_http "API docs NOT exposed post-upgrade (hardened)" 404 "$code"
+    fi
 
     code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_FRONTEND_PORT}/")
     as_assert_http "frontend reachable post-upgrade" 200 "$code"
@@ -852,7 +863,7 @@ PY
         # image really is different from the old one.
         gr_log "API routes added by this upgrade: $added"
     else
-        as_record SKIP "API route diff" "openapi.json unavailable on one side"
+        as_record SKIP "API route diff" "openapi.json not served (hardened: ENABLE_API_DOCS unset) — set it to exercise the route diff"
     fi
 
     # Neural search / OpenSearch ML model check. This is the same strict

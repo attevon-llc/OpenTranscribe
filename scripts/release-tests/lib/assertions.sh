@@ -18,18 +18,30 @@ set -euo pipefail
 
 as_pass=0
 as_fail=0
+as_skip=0
 
 as_record() {
     local status="$1"
     local label="$2"
     local detail="${3:-}"
-    if [[ "$status" == "PASS" ]]; then
-        echo -e "\033[0;32m  PASS\033[0m  $label"
-        as_pass=$((as_pass + 1))
-    else
-        echo -e "\033[0;31m  FAIL\033[0m  $label  ${detail}"
-        as_fail=$((as_fail + 1))
-    fi
+    case "$status" in
+        PASS)
+            echo -e "\033[0;32m  PASS\033[0m  $label"
+            as_pass=$((as_pass + 1))
+            ;;
+        # SKIP is a deliberate "not applicable here", not a failure. It used to
+        # fall into the else branch and be counted — and printed — as FAIL, so a
+        # correctly-hardened deployment that does not serve openapi.json showed up
+        # as a failing release gate.
+        SKIP)
+            echo -e "\033[1;33m  SKIP\033[0m  $label  ${detail}"
+            as_skip=$((as_skip + 1))
+            ;;
+        *)
+            echo -e "\033[0;31m  FAIL\033[0m  $label  ${detail}"
+            as_fail=$((as_fail + 1))
+            ;;
+    esac
     printf '| %s | %s | %s |\n' "$status" "$label" "$detail" >> "$TEST_REPORT_FILE"
 }
 
@@ -117,13 +129,13 @@ as_assert_diff_files() {
 }
 
 as_summary() {
-    local total=$((as_pass + as_fail))
+    local total=$((as_pass + as_fail + as_skip))
     echo
     if (( as_fail == 0 )); then
-        echo -e "\033[0;32m=== ${as_pass}/${total} assertions passed ===\033[0m"
+        echo -e "\033[0;32m=== ${as_pass}/${total} assertions passed (${as_skip} skipped) ===\033[0m"
         return 0
     else
-        echo -e "\033[0;31m=== ${as_fail}/${total} assertions FAILED ===\033[0m"
+        echo -e "\033[0;31m=== ${as_fail}/${total} assertions FAILED (${as_skip} skipped) ===\033[0m"
         return 1
     fi
 }

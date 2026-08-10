@@ -457,3 +457,39 @@ def test_upgrade_refuses_before_teardown_when_secrets_are_missing():
     assert source.count("preflight_upgrade_env || exit 1") == 2, (
         "both `update` and `update-full` must be gated"
     )
+
+
+def test_base_compose_does_not_blank_the_baked_version():
+    """The bare `- APP_VERSION` form overrode the image's baked ENV with "".
+
+    Only opentr.sh (a git checkout) exports APP_VERSION. A real deployment runs
+    opentranscribe.sh or plain `docker compose`, so Compose forwarded an EMPTY
+    value and every production container reported its version as "unknown" --
+    defeating the --build-arg contract one layer further out, and silently
+    disabling AboutModal's version-mismatch warning (#411).
+
+    `${APP_VERSION:-}` is equally wrong: it injects an empty string just the same.
+    """
+    base = (REPO_ROOT / "docker-compose.yml").read_text()
+    code = "\n".join(line for line in base.splitlines() if not line.lstrip().startswith("#"))
+    assert not re.search(r"^\s+- APP_VERSION\s*$", code, re.MULTILINE), (
+        "base compose forwards the host's APP_VERSION, blanking the image's baked value"
+    )
+    assert not re.search(r"APP_VERSION:\s*\$\{APP_VERSION:-\}", code), (
+        "base compose injects an empty APP_VERSION, which is the same bug"
+    )
+
+    # Dev genuinely needs it: bind-mounted source over a possibly stale image.
+    override = (REPO_ROOT / "docker-compose.override.yml").read_text()
+    assert "APP_VERSION" in override, "dev override should still supply APP_VERSION"
+
+
+def test_skip_is_not_counted_as_a_failure():
+    """A deliberate "not applicable" must not read as a failing release gate.
+
+    as_record's else-branch treated SKIP as FAIL, so a correctly hardened
+    deployment that does not serve openapi.json made the route-diff check appear
+    to fail.
+    """
+    assertions = (REPO_ROOT / "scripts" / "release-tests" / "lib" / "assertions.sh").read_text()
+    assert "as_skip" in assertions, "SKIP is still counted as a failure"

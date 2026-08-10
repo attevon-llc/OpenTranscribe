@@ -151,6 +151,15 @@ stage_script() {
         preflight) echo "10-preflight.sh" ;;
         bump)      echo "20-bump.sh" ;;
         verify)    echo "30-verify.sh" ;;
+        build)     echo "40-build.sh" ;;
+        scan)      echo "50-scan.sh" ;;
+        test)      echo "60-test.sh" ;;
+        rehearse)  echo "65-rehearse.sh" ;;
+        tag)       echo "70-tag.sh" ;;
+        publish)   echo "80-publish.sh" ;;
+        smoke)     echo "85-smoke.sh" ;;
+        promote)   echo "90-promote.sh" ;;
+        finish)    echo "95-finish.sh" ;;
         *)         echo "" ;;
     esac
 }

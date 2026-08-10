@@ -850,6 +850,28 @@ typed `MediaFileDetail` instead of `any`.
 
 ### Upgrade Notes
 
+- **⚠️ ACTION REQUIRED — the backend will REFUSE TO START if your `.env` lacks production
+  secrets.** Security enforcement changed from fail-open to fail-closed (issue #284 A0.3):
+  `ENVIRONMENT` now defaults to `production` and the gate is `settings.is_hardened` rather than
+  `ENVIRONMENT in ("production", "prod")`. In v0.4.x, `ENVIRONMENT` defaulted to `development`,
+  so a deployment that never set it — which is the documented normal case, since `.env.example`
+  ships it commented out — **skipped every production secret check**. v0.5.0 enforces them.
+
+  The upgrade fails with `ValueError: REDIS_PASSWORD is required in production environment` and
+  the stack stays down. Caught by the release rehearsal (v0.4.1 → v0.5.0); see issue #410.
+
+  **Before upgrading**, ensure your `.env` has all of:
+
+  ```bash
+  # Add a Redis password if you do not have one:
+  echo "REDIS_PASSWORD=$(openssl rand -hex 16)" >> .env
+  ```
+
+  and that `JWT_SECRET_KEY` / `ENCRYPTION_KEY` are not the shipped placeholders, `DEBUG` is not
+  enabled, and — if OIDC is configured — `OIDC_VERIFY_AUDIENCE` is set. A single-user install on
+  a trusted network that wants the old behaviour can instead set `ENVIRONMENT=development`, but
+  that disables every hardening control and is not recommended for anything reachable.
+
 - **ACTION REQUIRED if a plain `admin` manages deployment settings**: the ASR provider, Engine
   configuration, Backups, Media Mirror, Watch sources and Redaction policy panels now require
   `super_admin`. Promote those accounts (Settings → Users → Role → Super Admin) before upgrading,

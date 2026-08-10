@@ -415,6 +415,17 @@ USE_GPU=true
 COMPUTE_TYPE=float16
 BATCH_SIZE=16
 LLM_PROVIDER=
+# Required by _validate_production_secrets on BOTH sides of the upgrade. Omitting
+# it made the v0.5.0 backend refuse to start after the upgrade while v0.4.1 booted
+# fine from the same file -- v0.4.1's gate was fail-OPEN (ENVIRONMENT defaulted to
+# "development"), v0.5.0's is fail-CLOSED. That divergence is a real breaking
+# change for users and is tracked in #410; this line is about the harness
+# representing a correctly-configured deployment, not about hiding it.
+REDIS_PASSWORD=$(openssl rand -hex 16)
+# Pins every service image. This scenario writes its own .env rather than using
+# lib/env-template.sh, so it needs its own copy of this line; phase 07 rewrites it
+# to the target version when the stack is swapped.
+OT_IMAGE_TAG=${OT_TEST_IMAGE_TAG:-latest}
 EOF
     chmod 600 "$stage/.env"
     gr_ok "$FROM_VERSION compose staged at $stage"

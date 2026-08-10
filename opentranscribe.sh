@@ -190,6 +190,63 @@ get_compose_files() {
     echo "$compose_files"
 }
 
+# Refuse an upgrade that the new backend will reject, BEFORE tearing anything down.
+#
+# v0.5.0 flipped security enforcement from fail-open to fail-closed (#284 A0.3):
+# ENVIRONMENT now defaults to production, so a v0.4.x deployment that never set it
+# skipped every production secret check and now gets all of them. The first
+# symptom was the backend exiting with "REDIS_PASSWORD is required in production
+# environment" AFTER `down` had already run -- stack stopped, new one refusing to
+# boot, user holding a stack-trace (#410).
+#
+# Checking first turns that into a refusal with a remedy, while the old stack is
+# still running.
+preflight_upgrade_env() {
+    local problems=()
+
+    # Relaxed environments opt out of all of this, exactly as the backend does.
+    local env_name
+    env_name=$(grep -E '^ENVIRONMENT=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | tr '[:upper:]' '[:lower:]' | head -1)
+    case "$env_name" in
+        development|dev|testing|test|local) return 0 ;;
+    esac
+
+    local redis_pw
+    redis_pw=$(grep -E '^REDIS_PASSWORD=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
+    [ -z "$redis_pw" ] && problems+=("REDIS_PASSWORD is empty or missing")
+
+    local jwt
+    jwt=$(grep -E '^JWT_SECRET_KEY=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
+    case "$jwt" in
+        ""|*change_me*|*CHANGE_ME*) problems+=("JWT_SECRET_KEY is unset or still a placeholder") ;;
+    esac
+
+    local enc
+    enc=$(grep -E '^ENCRYPTION_KEY=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
+    case "$enc" in
+        ""|*change_me*|*CHANGE_ME*) problems+=("ENCRYPTION_KEY is unset or still a placeholder") ;;
+    esac
+
+    [ ${#problems[@]} -eq 0 ] && return 0
+
+    echo -e "${RED}❌ This release enforces production secrets that your .env does not satisfy.${NC}"
+    echo -e "${RED}   Refusing to upgrade — your current stack is untouched and still running.${NC}"
+    echo ""
+    for p in "${problems[@]}"; do echo "   • $p"; done
+    echo ""
+    echo -e "${YELLOW}Why now:${NC} security enforcement moved from fail-open to fail-closed."
+    echo "  Previously ENVIRONMENT defaulted to \"development\", so these checks were skipped"
+    echo "  on any deployment that never set it. They now apply by default."
+    echo ""
+    echo -e "${YELLOW}To fix:${NC}"
+    [ -z "$redis_pw" ] && echo "  echo \"REDIS_PASSWORD=\$(openssl rand -hex 16)\" >> .env"
+    echo "  # then re-run: ./opentranscribe.sh update"
+    echo ""
+    echo "  A single-user install on a trusted network can instead set ENVIRONMENT=development,"
+    echo "  but that disables every hardening control."
+    return 1
+}
+
 # Bring the stack down for an upgrade, tolerating the stale-network race.
 #
 # `docker compose down` removes the containers and then the network. The daemon
@@ -482,6 +539,7 @@ case "${1:-help}" in
 
         compose_files=$(get_compose_files)
 
+        preflight_upgrade_env || exit 1
         compose_down_for_upgrade "$compose_files" || exit 1
         docker compose $compose_files pull
 
@@ -590,7 +648,10 @@ case "${1:-help}" in
         echo -e "${BLUE}🐳 Updating Docker images...${NC}"
         fix_model_cache_permissions
         compose_files=$(get_compose_files)
-        docker compose $compose_files down
+        # Same gate as `update`: refuse while the old stack is still running
+        # rather than after it is torn down (#410).
+        preflight_upgrade_env || exit 1
+        compose_down_for_upgrade "$compose_files" || exit 1
         docker compose $compose_files pull
 
         # Same phased startup `update` uses. This path previously did a bare

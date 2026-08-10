@@ -426,3 +426,34 @@ def test_upgrade_tolerates_the_stale_network_race():
     assert "docker ps -aq" in fn, (
         "must verify no containers remain before continuing past a failed down"
     )
+
+
+def test_upgrade_refuses_before_teardown_when_secrets_are_missing():
+    """v0.5.0 enforces production secrets v0.4.x skipped -- refuse BEFORE `down`.
+
+    Enforcement moved from fail-open to fail-closed (#284 A0.3): ENVIRONMENT now
+    defaults to production, so a v0.4.x deployment that never set it skipped every
+    production secret check and now gets all of them. The first symptom was the
+    new backend exiting with "REDIS_PASSWORD is required in production
+    environment" AFTER the stack had been torn down -- old stack stopped, new one
+    refusing to boot (#410).
+
+    The gate must therefore run before the teardown, on BOTH upgrade paths, and
+    must respect the same relaxed-environment opt-out the backend uses.
+    """
+    source = MANAGER.read_text()
+    assert "preflight_upgrade_env" in source
+
+    fn = source.split("preflight_upgrade_env() {", 1)[1].split("\n}", 1)[0]
+    assert "REDIS_PASSWORD" in fn
+    assert "development" in fn, "must honour the relaxed-environment opt-out"
+
+    # Ordering is the whole point: the check must precede the teardown each time.
+    for path in source.split("preflight_upgrade_env || exit 1")[1:]:
+        head = path.lstrip().splitlines()[0]
+        assert "compose_down_for_upgrade" in head, (
+            f"teardown does not immediately follow the gate: {head!r}"
+        )
+    assert source.count("preflight_upgrade_env || exit 1") == 2, (
+        "both `update` and `update-full` must be gated"
+    )

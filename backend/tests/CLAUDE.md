@@ -133,6 +133,28 @@ Why each piece:
 | `unit/test_llm_streaming.py`, `unit/test_chat_{prompting,retrieval,citations,redactor,hooks,limits}.py` | nothing — mocks only |
 | `unit/test_v374_migration_consistency.py`, `test_chat_{context_resolver,endpoints,user_settings,gdpr_erasure}.py` | Postgres |
 | `e2e/test_chat.py` (marker `chat`) | full stack + an LLM provider + a completed transcript |
+| `e2e/test_chat_grounding.py` (marker `chat`) | full stack + `--with-mock-llm` + a completed transcript |
+
+`test_chat_grounding.py` covers the #384 invariant end to end: **the citations a
+user can click are exactly the excerpts the model was given.** It registers its
+own per-test LLM config rather than reusing the shared provider, because the
+whole point is to control `max_tokens` — the user-declared context window the
+excerpt budget is computed against. A 512-token window (the API minimum) makes
+`budget_chars` floor at 0 against the ~2 KB base rules, so *no* excerpt fits and
+the `context_dropped` warning fires deterministically. `ROOMY_CONTEXT_WINDOW` is
+the control: same code path, opposite outcome, driven only by config — without it
+the suite would still pass if the notice were rendered unconditionally.
+
+**Two traps that read-order gets wrong** (both cost a debugging cycle):
+
+- **Retrieval diagnostics are not on screen mid-stream.** A streaming message
+  holds only what the SSE frames supplied; `msg_metadata.retrieved` /
+  `chunks_used` live on the persisted row and arrive when the thread is fetched.
+  Read the Details panel only after `_reload_thread()`, or it has no counts at all.
+- **Persisted citations ≠ offered citations.** `_persist_reply` stores
+  `used_citations` — the ones the answer actually referenced — so after a reload
+  the source cards are a *subset* of what the `sources` frame offered. Count
+  offered cards DURING the stream; compare against `chunks_used` read after.
 
 `test_chat_endpoints.py` patches `app.db.session_utils.session_scope` to the test session.
 The streaming service deliberately opens its **own** session (it outlives the request's

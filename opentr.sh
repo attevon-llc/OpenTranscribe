@@ -1080,14 +1080,23 @@ start_app() {
   # Set build environment
   export BUILD_ENV="$ENVIRONMENT"
 
-  # Create necessary directories
-  create_required_dirs
+  # Side-effecting host preparation. Skipped under --dry-run so the compose chain
+  # can be resolved and validated cheaply (scripts/validate-deployments.sh runs this
+  # ~20 times). ensure_opensearch_models in particular will `docker pull` a multi-GB
+  # backend image when the model cache is cold, which a validation loop must never do.
+  # detect_and_configure_hardware above is deliberately NOT skipped: it is read-only
+  # and exports DOCKER_RUNTIME/COMPUTE_TYPE/TORCH_DEVICE, which the compose files
+  # interpolate — skipping it would validate a different config than we run.
+  if [ -z "$DRY_RUN_FLAG" ]; then
+    # Create necessary directories
+    create_required_dirs
 
-  # Fix model cache permissions for non-root container
-  fix_model_cache_permissions
+    # Fix model cache permissions for non-root container
+    fix_model_cache_permissions
 
-  # Ensure OpenSearch neural models are downloaded for offline capability
-  ensure_opensearch_models
+    # Ensure OpenSearch neural models are downloaded for offline capability
+    ensure_opensearch_models
+  fi
 
   # Build compose file list based on environment and flags
   COMPOSE_FILES="-f docker-compose.yml"

@@ -135,6 +135,30 @@ repos:
         pass_filenames: false
         files: ^backend/app/.*\.py$
 
+  # Version consistency — VERSION, pyproject.toml, frontend/package.json,
+  # frontend/package-lock.json (BOTH version fields), the Alembic single-head
+  # invariant, the Dockerfile APP_VERSION build-arg contract, and duplicate
+  # docs-site blog slugs must all agree.
+  #
+  # Exists because the previous process documented "append a row every release"
+  # for scripts/release-tests/expected-schemas.tsv and enforced it nowhere — so
+  # v0.4.1's row was never added and nobody noticed for four months. A rule with
+  # no enforcement is a rule that rots.
+  #
+  # language: system + python3 because the checker is deliberately stdlib-only
+  # (tomllib, json, re) and must also run on a bare CI runner with no venv.
+  # CHANGELOG checks are warn-only in `ci` mode: the release bumps VERSION in one
+  # commit and writes the CHANGELOG in a later one, so blocking here would make
+  # the intermediate commit uncommittable.
+  - repo: local
+    hooks:
+      - id: version-consistency
+        name: version consistency (VERSION / pyproject / package.json / alembic)
+        entry: python3 scripts/release/check-version-consistency.py --mode ci
+        language: system
+        pass_filenames: false
+        files: ^(VERSION|pyproject\.toml|frontend/package\.json|frontend/package-lock\.json|backend/alembic/versions/.*\.py|backend/Dockerfile\.prod|docs-site/blog/.*\.md)$
+
   # Shell script linting
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.9.0.6

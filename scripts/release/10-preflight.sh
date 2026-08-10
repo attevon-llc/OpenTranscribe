@@ -101,6 +101,28 @@ else
         "cp $SECRETS.example $SECRETS && edit"
 fi
 
+# ── Release-test media ─────────────────────────────────────────────────────
+# Both scenarios upload real media and assert the transcript is NON-EMPTY, so a
+# missing or silent fixture fails the rehearsal for a reason unrelated to the
+# release — after the stack is already up and an upload has been attempted.
+TEST_MEDIA_DIR="${TEST_MEDIA_DIR:-/mnt/nvm/opentranscribe-test-runs/test-media}"
+if [[ ! -d "$TEST_MEDIA_DIR" ]]; then
+    record release-test-media warn \
+        "no fixtures at $TEST_MEDIA_DIR (rehearse would fail at upload)" \
+        "./scripts/release-tests/provision-test-media.sh"
+else
+    media_count=$(find "$TEST_MEDIA_DIR" -maxdepth 1 -type f \
+        \( -iname '*.mp3' -o -iname '*.m4a' -o -iname '*.mp4' -o -iname '*.wav' \
+           -o -iname '*.flac' -o -iname '*.ogg' \) -size -5M 2>/dev/null | wc -l)
+    if [[ "$media_count" -ge 1 ]]; then
+        record release-test-media pass
+    else
+        record release-test-media warn \
+            "$TEST_MEDIA_DIR has no media under 5 MB" \
+            "./scripts/release-tests/provision-test-media.sh"
+    fi
+fi
+
 # ── Disk ───────────────────────────────────────────────────────────────────
 avail_gb=$(df -BG --output=avail /var/lib/docker 2>/dev/null | tail -1 | tr -dc '0-9' || echo 0)
 if [[ "${avail_gb:-0}" -ge 60 ]]; then

@@ -130,6 +130,9 @@ if [[ -z "$LOCAL_IMAGE_TAG" ]]; then
     LOCAL_IMAGE_TAG="$(ver_to_version)"
 fi
 LOCAL_IMAGE_TAG="$(ver_normalize "$LOCAL_IMAGE_TAG")"
+# Pins EVERY service via ${OT_IMAGE_TAG:-latest}, not just the ones named in
+# cp_pin_image_tag's hand-maintained list (which misses docs and the GPU workers).
+export OT_TEST_IMAGE_TAG="$LOCAL_IMAGE_TAG"
 gr_log "version under test: $LOCAL_IMAGE_TAG (from ${TO_VERSION:+TO_VERSION}${TO_VERSION:-VERSION file})"
 
 # ─── Cleanup mode ───────────────────────────────────────────────────────────

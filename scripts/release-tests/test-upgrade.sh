@@ -188,6 +188,13 @@ fi
 # table that nothing read and that never got its v0.4.1 row.
 gr_ok "upgrade path: $FROM_VERSION  ->  $TO_VERSION"
 
+# The generated .env pins every service through ${OT_IMAGE_TAG:-latest}. It is
+# re-written for each side of the upgrade: the FROM stack must run FROM_VERSION
+# throughout, the upgraded stack TO_VERSION throughout. Without this the services
+# outside cp_pin_image_tag's hardcoded list (docs, the three GPU workers) would
+# resolve to :latest on BOTH sides and the upgrade would not actually be tested.
+export OT_TEST_IMAGE_TAG="$FROM_VERSION"
+
 PHASE_DIR="$TEST_ROOT/.phase"
 phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; }
 phase_check() { [[ -f "$PHASE_DIR/$1.done" && $DO_FORCE -eq 0 ]]; }
@@ -588,6 +595,21 @@ phase_07_swap_to_new() {
     # Reuse the SAME .env so credentials and ports are preserved across the
     # upgrade (mirrors what a real user sees on disk).
     cp "$stage_before/.env" "$stage_after/.env"
+
+    # ...but move OT_IMAGE_TAG to the version being upgraded TO. Every service
+    # image resolves ${OT_IMAGE_TAG:-latest}, so copying the FROM value verbatim
+    # would leave the "upgraded" stack running the OLD images for the four
+    # services cp_pin_image_tag's hardcoded list does not name (docs and the
+    # three GPU worker variants) — an upgrade test that partly did not upgrade.
+    #
+    # This is also exactly what a real user's `update --version` does to their
+    # .env, so the rehearsal exercises the same mechanism.
+    if grep -q '^OT_IMAGE_TAG=' "$stage_after/.env"; then
+        sed -i "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${LOCAL_IMAGE_TAG}|" "$stage_after/.env"
+    else
+        echo "OT_IMAGE_TAG=${LOCAL_IMAGE_TAG}" >> "$stage_after/.env"
+    fi
+    gr_ok "after-stack .env pinned to OT_IMAGE_TAG=${LOCAL_IMAGE_TAG}"
 }
 
 # Defensive cleanup for the stale-network-endpoint daemon bug. If a previous

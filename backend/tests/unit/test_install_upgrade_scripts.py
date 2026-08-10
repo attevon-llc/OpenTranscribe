@@ -295,3 +295,64 @@ def test_update_full_mentions_the_model_cache():
         "update-full should tell the user how to pre-fetch models a new release needs; "
         "offline deployments set HF_HUB_OFFLINE=1 and cannot lazy-download"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Release-harness image pinning
+# --------------------------------------------------------------------------- #
+
+PROD_COMPOSE = REPO_ROOT / "docker-compose.prod.yml"
+ENV_TEMPLATE = REPO_ROOT / "scripts" / "release-tests" / "lib" / "env-template.sh"
+UPGRADE_SCENARIO = REPO_ROOT / "scripts" / "release-tests" / "test-upgrade.sh"
+FRESH_SCENARIO = REPO_ROOT / "scripts" / "release-tests" / "test-fresh-install.sh"
+
+
+def test_every_prod_service_image_is_tag_pinnable():
+    """One variable must pin every service, not a hand-maintained list.
+
+    The scenarios also rewrite individual `image:` lines through
+    cp_pin_image_tag, but that call takes an explicit service list which had
+    already drifted — it named 11 services while docker-compose.prod.yml declares
+    15, missing `docs` and the three GPU worker variants. Under
+    `pull_policy: never` those would have run whatever `:latest` was in the local
+    cache, i.e. the PREVIOUS release: a mixed-version stack, and a rehearsal
+    proving the wrong thing.
+    """
+    import yaml
+
+    services = yaml.safe_load(PROD_COMPOSE.read_text()).get("services") or {}
+    unpinnable = {
+        name: svc["image"]
+        for name, svc in services.items()
+        if isinstance(svc, dict)
+        and "image" in svc
+        and "opentranscribe" in svc["image"]
+        and "${OT_IMAGE_TAG" not in svc["image"]
+    }
+    assert not unpinnable, f"these service images cannot be pinned by OT_IMAGE_TAG: {unpinnable}"
+
+
+def test_generated_test_env_pins_the_image_tag():
+    assert "OT_IMAGE_TAG=" in ENV_TEMPLATE.read_text(), (
+        "the release-test .env must pin OT_IMAGE_TAG or the stack mixes versions"
+    )
+
+
+def test_both_scenarios_export_the_tag_under_test():
+    for scenario in (FRESH_SCENARIO, UPGRADE_SCENARIO):
+        assert "OT_TEST_IMAGE_TAG" in scenario.read_text(), (
+            f"{scenario.name} does not export the tag the env template reads"
+        )
+
+
+def test_upgrade_repins_the_env_for_the_new_stack():
+    """The swap copies the FROM .env; OT_IMAGE_TAG must be moved to TO.
+
+    Copying it verbatim would leave the "upgraded" stack running the old images
+    for every service outside the hardcoded pin list — an upgrade test that
+    partly did not upgrade.
+    """
+    source = UPGRADE_SCENARIO.read_text()
+    assert 'sed -i "s|^OT_IMAGE_TAG=' in source, (
+        "the after-stack .env is not re-pinned to the version being upgraded to"
+    )

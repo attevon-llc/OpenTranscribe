@@ -2180,14 +2180,40 @@ pull_docker_images() {
 }
 
 display_summary() {
-    # Load key values from .env if shell vars are empty (re-run case)
-    [[ -z "$WHISPER_MODEL" ]]     && WHISPER_MODEL=$(grep '^WHISPER_MODEL=' .env 2>/dev/null | cut -d= -f2-)
-    [[ -z "$HUGGINGFACE_TOKEN" ]] && HUGGINGFACE_TOKEN=$(grep '^HUGGINGFACE_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
-    [[ -z "$LLM_PROVIDER" ]]      && LLM_PROVIDER=$(grep '^LLM_PROVIDER=' .env 2>/dev/null | cut -d= -f2-)
-    [[ -z "$NGINX_SERVER_NAME" ]] && NGINX_SERVER_NAME=$(grep '^NGINX_SERVER_NAME=' .env 2>/dev/null | cut -d= -f2- | tr -d '"')
-    [[ -z "$DETECTED_DEVICE" ]]   && DETECTED_DEVICE=$(grep '^DETECTED_DEVICE=' .env 2>/dev/null | cut -d= -f2-)
-    [[ -z "$COMPUTE_TYPE" ]]      && COMPUTE_TYPE=$(grep '^COMPUTE_TYPE=' .env 2>/dev/null | cut -d= -f2-)
-    [[ -z "$VLLM_BASE_URL" ]]     && VLLM_BASE_URL=$(grep '^VLLM_BASE_URL=' .env 2>/dev/null | cut -d= -f2-)
+    # Load key values from .env if shell vars are empty (re-run case).
+    #
+    # ${VAR:-} on every read, NOT "$VAR". This script runs under `set -u`, and
+    # several of these are only ever assigned by an INTERACTIVE prompt —
+    # LLM_PROVIDER and VLLM_BASE_URL by the LLM configuration step, which
+    # unattended mode skips entirely. A bare "$LLM_PROVIDER" therefore aborted
+    # with "unbound variable" at the very last step of every unattended install,
+    # AFTER the images had been pulled and everything was otherwise ready.
+    #
+    # That is the exact path used by OPENTRANSCRIBE_UNATTENDED=1, by any CI or
+    # scripted install, and by the release-test harness — where it surfaced only
+    # as "one-liner failed", because the abort happened before this function
+    # printed anything at all.
+    # `|| true` on each read is load-bearing, not defensive noise. This script
+    # runs under `set -e` AND `set -o pipefail`: when the key is absent from .env
+    # the `grep | cut` pipeline exits 1, that becomes the assignment's status, and
+    # the script dies. An absent optional key is the NORMAL case, so the whole
+    # summary aborted on it.
+    _env_val() { grep "^$1=" .env 2>/dev/null | cut -d= -f2- || true; }
+
+    [[ -z "${WHISPER_MODEL:-}" ]]     && WHISPER_MODEL=$(_env_val WHISPER_MODEL)
+    [[ -z "${HUGGINGFACE_TOKEN:-}" ]] && HUGGINGFACE_TOKEN=$(_env_val HUGGINGFACE_TOKEN)
+    [[ -z "${LLM_PROVIDER:-}" ]]      && LLM_PROVIDER=$(_env_val LLM_PROVIDER)
+    [[ -z "${NGINX_SERVER_NAME:-}" ]] && NGINX_SERVER_NAME=$(_env_val NGINX_SERVER_NAME | tr -d '"')
+    [[ -z "${DETECTED_DEVICE:-}" ]]   && DETECTED_DEVICE=$(_env_val DETECTED_DEVICE)
+    [[ -z "${COMPUTE_TYPE:-}" ]]      && COMPUTE_TYPE=$(_env_val COMPUTE_TYPE)
+    [[ -z "${VLLM_BASE_URL:-}" ]]     && VLLM_BASE_URL=$(_env_val VLLM_BASE_URL)
+
+    # Guarantee every one is DEFINED from here on, so the echo blocks below
+    # cannot re-trigger the unbound-variable half of the same abort.
+    WHISPER_MODEL="${WHISPER_MODEL:-}"; HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-}"
+    LLM_PROVIDER="${LLM_PROVIDER:-}"; NGINX_SERVER_NAME="${NGINX_SERVER_NAME:-}"
+    DETECTED_DEVICE="${DETECTED_DEVICE:-}"; COMPUTE_TYPE="${COMPUTE_TYPE:-}"
+    VLLM_BASE_URL="${VLLM_BASE_URL:-}"
 
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════${NC}"

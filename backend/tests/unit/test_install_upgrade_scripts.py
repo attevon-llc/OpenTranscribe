@@ -356,3 +356,29 @@ def test_upgrade_repins_the_env_for_the_new_stack():
     assert 'sed -i "s|^OT_IMAGE_TAG=' in source, (
         "the after-stack .env is not re-pinned to the version being upgraded to"
     )
+
+
+def test_installer_reads_optional_env_keys_safely():
+    """`set -e` + `set -o pipefail` made an ABSENT optional .env key fatal.
+
+    display_summary loaded values with `VAR=$(grep '^KEY=' .env | cut -d= -f2-)`.
+    When the key is absent -- the normal case for LLM_PROVIDER, VLLM_BASE_URL and
+    NGINX_SERVER_NAME on a default install -- grep exits 1, pipefail propagates it
+    to the assignment, and set -e killed the script at the very last step of the
+    install, after every image had already been pulled.
+
+    It surfaced in the release harness only as "one-liner failed", because the
+    abort happened before the function printed anything.
+
+    Two failure modes, both closed: reads use ${VAR:-} (set -u) and go through a
+    helper ending in `|| true` (set -e + pipefail).
+    """
+    source = INSTALLER.read_text()
+    summary = source.split("display_summary()", 1)[1].split("\nprompt_start", 1)[0]
+
+    bare_greps = re.findall(r"=\$\(grep '\^[A-Z_]+=' \.env[^)]*\)", summary)
+    assert not bare_greps, (
+        f"display_summary still assigns from an unguarded grep pipeline: {bare_greps}. "
+        "An absent optional key exits 1 under pipefail and set -e kills the install."
+    )
+    assert "_env_val" in summary, "expected the || true helper for optional .env reads"

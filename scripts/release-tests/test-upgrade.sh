@@ -1,5 +1,5 @@
 #!/bin/bash
-# Scenario B — v0.3.3 → 0.4.0 (or current head) in-place upgrade.
+# Scenario B — in-place upgrade from the previous published release to this one.
 #
 # What this proves:
 #   A real user with real data on the previous release can run the documented
@@ -9,19 +9,20 @@
 #
 # Phases:
 #   00 preflight + secrets gate
-#   01 build local 0.4.0 images (skipped if already present from Scenario A)
-#   02 verify Docker Hub has :v0.3.3 tags (FROM_VERSION)
-#   03 create v0.3.3 worktree, copy compose into TEST_ROOT, patch
-#   04 generate isolated .env, start the v0.3.3 stack, wait for health
+#   01 build local $TO_VERSION images (skipped if already present from Scenario A)
+#   02 verify Docker Hub has :$FROM_VERSION tags
+#   03 create $FROM_VERSION worktree, copy compose into TEST_ROOT, patch
+#   04 generate isolated .env, start the $FROM_VERSION stack, wait for health
 #   05 register user, upload media via URL, wait for completion
 #   06 snapshot pre-upgrade state (postgres SELECTs, MinIO ETags, transcripts)
-#   07 down v0.3.3, swap compose to current head, re-patch, point to local images
+#   07 down $FROM_VERSION, swap compose to current head, re-patch, point to local images
 #   08 up the upgraded stack, wait for migrations + health
 #   09 snapshot post-upgrade state
 #   10 diff snapshots, run feature liveness checks, write REPORT.md
 #
-# Future releases: set FROM_VERSION=v0.4.0 etc. — every other piece is
-# parameterised. Append a row to expected-schemas.tsv when adding a release.
+# Future releases need NO edits: FROM and TO are discovered (see the Tunables
+# block). FROM_VERSION / TO_VERSION override; FROM_VERSIONS (plural) runs the
+# scenario once per source, for multi-hop / oldest-supported coverage.
 
 set -euo pipefail
 
@@ -38,8 +39,28 @@ TEST_PROJECT_NAME="${TEST_PROJECT_NAME:-ot-reltest-upgrade}"
 TEST_ROOT="${TEST_ROOT:-/mnt/nvm/opentranscribe-test-runs/${TEST_PROJECT_NAME}-$(date +%Y%m%d-%H%M%S)}"
 TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 
-FROM_VERSION="${FROM_VERSION:-v0.3.3}"
-LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-0.4.0}"
+# FROM/TO are DISCOVERED, not hardcoded.
+#
+# The old defaults (v0.3.3 -> 0.4.0) were correct for exactly one release and
+# then quietly tested the wrong thing. GitLab deleted their equivalent CI job for
+# precisely this reason: it read the previous version from a file that went stale
+# and silently validated an upgrade nobody was performing.
+#
+# TO   = the VERSION file (the release being cut; its tag does not exist yet and
+#        its images are not on Hub, so nothing else can name it).
+# FROM = the newest git tag below TO that ALSO has published Docker Hub images.
+#        A tag with no images is not something a user could be running, so it is
+#        not a valid upgrade source.
+#
+# Both remain overridable. FROM_VERSIONS (plural, space-separated) runs the whole
+# scenario once per source, which is how the oldest-supported hop keeps being
+# exercised after auto-detection moves FROM forward.
+FROM_VERSION="${FROM_VERSION:-}"
+FROM_VERSIONS="${FROM_VERSIONS:-}"
+LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-}"
+# Set REQUIRE_PREVIOUS=1 to turn "no published previous release" into a failure
+# rather than a skip. The release gate sets it; a first-ever release does not.
+REQUIRE_PREVIOUS="${REQUIRE_PREVIOUS:-0}"
 
 # GPU policy: default to GPU 1 (RTX 3080 Ti, free on this host).
 TEST_USE_GPU="${TEST_USE_GPU:-true}"
@@ -87,8 +108,11 @@ mode you were using).
 Env:
   TEST_PROJECT_NAME      default ot-reltest-upgrade  (used as label namespace)
   TEST_ROOT              default /mnt/nvm/opentranscribe-test-runs/<name>-<ts>
-  FROM_VERSION           default v0.3.3   (Docker Hub tag for the "before" stack)
-  LOCAL_IMAGE_TAG        default 0.4.0    (locally built tag for the "after" stack)
+  FROM_VERSION           auto: newest git tag below TO that has Docker Hub images
+  FROM_VERSIONS          space-separated list; runs the scenario once per source
+  TO_VERSION             auto: the VERSION file
+  LOCAL_IMAGE_TAG        alias for TO_VERSION (locally built tag for the "after" stack)
+  REQUIRE_PREVIOUS       1 = fail instead of skip when no previous release exists
   FRONTEND_PORT..        default 5173-5180 (one-liner defaults; see README)
 EOF
             exit 0 ;;
@@ -112,12 +136,57 @@ source "$LIB_DIR/env-template.sh"
 source "$LIB_DIR/api-client.sh"
 # shellcheck source=lib/assertions.sh
 source "$LIB_DIR/assertions.sh"
+# shellcheck source=lib/versions.sh
+source "$LIB_DIR/versions.sh"
 
 if (( DO_CLEANUP == 1 )); then
     gr_log "cleanup requested"
     gr_cleanup
     exit 0
 fi
+
+# ─── Resolve FROM / TO ──────────────────────────────────────────────────────
+#
+# Done here, after the libs are sourced and before any phase runs, so a bad
+# assumption fails in seconds rather than 40 minutes into the scenario.
+
+if [[ -z "$LOCAL_IMAGE_TAG" ]]; then
+    LOCAL_IMAGE_TAG="$(ver_to_version)"
+fi
+LOCAL_IMAGE_TAG="$(ver_normalize "$LOCAL_IMAGE_TAG")"
+TO_VERSION="$LOCAL_IMAGE_TAG"
+
+if [[ -z "$FROM_VERSION" ]]; then
+    if FROM_VERSION="$(TO_VERSION="$TO_VERSION" ver_previous_version)"; then
+        ver_warn_if_unreleased "$FROM_VERSION"
+    else
+        if [[ "$REQUIRE_PREVIOUS" == "1" ]]; then
+            gr_die "no published previous release found below $TO_VERSION, and REQUIRE_PREVIOUS=1"
+        fi
+        gr_warn "no published previous release below $TO_VERSION — nothing to upgrade FROM"
+        gr_warn "this is expected for a first release; set REQUIRE_PREVIOUS=1 to make it fatal"
+        mkdir -p "$TEST_ROOT"
+        {
+            echo "# Upgrade scenario — SKIPPED"
+            echo
+            echo "| Status | Assertion | Detail |"
+            echo "|---|---|---|"
+            echo "| SKIP | upgrade path | no published release below $TO_VERSION |"
+        } > "$TEST_ROOT/REPORT.md"
+        exit 0
+    fi
+fi
+FROM_VERSION="$(ver_normalize "$FROM_VERSION")"
+
+if ! ver_lt "$FROM_VERSION" "$TO_VERSION"; then
+    gr_die "FROM ($FROM_VERSION) must be strictly older than TO ($TO_VERSION) — the migration chain is one-way"
+fi
+
+# The head the FROM release shipped with, derived from ITS OWN migration chain in
+# phase 03's worktree, then compared against what the running FROM stack reports.
+# That measured-vs-derived pair replaced expected-schemas.tsv, a hand-maintained
+# table that nothing read and that never got its v0.4.1 row.
+gr_ok "upgrade path: $FROM_VERSION  ->  $TO_VERSION"
 
 PHASE_DIR="$TEST_ROOT/.phase"
 phase_done()  { mkdir -p "$PHASE_DIR"; touch "$PHASE_DIR/$1.done"; }
@@ -226,16 +295,17 @@ phase_03_prepare_v033_compose() {
     mkdir -p "$stage"
 
     cp "$worktree/docker-compose.yml" "$stage/docker-compose.yml"
-    [[ -f "$worktree/docker-compose.prod.yml" ]] || gr_die "v$FROM_VERSION worktree missing docker-compose.prod.yml"
+    [[ -f "$worktree/docker-compose.prod.yml" ]] || gr_die "$FROM_VERSION worktree missing docker-compose.prod.yml"
     cp "$worktree/docker-compose.prod.yml" "$stage/docker-compose.prod.yml"
 
-    # v0.3.3 mounts ./database/init_db.sql into postgres for first-boot
-    # bootstrapping. (Newer releases use Alembic exclusively, but v0.3.3 still
-    # needs this file.) Copy the entire database/ directory from the worktree.
+    # Some older releases mount ./database/init_db.sql into postgres for
+    # first-boot bootstrapping (v0.3.3 did; newer releases use Alembic
+    # exclusively). FEATURE-DETECTED rather than version-gated, so this needs no
+    # edit as FROM moves forward and still works if an old FROM is pinned.
     if [[ -d "$worktree/database" ]]; then
         rm -rf "$stage/database"
         cp -r "$worktree/database" "$stage/database"
-        gr_ok "copied database/ from v0.3.3 worktree"
+        gr_ok "copied database/ bootstrap from the $FROM_VERSION worktree"
     fi
 
     # Inject the release-test label so cleanup can find managed resources.
@@ -254,7 +324,7 @@ phase_03_prepare_v033_compose() {
         cp_pin_image_tag "$stage/docker-compose.prod.yml" "$svc" "$FROM_VERSION" 2>/dev/null || true
     done
 
-    # GPU overlay (use the v0.3.3 worktree's copy if present, else current head's)
+    # GPU overlay (use the FROM worktree's copy if present, else current head's)
     if [[ "$TEST_USE_GPU" == "true" ]]; then
         local src_gpu="$worktree/docker-compose.gpu.yml"
         [[ -f "$src_gpu" ]] || src_gpu="$REPO_ROOT/docker-compose.gpu.yml"
@@ -285,7 +355,7 @@ phase_03_prepare_v033_compose() {
         if [[ -d "$live_cache/huggingface" ]]; then
             gr_log "seeding shared model cache from live cache (one-time)"
             # Copy only the subdirs that HF/PyAnnote/Whisper actually need.
-            # Skip opensearch-ml (container-specific) and onnx (0.4.0-only).
+            # Skip opensearch-ml (container-specific) and onnx (newer releases only).
             for sub in huggingface torch nltk_data sentence-transformers pyannote; do
                 if [[ -d "$live_cache/$sub" ]]; then
                     rsync -a --link-dest="$live_cache/$sub/" \
@@ -307,9 +377,9 @@ phase_03_prepare_v033_compose() {
         sh -c "chown -R 1000:1000 /models && chmod -R 755 /models" >/dev/null 2>&1 \
         || gr_warn "could not chown model cache (may need sudo)"
 
-    # Generate a .env for the v0.3.3 stack with isolated credentials.
+    # Generate a .env for the FROM stack with isolated credentials.
     cat > "$stage/.env" <<EOF
-# Auto-generated by test-upgrade-from-v033.sh phase 3
+# Auto-generated by test-upgrade.sh phase 3
 COMPOSE_PROJECT_NAME=opentranscribe
 # Pin model cache to an absolute path so the chown above takes effect
 # (default is ./models relative to the compose file location).
@@ -340,7 +410,7 @@ BATCH_SIZE=16
 LLM_PROVIDER=
 EOF
     chmod 600 "$stage/.env"
-    gr_ok "v0.3.3 compose staged at $stage"
+    gr_ok "$FROM_VERSION compose staged at $stage"
 }
 
 phase_04_start_v033() {
@@ -405,10 +475,38 @@ snapshot_state() {
 
     gr_log "snapshotting state to $out"
 
+    # API surface: the sorted "METHOD /path" set from the running stack's
+    # OpenAPI document. Diffed in phase 10 to catch a route that disappeared
+    # across the upgrade — a break for every existing client, and something no
+    # data-level assertion can see.
+    #
+    # Tolerant of absence: a hardened deployment serves no openapi.json
+    # (ENABLE_API_DOCS=false), and an old FROM may not expose it at this path.
+    # Phase 10 records SKIP rather than failing when either side is empty.
+    curl -fsS --max-time 15 "http://localhost:${TEST_BACKEND_PORT}/api/openapi.json" 2>/dev/null \
+        | python3 -c '
+import json, sys
+try:
+    spec = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+for path, methods in sorted(spec.get("paths", {}).items()):
+    for method in sorted(methods):
+        if method.lower() in {"get", "post", "put", "patch", "delete"}:
+            print(f"{method.upper()} {path}")
+' > "$out/routes.txt" 2>/dev/null || : > "$out/routes.txt"
+    gr_log "  captured $(wc -l < "$out/routes.txt") API routes"
+
+    # Runtime build identity, so the report says what was actually running on
+    # each side rather than what we believe we deployed.
+    curl -fsS --max-time 10 "http://localhost:${TEST_BACKEND_PORT}/api/version" \
+        > "$out/version.json" 2>/dev/null \
+        || echo '{"version":"unavailable"}' > "$out/version.json"
+
     # Postgres deterministic queries (the one-liner uses the stock
     # 'opentranscribe-postgres' container name and 'postgres' superuser).
-    # All queries are tolerant of missing tables — v0.3.3 may not have
-    # alembic_version (it bootstraps via init_db.sql) or some 0.4.0 tables.
+    # All queries are tolerant of missing tables: an old FROM may predate
+    # alembic_version (bootstrapped via init_db.sql) or lack newer tables.
     local pg="opentranscribe-postgres"
     docker exec "$pg" psql -U postgres -d opentranscribe -tAc \
         "SELECT version_num FROM alembic_version" > "$out/alembic_head.txt" 2>/dev/null \
@@ -606,10 +704,42 @@ phase_10_assert_and_report() {
     local pre_head post_head expected_head
     pre_head=$(<"$pre/alembic_head.txt")
     post_head=$(<"$post/alembic_head.txt")
-    expected_head=$(grep -hE "^revision[[:space:]]*=" "$REPO_ROOT/backend/alembic/versions/"*.py \
-        | tail -1 | awk -F'"' '{print $2}')
+    # Derived from the down_revision graph, not `grep | tail -1`. That old form
+    # sorted by FILENAME and only worked by luck of 3-digit zero-padded ids; the
+    # chain is already non-contiguous (v130->v071, v073->v140, two v270* files,
+    # v375-v381 renumbered), and a 4-digit id or a second head would have made it
+    # silently assert the wrong revision.
+    expected_head=$(ver_alembic_head "$REPO_ROOT/backend")
     as_assert_ne "alembic head advanced" "$pre_head" "$post_head"
     as_assert_eq "alembic head matches current head" "$expected_head" "$post_head"
+
+    # The FROM release's head, MEASURED off the running stack vs DERIVED from
+    # that release's own migration chain in the phase-03 worktree.
+    #
+    # This pair is what replaced expected-schemas.tsv. That file claimed to be
+    # "the single source of truth for what head release X shipped with", was
+    # hand-maintained, was read by no script, and never got its v0.4.1 row. Both
+    # sides here are computed, so there is nothing to forget to update — and it
+    # is a strictly stronger claim: the TSV only ever recorded what someone typed.
+    local from_worktree="$TEST_ROOT/worktree-${FROM_VERSION}"
+    if [[ -d "$from_worktree/backend/alembic/versions" ]]; then
+        local derived_from_head
+        if derived_from_head=$(ver_alembic_head "$from_worktree/backend" 2>/dev/null); then
+            if [[ "$pre_head" == *"absent"* ]]; then
+                # Pre-Alembic releases (v0.3.3 bootstrapped via init_db.sql) have
+                # no alembic_version row to measure; the derivation still applies.
+                as_record SKIP "$FROM_VERSION shipped head (measured vs derived)" \
+                    "pre-Alembic schema: $derived_from_head derived, nothing recorded in the DB"
+            else
+                as_assert_eq "$FROM_VERSION shipped head (measured == derived)" \
+                    "$derived_from_head" "$pre_head"
+            fi
+        else
+            as_record SKIP "$FROM_VERSION shipped head" "chain in the worktree is not single-headed"
+        fi
+    else
+        as_record SKIP "$FROM_VERSION shipped head" "worktree not present (resumed run?)"
+    fi
 
     # Transcript prefix check (per file)
     if [[ -f "$TEST_ROOT/seeded-file-ids.txt" ]]; then
@@ -654,11 +784,43 @@ PY
     code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_FRONTEND_PORT}/")
     as_assert_http "frontend reachable post-upgrade" 200 "$code"
 
-    # MFA endpoint exists in 0.4.0 but did not in v0.3.3
-    code=$(curl -o /dev/null -s -w '%{http_code}' \
-        -H "Authorization: Bearer ${API_TOKEN:-}" \
-        "$API_BASE/auth/mfa/status" || echo 000)
-    as_assert "MFA endpoint present (was 404 in $FROM_VERSION)" '[[ "$code" != "404" && "$code" != "000" ]]'
+    # ── The upgrade is running the NEW code ────────────────────────────────
+    #
+    # Without this, everything above only proves "a stack came up after the
+    # compose swap". With pull_policy:never plus local tag pinning, a silently
+    # stale image is genuinely reachable, and every data assertion would still
+    # pass against the OLD binary.
+    local running_version
+    running_version=$(curl -fsS --max-time 10 "$API_BASE/version" 2>/dev/null \
+        | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+    as_assert_eq "running version is the version under test" \
+        "$TO_VERSION" "$(ver_normalize "${running_version:-none}" 2>/dev/null || echo "${running_version:-none}")"
+    as_assert_ne "running version is not 'unknown' (build-arg contract)" "unknown" "${running_version:-none}"
+
+    # ── API contract: no route silently disappeared ────────────────────────
+    #
+    # This replaced a hardcoded "the MFA endpoint was 404 in v0.3.3" probe, which
+    # asserted one fact about one pair of releases and rotted the moment FROM
+    # moved. Diffing the OpenAPI route sets needs no maintenance AND catches a
+    # class the old probe could not: an endpoint REMOVED between releases, which
+    # breaks every existing client.
+    local before_routes="$TEST_ROOT/snapshots/before/routes.txt"
+    local after_routes="$TEST_ROOT/snapshots/after/routes.txt"
+    if [[ -s "$before_routes" && -s "$after_routes" ]]; then
+        local removed added
+        removed=$(comm -23 "$before_routes" "$after_routes" | head -20)
+        added=$(comm -13 "$before_routes" "$after_routes" | wc -l)
+
+        as_assert "no API route removed by the upgrade" '[[ -z "$removed" ]]'
+        [[ -n "$removed" ]] && gr_warn "routes gone after upgrade:"$'\n'"$removed"
+
+        # A release that adds nothing to the API is not necessarily wrong, so
+        # this is informational — it is the cheap sanity check that the new
+        # image really is different from the old one.
+        gr_log "API routes added by this upgrade: $added"
+    else
+        as_record SKIP "API route diff" "openapi.json unavailable on one side"
+    fi
 
     # Neural search / OpenSearch ML model check. This is the same strict
     # assertion Scenario A uses — it confirms the ML model is actually

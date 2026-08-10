@@ -31,7 +31,13 @@ TEST_ROOT="${TEST_ROOT:-/mnt/nvm/opentranscribe-test-runs/${TEST_PROJECT_NAME}-$
 TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 
 TO_BRANCH="${TO_BRANCH:-master}"
-LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-v0.4.0}"
+# Version under test, derived from the VERSION file rather than hardcoded. The
+# previous default (v0.4.0) went stale the moment v0.4.1 shipped, and the two
+# scenarios disagreed on whether the tag carried a `v` — this one said "v0.4.0",
+# the upgrade scenario said "0.4.0", and docker-build-push.sh always produces
+# "vX.Y.Z", so the upgrade scenario's default never matched a real local build.
+# lib/versions.sh owns that normalisation now. Sourced after guardrails.sh below.
+LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-}"
 
 # Set USE_HUB_IMAGES=true to skip the local build phase and pull the published
 # Docker Hub images instead. Phase 03 will set pull_policy: always and pin the
@@ -116,6 +122,15 @@ source "$LIB_DIR/compose-patch.sh"
 source "$LIB_DIR/api-client.sh"
 # shellcheck source=lib/assertions.sh
 source "$LIB_DIR/assertions.sh"
+# shellcheck source=lib/versions.sh
+source "$LIB_DIR/versions.sh"
+
+# Resolve the version under test now that versions.sh is available.
+if [[ -z "$LOCAL_IMAGE_TAG" ]]; then
+    LOCAL_IMAGE_TAG="$(ver_to_version)"
+fi
+LOCAL_IMAGE_TAG="$(ver_normalize "$LOCAL_IMAGE_TAG")"
+gr_log "version under test: $LOCAL_IMAGE_TAG (from ${TO_VERSION:+TO_VERSION}${TO_VERSION:-VERSION file})"
 
 # ─── Cleanup mode ───────────────────────────────────────────────────────────
 if (( DO_CLEANUP == 1 )); then
@@ -450,8 +465,12 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
     alembic_head=$(docker exec opentranscribe-postgres \
         psql -U postgres -d opentranscribe -tAc \
         "SELECT version_num FROM alembic_version" 2>/dev/null || echo "")
-    expected_head=$(grep -hE "^revision[[:space:]]*=" "$REPO_ROOT/backend/alembic/versions/"*.py \
-        | tail -1 | awk -F'"' '{print $2}')
+    # Derived from the down_revision graph, not `grep | tail -1`. That old form
+    # sorted by FILENAME and only worked by luck of 3-digit zero-padded ids; the
+    # chain is already non-contiguous (v130->v071, v073->v140, two v270* files,
+    # v375-v381 renumbered), and a 4-digit id or a second head would have made it
+    # silently assert the wrong revision.
+    expected_head=$(ver_alembic_head "$REPO_ROOT/backend")
     as_assert_eq "alembic head" "$expected_head" "$alembic_head"
 
     as_summary | tee -a "$TEST_REPORT_FILE"

@@ -5,7 +5,7 @@ End-to-end validation for every OpenTranscribe release. Two scenarios:
 | Script | What it proves |
 |---|---|
 | `test-fresh-install.sh` | A new user runs the documented `setup-opentranscribe.sh` one-liner and ends up with a working stack on the current release |
-| `test-upgrade-from-v033.sh` | A user with real data on the previous release can run the documented upgrade path and find their data intact, migrations applied, new features available |
+| `test-upgrade.sh` | A user with real data on the previous release can run the documented upgrade path and find their data intact, migrations applied, new features available |
 
 ## ⚠️ Precondition: the live stack must be STOPPED
 
@@ -29,23 +29,23 @@ Run through this list for every release before tagging:
 
 1. **Bump version strings** (`VERSION`, `frontend/package.json`, `pyproject.toml`, `frontend/package-lock.json`)
 2. **Update `CHANGELOG.md`** with the new section
-3. **Append the new release row** to `expected-schemas.tsv`:
-   ```
-   v0.4.0    <alembic_head>
-   ```
+3. *(nothing to do — the Alembic head is derived, see "Future releases" below)*
 4. **Run pre-commit** locally (`pre-commit run --all-files`)
 5. **Merge feature branch into `master` preserving history** (no squash, no rebase)
-6. **Build local 0.4.0 images** (do not push yet):
+6. **Build local images without publishing** (`BUILD_MODE=local` loads them into
+   the local daemon and pushes nothing):
    ```bash
-   docker build -t davidamacey/opentranscribe-backend:0.4.0 -t davidamacey/opentranscribe-backend:latest -f backend/Dockerfile.prod backend/
-   docker build -t davidamacey/opentranscribe-frontend:0.4.0 -t davidamacey/opentranscribe-frontend:latest -f frontend/Dockerfile.prod frontend/
+   BUILD_MODE=local PUSH_LATEST=false ./scripts/docker-build-push.sh all
    ```
+   Do NOT use a bare `docker build`: it omits `--build-arg APP_VERSION`, so the
+   image reports its version as `"unknown"` and the harness's
+   "running version is the version under test" assertion fails.
 7. **Fill in `.env.test-secrets`** (see below) — only required once per machine
 8. **Run Scenario A**: `./test-fresh-install.sh`
-9. **Run Scenario B**: `./test-upgrade-from-v033.sh`
+9. **Run Scenario B**: `./test-upgrade.sh`
 10. **Review** both `REPORT.md` files. All assertions must be PASS.
-11. **Push images to Docker Hub**, tag `v0.4.0`, create GitHub release
-12. **Cleanup** sandboxes: `./test-fresh-install.sh --cleanup` and `./test-upgrade-from-v033.sh --cleanup`
+11. **Push images to Docker Hub**, tag the release, create the GitHub release
+12. **Cleanup** sandboxes: `./test-fresh-install.sh --cleanup` and `./test-upgrade.sh --cleanup`
 
 ## Secrets file
 
@@ -69,8 +69,8 @@ OPENAI_MODEL_NAME=
 # Scenario A — fresh install via the one-liner
 ./scripts/release-tests/test-fresh-install.sh
 
-# Scenario B — upgrade from v0.3.3
-./scripts/release-tests/test-upgrade-from-v033.sh
+# Scenario B — upgrade from the previous published release (auto-detected)
+./scripts/release-tests/test-upgrade.sh
 
 # Skip the confirmation gate (for unattended re-runs)
 ./scripts/release-tests/test-fresh-install.sh --yes
@@ -80,7 +80,7 @@ OPENAI_MODEL_NAME=
 
 # Tear down (only resources labeled com.opentranscribe.release-test=*)
 ./scripts/release-tests/test-fresh-install.sh --cleanup
-./scripts/release-tests/test-upgrade-from-v033.sh --cleanup
+./scripts/release-tests/test-upgrade.sh --cleanup
 ```
 
 Each scenario writes:
@@ -113,8 +113,22 @@ them, but the container names are not — they come from the installer being tes
 
 Each future release follows the same flow. Only one file needs an edit:
 
-1. Append a row to `expected-schemas.tsv` with the new release's Alembic head
-2. Run `FROM_VERSION=v0.4.0 ./test-upgrade-from-v033.sh` (or whichever version is now "previous")
+**Nothing needs an edit.** Both scenarios discover their own versions:
+
+- **TO** comes from the `VERSION` file. It cannot come from anywhere else: when
+  the scenarios run, the new tag does not exist yet and the new images are not on
+  Docker Hub.
+- **FROM** is the newest git tag below TO that *also* has published Docker Hub
+  images. A tag with no images is not something a user could be running, so it is
+  not a valid upgrade source.
+
+Overrides still work — `FROM_VERSION`, `TO_VERSION`, and `FROM_VERSIONS` (plural,
+space-separated) to run the scenario once per source. Use `FROM_VERSIONS` on
+minor/major releases to keep the oldest supported hop exercised: once
+auto-detection moves FROM forward, the older path stops being tested otherwise.
+
+`REQUIRE_PREVIOUS=1` turns "no published previous release" into a failure instead
+of a skip; the release gate sets it, a first-ever release does not.
 
 For pre-release testing on a feature branch:
 
@@ -135,11 +149,16 @@ Then `docker stop` / `docker rm` / `docker volume rm` each one individually afte
 
 ## Edge cases & known limitations
 
-See the dedicated section in the planning doc and the `Edge Cases & Mitigations` section comments in `test-upgrade-from-v033.sh`. The short list:
+See the dedicated section in the planning doc and the `Edge Cases & Mitigations` section comments in `test-upgrade.sh`. The short list:
 
 - **GPU contention**: tests default to CPU. Pass `CUDA_VISIBLE_DEVICES=2` (or whichever slot is free) before invoking if you want GPU acceleration. Do not steal the GPU the live workers are using.
 - **Disk space**: each scenario needs ~20 GB free under `$TEST_ROOT` and ~10 GB on the docker root.
 - **Docker Hub rate limits**: an unauthenticated pull is limited to 100/6h per IP. Login (`docker login`) if you're iterating.
 - **Public test URLs may decay**: edit `fixtures/test-urls.txt` if archive.org links 404.
-- **Rollback (0.4.0 → v0.3.3) is not supported** — the migration chain is one-way. Don't run Scenario B in reverse.
-- **`expected-schemas.tsv`** is the single source of truth for "what Alembic head should we see for release X". Append, never edit historical rows.
+- **Rollback is not supported** — the migration chain is one-way, and the scenario
+  refuses to run when FROM is not strictly older than TO.
+- **The Alembic head is derived, never recorded.** `expected-schemas.tsv` used to
+  claim that role but was read by no script and never got its `v0.4.1` row.
+  `lib/alembic-head.py` computes the single head from the `down_revision` graph —
+  including for the FROM release, from that release's own worktree — and phase 10
+  asserts measured-equals-derived. There is no table to keep up to date.

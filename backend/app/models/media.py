@@ -565,6 +565,14 @@ class Tag(Base):
         String(50), nullable=True
     )  # "manual" | "auto_ai" | "ai_accepted"
     normalized_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # Declared to match the column v230_add_auto_labeling created. The column has
+    # existed in every database since then; only the model was missing it, so it
+    # showed up as model-vs-schema drift (issue #398). Adopting it is the
+    # non-destructive fix — dropping a populated timestamptz to satisfy a
+    # comparison would be the wrong direction entirely.
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
 
     # Two partial unique indexes rather than one composite UNIQUE: Postgres
     # treats NULLs as distinct, so UNIQUE(user_id, name) alone would allow

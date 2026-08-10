@@ -36,6 +36,13 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC
 OUT_DIR="${OT_TEST_OUT_DIR:-/tmp/ot-backend-tests}"
 LOG="$OUT_DIR/last.log"
 XML="$OUT_DIR/last.xml"
+# Each run writes to its own PID-scoped files and only publishes to last.* when
+# it finishes. Without this, starting a short run while a long one is in flight
+# has the short one overwrite last.* and then the reporting modes describe the
+# WRONG run — which happened: a full-suite run was still going when a 16-test run
+# clobbered its artifacts, so `--summary` reported 16 tests.
+RUN_LOG="$OUT_DIR/run-$$.log"
+RUN_XML="$OUT_DIR/run-$$.xml"
 mkdir -p "$OUT_DIR"
 
 PY="$REPO_ROOT/backend/venv/bin/pytest"
@@ -120,9 +127,13 @@ fi
 
 "${env_prefix[@]}" "$PY" "${ARGS[@]}" \
     -p no:warnings \
-    --junitxml="$XML" \
-    2>&1 | tee "$LOG"
+    --junitxml="$RUN_XML" \
+    2>&1 | tee "$RUN_LOG"
 rc=${PIPESTATUS[0]}
+
+# Publish atomically, only now that this run is complete.
+mv -f "$RUN_LOG" "$LOG"
+[[ -f "$RUN_XML" ]] && mv -f "$RUN_XML" "$XML"
 
 echo
 report_summary

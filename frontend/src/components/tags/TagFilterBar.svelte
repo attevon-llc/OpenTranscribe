@@ -47,7 +47,8 @@
     <select class="form-select scope-select" value={scope} on:change={onScopeChange}>
       <option value="all">{$t('tags.manager.scope.all')}</option>
       <option value="mine">{$t('tags.manager.scope.mine')}</option>
-      <option value="shared">{$t('tags.manager.scope.shared')}</option>
+      <option value="system">{$t('tags.manager.scope.system')}</option>
+      <option value="shared_with_me">{$t('tags.manager.scope.shared_with_me')}</option>
     </select>
   </label>
 </div>

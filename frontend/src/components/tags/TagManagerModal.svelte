@@ -1,6 +1,12 @@
 <script lang="ts">
   /**
-   * Tag manager — the coordinator for `$components/tags/*`.
+   * Tag manager — the coordinator for `$components/tags/*`, shown as a modal.
+   *
+   * Tags are metadata on the library, not a place to navigate to, so this lives
+   * behind the gallery's Tags button beside Collections rather than a top-level
+   * route. The gallery decides which mode to open by selection, mirroring
+   * `CollectionsPanel`'s `viewMode`: nothing selected opens this manager;
+   * a selection opens the bulk apply/remove flow instead.
    *
    * It owns every fetch, the selection, and the mutation lifecycle; the
    * children are presentational and dispatch intent up. Nothing here recomputes
@@ -8,7 +14,8 @@
    * near matches, the suggested survivor, `awaiting_review`) — those are
    * rendered as received.
    */
-  import { onMount } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
+  import BaseModal from '$components/ui/BaseModal.svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -36,6 +43,8 @@
   import EmptyState from '$components/ui/EmptyState.svelte';
   import ListRowSkeleton from '$components/ui/ListRowSkeleton.svelte';
 
+  const dispatch = createEventDispatcher<{ close: void }>();
+
   type Busy = 'rename' | 'merge' | 'delete' | 'accept' | 'reject' | 'promote' | null;
 
   let filter: TagFilterId = 'all';
@@ -44,7 +53,10 @@
   let scope: TagScope = 'all';
   // Cosmetic gate only: POST /tags/promote enforces the admin check server-side.
   // `role` is the authorization truth in this app; `is_superuser` is its mirror.
-  $: canPromote = $user?.role === 'admin' || $user?.role === 'super_admin';
+  $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
+  // Promotion is admin-only, same gate — named separately because the button
+  // and the write-rights check answer different questions.
+  $: canPromote = isAdmin;
   let tags: TagListEntry[] = [];
   let clusters: TagCollisionCluster[] = [];
   let loading = true;
@@ -321,23 +333,13 @@
   }
 </script>
 
-<svelte:head>
-  <title>{$t('tags.manager.title')} - OpenTranscribe</title>
-</svelte:head>
-
-<div class="tags-page">
-  <div class="page-header">
-    <a href="/" class="back-to-gallery" title={$t('nav.backToGallery')} aria-label={$t('nav.backToGallery')}>
-      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <polyline points="15 18 9 12 15 6"></polyline>
-      </svg>
-    </a>
-    <div>
-      <h1>{$t('tags.manager.title')}</h1>
-      <p class="page-subtitle">{$t('tags.manager.subtitle')}</p>
-    </div>
-  </div>
-
+<BaseModal
+  isOpen
+  maxWidth="1100px"
+  title={$t('tags.manager.title')}
+  onClose={() => dispatch('close')}
+>
+  <div class="tags-manager">
   <TagFilterBar
     {filter}
     {scope}
@@ -434,6 +436,7 @@
           {rejectPreview}
           {renameMergeImpact}
           {canPromote}
+          {isAdmin}
           on:rename={(event) => submitRename(event.detail.name)}
           on:promote={promoteSelection}
           on:confirmRenameMerge={(event) => submitRename(event.detail.name, true)}
@@ -451,55 +454,29 @@
       {/if}
     </div>
   </div>
-</div>
+  </div>
+
+  <svelte:fragment slot="footer">
+    <button type="button" class="btn btn-ghost" on:click={() => dispatch('close')}>
+      {$t('tags.manager.close')}
+    </button>
+  </svelte:fragment>
+</BaseModal>
 
 <style>
-  .tags-page {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 24px 16px;
-    box-sizing: border-box;
-  }
-
-  .page-header {
+  .tags-manager {
+    /* The modal owns the outer padding; this only bounds the working area so
+       the two panes keep their proportions on a wide screen. */
     display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    margin-bottom: 16px;
+    flex-direction: column;
+    gap: 12px;
+    min-height: min(60vh, 520px);
   }
 
-  .page-header h1 {
-    font-size: 24px;
-    font-weight: 600;
-    color: var(--text-color);
-    margin: 0;
-  }
 
-  .page-subtitle {
-    margin: 2px 0 0;
-    font-size: 13px;
-    color: var(--text-secondary);
-  }
 
-  .back-to-gallery {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
-    color: var(--text-secondary);
-    text-decoration: none;
-    flex-shrink: 0;
-    transition:
-      background 0.15s,
-      color 0.15s;
-  }
 
-  .back-to-gallery:hover {
-    background: var(--hover-color, rgba(0, 0, 0, 0.05));
-    color: var(--text-color);
-  }
+
 
   .tags-layout {
     display: grid;
@@ -583,7 +560,7 @@
   }
 
   @media (max-width: 768px) {
-    .tags-page {
+    .tags-manager {
       padding: 16px 12px;
     }
 

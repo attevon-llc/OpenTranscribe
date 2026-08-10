@@ -15,17 +15,15 @@
  * it (#326). The gallery list endpoint `GET /files` sends no tags at all, which
  * is why `MediaFile` has no `tags` field — only `MediaFileDetail` does.
  *
- * `is_shared` marks a system tag (`user_id IS NULL` on the backend): the seeded
- * vocabulary every account sees and attaches to. Only an admin may rename,
- * merge or delete one.
+ * `ownership` says what the caller may do with the tag — see `TagOwnership`.
  */
 export interface Tag {
   uuid: string;
   name: string;
   /** How the tag was created — e.g. `auto_ai` for LLM-suggested tags. */
   source?: string | null;
-  /** True for a system tag in the shared vocabulary. */
-  is_shared?: boolean;
+  /** The caller's relationship to this tag, and therefore their rights over it. */
+  ownership?: TagOwnership;
 }
 
 /**
@@ -41,13 +39,33 @@ export interface TagWithCount extends Tag {
 }
 
 /**
- * Ownership scope for the tag list.
+ * The caller's relationship to a tag, mirroring `tag_service.TAG_OWNERSHIPS`.
  *
- * `all` is everything the caller may resolve against (their own tags plus the
- * shared vocabulary); `mine` and `shared` split that set. A separate axis from
- * the three view filters below, so "my unused tags" is expressible.
+ * - `mine` — they own it; full control.
+ * - `system` — the shared vocabulary every account sees; admin-only to change.
+ * - `shared_with_me` — another account's, visible only because it sits on a
+ *   file shared with them. Read-only: every mutation answers 404, so the UI
+ *   must not offer one.
  */
-export type TagScope = 'all' | 'mine' | 'shared';
+export type TagOwnership = 'mine' | 'system' | 'shared_with_me';
+
+/** True when the caller may rename / merge / delete this tag. */
+export function canMutateTag(tag: Tag, isAdmin: boolean): boolean {
+  const ownership = tag.ownership ?? 'mine';
+  if (ownership === 'shared_with_me') return false;
+  if (ownership === 'system') return isAdmin;
+  return true;
+}
+
+/**
+ * Ownership scope for the tag list — `all`, or one `TagOwnership` value.
+ *
+ * Deliberately the same vocabulary the rows report: a scoped request returns
+ * only rows whose `ownership` equals the scope, so the filter and the field it
+ * filters on cannot drift. A separate axis from the three view filters below,
+ * so "my unused tags" is expressible.
+ */
+export type TagScope = 'all' | TagOwnership;
 
 /** Server-side filters for the tag list; they combine (AND). */
 export interface TagListFilters {

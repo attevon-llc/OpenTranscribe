@@ -71,6 +71,8 @@ export interface GalleryActions {
   toggleFilters: () => void;
   triggerUpload: () => void;
   triggerCollections: () => void;
+  /** Open the tag surface; the gallery picks manage-vs-apply by selection. */
+  triggerTags: () => void;
   triggerAddToCollection: () => void;
   triggerAddTags: () => void;
   triggerRemoveTags: () => void;
@@ -124,6 +126,7 @@ function createGalleryStore() {
   // Action stores for triggering operations
   const uploadTrigger = writable<number>(0);
   const collectionsTrigger = writable<number>(0);
+  const tagsTrigger = writable<number>(0);
   const addToCollectionTrigger = writable<number>(0);
   const addTagsTrigger = writable<number>(0);
   const removeTagsTrigger = writable<number>(0);
@@ -255,6 +258,9 @@ function createGalleryStore() {
       uploadTrigger.update((n) => n + 1);
     },
 
+    triggerTags: () => {
+      tagsTrigger.update((n) => n + 1);
+    },
     triggerCollections: () => {
       collectionsTrigger.update((n) => n + 1);
     },
@@ -411,6 +417,15 @@ function createGalleryStore() {
       });
     },
 
+    onTagsTrigger: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return tagsTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
     onCollectionsTrigger: (callback: (value: number) => void) => {
       let hasInitialized = false;
       return collectionsTrigger.subscribe((value) => {

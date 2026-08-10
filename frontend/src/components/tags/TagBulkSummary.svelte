@@ -49,9 +49,10 @@
     clear: void;
   }>();
 
-  // An already-shared tag has nothing to promote, so a selection of only shared
-  // tags hides the button rather than offering a no-op.
-  $: promotableCount = tags.filter((tag) => !tag.is_shared).length;
+  // Only a tag you own can be promoted: a system tag is already shared, and a
+  // `shared_with_me` tag is someone else's to publish. A selection with none of
+  // them hides the button rather than offering a no-op that 404s.
+  $: promotableCount = tags.filter((tag) => (tag.ownership ?? 'mine') === 'mine').length;
 
   let survivorUuid = '';
   let lastSelectionKey = '';

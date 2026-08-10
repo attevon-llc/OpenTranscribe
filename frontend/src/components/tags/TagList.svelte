@@ -114,6 +114,9 @@
               name: member.name,
               source: member.source,
               usage_count: member.usage_count,
+              // Carried through, or a cluster member would lose the badge and
+              // the write gate that the flat list gives the same tag.
+              ownership: member.ownership,
             },
             suggestedSurvivor: member.suggested_survivor,
           });
@@ -349,9 +352,13 @@
               {/if}
             </span>
           </span>
-          {#if row.kind === 'tag' && row.entry.is_shared}
+          {#if row.kind === 'tag' && row.entry.ownership === 'system'}
             <Badge variant="info" title={$t('tags.manager.sharedTooltip')}>
               {$t('tags.manager.sharedBadge')}
+            </Badge>
+          {:else if row.kind === 'tag' && row.entry.ownership === 'shared_with_me'}
+            <Badge variant="default" title={$t('tags.manager.sharedWithMeTooltip')}>
+              {$t('tags.manager.sharedWithMeBadge')}
             </Badge>
           {/if}
           {#if row.kind === 'tag' && row.entry.awaiting_review}

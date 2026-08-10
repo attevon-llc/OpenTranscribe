@@ -1,8 +1,14 @@
-"""End-to-end tests for the tag manager (`/tags`).
+"""End-to-end tests for the tag manager modal.
 
-Covers what only a browser can: that the route renders, that the ownership
-scope and view filters reach the backend and change the list, and that rename /
-delete / promote apply through the UI and are visible in the API afterwards.
+Covers what only a browser can: that the modal opens from the gallery's Tags
+button, that the ownership scope and view filters reach the backend and change
+the list, and that rename / delete / promote apply through the UI and are
+visible in the API afterwards.
+
+Tags are metadata over the library rather than a destination, so there is no
+`/tags` route: the Tags button sits beside Collections and picks its mode from
+the selection — nothing selected opens this manager, a selection opens the bulk
+apply flow instead (mirroring `CollectionsPanel`'s `viewMode`).
 
 **Dev-data safety.** Every tag these tests touch is created by the test under a
 `e2e-tag-<uuid>` name and removed in the fixture's teardown, whichever way the
@@ -56,26 +62,39 @@ def tag_api(api_helper):
         print(f"tag teardown failed (leaves orphan e2e tags): {exc}")
 
 
+def _open_manager(page: Page) -> None:
+    """Open the tag manager from the gallery, with nothing selected.
+
+    A selection would open the bulk apply flow instead, so the tests that want
+    the manager clear it first.
+    """
+    page.keyboard.press("Escape")
+    page.click(".tags-btn")
+    page.wait_for_selector(".tags-manager", timeout=30000)
+
+
 @pytest.fixture
 def tags_page(browser, shared_auth_state, base_url):
-    """A fresh pre-authenticated page on the tag manager."""
+    """A fresh pre-authenticated gallery page with the tag manager open."""
     context = browser.new_context(
         storage_state=shared_auth_state,
         viewport={"width": 1440, "height": 950},
         ignore_https_errors=True,
     )
     page = context.new_page()
-    page.goto(f"{base_url}/tags")
-    page.wait_for_selector(".tags-page", timeout=30000)
+    page.goto(base_url)
+    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    _open_manager(page)
     yield page
     page.close()
     context.close()
 
 
 def _reload_tags(page: Page) -> None:
-    """Re-fetch the list, waiting for the route to settle."""
+    """Re-fetch the list by reopening the modal."""
     page.reload()
-    page.wait_for_selector(".tags-page", timeout=30000)
+    page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    _open_manager(page)
 
 
 def _row(page: Page, name: str):
@@ -85,20 +104,21 @@ def _row(page: Page, name: str):
 class TestTagManagerRoute:
     """The route renders and lists what the backend returned."""
 
-    def test_route_renders_with_the_tag_list(self, tags_page: Page, tag_api):
+    def test_modal_opens_with_the_tag_list(self, tags_page: Page, tag_api):
         name = _unique_tag_name()
         tag_api.post("/api/tags", {"name": name})
 
         _reload_tags(tags_page)
 
-        expect(tags_page.locator(".tags-page")).to_be_visible()
+        expect(tags_page.locator(".tags-manager")).to_be_visible()
         expect(_row(tags_page, name)).to_be_visible()
 
-    def test_navbar_link_reaches_the_manager(self, gallery_page: Page, base_url):
-        gallery_page.click('a[href="/tags"]')
-
-        gallery_page.wait_for_selector(".tags-page", timeout=15000)
-        assert "/tags" in gallery_page.url
+    def test_tags_button_sits_beside_collections(self, gallery_page: Page):
+        """Tags is a library action next to Collections, not a nav destination."""
+        expect(gallery_page.locator(".tags-btn")).to_be_visible()
+        expect(gallery_page.locator(".collections-btn")).to_be_visible()
+        # The route is gone; nothing should link to it.
+        expect(gallery_page.locator('a[href="/tags"]')).to_have_count(0)
 
     def test_no_console_errors_on_load(self, browser, shared_auth_state, base_url, tag_api):
         """A render that logs an error is a broken render even when it looks fine."""
@@ -112,23 +132,24 @@ class TestTagManagerRoute:
         errors: list[str] = []
         page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
 
-        page.goto(f"{base_url}/tags")
-        page.wait_for_selector(".tags-page", timeout=30000)
+        page.goto(base_url)
+        page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+        _open_manager(page)
         page.wait_for_timeout(1000)
 
         page.close()
         context.close()
-        assert errors == [], f"console errors on /tags: {errors}"
+        assert errors == [], f"console errors opening the tag manager: {errors}"
 
 
 class TestOwnershipScope:
     """The scope picker is the read half of the ownership model."""
 
-    def test_scope_picker_offers_the_three_scopes(self, tags_page: Page):
+    def test_scope_picker_offers_all_and_each_ownership(self, tags_page: Page):
         picker = tags_page.get_by_label("Tag ownership")
 
         expect(picker).to_be_visible()
-        assert picker.locator("option").count() == 3
+        assert picker.locator("option").count() == 4
 
     def test_mine_scope_keeps_an_owned_tag(self, tags_page: Page, tag_api):
         name = _unique_tag_name()
@@ -148,14 +169,14 @@ class TestOwnershipScope:
         tag_api.post("/api/tags", {"name": name})
         _reload_tags(tags_page)
 
-        tags_page.get_by_label("Tag ownership").select_option("shared")
+        tags_page.get_by_label("Tag ownership").select_option("system")
         tags_page.wait_for_timeout(750)
 
         expect(_row(tags_page, name)).to_have_count(0)
 
-    def test_seeded_defaults_are_shared(self, tags_page: Page):
+    def test_seeded_defaults_are_system_tags(self, tags_page: Page):
         """The bootstrap vocabulary is the system tier, and says so in the UI."""
-        tags_page.get_by_label("Tag ownership").select_option("shared")
+        tags_page.get_by_label("Tag ownership").select_option("system")
         tags_page.wait_for_timeout(750)
 
         rows = tags_page.get_by_role("option")
@@ -207,7 +228,7 @@ class TestTagMutations:
     def test_promote_publishes_to_the_shared_vocabulary(self, tags_page: Page, tag_api):
         name = _unique_tag_name()
         created = tag_api.post("/api/tags", {"name": name})
-        assert created.get("is_shared") is False, "a new tag must start owned, not shared"
+        assert created.get("ownership") == "mine", "a new tag must start owned, not shared"
         _reload_tags(tags_page)
 
         self._select(tags_page, name)
@@ -215,7 +236,7 @@ class TestTagMutations:
         tags_page.wait_for_timeout(1500)
 
         after = {t["uuid"]: t for t in tag_api.get("/api/tags")}
-        assert after[created["uuid"]]["is_shared"] is True
+        assert after[created["uuid"]]["ownership"] == "system"
 
     def test_promote_control_absent_for_an_already_shared_tag(self, tags_page: Page, tag_api):
         name = _unique_tag_name()
@@ -242,7 +263,7 @@ class TestTagManagerThemes:
         tags_page.evaluate("(t) => document.documentElement.setAttribute('data-theme', t)", theme)
         tags_page.wait_for_timeout(400)
 
-        expect(tags_page.locator(".tags-page")).to_be_visible()
+        expect(tags_page.locator(".tags-manager")).to_be_visible()
         expect(tags_page.locator(".list-pane")).to_be_visible()
 
     def test_renders_on_a_narrow_viewport(self, tags_page: Page, tag_api):
@@ -250,7 +271,7 @@ class TestTagManagerThemes:
         tags_page.set_viewport_size({"width": 390, "height": 844})
         _reload_tags(tags_page)
 
-        expect(tags_page.locator(".tags-page")).to_be_visible()
+        expect(tags_page.locator(".tags-manager")).to_be_visible()
         # The filter row stacks below 640px; both controls must survive it.
         expect(tags_page.get_by_label("Tag ownership")).to_be_visible()
 

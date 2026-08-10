@@ -57,6 +57,10 @@
   // Event handlers
   function handleUploadClick() { galleryStore.triggerUpload(); }
   function handleCollectionsClick() { galleryStore.triggerCollections(); }
+  // Tags sit beside Collections because they are the same kind of thing: metadata
+  // over the library, not a place to navigate to. The gallery decides which mode
+  // to open from the current selection, exactly as Collections does.
+  function handleTagsClick() { galleryStore.triggerTags(); }
   function handleSelectFilesClick() { galleryStore.setSelecting(true); }
   function handleSelectAllFiles() { galleryStore.selectAllFiles(); }
   function handleDeleteSelected() { galleryStore.triggerDeleteSelected(); }
@@ -367,6 +371,13 @@
         <span>{$t('nav.collections')}</span>
       </button>
       <button
+        class="action-btn tags-btn"
+        on:click={handleTagsClick}
+        title={$t('gallery.bulk.tagsTooltip')}
+      >
+        <span>{$t('nav.tags')}</span>
+      </button>
+      <button
         class="action-btn select-btn"
         on:click={handleSelectFilesClick}
         title={$t('gallery.bulk.selectFilesTooltip')}
@@ -472,6 +483,7 @@
 
   /* Secondary actions — surface with border (not colored) */
   .collections-btn,
+  .tags-btn,
   .select-btn,
   .organize-btn {
     background-color: var(--surface-color);
@@ -481,6 +493,7 @@
   }
 
   .collections-btn:hover:not(:disabled),
+  .tags-btn:hover:not(:disabled),
   .select-btn:hover:not(:disabled),
   .organize-btn:hover:not(:disabled) {
     background-color: var(--button-hover, #f1f5f9);
@@ -488,6 +501,7 @@
   }
 
   :global(.dark) .collections-btn:hover:not(:disabled),
+  :global(.dark) .tags-btn:hover:not(:disabled),
   :global(.dark) .select-btn:hover:not(:disabled),
   :global(.dark) .organize-btn:hover:not(:disabled) {
     background-color: rgba(255, 255, 255, 0.08);

@@ -60,6 +60,7 @@
   // Import components
   import FileUploader from '../components/FileUploader.svelte';
   import CollectionsPanel from '../components/CollectionsPanel.svelte';
+  import TagManagerModal from '$components/tags/TagManagerModal.svelte';
   import UserFileStatus from '../components/UserFileStatus.svelte';
 
   // Media files state
@@ -95,6 +96,7 @@
   // View state — restore from gallery store for navigation persistence
   let selectedCollectionId: string | null = $galleryState.filterSelectedCollectionId;
   let showCollectionsModal = false;
+  let showTagManagerModal = false;
 
   // Use gallery store for state management
   $: activeTab = $galleryState.activeTab;
@@ -1338,6 +1340,18 @@
       openBulkTagModal('add_tag');
     });
 
+    // One Tags button, two modes — the same contract CollectionsPanel uses:
+    // a selection means "apply to these", no selection means "manage the
+    // library". Keeping it on one control avoids a second entry point that
+    // would have to explain which one to reach for.
+    const unsubscribeTags = galleryStore.onTagsTrigger(() => {
+      if ($galleryState.selectedFiles.size > 0) {
+        openBulkTagModal('add_tag');
+      } else {
+        showTagManagerModal = true;
+      }
+    });
+
     const unsubscribeRemoveTags = galleryStore.onRemoveTagsTrigger(() => {
       openBulkTagModal('remove_tag');
     });
@@ -1378,6 +1392,7 @@
     return () => {
       unsubscribeUpload();
       unsubscribeCollections();
+      unsubscribeTags();
       unsubscribeAddToCollection();
       unsubscribeAddTags();
       unsubscribeRemoveTags();
@@ -1510,6 +1525,10 @@
 {/if}
 
 <!-- Collections Modal -->
+{#if showTagManagerModal}
+  <TagManagerModal on:close={() => (showTagManagerModal = false)} />
+{/if}
+
 {#if showCollectionsModal}
   <div
     class="modal-backdrop"

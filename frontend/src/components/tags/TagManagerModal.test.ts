@@ -2,9 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 
 /**
- * Route-level tests: the page is the coordinator, so the states that only exist
- * because of a fetch (skeleton / error+retry / four distinct empty states) and
+ * Coordinator-level tests. The modal owns every fetch, so the states that exist
+ * only because of one (skeleton / error+retry / four distinct empty states) and
  * the detail-vs-bulk swap can only be exercised here.
+ *
+ * This was a route (`/tags`) until tags moved behind the gallery's Tags button:
+ * tags are metadata over the library, not a destination, so they live in a modal
+ * beside Collections. The assertions are unchanged by that move — which is the
+ * point of keeping them.
  */
 vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
@@ -45,7 +50,7 @@ vi.mock('$stores/auth', async () => {
   return { user: readable({ uuid: 'u1', email: 'a@example.com', get role() { return auth.role; } }) };
 });
 
-import TagsPage from './+page.svelte';
+import TagManagerModal from './TagManagerModal.svelte';
 
 const UUID_A = 'aaaaaaaa-0000-0000-0000-000000000001';
 const UUID_B = 'bbbbbbbb-0000-0000-0000-000000000002';
@@ -57,7 +62,7 @@ const allTags = [
     source: 'manual',
     usage_count: 12,
     awaiting_review: false,
-    is_shared: false,
+    ownership: 'mine',
   },
   {
     uuid: UUID_B,
@@ -65,7 +70,7 @@ const allTags = [
     source: 'auto_ai',
     usage_count: 4,
     awaiting_review: true,
-    is_shared: true,
+    ownership: 'system',
   },
 ];
 
@@ -98,9 +103,9 @@ function tagRows(): HTMLElement[] {
   return within(screen.getByRole('listbox')).getAllByRole('option');
 }
 
-describe('tag manager route', () => {
+describe('tag manager modal', () => {
   it('lists the tags the backend returned', async () => {
-    render(TagsPage);
+    render(TagManagerModal);
     await waitFor(() => expect(tagRows()).toHaveLength(2));
     expect(screen.getByText('interviews')).toBeInTheDocument();
     expect(screen.getByText('Used on 12 files')).toBeInTheDocument();
@@ -108,7 +113,7 @@ describe('tag manager route', () => {
 
   it('renders an error with retry — never the empty state — when the fetch fails', async () => {
     api.listTags.mockRejectedValueOnce({ response: { data: { detail: 'tag query exploded' } } });
-    render(TagsPage);
+    render(TagManagerModal);
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
     expect(screen.getByText('tag query exploded')).toBeInTheDocument();
@@ -122,7 +127,7 @@ describe('tag manager route', () => {
 
   describe('selection', () => {
     it('shows the detail pane for one tag and the bulk summary for several', async () => {
-      render(TagsPage);
+      render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
 
       await fireEvent.click(tagRows()[0]);
@@ -137,7 +142,7 @@ describe('tag manager route', () => {
 
     it('previews the delete impact before applying it', async () => {
       api.deleteTags.mockResolvedValue({ deleted_uuids: [UUID_A] });
-      render(TagsPage);
+      render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
       await fireEvent.click(tagRows()[0]);
 
@@ -153,7 +158,7 @@ describe('tag manager route', () => {
     });
 
     it('previews removed vs retained associations before rejecting', async () => {
-      render(TagsPage);
+      render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
       await fireEvent.click(tagRows()[1]);
 
@@ -169,7 +174,7 @@ describe('tag manager route', () => {
 
   describe('filters', () => {
     it('narrows the list to the awaiting-review set', async () => {
-      render(TagsPage);
+      render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
 
       api.listTags.mockResolvedValueOnce([allTags[1]]);
@@ -185,7 +190,7 @@ describe('tag manager route', () => {
     });
 
     it('narrows the list to the unused set', async () => {
-      render(TagsPage);
+      render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
 
       api.listTags.mockResolvedValueOnce([]);
@@ -201,7 +206,7 @@ describe('tag manager route', () => {
     });
 
     it('switches to the grouped collision endpoint for the collisions view', async () => {
-      render(TagsPage);
+      render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
 
       api.listTagCollisions.mockResolvedValueOnce([
@@ -235,7 +240,7 @@ describe('tag manager route', () => {
     it('renders a distinct empty state per filter', async () => {
       api.listTags.mockResolvedValue([]);
       api.listTagCollisions.mockResolvedValue([]);
-      render(TagsPage);
+      render(TagManagerModal);
 
       await waitFor(() => expect(screen.getByText('No tags yet')).toBeInTheDocument());
 
@@ -252,7 +257,7 @@ describe('tag manager route', () => {
 
   describe('ownership', () => {
     it('marks a shared tag in the list and leaves an owned one unmarked', async () => {
-      render(TagsPage);
+      render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
 
       // `is_shared` is derived from ownership on the wire; the badge is the only
@@ -263,7 +268,7 @@ describe('tag manager route', () => {
     });
 
     it('asks the backend for one ownership scope at a time', async () => {
-      render(TagsPage);
+      render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
 
       api.listTags.mockResolvedValueOnce([allTags[0]]);
@@ -282,7 +287,7 @@ describe('tag manager route', () => {
 
     it('promotes an owned tag to the shared vocabulary', async () => {
       api.promoteTags.mockResolvedValue({ impact: { tags: [], accessible_file_count: 0, total_file_count: 0 } });
-      render(TagsPage);
+      render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
 
       await fireEvent.click(tagRows()[0]);
@@ -292,7 +297,7 @@ describe('tag manager route', () => {
     });
 
     it('offers no promote control for an already-shared tag', async () => {
-      render(TagsPage);
+      render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
 
       await fireEvent.click(tagRows()[1]);
@@ -304,12 +309,73 @@ describe('tag manager route', () => {
 
     it('hides the promote control from a non-admin', async () => {
       auth.role = 'user';
-      render(TagsPage);
+      render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
 
       await fireEvent.click(tagRows()[0]);
 
       expect(screen.queryByRole('button', { name: 'Share with everyone' })).toBeNull();
+    });
+  });
+
+  describe('ownership gating', () => {
+    it('offers no write controls for a tag shared with me', async () => {
+      api.listTags.mockResolvedValue([
+        { ...allTags[0], ownership: 'shared_with_me', name: 'their-tag' },
+      ]);
+      render(TagManagerModal);
+      await waitFor(() => expect(tagRows()).toHaveLength(1));
+
+      await fireEvent.click(tagRows()[0]);
+
+      // The backend answers 404 for these, so offering them would be a button
+      // that can only fail. The badge explains the absence instead.
+      expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+      // Both surfaces mark it: the list row badge tells you before you click,
+      // the detail badge explains why the buttons are missing after you do.
+      expect(screen.getAllByText('Shared with me')).toHaveLength(2);
+    });
+
+    it('offers write controls for a system tag only to an admin', async () => {
+      api.listTags.mockResolvedValue([{ ...allTags[0], ownership: 'system', name: 'sys-tag' }]);
+      auth.role = 'user';
+      render(TagManagerModal);
+      await waitFor(() => expect(tagRows()).toHaveLength(1));
+
+      await fireEvent.click(tagRows()[0]);
+
+      expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+    });
+
+    it('offers write controls on my own tag', async () => {
+      api.listTags.mockResolvedValue([{ ...allTags[0], ownership: 'mine' }]);
+      render(TagManagerModal);
+      await waitFor(() => expect(tagRows()).toHaveLength(1));
+
+      await fireEvent.click(tagRows()[0]);
+
+      expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    });
+
+    it('asks the backend for the scope named by the picker', async () => {
+      render(TagManagerModal);
+      await waitFor(() => expect(tagRows()).toHaveLength(2));
+
+      await fireEvent.change(screen.getByLabelText('Tag ownership'), {
+        target: { value: 'shared_with_me' },
+      });
+
+      // The picker's values ARE the ownership values the API reports, so this
+      // asserts the two vocabularies have not drifted apart.
+      await waitFor(() =>
+        expect(api.listTags).toHaveBeenLastCalledWith({
+          awaiting_review: undefined,
+          unused: undefined,
+          scope: 'shared_with_me',
+        })
+      );
     });
   });
 });

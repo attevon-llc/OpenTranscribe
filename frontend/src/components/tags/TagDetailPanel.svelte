@@ -12,6 +12,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import { tagOriginKey, type TagListEntry } from './TagList.svelte';
   import type { TagImpact, TagReviewResult } from '$lib/types/tag';
+  import { canMutateTag } from '$lib/types/tag';
 
   export let tag: TagListEntry;
   /** Which mutation is in flight, if any. Disables the confirming control. */
@@ -22,6 +23,17 @@
    * Cosmetic — `POST /tags/promote` enforces the admin check itself.
    */
   export let canPromote = false;
+  /** Whether the caller is an admin — decides rights over a system tag. */
+  export let isAdmin = false;
+
+  /**
+   * Whether to offer the destructive controls at all.
+   *
+   * Mirrors `endpoints/tags.py:_writable_tag_ids`. A `shared_with_me` tag is
+   * refused with a 404, so rendering Rename/Delete for it would offer an action
+   * that can only fail — the badge and hint explain the absence instead.
+   */
+  $: canMutate = canMutateTag(tag, isAdmin);
   /** An impact preview is being fetched. */
   export let previewLoading = false;
   /** Impact of deleting this tag, once previewed. */
@@ -123,9 +135,11 @@
       </div>
     {:else}
       <h2 class="detail-name">{tag.name}</h2>
-      <button type="button" class="btn btn-ghost" on:click={startEdit}>
-        {$t('tags.manager.detail.rename')}
-      </button>
+      {#if canMutate}
+        <button type="button" class="btn btn-ghost" on:click={startEdit}>
+          {$t('tags.manager.detail.rename')}
+        </button>
+      {/if}
     {/if}
   </header>
 
@@ -182,15 +196,20 @@
     </div>
   {/if}
 
-  {#if tag.is_shared}
+  {#if tag.ownership === 'system'}
     <div class="review-flag">
       <Badge variant="info">{$t('tags.manager.sharedBadge')}</Badge>
       <span class="panel-note">{$t('tags.manager.detail.sharedHint')}</span>
     </div>
+  {:else if tag.ownership === 'shared_with_me'}
+    <div class="review-flag">
+      <Badge variant="default">{$t('tags.manager.sharedWithMeBadge')}</Badge>
+      <span class="panel-note">{$t('tags.manager.detail.sharedWithMeHint')}</span>
+    </div>
   {/if}
 
   <div class="detail-actions">
-    {#if canPromote && !tag.is_shared}
+    {#if canPromote && tag.ownership === 'mine'}
       <button
         type="button"
         class="btn btn-ghost"
@@ -203,7 +222,7 @@
           : $t('tags.manager.action.promote')}
       </button>
     {/if}
-    {#if tag.awaiting_review}
+    {#if tag.awaiting_review && canMutate}
       <button
         type="button"
         class="btn btn-primary"
@@ -223,14 +242,16 @@
         {$t('tags.manager.action.reject')}
       </button>
     {/if}
-    <button
-      type="button"
-      class="btn btn-danger-outline"
-      on:click={() => dispatch('previewDelete')}
-      disabled={busy !== null}
-    >
-      {$t('tags.manager.action.delete')}
-    </button>
+    {#if canMutate}
+      <button
+        type="button"
+        class="btn btn-danger-outline"
+        on:click={() => dispatch('previewDelete')}
+        disabled={busy !== null}
+      >
+        {$t('tags.manager.action.delete')}
+      </button>
+    {/if}
   </div>
 
   {#if previewLoading}

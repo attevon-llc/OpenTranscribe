@@ -161,6 +161,32 @@ for bad_root in /mnt/nas/opentranscribe-minio /home /var/lib; do
     esac
 done
 
+# ── Case 7: ownership is DERIVED by prefix, not a hardcoded name list ─────
+# The stamp records what existed BEFORE the run. Anything else under the
+# project prefix was created by the test. This is what stops volumes like
+# pipeline_scratch and transcription-temp accumulating forever just because
+# nobody added them to a list.
+echo "7. derived ownership (preexisting vs test-created)"
+docker volume create "${GR_STOCK_PROJECT}_preexisting_data" >/dev/null
+docker volume create "${GR_STOCK_PROJECT}_scratch_made_by_test" >/dev/null
+{
+    echo "project=${GR_STOCK_PROJECT}"
+    echo "preexisting=${GR_STOCK_PROJECT}_preexisting_data"
+} > "$GR_OWNED_STAMP"
+gr_cleanup_owned_stock_resources >/dev/null 2>&1
+
+if vol_exists "${GR_STOCK_PROJECT}_preexisting_data"; then
+    ok "a volume that existed before the run was left alone"
+else
+    bad "removed a PRE-EXISTING volume — that could be someone's data"
+fi
+if vol_exists "${GR_STOCK_PROJECT}_scratch_made_by_test"; then
+    bad "test-created volume left behind (it was never in any name list)"
+else
+    ok "test-created volume removed without being named anywhere"
+fi
+docker volume rm "${GR_STOCK_PROJECT}_preexisting_data" >/dev/null 2>&1
+
 echo
 echo "── $PASS passed, $FAIL failed ──"
 [[ $FAIL -eq 0 ]]

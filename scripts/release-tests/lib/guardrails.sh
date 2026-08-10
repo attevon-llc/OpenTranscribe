@@ -411,18 +411,32 @@ gr_stamp_owned_resources() {
     dir="$(dirname "$GR_OWNED_STAMP")"
     mkdir -p "$dir" 2>/dev/null || { gr_warn "cannot write ownership stamp in $dir"; return 0; }
 
+    # Record the stock project's volumes that ALREADY EXIST, rather than a list
+    # of names the test expects to create.
+    #
+    # A hand-maintained name list is the failure mode this whole harness exists
+    # to avoid: GR_PROTECTED_VOLUMES covers the five data volumes, so
+    # `pipeline_scratch` and `transcription-temp` were created by every run and
+    # cleaned up by none — dangling residue that grows per release. Any volume
+    # the stack gains in future would join them silently.
+    #
+    # Inverting it makes the rule self-maintaining: cleanup removes any
+    # `${proj}_*` volume that was NOT here before the run. New volumes are
+    # covered automatically; anything pre-existing is somebody else's and is
+    # never touched.
     {
         echo "# Written by gr_stamp_owned_resources at preflight."
-        echo "# Every stock volume below was verified ABSENT immediately before"
-        echo "# this run started, so anything now bearing the name belongs to the"
-        echo "# test and cleanup may remove it. Delete this file and cleanup will"
-        echo "# refuse to touch stock-named resources at all."
+        echo "# 'preexisting' volumes belong to whatever was here BEFORE this run"
+        echo "# and must never be removed. Any other ${proj}_* volume found at"
+        echo "# cleanup time was created by this test and may be removed."
+        echo "# Delete this file and cleanup will not touch stock-named resources."
         echo "scenario=${TEST_SCENARIO:-unknown}"
         echo "test_root=${TEST_ROOT:-unknown}"
+        echo "project=${proj}"
         local vol
-        for vol in "${GR_PROTECTED_VOLUMES[@]}"; do
-            echo "volume=${proj}_${vol}"
-        done
+        while IFS= read -r vol; do
+            [[ -n "$vol" ]] && echo "preexisting=$vol"
+        done < <(docker volume ls -q 2>/dev/null | grep "^${proj}_" || true)
         echo "network=${proj}_default"
     } > "$GR_OWNED_STAMP"
 
@@ -488,7 +502,47 @@ gr_cleanup_owned_stock_resources() {
         return 0
     fi
 
-    local vol net users
+    local vol net users proj="" line
+    local preexisting=()
+    while IFS= read -r line; do
+        case "$line" in
+            project=*)     proj="${line#project=}" ;;
+            preexisting=*) preexisting+=("${line#preexisting=}") ;;
+        esac
+    done < "$GR_OWNED_STAMP"
+
+    # Everything under the stock project that was not here before the run.
+    if [[ -n "$proj" ]]; then
+        local candidates=()
+        while IFS= read -r vol; do
+            [[ -n "$vol" ]] || continue
+            local is_pre=0 p
+            for p in ${preexisting[@]+"${preexisting[@]}"}; do
+                [[ "$p" == "$vol" ]] && { is_pre=1; break; }
+            done
+            if (( is_pre )); then
+                gr_log "leaving $vol alone — it existed before this run"
+            else
+                candidates+=("$vol")
+            fi
+        done < <(docker volume ls -q 2>/dev/null | grep "^${proj}_" || true)
+
+        for vol in ${candidates[@]+"${candidates[@]}"}; do
+            if gr_volume_has_live_marker "$vol"; then
+                gr_warn "refusing to remove $vol — carries the live-data marker"
+                continue
+            fi
+            users=$(docker ps -a --filter "volume=$vol" --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')
+            if [[ -n "${users// /}" ]]; then
+                gr_warn "refusing to remove $vol — still used by: ${users% }"
+                continue
+            fi
+            if docker volume rm "$vol" >/dev/null 2>&1; then
+                gr_ok "removed test-owned volume $vol"
+            fi
+        done
+    fi
+
     while IFS= read -r line; do
         case "$line" in
             volume=*)

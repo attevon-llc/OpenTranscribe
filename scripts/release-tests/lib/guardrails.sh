@@ -302,12 +302,67 @@ gr_cleanup() {
 }
 
 # ─── Entry point ────────────────────────────────────────────────────────────
+# ─── Stale stock volumes (issue #408) ───────────────────────────────────────
+#
+# The fresh-install scenario runs under the installer's stock compose project, so
+# its Postgres lands in `opentranscribe_postgres_data` — the same name a real
+# deployment uses, and one this file refuses to delete. The volume therefore
+# survives --cleanup, and the NEXT run generates fresh credentials into a new
+# .env while Postgres still holds the previous run's password. The stack then
+# fails five minutes later with an unhealthy backend and an opaque
+# "password authentication failed", having silently inherited an old database.
+#
+# So: detect it up front and say so. Removal is opt-in and re-verified, never
+# implicit — on a machine whose live deployment uses named volumes, that same
+# name IS production.
+gr_check_stale_stock_volumes() {
+    local proj="${GR_STOCK_PROJECT:-opentranscribe}"
+    local found=()
+    local vol
+    for vol in "${GR_PROTECTED_VOLUMES[@]}"; do
+        if docker volume inspect "${proj}_${vol}" >/dev/null 2>&1; then
+            found+=("${proj}_${vol}")
+        fi
+    done
+    [[ ${#found[@]} -eq 0 ]] && { gr_ok "no stale stock volumes"; return 0; }
+
+    if [[ "${OT_RELEASE_TEST_RESET_VOLUMES:-}" != "1" ]]; then
+        gr_warn "pre-existing stock volumes found:"
+        printf '           %s
+' "${found[@]}" >&2
+        gr_warn "A fresh-install test against these is NOT a fresh install: the"
+        gr_warn "database still holds the previous run's credentials, so the"
+        gr_warn "backend will fail to authenticate in phase 04."
+        gr_die "Re-run with OT_RELEASE_TEST_RESET_VOLUMES=1 to remove them (each is
+           re-checked for the .opentranscribe-live-data marker first), or remove
+           them by hand after confirming they are not your live deployment."
+    fi
+
+    gr_log "OT_RELEASE_TEST_RESET_VOLUMES=1 — verifying each volume is not live data"
+    for vol in "${found[@]}"; do
+        local mp
+        mp=$(docker volume inspect "$vol" --format '{{.Mountpoint}}' 2>/dev/null || echo "")
+        if [[ -n "$mp" && -e "$mp/.opentranscribe-live-data" ]]; then
+            gr_die "$vol carries the .opentranscribe-live-data marker — REFUSING to remove it.
+           This is a live deployment's storage, not release-test residue."
+        fi
+    done
+    for vol in "${found[@]}"; do
+        if docker volume rm "$vol" >/dev/null 2>&1; then
+            gr_ok "removed stale volume $vol"
+        else
+            gr_die "could not remove $vol (still in use?)"
+        fi
+    done
+}
+
 gr_preflight() {
     gr_require_vars
     gr_check_project_name
     gr_check_test_root
     gr_check_volume_names
     gr_check_container_names
+    gr_check_stale_stock_volumes
     gr_check_ports_free
     gr_check_disk_space 80 10
     gr_confirmation_gate

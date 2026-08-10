@@ -342,6 +342,32 @@ phase_03_pin_local_image() {
         fi
         gr_ok "pinned GPU_DEVICE_ID=$TEST_GPU_DEVICE_ID in .env"
     fi
+
+    # Supply the bootstrap admin credential.
+    #
+    # A fresh install is HARDENED (ENVIRONMENT defaults to production), and
+    # app/initial_data.py deliberately refuses to seed the well-known
+    # admin@example.com/password there — it generates a random 192-bit password
+    # instead and prints it once. This scenario previously assumed the dev
+    # credential ("The backend creates a default admin ... so registration is not
+    # needed"), which is true only in a relaxed environment, so phase 06 died at
+    # `curl: (22) ... 401` on every run.
+    #
+    # INITIAL_ADMIN_PASSWORD is the documented way to bootstrap a hardened
+    # deployment with a known credential, so setting it here exercises the real
+    # supported path rather than scraping the generated password out of the logs.
+    # It must be written BEFORE phase 04 starts the stack: the admin is seeded on
+    # first backend boot.
+    local env_file="$target/.env"
+    for kv in "INITIAL_ADMIN_EMAIL=$TEST_ADMIN_EMAIL" "INITIAL_ADMIN_PASSWORD=$TEST_ADMIN_PASSWORD"; do
+        local key="${kv%%=*}"
+        if grep -q "^${key}=" "$env_file"; then
+            sed -i "s|^${key}=.*|${kv}|" "$env_file"
+        else
+            echo "$kv" >> "$env_file"
+        fi
+    done
+    gr_ok "bootstrap admin credential set for the hardened install ($TEST_ADMIN_EMAIL)"
 }
 
 phase_04_start_stack() {
@@ -384,8 +410,10 @@ phase_06_api_smoke() {
     } >> "$TEST_REPORT_FILE"
     export TEST_REPORT_FILE
 
-    # The backend creates a default admin (admin@example.com / password) on first
-    # start, so registration is not needed. Just log in.
+    # Log in as the bootstrap admin. The credential works because phase 03 wrote
+    # INITIAL_ADMIN_EMAIL/INITIAL_ADMIN_PASSWORD into the install's .env — a
+    # hardened deployment (which this is) refuses the well-known dev credential
+    # and generates a random password instead. See phase_03.
     ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"
 
     local fe_code

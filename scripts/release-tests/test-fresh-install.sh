@@ -420,9 +420,25 @@ phase_06_api_smoke() {
     fe_code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_FRONTEND_PORT}/")
     as_assert_http "frontend GET /" 200 "$fe_code"
 
-    local api_code
+    # API docs are a SECURITY surface, not a liveness check.
+    #
+    # main.py:_resolve_docs_urls publishes none of /api/docs, /api/redoc or
+    # /api/openapi.json in a hardened deployment — Swagger is anonymously
+    # reachable wherever it is mounted and enumerates the whole admin/auth attack
+    # surface. A fresh install IS hardened, so 404 is the CORRECT answer and this
+    # previously asserted 200, failing every run on intended behaviour.
+    #
+    # Assert whichever the deployment is configured for, so the check keeps
+    # meaning either way: exposed when opted in, hidden by default.
+    local api_code docs_enabled
+    docs_enabled=$(grep -E '^ENABLE_API_DOCS=' "$TEST_ROOT/install/opentranscribe/.env" 2>/dev/null \
+        | cut -d= -f2 | tr -d ' "' | tr '[:upper:]' '[:lower:]' || true)
     api_code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_BACKEND_PORT}/api/docs")
-    as_assert_http "backend GET /api/docs" 200 "$api_code"
+    if [[ "$docs_enabled" == "true" || "$docs_enabled" == "1" || "$docs_enabled" == "yes" ]]; then
+        as_assert_http "backend GET /api/docs (ENABLE_API_DOCS opted in)" 200 "$api_code"
+    else
+        as_assert_http "backend /api/docs NOT exposed by default (hardened)" 404 "$api_code"
+    fi
 
     if [[ ! -d "$TEST_MEDIA_DIR" ]]; then
         as_record FAIL "TEST_MEDIA_DIR missing: $TEST_MEDIA_DIR"

@@ -382,3 +382,23 @@ def test_installer_reads_optional_env_keys_safely():
         "An absent optional key exits 1 under pipefail and set -e kills the install."
     )
     assert "_env_val" in summary, "expected the || true helper for optional .env reads"
+
+
+def test_unattended_install_persists_the_huggingface_token():
+    """An unattended install must WRITE the token, not just hold it in a variable.
+
+    prompt_huggingface_token() returns early in unattended mode. That early return
+    used to sit above the only line that writes the token to .env (in the
+    interactive branch), so an unattended install produced `HUGGINGFACE_TOKEN=`
+    empty. The containers never saw it, PyAnnote's gated models answered 401, and
+    EVERY transcription failed on a stack that otherwise looked healthy —
+    diarization is not optional, the pipeline cannot complete without it.
+
+    Affects every scripted/CI install and the release harness itself.
+    """
+    source = INSTALLER.read_text()
+    fn = source.split("prompt_huggingface_token()", 1)[1].split("\n_upsert_env", 1)[0]
+    unattended = fn.split("is_unattended", 1)[1].split("return 0", 1)[0]
+    assert "HUGGINGFACE_TOKEN=" in unattended and "sed" in unattended, (
+        "the unattended branch returns without persisting HUGGINGFACE_TOKEN to .env"
+    )

@@ -897,6 +897,17 @@ prompt_huggingface_token() {
             ot_log_unattended "HUGGINGFACE_TOKEN not set; continuing without it"
             HUGGINGFACE_TOKEN=""
         fi
+        # PERSIST IT. This early return used to skip the only line that writes the
+        # token to .env (in the interactive branch below), so an unattended install
+        # kept the token in a shell variable and wrote HUGGINGFACE_TOKEN= empty.
+        # The containers therefore never saw it, PyAnnote's gated models answered
+        # 401, and EVERY transcription failed on a stack that otherwise looked
+        # healthy. Diarization is not optional: the pipeline cannot complete
+        # without it.
+        if [[ -n "$HUGGINGFACE_TOKEN" && -f .env ]]; then
+            sed -i.bak "s|^HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|" .env && rm -f .env.bak
+            ot_log_unattended "HUGGINGFACE_TOKEN written to .env"
+        fi
         return 0
     fi
 

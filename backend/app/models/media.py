@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from typing import Any
 
+from sqlalchemy import BigInteger
 from sqlalchemy import Boolean
 from sqlalchemy import DateTime
 from sqlalchemy import Enum as SAEnum
@@ -54,7 +55,14 @@ class MediaFile(Base):
         DateTime(timezone=True), nullable=True
     )  # When processing completed
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)  # Duration in seconds
-    file_size: Mapped[int] = mapped_column(Integer, nullable=False)  # Size in bytes
+    # BigInteger, not Integer: the column is bigint in Postgres and the app
+    # advertises 15 GB uploads (MAX_UPLOAD_BYTES), well past Integer's 2.1 GB
+    # ceiling. The model said Integer while the database said bigint — reads
+    # still worked (Python ints are arbitrary precision), but the model was
+    # wrong, DDL generated from it would have been too narrow, and the sibling
+    # models (pipeline_timing.file_size_bytes, watch_source) already use
+    # BigInteger. Found by scripts/check-schema-drift.py.
+    file_size: Mapped[int] = mapped_column(BigInteger, nullable=False)  # Size in bytes
     content_type: Mapped[str] = mapped_column(String, nullable=False)  # MIME type
     is_public: Mapped[bool | None] = mapped_column(
         Boolean, default=False

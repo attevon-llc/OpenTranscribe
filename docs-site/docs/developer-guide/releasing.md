@@ -136,10 +136,57 @@ An upgrade is not only a database check. The scenario asserts:
 | **Running version** | `/api/version` equals the version under test, and is not `"unknown"` |
 | **API contract** | No route present before the upgrade is missing after |
 | Search | The OpenSearch ML model is `DEPLOYED`, not a silent BM25 fallback |
+| **New work** | A file uploaded **after** the upgrade transcribes, produces segments, and becomes searchable |
 
 The running-version assertion is what turns "a container started" into "the new
 code is running": with `pull_policy: never` and local tag pinning, a silently
 stale image would otherwise pass every data assertion against the **old** binary.
+
+The new-work assertion (phase 11) covers the opposite blind spot. Everything
+else here inspects data at rest, so **a migration that preserves every existing
+row while making every INSERT fail is a total upgrade failure that phases 6-10
+report as a clean pass.** Phase 11 uploads a file that was deliberately *not*
+seeded before the upgrade and requires it to complete — which is what exercises
+the Celery workers under the new image, the ASR stack, the OpenSearch mapping,
+and the post-migration insert path.
+
+### Test media
+
+The scenarios read `TEST_MEDIA_DIR` (default
+`/mnt/nvm/opentranscribe-test-runs/test-media`), sorted; the first two files are
+seeded into the FROM release, and the first unseeded file is what phase 11
+uploads after the upgrade. **Sorted** matters: `find` returns directory order, so
+without it, which files get seeded varies per run and phase 11 cannot reliably
+reserve an unseeded one.
+
+Supply at least three files, and prefer real multi-speaker material — diarization
+is only meaningfully exercised by content that has more than one speaker.
+`TEST_MEDIA_MAX_SIZE` (default `100M`) bounds run time; it was previously a
+hardcoded `5M`, which silently excluded every realistic sample.
+
+### Cleanup and your data
+
+`--cleanup` removes containers, volumes, networks and the test root. Because the
+scenarios run under the installer's **stock** project name, their volumes are
+called `opentranscribe_postgres_data` and so on — the same names a real
+deployment uses. Deleting by name would therefore be indistinguishable from
+deleting a user's database, so cleanup never does that. It removes a stock-named
+resource only when all three hold:
+
+1. preflight recorded it as **absent before this run**, so the run created it,
+2. it carries no `.opentranscribe-live-data` marker (probed **inside a
+   container** — a volume's mountpoint is root-owned, so a host-side check
+   silently reports "no marker" for every volume), and
+3. no container is using it.
+
+No ownership record means no authority to delete, which is what protects a
+machine whose live deployment happens to use named volumes. Bind-mounted data —
+including the NAS MinIO dataset — is not addressable by `docker volume rm` at
+all, and is separately listed in `GR_PROTECTED_PATHS`.
+
+`scripts/release-tests/selftest-cleanup.sh` runs these rules against real
+volumes. It is worth running after any change to `guardrails.sh`: on its first
+execution it caught the marker check deleting a volume it should have refused.
 
 ## Version facts are derived, never recorded
 

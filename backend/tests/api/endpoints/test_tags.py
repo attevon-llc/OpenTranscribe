@@ -4,12 +4,93 @@ The creation endpoints resolve names through ``app/services/tag_service.py``:
 normalized-exact matching, a 50-character clamp, and rejection of names that are
 empty once normalized. A near match is deliberately NOT resolved here — the name
 came from a person, so a fuzzy hit may only be offered as a suggestion.
+
+The scoping half of this file is a security regression suite for
+``v374_add_tag_user_id``: before that revision ``tag`` had no owner column and
+``GET /api/tags/unused`` was ``db.query(Tag).filter(~Tag.id.in_(used_tag_ids))``
+with no user filter at all, so every authenticated user could read every
+unattached tag name in the deployment. ``GET /api/tags`` leaked the same set
+through its ``MediaFile.id IS NULL`` arm.
 """
 
-import uuid as _uuid
+import uuid
 
 import pytest
 from fastapi import status
+
+from app.models.media import Collection
+from app.models.media import CollectionMember
+from app.models.media import FileTag
+from app.models.media import MediaFile
+from app.models.media import Tag
+from app.models.sharing import CollectionShare
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _unique(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:10]}"
+
+
+def _make_tag(db, *, name, user_id):
+    tag = Tag(name=name, user_id=user_id, source="manual", normalized_name=name.lower())
+    db.add(tag)
+    db.commit()
+    db.refresh(tag)
+    return tag
+
+
+def _make_file(db, user) -> MediaFile:
+    media_file = MediaFile(
+        filename=f"{_unique('tagtest')}.mp3",
+        storage_path=f"tagtest/{uuid.uuid4().hex}",
+        file_size=1,
+        content_type="audio/mpeg",
+        user_id=user.id,
+        status="completed",
+    )
+    db.add(media_file)
+    db.commit()
+    db.refresh(media_file)
+    return media_file
+
+
+def _attach(db, media_file, tag):
+    db.add(FileTag(media_file_id=media_file.id, tag_id=tag.id, source="manual"))
+    db.commit()
+
+
+def _share_file(db, owner, target_user, media_file):
+    """Share ``media_file`` with ``target_user`` through a shared collection."""
+    collection = Collection(name=_unique("shared-coll"), user_id=owner.id)
+    db.add(collection)
+    db.commit()
+    db.refresh(collection)
+
+    db.add(CollectionMember(collection_id=collection.id, media_file_id=media_file.id))
+    db.add(
+        CollectionShare(
+            collection_id=collection.id,
+            shared_by_id=owner.id,
+            target_type="user",
+            target_user_id=target_user.id,
+            permission="viewer",
+        )
+    )
+    db.commit()
+    return collection
+
+
+def _tag_names(response):
+    assert response.status_code == 200, response.text
+    return {t["name"] for t in response.json()}
+
+
+# ---------------------------------------------------------------------------
+# Baseline behaviour
+# ---------------------------------------------------------------------------
 
 
 def test_list_tags(client, user_token_headers):
@@ -27,10 +108,7 @@ def test_list_tags_unauthorized(client):
 
 def test_create_tag(client, user_token_headers, db_session):
     """Test creating a new tag"""
-    import uuid
-
-    unique_id = str(uuid.uuid4())[:8]
-    tag_data = {"name": f"test_tag_{unique_id}"}
+    tag_data = {"name": _unique("test_tag")}
     response = client.post("/api/tags", headers=user_token_headers, json=tag_data)
     assert response.status_code == 200, f"Create tag failed: {response.json()}"
     tag = response.json()
@@ -40,10 +118,7 @@ def test_create_tag(client, user_token_headers, db_session):
 
 def test_create_duplicate_tag(client, user_token_headers, db_session):
     """Test creating a duplicate tag returns existing tag"""
-    import uuid
-
-    unique_id = str(uuid.uuid4())[:8]
-    tag_data = {"name": f"duplicate_tag_{unique_id}"}
+    tag_data = {"name": _unique("duplicate_tag")}
 
     # First create a tag
     first_response = client.post("/api/tags", headers=user_token_headers, json=tag_data)
@@ -52,11 +127,200 @@ def test_create_duplicate_tag(client, user_token_headers, db_session):
     # Try to create the same tag again - should return existing tag
     response = client.post("/api/tags", headers=user_token_headers, json=tag_data)
     assert response.status_code == 200
+    assert response.json()["uuid"] == first_response.json()["uuid"]
+
+
+def test_created_tag_is_owned_by_creator(client, user_token_headers, db_session, normal_user):
+    """A tag created through the API must not be ownerless (= visible to all)."""
+    name = _unique("owned_tag")
+    assert client.post("/api/tags", headers=user_token_headers, json={"name": name}).status_code
+
+    tag = db_session.query(Tag).filter(Tag.name == name).one()
+    assert tag.user_id == normal_user.id
+
+
+def test_two_users_can_create_the_same_tag_name(
+    client, user_token_headers, other_user_auth_headers, db_session
+):
+    """Per-user uniqueness: both users get their OWN row, not a shared one."""
+    name = _unique("Meeting")
+
+    first = client.post("/api/tags", headers=user_token_headers, json={"name": name})
+    second = client.post("/api/tags", headers=other_user_auth_headers, json={"name": name})
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["uuid"] != second.json()["uuid"]
+
+    owners = {t.user_id for t in db_session.query(Tag).filter(Tag.name == name).all()}
+    assert len(owners) == 2
+
+
+# ---------------------------------------------------------------------------
+# Cross-user disclosure (the bug this suite exists for)
+# ---------------------------------------------------------------------------
+
+
+def test_unused_tags_do_not_leak_across_users(client, user_token_headers, other_user, db_session):
+    """User A must not see user B's unattached tag via GET /api/tags/unused."""
+    secret = _unique("Project Falcon Layoffs")
+    _make_tag(db_session, name=secret, user_id=other_user.id)
+
+    response = client.get("/api/tags/unused", headers=user_token_headers)
+    assert secret not in _tag_names(response)
+
+
+def test_unused_tags_include_own_tags(client, user_token_headers, normal_user, db_session):
+    """...but the caller's own unattached tags are still listed."""
+    mine = _unique("MyOwnTag")
+    _make_tag(db_session, name=mine, user_id=normal_user.id)
+
+    response = client.get("/api/tags/unused", headers=user_token_headers)
+    assert mine in _tag_names(response)
+
+
+def test_list_tags_does_not_leak_other_users_unattached_tags(
+    client, user_token_headers, other_user, db_session
+):
+    """GET /api/tags leaked the same set through its MediaFile.id IS NULL arm."""
+    secret = _unique("Client Merger Notes")
+    _make_tag(db_session, name=secret, user_id=other_user.id)
+
+    response = client.get("/api/tags", headers=user_token_headers)
+    assert secret not in _tag_names(response)
+
+
+def test_list_tags_does_not_leak_other_users_attached_tags(
+    client, user_token_headers, other_user, db_session
+):
+    """A tag on a file that is NOT shared with the caller stays invisible."""
+    private = _unique("PrivateCaseNumber")
+    tag = _make_tag(db_session, name=private, user_id=other_user.id)
+    their_file = _make_file(db_session, other_user)
+    _attach(db_session, their_file, tag)
+
+    response = client.get("/api/tags", headers=user_token_headers)
+    assert private not in _tag_names(response)
+
+
+# ---------------------------------------------------------------------------
+# Visibility rule: system tags + sharing
+# ---------------------------------------------------------------------------
+
+
+def test_system_tags_are_visible_to_everyone(
+    client, user_token_headers, other_user_auth_headers, db_session
+):
+    """user_id IS NULL = shared vocabulary; both users see it."""
+    system_name = _unique("SystemVocab")
+    _make_tag(db_session, name=system_name, user_id=None)
+
+    assert system_name in _tag_names(client.get("/api/tags", headers=user_token_headers))
+    assert system_name in _tag_names(client.get("/api/tags", headers=other_user_auth_headers))
+
+
+def test_seeded_default_tags_are_system_tags(client, user_token_headers, db_session):
+    """The seeded picker defaults survive the split as ownerless rows."""
+    from app.initial_data import _ensure_default_tags
+
+    _ensure_default_tags(db_session)
+
+    names = _tag_names(client.get("/api/tags", headers=user_token_headers))
+    assert {"Important", "Meeting", "Interview", "Personal"} <= names
+
+
+def test_tag_on_shared_file_is_visible_to_the_recipient(
+    client, user_token_headers, normal_user, other_user, db_session
+):
+    """Sharing works through get_accessible_file_ids_subquery — no parallel rule."""
+    shared_tag_name = _unique("SharedProjectTag")
+    tag = _make_tag(db_session, name=shared_tag_name, user_id=other_user.id)
+    their_file = _make_file(db_session, other_user)
+    _attach(db_session, their_file, tag)
+
+    # Not visible before the share...
+    assert shared_tag_name not in _tag_names(client.get("/api/tags", headers=user_token_headers))
+
+    _share_file(db_session, other_user, normal_user, their_file)
+
+    # ...and visible after it.
+    assert shared_tag_name in _tag_names(client.get("/api/tags", headers=user_token_headers))
+
+
+def test_unattached_tag_of_a_sharing_user_stays_private(
+    client, user_token_headers, normal_user, other_user, db_session
+):
+    """Sharing one file does not hand over the sharer's whole vocabulary."""
+    their_file = _make_file(db_session, other_user)
+    _share_file(db_session, other_user, normal_user, their_file)
+
+    unrelated = _unique("UnrelatedPrivateTag")
+    _make_tag(db_session, name=unrelated, user_id=other_user.id)
+
+    assert unrelated not in _tag_names(client.get("/api/tags", headers=user_token_headers))
+    assert unrelated not in _tag_names(client.get("/api/tags/unused", headers=user_token_headers))
+
+
+# ---------------------------------------------------------------------------
+# Mutation paths
+# ---------------------------------------------------------------------------
+
+
+def test_add_tag_to_file_creates_an_owned_tag(client, user_token_headers, normal_user, db_session):
+    """The file-tag endpoint must attribute the tag, not leave it ownerless."""
+    media_file = _make_file(db_session, normal_user)
+    name = _unique("AttachedTag")
+
+    response = client.post(
+        f"/api/tags/files/{media_file.uuid}/tags",
+        headers=user_token_headers,
+        json={"name": name},
+    )
+    assert response.status_code == 200, response.text
+
+    tag = db_session.query(Tag).filter(Tag.name == name).one()
+    assert tag.user_id == normal_user.id
+
+
+def test_remove_tag_resolves_through_the_file_not_the_name(
+    client, user_token_headers, normal_user, other_user, db_session
+):
+    """Two users own 'Budget'; deleting mine must not touch theirs."""
+    name = _unique("Budget")
+    mine = _make_tag(db_session, name=name, user_id=normal_user.id)
+    theirs = _make_tag(db_session, name=name, user_id=other_user.id)
+
+    my_file = _make_file(db_session, normal_user)
+    their_file = _make_file(db_session, other_user)
+    _attach(db_session, my_file, mine)
+    _attach(db_session, their_file, theirs)
+
+    response = client.delete(
+        f"/api/tags/files/{my_file.uuid}/tags/{name}", headers=user_token_headers
+    )
+    assert response.status_code == 204
+
+    assert (
+        db_session.query(FileTag)
+        .filter(FileTag.media_file_id == my_file.id, FileTag.tag_id == mine.id)
+        .count()
+        == 0
+    )
+    assert (
+        db_session.query(FileTag)
+        .filter(FileTag.media_file_id == their_file.id, FileTag.tag_id == theirs.id)
+        .count()
+        == 1
+    )
+
+
+def test_cleanup_unused_tags_requires_admin(client, user_token_headers):
+    response = client.delete("/api/tags/cleanup", headers=user_token_headers)
+    assert response.status_code == 403
 
 
 def test_create_tag_case_insensitive_returns_existing(client, user_token_headers, db_session):
     """A name differing only by case resolves to the existing tag."""
-    name = f"Interview-{_uuid.uuid4().hex[:8]}"
+    name = f"Interview-{uuid.uuid4().hex[:8]}"
 
     first = client.post("/api/tags", headers=user_token_headers, json={"name": name})
     assert first.status_code == status.HTTP_200_OK
@@ -69,7 +333,7 @@ def test_create_tag_case_insensitive_returns_existing(client, user_token_headers
 
 def test_create_tag_separator_variants_return_existing(client, user_token_headers, db_session):
     """Hyphen / underscore / whitespace variants collapse onto the same tag."""
-    base = f"quarterly{_uuid.uuid4().hex[:8]}"
+    base = f"quarterly{uuid.uuid4().hex[:8]}"
 
     first = client.post("/api/tags", headers=user_token_headers, json={"name": f"{base}-notes"})
     assert first.status_code == status.HTTP_200_OK
@@ -82,7 +346,7 @@ def test_create_tag_separator_variants_return_existing(client, user_token_header
 
 def test_create_tag_near_match_is_not_auto_resolved(client, user_token_headers, db_session):
     """A near match is a distinct tag on the manual path — fuzzy only ever suggests."""
-    suffix = _uuid.uuid4().hex[:8]
+    suffix = uuid.uuid4().hex[:8]
 
     q3 = client.post(
         "/api/tags", headers=user_token_headers, json={"name": f"q3-earnings-{suffix}"}
@@ -99,7 +363,7 @@ def test_create_tag_near_match_is_not_auto_resolved(client, user_token_headers, 
 
 def test_create_tag_truncates_long_name(client, user_token_headers, db_session):
     """An over-long name is clamped to the stored width instead of erroring."""
-    long_name = f"retro-{_uuid.uuid4().hex[:8]}-" + ("x" * 80)
+    long_name = f"retro-{uuid.uuid4().hex[:8]}-" + ("x" * 80)
 
     response = client.post("/api/tags", headers=user_token_headers, json={"name": long_name})
 
@@ -130,8 +394,8 @@ def _create_tag(client, headers, name: str) -> dict:
 
 
 def test_rename_tag_endpoint_applies_a_plain_rename(client, user_token_headers, db_session):
-    tag = _create_tag(client, user_token_headers, f"before-{_uuid.uuid4().hex[:8]}")
-    new_name = f"after-{_uuid.uuid4().hex[:8]}"
+    tag = _create_tag(client, user_token_headers, f"before-{uuid.uuid4().hex[:8]}")
+    new_name = f"after-{uuid.uuid4().hex[:8]}"
 
     response = client.patch(
         f"/api/tags/{tag['uuid']}", headers=user_token_headers, json={"name": new_name}
@@ -149,7 +413,7 @@ def test_rename_onto_existing_tag_asks_for_confirmation_then_merges(
     client, user_token_headers, db_session
 ):
     """R8: the collision comes back as an impact preview, not a silent merge."""
-    suffix = _uuid.uuid4().hex[:8]
+    suffix = uuid.uuid4().hex[:8]
     target = _create_tag(client, user_token_headers, f"Interview-{suffix}")
     tag = _create_tag(client, user_token_headers, f"interviewing-{suffix}")
 
@@ -174,7 +438,7 @@ def test_rename_onto_existing_tag_asks_for_confirmation_then_merges(
 
 
 def test_merge_endpoint_folds_sources_into_the_path_tag(client, user_token_headers, db_session):
-    suffix = _uuid.uuid4().hex[:8]
+    suffix = uuid.uuid4().hex[:8]
     survivor = _create_tag(client, user_token_headers, f"survivor-{suffix}")
     first = _create_tag(client, user_token_headers, f"dupe-a-{suffix}")
     second = _create_tag(client, user_token_headers, f"dupe-b-{suffix}")
@@ -192,12 +456,12 @@ def test_merge_endpoint_folds_sources_into_the_path_tag(client, user_token_heade
 
 
 def test_merge_endpoint_404s_on_an_unknown_tag(client, user_token_headers, db_session):
-    survivor = _create_tag(client, user_token_headers, f"survivor-{_uuid.uuid4().hex[:8]}")
+    survivor = _create_tag(client, user_token_headers, f"survivor-{uuid.uuid4().hex[:8]}")
 
     response = client.post(
         f"/api/tags/{survivor['uuid']}/merge",
         headers=user_token_headers,
-        json={"source_uuids": [str(_uuid.uuid4())]},
+        json={"source_uuids": [str(uuid.uuid4())]},
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -206,7 +470,7 @@ def test_merge_endpoint_404s_on_an_unknown_tag(client, user_token_headers, db_se
 def test_delete_endpoint_removes_the_tags_and_reports_impact(
     client, user_token_headers, db_session
 ):
-    suffix = _uuid.uuid4().hex[:8]
+    suffix = uuid.uuid4().hex[:8]
     first = _create_tag(client, user_token_headers, f"gone-a-{suffix}")
     second = _create_tag(client, user_token_headers, f"gone-b-{suffix}")
 
@@ -232,7 +496,7 @@ def test_impact_endpoint_reports_accessible_and_global_counts(
     client, user_token_headers, db_session
 ):
     """The preview cannot understate the operation — both counts are surfaced."""
-    tag = _create_tag(client, user_token_headers, f"impact-{_uuid.uuid4().hex[:8]}")
+    tag = _create_tag(client, user_token_headers, f"impact-{uuid.uuid4().hex[:8]}")
 
     response = client.get(
         "/api/tags/impact", headers=user_token_headers, params={"tag_uuids": [tag["uuid"]]}
@@ -247,7 +511,7 @@ def test_impact_endpoint_reports_accessible_and_global_counts(
 
 
 def test_tag_mutation_endpoints_require_authentication(client, db_session):
-    tag_uuid = str(_uuid.uuid4())
+    tag_uuid = str(uuid.uuid4())
     assert client.patch(f"/api/tags/{tag_uuid}", json={"name": "x"}).status_code == 401
     assert (
         client.post(f"/api/tags/{tag_uuid}/merge", json={"source_uuids": [tag_uuid]}).status_code
@@ -286,7 +550,7 @@ def _auto_tag(db_session, name: str):
 
 
 def test_accept_endpoint_marks_the_tag_accepted(client, user_token_headers, db_session):
-    tag = _auto_tag(db_session, f"accept-me-{_uuid.uuid4().hex[:8]}")
+    tag = _auto_tag(db_session, f"accept-me-{uuid.uuid4().hex[:8]}")
 
     response = client.post(
         "/api/tags/accept", headers=user_token_headers, json={"tag_uuids": [str(tag.uuid)]}
@@ -305,7 +569,7 @@ def test_accept_endpoint_reports_ineligible_tags_without_failing(
     client, user_token_headers, db_session
 ):
     """A mixed multi-select must not 4xx the whole call."""
-    suffix = _uuid.uuid4().hex[:8]
+    suffix = uuid.uuid4().hex[:8]
     auto = _auto_tag(db_session, f"mix-auto-{suffix}")
     manual = _create_tag(client, user_token_headers, f"mix-manual-{suffix}")
 
@@ -324,7 +588,7 @@ def test_accept_endpoint_reports_ineligible_tags_without_failing(
 def _file_for(db_session, owner):
     from app.models.media import MediaFile
 
-    file_uuid = str(_uuid.uuid4())
+    file_uuid = str(uuid.uuid4())
     media_file = MediaFile(
         uuid=file_uuid,
         user_id=owner.id,
@@ -346,7 +610,7 @@ def test_review_impact_endpoint_reports_the_reject_split(
     from app.core.constants import TAG_SOURCE_MANUAL
     from app.models.media import FileTag
 
-    tag = _auto_tag(db_session, f"split-{_uuid.uuid4().hex[:8]}")
+    tag = _auto_tag(db_session, f"split-{uuid.uuid4().hex[:8]}")
     auto_file = _file_for(db_session, normal_user)
     manual_file = _file_for(db_session, normal_user)
     db_session.add(FileTag(media_file_id=auto_file.id, tag_id=tag.id, source=TAG_SOURCE_AUTO_AI))
@@ -372,7 +636,7 @@ def test_reject_endpoint_removes_the_tag_when_nothing_human_remains(
 ):
     from app.models.media import Tag
 
-    tag = _auto_tag(db_session, f"reject-me-{_uuid.uuid4().hex[:8]}")
+    tag = _auto_tag(db_session, f"reject-me-{uuid.uuid4().hex[:8]}")
 
     response = client.post(
         "/api/tags/reject", headers=user_token_headers, json={"tag_uuids": [str(tag.uuid)]}
@@ -386,7 +650,7 @@ def test_reject_endpoint_removes_the_tag_when_nothing_human_remains(
 
 
 def test_review_endpoints_404_on_an_unknown_tag(client, user_token_headers, db_session):
-    unknown = str(_uuid.uuid4())
+    unknown = str(uuid.uuid4())
 
     for path in ("/api/tags/accept", "/api/tags/reject"):
         response = client.post(path, headers=user_token_headers, json={"tag_uuids": [unknown]})
@@ -426,7 +690,7 @@ def test_unused_listing_agrees_with_the_usage_count(
     """
     from app.models.media import FileTag
 
-    tag = _create_tag(client, user_token_headers, f"foreign-{_uuid.uuid4().hex[:8]}")
+    tag = _create_tag(client, user_token_headers, f"foreign-{uuid.uuid4().hex[:8]}")
     hidden_file = _file_for(db_session, other_user)
     tag_row = _raw_tag_row(db_session, tag["uuid"])
     db_session.add(FileTag(media_file_id=hidden_file.id, tag_id=tag_row.id, source="manual"))
@@ -458,7 +722,7 @@ def test_unused_filter_drops_a_tag_the_caller_uses(
     """The filter narrows — a tag on the caller's own file must not come back."""
     from app.models.media import FileTag
 
-    tag = _create_tag(client, user_token_headers, f"inuse-{_uuid.uuid4().hex[:8]}")
+    tag = _create_tag(client, user_token_headers, f"inuse-{uuid.uuid4().hex[:8]}")
     media_file = _file_for(db_session, normal_user)
     tag_row = _raw_tag_row(db_session, tag["uuid"])
     db_session.add(FileTag(media_file_id=media_file.id, tag_id=tag_row.id, source="manual"))
@@ -473,7 +737,7 @@ def test_unused_filter_drops_a_tag_the_caller_uses(
 def test_awaiting_review_filter_returns_only_auto_labeled_tags(
     client, user_token_headers, db_session
 ):
-    suffix = _uuid.uuid4().hex[:8]
+    suffix = uuid.uuid4().hex[:8]
     auto = _auto_tag(db_session, f"await-auto-{suffix}")
     manual = _create_tag(client, user_token_headers, f"await-manual-{suffix}")
     accepted = _raw_tag(db_session, f"await-accepted-{suffix}", source="ai_accepted")
@@ -493,7 +757,7 @@ def test_collisions_endpoint_ships_clusters_survivor_and_suggestions(
     client, user_token_headers, db_session
 ):
     """Grouping, ranking, and preselection arrive pre-computed."""
-    suffix = _uuid.uuid4().hex[:8]
+    suffix = uuid.uuid4().hex[:8]
     first = _raw_tag(db_session, f"q3-earnings-{suffix}")
     second = _raw_tag(db_session, f"Q3 Earnings {suffix}")
     near = _raw_tag(db_session, f"q4-earnings-{suffix}")
@@ -518,7 +782,7 @@ def test_collisions_endpoint_ships_clusters_survivor_and_suggestions(
 
 
 def test_colliding_filter_narrows_the_tag_list(client, user_token_headers, db_session):
-    suffix = _uuid.uuid4().hex[:8]
+    suffix = uuid.uuid4().hex[:8]
     first = _raw_tag(db_session, f"clash-{suffix}")
     second = _raw_tag(db_session, f"CLASH-{suffix}")
     alone = _create_tag(client, user_token_headers, f"solo-{suffix}")

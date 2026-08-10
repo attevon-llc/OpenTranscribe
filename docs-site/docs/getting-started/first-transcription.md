@@ -329,7 +329,7 @@ Now that you've created your first transcription, explore:
 ## Need Help?
 
 - **[FAQ](../faq.md)** - Common questions and answers
-- **[GitHub Issues](https://github.com/davidamacey/OpenTranscribe/issues)** - Report bugs or request features
-- **[GitHub Discussions](https://github.com/davidamacey/OpenTranscribe/discussions)** - Ask questions and share tips
+- **[GitHub Issues](https://github.com/attevon-llc/OpenTranscribe/issues)** - Report bugs or request features
+- **[GitHub Discussions](https://github.com/attevon-llc/OpenTranscribe/discussions)** - Ask questions and share tips
 
 Happy transcribing!

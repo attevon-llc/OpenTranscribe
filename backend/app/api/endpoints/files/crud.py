@@ -24,6 +24,7 @@ from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate
+from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
@@ -103,13 +104,36 @@ def get_media_file_by_id(
     return db_file  # type: ignore[no-any-return]
 
 
-def get_file_tags(db: Session, file_id: int) -> list[str]:
-    """Get tags for a media file."""
+def get_file_tags(db: Session, file_id: int) -> list[TagSchema]:
+    """Get the tags attached to a media file as full tag objects.
+
+    Returns the same ``{uuid, name, source}`` shape ``/api/tags`` serves, so the
+    file-detail payload and the tag endpoints agree on one definition of a tag.
+
+    Visibility is unchanged from the previous name-only serializer: this returns
+    every tag attached to ``file_id``, and the caller has already been gated on
+    the file itself. ``endpoints/tags.py:_visible_to`` makes a tag visible when it
+    is attached to a file in the caller's accessible-files subquery, so any tag
+    reachable here is one ``GET /api/tags`` would already return in full to the
+    same caller. Widening the fields therefore discloses nothing new.
+
+    Args:
+        db: Database session.
+        file_id: Internal media file ID.
+
+    Returns:
+        Tag schemas for the file, or an empty list if the query fails.
+    """
     try:
-        tags = db.query(Tag.name).join(FileTag).filter(FileTag.media_file_id == file_id).all()
-        return [tag[0] for tag in tags]
+        tags = (
+            db.query(Tag)
+            .join(FileTag, FileTag.tag_id == Tag.id)
+            .filter(FileTag.media_file_id == file_id)
+            .all()
+        )
+        return [TagSchema.model_validate(tag) for tag in tags]
     except Exception as tag_error:
-        logger.error(f"Error getting tags: {tag_error}")
+        logger.exception(f"Error getting tags: {tag_error}")
         db.rollback()
         return []
 
@@ -139,7 +163,7 @@ def get_file_collections(db: Session, file_id: int, user_id: int) -> list[dict]:
             for col in collection_objs
         ]
     except Exception as collection_error:
-        logger.error(f"Error getting collections: {collection_error}")
+        logger.exception(f"Error getting collections: {collection_error}")
         db.rollback()
         return []
 
@@ -324,18 +348,29 @@ def _resolve_segment_speaker_name(speaker: Speaker | None) -> str:
     return str(speaker.display_name or speaker.name or "Unknown speaker")
 
 
-def _build_grouped_segments(formatted_segments: list[Any]) -> list[Any]:
-    """Group formatted transcript segments exactly like the frontend.
+def _build_grouped_segments(formatted_segments: list[Any], index_offset: int = 0) -> list[Any]:
+    """Build the authoritative display grouping for a page of transcript segments.
 
-    Replicates ``groupedTranscriptSegments`` in ``TranscriptDisplay.svelte``:
-    consecutive segments sharing a non-null ``overlap_group_id`` are collapsed into a
+    Consecutive segments sharing a non-null ``overlap_group_id`` are collapsed into a
     single overlap group **only when the run has more than one member**; every other
     segment becomes its own single-member group. Group ``start_time``/``end_time`` are
-    the min/max across the group's segments, and ``start_segment_index`` is the index
-    of the group's first segment in the flat list.
+    the min/max across the group's segments.
+
+    Groups reference their segments by UUID (``segment_uuids``) rather than embedding
+    copies — see ``GroupedTranscriptSegment`` for why (issue #352).
+
+    ``overlap_group_id`` is set on **every** group that has one, including single-member
+    groups. A group whose overlap run straddles a pagination boundary arrives as two
+    groups sharing that id, and the client stitches them back together by it; without
+    the id on the single-member branch the tail of a split run would be unstitchable.
 
     Args:
         formatted_segments: Formatted ``TranscriptSegment`` schema objects, in order.
+        index_offset: Absolute index of ``formatted_segments[0]`` in the full
+            transcript. Pass the request's ``segment_offset`` so
+            ``start_segment_index`` stays global across pagination — the SPA's
+            reading-progress bar divides it by the total segment count, so page-local
+            indices make progress jump backwards.
 
     Returns:
         List of ``GroupedTranscriptSegment`` schema objects.
@@ -364,21 +399,23 @@ def _build_grouped_segments(formatted_segments: list[Any]) -> list[Any]:
                         overlap_group_id=overlap_group_id,
                         start_time=min(s.start_time for s in overlap_segments),
                         end_time=max(s.end_time for s in overlap_segments),
-                        start_segment_index=i,
-                        segments=overlap_segments,
+                        start_segment_index=index_offset + i,
+                        segment_uuids=[s.uuid for s in overlap_segments],
                     )
                 )
                 i = j
                 continue
 
-            # Single segment carrying an overlap flag: treat as a regular group.
+            # Single segment carrying an overlap flag: renders as a regular group, but
+            # keep the id so a run split across a page boundary can be stitched.
             groups.append(
                 GroupedTranscriptSegment(
                     is_overlap_group=False,
+                    overlap_group_id=overlap_group_id,
                     start_time=segment.start_time,
                     end_time=segment.end_time,
-                    start_segment_index=i,
-                    segments=[segment],
+                    start_segment_index=index_offset + i,
+                    segment_uuids=[segment.uuid],
                 )
             )
             i += 1
@@ -388,8 +425,8 @@ def _build_grouped_segments(formatted_segments: list[Any]) -> list[Any]:
                     is_overlap_group=False,
                     start_time=segment.start_time,
                     end_time=segment.end_time,
-                    start_segment_index=i,
-                    segments=[segment],
+                    start_segment_index=index_offset + i,
+                    segment_uuids=[segment.uuid],
                 )
             )
             i += 1
@@ -439,14 +476,26 @@ def _resolve_redaction_for_request(
 
     The owner (and admins, audited) may set ``redact=false`` to reveal NON-forced
     categories; admin-forced categories stay masked. Non-owners never reveal.
+
+    Raises:
+        HTTPException: 503 when the redaction policy cannot be resolved.
     """
     try:
         from app.services.redaction.config import resolve_effective_config
 
         cfg = resolve_effective_config(db, current_user.id)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Failed to resolve redaction config: {e}")
-        return None, set()
+    except Exception as e:
+        # FAIL CLOSED. Returning (None, set()) told every downstream reader that
+        # redaction was off: `_apply_redaction` short-circuits on a None config
+        # and returned every segment raw, `_redaction_pending` stopped withholding
+        # transcripts mid-detection, and no `transcript.view_unredacted` audit
+        # event fired because `reveal` was empty — an unredacted read with no
+        # compliance trail, including admin-forced categories. Refuse the read.
+        logger.exception("Failed to resolve redaction config; refusing the transcript read")
+        raise HTTPException(
+            status_code=503,
+            detail="Redaction policy is temporarily unavailable; transcript withheld.",
+        ) from e
 
     can_reveal = bool(db_file.user_id == current_user.id) or bool(is_admin)
     reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
@@ -512,7 +561,7 @@ def _redaction_pending(db: Session, cfg: Any, db_file: MediaFile) -> bool:
 
 def _build_media_file_response(
     db_file: MediaFile,
-    tags: list[str],
+    tags: list[TagSchema],
     collections: list[dict[Any, Any]],
     speakers: list[Speaker],
     analytics: Analytics | None,
@@ -529,7 +578,7 @@ def _build_media_file_response(
 
     Args:
         db_file: MediaFile object
-        tags: List of tag names
+        tags: Tag objects attached to the file ({uuid, name, source})
         collections: List of collection dictionaries
         speakers: List of speakers
         analytics: Analytics object or None
@@ -586,7 +635,9 @@ def _build_media_file_response(
     response.transcript_segments = formatted_segments  # type: ignore[assignment]
 
     # Pre-grouped view (overlap groups kept together) for the frontend to render directly.
-    response.grouped_segments = _build_grouped_segments(formatted_segments)  # type: ignore[assignment]
+    response.grouped_segments = _build_grouped_segments(  # type: ignore[assignment]
+        formatted_segments, index_offset=segment_offset
+    )
 
     # Add pagination metadata
     response.total_segments = total_segments
@@ -721,7 +772,7 @@ def get_media_file_detail(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in get_media_file_detail: {e}")
+        logger.exception(f"Error in get_media_file_detail: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving media file: {str(e)}",

@@ -4,7 +4,7 @@ Covers ``files/crud.py`` plus the list/get/update/delete routes wired in
 ``files/__init__.py``:
 
 - ``GET  /api/files``                     (list, pagination, filters)
-- ``GET  /api/files/{uuid}``              (detail)
+- ``GET  /api/files/{uuid}``              (detail, incl. the #326 tag wire contract)
 - ``GET  /api/files/{uuid}/info``         (lightweight metadata)
 - ``PUT  /api/files/{uuid}``              (metadata update)
 - ``DELETE /api/files/{uuid}``            (delete via cancel_upload fall-through)
@@ -24,7 +24,9 @@ import uuid
 import pytest
 from fastapi import status
 
+from app.models.media import FileTag
 from app.models.media import MediaFile
+from app.models.media import Tag
 
 
 def _make_file(db_session, owner, *, file_status: str = "completed", **overrides) -> MediaFile:
@@ -229,6 +231,77 @@ def test_get_file_segment_limit_negative_422(client, user_token_headers, normal_
 
 
 # ---------------------------------------------------------------------------
+# GET /api/files/{uuid}  —  tag wire contract (issue #326)
+#
+# The detail payload used to serialize tags as bare name strings while every
+# /api/tags surface returned objects. These pin the single agreed shape so the
+# contract can't silently regress to `list[str]`.
+# ---------------------------------------------------------------------------
+
+
+def test_file_detail_tags_are_objects_not_names(
+    client, user_token_headers, normal_user, db_session
+):
+    """`tags` carries `{uuid, name, source}` objects, never bare name strings."""
+    media_file = _make_file(db_session, normal_user)
+    tag = Tag(name=f"contract-{uuid.uuid4().hex[:8]}", user_id=normal_user.id, source="auto_ai")
+    db_session.add(tag)
+    db_session.flush()
+    db_session.add(FileTag(media_file_id=media_file.id, tag_id=tag.id, source="auto_ai"))
+    db_session.commit()
+
+    response = client.get(f"/api/files/{media_file.uuid}", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+
+    tags = response.json()["tags"]
+    assert len(tags) == 1
+    payload = tags[0]
+    assert isinstance(payload, dict), "tags must be objects, not strings (#326)"
+    assert payload["uuid"] == str(tag.uuid)
+    assert payload["name"] == tag.name
+    assert payload["source"] == "auto_ai"
+    # The hybrid-ID rule: the internal integer id never reaches the wire.
+    assert "id" not in payload
+
+
+def test_file_detail_tags_match_the_tags_endpoint_shape(
+    client, user_token_headers, normal_user, db_session
+):
+    """The detail payload and ``GET /api/tags`` agree field-for-field."""
+    media_file = _make_file(db_session, normal_user)
+    tag = Tag(name=f"contract-{uuid.uuid4().hex[:8]}", user_id=normal_user.id, source="manual")
+    db_session.add(tag)
+    db_session.flush()
+    db_session.add(FileTag(media_file_id=media_file.id, tag_id=tag.id, source="manual"))
+    db_session.commit()
+
+    from_detail = client.get(f"/api/files/{media_file.uuid}", headers=user_token_headers).json()[
+        "tags"
+    ][0]
+    listing = client.get("/api/tags", headers=user_token_headers).json()
+    from_tags = next(t for t in listing if t["uuid"] == str(tag.uuid))
+
+    # /api/tags adds usage_count (TagWithCount); everything else is identical.
+    for field in ("uuid", "name", "source"):
+        assert from_detail[field] == from_tags[field]
+    assert set(from_detail) == {"uuid", "name", "source"}
+
+
+def test_file_list_still_has_no_tags_field(client, user_token_headers, normal_user, db_session):
+    """The gallery list endpoint carries no ``tags`` field — deliberately (#326).
+
+    Adding one would need a per-row tag query. Pinned so the two endpoints
+    aren't confused for each other when reading the changelog.
+    """
+    _make_file(db_session, normal_user)
+    response = client.get("/api/files", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    items = response.json()["items"]
+    assert items, "expected at least the file just created"
+    assert all("tags" not in item for item in items)
+
+
+# ---------------------------------------------------------------------------
 # GET /api/files/{uuid}/info  (lightweight metadata)
 # ---------------------------------------------------------------------------
 
@@ -375,7 +448,7 @@ def test_delete_file_malformed_uuid_404(client, user_token_headers):
 
 
 # ---------------------------------------------------------------------------
-# Duplicate detection (check_duplicate_by_hash branches via /prepare)
+# Duplicate detection (check_duplicate_by_fingerprint branches via /prepare)
 # These live with prepare/complete tests; the crud-level hash field is asserted
 # here to lock the dedup column contract used by the duplicate-detection branch.
 # ---------------------------------------------------------------------------
@@ -385,7 +458,7 @@ def test_file_hash_persisted_for_dedup(client, user_token_headers, normal_user, 
     """A row created with a file_hash exposes it so dedup-by-hash can find it.
 
     This is the data contract the duplicate-detection branch depends on
-    (``check_duplicate_by_hash`` filters on ``MediaFile.file_hash`` +
+    (``check_duplicate_by_fingerprint`` filters on ``MediaFile.file_hash`` +
     a real ``storage_path`` + a non-failed status).
     """
     digest = uuid.uuid4().hex

@@ -289,6 +289,23 @@ OpenTranscribe's independent diarization provider architecture allows routing di
 - When pyannote.ai is selected, speaker diarization is sent to the cloud API while transcription remains local
 - Falls back to local diarization if the cloud service is unavailable
 
+### Diarization Source
+
+A per-user setting — **Settings → Transcription** (`transcription_diarization_source`,
+backed by `UserDiarizationSettings`) — decides where a file's speaker labels actually come
+from. It takes four values:
+
+| Value | Behavior |
+|---|---|
+| **`provider`** (default) | No separate diarization pass runs — OpenTranscribe uses the speaker labels the ASR provider itself returned with the transcript. This is what matters when you're transcribing with a **cloud ASR provider**: it stays out of the way and accepts that provider's own diarization rather than layering PyAnnote on top of it. |
+| **`pyannote`** | Diarization is sent to the pyannote.ai cloud API described above, running in parallel with transcription and merged into the result afterward. |
+| **`local`** | Diarization runs through OpenTranscribe's own on-box PyAnnote pipeline described earlier on this page, via a reprocessing pass rather than the provider integration above. |
+| **`off`** | No diarization at all — the transcript is produced without speaker labels. |
+
+An unrecognized value, or `pyannote` selected without an API key configured, is refused with an
+error rather than silently falling back to local diarization — unlike ASR provider selection,
+which does degrade to a local model automatically.
+
 ### Speaker Verification Status
 
 Track identification confidence:
@@ -427,7 +444,7 @@ Word-level timestamps are generated natively during transcription via faster-whi
 
 ### Why Agglomerative Hierarchical Clustering (AHC)?
 
-PyAnnote's diarization pipeline uses sklearn's `AgglomerativeClustering` for grouping speaker embeddings. This was chosen over several alternatives after evaluating tradeoffs across accuracy, scalability, and operational characteristics ([#144](https://github.com/davidamacey/OpenTranscribe/issues/144)):
+PyAnnote's diarization pipeline uses sklearn's `AgglomerativeClustering` for grouping speaker embeddings. This was chosen over several alternatives after evaluating tradeoffs across accuracy, scalability, and operational characteristics ([#144](https://github.com/attevon-llc/OpenTranscribe/issues/144)):
 
 | Algorithm | K Required? | Handles Outliers? | Incremental? | Complexity | Verdict |
 |-----------|------------|-------------------|-------------|------------|---------|
@@ -468,7 +485,7 @@ The 512-dim pyannote/embedding model is retained in the `speakers_v3` index for 
 
 ### Gender Classification Model Selection
 
-Speaker attribute detection uses the `prithivMLmods/Wav2Vec2-Gender-Age-Classification` model ([#141](https://github.com/davidamacey/OpenTranscribe/issues/141)). This model was selected based on three criteria:
+Speaker attribute detection uses the `prithivMLmods/Wav2Vec2-Gender-Age-Classification` model ([#141](https://github.com/attevon-llc/OpenTranscribe/issues/141)). This model was selected based on three criteria:
 
 1. **Apache 2.0 licensing**: Unlike many voice classification models that use restrictive research-only licenses, this model's Apache 2.0 license permits commercial and production use without legal risk. This was a hard requirement for OpenTranscribe's open-source distribution.
 2. **Language independence**: The model analyzes acoustic features (pitch, formant frequencies, timbre) rather than linguistic content, so it works across all 100+ supported transcription languages without retraining.

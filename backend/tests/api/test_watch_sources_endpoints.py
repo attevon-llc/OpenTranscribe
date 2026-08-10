@@ -91,11 +91,11 @@ def test_list_sources_scope_all_is_admin_only(
 
 
 def test_list_sources_scope_all_admin_sees_all(
-    client, admin_token_headers, normal_user, db_session
+    client, super_admin_token_headers, normal_user, db_session
 ):
     ws = _make_source(db_session, normal_user)
     response = client.get(
-        "/api/watch-sources", headers=admin_token_headers, params={"scope": "all"}
+        "/api/watch-sources", headers=super_admin_token_headers, params={"scope": "all"}
     )
     assert response.status_code == status.HTTP_200_OK
     uuids = {s["uuid"] for s in response.json()["sources"]}
@@ -423,8 +423,10 @@ def test_capabilities(client, user_token_headers):
     response = client.get("/api/watch-sources/capabilities", headers=user_token_headers)
     assert response.status_code == status.HTTP_200_OK
     body = response.json()
-    for key in ("watch_source_enabled", "local_enabled", "fs_events_enabled"):
+    for key in ("watch_source_enabled", "local_enabled", "fs_events_enabled", "fs_events_mode"):
         assert key in body
+    # The UI switches on this to explain which observer a source can get (#294).
+    assert body["fs_events_mode"] in ("auto", "native", "polling", "off")
 
 
 # ---------------------------------------------------------------------------
@@ -437,9 +439,21 @@ def test_global_settings_non_admin_403(client, user_token_headers):
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_global_settings_admin_200(client, admin_token_headers):
-    response = client.get("/api/watch-sources/settings", headers=admin_token_headers)
+def test_global_settings_admin_200(client, super_admin_token_headers):
+    response = client.get("/api/watch-sources/settings", headers=super_admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    for key in (
+        "enabled",
+        "file_stability_seconds",
+        "max_imports_per_scan",
+        "fs_events_enabled",
+        "fs_events_mode",
+        "fs_events_poll_seconds",
+    ):
+        assert key in body
+    assert body["fs_events_mode"] in ("auto", "native", "polling", "off")
+    assert body["fs_events_poll_seconds"] >= 1
 
 
 def test_list_email_configs_non_admin_403(client, user_token_headers):
@@ -447,7 +461,7 @@ def test_list_email_configs_non_admin_403(client, user_token_headers):
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_list_email_configs_admin_200(client, admin_token_headers):
-    response = client.get("/api/watch-sources/email-configs", headers=admin_token_headers)
+def test_list_email_configs_admin_200(client, super_admin_token_headers):
+    response = client.get("/api/watch-sources/email-configs", headers=super_admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
     assert "configs" in response.json()

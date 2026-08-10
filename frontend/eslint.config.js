@@ -58,6 +58,13 @@ export default tseslint.config(
       'no-case-declarations': 'warn',
       'no-empty': 'warn',
       'prefer-const': 'warn',
+      // New in this codebase's eslint.config.js as of the eslint 9->10 bump (@eslint/js
+      // 10 added it to `recommended`). False-positives across ~25 files on the standard
+      // `let x = initial; $: x = ...` idiom: the declaration's initial value looks
+      // "unused" to a plain-JS analyzer, but Svelte's reactive statement doesn't run
+      // synchronously right after it — it's a separate reactive effect, not the next
+      // line of imperative code. Same class of gap as the svelte/* rules below.
+      'no-useless-assignment': 'warn',
       // Svelte legacy-debt → warn for now (real, but pre-existing; fixed in later phases).
       'svelte/require-each-key': 'warn', // Phase 6.2 adds keys
       'svelte/no-navigation-without-resolve': 'warn',

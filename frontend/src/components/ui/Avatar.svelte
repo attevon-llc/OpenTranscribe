@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getInitials } from '$lib/utils/formatting';
+  import { t } from '$stores/locale';
 
   export let name: string | null = null;
   export let email: string = '';
@@ -10,7 +11,7 @@
   export let alt: string = '';
 
   $: initials = getInitials(name, email);
-  $: label = alt || name || email || 'User avatar';
+  $: label = alt || name || email || $t('common.userAvatar');
 </script>
 
 {#if src}

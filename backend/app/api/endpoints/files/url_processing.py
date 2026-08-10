@@ -287,7 +287,7 @@ def _handle_playlist_processing(
         )
 
     except Exception as e:
-        logger.error(f"Failed to dispatch YouTube playlist processing task: {e}")
+        logger.exception(f"Failed to dispatch YouTube playlist processing task: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to start playlist processing. Please try again.",
@@ -327,7 +327,7 @@ def _extract_video_info(
         # Re-raise HTTPExceptions (they already have proper error messages)
         raise
     except Exception as e:
-        logger.error(f"Error extracting video info from {normalized_url}: {e}")
+        logger.exception(f"Error extracting video info from {normalized_url}: {e}")
         # Create user-friendly error message
         user_friendly_error = create_user_friendly_error(str(e), normalized_url)
         raise HTTPException(
@@ -552,7 +552,7 @@ def _dispatch_video_task(
 
         files_uploaded_total.labels(source="url").inc()
     except Exception as e:
-        logger.error(f"Failed to dispatch media processing task: {e}")
+        logger.exception(f"Failed to dispatch media processing task: {e}")
         db.delete(media_file)
         db.commit()
         raise HTTPException(
@@ -561,17 +561,28 @@ def _dispatch_video_task(
         ) from e
 
 
-async def _send_file_created_notification(media_file: MediaFile, user_id: int) -> None:
+def _send_file_created_notification(media_file: MediaFile, user_id: int) -> None:
     """Send WebSocket notification for newly created file.
+
+    Routed through Redis pub/sub rather than the in-process ConnectionManager
+    (issue #284 A1.14). ``send_notification`` only reaches sockets held by THIS
+    process, so behind a load balancer a user connected to a different replica never
+    saw the new file appear — the gallery just looked stuck until a manual refresh.
+    ``send_ws_event`` publishes on the ``websocket_notifications`` channel, which every
+    replica's subscriber consumes, so the owning process delivers it wherever it is.
+
+    Synchronous on purpose: ``send_ws_event`` is a blocking Redis PUBLISH, so declaring
+    this ``async`` only made the blocking call happen *on the event loop* (issue #284
+    A2.4). It is now called from a sync request handler, i.e. Starlette's threadpool.
 
     Args:
         media_file: The created MediaFile.
         user_id: User ID to notify.
     """
     try:
-        from app.api.websockets import send_notification
+        from app.utils.websocket_notify import send_ws_event
 
-        await send_notification(
+        send_ws_event(
             user_id=user_id,
             notification_type="file_created",
             data={
@@ -599,7 +610,7 @@ async def _send_file_created_notification(media_file: MediaFile, user_id: int) -
 
 
 @router.post("/process-url", response_model=URLProcessingResponse)
-async def process_media_url(
+def process_media_url(
     request_data: URLProcessingRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -610,6 +621,15 @@ async def process_media_url(
 
     Supports YouTube, Vimeo, Twitter/X, TikTok, and 1800+ other platforms via yt-dlp.
     YouTube playlists are also supported.
+
+    Declared ``def``, not ``async def`` (issue #284 A2.4). Every call in this handler is
+    blocking: ``yt-dlp``'s ``extract_info`` performs a full metadata fetch against the
+    remote platform (seconds, sometimes tens of seconds), the rate limiter talks to Redis,
+    and the duplicate check / placeholder insert talk to Postgres. In an ``async def``
+    handler all of that ran *on the event loop*, so a single slow YouTube lookup stalled
+    every other request served by the process. A plain ``def`` handler is dispatched to
+    Starlette's threadpool instead, which is the same mechanism as ``run_in_threadpool``
+    without hand-wrapping each call site.
 
     Args:
         request_data: URLProcessingRequest containing the media URL
@@ -713,7 +733,7 @@ async def process_media_url(
                     [_UUID(c) for c in request_data.collection_ids],
                 )
             if request_data.tag_names:
-                add_tags_to_file(db, media_file.id, request_data.tag_names)
+                add_tags_to_file(db, media_file.id, request_data.tag_names, current_user.id)
             db.commit()
 
         # Dispatch background task (pass credentials only for this processing request)
@@ -732,7 +752,7 @@ async def process_media_url(
         )
 
         # Send WebSocket notification
-        await _send_file_created_notification(media_file, current_user.id)
+        _send_file_created_notification(media_file, current_user.id)
 
         logger.info(f"Created placeholder MediaFile {media_file.id} for media URL processing")
         # ORM MediaFile serialized to the schema via response_model (from_attributes)
@@ -749,10 +769,12 @@ async def process_media_url(
 
 
 @router.get("/youtube/quota")
-async def get_youtube_download_quota(
+def get_youtube_download_quota(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get user's remaining YouTube download quota.
+
+    Sync handler: the quota lookup is a blocking Redis read (issue #284 A2.4).
 
     Returns:
         dict: Quota information with hourly/daily remaining and limits.

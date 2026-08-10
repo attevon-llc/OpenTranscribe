@@ -15,11 +15,26 @@
    */
 
   import { createEventDispatcher } from 'svelte';
+  import { t } from '$stores/locale';
 
   export let classification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
   export let bannerText: string = '';
   export let requireAcknowledgment: boolean = false;
   export let position: 'top' | 'both' = 'top';
+  /**
+   * The acknowledgment is being recorded server-side
+   * (`POST /auth/banner/acknowledge`). Disables both actions so a double click
+   * cannot fire two writes.
+   */
+  export let pending: boolean = false;
+  /** Why the last acknowledgment attempt failed. Empty when there is nothing to say. */
+  export let errorMessage: string = '';
+  /**
+   * The user already accepted a banner, but the wording has since changed and the
+   * server expired that consent (`reason: "banner_text_changed"`). Saying so is
+   * the difference between "the notice was updated" and "this is broken".
+   */
+  export let noticeUpdated: boolean = false;
 
   const dispatch = createEventDispatcher();
 
@@ -97,26 +112,34 @@ By using this IS (which includes any device attached to this IS), you consent to
           </svg>
         </div>
 
+        {#if noticeUpdated}
+          <p class="notice-updated" role="status">{$t('loginBanner.noticeUpdated')}</p>
+        {/if}
+
         <div class="consent-text">
           {#each displayText.split('\n\n') as paragraph}
             <p>{paragraph}</p>
           {/each}
         </div>
+
+        {#if errorMessage}
+          <p class="consent-error" role="alert">{errorMessage}</p>
+        {/if}
       </div>
 
       <div class="consent-footer">
-        <button class="btn-decline" on:click={handleDecline}>
+        <button class="btn-decline" on:click={handleDecline} disabled={pending}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"/>
             <line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
           Exit System
         </button>
-        <button class="btn-acknowledge" on:click={handleAcknowledge}>
+        <button class="btn-acknowledge" on:click={handleAcknowledge} disabled={pending}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="20 6 9 17 4 12"/>
           </svg>
-          I Acknowledge & Consent
+          {pending ? $t('loginBanner.acknowledging') : 'I Acknowledge & Consent'}
         </button>
       </div>
     </div>
@@ -234,6 +257,27 @@ By using this IS (which includes any device attached to this IS), you consent to
     color: #dc2626;
   }
 
+  .notice-updated {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border-left: 4px solid #b45309;
+    border-radius: 4px;
+    background-color: #fef3c7;
+    color: #7c2d12;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  .consent-error {
+    margin: 1rem 0 0;
+    padding: 0.75rem 1rem;
+    border-left: 4px solid #b91c1c;
+    border-radius: 4px;
+    background-color: #fee2e2;
+    color: #7f1d1d;
+    font-size: 0.875rem;
+  }
+
   .consent-text {
     color: #1f2937;
     font-size: 0.9rem;
@@ -287,6 +331,12 @@ By using this IS (which includes any device attached to this IS), you consent to
 
   .btn-acknowledge:hover {
     background-color: #047857;
+  }
+
+  .btn-decline:disabled,
+  .btn-acknowledge:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   /* Dark mode adjustments */

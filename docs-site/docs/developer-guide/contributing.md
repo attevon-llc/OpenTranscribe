@@ -139,4 +139,4 @@ Use GitHub Issues to report:
 
 - [Architecture](./architecture.md)
 - [Testing Guide](./testing.md)
-- [GitHub Repository](https://github.com/davidamacey/OpenTranscribe)
+- [GitHub Repository](https://github.com/attevon-llc/OpenTranscribe)

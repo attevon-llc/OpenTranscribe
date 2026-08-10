@@ -1,9 +1,17 @@
 """Celery task: content-redaction detection (dedicated CPU service).
 
-Runs once per transcript, unconditionally — independent of any user/admin setting.
-Detection spans are cached on the segments; enabling/disabling, categories and style
-are applied at read time, so this never reruns when settings change. Only segment text
-edits or an admin model upgrade re-trigger detection.
+**Dispatch is gated, not unconditional.** Redaction is opt-out by default
+(``DEFAULT_REDACTION_ENABLED = False``) because the scan delays transcript display,
+so the pipeline only dispatches this task when the owner has redaction enabled or an
+admin forces it — see ``tasks/transcription/postprocess.py::_dispatch_redaction``,
+which returns early unless ``resolve_effective_config(db, user_id).enabled``. A user
+who enables redaction later gets detection dispatched **lazily, the first time they
+open the file**, so an existing transcript with no spans is expected rather than a bug.
+
+Once it does run, it runs **once per transcript**: detection spans are cached on the
+segments, and enabling/disabling, categories, and style are all applied at read time,
+so this never reruns when settings change. Only segment text edits or an admin model
+upgrade re-trigger detection.
 """
 
 from __future__ import annotations

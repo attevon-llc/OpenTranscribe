@@ -696,6 +696,11 @@
     color: #dc2626;
   }
 
+  /* Abuse / DMCA takedown hold — amber, distinct from the red error states. */
+  .status-wrap.status-quarantined {
+    color: #d97706;
+  }
+
   .status-wrap.clickable-error {
     cursor: pointer;
   }

@@ -33,7 +33,7 @@ from app.services.minio_service import upload_file
 from app.services.minio_service import upload_file_tuned
 from app.services.protected_media_providers import PROTECTED_MEDIA_PROVIDERS
 from app.services.protected_media_providers import ProtectedMediaProvider
-from app.utils.thumbnail import generate_and_upload_thumbnail_sync
+from app.utils.thumbnail import generate_and_upload_thumbnail
 from app.utils.url_validation import is_safe_url
 
 logger = logging.getLogger(__name__)
@@ -399,7 +399,7 @@ def _get_thumbnail_with_fallback(
 
     # Inline fallback — keeps legacy behavior for callers that opt out.
     try:
-        return generate_and_upload_thumbnail_sync(
+        return generate_and_upload_thumbnail(
             user_id=user_id,
             media_file_id=media_file_id,
             video_path=video_path,
@@ -1033,6 +1033,22 @@ class MediaDownloadService:
         Raises:
             HTTPException: If download fails
         """
+        # Re-validate at FETCH time, not just at submission (issue #284 A0.2).
+        # `is_valid_media_url` runs in the request handler, but the download executes
+        # later on a Celery worker — a submitter controlling the domain can repoint DNS
+        # in between and have the worker fetch an internal address. Re-checking here
+        # closes that queue-delay window, which in practice is the whole attack.
+        #
+        # It does NOT fully close TOCTOU: yt-dlp resolves DNS itself at connect time and
+        # follows redirects internally, so a sub-second rebind or a redirect to a private
+        # host still gets through. Closing that needs egress restriction on the download
+        # worker (deny RFC1918 + link-local at the network layer) — infrastructure, not
+        # something this process can enforce.
+        if not self.is_valid_media_url(url):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid URL. Please enter a valid HTTP or HTTPS URL.",
+            )
 
         # First, try pluggable protected-media providers
         provider = self._get_protected_provider(url, user_id=user_id)

@@ -101,7 +101,7 @@ backend/tests/e2e/
 ├── test_registration.py              # Comprehensive registration tests (~35 tests)
 ├── test_mfa.py                       # MFA TOTP tests
 ├── test_pki.py                       # PKI certificate auth E2E (requires TLS overlay)
-├── test_ldap_keycloak.py             # LDAP + Keycloak config + login tests
+├── test_ldap_oidc.py             # LDAP + Keycloak config + login tests
 ├── test_gallery_actions.py           # File gallery UI action tests
 ├── test_upload.py                    # Upload stepper flows (@upload)
 ├── test_search.py                    # Search page (@search)
@@ -212,10 +212,10 @@ RUN_PKI_E2E=true pytest backend/tests/e2e/test_pki.py -v --headed
 ```
 PKI URL: `https://localhost:5182`
 
-### LDAP/Keycloak Tests (`test_ldap_keycloak.py`)
+### LDAP/Keycloak Tests (`test_ldap_oidc.py`)
 Config UI and login flow for LDAP and Keycloak. Requires running containers:
 ```bash
-RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_keycloak.py -v
+RUN_AUTH_E2E=true pytest backend/tests/e2e/test_ldap_oidc.py -v
 ```
 See `tests/AUTH_TEST_SETUP.md` for container setup instructions.
 

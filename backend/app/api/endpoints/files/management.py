@@ -69,7 +69,8 @@ class BulkActionRequest(BaseModel):
     """Request for bulk file operations."""
 
     file_uuids: list[str]
-    # delete | retry | cancel | recover | reprocess | summarize | redact | add_tag | remove_tag
+    # delete | retry | cancel | recover | reprocess | summarize | redact
+    # | identify_speakers | add_tag | remove_tag
     action: str
     force: bool = False
     reset_retry_count: bool = False
@@ -178,7 +179,7 @@ def get_file_status_detail(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting file status detail for {file_uuid}: {e}")
+        logger.exception(f"Error getting file status detail for {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving file status details",
@@ -224,7 +225,7 @@ def cancel_file_processing(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error cancelling file {file_uuid}: {e}")
+        logger.exception(f"Error cancelling file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error cancelling file processing",
@@ -305,7 +306,7 @@ def retry_file_processing(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrying file {file_uuid}: {e}")
+        logger.exception(f"Error retrying file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrying file processing",
@@ -347,7 +348,7 @@ def recover_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error recovering file {file_uuid}: {e}")
+        logger.exception(f"Error recovering file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error recovering file",
@@ -375,7 +376,7 @@ def force_delete_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error force deleting file {file_uuid}: {e}")
+        logger.exception(f"Error force deleting file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error force deleting file",
@@ -428,7 +429,7 @@ def get_stuck_files(
         }
 
     except Exception as e:
-        logger.error(f"Error getting stuck files: {e}")
+        logger.exception(f"Error getting stuck files: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving stuck files",
@@ -597,6 +598,9 @@ def _handle_summarize_action(
             )
         llm_service.close()
     except Exception:
+        # Bulk actions report per-file outcomes instead of aborting the batch,
+        # so an unconstructable LLM client becomes this file's failure result.
+        logger.exception(f"Could not construct an LLM client for file {file_uuid}")
         return BulkActionResult(
             file_uuid=file_uuid,
             success=False,
@@ -622,6 +626,73 @@ def _handle_summarize_action(
         message = f"Summarization started (task: {task.id})"
     else:
         message = "Summarization prepared (test mode)"
+
+    return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
+
+
+def _handle_identify_speakers_action(
+    db: Session, file_uuid: str, file_id: int, user_id: int | None = None
+) -> BulkActionResult:
+    """Handle LLM speaker identification for bulk operations.
+
+    Mirrors ``POST /api/files/{uuid}/identify-speakers``. Suggestions are stored as
+    confidence-scored predictions for manual review and are never auto-applied.
+
+    Availability is probed by constructing the client, as ``_handle_summarize_action``
+    does — the async ``is_llm_available`` helper the single-file endpoint uses cannot be
+    awaited from this synchronous dispatch.
+    """
+    import os
+
+    from app.models.media import MediaFile
+    from app.services.llm_service import LLMService
+
+    # Via the `speaker_tasks` re-export shim, as every other caller does — it keeps the
+    # legacy task-name routing alive.
+    from app.tasks.speaker_tasks import identify_speakers_llm_task
+
+    try:
+        llm_service = LLMService.create_from_settings(user_id=user_id)
+        if llm_service is None:
+            return BulkActionResult(
+                file_uuid=file_uuid,
+                success=False,
+                message="LLM provider is not configured",
+                error="LLM_NOT_AVAILABLE",
+            )
+        llm_service.close()
+    except Exception:
+        # Bulk actions report per-file outcomes instead of aborting the batch.
+        logger.exception(f"Could not construct an LLM client for file {file_uuid}")
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="LLM provider is not configured",
+            error="LLM_NOT_AVAILABLE",
+        )
+
+    db_file = db.query(MediaFile).filter_by(id=file_id).first()
+    if not db_file or db_file.status != FileStatus.COMPLETED:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="File must be completed before identifying speakers",
+            error="INVALID_STATUS",
+        )
+
+    if not db_file.speakers:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="No speakers found in this file to identify",
+            error="NO_SPEAKERS",
+        )
+
+    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
+        message = f"Speaker identification started (task: {task.id})"
+    else:
+        message = "Speaker identification prepared (test mode)"
 
     return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
 
@@ -728,6 +799,9 @@ def _process_single_file_action(
         ),
         "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, current_user.id),
         "redact": lambda: _handle_redact_action(db, file_uuid, file_id),
+        "identify_speakers": lambda: _handle_identify_speakers_action(
+            db, file_uuid, file_id, current_user.id
+        ),
         "add_tag": lambda: _handle_tag_action(
             db, file_uuid, file_id, tag, add=True, user_id=current_user.id, is_admin=is_admin
         ),
@@ -760,7 +834,9 @@ def bulk_file_action(
     tag = None
     if is_tag_action:
         try:
-            tag = resolve_bulk_tag(db, request.action, request.tag_name)
+            tag = resolve_bulk_tag(
+                db, request.action, request.tag_name, user_id=current_user.id
+            )
         except InvalidTagNameError as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -800,7 +876,7 @@ def bulk_file_action(
                     )
                 )
             except Exception as e:
-                logger.error(f"Error processing bulk action for file {file_uuid}: {e}")
+                logger.exception(f"Error processing bulk action for file {file_uuid}: {e}")
                 results.append(
                     BulkActionResult(
                         file_uuid=file_uuid,
@@ -828,7 +904,7 @@ def bulk_file_action(
         return results
 
     except Exception as e:
-        logger.error(f"Error in bulk file action: {e}")
+        logger.exception(f"Error in bulk file action: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error performing bulk file action",
@@ -873,6 +949,9 @@ def cleanup_orphaned_files(
                         if isinstance(errors_list, list):
                             errors_list.append(f"Failed to recover file {file_id}")
                 except Exception as e:
+                    # Per-file failure is recorded and the sweep continues; the
+                    # caller reads cleanup_results["errors"].
+                    logger.exception(f"Orphan cleanup failed for file {file_id}")
                     errors_list = cleanup_results["errors"]
                     if isinstance(errors_list, list):
                         errors_list.append(f"Error processing file {file_id}: {str(e)}")
@@ -880,7 +959,7 @@ def cleanup_orphaned_files(
         return cleanup_results
 
     except Exception as e:
-        logger.error(f"Error in cleanup orphaned files: {e}")
+        logger.exception(f"Error in cleanup orphaned files: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error cleaning up orphaned files",

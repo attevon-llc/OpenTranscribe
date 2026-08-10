@@ -18,6 +18,25 @@
 #   See docs/NGINX_SETUP.md for Certbot instructions
 
 services:
+  backend:
+    environment:
+      # This overlay puts nginx in front of the backend, so `request.client.host` is
+      # the nginx container for every API request. Without a trusted-proxy list the
+      # IP resolver (backend/app/utils/client_ip.py) returns that peer address and
+      # every caller lands in ONE rate-limit bucket — one user can exhaust the auth
+      # limit for everyone — while the audit log records the proxy, not the user.
+      #
+      # 172.16.0.0/12 is Docker's own address pool (default bridge + user-defined
+      # compose networks), so it covers the nginx container and nothing beyond the
+      # host. Deliberately NOT the full RFC1918 set: published container ports
+      # preserve the external source address, so trusting 10/8 or 192.168.0.0/16
+      # would let any machine on a typical LAN hit the backend port directly and
+      # forge its own X-Forwarded-For.
+      #
+      # Override in .env when Docker's pool is customised (`default-address-pools`)
+      # or an additional proxy sits in front — .env.example documents the format.
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}
+
   nginx:
     image: nginx:1.27-alpine
     container_name: opentranscribe-nginx

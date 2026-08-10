@@ -27,7 +27,7 @@ so keep heavy imports lazy.
   `ErrorHandler` builders for opaque 5xx. `pagination.py` — `paginate()` replaces the
   count+offset+limit boilerplate (counts with `order_by(None)`).
 - `encryption.py` — AES-256-GCM (v3) with legacy Fernet auto-detect. Every stored secret (ASR/LLM
-  keys, S3/SMB creds, Keycloak refresh tokens) goes through it.
+  keys, S3/SMB creds, OIDC refresh/ID tokens) goes through it.
 - `uuid7.py` — RFC 9562 UUIDv7, the `default=` for every model `uuid` column (index locality).
 - `scratch_volume.py` — cross-worker WAV handoff at `/scratch/opentranscribe`. **Presence of the
   mount is the feature flag** — there is no enable/disable env var.
@@ -45,7 +45,8 @@ so keep heavy imports lazy.
 ## Conventions / patterns
 
 - No `app.api` imports from here (`db_helpers` types `RequestContext` under `TYPE_CHECKING`).
-  Import-linter also forbids any `cloud`/`clerk`/`stripe` import — see `backend/app/core/CLAUDE.md`.
+  Import-linter also forbids `cloud` and managed-edition vendor imports — see
+  `backend/app/core/CLAUDE.md`.
 - Optional heavy deps (pyannote.metrics, meeteval, torch) are imported **inside** the function
   that needs them so these modules stay importable on CPU-only workers and in fast unit tests.
 - Best-effort side paths (cache invalidation, WS publish, metrics) log and swallow — they must
@@ -53,7 +54,12 @@ so keep heavy imports lazy.
 
 ## Gotchas
 
-- `MediaFile.imohash` (via `services/imohash_service.py`) is a sampled fingerprint, **not**
-  collision-resistant — never use it for security-sensitive equality. `file_hash.py` (SHA-256)
-  is the real hash, and its primary computation happens client-side.
+- **Both dedup columns now hold the same *kind* of value, and neither is collision-resistant.**
+  `MediaFile.imohash` (via `services/imohash_service.py`) is the server-computed sampled
+  fingerprint; `MediaFile.file_hash` is the *client-declared* one, and since issue #342 the
+  browser computes it with the same imohash algorithm rather than SHA-256 — whole-file SHA-256
+  threw `NotReadableError` above ~4 GB and the swallowed error silently disabled duplicate
+  detection on the largest uploads. `file_hash.py:check_duplicate_by_fingerprint` matches
+  **either** column, so rows predating the change (SHA-256 in `file_hash`, imohash in `imohash`)
+  keep deduplicating. Never use either for security-sensitive equality.
 - `encryption.py` transparently decrypts legacy Fernet ciphertext — don't assume a single format.

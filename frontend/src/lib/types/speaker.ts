@@ -16,7 +16,7 @@ export interface Speaker {
     uuid: string; // Public UUID identifier
     name: string;
     description?: string;
-  };
+  } | null; // null when the speaker has been explicitly unlinked from a profile
   // AI-predicted speaker attributes
   predicted_gender?: string; // "male", "female"
   attribute_confidence?: Record<string, number | string>; // e.g., {"gender": 0.92}
@@ -56,21 +56,21 @@ export interface Segment {
   };
   formatted_timestamp?: string;
   display_timestamp?: string;
+  /** ASR confidence for the segment, when the provider reports one. */
+  confidence?: number;
+  /**
+   * Redaction spans applied to `text`, present only when the redaction pipeline
+   * has run. The frontend only ever checks whether the array is non-empty (to
+   * decide whether to offer the show-original toggle), so the element shape is
+   * deliberately left open — see `backend/app/services/redaction/`.
+   */
+  redactions?: unknown[];
   // Overlap fields for simultaneous speech display
   is_overlap?: boolean;
   overlap_group_id?: string;
   overlap_confidence?: number;
   overlap_index?: number; // Position within group (computed client-side)
   overlap_count?: number; // Total in group (computed client-side)
-}
-
-/**
- * Result of a merge operation for a single speaker
- */
-export interface MergeResult {
-  speaker: Speaker;
-  success: boolean;
-  error?: string;
 }
 
 /**

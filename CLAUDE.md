@@ -95,7 +95,7 @@ Run `./opentr.sh` with no arguments for full usage. The ones you'll reach for:
 ./opentr.sh start dev --dry-run              # print compose files + command, start nothing
 ```
 
-`--fresh` refuses to start on the standard ports if the main stack is up (it offers `--port-offset N`) and generates gitignored `.fresh/<name>*.yml` overlays that re-pin every service to `otfresh-<name>-*`. Details: `scripts/CLAUDE.md`.
+`--fresh` refuses to start when any port it needs is already bound (it offers `--port-offset N`) and generates a gitignored `.fresh/<name>.yml` overlay that re-pins every service to `otfresh-<name>-*`. `--port-offset` works by exporting the `*_PORT` vars the compose files already read — never by overlaying a second `ports:` list, which compose would append (issue #343). The offset is remembered in `.fresh/<name>.offset`. The `--with-ldap-test` / `--with-smb-test` / `--with-monitoring` / `--with-keycloak-test` / `--with-authentik-test` overlays are isolated too (issue #347) — names, ports, and volumes all move — and the overlays used are recorded in `.fresh/<name>.aux`. `--with-watch` / `--with-backup` are **not**: they bind live host directories, and `opentr.sh` warns. Details: `scripts/CLAUDE.md`.
 
 **NAS overlay** (non-fresh `start`): auto-detected from `.env`, announced with a `💾 NAS overlay AUTO-LOADED` banner; `--no-nas` suppresses, `--nas` opts in explicitly. When active it writes a `.opentranscribe-live-data` marker into each bind dir — **if you see that marker, you are looking at live data; do not delete.** Full map: `docs-site/docs/operations/fresh-deployments.md`.
 
@@ -105,11 +105,29 @@ Configure auth via Admin UI (Settings → Authentication); DB config takes prece
 
 ```bash
 ./opentr.sh start dev --with-ldap-test       # LDAP at localhost:3890, UI :17170 (admin/admin_password)
-./opentr.sh start dev --with-keycloak-test   # Keycloak at localhost:8180 (admin/admin)
+./opentr.sh start dev --with-keycloak-test   # a Keycloak IdP to test OIDC against, localhost:8180 (admin/admin)
+./opentr.sh start dev --with-authentik-test  # an Authentik IdP to test OIDC against, localhost:9022 (bootstrap: admin@example.com/admin_password)
 ./opentr.sh start prod --build --with-pki    # PKI/mTLS at https://localhost:5182 (prod-only — Vite can't do mTLS)
 ```
+
+### Mock LLM (chat / AI features without a model)
+
+```bash
+./opentr.sh start dev --with-mock-llm        # OpenAI-compatible mock at http://mock-llm:5199/v1
+```
+
+Runs `scripts/mock-llm-server.py` on the app network so chat, summarization and
+topic extraction work with **no GPU, API key, or internet**. Only token generation
+is canned — retrieval, redaction masking, citations, SSE and usage recording all
+take their real paths. Scenario models drive the app's real error handling:
+`mock-gpt` (normal), `mock-echo` (returns the prompt it was given — assert what the
+app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`, `mock-reasoning`
+(streams a `delta.reasoning_content` "thinking" phase before the answer — exercises
+the collapsible reasoning display). Never start it as a
+bare host process: it binds 5199 and then blocks the container. Fixtures and the
+full table: `backend/tests/CLAUDE.md`.
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
-Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/KEYCLOAK_SETUP.md`.
+Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
 
 ### Multi-GPU worker scaling (optional)
 
@@ -123,7 +141,7 @@ Skill: `.claude/skills/docker-build-push/SKILL.md` (multi-arch requires `USE_REM
 
 Alembic runs automatically on dev backend startup — `alembic upgrade head` is production-only.
 
-Host venv for pre-commit / mypy / ruff / bandit / pytest outside Docker lives at `backend/venv/` and already exists. If it doesn't: `cd backend && python3.11 -m venv venv && source venv/bin/activate && pip install -r requirements.txt pre-commit mypy ruff bandit`.
+Host venv for pre-commit / mypy / ruff / bandit / pytest outside Docker lives at `backend/venv/` and already exists. If it doesn't: `cd backend && python3.11 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && pip install --no-deps -r requirements-nodeps.txt && pip install pre-commit mypy ruff bandit`. The `requirements-nodeps.txt` step is mandatory, not optional — it installs whisperx/faster-whisper/gliner, and skipping it leaves the venv without a working ASR/redaction stack. This is the exact two-step install `Dockerfile.prod` runs; see `requirements-nodeps.txt`'s header for why those three packages need `--no-deps`.
 
 ### Pre-commit / lint hooks
 
@@ -187,6 +205,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Config, constants, celery wiring | `backend/app/core/CLAUDE.md` |
 | Shared backend helpers | `backend/app/utils/CLAUDE.md` |
 | Services overview, LLM features, yt-dlp ingestion | `backend/app/services/CLAUDE.md` |
+| RAG chat pipeline (retrieval, masking, prompting) | `backend/app/services/chat/CLAUDE.md` |
 | Pluggable ASR providers | `backend/app/services/asr/CLAUDE.md` |
 | Pluggable diarization providers | `backend/app/services/diarization/CLAUDE.md` |
 | OpenSearch indexing + neural/hybrid search | `backend/app/services/search/CLAUDE.md` |
@@ -194,9 +213,17 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Watch sources (local / S3 / SMB auto-import) | `backend/app/services/watch_sources/CLAUDE.md` |
 | Test suite: markers, gates, E2E fixtures | `backend/tests/CLAUDE.md` |
 | Repo scripts + destructive-op warnings | `scripts/CLAUDE.md` |
-| Frontend SPA (+ 23 folder-level files) | `frontend/CLAUDE.md` |
+| Frontend SPA (+ 24 folder-level files) | `frontend/CLAUDE.md` |
 
 > **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. Full table: `backend/app/services/search/CLAUDE.md`.
+
+> **Chat retrieval trap (issue #52):** the `transcript_chunks` OpenSearch index stores
+> transcript text **UNREDACTED** — correct for search over your own words, but it means
+> any path sending chunk content to an LLM must first call
+> `services/chat/redactor.mask_chunks()`. Masking fails CLOSED (an unmaskable chunk
+> contributes nothing rather than going out raw). Equally: in chat scope resolution
+> `file_uuids=None` means "all accessible" while `file_uuids=[]` means "match nothing" —
+> inverting those leaks the whole library. Details: `backend/app/services/chat/CLAUDE.md`.
 
 ## Conventions
 
@@ -212,22 +239,11 @@ subsystem, and put new subsystem detail **there**, not in this file.
 - Stay in scope: don't modify code unrelated to the task at hand.
 - Python imports go at the top **except** heavy optional deps (torch, pyannote.metrics, meeteval), which are imported inside the function so modules stay importable on CPU-only workers.
 - Settings that look like they need `.env` vars are often **DB-backed** `SystemSettings` with coded defaults in `backend/app/core/constants.py`, edited in the admin UI with no restart. Check before adding an env var.
-
-## Skill routing
-
-When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
-
-Key routing rules:
-- Product ideas/brainstorming → invoke /office-hours
-- Strategy/scope → invoke /plan-ceo-review
-- Architecture → invoke /plan-eng-review
-- Design system/plan review → invoke /design-consultation or /plan-design-review
-- Full review pipeline → invoke /autoplan
-- Bugs/errors → invoke /investigate
-- QA/testing site behavior → invoke /qa or /qa-only
-- Code review/diff check → invoke /review
-- Visual polish → invoke /design-review
-- Ship/deploy/PR → invoke /ship or /land-and-deploy
-- Save progress → invoke /context-save
-- Resume context → invoke /context-restore
-- Author a backlog-ready spec/issue → invoke /spec
+- **Worktree → branch → PR, never a local merge onto `master`.** Use a `.claude/worktrees/<name>`
+  git worktree for deep, issue/PR-scoped work. When it's done: commit and push *that branch* to
+  origin — nothing more. Build and test the branch **itself** (relocate its checkout — e.g.
+  remove the worktree and `git checkout <branch>` in the main repo — if it needs the main repo's
+  `.env`/tooling; don't create a separate local merge of it into `master` to test "how it looks
+  merged"). Only once the branch is fully green does a PR go open from it into `master`; `master`
+  changes **only** via that merged PR, never via a local `git merge <branch>` on `master` pushed
+  directly — that bypasses review and produces a merge commit nobody chose the message for.

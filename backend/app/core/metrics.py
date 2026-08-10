@@ -86,6 +86,7 @@ http_requests_in_flight: Gauge
 db_query_duration_seconds: Histogram
 db_queries_per_request: Histogram
 cache_operations_total: Counter
+security_state_degraded_total: Counter
 celery_queue_depth: Gauge
 user_signups_total: Counter
 files_uploaded_total: Counter
@@ -107,6 +108,7 @@ def _register() -> None:
     global db_query_duration_seconds
     global db_queries_per_request
     global cache_operations_total
+    global security_state_degraded_total
     global celery_queue_depth
     global user_signups_total
     global files_uploaded_total
@@ -152,6 +154,15 @@ def _register() -> None:
         "cache_operations_total",
         "Cache lookups by backend and result.",
         ["cache", "result"],
+    )
+    security_state_degraded_total = Counter(
+        "security_state_degraded_total",
+        "Times a security control could not reach its shared state store (Redis) and "
+        "fell back. ALERT ON THIS: shared state is what makes revocation, lockout and "
+        "MFA replay protection work across replicas. `control` is the control affected; "
+        "`fallback` is what was used instead (database = authoritative, deny = failed "
+        "closed, local = per-process approximation).",
+        ["control", "fallback"],
     )
     celery_queue_depth = Gauge(
         "celery_queue_depth",

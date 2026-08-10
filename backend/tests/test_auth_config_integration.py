@@ -6,7 +6,7 @@ Tests verify:
 - Encryption/decryption cycle for sensitive values
 - Bulk category updates with real DB commits
 - LdapConfig.from_db() reading values stored in database
-- KeycloakConfig.from_db() reading values stored in database
+- OIDCConfig.from_db() reading values stored in database
 - Audit log creation with real DB
 - Type conversion accuracy (bool, int, string)
 - DB > .env precedence via get_effective_config()
@@ -275,38 +275,38 @@ class TestBulkUpdateCategory:
         # Server should be updated
         assert AuthConfigService.get_config(db_session, "ldap_server") == "new.server.com"
 
-    def test_bulk_update_keycloak_category(self, db_session, admin_user):
-        """Bulk update stores all Keycloak config values."""
+    def test_bulk_update_oidc_category(self, db_session, admin_user):
+        """Bulk update stores all OIDC config values."""
         config = {
-            "keycloak_enabled": True,
-            "keycloak_server_url": "https://keycloak.test.example.com",
-            "keycloak_realm": "testrealm",
-            "keycloak_client_id": "test-client",
-            "keycloak_client_secret": "test-secret-value",
-            "keycloak_callback_url": "http://localhost:5173/api/auth/keycloak/callback",
-            "keycloak_admin_role": "admin",
-            "keycloak_timeout": 30,
-            "keycloak_use_pkce": True,
-            "keycloak_verify_issuer": True,
-            "keycloak_verify_audience": False,
+            "oidc_enabled": True,
+            "oidc_server_url": "https://keycloak.test.example.com",
+            "oidc_realm": "testrealm",
+            "oidc_client_id": "test-client",
+            "oidc_client_secret": "test-secret-value",
+            "oidc_callback_url": "http://localhost:5173/api/auth/keycloak/callback",
+            "oidc_admin_role": "admin",
+            "oidc_timeout": 30,
+            "oidc_use_pkce": True,
+            "oidc_verify_issuer": True,
+            "oidc_verify_audience": False,
         }
 
         results = AuthConfigService.bulk_update_category(
             db=db_session,
-            category="keycloak",
+            category="oidc",
             config_dict=config,
             user_id=admin_user.id,
         )
 
-        assert "keycloak_enabled" in results
+        assert "oidc_enabled" in results
         assert (
-            AuthConfigService.get_config(db_session, "keycloak_server_url")
+            AuthConfigService.get_config(db_session, "oidc_server_url")
             == "https://keycloak.test.example.com"
         )
-        assert AuthConfigService.get_config(db_session, "keycloak_realm") == "testrealm"
+        assert AuthConfigService.get_config(db_session, "oidc_realm") == "testrealm"
 
         # Client secret should be decrypted
-        secret = AuthConfigService.get_config(db_session, "keycloak_client_secret", decrypt=True)
+        secret = AuthConfigService.get_config(db_session, "oidc_client_secret", decrypt=True)
         assert secret == "test-secret-value"
 
 
@@ -667,27 +667,27 @@ class TestLdapConfigFromDb:
             config.server = "mutated.example.com"  # type: ignore[misc]  # Testing immutability
 
 
-# ===== KeycloakConfig.from_db() Integration Tests =====
+# ===== OIDCConfig.from_db() Integration Tests =====
 
 
-class TestKeycloakConfigFromDb:
-    """Test KeycloakConfig.from_db() reading from real database."""
+class TestOIDCConfigFromDb:
+    """Test OIDCConfig.from_db() reading from real database."""
 
-    def _store_keycloak_config(self, db_session, admin_user, overrides=None):
-        """Helper: store a complete Keycloak configuration in the database."""
+    def _store_oidc_config(self, db_session, admin_user, overrides=None):
+        """Helper: store a complete OIDC configuration in the database."""
         defaults = {
-            "keycloak_enabled": ("true", "bool"),
-            "keycloak_server_url": ("https://keycloak.integration-test.com", "string"),
-            "keycloak_internal_url": ("http://keycloak:8080", "string"),
-            "keycloak_realm": ("integration-test", "string"),
-            "keycloak_client_id": ("test-app", "string"),
-            "keycloak_callback_url": ("http://localhost:5173/api/auth/keycloak/callback", "string"),
-            "keycloak_admin_role": ("realm-admin", "string"),
-            "keycloak_timeout": ("25", "int"),
-            "keycloak_use_pkce": ("true", "bool"),
-            "keycloak_verify_issuer": ("true", "bool"),
-            "keycloak_verify_audience": ("false", "bool"),
-            "keycloak_audience": ("test-audience", "string"),
+            "oidc_enabled": ("true", "bool"),
+            "oidc_server_url": ("https://keycloak.integration-test.com", "string"),
+            "oidc_internal_url": ("http://keycloak:8080", "string"),
+            "oidc_realm": ("integration-test", "string"),
+            "oidc_client_id": ("test-app", "string"),
+            "oidc_callback_url": ("http://localhost:5173/api/auth/keycloak/callback", "string"),
+            "oidc_admin_role": ("realm-admin", "string"),
+            "oidc_timeout": ("25", "int"),
+            "oidc_use_pkce": ("true", "bool"),
+            "oidc_verify_issuer": ("true", "bool"),
+            "oidc_verify_audience": ("false", "bool"),
+            "oidc_audience": ("test-audience", "string"),
         }
         if overrides:
             defaults.update(overrides)
@@ -703,7 +703,7 @@ class TestKeycloakConfigFromDb:
                     AuthConfig(
                         config_key=key,
                         config_value=value,
-                        category="keycloak",
+                        category="oidc",
                         data_type=dtype,
                         is_sensitive=is_sensitive,
                     )
@@ -711,12 +711,12 @@ class TestKeycloakConfigFromDb:
         db_session.commit()
 
     def test_from_db_reads_all_fields(self, db_session, admin_user):
-        """KeycloakConfig.from_db() populates all fields from database."""
-        from app.auth.keycloak_auth import KeycloakConfig
+        """OIDCConfig.from_db() populates all fields from database."""
+        from app.auth.oidc import OIDCConfig
 
-        self._store_keycloak_config(db_session, admin_user)
+        self._store_oidc_config(db_session, admin_user)
 
-        config = KeycloakConfig.from_db(db_session)
+        config = OIDCConfig.from_db(db_session)
 
         assert config.enabled is True
         assert config.server_url == "https://keycloak.integration-test.com"
@@ -732,21 +732,21 @@ class TestKeycloakConfigFromDb:
         assert config.audience == "test-audience"
 
     def test_from_db_bool_conversion(self, db_session, admin_user):
-        """KeycloakConfig.from_db() correctly converts boolean values."""
-        from app.auth.keycloak_auth import KeycloakConfig
+        """OIDCConfig.from_db() correctly converts boolean values."""
+        from app.auth.oidc import OIDCConfig
 
-        self._store_keycloak_config(
+        self._store_oidc_config(
             db_session,
             admin_user,
             overrides={
-                "keycloak_enabled": ("false", "bool"),
-                "keycloak_use_pkce": ("false", "bool"),
-                "keycloak_verify_issuer": ("false", "bool"),
-                "keycloak_verify_audience": ("true", "bool"),
+                "oidc_enabled": ("false", "bool"),
+                "oidc_use_pkce": ("false", "bool"),
+                "oidc_verify_issuer": ("false", "bool"),
+                "oidc_verify_audience": ("true", "bool"),
             },
         )
 
-        config = KeycloakConfig.from_db(db_session)
+        config = OIDCConfig.from_db(db_session)
 
         assert config.enabled is False
         assert config.use_pkce is False
@@ -754,24 +754,24 @@ class TestKeycloakConfigFromDb:
         assert config.verify_audience is True
 
     def test_from_db_int_conversion(self, db_session, admin_user):
-        """KeycloakConfig.from_db() correctly converts integer values."""
-        from app.auth.keycloak_auth import KeycloakConfig
+        """OIDCConfig.from_db() correctly converts integer values."""
+        from app.auth.oidc import OIDCConfig
 
-        self._store_keycloak_config(
+        self._store_oidc_config(
             db_session,
             admin_user,
-            overrides={"keycloak_timeout": ("60", "int")},
+            overrides={"oidc_timeout": ("60", "int")},
         )
 
-        config = KeycloakConfig.from_db(db_session)
+        config = OIDCConfig.from_db(db_session)
         assert config.timeout == 60
 
     def test_from_db_is_frozen(self, db_session, admin_user):
-        """KeycloakConfig is immutable (frozen dataclass)."""
-        from app.auth.keycloak_auth import KeycloakConfig
+        """OIDCConfig is immutable (frozen dataclass)."""
+        from app.auth.oidc import OIDCConfig
 
-        self._store_keycloak_config(db_session, admin_user)
-        config = KeycloakConfig.from_db(db_session)
+        self._store_oidc_config(db_session, admin_user)
+        config = OIDCConfig.from_db(db_session)
 
         with pytest.raises(AttributeError):
             config.server_url = "https://mutated.example.com"  # type: ignore[misc]  # Testing immutability
@@ -785,10 +785,10 @@ class TestConfigStatusIntegration:
 
     def test_config_status_reflects_db_state(self, db_session, admin_user):
         """get_config_status returns correct booleans from database state."""
-        # Enable LDAP, disable Keycloak and PKI
+        # Enable LDAP, disable OIDC and PKI
         for key, value in [
             ("ldap_enabled", "true"),
-            ("keycloak_enabled", "false"),
+            ("oidc_enabled", "false"),
             ("pki_enabled", "false"),
             ("mfa_enabled", "true"),
         ]:
@@ -810,6 +810,6 @@ class TestConfigStatusIntegration:
         status = AuthConfigService.get_config_status(db_session)
 
         assert status["ldap_enabled"] is True
-        assert status["keycloak_enabled"] is False
+        assert status["oidc_enabled"] is False
         assert status["pki_enabled"] is False
         assert status["mfa_enabled"] is True

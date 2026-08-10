@@ -20,6 +20,21 @@ Multi-GPU scaling is ideal for:
 - Systems with dedicated transcription GPU
 - Workflows with concurrent uploads
 
+## `--gpu-scale` vs. `--with-gpu-split`
+
+These are two distinct multi-GPU features with different goals, enabled independently:
+
+| | `--gpu-scale` (this page) | `--with-gpu-split` |
+|---|---|---|
+| What it does | Runs **N parallel Celery workers in one container** against a dedicated GPU, for higher **throughput** (more files transcribed concurrently) | Runs transcription and diarization on **separate** GPUs for higher **per-file** performance |
+| Enabled by | The `--gpu-scale` CLI flag on `./opentr.sh start dev` / `start prod` -- **not** `GPU_SCALE_ENABLED` (see Step 1 below) | The `--with-gpu-split` CLI flag **and** `ENGINE_GPU_SPLIT=true` |
+| Compose overlay | `docker-compose.gpu-scale.yml` (`COMPOSE_PROFILES=gpu-scale`) | `docker-compose.gpu-split.yml` (`gpu-split` profile) |
+| Tuning | `GPU_SCALE_WORKERS`, `GPU_SCALE_DEVICE_ID`, `GPU_SCALE_DEFAULT_WORKER` | `GPU_TRANSCRIBE_DEVICE_ID`, `GPU_DIARIZE_DEVICE_ID` |
+
+This page covers `--gpu-scale` only. For `--with-gpu-split`, see
+[Deployment Configuration](../operations/deployment-configuration.md#split-gpu-transcription-on-one-card-diarization-on-another).
+The two flags combine on a 3+ GPU host if you want both behaviors at once.
+
 ## Hardware Example
 
 ```
@@ -32,17 +47,25 @@ GPU 2: NVIDIA RTX A6000 (49GB) - 4 parallel workers (scaled)
 
 ### Step 1: Configure Environment
 
-Edit `.env`:
+:::warning `GPU_SCALE_ENABLED` does not enable scaling
+Scaling is turned on **only** by the `--gpu-scale` CLI flag in Step 2 -- no compose file or
+startup script reads `GPU_SCALE_ENABLED`. It's consulted in exactly one unrelated place
+(`tasks/utility.py`), to pick which GPU device IDs the system-stats task queries, so a stale
+value misreports which GPU is in use without changing any scheduling. Don't set it expecting it
+to turn scaling on or off.
+:::
+
+Edit `.env` to configure which GPU the scaled workers use and how many run:
 
 ```bash
-# Enable multi-GPU scaling
-GPU_SCALE_ENABLED=true
-
 # Which GPU to use for scaled workers
 GPU_SCALE_DEVICE_ID=2
 
 # Number of parallel workers
 GPU_SCALE_WORKERS=4
+
+# Keep the default single-GPU worker running alongside the scaled workers (1) or disable it (0)
+GPU_SCALE_DEFAULT_WORKER=1
 ```
 
 ### Step 2: Start with Scaling
@@ -107,3 +130,4 @@ GPU_SCALE_WORKERS=6  # instead of 4
 - [GPU Setup](../installation/gpu-setup.md)
 - [Hardware Requirements](../installation/hardware-requirements.md)
 - [Environment Variables](./environment-variables.md)
+- [Deployment Configuration](../operations/deployment-configuration.md) -- GPU split mode and all other deployment types

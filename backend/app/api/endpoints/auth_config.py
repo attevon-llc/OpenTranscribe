@@ -1,7 +1,7 @@
 """API endpoints for authentication configuration management.
 
 This module provides REST API endpoints for super admin users to manage
-authentication configuration settings including LDAP, Keycloak, PKI,
+authentication configuration settings including LDAP, OIDC, PKI,
 MFA, password policy, and session configurations.
 
 All endpoints require super_admin role and include audit logging for
@@ -14,11 +14,13 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import Request
 from fastapi import status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.auth import get_current_active_superuser
 from app.db.base import get_db
 from app.models.auth_config import AuthConfig
 from app.models.user import User
@@ -26,47 +28,51 @@ from app.schemas.auth_config import AuthConfigAuditResponse
 from app.schemas.auth_config import AuthConfigResponse
 from app.schemas.auth_config import AuthConfigStatusResponse
 from app.schemas.auth_config import AuthMethodTestResponse
+from app.services.auth_config_service import MAX_AUDIT_LOG_LIMIT
 from app.services.auth_config_service import AuthConfigService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def get_current_super_admin_user(
-    current_user: User = Depends(get_current_active_user),
-) -> User:
-    """Verify user has super_admin role.
+# The super_admin gate lives in api/endpoints/auth/dependencies.py, next to
+# get_current_user and get_current_admin_user. It used to be re-declared here and
+# in admin.py, each comparing against its own "super_admin" string literal rather
+# than roles.ROLE_SUPER_ADMIN — three copies of one authorization rule.
+get_current_super_admin_user = get_current_active_superuser
+
+
+#: The category allow-list, derived from the per-category schemas so it cannot
+#: drift. It used to be a literal list repeated in three route bodies, and the
+#: audit route — the one that leaks data when it is wrong — had no copy at all.
+VALID_CATEGORIES: tuple[str, ...] = tuple(AuthConfigService.CONFIG_CATEGORIES)
+
+
+def _require_valid_category(category: str) -> None:
+    """Reject a category outside the allow-list.
 
     Args:
-        current_user: Currently authenticated user
-
-    Returns:
-        User if they have super_admin role
+        category: Category from the request path.
 
     Raises:
-        HTTPException: If user does not have super_admin role
+        HTTPException: 400 when the category is unknown.
     """
-    if current_user.role != "super_admin":
-        logger.warning(
-            f"User {current_user.email} (role={current_user.role}) "
-            "attempted to access super admin endpoint"
-        )
+    if category not in VALID_CATEGORIES:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Super admin access required",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid category. Must be one of: {', '.join(VALID_CATEGORIES)}",
         )
-    return current_user
 
 
 @router.get("", response_model=dict[str, list[AuthConfigResponse]])
-async def get_all_configs(
+def get_all_configs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
 ) -> dict[str, list[AuthConfigResponse]]:
     """Get all authentication configurations grouped by category.
 
     Returns all authentication configuration settings organized by their
-    category (ldap, keycloak, pki, mfa, password_policy, session, banner).
+    category (ldap, oidc, pki, mfa, password_policy, session, banner).
 
     Sensitive values are masked in the response.
 
@@ -75,30 +81,24 @@ async def get_all_configs(
     """
     logger.info(f"Auth configs requested by super admin {current_user.email}")
 
-    categories = [
-        "local",
-        "ldap",
-        "keycloak",
-        "pki",
-        "password_policy",
-        "mfa",
-        "session",
-        "banner",
-        "lockout",
-    ]
     result: dict[str, list[AuthConfigResponse]] = {}
 
-    for category in categories:
+    for category in VALID_CATEGORIES:
         configs = db.query(AuthConfig).filter(AuthConfig.category == category).all()
         result[category] = []
 
         for config in configs:
-            # Mask sensitive values in response
+            # Never hand a secret — or a placeholder standing in for one — back to
+            # the client. Returning the literal "***REDACTED***" here is what let
+            # the admin panel bind it into the password field and submit it back,
+            # overwriting the real credential on the next Save. `is_set` carries
+            # the only thing the UI actually needs: whether a value exists.
             config_dict = {
                 "id": config.id,
                 "uuid": str(config.uuid),
                 "config_key": config.config_key,
-                "config_value": ("***REDACTED***" if config.is_sensitive else config.config_value),
+                "config_value": (None if config.is_sensitive else config.config_value),
+                "is_set": bool(config.config_value),
                 "is_sensitive": config.is_sensitive,
                 "category": config.category,
                 "data_type": config.data_type,
@@ -113,7 +113,7 @@ async def get_all_configs(
 
 
 @router.get("/status", response_model=AuthConfigStatusResponse)
-async def get_auth_status(
+def get_auth_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
 ) -> AuthConfigStatusResponse:
@@ -130,7 +130,7 @@ async def get_auth_status(
 
 
 @router.get("/{category}", response_model=dict[str, Any])
-async def get_config_by_category(
+def get_config_by_category(
     category: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
@@ -138,7 +138,7 @@ async def get_config_by_category(
     """Get configuration for a specific category.
 
     Args:
-        category: Configuration category (ldap, keycloak, pki, etc.)
+        category: Configuration category (ldap, oidc, pki, etc.)
 
     Returns:
         Dictionary of configuration key-value pairs for the category
@@ -146,23 +146,7 @@ async def get_config_by_category(
     Raises:
         HTTPException: If category is not valid
     """
-    valid_categories = [
-        "local",
-        "ldap",
-        "keycloak",
-        "pki",
-        "password_policy",
-        "mfa",
-        "session",
-        "banner",
-        "lockout",
-    ]
-
-    if category not in valid_categories:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid category. Must be one of: {', '.join(valid_categories)}",
-        )
+    _require_valid_category(category)
 
     logger.info(f"Auth config category '{category}' requested by super admin {current_user.email}")
 
@@ -171,7 +155,7 @@ async def get_config_by_category(
 
 
 @router.put("/{category}", response_model=dict[str, Any])
-async def update_config_category(
+def update_config_category(
     category: str,
     config: dict[str, Any],
     request: Request,
@@ -183,6 +167,11 @@ async def update_config_category(
     Updates multiple configuration values for the specified category.
     All changes are logged to the audit table.
 
+    The body stays an open dict because each category has its own key set; it is
+    validated against that category's schema in ``bulk_update_category`` (unknown
+    keys, unparseable values, out-of-range numbers and rejected combinations all
+    become a 400). Nothing is written unless the whole payload validates.
+
     Args:
         category: Configuration category to update
         config: Dictionary of key-value pairs to update
@@ -192,25 +181,10 @@ async def update_config_category(
         Success message and update count
 
     Raises:
-        HTTPException: If category is not valid or update fails
+        HTTPException: 400 if the category or payload is invalid, 500 if the
+            update itself fails
     """
-    valid_categories = [
-        "local",
-        "ldap",
-        "keycloak",
-        "pki",
-        "password_policy",
-        "mfa",
-        "session",
-        "banner",
-        "lockout",
-    ]
-
-    if category not in valid_categories:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid category. Must be one of: {', '.join(valid_categories)}",
-        )
+    _require_valid_category(category)
 
     logger.info(
         f"Auth config category '{category}' update by super admin {current_user.email}: "
@@ -233,6 +207,13 @@ async def update_config_category(
             "updated_keys": list(results.keys()),
         }
 
+    except ValueError as e:
+        # A rejected payload is the caller's fault and its detail is safe to
+        # return: it names the offending keys so the admin can fix the request.
+        # Reaching the generic handler below would have turned it into a 500.
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+
     except Exception as e:
         logger.error("Failed to update %s config: %s", category, e, exc_info=True)
         db.rollback()
@@ -248,13 +229,13 @@ async def test_auth_connection(
     config: dict[str, Any],
     current_user: User = Depends(get_current_super_admin_user),
 ) -> AuthMethodTestResponse:
-    """Test connection for LDAP or Keycloak.
+    """Test connection for LDAP or OIDC.
 
     Tests the provided configuration without saving it. Useful for
     validating settings before applying them.
 
     Args:
-        category: Configuration category (ldap or keycloak)
+        category: Configuration category (ldap or oidc)
         config: Configuration values to test
 
     Returns:
@@ -266,9 +247,11 @@ async def test_auth_connection(
     logger.info(f"Auth connection test for '{category}' by super admin {current_user.email}")
 
     if category == "ldap":
-        return await _test_ldap_connection(config)
-    elif category == "keycloak":
-        return await _test_keycloak_connection(config)
+        # ldap3 is blocking; keep it off the event loop (issue #320).
+        ldap_result: AuthMethodTestResponse = await run_in_threadpool(_test_ldap_connection, config)
+        return ldap_result
+    elif category == "oidc":
+        return await _test_oidc_connection(config)
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -277,10 +260,10 @@ async def test_auth_connection(
 
 
 @router.get("/audit/{category}", response_model=list[AuthConfigAuditResponse])
-async def get_audit_log(
+def get_audit_log(
     category: str,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=MAX_AUDIT_LOG_LIMIT),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
 ) -> list[AuthConfigAuditResponse]:
@@ -296,7 +279,15 @@ async def get_audit_log(
 
     Returns:
         List of audit log entries
+
+    Raises:
+        HTTPException: 400 if the category is not valid. This route had no
+            category check at all, and ``get_audit_log`` skipped its filter for an
+            unrecognised category — so ``/audit/anything`` returned the ENTIRE
+            audit log, every category, unfiltered.
     """
+    _require_valid_category(category)
+
     logger.info(
         f"Auth config audit log for '{category}' requested by super admin {current_user.email}"
     )
@@ -308,6 +299,18 @@ async def get_audit_log(
         offset=offset,
     )
 
+    # Resolve the actors in one query rather than per row. `changed_by` is a NOT
+    # NULL FK, but the referenced account may have been deleted since, so a miss
+    # is rendered as unknown rather than dropping the entry — losing the record
+    # of a change because its author left is the opposite of an audit trail.
+    actor_ids = {audit.changed_by for audit in audits if audit.changed_by is not None}
+    actor_emails: dict[int, str] = {}
+    if actor_ids:
+        actor_emails = {
+            row.id: row.email
+            for row in db.query(User.id, User.email).filter(User.id.in_(actor_ids)).all()
+        }
+
     return [
         AuthConfigAuditResponse(
             id=audit.id,  # type: ignore[arg-type]
@@ -316,6 +319,7 @@ async def get_audit_log(
             old_value=audit.old_value,  # type: ignore[arg-type]
             new_value=audit.new_value,  # type: ignore[arg-type]
             change_type=audit.change_type,  # type: ignore[arg-type]
+            changed_by_email=actor_emails.get(audit.changed_by),  # type: ignore[arg-type]
             ip_address=audit.ip_address,  # type: ignore[arg-type]
             created_at=audit.created_at,  # type: ignore[arg-type]
         )
@@ -324,7 +328,7 @@ async def get_audit_log(
 
 
 @router.post("/migrate")
-async def migrate_from_env(
+def migrate_from_env(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
@@ -358,8 +362,11 @@ async def migrate_from_env(
         ) from e
 
 
-async def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
+def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
     """Test LDAP connection with provided configuration.
+
+    Synchronous: ``ldap3`` binds are blocking with a 10 s connect timeout, so the
+    caller must run this off the event loop (issue #320).
 
     Args:
         config: LDAP configuration to test
@@ -448,18 +455,49 @@ async def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestRespons
             message="LDAP library (ldap3) is not installed",
         )
     except Exception as e:
-        logger.error(f"LDAP connection test error: {e}")
+        logger.exception(f"LDAP connection test error: {e}")
         return AuthMethodTestResponse(
             success=False,
             message="LDAP connection failed due to an unexpected error. Check server logs for details.",
         )
 
 
-async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
-    """Test Keycloak connection with provided configuration.
+def _roles_claim_advertised(configured_roles_claim: str, claims_supported: Any) -> str:
+    """Cross-reference the configured roles claim against the discovery document.
+
+    Best-effort only, and says so via ``"unknown"``: ``claims_supported`` is an
+    OPTIONAL discovery field (OIDC Discovery §3), several real providers omit it
+    entirely, and only the top-level segment of a dotted path (``realm_access`` of
+    ``realm_access.roles``) is a claim NAME — the rest is a JSON path into it,
+    which a claims list was never going to enumerate.
 
     Args:
-        config: Keycloak configuration to test
+        configured_roles_claim: The admin's configured dotted claim path.
+        claims_supported: The discovery document's ``claims_supported`` value, if
+            the provider sent one.
+
+    Returns:
+        ``"yes"``, ``"no"``, or ``"unknown"``.
+    """
+    if not isinstance(claims_supported, list) or not claims_supported:
+        return "unknown"
+    if not configured_roles_claim:
+        return "unknown"
+    top_level = configured_roles_claim.split(".", 1)[0]
+    return "yes" if top_level in claims_supported else "no"
+
+
+async def _test_oidc_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
+    """Test the OIDC provider connection with the supplied configuration.
+
+    Resolves the metadata URL exactly the way the login path does — the explicit
+    discovery URL when one is configured, the realm form otherwise. It previously
+    always built the realm form, so on a provider that does not serve that URL shape
+    this button reported a failure for a configuration that was in fact correct, and
+    on a realm provider it tested a URL the login path might not use.
+
+    Args:
+        config: OIDC configuration to test
 
     Returns:
         Test result with success status, message, and optional details
@@ -467,21 +505,42 @@ async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestRes
     try:
         import httpx
 
-        server_url = config.get("keycloak_server_url", "")
-        realm = config.get("keycloak_realm", "opentranscribe")
+        from app.utils.url_validation import assert_safe_outbound_url
 
-        if not server_url:
+        server_url = config.get("oidc_server_url", "")
+        realm = config.get("oidc_realm", "opentranscribe")
+        discovery_url = (config.get("oidc_discovery_url") or "").strip()
+
+        if not discovery_url and not server_url:
             return AuthMethodTestResponse(
                 success=False,
-                message="Keycloak server URL is required",
+                message="Provide either a discovery URL or a server URL",
             )
 
-        # Build the well-known endpoint URL
-        # Remove trailing slash if present
-        server_url = server_url.rstrip("/")
-        well_known_url = f"{server_url}/realms/{realm}/.well-known/openid-configuration"
+        if discovery_url:
+            well_known_url = discovery_url
+        else:
+            # Remove trailing slash if present
+            server_url = server_url.rstrip("/")
+            well_known_url = f"{server_url}/realms/{realm}/.well-known/openid-configuration"
 
-        logger.info(f"Testing Keycloak connection to {well_known_url}")
+        # This endpoint fetches a super_admin-supplied URL, which is a classic
+        # SSRF primitive — it had no guard at all. Private targets stay allowed
+        # because an IdP on the LAN or the compose network is a legitimate
+        # deployment; what this blocks is cloud instance metadata and friends.
+        try:
+            assert_safe_outbound_url(
+                well_known_url,
+                purpose="OIDC discovery test-connection",
+                allow_private=True,
+            )
+        except HTTPException:
+            return AuthMethodTestResponse(
+                success=False,
+                message="That URL is not an allowed outbound target.",
+            )
+
+        logger.info(f"Testing OIDC connection to {well_known_url}")
 
         async with httpx.AsyncClient(timeout=10.0, verify=True) as client:
             response = await client.get(well_known_url)
@@ -490,7 +549,7 @@ async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestRes
                 oidc_config = response.json()
 
                 # Extract relevant endpoints for display
-                details = {
+                details: dict[str, Any] = {
                     "issuer": oidc_config.get("issuer"),
                     "authorization_endpoint": oidc_config.get("authorization_endpoint"),
                     "token_endpoint": oidc_config.get("token_endpoint"),
@@ -501,37 +560,51 @@ async def _test_keycloak_connection(config: dict[str, Any]) -> AuthMethodTestRes
                     "supported_scopes": oidc_config.get("scopes_supported", [])[:10],
                 }
 
-                logger.info(f"Keycloak connection test successful to {server_url}")
+                # P1.2: this is the only signal available before a real login has
+                # happened. `claims_supported` is OPTIONAL per Discovery §3 — a
+                # provider that omits it (Authentik does) leaves the check
+                # "unknown", not "not advertised", since silence isn't a claim.
+                claims_supported = oidc_config.get("claims_supported")
+                details["claims_supported"] = (
+                    claims_supported[:30] if isinstance(claims_supported, list) else None
+                )
+                configured_roles_claim = (config.get("oidc_roles_claim") or "").strip()
+                details["configured_roles_claim"] = configured_roles_claim or None
+                details["roles_claim_advertised"] = _roles_claim_advertised(
+                    configured_roles_claim, claims_supported
+                )
+
+                logger.info(f"OIDC connection test successful to {server_url}")
 
                 return AuthMethodTestResponse(
                     success=True,
-                    message="Keycloak connection successful",
+                    message="OIDC connection successful",
                     details=details,
                 )
             else:
                 logger.warning(
-                    f"Keycloak connection test failed with status {response.status_code}: "
+                    f"OIDC connection test failed with status {response.status_code}: "
                     f"{response.text[:200]}"
                 )
                 return AuthMethodTestResponse(
                     success=False,
-                    message=f"Keycloak returned HTTP status {response.status_code}. Check server logs for details.",
+                    message=f"The identity provider returned HTTP status {response.status_code}. Check server logs for details.",
                 )
 
     except httpx.ConnectError as e:
-        logger.warning(f"Keycloak connection test failed: {e}")
+        logger.warning(f"OIDC connection test failed: {e}")
         return AuthMethodTestResponse(
             success=False,
-            message="Could not connect to Keycloak server. Please verify the server URL and network connectivity.",
+            message="Could not connect to the identity provider. Please verify the server URL and network connectivity.",
         )
     except httpx.TimeoutException:
         return AuthMethodTestResponse(
             success=False,
-            message="Connection to Keycloak server timed out",
+            message="Connection to the identity provider timed out",
         )
     except Exception as e:
-        logger.error(f"Keycloak connection test error: {e}")
+        logger.exception(f"OIDC connection test error: {e}")
         return AuthMethodTestResponse(
             success=False,
-            message="Keycloak connection failed due to an unexpected error. Check server logs for details.",
+            message="OIDC connection failed due to an unexpected error. Check server logs for details.",
         )

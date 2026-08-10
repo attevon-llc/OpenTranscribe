@@ -58,6 +58,7 @@ from app.models.media import Tag
 from app.services.tag_service import accessible_file_ids_subquery
 from app.services.tag_service import is_awaiting_review
 from app.services.tag_service import normalize_tag_name
+from app.services.tag_service import owned_or_system
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,9 @@ class TagListEntry:
         awaiting_review: True when the tag is still the auto-labeler's to accept
             or reject. Shipped as a flag so the SPA never re-derives it from the
             origin string.
+        is_shared: True for a system tag — the shared vocabulary. Derived from
+            ownership here rather than serialized from ``user_id``, which never
+            reaches the wire.
     """
 
     uuid: uuid_pkg.UUID
@@ -81,6 +85,7 @@ class TagListEntry:
     source: str | None
     usage_count: int
     awaiting_review: bool
+    is_shared: bool = False
 
 
 @dataclass(frozen=True)
@@ -92,6 +97,7 @@ class TagClusterMember:
     source: str | None
     usage_count: int
     suggested_survivor: bool
+    is_shared: bool = False
 
 
 @dataclass(frozen=True)
@@ -107,6 +113,7 @@ class TagClusterSuggestion:
     source: str | None
     usage_count: int
     similarity: float
+    is_shared: bool = False
 
 
 @dataclass(frozen=True)
@@ -126,8 +133,8 @@ class TagCollisionCluster:
     suggestions: list[TagClusterSuggestion] = field(default_factory=list)
 
 
-def refresh_stored_normalization(db: Session) -> int:
-    """Correct every tag whose stored ``normalized_name`` is missing or stale.
+def refresh_stored_normalization(db: Session, *, user_id: int) -> int:
+    """Correct the caller's tags whose stored ``normalized_name`` is missing or stale.
 
     Idempotent by construction: it writes :func:`normalize_tag_name` of the
     current name and only when the column disagrees, so a second run changes
@@ -135,14 +142,19 @@ def refresh_stored_normalization(db: Session) -> int:
     real, independently useful write, and a read request's session is closed
     without a commit, which would silently discard it.
 
+    Scoped to ``owned_or_system`` like every other read here. The repair
+    discloses nothing on its own, but running it deployment-wide from a per-user
+    GET would have one user's page take row locks on every other account's tags.
+
     Args:
         db: Database session. Committed when anything changed.
+        user_id: The acting user, whose vocabulary is repaired.
 
     Returns:
         The number of rows corrected.
     """
     changed = 0
-    for tag in db.query(Tag).all():
+    for tag in db.query(Tag).filter(owned_or_system(user_id)).all():
         expected = normalize_tag_name(tag.name)
         if tag.normalized_name != expected:
             tag.normalized_name = expected
@@ -182,7 +194,7 @@ def accessible_usage_counts(
     return {int(tag_id): int(count) for tag_id, count in rows if tag_id is not None}
 
 
-def _clustered_tags(db: Session) -> tuple[dict[str, list[Tag]], list[Tag]]:
+def _clustered_tags(db: Session, *, user_id: int) -> tuple[dict[str, list[Tag]], list[Tag]]:
     """Group tags by stored normalized name, keeping only the collisions.
 
     Repairs the stored normalization first — grouping on a column nothing keeps
@@ -195,9 +207,9 @@ def _clustered_tags(db: Session) -> tuple[dict[str, list[Tag]], list[Tag]]:
         exactly the same order, and re-querying it was a third full-table scan
         per request.
     """
-    refresh_stored_normalization(db)
+    refresh_stored_normalization(db, user_id=user_id)
 
-    all_tags = db.query(Tag).order_by(Tag.id).all()
+    all_tags = db.query(Tag).filter(owned_or_system(user_id)).order_by(Tag.id).all()
     grouped: dict[str, list[Tag]] = {}
     for tag in all_tags:
         normalized = tag.normalized_name or ""
@@ -253,6 +265,7 @@ def _suggestions_for(
             source=tag.source,
             usage_count=usage.get(tag.id, 0),
             similarity=round(ratio, 4),
+            is_shared=tag.user_id is None,
         )
         for ratio, tag in scored
     ]
@@ -282,7 +295,7 @@ def find_tag_collisions(
         Clusters ordered by normalized name, each with its members ordered by
         usage and its highest-usage member preselected as the survivor.
     """
-    clusters, all_tags = _clustered_tags(db)
+    clusters, all_tags = _clustered_tags(db, user_id=user_id)
     if not clusters:
         return []
 
@@ -302,6 +315,7 @@ def find_tag_collisions(
                         source=tag.source,
                         usage_count=usage.get(tag.id, 0),
                         suggested_survivor=tag.id == survivor.id,
+                        is_shared=tag.user_id is None,
                     )
                     for tag in members
                 ],
@@ -318,13 +332,13 @@ def find_tag_collisions(
     return built
 
 
-def colliding_tag_ids(db: Session) -> set[int]:
+def colliding_tag_ids(db: Session, *, user_id: int) -> set[int]:
     """Return the ids of every tag that shares its normalized name with another.
 
     The same pass :func:`find_tag_collisions` uses, so the ``colliding`` list
     filter and the cluster view can never disagree about who is a duplicate.
     """
-    clusters, _all_tags = _clustered_tags(db)
+    clusters, _all_tags = _clustered_tags(db, user_id=user_id)
     return {tag.id for tags in clusters.values() for tag in tags}
 
 
@@ -357,10 +371,10 @@ def list_tags_filtered(
         list has always shipped in.
     """
     usage = accessible_usage_counts(db, user_id=user_id, organization_id=organization_id)
-    collision_ids = colliding_tag_ids(db) if colliding else set()
+    collision_ids = colliding_tag_ids(db, user_id=user_id) if colliding else set()
 
     entries: list[TagListEntry] = []
-    for tag in db.query(Tag).order_by(Tag.name).all():
+    for tag in db.query(Tag).filter(owned_or_system(user_id)).order_by(Tag.name).all():
         count = usage.get(tag.id, 0)
         if awaiting_review and not is_awaiting_review(tag):
             continue
@@ -375,6 +389,7 @@ def list_tags_filtered(
                 source=tag.source,
                 usage_count=count,
                 awaiting_review=is_awaiting_review(tag),
+                is_shared=tag.user_id is None,
             )
         )
 
@@ -399,4 +414,5 @@ def list_unused_tag_rows(
         The unused rows, ordered by name.
     """
     usage = accessible_usage_counts(db, user_id=user_id, organization_id=organization_id)
-    return [tag for tag in db.query(Tag).order_by(Tag.name).all() if not usage.get(tag.id, 0)]
+    rows = db.query(Tag).filter(owned_or_system(user_id)).order_by(Tag.name).all()
+    return [tag for tag in rows if not usage.get(tag.id, 0)]

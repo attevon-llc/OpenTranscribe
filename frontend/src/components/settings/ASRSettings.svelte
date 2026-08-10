@@ -99,7 +99,7 @@
       toastStore.success($t('settings.asrProvider.setActive') + ' — ' + (configurations.find(c => c.uuid === uuid)?.name || ''));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to activate ASR configuration'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.activateFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -115,7 +115,7 @@
       toastStore.success($t('settings.asrProvider.switchedToLocal'));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to switch to local'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.switchToLocalFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -134,7 +134,7 @@
         toastStore.error(`${config.name}: ${result.message}`, 8000);
       }
     } catch (err: unknown) {
-      toastStore.error(`${config.name}: ${getErrorMessage(err, 'Test failed')}`, 8000);
+      toastStore.error(`${config.name}: ${getErrorMessage(err, $t('settings.asrProvider.testFailed'))}`, 8000);
     } finally {
       testing = false;
       testingConfigId = null;
@@ -169,7 +169,7 @@
       toastStore.success(`"${deletedName}" deleted`);
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to delete configuration'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.deleteFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -186,7 +186,7 @@
       toastStore.success($t('settings.asrProvider.deletedAll'));
       if (onSettingsChange) onSettingsChange();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to delete configurations'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.deleteAllFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -235,7 +235,7 @@
         };
         configurations = configurations;
       }
-      toastStore.error(getErrorMessage(err, 'Failed to toggle sharing'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.shareFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -261,9 +261,9 @@
       await ASRSettingsApi.setLocalModel(selectedLocalModel);
       activeLocalModel = selectedLocalModel;
       activeLocalModelSource = 'database';
-      toastStore.success(`Local model set to "${selectedLocalModel}". Restart GPU worker to apply.`);
+      toastStore.success($t('settings.asrProvider.localModelSet', { model: selectedLocalModel }));
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to set local model'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.setLocalModelFailed')), 5000);
     } finally {
       modelChangeInProgress = false;
     }
@@ -275,7 +275,7 @@
       const result = await ASRSettingsApi.restartGpuWorker();
       toastStore.success(result.message, 8000);
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to restart GPU worker'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.restartWorkerFailed')), 5000);
     } finally {
       restartInProgress = false;
     }
@@ -309,10 +309,10 @@
               <line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/>
               <line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
             </svg>
-            Local GPU Model
+            {$t('settings.asrProvider.localGpuModel')}
           </h4>
           {#if isAdmin}
-            <span class="admin-badge-tag">Admin</span>
+            <span class="admin-badge-tag">{$t('settings.asrProvider.adminBadge')}</span>
           {/if}
         </div>
 
@@ -327,10 +327,10 @@
           <div class="model-capabilities">
             {#if localModelInfo}
               <span class="cap-badge" class:cap-yes={localModelInfo.supports_diarization} class:cap-no={!localModelInfo.supports_diarization}>
-                {localModelInfo.supports_diarization ? '✓' : '✗'} Diarization
+                {localModelInfo.supports_diarization ? '✓' : '✗'} {$t('settings.asrProvider.diarizationQuality')}
               </span>
               <span class="cap-badge" class:cap-yes={localModelInfo.supports_translation} class:cap-no={!localModelInfo.supports_translation}>
-                {localModelInfo.supports_translation ? '✓' : '✗'} Translation
+                {localModelInfo.supports_translation ? '✓' : '✗'} {$t('settings.asrProvider.capTranslation')}
               </span>
               <span class="cap-badge cap-neutral">
                 {localModelInfo.language_support === 'english_optimized' ? 'English optimized' : 'Multilingual'}
@@ -342,11 +342,11 @@
         {#if isAdmin}
           <!-- Admin controls -->
           <p class="admin-description">
-            The local Whisper model is loaded into GPU VRAM at worker startup and shared by all users. Changing the model requires a GPU worker restart.
+            {$t('settings.asrProvider.localModelDescription')}
           </p>
           <div class="model-control-row">
             <div class="model-select-group">
-              <label for="local-model-select">Active Model</label>
+              <label for="local-model-select">{$t('settings.asrProvider.activeModel')}</label>
               <div class="model-select-with-source">
                 <select id="local-model-select" bind:value={selectedLocalModel} disabled={modelChangeInProgress || restartInProgress} class="form-select">
                   {#if availableLocalModels.length > 0}
@@ -354,40 +354,40 @@
                       <option value={model.short_name}>{model.short_name}</option>
                     {/each}
                     {#if !availableLocalModels.find(m => m.short_name === activeLocalModel)}
-                      <option value={activeLocalModel}>{activeLocalModel} (not downloaded)</option>
+                      <option value={activeLocalModel}>{activeLocalModel} {$t('settings.asrProvider.notDownloaded')}</option>
                     {/if}
                   {:else}
                     <option value={activeLocalModel}>{activeLocalModel}</option>
                   {/if}
                 </select>
-                <span class="model-source">Source: {activeLocalModelSource === 'database' ? 'Database' : 'Environment variable'}</span>
+                <span class="model-source">{$t('settings.asrProvider.modelSource', { source: activeLocalModelSource === 'database' ? $t('settings.asrProvider.sourceDatabase') : $t('settings.asrProvider.sourceEnvironment') })}</span>
               </div>
             </div>
             <div class="model-actions">
               {#if localModelChanged}
                 <button class="btn btn-primary" on:click={handleSetLocalModel} disabled={modelChangeInProgress}>
                   {#if modelChangeInProgress}
-                    <Spinner size="small" /> Saving...
+                    <Spinner size="small" /> {$t('common.saving')}
                   {:else}
-                    Save Model
+                    {$t('settings.asrProvider.saveModel')}
                   {/if}
                 </button>
               {/if}
               <button class="btn btn-warning" on:click={handleRestartGpuWorker} disabled={restartInProgress || modelChangeInProgress}>
                 {#if restartInProgress}
-                  <Spinner size="small" /> Restarting...
+                  <Spinner size="small" /> {$t('settings.asrProvider.restarting')}
                 {:else}
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
                     <path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
                   </svg>
-                  Restart GPU Worker
+                  {$t('settings.asrProvider.restartGpuWorker')}
                 {/if}
               </button>
             </div>
           </div>
           {#if availableLocalModels.length > 0}
-            <div class="downloaded-count">{availableLocalModels.length} model{availableLocalModels.length !== 1 ? 's' : ''} downloaded locally</div>
+            <div class="downloaded-count">{$t('settings.asrProvider.downloadedLocally', { count: availableLocalModels.length })}</div>
           {/if}
         {/if}
       </div>

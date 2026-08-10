@@ -20,6 +20,13 @@ from app.core import constants as C  # noqa: N812
 from app.services import backup_service as bs
 from app.services import system_settings_service as sss
 
+# This file, test_backup_metrics.py, and test_backup_alerts.py all upsert the same
+# backup.* SystemSettings keys (bs.KEY_*) with no coordination between them — under
+# `-n auto` two workers inserting overlapping keys in different orders can deadlock on
+# the system_settings_key_key unique index (issue #389). Same pattern/precedent as
+# test_media_mirror_service.py's "media_mirror_system_settings" group.
+pytestmark = pytest.mark.xdist_group("backup_system_settings")
+
 
 # =============================================================================
 # Settings round-trip (DB-backed)

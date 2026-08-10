@@ -58,13 +58,16 @@ def apply_tag_filter(query: Query, tag: list[str] | None) -> Query:
         Filtered query
     """
     if tag and len(tag) > 0:
-        # Subquery: find media_file IDs that have every requested tag
+        # Subquery: find media_file IDs that have every requested tag.
+        # COUNT over Tag.name, not Tag.id: since v374 the same name can exist as
+        # several rows (one per owner), and a file carrying two of them would
+        # otherwise satisfy a two-tag filter with a single distinct name.
         matching_ids = (
             select(FileTag.media_file_id)
             .join(Tag, Tag.id == FileTag.tag_id)
             .where(Tag.name.in_(tag))
             .group_by(FileTag.media_file_id)
-            .having(func.count(func.distinct(Tag.id)) == len(tag))
+            .having(func.count(func.distinct(Tag.name)) == len(tag))
         )
         query = query.filter(MediaFile.id.in_(matching_ids))
     return query
@@ -301,7 +304,7 @@ def apply_transcript_search_filter(
             query = query.filter(MediaFile.uuid.in_(file_uuids))
 
     except Exception as e:
-        logger.error(f"OpenSearch transcript search failed: {e}")
+        logger.exception(f"OpenSearch transcript search failed: {e}")
         # Degrade gracefully — skip filter rather than error the whole request
 
     return query

@@ -69,17 +69,29 @@ show_help() {
   echo "  --no-nas             - Suppress the auto-loaded NAS overlay (use Docker named volumes)"
   echo "  --fresh [name]       - Isolated dev deployment: own project + named volumes, NAS"
   echo "                         overlay NEVER loaded, real data untouched (dev mode only)"
-  echo "  --port-offset N      - With --fresh: offset every published port by N (run side-by-side)"
+  echo "  --port-offset N      - With --fresh: offset every published port by N (run side-by-side;"
+  echo "                         remembered per deployment — pass --port-offset 0 to reset)."
+  echo "                         Covers the --with-ldap-test/--with-smb-test/--with-monitoring/"
+  echo "                         --with-keycloak-test/--with-authentik-test overlays too."
   echo "  --seed-benchmark     - With --fresh: upload small benchmark media once healthy"
   echo "  --dry-run            - Print the compose files + command that WOULD run; start nothing"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
   echo "  --cpu                - CPU-only mode (local transcription, no GPU overlay)"
   echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
-  echo "  --with-ldap-test     - Start LDAP test container (dev or prod)"
-  echo "  --with-keycloak-test - Start Keycloak test container (dev or prod)"
+  echo "  --with-ldap-test     - Start LDAP test container (dev or prod; localhost:3890, UI :17170)"
+  echo "  --with-mock-llm      - Start mock LLM provider (localhost:5199) so chat/AI features"
+  echo "                         work without a GPU or API key. Models: mock-gpt, mock-echo,"
+  echo "                         mock-empty, mock-error, mock-slow"
+  echo "  --with-llm-test      - Start a real GPU-backed LLM (vLLM, localhost:5195) for chat"
+  echo "                         testing against actual model output, not canned tokens."
+  echo "                         Default model: Gemma 4 E4B (AWQ), GPU 2. See"
+  echo "                         docker-compose.llm-test.yml for the Ollama alternative."
+  echo "  --with-keycloak-test - Start Keycloak test container (dev or prod; localhost:8180)"
+  echo "  --with-authentik-test - Start Authentik test container (dev or prod; localhost:9022)"
   echo "  --with-watch         - Mount the host watch folder (WATCH_HOST_PATH, default ./watch) for auto-import"
   echo "  --with-smb-test      - Start a Samba test share for watch-source testing (localhost:4450)"
   echo "  --with-monitoring    - Start Prometheus (:5186) + Grafana (:5185) observability stack"
+  echo "                         (all four --with-* test overlays are isolated + port-offset by --fresh)"
   echo "  --with-backup        - Mount BACKUP_HOST_PATH (default ./backups) for in-app scheduled backups"
   echo ""
   echo "Reset & Database Commands:"
@@ -96,7 +108,7 @@ show_help() {
   echo "                             (pass --nas on NAS/NVMe deployments; auto-detected"
   echo "                             from MINIO_NAS_PATH/POSTGRES_DATA_PATH/OPENSEARCH_DATA_PATH"
   echo "                             env vars). --no-deps protects postgres/minio/opensearch."
-  echo "  rebuild-frontend         - Rebuild frontend with code changes (--no-deps)"
+  echo "  rebuild-frontend         - Rebuild frontend + docs with code changes (--no-deps)"
   echo "  shell [service]     - Open a shell in a container"
   echo "  build               - Rebuild all containers without starting"
   echo ""
@@ -131,7 +143,10 @@ show_help() {
   echo "  ./opentr.sh start dev --lite                 # Cloud-only ASR mode (no GPU)"
   echo "  ./opentr.sh start dev --cpu                  # Local CPU-only (skip GPU overlay)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
+  echo "  ./opentr.sh start dev --with-mock-llm        # Dev with a fake LLM for chat/AI testing"
+  echo "  ./opentr.sh start dev --with-llm-test        # Dev with a real GPU-backed LLM (vLLM) for chat testing"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
+  echo "  ./opentr.sh start dev --with-authentik-test  # Dev with Authentik test container"
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
   echo "  ./opentr.sh start prod --build               # Production with local build (test before push)"
   echo "  ./opentr.sh start prod --build --with-pki    # Production with PKI (requires nginx)"
@@ -159,7 +174,11 @@ build_prod_images() {
   }
 
   echo "🧱 Building docs image (davidamacey/opentranscribe-docs:latest)..."
-  docker build --build-arg DOCS_BASE_URL=/docs/ -t davidamacey/opentranscribe-docs:latest docs-site || {
+  # The docs build context is docs-site/, so pass the repo-root VERSION in explicitly —
+  # docusaurus.config.ts cannot read ../VERSION from inside the container.
+  docker build --build-arg DOCS_BASE_URL=/docs/ \
+    --build-arg "OT_VERSION=${APP_VERSION}" \
+    -t davidamacey/opentranscribe-docs:latest docs-site || {
     echo "❌ Docs image build failed"
     exit 1
   }
@@ -329,13 +348,30 @@ fresh_project_name() {
   echo "otfresh-$(fresh_sanitize_name "$1")"
 }
 
+# Aux test overlays that hard-code a container_name. Their services are added to
+# the generated overlay ONLY when the matching --with-* flag is passed — an
+# overlay entry for a service no compose file defines makes `up` fail (issue
+# #347). docker-compose.keycloak.yml is absent on purpose: it declares no
+# container_name, so the project name already namespaces it.
+FRESH_LDAP_SERVICES=(lldap)
+# Mock LLM provider (--with-mock-llm). Isolated like every other aux overlay so
+# a fresh stack cannot collide with the main one on port 5199.
+FRESH_MOCK_LLM_SERVICES=(mock-llm)
+FRESH_SMB_SERVICES=(smb-test)
+FRESH_MONITORING_SERVICES=(prometheus grafana)
+
 # Generate (idempotently) the container_name override overlay for a fresh
 # deployment and echo its path. Re-pins every hard-coded container_name to
 # otfresh-<name>-* so there is zero collision with the real opentranscribe-*
 # containers. Compose cannot UNSET container_name via an overlay, so we set an
 # explicit per-service value instead.
+#
+# $1 = deployment name; remaining args = extra aux-overlay service names to
+# re-pin (see FRESH_*_SERVICES above).
 fresh_generate_overlay() {
   local name="$1"
+  shift
+  local aux_services=("$@")
   local proj
   proj="$(fresh_project_name "$name")"
   mkdir -p "$FRESH_OVERLAY_DIR"
@@ -347,48 +383,157 @@ fresh_generate_overlay() {
     echo "# Safe to delete; regenerated on demand. Do NOT edit by hand."
     echo "services:"
     local svc
-    for svc in "${FRESH_NAMED_SERVICES[@]}"; do
+    for svc in "${FRESH_NAMED_SERVICES[@]}" ${aux_services[@]+"${aux_services[@]}"}; do
       echo "  ${svc}:"
       echo "    container_name: ${proj}-${svc}"
     done
   } > "$file"
+  # Pre-#343 deployments also generated a <name>-ports.yml overlay that added a
+  # SECOND `ports:` list; compose appends those, so the base port stayed bound.
+  # Ports are env-var driven now — drop the stale file so nothing picks it up.
+  rm -f "${FRESH_OVERLAY_DIR}/${name}-ports.yml"
   echo "$file"
 }
 
-# Apply a published-port offset to COMPOSE_FILES via a generated overlay so a
-# fresh stack can run side-by-side with the main stack. Echoes the overlay path.
-# offset is added to every default host port; container ports are unchanged.
-fresh_generate_port_overlay() {
+# Every host port a fresh dev stack publishes, as "VAR=default" pairs. VAR is the
+# variable the base compose files already interpolate into their single `ports:`
+# entry; default is the value baked into that entry.
+#
+# --port-offset works by EXPORTING these variables (value + offset) so compose
+# substitutes the moved port into the existing mapping. It must never emit a
+# second `ports:` list in an overlay: compose APPENDS port lists when merging
+# files, so an overlay-based offset republished the offset port *in addition to*
+# the base one and collided with the main stack anyway (issue #343). The env-var
+# route also preserves the `127.0.0.1:` loopback binding the base file puts on
+# every infra port — an overlay list replaced that with a 0.0.0.0 bind.
+#
+# Source of truth: `ports:` entries in docker-compose.yml + docker-compose.override.yml.
+FRESH_PORT_VARS=(
+  "FRONTEND_PORT=5173"          # frontend (dev override) → :5173
+  "BACKEND_PORT=5174"           # backend                 → :8080
+  "FLOWER_PORT=5175"            # flower                  → :5555
+  "POSTGRES_PORT=5176"          # postgres                → :5432
+  "REDIS_PORT=5177"             # redis                   → :6379
+  "MINIO_PORT=5178"             # minio API               → :9000
+  "MINIO_CONSOLE_PORT=5179"     # minio console           → :9001
+  "OPENSEARCH_PORT=5180"        # opensearch API          → :9200
+  "OPENSEARCH_ADMIN_PORT=5181"  # opensearch admin        → :9600
+  "DOCS_PORT=5183"              # docs (dev override)     → :8080
+)
+
+# Aux-overlay host ports, appended to the list above only when the matching
+# --with-* flag is passed. Same contract: the overlay interpolates the variable
+# into its single `ports:` entry, so exporting it moves the port (issue #347).
+#
+# LDAP_TEST_PORT / LDAP_TEST_UI_PORT are deliberately NOT named LDAP_PORT:
+# LDAP_PORT is the backend's LDAP *client* port (`.env` ships LDAP_PORT=636), and
+# offsetting that would silently repoint the app's LDAP config.
+FRESH_KEYCLOAK_PORT_VARS=(
+  "KEYCLOAK_PORT=8180"          # keycloak → :8080
+  "STEP_CA_PORT=9000"           # step-ca  → :9000
+)
+FRESH_AUTHENTIK_PORT_VARS=(
+  "AUTHENTIK_PORT=9022"         # authentik-server → :9000
+)
+FRESH_LDAP_PORT_VARS=(
+  "LDAP_TEST_PORT=3890"         # lldap LDAP   → :3890
+  "LDAP_TEST_UI_PORT=17170"     # lldap web UI → :17170
+)
+FRESH_MOCK_LLM_PORT_VARS=(
+  "MOCK_LLM_PORT=5199"          # mock LLM provider → :5199
+)
+FRESH_SMB_PORT_VARS=(
+  "SMB_TEST_PORT=4450"          # samba → :445
+)
+FRESH_MONITORING_PORT_VARS=(
+  "GRAFANA_PORT=5185"           # grafana    → :3000
+  "PROMETHEUS_PORT=5186"        # prometheus → :9090
+)
+
+# Resolve and export the host ports a fresh stack publishes, offset by $1.
+# Remaining args are "VAR=default" pairs. A value already in the environment
+# (i.e. set in .env) is the base the offset applies to, so an operator's custom
+# port layout is preserved. Sets FRESH_RESOLVED_PORTS ("VAR:port" entries) for
+# the pre-flight bind check and the startup banner.
+FRESH_RESOLVED_PORTS=()
+fresh_apply_port_offset() {
+  local offset="$1"
+  shift
+  FRESH_RESOLVED_PORTS=()
+  local entry var base current
+  for entry in "$@"; do
+    var="${entry%%=*}"
+    base="${entry#*=}"
+    current="${!var:-}"
+    [[ "$current" =~ ^[0-9]+$ ]] || current="$base"
+    export "${var}=$((current + offset))"
+    FRESH_RESOLVED_PORTS+=("${var}:$((current + offset))")
+  done
+}
+
+# Human-readable one-liner of the resolved ports, e.g. "frontend=5273 backend=5274".
+fresh_port_summary() {
+  local entry out=""
+  for entry in "${FRESH_RESOLVED_PORTS[@]}"; do
+    out="${out} $(echo "${entry%%:*}" | sed 's/_PORT$//' | tr '[:upper:]' '[:lower:]')=${entry#*:}"
+  done
+  echo "$out"
+}
+
+# File recording a deployment's port offset so `stop`, `status`, `fresh-list` and
+# a later re-up all address the same ports without repeating --port-offset.
+fresh_offset_file() {
+  echo "${FRESH_OVERLAY_DIR}/${1}.offset"
+}
+
+# Echo a deployment's recorded port offset (0 when none recorded).
+fresh_read_offset() {
+  local file value=""
+  file="$(fresh_offset_file "$1")"
+  [ -f "$file" ] && value="$(tr -dc '0-9' < "$file")"
+  echo "${value:-0}"
+}
+
+# Record (or clear, when 0) a deployment's port offset.
+fresh_write_offset() {
   local name="$1"
   local offset="$2"
   mkdir -p "$FRESH_OVERLAY_DIR"
-  local file="${FRESH_OVERLAY_DIR}/${name}-ports.yml"
-  {
-    echo "# AUTO-GENERATED by opentr.sh — port offset +${offset} for fresh '${name}'."
-    echo "services:"
-    echo "  postgres:"
-    echo "    ports: [\"$((5176 + offset)):5432\"]"
-    echo "  redis:"
-    echo "    ports: [\"$((5177 + offset)):6379\"]"
-    echo "  minio:"
-    echo "    ports: [\"$((5178 + offset)):9000\", \"$((5179 + offset)):9001\"]"
-    echo "  opensearch:"
-    echo "    ports: [\"$((5180 + offset)):9200\", \"$((5181 + offset)):9600\"]"
-    echo "  backend:"
-    echo "    ports: [\"$((5174 + offset)):8080\"]"
-    echo "  flower:"
-    echo "    ports: [\"$((5175 + offset)):5555\"]"
-    echo "  frontend:"
-    echo "    ports: [\"$((5173 + offset)):5173\"]"
-    echo "  docs:"
-    echo "    ports: [\"$((5183 + offset)):8080\"]"
-  } > "$file"
-  echo "$file"
+  if [ "$offset" -eq 0 ]; then
+    rm -f "$(fresh_offset_file "$name")"
+  else
+    echo "$offset" > "$(fresh_offset_file "$name")"
+  fi
 }
 
-# The default published host ports the dev stack binds. Used to refuse a fresh
-# start when the main stack is already up (zero offset).
-FRESH_DEFAULT_PORTS=(5173 5174 5175 5176 5177 5178 5179 5180 5181)
+# File recording which aux overlays (--with-ldap-test etc.) a deployment was
+# started with, one compose filename per line. Without it, `stop`, `status` and
+# `fresh-destroy` would address a chain that lacks those files while the
+# generated overlay still re-pins their container_name — compose would reject
+# the "service with no image" and the aux containers would survive teardown.
+fresh_aux_file() {
+  echo "${FRESH_OVERLAY_DIR}/${1}.aux"
+}
+
+# Echo a deployment's recorded aux overlay files (nothing when none recorded).
+fresh_read_aux() {
+  local file
+  file="$(fresh_aux_file "$1")"
+  [ -f "$file" ] && cat "$file"
+  return 0
+}
+
+# Record (or clear, when none given) a deployment's aux overlay files.
+fresh_write_aux() {
+  local name="$1"
+  shift
+  mkdir -p "$FRESH_OVERLAY_DIR"
+  if [ $# -eq 0 ]; then
+    rm -f "$(fresh_aux_file "$name")"
+  else
+    printf '%s\n' "$@" > "$(fresh_aux_file "$name")"
+  fi
+}
 
 # Return 0 if a TCP port is already bound on localhost, 1 otherwise.
 fresh_port_in_use() {
@@ -464,6 +609,7 @@ print_data_paths() {
   if [ -d "$FRESH_OVERLAY_DIR" ] && ls "${FRESH_OVERLAY_DIR}"/*.yml >/dev/null 2>&1; then
     local f n
     for f in "${FRESH_OVERLAY_DIR}"/*.yml; do
+      # *-ports.yml is a stale pre-#343 artifact, not a deployment (see #343).
       case "$f" in *-ports.yml) continue;; esac
       n="$(basename "$f" .yml)"
       echo "   otfresh-${n} → named volumes otfresh-${n}_{postgres,minio,opensearch,redis}_data"
@@ -474,14 +620,18 @@ print_data_paths() {
 }
 
 # Build the compose-file chain used to address a fresh deployment for
-# stop/status/destroy. Mirrors the dev chain (base + override + gpu) plus the
-# generated container_name overlay; NAS is never included. Echoes the chain.
+# stop/status/destroy. Mirrors the dev chain (base + override + gpu), plus any
+# aux overlays the deployment was started with, plus the generated
+# container_name overlay LAST so its re-pinning wins. NAS is never included.
 fresh_compose_chain() {
   local name="$1"
   local chain="-f docker-compose.yml -f docker-compose.override.yml"
   [ -f "docker-compose.gpu.yml" ] && chain="$chain -f docker-compose.gpu.yml"
+  local aux
+  while IFS= read -r aux; do
+    [ -n "$aux" ] && [ -f "$aux" ] && chain="$chain -f $aux"
+  done < <(fresh_read_aux "$name")
   [ -f "${FRESH_OVERLAY_DIR}/${name}.yml" ] && chain="$chain -f ${FRESH_OVERLAY_DIR}/${name}.yml"
-  [ -f "${FRESH_OVERLAY_DIR}/${name}-ports.yml" ] && chain="$chain -f ${FRESH_OVERLAY_DIR}/${name}-ports.yml"
   echo "$chain"
 }
 
@@ -494,8 +644,11 @@ fresh_stop() {
   local chain
   chain="$(fresh_compose_chain "$name")"
   echo "🛑 Stopping fresh deployment '${name}' (project ${proj})..."
+  # --remove-orphans so an aux container from an earlier start with a --with-*
+  # flag that is no longer recorded still comes down. Safe: the project is
+  # isolated by construction, so nothing outside this deployment can be hit.
   # shellcheck disable=SC2086
-  COMPOSE_PROJECT_NAME="$proj" docker compose $chain down 2>/dev/null || true
+  COMPOSE_PROJECT_NAME="$proj" docker compose $chain down --remove-orphans 2>/dev/null || true
   echo "✅ Stopped. Volumes preserved — use 'fresh-destroy ${name}' to remove them."
 }
 
@@ -507,7 +660,13 @@ fresh_status() {
   proj="$(fresh_project_name "$name")"
   local chain
   chain="$(fresh_compose_chain "$name")"
-  echo "📊 Fresh deployment '${name}' (project ${proj}):"
+  local offset
+  offset="$(fresh_read_offset "$name")"
+  if [ "$offset" -ne 0 ]; then
+    echo "📊 Fresh deployment '${name}' (project ${proj}, port offset +${offset}):"
+  else
+    echo "📊 Fresh deployment '${name}' (project ${proj}, standard dev ports):"
+  fi
   # shellcheck disable=SC2086
   COMPOSE_PROJECT_NAME="$proj" docker compose $chain ps 2>/dev/null || true
 }
@@ -517,13 +676,20 @@ fresh_status() {
 fresh_list() {
   echo "🧪 Fresh deployments:"
   if [ -d "$FRESH_OVERLAY_DIR" ] && ls "${FRESH_OVERLAY_DIR}"/*.yml >/dev/null 2>&1; then
-    local f n proj running
+    local f n proj running offset ports
     for f in "${FRESH_OVERLAY_DIR}"/*.yml; do
+      # *-ports.yml is a stale pre-#343 artifact, not a deployment (see #343).
       case "$f" in *-ports.yml) continue;; esac
       n="$(basename "$f" .yml)"
       proj="$(fresh_project_name "$n")"
       running="$(docker ps --filter "name=^${proj}-" --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')"
-      echo "  • ${n}  (project ${proj}, ${running} container(s) running)"
+      offset="$(fresh_read_offset "$n")"
+      if [ "$offset" -ne 0 ]; then
+        ports="port offset +${offset} → frontend $((${FRONTEND_PORT:-5173} + offset)), backend $((${BACKEND_PORT:-5174} + offset))"
+      else
+        ports="standard dev ports"
+      fi
+      echo "  • ${n}  (project ${proj}, ${running} container(s) running, ${ports})"
     done
   else
     echo "  (none — create with ./opentr.sh start dev --fresh <name>)"
@@ -560,8 +726,13 @@ fresh_destroy() {
   if [ -n "$containers" ]; then echo "$containers" | sed 's/^/     - /'; else echo "     (none)"; fi
   echo "   Named volumes to remove:"
   if [ -n "$vols" ]; then echo "$vols" | sed 's/^/     - /'; else echo "     (none)"; fi
-  echo "   Generated overlays to remove:"
-  ls "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null | sed 's/^/     - /' || true
+  echo "   Generated files to remove:"
+  # <name>.yml = container_name overlay, <name>.offset = recorded --port-offset,
+  # <name>.aux = recorded aux overlays (#347),
+  # <name>-ports.yml = stale pre-#343 port overlay (see #343).
+  ls "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}.offset" \
+     "${FRESH_OVERLAY_DIR}/${name}.aux" \
+     "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null | sed 's/^/     - /' || true
   echo ""
   echo "   This touches ONLY this isolated project — no bind paths, no other stack."
   printf "   Proceed? (y/N) "
@@ -572,13 +743,15 @@ fresh_destroy() {
   fi
 
   # shellcheck disable=SC2086
-  COMPOSE_PROJECT_NAME="$proj" docker compose $chain down -v 2>/dev/null || true
+  COMPOSE_PROJECT_NAME="$proj" docker compose $chain down -v --remove-orphans 2>/dev/null || true
   # Catch any stragglers the compose chain didn't own.
   if [ -n "$vols" ]; then
     echo "$vols" | xargs -r docker volume rm 2>/dev/null || true
   fi
-  rm -f "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null || true
-  echo "✅ Fresh deployment '${name}' destroyed (containers + volumes + overlays)."
+  rm -f "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}.offset" \
+        "${FRESH_OVERLAY_DIR}/${name}.aux" \
+        "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null || true
+  echo "✅ Fresh deployment '${name}' destroyed (containers + volumes + generated files)."
 }
 
 # Function to start the environment
@@ -594,7 +767,10 @@ start_app() {
   PULL_FLAG=""
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
+  WITH_MOCK_LLM_FLAG=""
+  WITH_LLM_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
+  WITH_AUTHENTIK_TEST_FLAG=""
   WITH_WATCH_FLAG=""
   WITH_SMB_TEST_FLAG=""
   WITH_MONITORING_FLAG=""
@@ -645,6 +821,11 @@ start_app() {
         ;;
       --port-offset)
         shift
+        # A missing value would abort on `set -u`; fail with something readable.
+        if [ $# -eq 0 ] || [ "${1#-}" != "$1" ]; then
+          echo "❌ --port-offset requires a value (e.g. --port-offset 100)"
+          exit 1
+        fi
         PORT_OFFSET="$1"
         shift
         ;;
@@ -672,8 +853,20 @@ start_app() {
         WITH_LDAP_TEST_FLAG="--with-ldap-test"
         shift
         ;;
+      --with-mock-llm)
+        WITH_MOCK_LLM_FLAG="--with-mock-llm"
+        shift
+        ;;
+      --with-llm-test)
+        WITH_LLM_TEST_FLAG="--with-llm-test"
+        shift
+        ;;
       --with-keycloak-test)
         WITH_KEYCLOAK_TEST_FLAG="--with-keycloak-test"
+        shift
+        ;;
+      --with-authentik-test)
+        WITH_AUTHENTIK_TEST_FLAG="--with-authentik-test"
         shift
         ;;
       --with-watch)
@@ -704,7 +897,6 @@ start_app() {
   # collisions resolved via a generated overlay. Real data is never touched.
   FRESH_PROJECT=""
   FRESH_OVERLAY=""
-  FRESH_PORT_OVERLAY=""
   if [ -n "$FRESH_FLAG" ]; then
     if [ "$ENVIRONMENT" != "dev" ]; then
       echo "❌ --fresh is only supported in dev mode (./opentr.sh start dev --fresh [name])"
@@ -713,55 +905,120 @@ start_app() {
     FRESH_NAME="$(fresh_sanitize_name "$FRESH_NAME")"
     FRESH_PROJECT="$(fresh_project_name "$FRESH_NAME")"
 
-    # Resolve port offset (default 0 → standard dev ports so conftest works).
-    local _offset="${PORT_OFFSET:-0}"
-    if ! [[ "$_offset" =~ ^[0-9]+$ ]]; then
-      echo "❌ --port-offset must be a non-negative integer (got '$_offset')"
-      exit 1
+    # Resolve port offset. Explicit --port-offset wins and is recorded; otherwise
+    # reuse this deployment's recorded offset so a re-up lands on the same ports.
+    # Default 0 → standard dev ports so conftest/e2e work unchanged.
+    local _offset
+    if [ -n "$PORT_OFFSET" ]; then
+      _offset="$PORT_OFFSET"
+      if ! [[ "$_offset" =~ ^[0-9]+$ ]]; then
+        echo "❌ --port-offset must be a non-negative integer (got '$_offset')"
+        exit 1
+      fi
+    else
+      _offset="$(fresh_read_offset "$FRESH_NAME")"
+      [ "$_offset" -ne 0 ] && echo "ℹ️  Reusing recorded port offset +${_offset} for '${FRESH_NAME}' (pass --port-offset 0 to reset)."
     fi
 
-    # Refuse to start on standard ports if ANOTHER stack already holds them.
-    # Exception: when THIS SAME fresh project is what's bound to them, proceed —
+    # Export the *_PORT variables the base compose files interpolate, offset by
+    # $_offset. This moves the SINGLE existing `ports:` entry — see FRESH_PORT_VARS
+    # for why an overlay must not be used (issue #343).
+    #
+    # Aux test overlays join the same treatment when their flag is passed: their
+    # ports are offset here, their hard-coded container_names are re-pinned by
+    # the generated overlay, and the files are recorded so stop/status/destroy
+    # address the whole deployment (issue #347).
+    local _port_vars=("${FRESH_PORT_VARS[@]}")
+    local _aux_services=()
+    local _aux_files=()
+    if [ -n "$WITH_KEYCLOAK_TEST_FLAG" ]; then
+      _port_vars+=("${FRESH_KEYCLOAK_PORT_VARS[@]}")
+      _aux_files+=("docker-compose.keycloak.yml")
+    fi
+    if [ -n "$WITH_AUTHENTIK_TEST_FLAG" ]; then
+      _port_vars+=("${FRESH_AUTHENTIK_PORT_VARS[@]}")
+      _aux_files+=("docker-compose.authentik.yml")
+    fi
+    if [ -n "$WITH_LDAP_TEST_FLAG" ]; then
+      _port_vars+=("${FRESH_LDAP_PORT_VARS[@]}")
+      _aux_services+=("${FRESH_LDAP_SERVICES[@]}")
+      _aux_files+=("docker-compose.ldap-test.yml")
+    fi
+    if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
+      _port_vars+=("${FRESH_MOCK_LLM_PORT_VARS[@]}")
+      _aux_services+=("${FRESH_MOCK_LLM_SERVICES[@]}")
+      _aux_files+=("docker-compose.mock-llm.yml")
+    fi
+    if [ -n "$WITH_SMB_TEST_FLAG" ]; then
+      _port_vars+=("${FRESH_SMB_PORT_VARS[@]}")
+      _aux_services+=("${FRESH_SMB_SERVICES[@]}")
+      _aux_files+=("docker-compose.smb-test.yml")
+    fi
+    if [ -n "$WITH_MONITORING_FLAG" ]; then
+      _port_vars+=("${FRESH_MONITORING_PORT_VARS[@]}")
+      _aux_services+=("${FRESH_MONITORING_SERVICES[@]}")
+      _aux_files+=("docker-compose.monitoring.yml")
+    fi
+    fresh_apply_port_offset "$_offset" "${_port_vars[@]}"
+
+    # Refuse to start when a port this stack needs is already bound. At offset 0
+    # that is normally the main stack; at a non-zero offset it is a poorly chosen
+    # offset. Exception: when THIS SAME fresh project holds them, proceed —
     # `compose up -d` just recreates changed services (e.g. after a .env edit).
-    if [ "$_offset" -eq 0 ]; then
-      local _busy=""
-      local _p
-      for _p in "${FRESH_DEFAULT_PORTS[@]}"; do
-        if fresh_port_in_use "$_p"; then _busy="$_busy $_p"; fi
-      done
-      if [ -n "$_busy" ]; then
-        local _holder
-        _holder="$(docker ps --filter "label=com.docker.compose.project=${FRESH_PROJECT}" --format '{{.Names}}' 2>/dev/null | head -1)"
-        if [ -n "$_holder" ]; then
-          echo "ℹ️  Standard ports are held by this same fresh deployment (${FRESH_PROJECT}) — re-upping in place."
-        else
-          echo "❌ Cannot start fresh deployment on the standard dev ports — already bound:${_busy}"
-          echo "   The main stack appears to be running. Either stop it, or run side-by-side:"
-          echo "   ./opentr.sh start dev --fresh ${FRESH_NAME} --port-offset 100"
-          exit 1
-        fi
+    local _busy=""
+    local _entry
+    for _entry in "${FRESH_RESOLVED_PORTS[@]}"; do
+      if fresh_port_in_use "${_entry#*:}"; then _busy="$_busy ${_entry#*:}"; fi
+    done
+    if [ -n "$_busy" ]; then
+      local _holder
+      _holder="$(docker ps --filter "label=com.docker.compose.project=${FRESH_PROJECT}" --format '{{.Names}}' 2>/dev/null | head -1)"
+      if [ -n "$_holder" ]; then
+        echo "ℹ️  Those ports are held by this same fresh deployment (${FRESH_PROJECT}) — re-upping in place."
+      elif [ "$_offset" -eq 0 ]; then
+        echo "❌ Cannot start fresh deployment on the standard dev ports — already bound:${_busy}"
+        echo "   The main stack appears to be running. Either stop it, or run side-by-side:"
+        echo "   ./opentr.sh start dev --fresh ${FRESH_NAME} --port-offset 100"
+        exit 1
+      else
+        echo "❌ Cannot start fresh deployment '${FRESH_NAME}' with --port-offset ${_offset} — already bound:${_busy}"
+        echo "   Something else holds those ports. Pick a different --port-offset."
+        exit 1
       fi
     fi
 
-    FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME")"
-    if [ "$_offset" -ne 0 ]; then
-      FRESH_PORT_OVERLAY="$(fresh_generate_port_overlay "$FRESH_NAME" "$_offset")"
+    # The host-bind overlays are the one thing --fresh still cannot isolate:
+    # they mount LIVE host directories, which a fresh stack would then share
+    # with (and write into) alongside the main stack. Ports and container names
+    # are not the problem here — the shared directory is.
+    if [ -n "$WITH_WATCH_FLAG" ] || [ -n "$WITH_BACKUP_FLAG" ]; then
+      echo "⚠️  --with-watch / --with-backup bind LIVE host directories (WATCH_HOST_PATH,"
+      echo "   BACKUP_HOST_PATH, BACKUP_MIRROR_HOST_PATH) into the stack. Those paths are NOT"
+      echo "   isolated by --fresh — this deployment will read and write the same host folders"
+      echo "   as the main stack. Point them at a scratch dir before continuing if that matters."
     fi
+
+    fresh_write_offset "$FRESH_NAME" "$_offset"
+    fresh_write_aux "$FRESH_NAME" ${_aux_files[@]+"${_aux_files[@]}"}
+    FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME" ${_aux_services[@]+"${_aux_services[@]}"})"
     export COMPOSE_PROJECT_NAME="$FRESH_PROJECT"
 
     echo ""
     echo "🧪 FRESH DEPLOYMENT '${FRESH_NAME}': isolated project + volumes; NAS overlay IGNORED; real data untouched."
     echo "   Project: ${FRESH_PROJECT}  (containers: ${FRESH_PROJECT}-*)"
     if [ "$_offset" -ne 0 ]; then
-      echo "   Port offset: +${_offset} (e.g. backend on $((5174 + _offset)), frontend on $((5173 + _offset)))"
+      echo "   Port offset: +${_offset} (recorded in $(fresh_offset_file "$FRESH_NAME"))"
     else
-      echo "   Ports: standard dev ports (5173-5181)"
+      echo "   Port offset: none — standard dev ports"
     fi
+    echo "   Published ports:$(fresh_port_summary)"
     echo ""
 
     # Force NAS off in fresh mode regardless of .env.
     NO_NAS_FLAG="--no-nas"
     NAS_FLAG=""
+  elif [ -n "$PORT_OFFSET" ]; then
+    echo "⚠️  --port-offset is only honored in fresh mode (--fresh); ignoring."
   fi
 
   # PKI requires production mode (nginx with mTLS)
@@ -1002,13 +1259,38 @@ start_app() {
     fi
   fi
 
+  # Add mock LLM provider if requested
+  if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
+    if [ -f "docker-compose.mock-llm.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-llm.yml"
+      echo "🤖 Adding mock LLM provider (docker-compose.mock-llm.yml)"
+      echo "   From containers: http://mock-llm:5199/v1   From host: http://localhost:${MOCK_LLM_PORT:-5199}/v1"
+      echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
+    else
+      echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
+    fi
+  fi
+
+  # Add real GPU-backed LLM test provider if requested
+  if [ -n "$WITH_LLM_TEST_FLAG" ]; then
+    if [ -f "docker-compose.llm-test.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.llm-test.yml"
+      echo "🧠 Adding real LLM test provider (docker-compose.llm-test.yml)"
+      echo "   vLLM — from containers: http://llm-test-vllm:8000/v1   from host: http://localhost:${LLM_TEST_PORT:-5195}/v1"
+      echo "   Model: ${LLM_TEST_SERVED_NAME:-gemma-4-e4b}   GPU: ${LLM_TEST_GPU_DEVICE_ID:-2}"
+      echo "   Ollama alternative (not auto-started): docker compose ... --profile ollama up -d llm-test-ollama"
+    else
+      echo "⚠️  --with-llm-test specified but docker-compose.llm-test.yml not found"
+    fi
+  fi
+
   # Add LDAP test container if requested
   if [ -n "$WITH_LDAP_TEST_FLAG" ]; then
     if [ -f "docker-compose.ldap-test.yml" ]; then
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.ldap-test.yml"
       echo "🔐 Adding LDAP test container (docker-compose.ldap-test.yml)"
-      echo "   LDAP server: localhost:3890"
-      echo "   Web UI: http://localhost:17170"
+      echo "   LDAP server: localhost:${LDAP_TEST_PORT:-3890}  (from containers: ldap://lldap-test:3890)"
+      echo "   Web UI: http://localhost:${LDAP_TEST_UI_PORT:-17170}"
     else
       echo "⚠️  --with-ldap-test specified but docker-compose.ldap-test.yml not found"
     fi
@@ -1019,10 +1301,22 @@ start_app() {
     if [ -f "docker-compose.keycloak.yml" ]; then
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.keycloak.yml"
       echo "🔐 Adding Keycloak test container (docker-compose.keycloak.yml)"
-      echo "   Keycloak URL: http://localhost:8180"
+      echo "   Keycloak URL: http://localhost:${KEYCLOAK_PORT:-8180}"
       echo "   Admin credentials: admin / admin"
     else
       echo "⚠️  --with-keycloak-test specified but docker-compose.keycloak.yml not found"
+    fi
+  fi
+
+  # Add Authentik test container if requested
+  if [ -n "$WITH_AUTHENTIK_TEST_FLAG" ]; then
+    if [ -f "docker-compose.authentik.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.authentik.yml"
+      echo "🔐 Adding Authentik test container (docker-compose.authentik.yml)"
+      echo "   Authentik URL: http://localhost:${AUTHENTIK_PORT:-9022}"
+      echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin_password}"
+    else
+      echo "⚠️  --with-authentik-test specified but docker-compose.authentik.yml not found"
     fi
   fi
 
@@ -1047,7 +1341,7 @@ start_app() {
     if [ -f "docker-compose.smb-test.yml" ]; then
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.smb-test.yml"
       echo "🗄️  Adding SMB test container (docker-compose.smb-test.yml)"
-      echo "   SMB share: smb://localhost:4450/media  (testuser / testpass)"
+      echo "   SMB share: smb://localhost:${SMB_TEST_PORT:-4450}/media  (testuser / testpass)"
     else
       echo "⚠️  --with-smb-test specified but docker-compose.smb-test.yml not found"
     fi
@@ -1083,10 +1377,10 @@ start_app() {
     fi
   fi
 
-  # Fresh-mode overlays go LAST so their container_name + port re-pinning wins.
-  if [ -n "$FRESH_FLAG" ]; then
-    [ -n "$FRESH_OVERLAY" ] && COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_OVERLAY"
-    [ -n "$FRESH_PORT_OVERLAY" ] && COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_PORT_OVERLAY"
+  # Fresh-mode overlay goes LAST so its container_name re-pinning wins. Ports are
+  # NOT overlaid — they come from the exported *_PORT vars (see FRESH_PORT_VARS).
+  if [ -n "$FRESH_FLAG" ] && [ -n "$FRESH_OVERLAY" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_OVERLAY"
   fi
 
   # Dry-run: print exactly what WOULD run and exit without touching Docker.
@@ -1156,7 +1450,7 @@ start_app() {
     echo "- GPU transcribe worker: docker compose logs -f celery-worker-gpu-transcribe"
     echo "- GPU diarize worker: docker compose logs -f celery-worker-gpu-diarize"
   elif [ -n "$LITE_FLAG" ]; then
-    echo "- Cloud ASR worker logs: docker compose logs -f celery-cloud-worker"
+    echo "- Cloud ASR worker logs: docker compose logs -f celery-cloud-asr-worker"
   else
     echo "- Celery worker logs: docker compose logs -f celery-worker"
   fi
@@ -1170,8 +1464,8 @@ start_app() {
     if [ -z "$FRESH_FLAG" ]; then
       echo "⚠️  --seed-benchmark is only honored in fresh mode (--fresh); skipping."
     elif [ -f "scripts/seed-fresh-deployment.sh" ]; then
-      local _seed_offset="${PORT_OFFSET:-0}"
-      local _seed_backend_port=$((5174 + _seed_offset))
+      # BACKEND_PORT was exported with the offset already applied.
+      local _seed_backend_port="${BACKEND_PORT:-5174}"
       echo ""
       echo "🌱 Seeding benchmark media into fresh deployment '${FRESH_NAME}' (backend :${_seed_backend_port})..."
       BACKEND_URL="http://localhost:${_seed_backend_port}" \
@@ -1196,6 +1490,7 @@ reset_and_init() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
+  WITH_AUTHENTIK_TEST_FLAG=""
   WITH_WATCH_FLAG=""
   WITH_SMB_TEST_FLAG=""
   WITH_MONITORING_FLAG=""
@@ -1258,6 +1553,10 @@ reset_and_init() {
         ;;
       --with-keycloak-test)
         WITH_KEYCLOAK_TEST_FLAG="--with-keycloak-test"
+        shift
+        ;;
+      --with-authentik-test)
+        WITH_AUTHENTIK_TEST_FLAG="--with-authentik-test"
         shift
         ;;
       --with-watch)
@@ -1508,13 +1807,38 @@ reset_and_init() {
     fi
   fi
 
+  # Add mock LLM provider if requested
+  if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
+    if [ -f "docker-compose.mock-llm.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-llm.yml"
+      echo "🤖 Adding mock LLM provider (docker-compose.mock-llm.yml)"
+      echo "   From containers: http://mock-llm:5199/v1   From host: http://localhost:${MOCK_LLM_PORT:-5199}/v1"
+      echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
+    else
+      echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
+    fi
+  fi
+
+  # Add real GPU-backed LLM test provider if requested
+  if [ -n "$WITH_LLM_TEST_FLAG" ]; then
+    if [ -f "docker-compose.llm-test.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.llm-test.yml"
+      echo "🧠 Adding real LLM test provider (docker-compose.llm-test.yml)"
+      echo "   vLLM — from containers: http://llm-test-vllm:8000/v1   from host: http://localhost:${LLM_TEST_PORT:-5195}/v1"
+      echo "   Model: ${LLM_TEST_SERVED_NAME:-gemma-4-e4b}   GPU: ${LLM_TEST_GPU_DEVICE_ID:-2}"
+      echo "   Ollama alternative (not auto-started): docker compose ... --profile ollama up -d llm-test-ollama"
+    else
+      echo "⚠️  --with-llm-test specified but docker-compose.llm-test.yml not found"
+    fi
+  fi
+
   # Add LDAP test container if requested
   if [ -n "$WITH_LDAP_TEST_FLAG" ]; then
     if [ -f "docker-compose.ldap-test.yml" ]; then
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.ldap-test.yml"
       echo "🔐 Adding LDAP test container (docker-compose.ldap-test.yml)"
-      echo "   LDAP server: localhost:3890"
-      echo "   Web UI: http://localhost:17170"
+      echo "   LDAP server: localhost:${LDAP_TEST_PORT:-3890}  (from containers: ldap://lldap-test:3890)"
+      echo "   Web UI: http://localhost:${LDAP_TEST_UI_PORT:-17170}"
     else
       echo "⚠️  --with-ldap-test specified but docker-compose.ldap-test.yml not found"
     fi
@@ -1525,10 +1849,22 @@ reset_and_init() {
     if [ -f "docker-compose.keycloak.yml" ]; then
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.keycloak.yml"
       echo "🔐 Adding Keycloak test container (docker-compose.keycloak.yml)"
-      echo "   Keycloak URL: http://localhost:8180"
+      echo "   Keycloak URL: http://localhost:${KEYCLOAK_PORT:-8180}"
       echo "   Admin credentials: admin / admin"
     else
       echo "⚠️  --with-keycloak-test specified but docker-compose.keycloak.yml not found"
+    fi
+  fi
+
+  # Add Authentik test container if requested
+  if [ -n "$WITH_AUTHENTIK_TEST_FLAG" ]; then
+    if [ -f "docker-compose.authentik.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.authentik.yml"
+      echo "🔐 Adding Authentik test container (docker-compose.authentik.yml)"
+      echo "   Authentik URL: http://localhost:${AUTHENTIK_PORT:-9022}"
+      echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin_password}"
+    else
+      echo "⚠️  --with-authentik-test specified but docker-compose.authentik.yml not found"
     fi
   fi
 
@@ -1553,7 +1889,7 @@ reset_and_init() {
     if [ -f "docker-compose.smb-test.yml" ]; then
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.smb-test.yml"
       echo "🗄️  Adding SMB test container (docker-compose.smb-test.yml)"
-      echo "   SMB share: smb://localhost:4450/media  (testuser / testpass)"
+      echo "   SMB share: smb://localhost:${SMB_TEST_PORT:-4450}/media  (testuser / testpass)"
     else
       echo "⚠️  --with-smb-test specified but docker-compose.smb-test.yml not found"
     fi
@@ -2065,12 +2401,31 @@ case "$1" in
 
     # --no-deps keeps postgres/minio/opensearch/redis containers exactly as
     # they were running. Only rebuild + recreate the services that actually
-    # consume backend code.
+    # consume backend code -- every service in docker-compose.override.yml
+    # built from `image: opentranscribe-backend:latest`. celery-redaction was
+    # missing from this list for a while: it shares the image but has its own
+    # entry, so it silently kept running stale code after every rebuild until
+    # something recreated it another way.
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES up -d --build --no-deps \
       backend celery-worker celery-download-worker celery-cpu-worker \
-      celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
-      celery-beat flower
+      celery-redaction celery-cloud-asr-worker celery-nlp-worker \
+      celery-embedding-worker celery-beat flower
+
+    # celery-worker-gpu-scaled (profile gpu-scale) and celery-worker-gpu-transcribe/
+    # -diarize (profile gpu-split) share the same image too, but are scale:0 /
+    # profile-gated -- only rebuild them if they're actually running, so a plain
+    # rebuild-backend never starts a GPU worker profile nobody activated.
+    for gpu_entry in "celery-worker-gpu-scaled:gpu-scale" "celery-worker-gpu-transcribe:gpu-split" "celery-worker-gpu-diarize:gpu-split"; do
+      gpu_service="${gpu_entry%%:*}"
+      gpu_profile="${gpu_entry##*:}"
+      container="${COMPOSE_PROJECT_NAME:-opentranscribe}-${gpu_service}"
+      if docker ps --filter "name=^${container}$" --filter "status=running" -q | grep -q .; then
+        echo "🎯 ${gpu_service} is active — rebuilding it too"
+        # shellcheck disable=SC2086
+        COMPOSE_PROFILES="$gpu_profile" docker compose $COMPOSE_FILES up -d --build --no-deps "$gpu_service"
+      fi
+    done
 
     # Fix pipeline_scratch volume permissions in case it was recreated.
     fix_pipeline_scratch_permissions
@@ -2079,11 +2434,14 @@ case "$1" in
     ;;
 
   rebuild-frontend)
-    echo "🔨 Rebuilding frontend service..."
-    # Frontend doesn't use NAS volumes, but keep --no-deps for symmetry
-    # with rebuild-backend so data containers are untouched.
-    docker compose up -d --build --no-deps frontend
-    echo "✅ Frontend service rebuilt successfully."
+    echo "🔨 Rebuilding frontend + docs services..."
+    # Frontend/docs don't use NAS volumes, but keep --no-deps for symmetry
+    # with rebuild-backend so data containers are untouched. docs rides along
+    # so the two never drift apart the way they did before this was added —
+    # a rebuilt frontend with a stale docs image looks fine until someone
+    # reads a stale changelog/auth-setup page for a feature that already shipped.
+    docker compose up -d --build --no-deps frontend docs
+    echo "✅ Frontend + docs services rebuilt successfully."
     ;;
 
   remove)
@@ -2337,20 +2695,22 @@ case "$1" in
           "${BENCH_VOLUME_PREFIX}_flower_bench_data" 2>/dev/null || true
 
         # Build and start bench stack on current branch.
-        # Build only the services needed for engine benchmarks — skip docs/frontend
-        # (they don't affect AI processing and docs has an MDX build step that can
-        # fail on unrelated content changes).
+        # Build the full backend service set (every worker sharing the backend
+        # image, so the bench stack never silently drifts from what
+        # rebuild-backend rebuilds) plus infra — skip docs/frontend (they don't
+        # affect AI processing and docs has an MDX build step that can fail on
+        # unrelated content changes).
         echo "🚀 Building bench stack from current branch (backend + infra only)..."
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE build \
           backend celery-worker celery-download-worker celery-cpu-worker \
-          celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
+          celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
           celery-beat flower
         # shellcheck disable=SC2086
         docker compose $BENCH_COMPOSE up -d --no-build \
           postgres redis minio opensearch \
           backend celery-worker celery-download-worker celery-cpu-worker \
-          celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
+          celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
           celery-beat flower
 
         echo ""

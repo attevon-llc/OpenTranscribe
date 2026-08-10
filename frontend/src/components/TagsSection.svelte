@@ -1,21 +1,25 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   import { t } from '$stores/locale';
+  import type { Tag } from '$lib/types/tag';
+  import type { MediaFileDetail } from '$lib/types/media';
   import TagsEditor from './TagsEditor.svelte';
 
-  export let file: any = null;
+  export let file: MediaFileDetail | null = null;
   export let isTagsExpanded: boolean = false;
   export let aiTagSuggestions: Array<{name: string, confidence: number, rationale?: string}> = [];
+
+  const dispatch = createEventDispatcher<{ tagsUpdated: { tags: Tag[] } }>();
 
   function toggleTags() {
     isTagsExpanded = !isTagsExpanded;
   }
 
-  function handleTagsUpdated(event: any) {
-    // Re-emit the event to parent component
-    if (file) {
-      file.tags = event.detail.tags;
-    }
+  // The file-detail page owns `file`; forward the editor's update instead of
+  // mutating the prop, so the page's own `file` assignment drives the re-render.
+  function forwardTagsUpdated(event: CustomEvent<{ tags: Tag[] }>) {
+    dispatch('tagsUpdated', event.detail);
   }
 </script>
 
@@ -28,8 +32,8 @@
     <h4 class="section-heading">{$t('tags.title')}</h4>
     <div class="tags-preview">
       {#if file?.tags && file.tags.length > 0}
-        {#each file.tags.slice(0, 3) as tag, i}
-          <span class="tag-chip">{tag && tag.name ? tag.name : tag}</span>
+        {#each file.tags.slice(0, 3) as tag (tag.uuid)}
+          <span class="tag-chip">{tag.name}</span>
         {/each}
         {#if file.tags.length > 3}
           <span class="tag-chip more">{$t('tags.moreCount', { count: file.tags.length - 3 })}</span>
@@ -52,7 +56,7 @@
           fileId={String(file.uuid)}
           tags={file.tags || []}
           aiSuggestions={aiTagSuggestions}
-          on:tagsUpdated={handleTagsUpdated}
+          on:tagsUpdated={forwardTagsUpdated}
         />
       {:else}
         <p>{$t('tags.loadingTags')}</p>

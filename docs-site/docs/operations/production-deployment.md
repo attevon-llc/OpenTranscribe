@@ -367,6 +367,31 @@ Periodically rotate MinIO credentials:
 1. Update `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in `.env`
 2. Restart the stack: `./opentr.sh stop && ./opentr.sh start prod`
 
+### Native AWS S3 Backend (alternative to MinIO)
+
+Object storage is not hardwired to the bundled MinIO container. Setting `STORAGE_BACKEND=s3`
+targets a real regional AWS S3 endpoint (or any S3-compatible provider via `S3_ENDPOINT_URL`)
+instead:
+
+```bash
+STORAGE_BACKEND=s3
+S3_REGION=us-east-1
+S3_USE_IAM_ROLE=true   # default: AWS credential chain (env / EKS-IRSA / ECS task role / EC2 instance metadata) -- no static keys, automatic rotation
+```
+
+Set `S3_USE_IAM_ROLE=false` and provide `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` only if the
+deployment cannot use the AWS credential chain. `STORAGE_BACKEND=minio` remains the default, and
+self-hosted behavior (endpoint, credentials, addressing, presigned-URL rewriting) is unchanged
+when it's in effect. See [Environment Variables](../configuration/environment-variables.md#object-storage)
+for the full variable reference, including presigned-URL TTL clamping
+(`PRESIGNED_URL_MAX_SECONDS`) and the multipart-upload threshold.
+
+:::note AWS S3's 5 GiB single-PUT ceiling
+MinIO accepts a single-PUT object up to 5 TiB; AWS S3 rejects one above 5 GiB. On
+`STORAGE_BACKEND=s3`, uploads above that size are always routed through the multipart path, so
+this only affects very large source files, not typical media uploads.
+:::
+
 ---
 
 ## 6. Redis Security
@@ -383,11 +408,38 @@ The base `docker-compose.yml` automatically starts Redis with `--requirepass` wh
 
 ### Persistence
 
-Redis is configured with a named volume (`redis_data`) for persistence. The default persistence strategy (RDB snapshots) is sufficient for OpenTranscribe's use case -- Redis stores Celery task state and cached GPU stats, not primary data.
+Redis is configured with a named volume (`redis_data`) for persistence. The default persistence strategy (RDB snapshots) is sufficient for OpenTranscribe's use case -- Redis stores Celery task state, cached GPU stats, and the shared security state described below, not primary data.
+
+### Redis also carries security state -- plan for its loss
+
+Beyond the Celery broker, Redis holds the **shared state that several security controls depend on**:
+
+- the token revocation blacklist (JTIs invalidated by logout-all, password reset, or admin session termination)
+- account lockout counters
+- MFA single-use token (replay) protection
+- authentication rate limiting
+
+That state is *shared across replicas*. If Redis becomes unreachable, each container falls back to its own process memory, which is empty on start and never shared -- so on a multi-replica deployment a session revoked on one replica would still be honoured by every other.
+
+OpenTranscribe handles this rather than degrading silently:
+
+- **Token revocation falls back to the database.** `refresh_token.revoked_at` is durable and shared by every replica, so revocation keeps working and nobody is logged out during a Redis outage.
+- **Where no durable record exists**, the control fails closed or tightens rather than loosening.
+- **Degradation is logged at `CRITICAL`** and increments the Prometheus counter `security_state_degraded_total{control,fallback}`.
+
+**Alert on `security_state_degraded_total`.** A non-zero rate means a security control is running without its shared state store. There is deliberately no configuration flag to disable this behaviour -- an off-switch on a security control tends to get flipped during exactly the incident it guards against.
+
+:::warning Run Redis highly available in production
+On AWS, use **ElastiCache for Redis with Multi-AZ and automatic failover** rather than a single Redis container. Failover then takes seconds instead of leaving the cluster in the degraded state above for the length of an outage.
+
+Note that Redis is also the Celery broker, so a Redis outage stops transcription regardless -- highly available Redis protects throughput and security posture together.
+:::
 
 ### Network Isolation
 
 In production, **do not expose the Redis port to the host.** Remove or comment out the `REDIS_PORT` mapping in `.env` so Redis is only accessible within the Docker network.
+
+When using a managed Redis (ElastiCache or equivalent), enable **encryption in transit** and point `REDIS_URL` at the `rediss://` scheme -- the Celery configuration detects it and enables TLS for both the broker and the result backend.
 
 ---
 
@@ -429,6 +481,24 @@ OPENSEARCH_USE_TLS=true
 ```
 
 You will also need TLS certificates for inter-node transport. See the `docker-compose.prod.yml` for the certificate path configuration.
+
+### Amazon OpenSearch Service (SigV4)
+
+A managed **Amazon OpenSearch Service** domain uses an IAM access policy instead of the
+self-hosted security plugin, and requires SigV4-signed requests rather than basic auth:
+
+```bash
+OPENSEARCH_AUTH=sigv4       # default: basic (unchanged for self-hosted OpenSearch)
+OPENSEARCH_AWS_REGION=      # empty falls back to AWS_REGION
+OPENSEARCH_AWS_SERVICE=es   # es (managed domain) or aoss (OpenSearch Serverless)
+```
+
+`OPENSEARCH_AUTH=sigv4` signs every OpenSearch client with the AWS credential chain and forces
+TLS. Pair it with `OPENSEARCH_EMBEDDING_MODE=managed` (see
+[Environment Variables](../configuration/environment-variables.md#aws-opensearch-service-sigv4-auth--managed-embeddings))
+if the domain already hosts the neural-search embedding model -- a managed domain does not permit
+registering a model by URL or mutating ML Commons cluster settings the way self-hosted
+initialization does.
 
 ### Memory Locking
 

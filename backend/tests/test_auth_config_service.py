@@ -79,8 +79,18 @@ class TestAuthConfigServiceGetConfig:
         result = AuthConfigService.get_config(mock_db, "sensitive_key", decrypt=False)
         assert result == "encrypted_value"
 
-    def test_get_config_decryption_failure_returns_encrypted(self, mock_db):
-        """Test that decryption failure returns encrypted value."""
+    def test_get_config_decryption_failure_returns_none(self, mock_db):
+        """A value that cannot be decrypted is UNSET, never the raw ciphertext.
+
+        This test previously asserted the opposite — that the ciphertext is handed
+        back — which pinned a fail-open as intended behaviour (issue #324). Callers
+        use these values as real credentials (LDAP bind password, OIDC client
+        secret), so ciphertext is at best a baffling auth failure and at worst an
+        encrypted blob shipped to an external IdP or rendered in the admin UI.
+
+        Returning None makes `_get_effective` fall through to the env value and then
+        the coded default — a known source instead of garbage.
+        """
         mock_config = MagicMock(spec=AuthConfig)
         mock_config.config_value = "encrypted_value"
         mock_config.is_sensitive = True
@@ -89,8 +99,24 @@ class TestAuthConfigServiceGetConfig:
         with patch("app.services.auth_config_service.decrypt_api_key") as mock_decrypt:
             mock_decrypt.side_effect = Exception("Decryption failed")
             result = AuthConfigService.get_config(mock_db, "sensitive_key")
-            # Should return the encrypted value on failure
-            assert result == "encrypted_value"
+            assert result is None, "must not hand back the ciphertext"
+
+    def test_get_config_empty_decryption_returns_none(self, mock_db):
+        """A decrypt that returns falsy without raising is also UNSET.
+
+        The quieter half of the same bug: the old code only logged in the `except`
+        branch, so a `decrypt_api_key` that returned None or "" left `value` as the
+        ciphertext and said nothing at all.
+        """
+        mock_config = MagicMock(spec=AuthConfig)
+        mock_config.config_value = "encrypted_value"
+        mock_config.is_sensitive = True
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_config
+
+        with patch("app.services.auth_config_service.decrypt_api_key") as mock_decrypt:
+            mock_decrypt.return_value = None
+            result = AuthConfigService.get_config(mock_db, "sensitive_key")
+            assert result is None, "must not silently fall back to the ciphertext"
 
 
 class TestAuthConfigServiceSetConfig:
@@ -198,15 +224,37 @@ class TestAuthConfigServiceBulkUpdate:
         return db
 
     def test_bulk_update_category(self, mock_db):
-        """Test bulk updating a category."""
-        config = {"key1": "value1", "key2": "value2", "key3": True}
+        """Test bulk updating a category.
 
-        results = AuthConfigService.bulk_update_category(
-            db=mock_db, category="test", config_dict=config, user_id=1
+        Updated: this used to write ``{"key1": ..., "key2": ...}`` to a category
+        called ``"test"``, pinning the behaviour that any key in any category is
+        stored verbatim. Unknown keys are now a ValueError (400 at the HTTP edge),
+        so the payload has to be real keys in a real category.
+        """
+        config = {
+            "oidc_realm": "opentranscribe",
+            "oidc_admin_role": "admin",
+            "oidc_use_pkce": True,
+        }
+
+        AuthConfigService.bulk_update_category(
+            db=mock_db, category="oidc", config_dict=config, user_id=1
         )
 
         # Should have processed all non-sensitive keys
         assert mock_db.add.call_count >= 3  # At least 3 configs + 3 audits
+
+    def test_bulk_update_rejects_unknown_keys(self, mock_db):
+        """A typo'd key is refused instead of being stored and read by nothing."""
+        with pytest.raises(ValueError, match="oidc_verify_audiance"):
+            AuthConfigService.bulk_update_category(
+                db=mock_db,
+                category="oidc",
+                config_dict={"oidc_verify_audiance": True},
+                user_id=1,
+            )
+
+        mock_db.add.assert_not_called()
 
     def test_bulk_update_skips_empty_sensitive(self, mock_db):
         """Test that empty sensitive values are skipped."""
@@ -223,20 +271,30 @@ class TestAuthConfigServiceBulkUpdate:
         # Due to the skip, we expect fewer calls
 
     def test_bulk_update_encrypts_sensitive_keys(self, mock_db):
-        """Test that sensitive keys are encrypted during bulk update."""
-        config = {
-            "ldap_bind_password": "secret123",
-            "keycloak_client_secret": "another_secret",
-        }
+        """Test that sensitive keys are encrypted during bulk update.
 
+        Updated: both secrets used to be submitted under ``category="ldap"``.
+        ``oidc_client_secret`` belongs to ``oidc`` and writing it through
+        the LDAP tab is now a ValueError, so each goes to its own category.
+        """
         with patch("app.services.auth_config_service.encrypt_api_key") as mock_encrypt:
             mock_encrypt.return_value = "encrypted"
+
             AuthConfigService.bulk_update_category(
-                db=mock_db, category="ldap", config_dict=config, user_id=1
+                db=mock_db,
+                category="ldap",
+                config_dict={"ldap_bind_password": "secret123"},
+                user_id=1,
+            )
+            AuthConfigService.bulk_update_category(
+                db=mock_db,
+                category="oidc",
+                config_dict={"oidc_client_secret": "another_secret"},
+                user_id=1,
             )
 
             # Both sensitive keys should have been encrypted
-            assert mock_encrypt.call_count >= 1
+            assert mock_encrypt.call_count == 2
 
 
 class TestAuthConfigServiceEffectiveConfig:
@@ -337,7 +395,7 @@ class TestAuthConfigServiceSensitiveKeys:
         sensitive = AuthConfigService.SENSITIVE_KEYS
 
         assert "ldap_bind_password" in sensitive
-        assert "keycloak_client_secret" in sensitive
+        assert "oidc_client_secret" in sensitive
 
     def test_sensitive_key_identification(self):
         """Test identifying sensitive keys during operations."""
@@ -482,7 +540,7 @@ class TestAuthConfigServiceCategories:
         categories = AuthConfigService.CONFIG_CATEGORIES
 
         assert "ldap" in categories
-        assert "keycloak" in categories
+        assert "oidc" in categories
         assert "pki" in categories
         assert "password_policy" in categories
         assert "mfa" in categories
@@ -496,7 +554,7 @@ class TestAuthConfigServiceCategories:
         with patch.object(AuthConfigService, "get_effective_config") as mock_get_effective:
             mock_get_effective.side_effect = lambda db, key: {
                 "ldap_enabled": True,
-                "keycloak_enabled": False,
+                "oidc_enabled": False,
                 "pki_enabled": False,
                 "mfa_enabled": True,
                 "password_policy_enabled": True,
@@ -506,7 +564,7 @@ class TestAuthConfigServiceCategories:
             result = AuthConfigService.get_config_status(mock_db)
 
             assert result["ldap_enabled"] is True
-            assert result["keycloak_enabled"] is False
+            assert result["oidc_enabled"] is False
             assert result["mfa_enabled"] is True
 
 
@@ -555,7 +613,7 @@ class TestAuthConfigDataTypeMapping:
 
         # Boolean settings
         assert mapping["ldap_enabled"] == "bool"
-        assert mapping["keycloak_enabled"] == "bool"
+        assert mapping["oidc_enabled"] == "bool"
         assert mapping["pki_enabled"] == "bool"
         assert mapping["mfa_enabled"] == "bool"
 
@@ -570,7 +628,7 @@ class TestAuthConfigDataTypeMapping:
         mapping = AuthConfigService.ENV_TO_CONFIG_MAPPING
 
         assert mapping["LDAP_ENABLED"] == "ldap_enabled"
-        assert mapping["KEYCLOAK_SERVER_URL"] == "keycloak_server_url"
+        assert mapping["OIDC_SERVER_URL"] == "oidc_server_url"
         assert mapping["PKI_ENABLED"] == "pki_enabled"
 
 

@@ -1,0 +1,127 @@
+# Authentik test IdP (P1.4 — plans/auth-provider-compatibility.md P1 item 4).
+#
+# Unlike Keycloak, Authentik is not a single container: `server` and `worker` both
+# need Postgres and Redis, so this overlay carries its own dedicated instances of
+# both rather than touching the app's — same isolation contract as
+# docker-compose.keycloak.yml and docker-compose.ldap-test.yml, own named volumes,
+# never the live stack's data.
+#
+# Load it WITH the stack so it joins the same compose project (and therefore the
+# same network). `./opentr.sh` is the only supported entry point:
+#   ./opentr.sh start dev --with-authentik-test
+#   ./opentr.sh start dev --fresh t1 --port-offset 100 --with-authentik-test
+#
+# Admin console: http://localhost:${AUTHENTIK_PORT:-9022}
+# Log in directly with AUTHENTIK_BOOTSTRAP_EMAIL / AUTHENTIK_BOOTSTRAP_PASSWORD
+# (default admin@example.com / admin_password) — those env vars create a working
+# admin account non-interactively on first boot, unlike Keycloak's fixed
+# admin/admin baked into the image. Visiting /if/flow/initial-setup/ once that
+# account exists correctly refuses with "flow does not apply to current user";
+# that is not a failure, it means the bootstrap already worked.
+#
+# Discovery is per-application, not per-realm: once you have created an OAuth2/OIDC
+# provider and application in the admin console, the discovery URL is
+#   http://localhost:${AUTHENTIK_PORT:-9022}/application/o/<slug>/.well-known/openid-configuration
+# — see docs/OIDC_SETUP.md's Authentik section for the known traps (email_verified
+# hardcoded false, signing algorithm follows the signing key type, groups arrive in
+# a flat `groups` claim).
+#
+# Neither service declares a container_name, so the compose project namespaces them
+# automatically; containers reach them by SERVICE name (authentik-server,
+# authentik-worker, authentik-postgresql, authentik-redis).
+
+services:
+  authentik-postgresql:
+    image: docker.io/library/postgres:16-alpine
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentik-test-only}
+      POSTGRES_DB: authentik
+    volumes:
+      - authentik_postgresql:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  authentik-redis:
+    image: docker.io/library/redis:alpine
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - authentik_redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.10
+    command: server
+    security_opt:
+      - no-new-privileges:true
+    environment: &authentik-env
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-dev-test-secret-key-not-for-production}
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentik-test-only}
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      # No fixed admin password, deliberately unlike Keycloak's admin/admin — the
+      # initial-setup flow sets one interactively on first visit to the console.
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin_password}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    ports:
+      # Loopback-only, matching the base file's convention: this is a dev IdP with
+      # a scripted bootstrap admin password.
+      - "127.0.0.1:${AUTHENTIK_PORT:-9022}:9000"
+    volumes:
+      - authentik_media:/media
+      - authentik_templates:/templates
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+    healthcheck:
+      # The image ships neither wget nor curl — python3 (its own runtime) is
+      # what's actually on PATH, confirmed against a running container.
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://localhost:9000/-/health/live/', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 60s
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.10
+    command: worker
+    security_opt:
+      - no-new-privileges:true
+    environment: *authentik-env
+    volumes:
+      - authentik_media:/media
+      - authentik_templates:/templates
+      # The worker applies blueprints from here on boot — unused today, reserved
+      # for a scripted provider/application bootstrap (task #20's real-login
+      # verification) so a fresh container can come up with a working OIDC client
+      # without a manual console walkthrough.
+      - authentik_certs:/certs
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
+      authentik-redis:
+        condition: service_healthy
+
+volumes:
+  authentik_postgresql:
+  authentik_redis:
+  authentik_media:
+  authentik_templates:
+  authentik_certs:

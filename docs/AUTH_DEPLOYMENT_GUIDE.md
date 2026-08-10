@@ -84,6 +84,46 @@ OpenTranscribe always maintains a local super_admin account for emergency access
 - PKI mode includes a password fallback so the super admin can always log in with a password even when PKI is the primary method
 - Regular admins (from LDAP/Keycloak/PKI) cannot configure authentication settings
 
+### Creating additional super admins
+
+There is **no secret key, bootstrap password, or environment variable** for this, and there
+should not be — a shared secret that mints platform owners is worse than the problem it solves.
+
+An existing super_admin promotes another account:
+
+**Settings → Users → (row) → Role → Super Admin.** The option only appears when *you* are a
+super_admin, and promoting asks for confirmation because the tier grants authentication
+configuration, role changes, and the audit log.
+
+Two guard rails:
+
+- **The last super_admin cannot be demoted or deleted.** Auth configuration is super_admin-gated,
+  so losing the last one is unrecoverable without direct database access.
+- **External IdPs grant at most `admin`.** `super_admin` is local-only by design, which is what
+  keeps the break-glass account independent of the identity provider it exists to rescue you from.
+
+If Settings → Authentication does not appear for you at all, your account is `admin`, not
+`super_admin` — that is the single most common cause. On startup the app now repairs any legacy
+account carrying the old `role='admin' + is_superuser=true` shape.
+
+### Choosing which methods may authenticate
+
+| Setting | Effect | Where |
+|---|---|---|
+| `local_enabled` | accounts with a local password may sign in | Settings → Authentication → Local |
+| `allow_registration` | anyone may create their own account | Settings → Authentication → Local |
+| `ldap_enabled` / `keycloak_enabled` / `pki_enabled` | that method is offered | its own tab |
+
+For a deployment where the directory owns identity, the combination is:
+**`ldap_enabled = true`, `local_enabled = false`, `allow_registration = false`.**
+
+Two behaviours to expect:
+
+- The username/password form stays visible. LDAP authenticates through that same form, so it is
+  shown whenever local **or** LDAP is enabled.
+- Your active super_admin can still sign in with its password even with `local_enabled = false`.
+  That exemption is deliberate — see above.
+
 ### Configuration Methods
 
 **Precedence order: Database > Environment Variables > Built-in defaults**
@@ -244,6 +284,93 @@ This mode disables the GPU worker requirement and is suitable for cloud-only tra
 
 **Super admin password fallback:** Even when PKI is the only enabled auth method, the super admin account can always log in with a password for emergency access and configuration management.
 
+## Transactional auth email (REQUIRED for password reset and invitations)
+
+Password reset, admin invitations, address verification, and account-security
+notices are all email. **Neither `SMTP_HOST` nor `FRONTEND_URL` is set in any of
+the compose files**, so a deployment that changes nothing has no working mail path
+and no usable link — configure both before enabling local accounts.
+
+### 1. Point `FRONTEND_URL` at the deployment
+
+```bash
+# .env — the public base URL users reach the SPA on
+FRONTEND_URL=https://transcribe.yourdomain.com
+```
+
+Every credential link is built from this value. It defaults to
+`http://localhost:5173`, which would mail every user a link to their own machine.
+The backend **refuses to send** a credential link still built from that default
+once a mail transport is configured, and logs the refusal at `CRITICAL`:
+
+```
+CRITICAL FRONTEND_URL is still http://localhost:5173, so '... - Password Reset
+Request' would carry a link to the recipient's own machine. Refusing to send.
+```
+
+Requires a container **recreate**, not `restart-backend` (env changes do not
+survive a plain restart).
+
+### 2. Choose a mail transport
+
+**Preferred — DB-backed provider config (admin UI, no restart, encrypted creds):**
+
+1. Settings → Watch Sources → **Email Configurations** → add a config.
+   Providers: `smtp` (STARTTLS or implicit SSL on 465), `m365` (Microsoft Graph
+   `sendMail` via client-credentials OAuth2, for tenants with SMTP basic auth
+   disabled), `exchange` (authenticated submission to on-prem Exchange).
+   Secrets are AES-256-GCM encrypted at rest with `ENCRYPTION_KEY`.
+2. Use **Test Connection** to confirm auth and reachability.
+3. In the same panel, under **Authentication email** (super_admin only), pick
+   that config in the dropdown and **Save**. It takes effect immediately — no
+   restart. The panel states what is designated and warns when the designation
+   is dangling.
+
+   Nothing is auto-selected. Email configs are created for specific notification
+   purposes, and sending password resets out of an unrelated mailbox would leak
+   the deployment's auth mail through it — so the designation is always an
+   explicit super_admin act, recorded in the `SystemSettings` key
+   `email.auth_config_uuid` and written to the audit log.
+
+   The API behind the control is `GET`/`PUT
+   /api/admin/auth-config/email/designation` (super_admin). A UUID that names no
+   config, or a disabled one, is refused with a 400 rather than stored; an empty
+   `config_uuid` clears the designation and falls back to env SMTP. Deleting or
+   disabling the designated config is refused with a 409 — clear or move the
+   designation first. Should the row disappear another way (direct SQL), auth
+   mail degrades to the env SMTP transport below with an error log, never to
+   some other config, and the panel reports the designation as dangling.
+
+**Fallback — env SMTP** (used only when nothing is designated):
+
+```bash
+SMTP_HOST=smtp.yourdomain.com
+SMTP_PORT=587          # 587 = STARTTLS (honours SMTP_USE_TLS); 465 = implicit SSL
+SMTP_USER=svc-transcribe
+SMTP_PASSWORD=...
+SMTP_FROM=noreply@yourdomain.com
+SMTP_USE_TLS=true
+```
+
+### 3. Verify
+
+Request a reset for a known account and watch the backend log. Delivery is
+reported per message with the recipient **masked**; the link itself is never
+logged, because a reset URL is a single-use credential.
+
+```bash
+./opentr.sh logs backend | grep -i "Sent '\|Failed to send\|mail transport"
+```
+
+With no transport at all, a credential-bearing send fails rather than silently
+succeeding:
+
+```
+ERROR No mail transport configured — '... - Password Reset Request' was NOT
+delivered to v***@example.com. Designate an email config
+(email.auth_config_uuid) or set SMTP_HOST.
+```
+
 ## Troubleshooting
 
 ### Common Issues
@@ -266,6 +393,31 @@ This mode disables the GPU worker requirement and is suitable for cloud-only tra
 - Verify certificate is imported to correct keychain/store
 - Check browser settings allow client certificate prompts
 - macOS: Set private key to "Allow all applications to access"
+
+**Email: users never receive a password reset**
+- `SMTP_HOST` is empty and no email config is designated — see
+  "Transactional auth email" above. The backend logs
+  `No mail transport configured — ... was NOT delivered`.
+- The link is never printed to the log by design (it is a live single-use
+  credential), so an empty log is not evidence the mail was sent.
+
+**Email: the panel says the designated configuration is missing or disabled**
+- The row was deleted or disabled outside the UI (the API refuses both with a
+  409). Auth mail has fallen back to env SMTP, which is unset by default — so
+  resets and invitations stop. Designate a working config, or clear the
+  designation and set `SMTP_HOST`.
+
+**Email: "This email configuration is designated to carry authentication email"**
+- You tried to delete or disable the auth mailer. Point the **Authentication
+  email** dropdown at another config (or clear it) first, then retry.
+
+**Email: reset links point at `localhost:5173`**
+- `FRONTEND_URL` is unset. Set it in `.env` and **recreate** the backend
+  container. The send is refused (CRITICAL log) rather than delivered.
+
+**Email: `SMTPServerDisconnected` / TLS handshake errors on port 465**
+- 465 is implicit SSL, negotiated before the greeting. Set `SMTP_PORT=465` and
+  the backend uses `SMTP_SSL` automatically; `SMTP_USE_TLS` does not apply there.
 
 **PKI: "Certificate verification failed"**
 - Ensure CA certificate is correctly configured in admin UI
@@ -370,7 +522,7 @@ Systematically test each authentication method:
 
 - **PKI Detailed Setup:** `docs/PKI_SETUP.md`
 - **LDAP/AD Detailed Setup:** `docs/LDAP_AUTH.md`
-- **Keycloak Detailed Setup:** `docs/KEYCLOAK_SETUP.md`
+- **OIDC Detailed Setup:** `docs/OIDC_SETUP.md`
 - **Super Admin Guide:** `docs/SUPER_ADMIN_GUIDE.md`
 - **Security Policy:** `docs/SECURITY.md`
 - **FIPS Compliance:** `docs/FIPS_140_3_COMPLIANCE.md`

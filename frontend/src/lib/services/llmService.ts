@@ -15,13 +15,13 @@ export interface LLMStatus {
   message: string;
 }
 
-export interface LLMProviders {
+interface LLMProviders {
   providers: string[];
   total: number;
   message: string;
 }
 
-export interface LLMConnectionTest {
+interface LLMConnectionTest {
   success: boolean;
   message: string;
   provider?: string;
@@ -29,7 +29,7 @@ export interface LLMConnectionTest {
   details?: string;
 }
 
-export class LLMService {
+class LLMService {
   private static instance: LLMService;
   private statusCache: LLMStatus | null = null;
   private lastCheck: number = 0;
@@ -106,7 +106,7 @@ export class LLMService {
       return response.data;
     } catch (error: unknown) {
       console.error('Error getting LLM providers:', error);
-      throw new Error(getErrorMessage(error, get(t)('llm.providersLoadFailed')));
+      throw new Error(getErrorMessage(error, get(t)('llm.providersLoadFailed')), { cause: error });
     }
   }
 

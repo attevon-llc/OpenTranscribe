@@ -7,8 +7,10 @@ Implements NIST SP 800-63B password requirements:
 - Password history tracking (prevent reuse of last N passwords)
 - Password expiration (max age before forced reset)
 
-All settings are configurable via environment variables and can be disabled
-for non-FedRAMP environments by setting PASSWORD_POLICY_ENABLED=false.
+Every setting is admin-editable at runtime (Settings -> Authentication ->
+Password Policy) and resolves DB ``auth_config`` > ``.env`` > coded default, the
+same rule as the rest of the auth plane. The policy can be turned off entirely
+for non-FedRAMP environments with ``password_policy_enabled``.
 """
 
 import logging
@@ -20,7 +22,7 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
-from app.core.config import settings
+from app.core.auth_settings import get_process_auth_settings
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +63,23 @@ class PasswordPolicy:
     This class validates passwords against configurable requirements and
     manages password history to prevent reuse.
 
-    Configuration (via environment variables):
-        PASSWORD_POLICY_ENABLED: Enable/disable policy enforcement (default: true)
-        PASSWORD_MIN_LENGTH: Minimum password length (default: 12)
-        PASSWORD_REQUIRE_UPPERCASE: Require uppercase letters (default: true)
-        PASSWORD_REQUIRE_LOWERCASE: Require lowercase letters (default: true)
-        PASSWORD_REQUIRE_DIGIT: Require numeric digits (default: true)
-        PASSWORD_REQUIRE_SPECIAL: Require special characters (default: true)
-        PASSWORD_HISTORY_COUNT: Number of previous passwords to check (default: 24)
-        PASSWORD_MAX_AGE_DAYS: Days before password expires (default: 60)
+    Every requirement below is a **property**, read through
+    ``get_process_auth_settings()`` at the moment it is checked, so it resolves
+    DB ``auth_config`` > ``.env`` > coded default. They used to be plain
+    attributes assigned from ``settings.*`` in ``__init__``, and the module-level
+    ``password_policy`` singleton is built at import — so all eight admin
+    controls were frozen at the value the process started with and saving any of
+    them changed nothing.
+
+    Properties rather than a ``reload()`` because the enforcement points are
+    reached without a session (``schemas/user.py`` validates inside a Pydantic
+    model) and because a second cached copy here would be a second thing to
+    invalidate; ``_ProcessAuthSettings`` already owns exactly one cache.
+
+    Configuration keys (category ``password_policy``):
+        password_policy_enabled, password_min_length, password_require_uppercase,
+        password_require_lowercase, password_require_digit,
+        password_require_special, password_history_count, password_max_age_days.
     """
 
     # Common password patterns to avoid (compiled for performance)
@@ -82,16 +92,45 @@ class PasswordPolicy:
         r"(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz){2,}",  # sequential letters
     ]
 
-    def __init__(self):
-        """Initialize password policy with current settings."""
-        self.enabled = settings.PASSWORD_POLICY_ENABLED
-        self.min_length = settings.PASSWORD_MIN_LENGTH
-        self.require_uppercase = settings.PASSWORD_REQUIRE_UPPERCASE
-        self.require_lowercase = settings.PASSWORD_REQUIRE_LOWERCASE
-        self.require_digit = settings.PASSWORD_REQUIRE_DIGIT
-        self.require_special = settings.PASSWORD_REQUIRE_SPECIAL
-        self.history_count = settings.PASSWORD_HISTORY_COUNT
-        self.max_age_days = settings.PASSWORD_MAX_AGE_DAYS
+    @property
+    def enabled(self) -> bool:
+        """Whether the policy is enforced at all."""
+        return get_process_auth_settings().password_policy_enabled
+
+    @property
+    def min_length(self) -> int:
+        """Minimum accepted password length."""
+        return get_process_auth_settings().password_min_length
+
+    @property
+    def require_uppercase(self) -> bool:
+        """Whether an upper-case letter is required."""
+        return get_process_auth_settings().password_require_uppercase
+
+    @property
+    def require_lowercase(self) -> bool:
+        """Whether a lower-case letter is required."""
+        return get_process_auth_settings().password_require_lowercase
+
+    @property
+    def require_digit(self) -> bool:
+        """Whether a digit is required."""
+        return get_process_auth_settings().password_require_digit
+
+    @property
+    def require_special(self) -> bool:
+        """Whether a special character is required."""
+        return get_process_auth_settings().password_require_special
+
+    @property
+    def history_count(self) -> int:
+        """How many previous passwords may not be reused. 0 disables the check."""
+        return get_process_auth_settings().password_history_count
+
+    @property
+    def max_age_days(self) -> int:
+        """Days before a password expires. 0 disables expiry."""
+        return get_process_auth_settings().password_max_age_days
 
     def _check_character_requirements(self, password: str) -> list[str]:
         """
@@ -268,6 +307,9 @@ class PasswordPolicy:
         # Check against the last N passwords
         history_to_check = password_history[: self.history_count]
 
+        checked = 0
+        unverifiable = 0
+
         for old_hash in history_to_check:
             if not old_hash:
                 continue
@@ -275,12 +317,60 @@ class PasswordPolicy:
                 if verify_func(plain_password, old_hash):
                     logger.warning("Password reuse detected in history check")
                     return False
-            except Exception as e:
-                # Log but don't fail if hash verification has issues
-                logger.debug(f"Error checking password history: {e}")
-                continue
+                checked += 1
+            except Exception:
+                # An entry we cannot verify is NOT evidence that the password is
+                # unused — we simply do not know. Keep going, but say so out loud:
+                # this used to log at debug, i.e. invisibly in production, so a
+                # history that had silently stopped being checked looked identical
+                # to one that passed (issue #324).
+                unverifiable += 1
+                logger.exception("Could not verify a password-history entry")
+
+        if unverifiable:
+            # Deliberately NOT fail-closed. Rejecting the new password would leave
+            # the user on their CURRENT password — a guaranteed reuse — which is
+            # worse than possibly permitting an old one. So allow the change and
+            # make the degradation alertable instead.
+            level = logger.critical if checked == 0 else logger.error
+            level(
+                "Password-history check was %s: %d of %d entries could not be "
+                "verified. The reuse control is %s. This usually means the stored "
+                "hashes were written under a different scheme (see FIPS_MODE / "
+                "FIPS_VERSION) and can no longer be verified.",
+                "completely blind" if checked == 0 else "degraded",
+                unverifiable,
+                unverifiable + checked,
+                "NOT being enforced" if checked == 0 else "partially enforced",
+            )
 
         return True
+
+    def expiry_cutoff(self, current_time: datetime | None = None) -> datetime | None:
+        """
+        The instant before which a ``password_changed_at`` counts as expired.
+
+        Exists so the row-at-a-time check and the SQL aggregate check are the
+        same rule: ``admin.py``'s account-status report re-derived this cutoff
+        inline with its own ``timedelta(days=settings.PASSWORD_MAX_AGE_DAYS)``,
+        which meant disabling the policy did not disable the report's notion of
+        expiry.
+
+        Args:
+            current_time: Current time for comparison (default: now UTC)
+
+        Returns:
+            The cutoff timestamp (UTC), or None when expiry is not enforced.
+        """
+        if not self.enabled or self.max_age_days <= 0:
+            return None
+
+        if current_time is None:
+            current_time = datetime.now(UTC)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=UTC)
+
+        return current_time - timedelta(days=self.max_age_days)
 
     def is_password_expired(
         self,
@@ -297,24 +387,19 @@ class PasswordPolicy:
         Returns:
             True if password is expired, False otherwise
         """
-        if not self.enabled or self.max_age_days <= 0:
+        cutoff = self.expiry_cutoff(current_time)
+        if cutoff is None:
             return False
 
         if password_changed_at is None:
             # No recorded change time - treat as expired for safety
             return True
 
-        if current_time is None:
-            current_time = datetime.now(UTC)
-
         # Ensure timezone-aware comparison
         if password_changed_at.tzinfo is None:
             password_changed_at = password_changed_at.replace(tzinfo=UTC)
-        if current_time.tzinfo is None:
-            current_time = current_time.replace(tzinfo=UTC)
 
-        expiration_date = password_changed_at + timedelta(days=self.max_age_days)
-        return current_time >= expiration_date
+        return password_changed_at <= cutoff
 
     def get_days_until_expiration(
         self,
@@ -438,6 +523,44 @@ def is_password_expired(
         True if password is expired, False otherwise
     """
     return password_policy.is_password_expired(password_changed_at, current_time)
+
+
+def get_days_until_expiration(
+    password_changed_at: datetime | None,
+    current_time: datetime | None = None,
+) -> int | None:
+    """
+    Get the number of days until a password expires.
+
+    Convenience function that uses the global password policy instance. The
+    method had no module-level wrapper while its sibling
+    :func:`is_password_expired` did, which is why nothing ever called it.
+
+    Args:
+        password_changed_at: When the password was last changed (UTC)
+        current_time: Current time for comparison (default: now UTC)
+
+    Returns:
+        Days until expiration (negative if expired), None if policy disabled
+    """
+    return password_policy.get_days_until_expiration(password_changed_at, current_time)
+
+
+def password_expiry_cutoff(current_time: datetime | None = None) -> datetime | None:
+    """
+    The instant before which a ``password_changed_at`` counts as expired.
+
+    Convenience function that uses the global password policy instance. Query
+    builders filter ``User.password_changed_at < cutoff``; None means expiry is
+    not enforced and nothing should be reported as expired.
+
+    Args:
+        current_time: Current time for comparison (default: now UTC)
+
+    Returns:
+        The cutoff timestamp (UTC), or None when expiry is not enforced.
+    """
+    return password_policy.expiry_cutoff(current_time)
 
 
 def get_policy_requirements() -> dict:

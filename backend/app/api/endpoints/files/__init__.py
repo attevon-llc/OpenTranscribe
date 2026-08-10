@@ -8,6 +8,7 @@ This module contains the refactored files endpoint split into modular components
 - streaming.py: Video/audio streaming endpoints
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -27,6 +28,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
@@ -48,6 +50,7 @@ from app.services.formatting_service import FormattingService
 
 from . import cancel_upload
 from . import complete_upload
+from . import multipart
 from . import prepare_upload
 from .crud import _get_or_compute_analytics
 from .crud import delete_media_file
@@ -126,6 +129,7 @@ def _parse_speaker_params_from_headers(request: Request | None) -> SpeakerParams
 router.include_router(cancel_upload.router, prefix="", tags=["files"])
 router.include_router(prepare_upload.router, prefix="", tags=["files"])
 router.include_router(complete_upload.router, prefix="", tags=["files"])
+router.include_router(multipart.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])
 router.include_router(waveform_router, prefix="", tags=["waveform"])
 router.include_router(url_processing_router, prefix="", tags=["url-processing"])
@@ -597,7 +601,7 @@ def get_media_file_stream_url(
             "is_public": getattr(db_file, "is_public", False),
         }
     except Exception as e:
-        logger.error(f"Error generating presigned URL for file {file_uuid}: {e}")
+        logger.exception(f"Error generating presigned URL for file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating streaming URL: {str(e)}",
@@ -691,7 +695,10 @@ def _ensure_prepare_enqueued(db_file: MediaFile, user_id: int, mode: str) -> Non
     try:
         first = get_redis().set(guard_key, "1", nx=True, ex=900)
     except Exception:
-        first = True  # Redis hiccup → don't block the download
+        # The Redis key is only a duplicate-dispatch guard; losing it costs one
+        # redundant prepare task, whereas failing here would block the download.
+        logger.exception("Download-prepare dedup guard unavailable; dispatching anyway")
+        first = True
     if first:
         prepare_media_download_task.delay(file_id=db_file.id, user_id=user_id, mode=mode)
 
@@ -730,8 +737,28 @@ def prepare_download(
     return {"status": "processing", "file_id": str(db_file.uuid)}
 
 
+def _download_event_frame(data: dict, mode: str) -> tuple[str | None, bool]:
+    """Map one download pub/sub event to an SSE frame.
+
+    Returns:
+        ``(frame, terminal)`` — *frame* is None when the event is for another mode and
+        should be ignored; *terminal* means the stream should close after yielding it.
+    """
+    if data.get("mode") != mode:
+        return None, False
+    status = data.get("status")
+    if status == "completed" and data.get("url"):
+        payload = {"url": data["url"], "filename": data.get("filename", "")}
+        return f"event: ready\ndata: {json.dumps(payload)}\n\n", True
+    if status == "error":
+        payload = {"message": data.get("message", "Download failed.")}
+        return f"event: error\ndata: {json.dumps(payload)}\n\n", True
+    payload = {"message": data.get("message", ""), "progress": data.get("progress", 0)}
+    return f"event: progress\ndata: {json.dumps(payload)}\n\n", False
+
+
 @router.get("/{file_uuid}/download-stream")
-async def download_stream(
+def download_stream(
     file_uuid: str,
     mode: str = Query(
         ..., description="video_subtitles|video_original|audio_mp3|audio_wav|audio_original"
@@ -765,22 +792,28 @@ async def download_stream(
     user_id = current_user.id
 
     def sse(event: str, payload: dict) -> str:
-        return f"event: {event}\ndata: {_json.dumps(payload)}\n\n"
+        return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
-    async def event_stream():
-        # 1. Already available? deliver immediately (covers reconnects after completion).
+    def _ready_frame() -> str | None:
+        """SSE frame if the download is ready or errored, else None to keep waiting.
+
+        Blocking: ``_resolve_ready_download`` stats object storage and presigns. The
+        generator below runs on the event loop, so it must never call this directly —
+        every call goes through ``run_in_threadpool`` (issue #320).
+        """
         try:
             ready = _resolve_ready_download(db_file, mode)
         except HTTPException as e:
-            yield sse("error", {"message": e.detail})
-            return
-        if ready:
-            yield sse("ready", ready)
-            return
+            return sse("error", {"message": e.detail})
+        return sse("ready", ready) if ready else None
 
-        # 2. Make sure the work is running, then stream its events.
-        _ensure_prepare_enqueued(db_file, user_id, mode)
-        yield sse("progress", {"message": "Preparing your download…", "progress": 0})
+    async def event_stream():
+        # 1. Fast path — already available (covers reconnects after completion). Checked
+        # BEFORE touching Redis so a ready download still works when Redis is down.
+        frame = await run_in_threadpool(_ready_frame)
+        if frame:
+            yield frame
+            return
 
         from redis.exceptions import RedisError
         from redis.exceptions import TimeoutError as RedisTimeoutError
@@ -791,6 +824,27 @@ async def download_stream(
         pubsub = client.pubsub()
         await pubsub.subscribe(download_events_channel(file_uuid))
         try:
+            # 2. RE-CHECK after subscribing (issue #284 A1.22).
+            #
+            # A single check-then-subscribe has a lost-wakeup race: a prepare that
+            # finishes in the gap publishes to an empty channel, and this stream then
+            # waits forever for an event that already happened — the download appears
+            # to hang until the client gives up. Subscribing first and re-checking
+            # means the completion is either buffered on the subscription or visible
+            # to this second check; it cannot fall between them.
+            frame = await run_in_threadpool(_ready_frame)
+            if frame:
+                yield frame
+                return
+
+            # 3. Make sure the work is running, then stream its events.
+            #
+            # Threadpooled because it is a synchronous Redis SETNX plus a Celery
+            # dispatch (another blocking broker round trip) — running it inline
+            # stalled the loop for every other request (issue #320).
+            await run_in_threadpool(_ensure_prepare_enqueued, db_file, user_id, mode)
+            yield sse("progress", {"message": "Preparing your download…", "progress": 0})
+
             while True:
                 try:
                     msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
@@ -809,22 +863,12 @@ async def download_stream(
                 except Exception:
                     logger.debug("Skipping malformed download event payload")
                     continue
-                if data.get("mode") != mode:
+                frame, terminal = _download_event_frame(data, mode)
+                if frame is None:
                     continue
-                status = data.get("status")
-                if status == "completed" and data.get("url"):
-                    yield sse("ready", {"url": data["url"], "filename": data.get("filename", "")})
+                yield frame
+                if terminal:
                     return
-                if status == "error":
-                    yield sse("error", {"message": data.get("message", "Download failed.")})
-                    return
-                yield sse(
-                    "progress",
-                    {
-                        "message": data.get("message", ""),
-                        "progress": data.get("progress", 0),
-                    },
-                )
         except asyncio.CancelledError:
             raise
         finally:
@@ -965,15 +1009,17 @@ def clear_video_cache(
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Clear cached processed videos for a file (e.g., after speaker name updates)"""
-    try:
-        # Verify user owns the file or is admin (tenant-gated via ctx.org_id)
-        is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
-        )
-        file_id = db_file.id  # Get internal ID for cache operations
+    # Authorization runs OUTSIDE the try: get_media_file_by_uuid raises HTTPException
+    # 403/404, and a broad `except Exception` around it re-wrapped that as a 500 — hiding
+    # the authz result — then referenced the still-unassigned `file_id` in its own log
+    # line and crashed a second time with NameError (issue #284 A0.6).
+    is_admin = current_user.is_admin
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+    )
+    file_id = db_file.id  # Internal ID for cache operations
 
-        # Clear the cache using video processing service
+    try:
         from app.services.minio_service import MinIOService
         from app.services.video_processing_service import VideoProcessingService
 
@@ -987,11 +1033,13 @@ def clear_video_cache(
 
         return None
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error clearing video cache for file {file_id}: {e}")
+        logger.exception(f"Error clearing video cache for file {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error clearing video cache: {str(e)}",
+            detail="Error clearing video cache",
         ) from e
 
 
@@ -1025,15 +1073,16 @@ def refresh_analytics(
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Refresh analytics for a media file by recomputing them"""
-    try:
-        # Verify user owns the file or is admin (tenant-gated via ctx.org_id)
-        is_admin = current_user.is_admin
-        db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
-        )
-        file_id = db_file.id  # Get internal ID for analytics refresh
+    # Authorization runs OUTSIDE the try — see clear_video_cache above for why
+    # (issue #284 A0.6). The `raise HTTPException(500)` below was also swallowed by the
+    # broad handler and re-wrapped, doubling the `from e` chain.
+    is_admin = current_user.is_admin
+    db_file = get_media_file_by_uuid(
+        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+    )
+    file_id = db_file.id  # Internal ID for analytics refresh
 
-        # Refresh analytics using the analytics service
+    try:
         from app.services.analytics_service import AnalyticsService
 
         success = AnalyticsService.refresh_analytics(db, file_id)
@@ -1047,11 +1096,13 @@ def refresh_analytics(
 
         return None
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error refreshing analytics for file {file_id}: {e}")
+        logger.exception(f"Error refreshing analytics for file {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error refreshing analytics: {str(e)}",
+            detail="Error refreshing analytics",
         ) from e
 
 

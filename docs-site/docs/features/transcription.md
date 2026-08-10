@@ -158,6 +158,13 @@ While `large-v3-turbo` is recommended for most users, other models are available
 | large-v2 | 6GB | Slower | Excellent | Legacy (slower than turbo) |
 | **large-v3-turbo** | 6GB | **6x faster** | **Excellent** | **Production (default)** |
 | large-v3 | 6GB | Standard | **Best** | Translation, maximum accuracy |
+| CrisperWhisper | 3GB | Standard | Excellent (verbatim) | English-only; precise, verbatim word-level timestamps |
+
+CrisperWhisper (`nyrahealth/faster_CrisperWhisper`) is a local model tuned for verbatim
+transcription — it preserves disfluencies and word-level timing precision rather than
+smoothing them out, which is useful for captioning or forced-alignment-quality output. It is
+English-only and does not support translation. Select it via Settings → Transcription →
+Model Selection (Advanced) or `WHISPER_MODEL=nyrahealth/faster_CrisperWhisper`.
 
 **Default Recommendation**: Use `large-v3-turbo` for production (6x faster with excellent accuracy)
 
@@ -245,7 +252,7 @@ The 3-stage architecture was designed to solve several concrete problems with th
 
 2. **Fault isolation**: Each stage can fail independently without losing completed work. If OpenSearch indexing fails in Stage 3, the transcript and diarization from Stage 2 are already saved to the database. Only the failed stage needs to be retried.
 
-3. **Selective reprocessing** ([#143](https://github.com/davidamacey/OpenTranscribe/issues/143)): The stage separation enables re-running individual pipeline stages without repeating the full pipeline. Users can re-index search without re-transcribing, or regenerate an AI summary without touching the transcript. This avoids wasting GPU time re-transcribing a 2-hour file just to update its summary.
+3. **Selective reprocessing** ([#143](https://github.com/attevon-llc/OpenTranscribe/issues/143)): The stage separation enables re-running individual pipeline stages without repeating the full pipeline. Users can re-index search without re-transcribing, or regenerate an AI summary without touching the transcript. This avoids wasting GPU time re-transcribing a 2-hour file just to update its summary.
 
 4. **Retry granularity**: Celery retries apply per-stage. A transient GPU OOM error during transcription retries only Stage 2, not the entire pipeline. Postprocess tasks (search indexing, embedding extraction) have their own retry policies tuned for their failure modes.
 
@@ -275,20 +282,33 @@ flowchart TD
     Segments --> Postprocess[Postprocess Stage\nSearch indexing, analytics]
 ```
 
-In addition to local Whisper models, OpenTranscribe supports cloud ASR providers for API-lite deployments that don't require a GPU ([#150](https://github.com/davidamacey/OpenTranscribe/issues/150)):
+In addition to local Whisper models, OpenTranscribe supports cloud ASR providers for API-lite deployments that don't require a GPU ([#150](https://github.com/attevon-llc/OpenTranscribe/issues/150)):
 
-| Provider | Diarization | Translation | Notes |
-|----------|-------------|-------------|-------|
-| **Deepgram** | Yes | Yes | High accuracy, fast |
-| **AssemblyAI** | Yes | No | Strong diarization |
-| **OpenAI Whisper API** | No | Yes | Cloud version of Whisper |
-| **Google Speech-to-Text** | Yes | No | Enterprise-grade |
-| **AWS Transcribe** | Yes | No | AWS ecosystem |
-| **Azure Speech** | Yes | Yes | Microsoft ecosystem |
-| **Speechmatics** | Yes | Yes | Enterprise accuracy |
-| **Gladia** | Yes | Yes | European provider |
+| Provider | Diarization | Translation | Status | Notes |
+|----------|-------------|-------------|--------|-------|
+| **Deepgram** | Yes | Yes | Tested | High accuracy, fast |
+| **AssemblyAI** | Yes | No | Tested | Strong diarization |
+| **OpenAI Whisper API** | No | Yes (`whisper-1` only) | Experimental | Cloud version of Whisper; 25 MB file limit; no diarization support at all |
+| **Google Speech-to-Text** | Yes | No | Experimental | Enterprise-grade |
+| **AWS Transcribe** | Yes | No | Tested | AWS ecosystem, HIPAA-eligible medical model. **v0.5.0**: dual-credential support (access key ID + secret access key), up to 30 speakers, and a multilingual code-switching model for files that mix languages mid-conversation |
+| **Azure Speech** | Yes | Yes | Experimental | Microsoft ecosystem; diarization requires `ConversationTranscriber` |
+| **Speechmatics** | Yes | Yes | Tested | Enterprise accuracy |
+| **Gladia** | Yes | Yes | Tested | European provider, all features bundled |
+| **pyannote.ai** | Yes | No | Tested | Premium orchestration — transcription and diarization from a single cloud API call |
+
+"Experimental" means the provider has not been fully tested against a live account with real API keys — it should work, but results may vary. See [Provider Caveats](#provider-caveats) below before relying on a specific provider for diarization or large files.
 
 **Configuration**: Set the ASR provider per-user in Settings, or via environment variables. The pipeline automatically routes transcription tasks to the appropriate queue (`gpu` for local, `cloud-asr` for cloud providers).
+
+### Provider Caveats
+
+Cloud providers have vendor-specific quirks that are easy to trip over:
+
+- **Azure Speech** — diarization only works through the `ConversationTranscriber` API. If a config ends up routed through the plain `SpeechRecognizer` endpoint instead, it silently returns **no speakers at all** rather than an error.
+- **OpenAI** — a hard **25 MB** file size limit and **no diarization support**. Translation to English only works on the `whisper-1` model, not `gpt-4o-transcribe`.
+- **pyannote.ai** — polls for job completion with a **300-second timeout**, far shorter than other cloud providers (30–120 minutes). Long files can fail here first even though the job itself would have finished with more time.
+- **AssemblyAI** — model selection is sent as a `speech_models` list, and only `universal-3-pro` and `universal-2` are currently accepted by the API.
+- **Google Cloud Speech and Azure** — `validate_connection()` makes no network call for either provider, so a bad credential still "validates" successfully; you only find out it's wrong when a real transcription job fails.
 
 **API-Lite Mode**: Cloud providers require no GPU — the backend runs on CPU-only hardware while offloading transcription to cloud APIs. The API-Lite Docker image is ~2 GB vs 8.9 GB for the full image, making it practical for organizations without GPU hardware. Cloud-transcribed files still get local speaker embedding extraction (CPU-friendly WeSpeaker model) so cross-file speaker matching works identically across local and cloud-transcribed files.
 

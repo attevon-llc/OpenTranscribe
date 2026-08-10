@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Segment } from '$lib/types/speaker';
   import { createEventDispatcher, tick, onDestroy } from 'svelte';
   import { getSpeakerColorForSegment } from '$lib/utils/speakerColors';
   import { translateSpeakerLabel } from '$lib/i18n';
@@ -213,7 +214,7 @@
     existingLastGroup: GroupedSegment | null,
     rawStartOffset: number = 0
   ): { grouped: GroupedSegment[]; nextSegIdx: number } {
-    const sorted = [...segments].sort((a: any, b: any) => {
+    const sorted = [...segments].sort((a: Segment, b: Segment) => {
       return parseFloat(String(a.start_time || 0)) - parseFloat(String(b.start_time || 0));
     });
 
@@ -262,7 +263,7 @@
       }
     }
 
-    sorted.forEach((segment: any, rawIdx: number) => {
+    sorted.forEach((segment: Segment, rawIdx: number) => {
       // Backend guarantees `resolved_speaker_name`; prefer it directly, with a
       // last-resort guard for old payloads. `speakerLabel` stays for color mapping.
       const speakerName = segment.resolved_speaker_name || 'Unknown Speaker';
@@ -460,7 +461,7 @@
 
       const segments = res.data.transcript_segments || [];
       myPermission = res.data.my_permission || null;
-      if (!showOriginal && segments.some((s: any) => s?.redactions?.length)) {
+      if (!showOriginal && segments.some((s: Segment) => s?.redactions?.length)) {
         redactionActive = true;
       }
       if (segments.length === 0) {
@@ -504,7 +505,7 @@
       setupInfiniteScrollObserver();
     } catch (e: unknown) {
       console.error('Failed to load transcript:', e);
-      error = getErrorMessage(e, 'Failed to load transcript');
+      error = getErrorMessage(e, $t('searchTranscript.error'));
       loading = false;
     }
   }
@@ -915,7 +916,7 @@
                   {#if loadingMoreSegments}
                     <div class="loading-more-indicator">
                       <Spinner size="small" />
-                      <span>Loading more...</span>
+                      <span>{$t('searchTranscript.loadingMore')}</span>
                     </div>
                   {/if}
                 </div>

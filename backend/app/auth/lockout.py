@@ -12,10 +12,10 @@ This implementation uses Redis-backed storage for distributed deployments,
 with automatic fallback to thread-safe in-memory storage when Redis is unavailable.
 """
 
-import contextlib
 import json
 import logging
 import threading
+import time
 from dataclasses import asdict
 from dataclasses import dataclass
 from datetime import UTC
@@ -23,6 +23,7 @@ from datetime import datetime
 from datetime import timedelta
 from typing import TypedDict
 
+from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
 
 
@@ -155,11 +156,26 @@ _redis_client = None
 _in_memory_store: InMemoryLockoutStore | None = None
 _store_initialized = False
 _store_lock = threading.Lock()
+_last_redis_probe: float = 0.0
+
+#: How long to stay on the in-memory fallback before re-probing Redis.
+REDIS_REPROBE_SECONDS = 30.0
 
 
 def _get_store():
-    """Get the storage backend (Redis or in-memory fallback)."""
-    global _redis_client, _in_memory_store, _store_initialized
+    """Get the storage backend (Redis, or the in-memory fallback while it is down).
+
+    Re-probes Redis instead of latching (issue #284 A1.16). The fallback used to be
+    permanent for the process lifetime: one transient Redis failure at first use and
+    that replica counted failed logins **in its own memory forever**, even after Redis
+    came back. Behind a load balancer that is an auth-throttling bypass — each replica
+    tracks its own counter, so an attacker gets N x the allowed attempts, and lockouts
+    stop being visible across replicas at all.
+
+    Probing is rate-limited to one attempt per ``REDIS_REPROBE_SECONDS`` so a hard Redis
+    outage doesn't add a connection attempt to every single login.
+    """
+    global _redis_client, _in_memory_store, _store_initialized, _last_redis_probe
 
     with _store_lock:
         if not _store_initialized:
@@ -171,8 +187,147 @@ def _get_store():
                 )
                 _in_memory_store = InMemoryLockoutStore()
             _store_initialized = True
+            _last_redis_probe = time.monotonic()
+        elif _redis_client is None:
+            # On the fallback — retry Redis, but not on every call.
+            now = time.monotonic()
+            if now - _last_redis_probe >= REDIS_REPROBE_SECONDS:
+                _last_redis_probe = now
+                recovered = _get_redis_client()
+                if recovered is not None:
+                    logger.info("Redis recovered — resuming distributed lockout storage")
+                    _redis_client = recovered
 
         return _redis_client if _redis_client else _in_memory_store
+
+
+def _get_memory_fallback_store() -> InMemoryLockoutStore:
+    """Get the in-memory store, creating it if Redis was healthy until now.
+
+    ``_get_store()`` returns the *Redis* client whenever one exists, so it must never
+    be used to supply the fallback: ``_check_and_record_attempt_memory`` reaches into
+    ``store._lock`` / ``store._data``, which a ``redis.Redis`` does not have. Passing
+    the Redis client there raised ``AttributeError`` out of ``check_and_record_attempt``
+    and turned every login into an HTTP 500 for as long as Redis was unhealthy.
+    """
+    global _in_memory_store
+
+    with _store_lock:
+        if _in_memory_store is None:
+            _in_memory_store = InMemoryLockoutStore()
+        return _in_memory_store
+
+
+def _record_degradation(control: str, fallback: str) -> None:
+    """Count a security control running without its shared state store.
+
+    Imported lazily and never allowed to raise: a broken metrics backend must not be
+    able to turn into a failed login. Mirrors ``token_service._record_degradation``.
+    """
+    try:
+        from app.core.metrics import security_state_degraded_total
+
+        security_state_degraded_total.labels(control=control, fallback=fallback).inc()
+    except Exception:  # pragma: no cover - metrics must never break auth
+        logger.debug("Could not record security degradation metric", exc_info=True)
+
+
+#: Compare-and-set write for the lockout record.
+#:
+#: ``WATCH`` cannot guard this operation. ``redis.Redis.watch()`` issues WATCH on a
+#: connection from the pool, while ``redis.Redis.pipeline()`` acquires a *different*
+#: connection for its MULTI/EXEC — so the previous "atomic" implementation was a plain
+#: read-modify-write and two concurrent failed logins could both read
+#: ``failed_attempts = 4`` and both write 5, letting an attacker exceed the threshold.
+#: A server-side script has no such split: the GET and the SET run in one Redis
+#: execution with nothing interleaved. The write applies only when the stored value is
+#: still byte-identical to the one the caller read; on conflict the current value comes
+#: back so the retry recomputes from fresh state without an extra round trip. A key that
+#: TTL'd out mid-flight also reports a conflict, so the retry re-creates it rather than
+#: resurrecting a record the server has already dropped.
+_CAS_LUA = """
+local current = redis.call('GET', KEYS[1])
+if ARGV[4] == '1' then
+  if current then return {0, current} end
+elseif current ~= ARGV[1] then
+  return {0, current or ''}
+end
+redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+return {1, ''}
+"""
+
+#: How many times a losing writer recomputes before degrading to in-memory tracking.
+CAS_MAX_RETRIES = 5
+
+_cas_script = None
+_cas_script_client = None
+
+
+def _get_cas_script(store):
+    """Get the registered CAS script for ``store``.
+
+    ``register_script`` hashes locally (no round trip), but caching keeps the SHA
+    stable so repeated calls hit ``EVALSHA``. A race here is harmless: both threads
+    build equivalent script objects.
+    """
+    global _cas_script, _cas_script_client
+
+    if _cas_script is None or _cas_script_client is not store:
+        _cas_script = store.register_script(_CAS_LUA)
+        _cas_script_client = store
+    return _cas_script
+
+
+def _decode_stored(value: str | bytes | None) -> str | None:
+    """Normalize a Redis value to ``str``/``None`` (clients may not decode responses)."""
+    if value is None or value == "" or value == b"":
+        return None
+    if isinstance(value, bytes):
+        return value.decode()
+    return value
+
+
+def _cas_write(
+    script, key: str, expected: str | None, record: LockoutRecord
+) -> tuple[bool, str | None]:
+    """Persist ``record`` only if ``key`` still holds ``expected``.
+
+    Args:
+        script: Registered ``_CAS_LUA`` script
+        key: Storage key for the record
+        expected: The exact value read at the start of this attempt (None if absent)
+        record: The mutated record to write
+
+    Returns:
+        Tuple of (written, current_value): ``current_value`` is the value that beat us
+        when ``written`` is False.
+    """
+    ttl = _record_ttl_seconds()
+    written, current = script(
+        keys=[key],
+        args=[
+            expected or "",
+            json.dumps(record.to_dict()),
+            ttl,
+            "1" if expected is None else "0",
+        ],
+    )
+    return bool(int(written)), _decode_stored(current)
+
+
+def _record_ttl_seconds() -> int:
+    """How long a lockout record survives in the store.
+
+    The maximum lockout duration plus 24 h, so a record can never expire while
+    the account it locks is still locked — an expiring record silently unlocks
+    the account. Resolved live because ``account_lockout_max_duration_minutes``
+    is admin-editable: pinning the TTL at the value the process started with
+    would under-cover a lockout the admin has since made longer.
+
+    Returns:
+        Time-to-live in seconds.
+    """
+    return (get_process_auth_settings().account_lockout_max_duration_minutes + 1440) * 60
 
 
 def _lockout_key(identifier: str) -> str:
@@ -190,6 +345,45 @@ def _normalize_identifier(identifier: str) -> str:
         Lowercase identifier
     """
     return identifier.lower().strip()
+
+
+def canonical_identifier(submitted: str, account_email: str | None) -> str:
+    """Collapse every alias of one account onto a single lockout bucket.
+
+    Lockout was keyed on the **submitted string**, so an account reachable both as
+    ``person@example.com`` and as its ``ldap_uid`` had two independent counters and
+    an attacker got ``2 x ACCOUNT_LOCKOUT_THRESHOLD`` attempts against it. Keying on
+    the resolved account's email collapses those aliases onto one counter, which is
+    what NIST AC-7 counts: attempts *against an account*, not against a spelling.
+
+    Why the email and not the UUID: the admin unlock endpoint
+    (``api/endpoints/admin.py``) clears the lockout with ``unlock_account(user.email)``
+    and the periodic/inspection helpers surface identifiers to operators. Email keeps
+    one key space for writers and readers; a UUID key would silently orphan every
+    admin unlock.
+
+    Enumeration safety — the two properties that make the fallback safe:
+
+    * **Bucket names do not distinguish existence.** When no account resolves, the
+      bucket is the normalized submitted string. For the overwhelmingly common case
+      (the login form, where the submitted string *is* the email) the unknown-account
+      bucket is byte-identical to the one that account would have used had it
+      existed, so the choice of bucket reveals nothing. The alias case can only be
+      correlated by an attacker who already knows the account's email address.
+    * **No new timing signal.** The caller resolves the account **once,
+      unconditionally, on the same code path for a hit and a miss**
+      (``login._resolve_lockout_account``) — the very lookup the lockout-exemption
+      check already performed on every attempt. This function itself does no I/O.
+
+    Args:
+        submitted: The identifier as typed by the caller (email or LDAP uid).
+        account_email: Email of the account this attempt resolved to, or ``None``
+            when no account matched.
+
+    Returns:
+        The normalized lockout key for this attempt.
+    """
+    return _normalize_identifier(account_email or submitted)
 
 
 def _mask_identifier(identifier: str) -> str:
@@ -218,10 +412,11 @@ def _get_lockout_duration_minutes(lockout_count: int) -> int:
     Returns:
         Lockout duration in minutes
     """
-    base_duration = settings.ACCOUNT_LOCKOUT_DURATION_MINUTES
-    max_duration = settings.ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES
+    auth = get_process_auth_settings()
+    base_duration = auth.account_lockout_duration_minutes
+    max_duration = auth.account_lockout_max_duration_minutes
 
-    if not settings.ACCOUNT_LOCKOUT_PROGRESSIVE:
+    if not auth.account_lockout_progressive:
         return base_duration
 
     # lockout_count is the count before this lockout, so 0 = first lockout
@@ -259,8 +454,7 @@ def _save_record(record: LockoutRecord) -> None:
     """
     store = _get_store()
     key = _lockout_key(record.identifier)
-    # Set TTL to max lockout duration + 24 hours for cleanup
-    ttl = (settings.ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES + 1440) * 60
+    ttl = _record_ttl_seconds()
     store.set(key, json.dumps(record.to_dict()), ex=ttl)
 
 
@@ -314,7 +508,7 @@ def check_and_record_attempt(
         - is_locked: True if account is/becomes locked, False otherwise
         - unlock_time: When the lockout expires (None if not locked)
     """
-    if not settings.ACCOUNT_LOCKOUT_ENABLED:
+    if not get_process_auth_settings().account_lockout_enabled:
         return False, None
 
     if exempt_from_lockout:
@@ -348,14 +542,15 @@ def _handle_expired_lockout(record: LockoutRecord, now: datetime) -> None:
     record.first_failed_attempt = now.isoformat()
 
 
-def _handle_successful_login(
-    store, key: str, record: LockoutRecord, locked_until_dt: datetime | None
+def _apply_successful_login(
+    record: LockoutRecord, locked_until_dt: datetime | None
 ) -> tuple[bool, None]:
     """Clear failed attempts after successful login.
 
+    Mutates ``record`` only — the caller is responsible for persisting it, so the
+    write can be made conditional (see ``_cas_write``).
+
     Args:
-        store: Redis store with pipeline support
-        key: Storage key for the record
         record: The lockout record to update
         locked_until_dt: Previous lockout datetime (for logging)
 
@@ -372,15 +567,6 @@ def _handle_successful_login(
     record.first_failed_attempt = None
     record.last_failed_attempt = None
     record.admin_unlocked_at = None
-
-    ttl = (settings.ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES + 1440) * 60
-    pipe = store.pipeline(True)  # Transaction mode
-    try:
-        pipe.set(key, json.dumps(record.to_dict()), ex=ttl)
-        pipe.execute()
-    except Exception:
-        pipe.reset()
-        raise
     return False, None
 
 
@@ -397,7 +583,7 @@ def _check_lockout_threshold(
     Returns:
         Tuple of (is_locked, unlock_time)
     """
-    if record.failed_attempts < settings.ACCOUNT_LOCKOUT_THRESHOLD:
+    if record.failed_attempts < get_process_auth_settings().account_lockout_threshold:
         return False, None
 
     duration_minutes = _get_lockout_duration_minutes(record.lockout_count)
@@ -414,14 +600,15 @@ def _check_lockout_threshold(
     return True, unlock_time
 
 
-def _handle_failed_login(
-    store, key: str, record: LockoutRecord, identifier: str, now: datetime
+def _apply_failed_login(
+    record: LockoutRecord, identifier: str, now: datetime
 ) -> tuple[bool, datetime | None]:
     """Increment failed attempts and check lockout threshold.
 
+    Mutates ``record`` only — the caller persists it conditionally so two concurrent
+    failures cannot both write the same attempt count.
+
     Args:
-        store: Redis store with pipeline support
-        key: Storage key for the record
         record: The lockout record to update
         identifier: User identifier for logging
         now: Current UTC datetime
@@ -438,46 +625,41 @@ def _handle_failed_login(
 
     logger.info(
         f"Failed login attempt for {_mask_identifier(identifier)}: "
-        f"attempt {record.failed_attempts}/{settings.ACCOUNT_LOCKOUT_THRESHOLD}"
+        f"attempt {record.failed_attempts}/"
+        f"{get_process_auth_settings().account_lockout_threshold}"
     )
 
-    is_locked, unlock_time = _check_lockout_threshold(record, now, identifier)
-
-    ttl = (settings.ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES + 1440) * 60
-    pipe = store.pipeline(True)  # Transaction mode
-    try:
-        pipe.set(key, json.dumps(record.to_dict()), ex=ttl)
-        pipe.execute()
-    except Exception:
-        pipe.reset()
-        raise
-    return is_locked, unlock_time
+    return _check_lockout_threshold(record, now, identifier)
 
 
 def _check_and_record_attempt_redis(
     store, key: str, identifier: str, success: bool, now: datetime
 ) -> tuple[bool, datetime | None]:
     """
-    Atomic check-and-record using Redis transactions.
+    Atomic check-and-record backed by a compare-and-set Lua script.
 
-    Uses optimistic locking with WATCH to ensure atomicity.
+    The read-modify-write is made atomic by the ``_CAS_LUA`` script: the record is
+    written only if Redis still holds exactly the value this call read. A losing
+    writer gets the winner's value back and recomputes from it, so two concurrent
+    failed logins produce attempts 4 and 5 rather than both writing 5.
+
+    Falls back to the in-memory store (never to a non-atomic Redis write) if Redis
+    is unreachable or contention outlasts the retry budget.
     """
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            store.watch(key)
+    try:
+        script = _get_cas_script(store)
+        raw = _decode_stored(store.get(key))
 
-            data = store.get(key)
+        for _ in range(CAS_MAX_RETRIES):
             record = (
-                LockoutRecord.from_dict(json.loads(data))
-                if data
+                LockoutRecord.from_dict(json.loads(raw))
+                if raw
                 else LockoutRecord(identifier=identifier)
             )
             locked_until_dt = record.get_locked_until_datetime()
 
-            # Check if currently locked
+            # Currently locked: nothing to write, so no CAS is needed.
             if locked_until_dt and now < locked_until_dt:
-                store.unwatch()
                 logger.warning(
                     f"Login attempt on locked account: {_mask_identifier(identifier)}, "
                     f"locked until {locked_until_dt.isoformat()}"
@@ -488,24 +670,33 @@ def _check_and_record_attempt_redis(
             if locked_until_dt and now >= locked_until_dt:
                 _handle_expired_lockout(record, now)
 
+            result: tuple[bool, datetime | None]
             if success:
-                return _handle_successful_login(store, key, record, locked_until_dt)
+                result = _apply_successful_login(record, locked_until_dt)
+            else:
+                result = _apply_failed_login(record, identifier, now)
 
-            return _handle_failed_login(store, key, record, identifier, now)
+            written, current = _cas_write(script, key, raw, record)
+            if written:
+                return result
 
-        except Exception as e:
-            if "WATCH" in str(type(e).__name__).upper() or "watch" in str(e).lower():
-                logger.debug(
-                    f"Lockout record modified by another client, retrying (attempt {attempt + 1})"
-                )
-                continue
-            logger.warning(f"Redis transaction failed, using non-atomic fallback: {e}")
-            with contextlib.suppress(Exception):
-                store.unwatch()
-            break
+            raw = current
+            logger.debug(
+                f"Lockout record for {_mask_identifier(identifier)} changed concurrently, "
+                "recomputing from the winning value"
+            )
 
-    # Fallback to non-atomic behavior after retries exhausted
-    return _check_and_record_attempt_memory(_get_store(), key, identifier, success, now)
+        logger.warning(
+            f"Lockout write for {_mask_identifier(identifier)} lost {CAS_MAX_RETRIES} "
+            "compare-and-set races; falling back to in-memory tracking"
+        )
+    except Exception as e:
+        logger.warning(f"Redis lockout transaction failed, falling back to in-memory: {e}")
+
+    _record_degradation("account_lockout", "local")
+    return _check_and_record_attempt_memory(
+        _get_memory_fallback_store(), key, identifier, success, now
+    )
 
 
 def _check_and_record_attempt_memory(
@@ -566,15 +757,16 @@ def _check_and_record_attempt_memory(
             if record.first_failed_attempt is None:
                 record.first_failed_attempt = now.isoformat()
 
+            threshold = get_process_auth_settings().account_lockout_threshold
             logger.info(
                 f"Failed login attempt for {_mask_identifier(identifier)}: "
-                f"attempt {record.failed_attempts}/{settings.ACCOUNT_LOCKOUT_THRESHOLD}"
+                f"attempt {record.failed_attempts}/{threshold}"
             )
 
             # Check if threshold reached
             is_locked = False
             unlock_time = None
-            if record.failed_attempts >= settings.ACCOUNT_LOCKOUT_THRESHOLD:
+            if record.failed_attempts >= threshold:
                 duration_minutes = _get_lockout_duration_minutes(record.lockout_count)
                 unlock_time = now + timedelta(minutes=duration_minutes)
                 record.set_locked_until(unlock_time)
@@ -634,7 +826,7 @@ def is_account_locked(identifier: str) -> tuple[bool, datetime | None]:
         - is_locked: True if account is locked, False otherwise
         - unlock_time: When the lockout expires (None if not locked)
     """
-    if not settings.ACCOUNT_LOCKOUT_ENABLED:
+    if not get_process_auth_settings().account_lockout_enabled:
         return False, None
 
     identifier = _normalize_identifier(identifier)
@@ -677,6 +869,7 @@ def get_lockout_info(identifier: str) -> LockoutInfo:
     """
     identifier = _normalize_identifier(identifier)
     now = datetime.now(UTC)
+    lockout_enabled = get_process_auth_settings().account_lockout_enabled
 
     record = _get_record(identifier)
     if not record:
@@ -689,13 +882,11 @@ def get_lockout_info(identifier: str) -> LockoutInfo:
             "first_failed_attempt": None,
             "last_failed_attempt": None,
             "admin_unlocked_at": None,
-            "lockout_enabled": settings.ACCOUNT_LOCKOUT_ENABLED,
+            "lockout_enabled": lockout_enabled,
         }
 
     locked_until_dt = record.get_locked_until_datetime()
-    is_locked = (
-        locked_until_dt is not None and now < locked_until_dt and settings.ACCOUNT_LOCKOUT_ENABLED
-    )
+    is_locked = locked_until_dt is not None and now < locked_until_dt and lockout_enabled
 
     return {
         "identifier": record.identifier,
@@ -706,7 +897,7 @@ def get_lockout_info(identifier: str) -> LockoutInfo:
         "first_failed_attempt": record.first_failed_attempt,
         "last_failed_attempt": record.last_failed_attempt,
         "admin_unlocked_at": record.admin_unlocked_at,
-        "lockout_enabled": settings.ACCOUNT_LOCKOUT_ENABLED,
+        "lockout_enabled": lockout_enabled,
     }
 
 
@@ -763,7 +954,7 @@ def cleanup_expired_lockouts() -> int:
     Returns:
         Number of records cleaned up
     """
-    if not settings.ACCOUNT_LOCKOUT_ENABLED:
+    if not get_process_auth_settings().account_lockout_enabled:
         return 0
 
     store = _get_store()
@@ -826,7 +1017,7 @@ def get_all_locked_accounts() -> list[LockoutInfo]:
     Returns:
         List of lockout info dictionaries for all locked accounts
     """
-    if not settings.ACCOUNT_LOCKOUT_ENABLED:
+    if not get_process_auth_settings().account_lockout_enabled:
         return []
 
     store = _get_store()

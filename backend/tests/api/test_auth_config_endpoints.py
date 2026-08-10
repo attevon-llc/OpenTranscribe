@@ -28,38 +28,38 @@ class TestSuperAdminGate:
     def test_get_all_normal_user_403(self, client, user_token_headers):
         resp = client.get(_BASE, headers=user_token_headers)
         assert resp.status_code == 403
-        assert resp.json()["detail"] == "Super admin access required"
+        assert "super_admin" in resp.json()["detail"]
 
     def test_get_all_regular_admin_403(self, client, admin_token_headers):
         """A plain ``admin`` (not ``super_admin``) is still forbidden."""
         resp = client.get(_BASE, headers=admin_token_headers)
         assert resp.status_code == 403
-        assert resp.json()["detail"] == "Super admin access required"
+        assert "super_admin" in resp.json()["detail"]
 
     def test_status_normal_user_403(self, client, user_token_headers):
         resp = client.get(f"{_BASE}/status", headers=user_token_headers)
         assert resp.status_code == 403
-        assert resp.json()["detail"] == "Super admin access required"
+        assert "super_admin" in resp.json()["detail"]
 
     def test_get_category_regular_admin_403(self, client, admin_token_headers):
         resp = client.get(f"{_BASE}/ldap", headers=admin_token_headers)
         assert resp.status_code == 403
-        assert resp.json()["detail"] == "Super admin access required"
+        assert "super_admin" in resp.json()["detail"]
 
     def test_put_category_normal_user_403(self, client, user_token_headers):
         resp = client.put(f"{_BASE}/mfa", headers=user_token_headers, json={"mfa_enabled": False})
         assert resp.status_code == 403
-        assert resp.json()["detail"] == "Super admin access required"
+        assert "super_admin" in resp.json()["detail"]
 
     def test_test_connection_normal_user_403(self, client, user_token_headers):
         resp = client.post(f"{_BASE}/ldap/test", headers=user_token_headers, json={})
         assert resp.status_code == 403
-        assert resp.json()["detail"] == "Super admin access required"
+        assert "super_admin" in resp.json()["detail"]
 
     def test_migrate_normal_user_403(self, client, user_token_headers):
         resp = client.post(f"{_BASE}/migrate", headers=user_token_headers)
         assert resp.status_code == 403
-        assert resp.json()["detail"] == "Super admin access required"
+        assert "super_admin" in resp.json()["detail"]
 
 
 # --------------------------------------------------------------------------- #
@@ -74,7 +74,7 @@ class TestSuperAdminReads:
         for category in (
             "local",
             "ldap",
-            "keycloak",
+            "oidc",
             "pki",
             "password_policy",
             "mfa",
@@ -91,7 +91,7 @@ class TestSuperAdminReads:
         body = resp.json()
         for key in (
             "ldap_enabled",
-            "keycloak_enabled",
+            "oidc_enabled",
             "pki_enabled",
             "mfa_enabled",
             "password_policy_enabled",
@@ -143,7 +143,7 @@ class TestSuperAdminWrites:
         assert resp.json()["detail"].startswith("Invalid category. Must be one of:")
 
     def test_test_connection_unsupported_category_400(self, client, super_admin_token_headers):
-        """``/test`` only supports ldap/keycloak — anything else is a 400."""
+        """``/test`` only supports ldap/oidc — anything else is a 400."""
         resp = client.post(f"{_BASE}/mfa/test", headers=super_admin_token_headers, json={})
         assert resp.status_code == 400
         assert resp.json()["detail"] == "Connection test not supported for category: mfa"

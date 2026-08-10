@@ -2,7 +2,9 @@ import { writable, derived, get, type Writable } from 'svelte/store';
 import * as authStore from './auth';
 import { downloadStore, type DownloadState } from './downloads';
 import { t } from '$stores/locale';
+import axiosInstance from '$lib/axios';
 import { generateId } from '$lib/utils/ids';
+import { reconnectDelayMs } from '$lib/utils/backoff';
 import { isCloudEdition } from '$lib/edition';
 
 // Define notification types
@@ -617,6 +619,7 @@ function createWebSocketStore() {
               }
 
               // Synthesize message for admin tasks that don't have one
+              const translate = get(t);
               let currentStep = data.data.message || '';
               if (!currentStep && isAdminProgressType) {
                 if (data.type.startsWith('reindex')) {
@@ -624,44 +627,63 @@ function createWebSocketStore() {
                   const tot = data.data.total_files ?? data.data.stats?.total_files ?? 0;
                   currentStep =
                     status === 'completed'
-                      ? `Indexed ${idx} files`
-                      : `Indexed ${idx} of ${tot} files`;
+                      ? translate('notifications.progress.indexedComplete', { count: idx })
+                      : translate('notifications.progress.indexedProgress', {
+                          count: idx,
+                          total: tot,
+                        });
                 } else if (data.type.startsWith('migration')) {
                   const proc = data.data.processed_files ?? 0;
                   const tot = data.data.total_files ?? 0;
                   currentStep =
                     status === 'completed'
-                      ? `Processed ${proc} files`
-                      : `Processed ${proc} of ${tot} files`;
+                      ? translate('notifications.progress.processedComplete', { count: proc })
+                      : translate('notifications.progress.processedProgress', {
+                          count: proc,
+                          total: tot,
+                        });
                 } else if (data.type.startsWith('clustering')) {
                   const step = data.data.step ?? 0;
                   const tot = data.data.total_steps ?? 0;
                   currentStep =
-                    status === 'completed' ? 'Clustering complete' : `Step ${step} of ${tot}`;
+                    status === 'completed'
+                      ? translate('notifications.progress.clusteringComplete')
+                      : translate('notifications.progress.clusteringStep', { step, total: tot });
                 } else if (data.type.startsWith('attribute_migration')) {
                   const proc = data.data.processed_files ?? 0;
                   const tot = data.data.total_files ?? 0;
                   currentStep =
                     status === 'completed'
-                      ? `Processed ${proc} files`
-                      : `Processed ${proc} of ${tot} files`;
+                      ? translate('notifications.progress.processedComplete', { count: proc })
+                      : translate('notifications.progress.processedProgress', {
+                          count: proc,
+                          total: tot,
+                        });
                 } else if (data.type.startsWith('data_integrity')) {
                   const proc = data.data.processed_files ?? data.data.processed ?? 0;
                   const tot = data.data.total_files ?? data.data.total ?? 0;
                   currentStep =
                     status === 'completed'
-                      ? `Checked ${proc} files`
-                      : `Checked ${proc} of ${tot} files`;
+                      ? translate('notifications.progress.checkedComplete', { count: proc })
+                      : translate('notifications.progress.checkedProgress', {
+                          count: proc,
+                          total: tot,
+                        });
                 } else if (data.type.startsWith('embedding_consistency')) {
                   const proc = data.data.processed_files ?? 0;
                   const tot = data.data.total_files ?? 0;
                   currentStep =
                     status === 'completed'
-                      ? `Repaired ${data.data.repaired ?? 0} speakers`
-                      : `Repairing ${proc} of ${tot} files`;
+                      ? translate('notifications.progress.repairedComplete', {
+                          count: data.data.repaired ?? 0,
+                        })
+                      : translate('notifications.progress.repairingProgress', {
+                          count: proc,
+                          total: tot,
+                        });
                 }
               }
-              if (!currentStep) currentStep = 'Processing...';
+              if (!currentStep) currentStep = translate('notifications.progress.processing');
 
               // Normalize progress: admin tasks send 0.0-1.0, others send 0-100
               let rawProgress = data.data.progress || 0;
@@ -775,7 +797,7 @@ function createWebSocketStore() {
                 id: generateId('ws'),
                 type: data.type as NotificationType,
                 title: getNotificationTitle(data.type),
-                message: data.data.message || 'Gallery update',
+                message: data.data.message || get(t)('notifications.galleryUpdate'),
                 timestamp: new Date(),
                 read: false,
                 data: data.data,
@@ -798,7 +820,7 @@ function createWebSocketStore() {
                 message:
                   composeClientMessage(data.type, data.data) ||
                   data.data.message ||
-                  'No message provided',
+                  get(t)('notifications.noMessage'),
                 timestamp: new Date(),
                 read: false,
                 data: data.data,
@@ -826,22 +848,22 @@ function createWebSocketStore() {
     });
   };
 
-  // Try to reconnect with exponential backoff
+  // Try to reconnect with jittered exponential backoff.
+  //
+  // The jitter matters: a backend restart drops every connected client at the
+  // same instant, and an un-jittered 2/4/8/16/30 s grid makes all of them
+  // retry in lockstep, so the server takes a synchronised burst on every tick
+  // while it is still coming up. `reconnectDelayMs` spreads each client over
+  // the second half of its backoff window instead.
   const tryReconnect = () => {
     update((state: WebSocketState) => {
       state.reconnectAttempts += 1;
       return state;
     });
 
-    // Calculate backoff time (max 30 seconds)
-    const backoffTime = Math.min(
-      Math.pow(2, Math.min(10, getState().reconnectAttempts)) * 1000,
-      30000
-    );
-
     reconnectTimeout = setTimeout(() => {
       connect();
-    }, backoffTime);
+    }, reconnectDelayMs(getState().reconnectAttempts));
   };
 
   // Disconnect
@@ -1139,17 +1161,17 @@ function createWebSocketStore() {
   // Recover active task progress from backend on connect/reconnect
   const recoverActiveProgress = async () => {
     try {
-      const response = await fetch('/api/tasks/progress/active', { credentials: 'include' });
-      if (!response.ok) return;
-      const activeTasks: Array<{
-        task_type: string;
-        user_id: number;
-        total: number;
-        processed: number;
-        status: string;
-        message: string;
-        eta_seconds: number | null;
-      }> = await response.json();
+      const { data: activeTasks } = await axiosInstance.get<
+        Array<{
+          task_type: string;
+          user_id: number;
+          total: number;
+          processed: number;
+          status: string;
+          message: string;
+          eta_seconds: number | null;
+        }>
+      >('/tasks/progress/active');
 
       if (!activeTasks || activeTasks.length === 0) return;
 

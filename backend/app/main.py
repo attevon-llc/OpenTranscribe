@@ -7,6 +7,7 @@ from contextlib import suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 from app.api.router import api_router
@@ -14,10 +15,12 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError
+from app.core.exceptions import EmailDeliveryError
 from app.core.exceptions import LLMServiceError
 from app.core.exceptions import OpenTranscribeError
 from app.core.exceptions import SearchIndexError
 from app.core.exceptions import StorageError
+from app.core.legacy_auth_env import deprecated_oidc_env_names
 from app.core.logging_config import configure_logging
 from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
@@ -30,8 +33,14 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_production_secrets():
-    """Validate that production secrets are properly configured."""
-    is_production = settings.ENVIRONMENT.lower() in ("production", "prod")
+    """Validate that production secrets are properly configured.
+
+    Gated on ``settings.is_hardened`` (fail-closed): every check below applies unless
+    ENVIRONMENT explicitly names a relaxed environment. The previous
+    ``ENVIRONMENT in ("production", "prod")`` test was never true in practice — nothing
+    passes ENVIRONMENT into the containers — so none of these ran anywhere (#284 A0.3).
+    """
+    is_production = settings.is_hardened
 
     # Check JWT secret key
     insecure_jwt_secrets = (
@@ -61,12 +70,24 @@ def _validate_production_secrets():
         )
         raise ValueError("Insecure ENCRYPTION_KEY in production environment")
 
-    # Warn about Keycloak audience validation disabled in production
-    if is_production and settings.KEYCLOAK_ENABLED and not settings.KEYCLOAK_VERIFY_AUDIENCE:
+    # Warn about OIDC audience validation disabled in production
+    if is_production and settings.OIDC_ENABLED and not settings.OIDC_VERIFY_AUDIENCE:
         logger.warning(
-            "SECURITY WARNING: KEYCLOAK_VERIFY_AUDIENCE is disabled in production! "
+            "SECURITY WARNING: OIDC_VERIFY_AUDIENCE is disabled in production! "
             "This allows tokens intended for other clients to be accepted. "
-            "Set KEYCLOAK_VERIFY_AUDIENCE=true and configure KEYCLOAK_AUDIENCE for proper token validation."
+            "Set OIDC_VERIFY_AUDIENCE=true and configure OIDC_AUDIENCE for proper token validation."
+        )
+
+    # One line, once, naming the retired environment-variable spellings still in use.
+    # They keep working permanently (core/legacy_auth_env.py); this only tells the
+    # operator that a provider-neutral canonical name now exists.
+    deprecated_env = deprecated_oidc_env_names()
+    if deprecated_env:
+        logger.warning(
+            "DEPRECATED: %s still use the pre-rename environment-variable names. "
+            "They continue to work and take precedence, but the canonical spelling is "
+            "OIDC_* (see docs/OIDC_SETUP.md).",
+            ", ".join(deprecated_env),
         )
 
     # Enforce PKI trusted proxies in production, warn in development
@@ -85,6 +106,32 @@ def _validate_production_secrets():
                 "(e.g., '127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')."
             )
 
+    # Same rule for trusted-header authentication, and for the same reason: a header
+    # nobody vouched for is an attacker-supplied string, and PROXY_ROLE_HEADER can
+    # turn one into an admin session. The runtime path fails closed as well
+    # (auth/header_trust.py refuses every assertion with an empty allowlist) — this
+    # guard is what makes the misconfiguration visible at boot rather than as a
+    # silent, total authentication outage.
+    #
+    # It reads .env only. A deployment that enables proxy auth *solely* in the admin
+    # UI is not visible here, because Settings is built before any database session
+    # exists; the runtime refusal is what covers that case, and the admin UI's own
+    # cross-field validation is where the warning belongs.
+    if settings.PROXY_ENABLED and not settings.PROXY_TRUSTED_PROXIES:
+        if is_production:
+            logger.critical(
+                "PROXY_ENABLED=true but PROXY_TRUSTED_PROXIES is empty! "
+                "Any client could inject identity headers. Refusing to start."
+            )
+            raise ValueError(
+                "PROXY_TRUSTED_PROXIES must be set when PROXY_ENABLED=true in production"
+            )
+        logger.warning(
+            "SECURITY WARNING: PROXY_ENABLED=true but PROXY_TRUSTED_PROXIES is empty. "
+            "Every header-sourced assertion will be REFUSED until you configure the "
+            "reverse proxy's addresses (e.g. '10.0.0.0/8,172.16.0.0/12')."
+        )
+
     # Check Redis password in production
     if is_production and not settings.REDIS_PASSWORD:
         logger.critical("REDIS_PASSWORD must be set in production!")
@@ -96,50 +143,109 @@ def _validate_production_secrets():
         raise ValueError("DEBUG must be false in production environment")
 
     # Warn about insecure presigned URLs in production
-    if (
-        is_production
-        and settings.MINIO_PUBLIC_URL
-        and not settings.MINIO_PUBLIC_URL.startswith("https://")
-    ):
+    public_storage_url = settings.STORAGE_PUBLIC_URL or settings.MINIO_PUBLIC_URL
+    if is_production and public_storage_url and not public_storage_url.startswith("https://"):
         logger.warning(
-            "SECURITY WARNING: MINIO_PUBLIC_URL uses HTTP instead of HTTPS. "
-            "Presigned URLs will be served over an insecure connection in production."
+            "SECURITY WARNING: STORAGE_PUBLIC_URL/MINIO_PUBLIC_URL uses HTTP instead of "
+            "HTTPS. Presigned URLs will be served over an insecure connection in production."
         )
+
+    # TESTING=true enables auth shortcuts (a fabricated user, a password-free login
+    # path). Enforcement lives at the USE sites in endpoints/auth.py, which additionally
+    # require `not settings.is_hardened` — so the flag is inert in a real deployment even
+    # if it leaks into the environment. Warn here rather than refusing to boot: the
+    # secrets-guard test suite legitimately simulates production while TESTING is set
+    # process-wide by conftest (issue #284 A0.8).
+    if is_production and os.environ.get("TESTING", "False").lower() == "true":
+        logger.warning(
+            "TESTING=true in a hardened environment. Auth shortcuts are disabled by "
+            "is_hardened, but this variable should not be set in production."
+        )
+
+    # A wildcard origin combined with allow_credentials=True lets any site read
+    # authenticated responses. Browsers reject that pairing, but the misconfiguration
+    # should surface at boot rather than as confusing CORS failures (issue #284 A0.8).
+    if is_production and "*" in settings.CORS_ORIGINS:
+        logger.critical(
+            "CORS_ORIGINS contains '*' while credentials are allowed. "
+            "Set explicit origins. Refusing to start."
+        )
+        raise ValueError("Wildcard CORS_ORIGINS is not permitted with credentialed requests")
 
     if is_production:
         logger.info("Production security validation passed")
 
 
-async def _setup_minio():
-    """Initialize MinIO bucket on startup.
+async def _drain_websockets() -> None:
+    """Close live WebSockets on shutdown so the process doesn't hang to SIGKILL.
+
+    See ``ConnectionManager.drain`` (issue #284 A1.21). Never raises — a failure here
+    must not block shutdown.
+    """
+    try:
+        from app.api.websockets import manager
+
+        await manager.drain()
+    except Exception as e:  # noqa: BLE001 - never block shutdown on drain
+        logger.warning(f"WebSocket drain failed (non-fatal): {e}")
+
+
+def _setup_minio():
+    """Initialize the media bucket on startup.
 
     Creates the media bucket if it doesn't exist and ensures the bucket
     policy is private (no anonymous/public access). All file access goes
     through presigned URLs, so public read is unnecessary and a security risk.
+
+    Every call in here is a blocking object-storage round trip and the function never
+    awaited anything, so as an ``async def`` startup task it held the event loop for
+    the whole bucket bootstrap — with the API already accepting requests (issue #320).
+    The lifespan now dispatches it through ``run_in_threadpool``.
+
+    Uses the shared storage client so ``STORAGE_BACKEND=s3`` bootstraps against
+    the real bucket instead of a MinIO-shaped client built from raw env vars
+    (issue #284 A1.11). On native S3 the bucket is owned by the operator's
+    infrastructure: we verify it and configure CORS, but never create it and
+    never touch its bucket policy — a globally-unique name created in the wrong
+    region, or a deleted policy, is not ours to guess at.
     """
     try:
         import json
 
-        from minio import Minio
+        from app.services import storage_backend
+        from app.services.minio_service import minio_client
 
-        minio_host = os.getenv("MINIO_HOST", "minio")
-        minio_port = os.getenv("MINIO_PORT", "9000")
-        minio_user = os.getenv("MINIO_ROOT_USER", "minioadmin")
-        minio_password = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
-        bucket_name = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
+        bucket_name = settings.MEDIA_BUCKET_NAME
+        native_s3 = storage_backend.is_native_s3()
 
-        client = Minio(
-            f"{minio_host}:{minio_port}",
-            access_key=minio_user,
-            secret_key=minio_password,
-            secure=settings.MINIO_SECURE,
-        )
-
-        if not client.bucket_exists(bucket_name):
-            client.make_bucket(bucket_name)
+        if not minio_client.bucket_exists(bucket_name):
+            if native_s3:
+                logger.error(
+                    f"S3 bucket '{bucket_name}' does not exist or is not reachable with the "
+                    "configured credentials. Create it (and grant the role access) before "
+                    "starting OpenTranscribe."
+                )
+                return
+            minio_client.make_bucket(bucket_name)
             logger.info(f"MinIO bucket '{bucket_name}' created successfully")
         else:
-            logger.info(f"MinIO bucket '{bucket_name}' already exists")
+            logger.info(f"Media bucket '{bucket_name}' already exists")
+
+        # Browser-direct uploads need a bucket CORS policy on S3 (MinIO allows any
+        # origin already). Opt-in and best-effort; never blocks startup.
+        storage_backend.ensure_bucket_cors(bucket_name)
+
+        # Backstop for browser-side multipart uploads the user never finished:
+        # the parts of an abandoned upload are billable and invisible in a normal
+        # object listing. S3 needs an explicit lifecycle rule; MinIO expires them
+        # itself and refuses the rule, so this is a no-op there. Either way the
+        # explicit abort on cancel/delete is the primary path.
+        from app.services.multipart_upload import ensure_abort_incomplete_lifecycle
+
+        ensure_abort_incomplete_lifecycle(bucket_name)
+
+        if native_s3:
+            return
 
         # Security: ensure bucket has no public access policy.
         # Previous versions set a public read policy ("Principal": {"AWS": "*"})
@@ -147,7 +253,7 @@ async def _setup_minio():
         # access goes through presigned URLs, public read is unnecessary.
         # Remove any existing public policy to lock down the bucket.
         try:
-            existing_policy = client.get_bucket_policy(bucket_name)
+            existing_policy = minio_client.get_bucket_policy(bucket_name)
             if existing_policy:
                 policy_data = json.loads(existing_policy)
                 has_public_access = any(
@@ -155,7 +261,7 @@ async def _setup_minio():
                     for stmt in policy_data.get("Statement", [])
                 )
                 if has_public_access:
-                    client.delete_bucket_policy(bucket_name)
+                    minio_client.delete_bucket_policy(bucket_name)
                     logger.warning(
                         f"SECURITY FIX: Removed public access policy from bucket '{bucket_name}'. "
                         "All file access now requires authentication via presigned URLs."
@@ -165,7 +271,7 @@ async def _setup_minio():
             logger.debug("No bucket policy set for '%s' (secure default)", bucket_name)
 
     except Exception as e:
-        logger.error(f"Error setting up MinIO bucket: {e}")
+        logger.error(f"Error setting up media bucket: {e}")
 
 
 def _clear_stale_task_state():
@@ -397,6 +503,47 @@ async def _run_one_time_embedding_normalization():
 # No need to load them into runtime config - they're read directly from DB when needed.
 
 
+def _managed_embedding_mode() -> bool:
+    """Whether the embedding model is owned by the OpenSearch domain, not by us."""
+    return settings.OPENSEARCH_EMBEDDING_MODE.strip().lower() == "managed"
+
+
+def _adopt_managed_embedding_model(ml_service) -> None:
+    """Use an embedding model the OpenSearch domain already hosts (issue #284 A1.13).
+
+    The default "local" path mutates ML Commons cluster settings and registers a
+    model from a ``file://`` or public ``https://`` URL. Amazon OpenSearch Service
+    exposes neither knob, so on a managed domain that path fails at the first
+    cluster-settings PUT and neural search never comes up. In "managed" mode the
+    operator has already registered the model (typically a remote-model connector),
+    and all we do is adopt its id and wire the ingest pipeline.
+
+    Synchronous: the model-id write and the ingest-pipeline PUT are both blocking
+    OpenSearch calls with nothing to await (issue #320). The caller offloads it.
+
+    Args:
+        ml_service: The ``MLModelService`` singleton.
+    """
+    from app.services.search.indexing_service import ensure_neural_ingest_pipeline
+
+    model_id = settings.OPENSEARCH_NEURAL_MODEL_ID.strip() or ml_service.get_active_model_id()
+    if not model_id:
+        logger.warning(
+            "OPENSEARCH_EMBEDDING_MODE=managed but no model id is configured. Set "
+            "OPENSEARCH_NEURAL_MODEL_ID to a model already registered in the domain, "
+            "or set OPENSEARCH_NEURAL_SEARCH_ENABLED=false to run keyword-only search."
+        )
+        return
+
+    ml_service.set_active_model_id(model_id)
+    logger.info(f"Neural search using domain-managed model: {model_id}")
+
+    if ensure_neural_ingest_pipeline():
+        logger.info("Neural ingest pipeline configured successfully")
+    else:
+        logger.warning("Could not configure neural ingest pipeline")
+
+
 async def _initialize_neural_search():
     """Initialize OpenSearch neural search models on startup.
 
@@ -410,6 +557,9 @@ async def _initialize_neural_search():
     Runs after a delay to allow OpenSearch to fully start.
     For offline/air-gapped deployments, models are loaded from
     pre-downloaded local files (mounted at /ml-models in OpenSearch container).
+
+    ``OPENSEARCH_EMBEDDING_MODE=managed`` short-circuits steps 1-4 and adopts a model
+    the domain already hosts — see :func:`_adopt_managed_embedding_model`.
     """
     if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
         logger.info("Neural search disabled, skipping initialization")
@@ -422,6 +572,10 @@ async def _initialize_neural_search():
         from app.services.search.ml_model_service import get_ml_model_service
 
         ml_service = get_ml_model_service()
+
+        if _managed_embedding_mode():
+            await run_in_threadpool(_adopt_managed_embedding_model, ml_service)
+            return
 
         # Configure ML Commons settings
         if not ml_service.configure_ml_settings():
@@ -495,6 +649,21 @@ async def _initialize_neural_search():
         logger.error(f"Error initializing neural search: {e}")
 
 
+def _register_chat_usage_hook() -> None:
+    """Install the core chat usage recorder.
+
+    Registered in EVERY edition — a self-hosted operator paying an LLM bill wants
+    the same visibility a hosted tenant does. The cloud edition registers its own
+    billing hook alongside this one; the two are independent.
+    """
+    try:
+        from app.services.chat.usage import register as register_chat_usage
+
+        register_chat_usage()
+    except Exception as e:  # noqa: BLE001 — accounting never blocks startup
+        logger.warning(f"Chat usage hook registration failed (non-fatal): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
@@ -506,13 +675,27 @@ async def lifespan(app: FastAPI):
     logger.info("Starting application...")
     _validate_production_secrets()
 
-    from app.db.migrations import run_migrations
+    # Migrations run on startup for self-host (a single container owns the DB). On
+    # an orchestrated deploy a dedicated migrate Job owns them instead, and every API
+    # replica racing Alembic is exactly what RUN_MIGRATIONS_ON_STARTUP=false prevents
+    # (issue #284 A1.4). When gated off we do NOT silently trust the DB: readiness
+    # asserts the schema is at head and fails 503 otherwise, so a replica started
+    # against an un-migrated database never takes traffic.
+    if settings.RUN_MIGRATIONS_ON_STARTUP:
+        from app.db.migrations import run_migrations
 
-    try:
-        run_migrations()
-    except Exception as e:
-        logger.critical(f"Database migration failed — aborting startup: {e}")
-        raise SystemExit(1) from e
+        try:
+            run_migrations()
+        except Exception as e:
+            logger.critical(f"Database migration failed — aborting startup: {e}")
+            raise SystemExit(1) from e
+    else:
+        logger.info(
+            "RUN_MIGRATIONS_ON_STARTUP=false — skipping migrations; a migrate job is "
+            "expected to own them. Readiness will verify the schema is at head."
+        )
+
+    _register_chat_usage_hook()
 
     # Seed initial data (admin user, default tags, system prompts)
     try:
@@ -527,15 +710,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Initial data seeding failed (non-fatal): {e}")
 
-    # Check OpenSearch index health (auto-repair corrupted shards from unclean shutdowns)
+    # Check OpenSearch index health (auto-repair corrupted shards from unclean shutdowns).
+    #
+    # ensure_*_exist are idempotent no-ops once the indices are there, so every replica
+    # may run them. check_and_repair_indices is NOT cheap and acts on shared cluster
+    # state, so it is elected — N replicas repairing the same indices concurrently is
+    # wasted work at best (issue #284 A1.15).
     try:
         from app.services.opensearch_service import check_and_repair_indices
         from app.services.opensearch_service import ensure_indices_exist
         from app.services.opensearch_service import ensure_v4_index_exists
+        from app.utils.boot_once import run_once_per_boot
 
         ensure_indices_exist()
         ensure_v4_index_exists()
-        check_and_repair_indices()
+        if run_once_per_boot("opensearch_repair_indices"):
+            check_and_repair_indices()
     except Exception as e:
         logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")
 
@@ -583,14 +773,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Derived-cache retention/reclaim setup failed (non-fatal): {e}")
 
-    # Clear stale migration state from Redis (orphaned by unclean shutdown)
+    # Clear stale migration state from Redis (orphaned by unclean shutdown).
+    #
+    # Elected, because this deletes ALL task_progress:* keys and every coordination
+    # lock. Unelected, the second replica to boot wipes progress and locks belonging to
+    # work the first replica is actively coordinating (issue #284 A1.3).
     try:
-        _clear_stale_task_state()
+        from app.utils.boot_once import run_once_per_boot
+
+        if run_once_per_boot("clear_stale_task_state"):
+            _clear_stale_task_state()
     except Exception as e:
         logger.warning(f"Migration state cleanup failed (non-fatal): {e}")
 
     logger.info("Setting up MinIO and task recovery...")
-    minio_task = asyncio.create_task(_setup_minio())
+    minio_task = asyncio.create_task(run_in_threadpool(_setup_minio))
     recovery_task = asyncio.create_task(_run_startup_recovery())
     search_maintenance = asyncio.create_task(_run_search_maintenance())
     thumbnail_migration = asyncio.create_task(_run_thumbnail_migration())
@@ -601,6 +798,9 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("Shutting down application...")
+
+    await _drain_websockets()
+
     for task in [
         minio_task,
         recovery_task,
@@ -616,14 +816,37 @@ async def lifespan(app: FastAPI):
                 await task
 
 
+def _resolve_docs_urls() -> tuple[str | None, str | None, str | None]:
+    """Resolve the OpenAPI schema, Swagger UI, and ReDoc URLs.
+
+    Swagger UI is anonymously reachable wherever it is mounted (nginx proxies
+    ``/api/`` straight through), and it enumerates the whole admin/auth attack
+    surface. A hardened deployment therefore publishes none of the three; set
+    ``ENABLE_API_DOCS=true`` to opt back in.
+
+    Returns:
+        The three URLs, or ``(None, None, None)`` when the docs are disabled.
+    """
+    opted_in = os.getenv("ENABLE_API_DOCS", "").strip().lower() in ("1", "true", "yes")
+    if settings.is_hardened and not opted_in:
+        return None, None, None
+    return (
+        f"{settings.API_PREFIX}/openapi.json",
+        f"{settings.API_PREFIX}/docs",
+        f"{settings.API_PREFIX}/redoc",
+    )
+
+
+_openapi_url, _swagger_url, _redoc_url = _resolve_docs_urls()
+
 # Create FastAPI app with lifespan and consistent routing configuration
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Audio transcription and analysis API",
     version=APP_VERSION,
-    openapi_url=f"{settings.API_PREFIX}/openapi.json",
-    docs_url=f"{settings.API_PREFIX}/docs",
-    redoc_url=f"{settings.API_PREFIX}/redoc",
+    openapi_url=_openapi_url,
+    docs_url=_swagger_url,
+    redoc_url=_redoc_url,
     lifespan=lifespan,
     # Disable redirect_slashes to prevent 307 redirects that expose Docker internal hostnames
     # Routes should be defined with "" (not "/") to match paths without trailing slash
@@ -673,6 +896,12 @@ app.add_middleware(ObservabilityMiddleware)
 # Maps domain-specific exceptions to appropriate HTTP status codes so that
 # any ``OpenTranscribeError`` raised in endpoint code is automatically
 # serialised as a structured JSON response.
+#
+# Deliberately `async def` even though it never awaits, which is the one shape the
+# issue #320 sweep leaves alone: the body is a dict lookup and a JSONResponse
+# construction, with no I/O to block the loop. Starlette does accept a plain `def`
+# handler, but it dispatches one through `run_in_threadpool`, so declaring it `def`
+# would buy a thread hop on every error response and free nothing.
 @app.exception_handler(OpenTranscribeError)
 async def handle_app_error(request, exc: OpenTranscribeError):
     status_map = {
@@ -680,6 +909,7 @@ async def handle_app_error(request, exc: OpenTranscribeError):
         StorageError: 503,
         SearchIndexError: 503,
         LLMServiceError: 502,
+        EmailDeliveryError: 503,
     }
     status = status_map.get(type(exc), 500)
     return JSONResponse(
@@ -701,6 +931,17 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # typ
 from app.api.endpoints.metrics import router as metrics_router  # noqa: E402
 
 app.include_router(metrics_router)
+
+# SCIM 2.0 provisioning, mounted at ROOT rather than under API_PREFIX: RFC 7644 §3.1
+# fixes the base path, and every IdP connector appends "/Users" to whatever base URL
+# it is given. Its errors must be SCIM Error resources, not FastAPI's {"detail": ...},
+# or an administrator reading their connector log sees an opaque status code.
+from app.api.endpoints.scim import router as scim_router  # noqa: E402
+from app.api.endpoints.scim.errors import SCIMError  # noqa: E402
+from app.api.endpoints.scim.errors import scim_error_handler  # noqa: E402
+
+app.include_router(scim_router)
+app.add_exception_handler(SCIMError, scim_error_handler)
 
 
 # Health check endpoint
@@ -767,7 +1008,30 @@ def readiness_check():
     except Exception as exc:  # noqa: BLE001
         checks["minio"] = f"error: {type(exc).__name__}"
 
-    critical_ok = checks["postgres"] == "ok" and checks["redis"] == "ok"
+    # Schema freshness (critical) — only when a migrate job owns migrations. If this
+    # replica did not run Alembic itself, it must prove the DB is actually at head
+    # before taking traffic; otherwise a rollout that outpaces the migrate job serves
+    # requests against an old schema (issue #284 A1.4).
+    if not settings.RUN_MIGRATIONS_ON_STARTUP:
+        try:
+            from alembic.migration import MigrationContext
+            from alembic.script import ScriptDirectory
+
+            from app.db.base import engine
+            from app.db.migrations import get_alembic_config
+
+            head = ScriptDirectory.from_config(get_alembic_config()).get_current_head()
+            with engine.connect() as conn:
+                current = MigrationContext.configure(conn).get_current_revision()
+            checks["schema"] = "ok" if current == head else f"stale: {current} != head {head}"
+        except Exception as exc:  # noqa: BLE001
+            checks["schema"] = f"error: {type(exc).__name__}"
+
+    critical_ok = (
+        checks["postgres"] == "ok"
+        and checks["redis"] == "ok"
+        and checks.get("schema", "ok") == "ok"
+    )
     if not critical_ok:
         return JSONResponse(
             status_code=503,

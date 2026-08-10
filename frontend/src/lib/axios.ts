@@ -3,7 +3,11 @@ import { isCloudEdition } from '$lib/edition';
 
 // Create axios instance with consistent base URL for all environments
 // This ensures the same behavior in development and production with nginx
-export const axiosInstance = axios.create({
+//
+// Import this as the default export (`import axiosInstance from '$lib/axios'`) —
+// that's the convention used by the vast majority of call sites. It is
+// intentionally NOT a named export to avoid knip's "duplicate export" flag.
+const axiosInstance = axios.create({
   baseURL: '/api',
   headers: {
     'Content-Type': 'application/json',
@@ -196,7 +200,13 @@ axiosInstance.interceptors.response.use(
       // Don't try to refresh on auth endpoints themselves
       !originalRequest.url?.includes('/auth/login') &&
       !originalRequest.url?.includes('/auth/token/refresh') &&
-      !originalRequest.url?.includes('/auth/me')
+      !originalRequest.url?.includes('/auth/me') &&
+      // Forced MFA enrolment runs BEFORE any session exists: it authenticates
+      // with a bearer half-token and there is no refresh cookie to spend. A 401
+      // here means the half-token is spent or expired, so refreshing is a
+      // guaranteed-useless round-trip.
+      !originalRequest.url?.includes('/auth/mfa/setup') &&
+      !originalRequest.url?.includes('/auth/mfa/verify-setup')
     ) {
       if (isRefreshing) {
         // Another refresh is in progress — queue this request

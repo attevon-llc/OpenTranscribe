@@ -6,7 +6,7 @@
 
 import { writable, derived } from 'svelte/store';
 
-export interface NetworkState {
+interface NetworkState {
   online: boolean;
   lastChecked: Date;
 }

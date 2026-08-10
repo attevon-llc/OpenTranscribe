@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getCsrfToken } from '$lib/axios';
+  import axiosInstance from '$lib/axios';
+  import { getErrorStatus } from '$lib/utils/apiError';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
@@ -83,23 +84,15 @@
     error = '';
 
     try {
-      const response = await fetch('/api/admin/data-integrity/status', {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          error = $t('settings.dataIntegrity.adminRequired');
-          return;
-        }
-        throw new Error('Failed to load status');
-      }
-
-      const data = await response.json();
+      const { data } = await axiosInstance.get('/admin/data-integrity/status');
       running = data.running || false;
       lastRun = data.last_run || null;
       indexOverview = data.index_overview || null;
     } catch (err) {
+      if (getErrorStatus(err) === 403) {
+        error = $t('settings.dataIntegrity.adminRequired');
+        return;
+      }
       console.error('Failed to load data integrity status:', err);
       error = $t('settings.dataIntegrity.loadFailed');
     } finally {
@@ -113,17 +106,7 @@
     totalIndices = 0;
 
     try {
-      const response = await fetch('/api/admin/data-integrity', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to start check');
-      }
-
-      const data = await response.json();
+      const { data } = await axiosInstance.post('/admin/data-integrity');
       if (data.status === 'already_running') {
         toastStore.info($t('settings.dataIntegrity.alreadyRunning'));
         return;

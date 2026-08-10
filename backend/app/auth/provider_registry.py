@@ -42,7 +42,7 @@ class ExternalIdentity:
     unless the email is verified — otherwise anyone who can register the
     victim's address at the IdP could take over the local account
     (self-serve IdPs do not gate registration the way an admin-run
-    Keycloak/LDAP does).
+    the OIDC/LDAP paths do).
     """
 
     provider: str

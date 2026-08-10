@@ -14,7 +14,10 @@ from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.endpoints.auth import get_current_admin_user
+
+# Deployment configuration is the super_admin tier: this router
+# changes the transcription engine and GPU topology.
+from app.api.endpoints.auth import get_current_active_superuser
 from app.db.base import get_db
 from app.models.system_settings import SystemSettings
 from app.services.system_settings_service import get_setting
@@ -103,7 +106,7 @@ def _resolve_setting(db: Session, field: str) -> dict[str, Any]:
 @router.get("")
 def get_engine_settings(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """Return current engine settings with source annotation (db / env / default)."""
     return {field: _resolve_setting(db, field) for field in _KEYS}
@@ -122,7 +125,7 @@ class _EngineSettingsUpdate(BaseModel):
 def update_engine_settings(
     body: _EngineSettingsUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """Write one or more engine settings to the DB. Only provided (non-None) fields are saved."""
     updates = body.model_dump(exclude_none=True)
@@ -141,7 +144,7 @@ def update_engine_settings(
 def reset_engine_setting(
     key: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> None:
     """Delete a DB override for the given key, reverting to env var / default."""
     if key not in _KEYS:
@@ -162,7 +165,7 @@ _METRICS_KEY_PREFIX = "engine:metrics:"
 
 @router.get("/metrics")
 def get_engine_metrics(
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """Return live engine metrics from all active workers via Redis.
 

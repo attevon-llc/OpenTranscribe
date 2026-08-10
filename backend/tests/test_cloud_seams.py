@@ -31,11 +31,11 @@ from app.models.user import User
 
 # Provider name used by the generic-registry seam tests. The registry + JIT sync
 # are vendor-neutral and map ANY provider onto the generic external_id /
-# external_org_id columns. We use a core-permitted auth_type here ("keycloak")
+# external_org_id columns. We use a core-permitted auth_type here ("oidc")
 # because core's user.auth_type CHECK only allows the built-in types — the cloud
 # edition widens that CHECK for its own managed-IdP provider in its own migration
 # and owns the external-provider persistence tests for it.
-EXTERNAL_PROVIDER = "keycloak"
+EXTERNAL_PROVIDER = "oidc"
 
 
 class FakeVerifier:
@@ -91,7 +91,7 @@ class TestConstants:
         # providers (cloud edition) are NOT enumerated here — they map onto the
         # generic external_id/external_org_id columns instead, and the cloud
         # layer widens the auth_type CHECK for its own provider.
-        assert VALID_AUTH_TYPES == ["local", "ldap", "keycloak", "pki"]
+        assert VALID_AUTH_TYPES == ["local", "ldap", "oidc", "pki", "proxy", "saml"]
         assert "clerk" not in VALID_AUTH_TYPES
 
     def test_seam_version_present(self):

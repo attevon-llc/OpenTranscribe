@@ -53,3 +53,12 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - ./backend:/app
+    environment:
+      # Same proxy topology as docker-compose.pki.yml: the PKI frontend nginx
+      # terminates mTLS and proxies /api, so without this every caller shares one
+      # rate-limit bucket and the audit log records the proxy. Dev's *relaxed* auth
+      # posture (RATE_LIMIT_AUTH_PER_MINUTE / ACCOUNT_LOCKOUT_THRESHOLD in
+      # docker-compose.override.yml) is untouched — this only fixes who a request is
+      # attributed to. See docker-compose.nginx.yml for why the default is Docker's
+      # own address pool rather than the full RFC1918 set.
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}

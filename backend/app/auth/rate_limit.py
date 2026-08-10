@@ -11,7 +11,6 @@ Configuration is managed via settings:
 - RATE_LIMIT_TRUSTED_PROXIES: Comma-separated list of trusted proxy IPs/CIDRs
 """
 
-import ipaddress
 import logging
 from collections.abc import Callable
 
@@ -19,7 +18,6 @@ from fastapi import Request
 from fastapi import Response
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
@@ -27,93 +25,48 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _parse_trusted_proxies(
-    trusted_proxies_str: str,
-) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
-    """
-    Parse trusted proxies configuration string into a list of IP networks.
+def _record_degradation(control: str, fallback: str) -> None:
+    """Count a security control running without its shared state store.
+
+    Imported lazily and never allowed to raise — a broken metrics backend must not be
+    able to turn into a failed request. Same contract as
+    ``lockout._record_degradation`` / ``token_service._record_degradation``.
 
     Args:
-        trusted_proxies_str: Comma-separated list of IPs or CIDR ranges
-
-    Returns:
-        List of parsed IP networks
+        control: The security control that degraded.
+        fallback: What it used instead (``local`` = per-process approximation).
     """
-    if not trusted_proxies_str:
-        return []
-
-    networks = []
-    for proxy in trusted_proxies_str.split(","):
-        proxy = proxy.strip()
-        if not proxy:
-            continue
-        try:
-            # Try parsing as a network (CIDR notation)
-            if "/" in proxy:
-                networks.append(ipaddress.ip_network(proxy, strict=False))
-            else:
-                # Single IP - convert to /32 or /128 network
-                ip = ipaddress.ip_address(proxy)
-                if isinstance(ip, ipaddress.IPv4Address):
-                    networks.append(ipaddress.ip_network(f"{proxy}/32"))
-                else:
-                    networks.append(ipaddress.ip_network(f"{proxy}/128"))
-        except ValueError as e:
-            logger.warning(f"Invalid trusted proxy address '{proxy}': {e}")
-    return networks
-
-
-def _is_trusted_proxy(client_ip: str, trusted_networks: list) -> bool:
-    """
-    Check if an IP address is in the list of trusted proxy networks.
-
-    Args:
-        client_ip: IP address to check
-        trusted_networks: List of trusted IP networks
-
-    Returns:
-        True if the IP is trusted, False otherwise
-    """
-    if not trusted_networks:
-        return False
-
     try:
-        ip = ipaddress.ip_address(client_ip)
-        for network in trusted_networks:
-            if ip in network:
-                return True
-    except ValueError:
-        logger.warning(f"Invalid IP address format: {client_ip}")
-    return False
+        from app.core.metrics import security_state_degraded_total
+
+        security_state_degraded_total.labels(control=control, fallback=fallback).inc()
+    except Exception:  # pragma: no cover - metrics must never break a request
+        logger.debug("Could not record security degradation metric", exc_info=True)
 
 
-# Parse trusted proxies at module load time for efficiency
-_trusted_proxy_networks = _parse_trusted_proxies(settings.RATE_LIMIT_TRUSTED_PROXIES)
+def _redis_reachable() -> bool:
+    """Probe Redis once, for the startup log line only.
 
-
-def _get_redis_storage() -> str | None:
-    """
-    Get Redis storage URI for rate limiting.
+    The result deliberately does **not** decide the limiter's storage — see
+    ``_create_limiter``.
 
     Returns:
-        Redis URI string if available, None otherwise.
+        True if Redis answered a PING.
     """
     try:
         import redis
 
-        # Build Redis URL from settings
-        redis_url = settings.REDIS_URL
-
-        # Test connection
-        client = redis.from_url(redis_url, socket_timeout=2)
+        client = redis.from_url(settings.REDIS_URL, socket_timeout=2)
         client.ping()
         logger.info("Rate limiter using Redis backend: %s", settings.REDIS_HOST)
-        return redis_url
+        return True
     except Exception as e:
         logger.warning(
-            "Redis unavailable for rate limiting, falling back to memory storage: %s", str(e)
+            "Redis unreachable at rate-limiter startup; limiting will run per-process "
+            "until it recovers: %s",
+            str(e),
         )
-        return None
+        return False
 
 
 def _get_key_func() -> Callable[[Request], str]:
@@ -128,25 +81,21 @@ def _get_key_func() -> Callable[[Request], str]:
     """
 
     def key_func(request: Request) -> str:
-        # Get direct connection IP first
-        direct_ip = get_remote_address(request) or "unknown"
+        # Shared with the audit log and login records so all three bucket a request the
+        # same way. Note this walks the forwarded chain right-to-left; taking the FIRST
+        # X-Forwarded-For entry (as this did) lets a client prepend its own value and
+        # pick its own rate-limit bucket when more than one proxy is in front of the
+        # app (issue #284 A0.5).
+        from app.utils.client_ip import resolve_client_ip
 
-        # Only trust X-Forwarded-For if request comes from a trusted proxy
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for and _trusted_proxy_networks:
-            if _is_trusted_proxy(direct_ip, _trusted_proxy_networks):
-                # Take the first IP in the chain (original client)
-                client_ip = forwarded_for.split(",")[0].strip()
-                return client_ip  # type: ignore[no-any-return]
-            else:
-                # X-Forwarded-For header from untrusted source - log and ignore
-                logger.warning(
-                    "X-Forwarded-For header received from untrusted IP %s, ignoring",
-                    direct_ip,
-                )
+        # slowapi flips this flag when the shared store is unreachable and again when
+        # it recovers. Reading it here (a bool, on the one function that runs for every
+        # rate-limited request) is what makes the degraded window visible in Prometheus
+        # instead of only in a log line nobody alerts on.
+        if getattr(limiter, "_storage_dead", False):
+            _record_degradation("rate_limit", "local")
 
-        # Fall back to direct connection IP
-        return direct_ip
+        return resolve_client_ip(request)
 
     return key_func
 
@@ -155,21 +104,52 @@ def _create_limiter() -> Limiter:
     """
     Create and configure the rate limiter instance.
 
-    Uses Redis backend if available, otherwise falls back to in-memory storage.
+    The limiter is **always** pointed at Redis, and slowapi's own in-memory fallback
+    is enabled so a Redis outage degrades to per-process counting and then recovers.
+
+    This used to probe Redis once, at import, and pass ``storage_uri=None`` — i.e.
+    ``memory://`` — if that single probe failed. Because the module-level ``limiter``
+    is bound into every ``@limiter.limit(...)`` decorator at import time, that choice
+    was permanent for the process lifetime: a Redis blip during startup left the whole
+    replica counting requests in its own memory forever, so N replicas behind a load
+    balancer meant N x the configured auth rate limit and no shared throttle at all.
+
+    With a real ``storage_uri``, slowapi marks the storage dead on the first failed
+    operation, serves the same route limits from ``MemoryStorage``, and re-checks the
+    backend on an exponential backoff (``Limiter.__should_check_backend``), clearing
+    the flag as soon as Redis answers. That is the library's own re-probe — preferred
+    over bolting a second one onto its internals.
 
     Returns:
         Configured Limiter instance.
     """
-    storage_uri = _get_redis_storage()
+    _redis_reachable()
 
-    limiter = Limiter(
-        key_func=_get_key_func(),
-        storage_uri=storage_uri,
-        enabled=settings.RATE_LIMIT_ENABLED,
-        default_limits=[],  # No default limits; applied per-endpoint
-        headers_enabled=True,  # Add rate limit headers to responses
-        strategy="fixed-window",  # Simple fixed window strategy
-    )
+    kwargs = {
+        "key_func": _get_key_func(),
+        "enabled": settings.RATE_LIMIT_ENABLED,
+        "default_limits": [],  # No default limits; applied per-endpoint
+        "headers_enabled": True,  # Add rate limit headers to responses
+        "strategy": "fixed-window",  # Simple fixed window strategy
+        # Without this, a dead storage raises out of the limiter instead of degrading;
+        # with it and an empty fallback list, slowapi re-evaluates the route's OWN
+        # limits against in-memory storage, so limits stay enforced while degraded.
+        "in_memory_fallback_enabled": True,
+    }
+
+    try:
+        # Building the storage does NOT connect (limits is lazy), so an unreachable
+        # Redis lands here happily and degrades at first use. This only catches a
+        # genuinely unusable URI or a missing redis client library.
+        limiter = Limiter(storage_uri=settings.REDIS_URL, **kwargs)  # type: ignore[arg-type]
+    except Exception as e:
+        logger.error(
+            "Cannot build a Redis-backed rate limiter (%s); falling back to per-process "
+            "counting. Rate limits will NOT be shared across replicas.",
+            e,
+        )
+        _record_degradation("rate_limit", "local")
+        limiter = Limiter(**kwargs)  # type: ignore[arg-type]
 
     if not settings.RATE_LIMIT_ENABLED:
         logger.info("Rate limiting is DISABLED via configuration")
@@ -214,18 +194,10 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Res
     Returns:
         JSONResponse with 429 status code and error details.
     """
-    # Extract client IP for logging (using same trusted proxy logic)
-    direct_ip = get_remote_address(request) or "unknown"
-    forwarded_for = request.headers.get("X-Forwarded-For")
+    # Same resolver as key_func, so the logged address matches the bucketed one.
+    from app.utils.client_ip import resolve_client_ip
 
-    if (
-        forwarded_for
-        and _trusted_proxy_networks
-        and _is_trusted_proxy(direct_ip, _trusted_proxy_networks)
-    ):
-        client_ip = forwarded_for.split(",")[0].strip()
-    else:
-        client_ip = direct_ip
+    client_ip = resolve_client_ip(request)
 
     # Log the rate-limited request
     logger.warning(

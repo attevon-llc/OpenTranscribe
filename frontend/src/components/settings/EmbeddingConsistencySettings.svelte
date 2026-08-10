@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getCsrfToken } from '$lib/axios';
+  import axiosInstance from '$lib/axios';
+  import { getErrorStatus } from '$lib/utils/apiError';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import StatusChip from './StatusChip.svelte';
@@ -89,19 +90,7 @@
     error = '';
 
     try {
-      const response = await fetch('/api/admin/embedding-consistency/status', {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          error = $t('settings.embeddingConsistency.adminRequired');
-          return;
-        }
-        throw new Error('Failed to load status');
-      }
-
-      const data = await response.json();
+      const { data } = await axiosInstance.get('/admin/embedding-consistency/status');
       running = data.running || false;
       lastRun = data.last_run || null;
 
@@ -112,6 +101,10 @@
         failedFiles = data.progress.failed_files || [];
       }
     } catch (err) {
+      if (getErrorStatus(err) === 403) {
+        error = $t('settings.embeddingConsistency.adminRequired');
+        return;
+      }
       console.error('Failed to load embedding consistency status:', err);
       error = $t('settings.embeddingConsistency.loadFailed');
     } finally {
@@ -122,13 +115,7 @@
   async function loadCounts() {
     loadingCounts = true;
     try {
-      const response = await fetch('/api/admin/embedding-consistency/counts', {
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to load counts');
-
-      counts = await response.json();
+      counts = (await axiosInstance.get('/admin/embedding-consistency/counts')).data;
     } catch (err) {
       console.error('Failed to load embedding consistency counts:', err);
       toastStore.error($t('settings.embeddingConsistency.countsFailed'));
@@ -146,15 +133,7 @@
     etaSeconds = null;
 
     try {
-      const response = await fetch('/api/admin/embedding-consistency/repair', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
-      });
-
-      if (!response.ok) throw new Error('Failed to start repair');
-
-      const data = await response.json();
+      const { data } = await axiosInstance.post('/admin/embedding-consistency/repair');
       if (data.status === 'already_running') {
         toastStore.info($t('settings.embeddingConsistency.alreadyRunning'));
         return;
@@ -170,14 +149,7 @@
 
   async function stopRepair() {
     try {
-      const response = await fetch('/api/admin/embedding-consistency/stop', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' },
-      });
-
-      if (!response.ok) throw new Error('Failed to stop repair');
-
+      await axiosInstance.post('/admin/embedding-consistency/stop');
       running = false;
       toastStore.info($t('settings.embeddingConsistency.repairStopped'));
       loadStatus();
@@ -338,7 +310,7 @@
               {processedFiles}/{totalFiles}
               ({Math.round((processedFiles / totalFiles) * 100)}%)
               {#if etaSeconds != null && etaSeconds > 0}
-                — ETA {formatDuration(etaSeconds)}
+                {$t('settings.embeddingConsistency.eta', { eta: formatDuration(etaSeconds) })}
               {/if}
             </span>
           </div>

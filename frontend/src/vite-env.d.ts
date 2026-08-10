@@ -34,3 +34,11 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// Build identity, injected by `define` in vite.config.ts. These are compile-time
+// constants — they are inlined into the bundle, so a running tab always reports the
+// build it was compiled from (see AboutModal's frontend/backend version comparison).
+/** Frontend package version at build time (e.g. `0.4.1`). */
+declare const __APP_VERSION__: string;
+/** ISO-8601 timestamp of the build that produced this bundle. */
+declare const __BUILD_TIME__: string;

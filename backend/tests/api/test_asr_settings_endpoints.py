@@ -153,7 +153,7 @@ def test_test_saved_config_decrypt_failure_500(client, user_token_headers):
 # ---------------------------------------------------------------------------
 
 
-def test_restart_admin_no_workers_envelope(client, admin_token_headers):
+def test_restart_admin_no_workers_envelope(client, super_admin_token_headers):
     """When inspect finds no GPU workers, a best-effort broadcast is sent and the
     envelope reports an empty worker list. Celery control is fully mocked so no
     real shutdown reaches the live stack."""
@@ -163,7 +163,7 @@ def test_restart_admin_no_workers_envelope(client, admin_token_headers):
     fake_control.inspect.return_value = fake_inspector
 
     with patch("app.core.celery.celery_app.control", fake_control):
-        resp = client.post(f"{_BASE}/local-model/restart", headers=admin_token_headers)
+        resp = client.post(f"{_BASE}/local-model/restart", headers=super_admin_token_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
@@ -173,7 +173,7 @@ def test_restart_admin_no_workers_envelope(client, admin_token_headers):
     fake_control.broadcast.assert_called_once_with("shutdown")
 
 
-def test_restart_admin_with_workers_envelope(client, admin_token_headers):
+def test_restart_admin_with_workers_envelope(client, super_admin_token_headers):
     """When GPU workers are present, shutdown is targeted at them only and the
     envelope reports the discovered worker names + active task count."""
     fake_inspector = MagicMock()
@@ -183,7 +183,7 @@ def test_restart_admin_with_workers_envelope(client, admin_token_headers):
     fake_control.inspect.return_value = fake_inspector
 
     with patch("app.core.celery.celery_app.control", fake_control):
-        resp = client.post(f"{_BASE}/local-model/restart", headers=admin_token_headers)
+        resp = client.post(f"{_BASE}/local-model/restart", headers=super_admin_token_headers)
 
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()

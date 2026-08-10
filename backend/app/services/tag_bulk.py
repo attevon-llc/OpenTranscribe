@@ -102,7 +102,9 @@ class BulkTagResult:
         return self.outcome is not BulkTagOutcome.FAILED
 
 
-def resolve_bulk_tag(db: Session, action: str, tag_name: str | None) -> Tag | None:
+def resolve_bulk_tag(
+    db: Session, action: str, tag_name: str | None, *, user_id: int
+) -> Tag | None:
     """Resolve the batch's tag **once**, before the per-file loop.
 
     Add resolves through :func:`app.services.tag_service.resolve_or_create_tag`
@@ -116,6 +118,9 @@ def resolve_bulk_tag(db: Session, action: str, tag_name: str | None) -> Tag | No
         db: Database session. Committed when a tag is created.
         action: ``add_tag`` or ``remove_tag``.
         tag_name: Supplied name, trimmed and clamped like every other tag path.
+        user_id: The acting user. Owns a tag this creates, and scopes the
+            lookup — resolving unscoped would let a bulk action attach or
+            detach another account's identically-named row.
 
     Returns:
         The tag to apply, or None when a remove names a tag nothing carries —
@@ -130,9 +135,9 @@ def resolve_bulk_tag(db: Session, action: str, tag_name: str | None) -> Tag | No
         raise InvalidTagNameError(f"Tag name is empty after normalization: {tag_name!r}")
 
     if action == REMOVE_TAG_ACTION:
-        return lookup_existing_tag(db, normalized, cleaned)
+        return lookup_existing_tag(db, normalized, cleaned, user_id)
 
-    tag = resolve_or_create_tag(db, cleaned, source=TAG_SOURCE_MANUAL)
+    tag = resolve_or_create_tag(db, cleaned, user_id=user_id, source=TAG_SOURCE_MANUAL)
     db.commit()
     return tag
 

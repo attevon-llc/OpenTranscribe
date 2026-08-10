@@ -8,7 +8,7 @@ Tests verify the full MFA lifecycle through FastAPI endpoints with a real databa
 - Login with MFA required (returns mfa_token)
 - MFA verify during login (TOTP code + backup code)
 - MFA disable
-- PKI/Keycloak users cannot set up MFA
+- PKI/OIDC users cannot set up MFA
 
 Run with: pytest tests/test_mfa_integration.py -v
 """
@@ -268,10 +268,16 @@ class TestMFALoginFlow:
         def mock_is_blacklisted(jti: str) -> bool:
             return jti in _blacklisted_jtis
 
+        # Patch where the helpers are defined: the verify endpoint resolves them
+        # through their own module, not through the package facade.
         with (
-            patch("app.api.endpoints.auth._blacklist_mfa_token", side_effect=mock_blacklist),
             patch(
-                "app.api.endpoints.auth._is_mfa_token_blacklisted", side_effect=mock_is_blacklisted
+                "app.api.endpoints.auth.mfa_tokens._blacklist_mfa_token",
+                side_effect=mock_blacklist,
+            ),
+            patch(
+                "app.api.endpoints.auth.mfa_tokens._is_mfa_token_blacklisted",
+                side_effect=mock_is_blacklisted,
             ),
         ):
             # First verify succeeds

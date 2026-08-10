@@ -483,7 +483,7 @@ create_production_compose() {
     # Download base docker-compose.yml
     echo "  Downloading base docker-compose.yml..."
     local retry_count=0
-    local base_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.yml"
+    local base_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.yml"
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$base_url" -o docker-compose.yml; then
@@ -514,7 +514,7 @@ create_production_compose() {
     # Download production overrides docker-compose.prod.yml
     echo "  Downloading production overrides docker-compose.prod.yml..."
     retry_count=0
-    local prod_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.prod.yml"
+    local prod_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.prod.yml"
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$prod_url" -o docker-compose.prod.yml; then
@@ -557,7 +557,7 @@ download_gpu_overlay() {
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     local encoded_branch
     encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local gpu_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.gpu.yml"
+    local gpu_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.gpu.yml"
 
     if curl -fsSL --connect-timeout 10 --max-time 30 "$gpu_url" -o docker-compose.gpu.yml 2>/dev/null; then
         if [ -s docker-compose.gpu.yml ] && grep -q "celery-worker:" docker-compose.gpu.yml; then
@@ -579,7 +579,7 @@ download_gpu_scale_overlay() {
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     local encoded_branch
     encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local gpu_scale_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.gpu-scale.yml"
+    local gpu_scale_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.gpu-scale.yml"
 
     if curl -fsSL --connect-timeout 10 --max-time 30 "$gpu_scale_url" -o docker-compose.gpu-scale.yml 2>/dev/null; then
         if [ -s docker-compose.gpu-scale.yml ] && grep -q "celery-worker-gpu-scaled:" docker-compose.gpu-scale.yml; then
@@ -603,7 +603,7 @@ download_management_script() {
     # URL-encode the branch name (replace / with %2F)
     local encoded_branch
     encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/opentranscribe.sh"
+    local download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/opentranscribe.sh"
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o opentranscribe.sh; then
@@ -647,7 +647,7 @@ download_nginx_files() {
     # Download docker-compose.nginx.yml
     echo "  Downloading docker-compose.nginx.yml..."
     local retry_count=0
-    local nginx_compose_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.nginx.yml"
+    local nginx_compose_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.nginx.yml"
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$nginx_compose_url" -o docker-compose.nginx.yml; then
@@ -675,7 +675,7 @@ download_nginx_files() {
     # Download nginx/site.conf.template
     echo "  Downloading nginx/site.conf.template..."
     retry_count=0
-    local nginx_conf_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/nginx/site.conf.template"
+    local nginx_conf_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/nginx/site.conf.template"
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$nginx_conf_url" -o nginx/site.conf.template; then
@@ -703,7 +703,7 @@ download_nginx_files() {
     # Download scripts/generate-ssl-cert.sh
     echo "  Downloading scripts/generate-ssl-cert.sh..."
     retry_count=0
-    local ssl_script_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/scripts/generate-ssl-cert.sh"
+    local ssl_script_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/generate-ssl-cert.sh"
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$ssl_script_url" -o scripts/generate-ssl-cert.sh; then
@@ -732,7 +732,7 @@ download_nginx_files() {
     # Download scripts/fix-model-permissions.sh
     echo "  Downloading scripts/fix-model-permissions.sh..."
     retry_count=0
-    local fix_perms_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/scripts/fix-model-permissions.sh"
+    local fix_perms_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/fix-model-permissions.sh"
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$fix_perms_url" -o scripts/fix-model-permissions.sh; then
@@ -773,7 +773,7 @@ download_model_downloader_scripts() {
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     local encoded_branch
     encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/scripts/download-models.sh"
+    local download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/download-models.sh"
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/download-models.sh; then
@@ -798,7 +798,7 @@ download_model_downloader_scripts() {
 
     # Download download-models.py
     retry_count=0
-    download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/scripts/download-models.py"
+    download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/download-models.py"
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/download-models.py; then
@@ -822,7 +822,7 @@ download_model_downloader_scripts() {
 
     # Download common.sh (utility functions used by opentr.sh)
     retry_count=0
-    download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/scripts/common.sh"
+    download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/common.sh"
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/common.sh; then
@@ -858,7 +858,7 @@ create_production_env_example() {
     # URL-encode the branch name (replace / with %2F)
     local encoded_branch
     encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/.env.example"
+    local download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/.env.example"
 
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o .env.example; then

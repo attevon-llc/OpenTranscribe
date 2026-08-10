@@ -9,6 +9,7 @@
   import { isCloudEdition } from '$lib/edition';
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
+  import ActiveSessionsPanel from '$components/settings/ActiveSessionsPanel.svelte';
 
   // Managed-edition users never have a local password; the password-change card
   // and the local MFA panel are both handled by the hosted IdP and replaced by a
@@ -195,13 +196,13 @@
     <!-- Right Column: hosted account portal link (cloud) OR local password change -->
     {#if isCloudEdition}
     <div class="profile-card">
-      <h4 class="card-title">{$t('settings.profile.accountSecurity') || 'Account & Security'}</h4>
+      <h4 class="card-title">{$t('settings.profile.accountSecurity')}</h4>
       <p class="form-text">
-        {$t('settings.profile.externalManaged') || 'Your password, multi-factor authentication, and security settings are managed in your account portal.'}
+        {$t('settings.profile.externalManaged')}
       </p>
       <div class="form-actions">
         <button type="button" class="btn btn-primary" on:click={openHostedAccountPortal}>
-          {$t('settings.profile.manageAccount') || 'Manage Account'}
+          {$t('settings.profile.manageAccount')}
         </button>
       </div>
     </div>
@@ -335,6 +336,13 @@
   {#if !isCloudEdition}
   <div class="mfa-card">
     <SecuritySettings />
+  </div>
+
+  <!-- Active sessions — same edition gate as the MFA card: in the managed
+       edition the hosted IdP owns the session, and signing out everywhere is
+       done from its account portal (linked above). -->
+  <div class="mfa-card">
+    <ActiveSessionsPanel />
   </div>
   {/if}
 </div>

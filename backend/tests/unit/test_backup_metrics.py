@@ -12,11 +12,21 @@ import json
 from datetime import UTC
 from datetime import datetime
 
+import pytest
 from prometheus_client import REGISTRY
 
 from app.core.backup_metrics import update_backup_metrics
 from app.services import backup_service as bs
 from app.services import system_settings_service as sss
+
+# This file, test_backup_service.py, and test_backup_alerts.py all upsert the same
+# backup.* SystemSettings keys (bs.KEY_*) with no coordination between them — under
+# `-n auto` two workers inserting overlapping keys in different orders can deadlock on
+# the system_settings_key_key unique index (issue #389). Same pattern/precedent as
+# test_media_mirror_service.py's "media_mirror_system_settings" group (a disjoint key
+# prefix, so it stays a separate group) and test_auth_config_integration.py's
+# "auth_config" group.
+pytestmark = pytest.mark.xdist_group("backup_system_settings")
 
 
 def _sample(name: str, labels: dict | None = None) -> float:

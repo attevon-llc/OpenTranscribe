@@ -5,16 +5,17 @@ import logging
 
 import redis.asyncio as redis
 from fastapi import APIRouter
-from fastapi import Depends
 from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
 from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy.orm import Session
 
+from app.auth.token_service import token_service
+from app.db.session_utils import session_scope
+
 from ..core.config import settings
 from ..core.security import verify_token
-from ..db.base import get_db
 from ..models.user import User
 
 # Set up logging
@@ -29,12 +30,48 @@ class ConnectionManager:
         # user_id -> List[WebSocket]
         self.active_connections: dict[int, list[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket, user_id: int):
-        """Register a WebSocket connection for a user (accept() must be called before this)."""
+    def connect(self, websocket: WebSocket, user_id: int):
+        """Register a WebSocket connection for a user (accept() must be called before this).
+
+        Bookkeeping only — no I/O — so it is a plain function, mirroring ``disconnect``.
+        It is still owned by the connection's own coroutine; nothing outside this
+        process may touch ``manager`` (publish via ``utils/websocket_notify.py``).
+        """
         if user_id not in self.active_connections:
             self.active_connections[user_id] = []
         self.active_connections[user_id].append(websocket)
         logger.info(f"User {user_id} connected. Total connections: {len(self.active_connections)}")
+
+    async def drain(self, code: int = 1001) -> int:
+        """Close every open socket so shutdown does not hang to SIGKILL.
+
+        Nothing closed WebSockets on shutdown (issue #284 A1.21): the lifespan cancelled
+        its background tasks but left sockets open, so the process waited on them until
+        the orchestrator's grace period expired and SIGKILLed it — dropping every stream
+        mid-message instead of letting clients reconnect cleanly.
+
+        1001 ("going away") is the correct code here: it tells the client this endpoint
+        is shutting down normally, which the frontend's reconnect logic treats as a
+        retry rather than an error.
+
+        Args:
+            code: WebSocket close code to send.
+
+        Returns:
+            Number of sockets closed.
+        """
+        import contextlib
+
+        sockets = [ws for conns in self.active_connections.values() for ws in conns]
+        for ws in sockets:
+            # A socket already torn down by the peer raises here; that is a successful
+            # drain, not a failure.
+            with contextlib.suppress(Exception):
+                await ws.close(code=code)
+        self.active_connections.clear()
+        if sockets:
+            logger.info("Drained %d WebSocket connection(s) on shutdown", len(sockets))
+        return len(sockets)
 
     def disconnect(self, websocket: WebSocket, user_id: int):
         if user_id in self.active_connections:
@@ -65,8 +102,14 @@ manager = ConnectionManager()
 redis_client: redis.Redis | None = None
 
 
-async def setup_redis():
-    """Initialize Redis connection for pub/sub notifications."""
+def setup_redis():
+    """Initialize Redis connection for pub/sub notifications.
+
+    ``redis.asyncio.from_url`` only builds a lazily-connecting pool and
+    ``asyncio.create_task`` needs a running loop, not an ``await`` — so nothing here
+    yields. Declaring it ``async def`` claimed otherwise (issue #320); callers must
+    still invoke it from a coroutine so ``create_task`` has a loop to attach to.
+    """
     global redis_client
     if not redis_client:
         # health_check_interval + keepalive keep the long-lived pub/sub connection
@@ -150,7 +193,7 @@ async def redis_subscriber():
 async def publish_notification(user_id: int, notification_type: str, data: dict):
     """Publish notification via Redis pub/sub."""
     if not redis_client:
-        await setup_redis()
+        setup_redis()
 
     notification = {"user_id": user_id, "type": notification_type, "data": data}
 
@@ -200,7 +243,22 @@ def _try_authenticate_token(
         user_identifier = payload.get("sub")  # UUID string
         if not user_identifier:
             return None
+
+        # Mirror the HTTP path's checks (endpoints/auth.py) — this branch used to skip
+        # BOTH, so a revoked token or a deactivated account still opened a socket and
+        # kept receiving that user's events (issue #284 A0.7).
+        token_jti = payload.get("jti")
+        if (
+            settings.TOKEN_REVOCATION_ENABLED
+            and token_jti
+            and token_service.is_token_revoked(token_jti, db=db, user_uuid=user_identifier)
+        ):
+            logger.warning("Rejected revoked token on WebSocket (jti=%s...)", token_jti[:8])
+            return None
+
         user = db.query(User).filter(User.uuid == user_identifier).first()
+        if user is None or not user.is_active:
+            return None
         return user  # type: ignore[no-any-return]
     except Exception as e:
         logger.error(f"WebSocket token authentication error: {str(e)}")
@@ -208,7 +266,7 @@ def _try_authenticate_token(
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)):
+async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint with first-message authentication.
 
     Authentication flow:
@@ -217,9 +275,20 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
     3. If no cookie, wait up to 10 s for a first-message ``authenticate`` frame.
     4. On success, register the connection and proceed with the normal
        message loop; on failure, close with an appropriate error code.
+
+    Deliberately does NOT take ``db: Session = Depends(get_db)``: a WebSocket route's
+    injected dependencies stay open for the *whole connection*, not just one
+    request/response like HTTP — and this connection can live for hours. DB access is
+    only needed for the few-millisecond auth check below, so each attempt opens its own
+    short-lived ``session_scope()`` instead. Holding a session open for the connection's
+    full lifetime left an idle, uncommitted transaction checked out of the pool for as
+    long as the socket stayed connected: wasted a pool slot, silently discarded any
+    write from the external-auth user-sync path (``get_db``'s cleanup only closes, which
+    rolls back — it never commits), and could block a schema migration waiting on the
+    same table for as long as any client stayed connected.
     """
     # Initialize Redis subscriber if not already running
-    await setup_redis()
+    setup_redis()
 
     # Accept the connection first, then authenticate
     await websocket.accept()
@@ -229,7 +298,16 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
     # 1. Try cookie-based auth
     token = websocket.cookies.get("access_token")
     if token:
-        user = _try_authenticate_token(token, db, websocket)
+        with session_scope() as db:
+            user = _try_authenticate_token(token, db, websocket)
+            # session_scope() commits on exit, which expires every attribute on `user`
+            # (SQLAlchemy's default expire_on_commit) — the only attribute touched after
+            # this block is user.id, which must survive the session closing. Expunge
+            # BEFORE the block exits/commits so the already-loaded columns stay readable
+            # on the now-detached instance; expunging after commit would be too late,
+            # since expiry already happened.
+            if user is not None:
+                db.expunge(user)
 
     # 2. If no cookie auth, wait for first-message authentication
     if not user:
@@ -239,7 +317,10 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
             if data.get("type") != "authenticate" or not data.get("token"):
                 await websocket.close(code=4001, reason="Authentication required")
                 return
-            user = _try_authenticate_token(data["token"], db, websocket)
+            with session_scope() as db:
+                user = _try_authenticate_token(data["token"], db, websocket)
+                if user is not None:
+                    db.expunge(user)
             if not user:
                 await websocket.close(code=4003, reason="Invalid token")
                 return
@@ -256,7 +337,7 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
             return
 
     # Register the authenticated connection
-    await manager.connect(websocket, user.id)
+    manager.connect(websocket, user.id)
 
     # Send initial connection status
     await websocket.send_text(

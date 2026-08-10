@@ -55,7 +55,7 @@
       draftAcousticCosineMargin = settings.boundary_acoustic_cosine_margin.value;
       draftAcousticMaxWordDur = settings.boundary_acoustic_max_word_dur.value;
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to load engine settings'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.engineSettings.loadFailed')), 5000);
     } finally {
       loading = false;
     }
@@ -105,7 +105,7 @@
       toastStore.success($t('settings.engineSettings.saved'));
       await loadData();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to save engine settings'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.engineSettings.saveFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -115,7 +115,7 @@
     resetInProgress = key;
     try {
       await axiosInstance.delete(`/admin/engine-settings/${key}`);
-      toastStore.success(`Reset ${key} to default`);
+      toastStore.success($t('settings.engineSettings.resetToDefault', { key }));
       await loadData();
     } catch (err: unknown) {
       toastStore.error(getErrorMessage(err, `Failed to reset ${key}`), 5000);

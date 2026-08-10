@@ -1,3 +1,9 @@
+# mypy: disable-error-code="arg-type,call-arg"
+# This suite passes structural stand-ins (fake sessions, fake users, namespace
+# requests) to signatures that declare Session/User/Request, and indexes
+# HTTPException.detail, which is typed str while every lifecycle gate raises an
+# object. Declared once here rather than as a cast at every call site — casts
+# bury the assertion, and widening a production signature to suit a test is worse.
 """Tests for user LLM settings: encryption, model, API endpoints, schemas, service.
 
 Encryption tests always run. The remaining classes are gated behind

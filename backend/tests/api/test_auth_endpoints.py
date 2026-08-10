@@ -35,6 +35,23 @@ def _login(client, email: str, password: str):
     )
 
 
+def _refresh(client, refresh_token: str):
+    """POST to ``/api/auth/token/refresh`` the way a browser would.
+
+    ``/api/auth/token/refresh`` is no longer CSRF-exempt — it mints a new session
+    from the refresh cookie alone, which is exactly what a forged cross-site
+    request would want. ``TestClient`` keeps the login's cookie jar, so it looks
+    like a browser and must double-submit the CSRF token like one.
+    """
+    csrf = client.cookies.get("csrf_token")
+    headers = {"X-CSRF-Token": csrf} if csrf else {}
+    return client.post(
+        "/api/auth/token/refresh",
+        json={"refresh_token": refresh_token},
+        headers=headers,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Local login (happy path) — token shape + cookies
 # --------------------------------------------------------------------------- #
@@ -207,7 +224,7 @@ class TestRefreshRotation:
         login = _login(client, normal_user.email, "password123")
         refresh_token = login.json()["refresh_token"]
 
-        resp = client.post("/api/auth/token/refresh", json={"refresh_token": refresh_token})
+        resp = _refresh(client, refresh_token)
         assert resp.status_code == 200
         body = resp.json()
         assert body["token_type"] == "bearer"
@@ -219,16 +236,16 @@ class TestRefreshRotation:
         login = _login(client, normal_user.email, "password123")
         old_refresh = login.json()["refresh_token"]
 
-        first = client.post("/api/auth/token/refresh", json={"refresh_token": old_refresh})
+        first = _refresh(client, old_refresh)
         assert first.status_code == 200
 
         # Replaying the now-rotated (revoked) token is rejected.
-        replay = client.post("/api/auth/token/refresh", json={"refresh_token": old_refresh})
+        replay = _refresh(client, old_refresh)
         assert replay.status_code == 401
         assert replay.json()["detail"] == "Invalid or expired refresh token"
 
     def test_refresh_invalid_token_401(self, client):
-        resp = client.post("/api/auth/token/refresh", json={"refresh_token": "not-a-real-token"})
+        resp = _refresh(client, "not-a-real-token")
         assert resp.status_code == 401
         assert resp.json()["detail"] == "Invalid or expired refresh token"
 

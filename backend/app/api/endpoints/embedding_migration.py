@@ -70,7 +70,7 @@ def _compute_ground_truth_status(db: Session) -> dict | None:
 
 
 @router.get("/status")
-async def get_migration_status(
+def get_migration_status(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
@@ -122,6 +122,9 @@ async def get_migration_status(
 
             status["consistency_status"] = get_embedding_consistency_status()
         except Exception:
+            # Optional Redis-backed enrichment of an otherwise complete status
+            # payload — a missing sub-field must not fail the whole endpoint.
+            logger.exception("Could not read embedding consistency status")
             status["consistency_status"] = None
 
         return status
@@ -135,7 +138,7 @@ async def get_migration_status(
 
 
 @router.get("/progress")
-async def get_migration_progress(
+def get_migration_progress(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
@@ -162,7 +165,7 @@ async def get_migration_progress(
 
 
 @router.post("/start")
-async def start_migration(
+def start_migration(
     user_id: int | None = None,
     force: bool = False,
     current_user: User = Depends(get_current_active_superuser),
@@ -229,7 +232,7 @@ async def start_migration(
 
 
 @router.post("/stop")
-async def stop_migration(
+def stop_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
@@ -316,7 +319,7 @@ async def stop_migration(
 
 
 @router.post("/finalize")
-async def finalize_migration(
+def finalize_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
@@ -366,7 +369,7 @@ async def finalize_migration(
 
 
 @router.delete("/progress")
-async def clear_progress(
+def clear_progress(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
@@ -407,7 +410,7 @@ async def clear_progress(
 
 
 @router.post("/retry-failed")
-async def retry_failed_files(
+def retry_failed_files(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
@@ -488,7 +491,7 @@ async def retry_failed_files(
 
 
 @router.post("/force-complete")
-async def force_complete_migration(
+def force_complete_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
@@ -540,7 +543,7 @@ async def force_complete_migration(
 
 
 @router.get("/mode")
-async def get_embedding_mode(
+def get_embedding_mode(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):

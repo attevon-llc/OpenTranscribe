@@ -21,7 +21,7 @@ from uuid import uuid4
 import pyotp
 import pytest
 from fastapi import HTTPException
-from jose import jwt
+from tests.jwt_compat import jwt
 
 # Skip all tests - MFA security tests need review
 pytestmark = pytest.mark.skipif(
@@ -45,7 +45,7 @@ class TestMFATokenBlacklistRedisFailure:
     @pytest.fixture
     def mock_redis_unavailable(self):
         """Mock Redis as unavailable (returns None)."""
-        with patch("app.api.endpoints.auth.get_redis_client", return_value=None):
+        with patch("app.api.endpoints.auth.mfa_tokens.get_redis_client", return_value=None):
             yield
 
     @pytest.fixture
@@ -54,7 +54,7 @@ class TestMFATokenBlacklistRedisFailure:
         mock_client = MagicMock()
         mock_client.set.side_effect = Exception("Redis connection error")
         mock_client.exists.side_effect = Exception("Redis connection error")
-        with patch("app.api.endpoints.auth.get_redis_client", return_value=mock_client):
+        with patch("app.api.endpoints.auth.mfa_tokens.get_redis_client", return_value=mock_client):
             yield
 
     def test_blacklist_token_redis_unavailable_fail_secure(self, mock_redis_unavailable):
@@ -136,7 +136,7 @@ class TestMFATokenBlacklistRedisFailure:
         mock_client = MagicMock()
         mock_client.set.return_value = True
 
-        with patch("app.api.endpoints.auth.get_redis_client", return_value=mock_client):
+        with patch("app.api.endpoints.auth.mfa_tokens.get_redis_client", return_value=mock_client):
             result = _blacklist_mfa_token("test-jti-12345", 300)
 
             assert result is True
@@ -154,13 +154,13 @@ class TestMFATokenBlacklistRedisFailure:
 
         # Test token not blacklisted
         mock_client.exists.return_value = 0
-        with patch("app.api.endpoints.auth.get_redis_client", return_value=mock_client):
+        with patch("app.api.endpoints.auth.mfa_tokens.get_redis_client", return_value=mock_client):
             result = _is_mfa_token_blacklisted("test-jti-clean")
             assert result is False
 
         # Test token is blacklisted
         mock_client.exists.return_value = 1
-        with patch("app.api.endpoints.auth.get_redis_client", return_value=mock_client):
+        with patch("app.api.endpoints.auth.mfa_tokens.get_redis_client", return_value=mock_client):
             result = _is_mfa_token_blacklisted("test-jti-used")
             assert result is True
 
@@ -195,7 +195,9 @@ class TestMFATokenReplayPrevention:
         from app.api.endpoints.auth import _verify_mfa_token
 
         # Mock that the token is already blacklisted (jti from mfa_token_data is embedded in token)
-        with patch("app.api.endpoints.auth._is_mfa_token_blacklisted", return_value=True):
+        with patch(
+            "app.api.endpoints.auth.mfa_tokens._is_mfa_token_blacklisted", return_value=True
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 _verify_mfa_token(valid_mfa_token)
 
@@ -207,7 +209,9 @@ class TestMFATokenReplayPrevention:
         from app.api.endpoints.auth import _verify_mfa_token
 
         # Mock that the token is not blacklisted
-        with patch("app.api.endpoints.auth._is_mfa_token_blacklisted", return_value=False):
+        with patch(
+            "app.api.endpoints.auth.mfa_tokens._is_mfa_token_blacklisted", return_value=False
+        ):
             user_uuid_str, user_role, jti = _verify_mfa_token(valid_mfa_token)
 
             assert user_uuid_str == mfa_token_data["sub"]
@@ -231,7 +235,9 @@ class TestMFATokenReplayPrevention:
             access_token_data, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
         )
 
-        with patch("app.api.endpoints.auth._is_mfa_token_blacklisted", return_value=False):
+        with patch(
+            "app.api.endpoints.auth.mfa_tokens._is_mfa_token_blacklisted", return_value=False
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 _verify_mfa_token(access_token)
 
@@ -267,7 +273,7 @@ class TestMFATokenReplayPrevention:
         mock_client = MagicMock()
         mock_client.set.return_value = True
 
-        with patch("app.api.endpoints.auth.get_redis_client", return_value=mock_client):
+        with patch("app.api.endpoints.auth.mfa_tokens.get_redis_client", return_value=mock_client):
             result = _blacklist_mfa_token(jti, mfa_token_ttl)
 
             assert result is True

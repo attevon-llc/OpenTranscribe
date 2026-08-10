@@ -1,3 +1,9 @@
+# mypy: disable-error-code="arg-type"
+# This suite passes structural stand-ins (fake sessions, fake users, namespace
+# requests) to signatures that declare Session/User/Request, and indexes
+# HTTPException.detail, which is typed str while every lifecycle gate raises an
+# object. Declared once here rather than as a cast at every call site — casts
+# bury the assertion, and widening a production signature to suit a test is worse.
 import os
 import socket
 import sys
@@ -8,6 +14,7 @@ import pytest
 from dotenv import dotenv_values
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 # Add backend directory to Python path for imports
@@ -55,6 +62,11 @@ def _service_reachable(host: str, port: int, timeout: float = 0.3) -> bool:
 
 # Set testing environment flag and disable external services in tests
 os.environ["TESTING"] = "True"
+# Declare the suite as a relaxed environment. ENVIRONMENT defaults to "production"
+# and fails closed (#284 A0.3), which would otherwise put Secure=True on session
+# cookies — and the TestClient talks plain http://testserver, so it would silently
+# drop them and every cookie-auth test would see an anonymous session.
+os.environ["ENVIRONMENT"] = "testing"
 os.environ["SKIP_CELERY"] = "True"
 os.environ["SKIP_REDIS"] = "True"
 os.environ["SKIP_WEBSOCKET"] = "True"
@@ -113,6 +125,11 @@ engine = create_engine(SQLALCHEMY_TEST_DATABASE_URL, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+# Shared fixture modules. Registered here rather than imported so they are
+# available to every suite without a per-file import.
+pytest_plugins = ["fixtures.mock_llm"]
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _skip_celery_dispatch():
     """No-op every Celery dispatch when SKIP_CELERY is set.
@@ -137,8 +154,32 @@ def _skip_celery_dispatch():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _clear_process_auth_cache():
+    """Isolate the process-wide auth-config cache between tests.
+
+    ``app.core.auth_settings`` caches effective auth config for the whole
+    process, and under ``TESTING`` a cache generation never ages out (see
+    ``_process_cache_ttl``) — deliberately, so a value primed from the test's own
+    savepointed session survives the test. That makes clearing it here the thing
+    that keeps one test's ``account_lockout_threshold=3`` out of the next test.
+    """
+    from app.core.auth_settings import clear_process_auth_settings_cache
+
+    clear_process_auth_settings_cache()
+    yield
+    clear_process_auth_settings_cache()
+
+
+#: Postgres advisory-lock namespace reserved for test-suite DDL isolation (issue #389).
+#: Uses the 2-key `(classid, objid)` form, which hashes into a lock space entirely
+#: separate from single-key `pg_advisory_lock(N)` calls (e.g. app/db/migrations.py's
+#: startup guard uses `pg_advisory_lock(42)`) — the two can never collide.
+_DDL_ISOLATION_LOCK_KEY = (990389, 1)
+
+
 @pytest.fixture(scope="function")
-def db_session():
+def db_session(request):
     """Fixture that provides a SQLAlchemy session for tests.
 
     Uses nested transactions (savepoints) for test isolation - all changes made during
@@ -146,11 +187,42 @@ def db_session():
 
     This handles the case where the code under test calls commit() by using
     a savepoint that can be rolled back.
+
+    Tests marked ``@pytest.mark.ddl_exclusive`` run schema DDL (``DROP TABLE`` /
+    ``ALTER TABLE ... DROP CONSTRAINT``) that takes Postgres's ``ACCESS EXCLUSIVE``
+    lock. That lock is not confined to the table named in the statement: dropping a
+    table (or constraint) with a foreign key also drops the FK's enforcement trigger
+    on the *referenced* table, which needs an ``ACCESS EXCLUSIVE`` lock there too
+    (issue #389 — dropping `scim_token` this way also locks `user`, since
+    `scim_token.created_by` references it). Nearly every other test creates or
+    touches a `user` row, so under `-n auto` a `ddl_exclusive` test can deadlock
+    against an unrelated worker's ordinary DML — a cross-table lock-wait cycle, not
+    just a collision with another DDL test. The existing `xdist_group("migration_ddl")`
+    marker only keeps DDL tests off each other on one worker; it does nothing about
+    every OTHER worker's unmarked tests running at the same wall-clock moment.
+    A Postgres advisory lock gives real mutual exclusion across every xdist worker
+    (they all talk to the same Postgres instance): every ordinary test takes the
+    lock's SHARED form for the life of its transaction; a `ddl_exclusive` test takes
+    the EXCLUSIVE form, which blocks until every in-flight ordinary test finishes and
+    blocks every new one from starting until the DDL transaction ends (commit or
+    rollback — `pg_advisory_xact_lock*` auto-releases either way, so a failed test
+    can't leave the suite wedged).
     """
     from sqlalchemy import event
 
     connection = engine.connect()
     transaction = connection.begin()
+
+    if request.node.get_closest_marker("ddl_exclusive") is not None:
+        connection.execute(
+            text("SELECT pg_advisory_xact_lock(:k1, :k2)"),
+            {"k1": _DDL_ISOLATION_LOCK_KEY[0], "k2": _DDL_ISOLATION_LOCK_KEY[1]},
+        )
+    else:
+        connection.execute(
+            text("SELECT pg_advisory_xact_lock_shared(:k1, :k2)"),
+            {"k1": _DDL_ISOLATION_LOCK_KEY[0], "k2": _DDL_ISOLATION_LOCK_KEY[1]},
+        )
 
     # Create a session bound to this connection
     session = TestingSessionLocal(bind=connection)

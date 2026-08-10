@@ -4,16 +4,22 @@ from fastapi import APIRouter
 
 from . import websockets
 from .endpoints import admin
+from .endpoints import admin_approvals
+from .endpoints import admin_group_mappings
+from .endpoints import admin_scim_tokens
 from .endpoints import admin_timing
 from .endpoints import asr_settings
 from .endpoints import auth
 from .endpoints import auth_config
+from .endpoints import auth_email_delivery
 from .endpoints import backup_settings
+from .endpoints import chat
 from .endpoints import combined_speaker_migration
 from .endpoints import comments
 from .endpoints import custom_vocabulary
 from .endpoints import embedding_migration
 from .endpoints import engine_settings
+from .endpoints import first_run_wizard
 from .endpoints import groups
 from .endpoints import llm_settings
 from .endpoints import llm_status
@@ -33,6 +39,7 @@ from .endpoints import tags
 from .endpoints import tasks
 from .endpoints import topics
 from .endpoints import transcript_segments
+from .endpoints import usage
 from .endpoints import user_files
 from .endpoints import user_settings
 from .endpoints import users
@@ -105,6 +112,12 @@ include_router_with_consistency(
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])
+# Working the approval queue is user management, so it sits at the admin tier next
+# to /admin/users — unlike the switch that creates the queue, which is deployment
+# configuration and lives under /admin/auth-config at the super_admin tier.
+include_router_with_consistency(
+    admin_approvals.router, prefix="/admin/user-approvals", tags=["admin"]
+)
 # Org-admin tenant administration (audit-log read + GDPR erasure). Gated by the
 # "organizations" capability: 404 in the community edition (no orgs), enabled by
 # the cloud capability resolver. require_org_admin further gates each route.
@@ -118,6 +131,41 @@ include_router_with_consistency(
     auth_config.router,
     prefix="/admin/auth-config",
     tags=["auth-config"],
+    capability="auth.config_ui",
+)
+# Same prefix, same capability: which mail config carries password resets and
+# invitations is auth configuration. It rides here rather than under
+# /watch-sources so it survives an edition that disables auto-import.
+include_router_with_consistency(
+    auth_email_delivery.router,
+    prefix="/admin/auth-config",
+    tags=["auth-config"],
+    capability="auth.config_ui",
+)
+# Which directory group becomes which in-app group — and which one hands out
+# admin — is authorization configuration, so it rides the auth-config capability
+# and the super_admin tier rather than the /groups (per-user sharing) router.
+include_router_with_consistency(
+    admin_group_mappings.router,
+    prefix="/admin/group-mappings",
+    tags=["group-mappings"],
+    capability="auth.config_ui",
+)
+# Completion state for the guided first-run flow (HANDOFF #28) — not itself a
+# config category, so no capability gate; super_admin only, enforced per-route.
+include_router_with_consistency(
+    first_run_wizard.router,
+    prefix="/admin/first-run-wizard",
+    tags=["first-run-wizard"],
+)
+# Issuing a credential that can create and disable accounts across the whole
+# deployment is infrastructure configuration, not user management — same tier as the
+# LDAP bind password. The SCIM surface those tokens authenticate lives at /scim/v2,
+# outside this router, because RFC 7644 fixes its base path (see main.py).
+include_router_with_consistency(
+    admin_scim_tokens.router,
+    prefix="/admin/scim-tokens",
+    tags=["scim-tokens"],
     capability="auth.config_ui",
 )
 include_router_with_consistency(system.router, prefix="/system", tags=["system"])
@@ -156,6 +204,16 @@ include_router_with_consistency(
 include_router_with_consistency(
     redaction_settings.user_router, prefix="/user-settings", tags=["redaction-settings"]
 )
+# RAG chat over the user's transcripts. Router-level capability gate: the whole
+# surface 404s when a deployment disables chat (community default: enabled).
+include_router_with_consistency(
+    chat.router,
+    prefix="/chat",
+    tags=["chat"],
+    capability="chat.rag",
+)
+include_router_with_consistency(chat.user_router, prefix="/user-settings", tags=["chat-settings"])
+include_router_with_consistency(chat.admin_router, prefix="/admin/chat-settings", tags=["admin"])
 include_router_with_consistency(
     redaction_settings.admin_router, prefix="/admin/redaction-policy", tags=["admin"]
 )
@@ -164,6 +222,7 @@ include_router_with_consistency(
     media_mirror_settings.router, prefix="/admin/backup/mirror", tags=["admin"]
 )
 include_router_with_consistency(topics.router, prefix="/files", tags=["topics"])
+include_router_with_consistency(usage.router, prefix="/usage", tags=["usage"])
 include_router_with_consistency(
     transcript_segments.router, prefix="/transcripts", tags=["transcript-segments"]
 )

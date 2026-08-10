@@ -8,10 +8,12 @@ from sqlalchemy import DateTime
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import Float
 from sqlalchemy import ForeignKey
+from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
@@ -97,9 +99,11 @@ class MediaFile(Base):
     redaction_model_version: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # Detector model version that produced the cached spans (for upgrade re-index)
-    file_hash: Mapped[str | None] = mapped_column(
-        String, nullable=True, index=True
-    )  # SHA-256 hash for duplicate detection
+    # Client-declared content fingerprint of the source the user selected — the
+    # file itself for a plain upload, the SOURCE VIDEO for client-extracted audio.
+    # imohash (32 hex) since issue #342; SHA-256 (64 hex) on rows predating it.
+    # Compared by exact equality only, so the two vintages never collide.
+    file_hash: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     # Constant-time content fingerprint (first/middle/last byte samples + size).
     # Complements file_hash for server-side dedup + artifact cache keys. Not
     # collision-resistant; do NOT use for security-sensitive equality checks.
@@ -529,17 +533,49 @@ class Comment(Base):
 
 
 class Tag(Base):
+    """A tag, owned by one user or shared as system vocabulary.
+
+    ``user_id`` is NULL for **system tags** (the seeded ``Important`` /
+    ``Meeting`` / ``Interview`` / ``Personal`` set, visible to everyone) and set
+    for a user's private tags. Uniqueness is therefore per owner, not global —
+    ``name`` alone can match several rows, so never look a tag up by name
+    without an owner predicate or a join through ``file_tag`` (migration
+    ``v374_add_tag_user_id``).
+    """
+
     __tablename__ = "tag"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
-    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("user.id"), nullable=True, index=True
+    )
     source: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )  # "manual" | "auto_ai" | "ai_accepted"
     normalized_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    # Two partial unique indexes rather than one composite UNIQUE: Postgres
+    # treats NULLs as distinct, so UNIQUE(user_id, name) alone would allow
+    # duplicate system tags and break the idempotent seeder.
+    __table_args__ = (
+        Index(
+            "uq_tag_user_name",
+            "user_id",
+            "name",
+            unique=True,
+            postgresql_where=text("user_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_tag_system_name",
+            "name",
+            unique=True,
+            postgresql_where=text("user_id IS NULL"),
+        ),
+    )
 
 
 class FileTag(Base):
@@ -562,6 +598,18 @@ class FileTag(Base):
     # Relationships
     media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="file_tags")
     tag: Mapped["Tag"] = relationship("Tag")
+
+    # Present in the DDL since ``v010_baseline`` but omitted here until now, so
+    # the ORM understated the schema and ``merge_tags`` met the violation at
+    # runtime instead of planning for it. One file carries a given tag once.
+    #
+    # It cannot express the *stronger* invariant — one file never carries two
+    # differently-owned rows of the same normalized name — because the name
+    # lives on ``tag``, not here. That one is held at the single choke point
+    # every attach path goes through (``tag_service.resolve_or_create_tag``
+    # consults ``lookup_tag_on_file`` first) and repaired for legacy rows by
+    # the collision/merge pass.
+    __table_args__ = (UniqueConstraint("media_file_id", "tag_id"),)
 
 
 class Task(Base):

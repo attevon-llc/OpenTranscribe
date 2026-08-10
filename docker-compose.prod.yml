@@ -14,6 +14,24 @@ services:
       dockerfile: Dockerfile.prod  # Production build
     pull_policy: always
     # No volumes needed - temp files live in container only
+    environment:
+      # In prod the frontend container is nginx and it proxies /api to the backend
+      # (frontend/nginx.conf), so `request.client.host` is the PROXY for every API
+      # request. With no trusted-proxy list the IP resolver falls back to that peer
+      # address and EVERY caller shares one rate-limit bucket and one audit-log
+      # address: a single user can exhaust the auth rate limit for the whole
+      # deployment, and the audit trail records the proxy instead of the user.
+      #
+      # 172.16.0.0/12 is Docker's own address pool (the default bridge plus every
+      # user-defined compose network), so it covers the proxy container and nothing
+      # outside the host. Deliberately NOT the full RFC1918 set: published container
+      # ports preserve the external source address, so trusting 10/8 or
+      # 192.168.0.0/16 would let any machine on a typical LAN reach the backend port
+      # directly and forge its own X-Forwarded-For.
+      #
+      # Override in .env when Docker's pool is customised (`default-address-pools`)
+      # or the proxy is external — .env.example documents the format.
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}
 
   celery-worker:
     image: davidamacey/opentranscribe-backend:latest
@@ -84,6 +102,8 @@ services:
     volumes:
       # Production: sentence-transformers model cache
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      # RAG chat loads a CPU cross-encoder here to rerank retrieval results.
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
 
   celery-beat:
     image: davidamacey/opentranscribe-backend:latest
@@ -140,6 +160,9 @@ services:
     build:
       context: ./docs-site
       dockerfile: Dockerfile
+      args:
+        # Repo-root VERSION is outside this build context; opentr.sh exports it.
+        OT_VERSION: ${APP_VERSION:-}
     pull_policy: always
     ports:
       - "${DOCS_PORT:-5183}:8080"

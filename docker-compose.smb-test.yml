@@ -1,11 +1,15 @@
 # SMB/CIFS test container for Watch Sources testing (issue #26).
 #
 # Spins up a Samba share so an "smb" watch source can be exercised end-to-end
-# without a real NAS. Load via: ./opentr.sh start dev --with-smb-test
+# without a real NAS. Load it WITH the stack so it joins the same compose
+# project (and therefore the same network):
+#   ./opentr.sh start dev --with-smb-test
+#   ./opentr.sh start dev --fresh t1 --port-offset 100 --with-smb-test
 #
-# Connection (from the backend/worker containers on the app network):
+# Connection from the backend/worker containers (use the SERVICE name — it is
+# stable, while `--fresh` re-pins container_name to otfresh-<name>-smb-test):
 #   server: smb-test    share: media    user: testuser / testpass    port: 445
-# Connection (from the host): localhost:4450
+# Connection from the host: localhost:${SMB_TEST_PORT:-4450}
 #
 # Seed test media into it with scripts/setup-watch-source-test-data.sh.
 
@@ -20,19 +24,13 @@ services:
       -s "media;/share;yes;no;no;testuser"
       -p
     ports:
-      - "4450:445"
+      # Loopback-only, matching the base file's convention: a world-writable
+      # Samba share with published credentials must never be on 0.0.0.0.
+      # Containers reach it over the compose network at smb-test:445.
+      - "127.0.0.1:${SMB_TEST_PORT:-4450}:445"
     volumes:
       - smb_test_data:/share
-    networks:
-      - default
     restart: unless-stopped
 
 volumes:
   smb_test_data:
-
-# Join the stack's default bridge network (project-name agnostic — works for any
-# clone whose compose project isn't literally "transcribe-app").
-networks:
-  default:
-    name: ${COMPOSE_PROJECT_NAME:-opentranscribe}_default
-    external: true

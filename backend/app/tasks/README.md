@@ -70,10 +70,13 @@ tasks/
 The transcription pipeline runs as three chained Celery tasks, separating concerns and allowing the GPU worker to be freed as early as possible:
 
 ```
-preprocess_task  →  gpu_transcription_task  →  postprocess_task
-(download audio)    (WhisperX + PyAnnote)       (index + notify + dispatch enrichment)
-     CPU                   GPU                          CPU
+preprocess_for_transcription  →  transcribe_gpu_task  →  finalize_transcription
+     (download audio)            (WhisperX + PyAnnote)   (index + notify + dispatch)
+          CPU                            GPU                      CPU
 ```
+
+Celery task names: `transcription.preprocess` → `transcription.gpu_transcribe` →
+`transcription.postprocess`.
 
 Enrichment tasks (speaker embedding, LLM identification) are dispatched asynchronously from postprocess — they do not block the GPU worker.
 
@@ -81,14 +84,14 @@ Enrichment tasks (speaker embedding, LLM identification) are dispatched asynchro
 - Downloads file from MinIO
 - Extracts audio with FFmpeg
 - Extracts media metadata with ExifTool
-- Dispatches `gpu_transcription_task`
+- Dispatches `transcribe_gpu_task`
 
 ### Stage 2: GPU Transcription (`core.py`)
 Main GPU-side orchestrator:
 
 ```python
-@celery_app.task(bind=True, name="gpu_transcription_task", queue="gpu")
-def gpu_transcription_task(self, file_id: int):
+@celery_app.task(bind=True, name="transcription.gpu_transcribe", queue=CeleryQueues.GPU)
+def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
     """
     Run WhisperX transcription + PyAnnote speaker diarization.
 
@@ -97,7 +100,7 @@ def gpu_transcription_task(self, file_id: int):
     2. Run WhisperX with configured model (admin-pinned via SystemSettings)
     3. Run PyAnnote speaker diarization
     4. Process and store transcript segments
-    5. Dispatch postprocess_task
+    5. Chain into finalize_transcription
     """
 ```
 
@@ -572,20 +575,20 @@ with session_scope() as db:
 ```python
 def test_preprocess_task_success(celery_app, db_session, sample_file):
     """Test successful preprocess task (stage 1)."""
-    from app.tasks.transcription.preprocess import preprocess_task
+    from app.tasks.transcription.preprocess import preprocess_for_transcription
 
     with patch('app.services.minio_service.download_file') as mock_download:
         mock_download.return_value = (sample_audio_data, 1024, "audio/wav")
 
-        result = preprocess_task.apply(args=[sample_file.id])
+        result = preprocess_for_transcription.apply(args=[sample_file.id])
 
         assert result.successful()
 
 def test_gpu_transcription_task_failure(celery_app, db_session, invalid_file):
     """Test GPU transcription task failure handling (stage 2)."""
-    from app.tasks.transcription.core import gpu_transcription_task
+    from app.tasks.transcription.core import transcribe_gpu_task
 
-    result = gpu_transcription_task.apply(args=[invalid_file.id])
+    result = transcribe_gpu_task.apply(args=[invalid_file.id])
     assert result.failed()
     # Verify file status set to ERROR and user notified
 ```

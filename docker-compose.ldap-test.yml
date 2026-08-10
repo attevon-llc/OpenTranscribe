@@ -1,21 +1,22 @@
-# LDAP Test Environment for PR #119 Testing
-# This creates a simple LDAP server with a web UI for managing users
+# LDAP test environment (LLDAP) — a throwaway IdP for auth development/testing.
 #
-# Usage:
-#   1. First start OpenTranscribe: ./opentr.sh start dev
-#   2. Then start LLDAP: docker compose -f docker-compose.ldap-test.yml up -d
+# Load it WITH the stack so it joins the same compose project (and therefore the
+# same network). `./opentr.sh` is the only supported entry point:
+#   ./opentr.sh start dev --with-ldap-test
+#   ./opentr.sh start dev --fresh t1 --port-offset 100 --with-ldap-test
 #
-# Access:
-#   - LLDAP Web UI: http://localhost:17170
+# Access from the host (loopback only — see the ports note below):
+#   - LLDAP Web UI: http://localhost:${LDAP_TEST_UI_PORT:-17170}
+#   - LDAP server:  ldap://localhost:${LDAP_TEST_PORT:-3890}
 #   - Login: admin / admin_password
 #
-# LDAP Connection (from host):
-#   - Server: ldap://localhost:3890
-#   - Bind DN: uid=admin,ou=people,dc=example,dc=com
-#   - Search Base: dc=example,dc=com
+# Access from the backend/worker containers — always use the network ALIAS, not
+# the container name. The alias is stable; `--fresh` re-pins container_name to
+# otfresh-<name>-lldap (issue #347):
+#   LDAP_SERVER=ldap://lldap-test    LDAP_PORT=3890
 #
-# LDAP Connection (from backend container):
-#   - Server: ldap://lldap-test:3890
+# Bind DN: uid=admin,ou=people,dc=example,dc=com
+# Search base: dc=example,dc=com
 
 services:
   lldap:
@@ -24,8 +25,12 @@ services:
     security_opt:
       - no-new-privileges:true
     ports:
-      - "3890:3890"   # LDAP port
-      - "17170:17170" # Web UI port
+      # Loopback-only, matching the base file's convention for infra ports: this
+      # is a test IdP with a published admin password and a hard-coded JWT
+      # secret, so it must never be reachable off-host. Containers reach it over
+      # the compose network at ldap://lldap-test:3890.
+      - "127.0.0.1:${LDAP_TEST_PORT:-3890}:3890"      # LDAP port
+      - "127.0.0.1:${LDAP_TEST_UI_PORT:-17170}:17170" # Web UI port
     environment:
       - LLDAP_JWT_SECRET=supersecretjwttokenfortest
       - LLDAP_LDAP_USER_PASS=admin_password
@@ -33,14 +38,12 @@ services:
     volumes:
       - lldap_data:/data
     networks:
-      - default  # Join OpenTranscribe's default network
+      # The project's implicit default network. The alias keeps ldap://lldap-test
+      # resolvable no matter what container_name this service ends up with, so a
+      # fresh deployment's backend reaches ITS OWN LLDAP with the same config.
+      default:
+        aliases:
+          - lldap-test
 
 volumes:
   lldap_data:
-
-# Join the stack's default bridge network (project-name agnostic — works for any
-# clone whose compose project isn't literally "transcribe-app").
-networks:
-  default:
-    name: ${COMPOSE_PROJECT_NAME:-opentranscribe}_default
-    external: true

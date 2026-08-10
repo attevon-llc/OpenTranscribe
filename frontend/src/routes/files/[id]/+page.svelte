@@ -1,7 +1,11 @@
 <script lang="ts">
-  import { onMount, onDestroy, afterUpdate } from 'svelte';
+  import { onMount, onDestroy, afterUpdate, tick } from 'svelte';
+  import type { Segment, Speaker } from '$lib/types/speaker';
+  import type { Collection } from '$lib/types/collection';
+  import type { Comment } from '$lib/types/comment';
+  import type { Tag } from '$lib/types/tag';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
-  import { writable, get } from 'svelte/store';
+  import { get } from 'svelte/store';
   import axiosInstance from '$lib/axios';
   import { formatDuration } from '$lib/utils/formatting';
   import { loadTxtPrefs, saveTxtPrefs } from '$lib/export/txtExportPrefs';
@@ -12,6 +16,12 @@
   } from '$lib/export/transcriptExport';
   import { websocketStore } from '$stores/websocket';
   import { handleFileNotification } from '$lib/fileDetail/notificationHandler';
+  import {
+    appendSegmentPage,
+    patchSegmentInFile,
+    renameSpeakersInFile,
+    MAX_SEGMENT_PAGE_SIZE
+  } from '$lib/fileDetail/segmentSync';
 
   // Import new components
   import VideoPlayer from '$components/VideoPlayer.svelte';
@@ -31,6 +41,10 @@
   import SummaryModal from '$components/SummaryModal.svelte';
   import TranscriptModal from '$components/TranscriptModal.svelte';
   import TxtExportOptionsModal from '$components/fileDetail/TxtExportOptionsModal.svelte';
+  import FileActionButtons from '$components/fileDetail/FileActionButtons.svelte';
+  import RedactionControls from '$components/fileDetail/RedactionControls.svelte';
+  import RedactionPendingPanel from '$components/fileDetail/RedactionPendingPanel.svelte';
+  import SpeakerProfileConfirmModal from '$components/fileDetail/SpeakerProfileConfirmModal.svelte';
   import { isLLMAvailable } from '$stores/llmStatus';
   import { authStore } from '$stores/auth';
   import { transcriptStore, processedTranscriptSegments, type SpeakerInfo } from '$stores/transcriptStore';
@@ -61,7 +75,7 @@
   let loadProgress = 0;
   let playerInitialized = false;
   let videoElementChecked = false;
-  let collections: any[] = [];
+  let collections: Collection[] = [];
 
   // UI state
   let showMetadata = false;
@@ -82,6 +96,11 @@
   }
   let speakerList: SpeakerItem[] = [];
   let originalSpeakerNames: Map<string, string> = new Map(); // Track original names for change detection
+  // Generation counter for loadSpeakers. Renames, websocket events and the initial load
+  // can all be in flight at once; a stale response must not overwrite a newer one.
+  let speakerLoadSeq = 0;
+  // Reported by CommentSection; the export flow reads it instead of refetching comments.
+  let commentCount = 0;
   let speakerNamesChanged = false; // Track if any speaker names have been modified
   let reprocessing = false;
   let showReprocessModal = false;
@@ -181,9 +200,6 @@
   let bulkSaveInProgress = false;
   let bulkSaveDecisions = new Map();
 
-  // Reactive store for file updates
-  const reactiveFile = writable(null);
-
 
   /**
    * Fetches file details from the API
@@ -201,8 +217,11 @@
       const response = await axiosInstance.get(`/files/${fileId}`);
 
       if (response.data && typeof response.data === 'object' && file) {
-        // Update all transcript and processing-related fields while preserving UI state flags
+        // Update all transcript and processing-related fields while preserving UI state flags.
+        // Both segment representations must be replaced together — the transcript renders
+        // from `grouped_segments`, so a stale copy keeps showing the old transcript (#352).
         file.transcript_segments = response.data.transcript_segments || [];
+        file.grouped_segments = response.data.grouped_segments || [];
         file.speakers = response.data.speakers || [];
         file.waveform_data = response.data.waveform_data;
         file.duration = response.data.duration;
@@ -232,7 +251,6 @@
 
         // Update file object
         file = { ...file };
-        reactiveFile.set(file);
 
         // Process the new transcript data
         processTranscriptData();
@@ -272,11 +290,10 @@
         redactionPending = response.data.redaction_pending || false;
         redactionStatus = response.data.redaction_status || '';
         if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
-          if (response.data.transcript_segments.some((s: any) => s?.redactions?.length)) {
+          if (response.data.transcript_segments.some((s: Segment) => s?.redactions?.length)) {
             redactionActive = true;
           }
         }
-        reactiveFile.set(file);
 
         // Track pagination metadata
         totalSegments = response.data.total_segments || 0;
@@ -346,11 +363,10 @@
         redactionPending = response.data.redaction_pending || false;
         redactionStatus = response.data.redaction_status || '';
         if (!showOriginal && Array.isArray(response.data.transcript_segments)) {
-          if (response.data.transcript_segments.some((s: any) => s?.redactions?.length)) {
+          if (response.data.transcript_segments.some((s: Segment) => s?.redactions?.length)) {
             redactionActive = true;
           }
         }
-        reactiveFile.set(file);
         processTranscriptData();
       }
     } catch (error) {
@@ -404,13 +420,9 @@
       });
 
       if (response.data && response.data.transcript_segments) {
-        // Append new segments to existing ones
-        file.transcript_segments = [
-          ...(file.transcript_segments || []),
-          ...response.data.transcript_segments
-        ];
-        file = { ...file }; // Trigger reactivity
-        reactiveFile.set(file);
+        // Both representations advance together — the transcript renders from the
+        // grouping, so appending segments alone loads rows that never display (#352).
+        file = appendSegmentPage(file, response.data);
 
         // Update pagination state
         totalSegments = response.data.total_segments || totalSegments;
@@ -446,28 +458,33 @@
     try {
       loadingMoreSegments = true;
       const buffer = 50;
-      const neededCount = targetIndex - currentCount + buffer + 1;
 
-      const response = await axiosInstance.get(`/files/${fileId}/segments`, {
-        params: {
-          segment_limit: neededCount,
-          segment_offset: currentCount,
-          ...(showOriginal ? { redact: false } : {})
-        }
-      });
+      // Page in a loop: the endpoint caps a single page, so a jump to the end of a long
+      // transcript can't be satisfied by one request. The guard bounds the loop if the
+      // server stops making progress.
+      for (let page = 0; page < 50; page++) {
+        const loaded = file?.transcript_segments?.length || 0;
+        if (loaded > targetIndex) break;
 
-      if (response.data && response.data.transcript_segments) {
-        file.transcript_segments = [
-          ...(file.transcript_segments || []),
-          ...response.data.transcript_segments
-        ];
-        file = { ...file };
-        reactiveFile.set(file);
+        const response = await axiosInstance.get(`/files/${fileId}/segments`, {
+          params: {
+            segment_limit: Math.min(targetIndex - loaded + buffer + 1, MAX_SEGMENT_PAGE_SIZE),
+            segment_offset: loaded,
+            ...(showOriginal ? { redact: false } : {})
+          }
+        });
+
+        const fetched = response.data?.transcript_segments;
+        if (!Array.isArray(fetched) || fetched.length === 0) break;
+
+        file = appendSegmentPage(file, response.data);
         totalSegments = response.data.total_segments || totalSegments;
 
-        if (file?.uuid && file.transcript_segments && speakerList) {
-          transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
-        }
+        if ((file?.transcript_segments?.length || 0) >= totalSegments) break;
+      }
+
+      if (file?.uuid && file.transcript_segments && speakerList) {
+        transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
       }
 
       // Wait for DOM update then scroll to target segment
@@ -534,7 +551,7 @@
       file.transcript_segments = transcriptData;
 
       // Update transcript text for editing
-      editedTranscript = transcriptData.map((seg: any) =>
+      editedTranscript = transcriptData.map((seg: Segment) =>
         `${seg.display_timestamp || seg.formatted_timestamp || formatDuration(seg.start_time)} [${seg.speaker_label || seg.speaker?.name || 'Speaker'}]: ${seg.text}`
       ).join('\n');
 
@@ -548,31 +565,47 @@
   // Speaker sorting is now handled by the backend
 
   /**
-   * Load cross-media appearances for labeled speakers
+   * Load cross-media appearances ("appears in N other videos") for labeled speakers.
+   *
+   * Runs in the background: this is one request per already-labeled speaker, and it feeds
+   * only the chips in the speaker editor. Awaiting it used to gate the transcript repaint
+   * and the success toast behind N round trips, which is what made renaming feel frozen.
+   *
+   * `seq` is the generation of the `loadSpeakers` call that started this; results from a
+   * superseded generation are dropped.
    */
-  async function loadCrossMediaDataForLabeledSpeakers(): Promise<void> {
+  async function loadCrossMediaDataForLabeledSpeakers(seq: number): Promise<void> {
     if (!speakerList || speakerList.length === 0) return;
     if (file?.diarization_disabled) return; // Skip cross-media for monologue files
 
     // Find speakers that need cross-media data (labeled speakers without individual matches)
     const speakersNeedingCrossMedia = speakerList.filter(speaker => speaker.needsCrossMediaCall);
+    if (speakersNeedingCrossMedia.length === 0) return;
 
-    // Load cross-media data for all labeled speakers in parallel
+    // Collect into a map rather than writing onto the captured speaker objects: by the
+    // time these resolve, `loadSpeakers` may have replaced `speakerList` wholesale and
+    // those writes would land on orphaned objects, silently losing the chips.
+    const matchesByUuid = new Map<string, any[]>();
+
     await Promise.allSettled(
       speakersNeedingCrossMedia.map(async (speaker) => {
         try {
           const response = await axiosInstance.get(`/speakers/${speaker.uuid}/cross-media`);
-          speaker.cross_video_matches = response.data || [];
+          matchesByUuid.set(speaker.uuid, response.data || []);
         } catch (error) {
           console.error(`Error loading cross-media data for speaker ${speaker.uuid}:`, error);
-          speaker.cross_video_matches = [];
+          matchesByUuid.set(speaker.uuid, []);
         }
       })
     );
 
+    if (seq !== speakerLoadSeq) return; // A newer load won — discard.
 
-    // Trigger reactivity by updating the speakerList reference
-    speakerList = [...speakerList];
+    speakerList = speakerList.map(speaker =>
+      matchesByUuid.has(speaker.uuid)
+        ? { ...speaker, cross_video_matches: matchesByUuid.get(speaker.uuid) }
+        : speaker
+    );
 
     // Update transcript store with the new cross-media data
     if (file?.uuid && file.transcript_segments) {
@@ -585,42 +618,63 @@
    */
   async function loadSpeakers(): Promise<void> {
     if (!file?.uuid) return;
+    const seq = ++speakerLoadSeq;
 
     try {
       // Load speakers from the backend API
       const response = await axiosInstance.get(`/speakers`, {
         params: { file_uuid: file.uuid }  // Use file_uuid parameter (file.uuid contains UUID)
       });
+      if (seq !== speakerLoadSeq) return; // Superseded by a newer load.
 
       if (response.data && Array.isArray(response.data)) {
+        // A websocket event or a sibling rename can land while the user is typing in
+        // another speaker's field, and this assignment replaces the whole list. Carry
+        // unsaved edits across so they aren't silently wiped mid-keystroke.
+        const unsavedNames = new Map<string, string>();
+        for (const speaker of speakerList) {
+          const baseline = originalSpeakerNames.get(speaker.uuid);
+          const current = (speaker.display_name || '').trim();
+          if (baseline !== undefined && baseline !== current) {
+            unsavedNames.set(speaker.uuid, speaker.display_name || '');
+          }
+        }
+
         // Use pre-processed data directly from backend - no frontend business logic
-        speakerList = response.data.map((speaker: any) => ({
+        speakerList = response.data.map((speaker: Speaker) => ({
             ...speaker,
+            verified: speaker.verified ?? false,
+            display_name: unsavedNames.has(speaker.uuid)
+              ? unsavedNames.get(speaker.uuid)
+              : speaker.display_name,
             showMatches: false,  // Only UI state, not business logic
             showSuggestions: false  // Only UI state, not business logic
           }));
 
-        // Store original speaker names for change detection (trimmed for consistent comparison)
+        // Store original speaker names for change detection (trimmed for consistent
+        // comparison). Built from SERVER values, so a preserved edit above still reads
+        // as unsaved.
         originalSpeakerNames = new Map(
-          speakerList.map(speaker => [speaker.uuid, (speaker.display_name || '').trim()])
+          response.data.map((speaker: Speaker) => [speaker.uuid, (speaker.display_name || '').trim()])
         );
 
         // Speakers are now pre-sorted by the backend
-
-        // Load cross-media data for labeled speakers
-        await loadCrossMediaDataForLabeledSpeakers();
 
         // Load data into the transcript store for reactive updates
         if (file?.uuid && file.transcript_segments) {
           transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
         }
 
+        // Cross-media feeds a secondary panel only — fetch it after the render above,
+        // and don't make callers wait for it.
+        void loadCrossMediaDataForLabeledSpeakers(seq);
+
       } else {
         // Fallback: extract from transcript data
         const transcriptData = file?.transcript_segments;
         if (transcriptData) {
           const speakers = new Map();
-          transcriptData.forEach((segment: any) => {
+          transcriptData.forEach((segment: Segment) => {
             const speakerLabel = segment.speaker_label || segment.speaker?.name || $t('fileDetail.unknownSpeaker');
             if (!speakers.has(speakerLabel)) {
               speakers.set(speakerLabel, {
@@ -644,7 +698,7 @@
       const transcriptData = file?.transcript_segments;
       if (transcriptData) {
         const speakers = new Map();
-        transcriptData.forEach((segment: any) => {
+        transcriptData.forEach((segment: Segment) => {
           const speakerLabel = segment.speaker_label || segment.speaker?.name || get(t)('fileDetail.unknownSpeaker');
           if (!speakers.has(speakerLabel)) {
             speakers.set(speakerLabel, {
@@ -749,7 +803,7 @@
       segment.classList.remove('active-segment');
     });
 
-    const currentSegment = transcriptData.find((segment: any) => {
+    const currentSegment = transcriptData.find((segment: Segment) => {
       return currentPlaybackTime >= segment.start_time && currentPlaybackTime <= segment.end_time;
     });
 
@@ -801,14 +855,17 @@
     if (!file?.uuid) return;
 
     try {
-      // Silently refresh file data without showing loading state
-      const response = await axiosInstance.get(`/files/${file.uuid}`);
+      // Silently refresh file data without showing loading state.
+      // Honour the reveal flag, as refreshTranscriptOnly does — without it, merging
+      // speakers while "show original" is on silently re-masks the transcript.
+      const response = await axiosInstance.get(`/files/${file.uuid}`, {
+        params: showOriginal ? { redact: false } : {}
+      });
 
       if (response.data && typeof response.data === 'object') {
         // Update file data (includes analytics and transcript segments)
         file = response.data;
         collections = response.data.collections || [];
-        reactiveFile.set(file);
 
         // Process transcript data from the refreshed response
         processTranscriptData();
@@ -850,7 +907,6 @@
       if (response.data && typeof response.data === 'object') {
         // Update analytics from refreshed response
         file.analytics = response.data.analytics;
-        reactiveFile.set(file);
       }
     } catch (error) {
       console.error('Error refreshing analytics after speaker change:', error);
@@ -897,13 +953,16 @@
     } else if (pendingSpeakerUpdate) {
       // Handle individual speaker confirmation
       const { speakerId, newName } = pendingSpeakerUpdate;
-      await performSpeakerUpdate(speakerId, newName, decision);
 
-      // Reset modal state
+      // Close BEFORE awaiting, as the bulk path already does. The optimistic rename runs
+      // synchronously inside performSpeakerUpdate, so the dialog closes and the transcript
+      // repaints in the same frame instead of the dialog sitting open through the request.
       showSpeakerProfileConfirmation = false;
       pendingSpeakerUpdate = null;
       profileUpdateMessage = '';
       profileUpdateTitle = '';
+
+      await performSpeakerUpdate(speakerId, newName, decision);
     }
   }
 
@@ -962,85 +1021,75 @@
   }
 
   // Perform the actual speaker update with the specified action
+  /**
+   * Apply a speaker display-name change everywhere the page renders it.
+   *
+   * Used for the optimistic write, for rollback, and for the websocket backstop, so all
+   * three stay in step. `speakerLabel` is the original `SPEAKER_XX` (`speaker.name`),
+   * which is both a match fallback and the value speaker colours hash — it is never
+   * rewritten, only read.
+   */
+  function applySpeakerRename(speakerUuid: string, speakerLabel: string | undefined, newName: string) {
+    speakerList = speakerList.map(speaker =>
+      speaker.uuid === speakerUuid ? { ...speaker, display_name: newName } : speaker
+    );
+    // Feeds TranscriptModal, which reads the store rather than `file`.
+    transcriptStore.updateSpeakerName(speakerUuid, newName);
+    file = renameSpeakersInFile(file, [
+      { uuid: speakerUuid, label: speakerLabel, displayName: newName }
+    ]);
+    // Regenerating the WebVTT track is local work with no network call, and it reads the
+    // props we just changed — so wait a tick, but don't make the caller wait on it.
+    tick()
+      .then(() => videoPlayerComponent?.updateSubtitles?.())
+      .catch(error => console.warn('Failed to update subtitles after speaker rename:', error));
+  }
+
+  // Perform the actual speaker update with the specified action
   async function performSpeakerUpdate(speakerId: number | string, newName: string, action: 'normal' | 'update_profile' | 'create_new_profile') {
-    // Update the speaker in the speakerList and maintain sort order
-    // IMPORTANT: Only update display_name, NEVER change name (original speaker ID for color consistency)
-    speakerList = speakerList
-      .map(speaker => {
-        if (speaker.uuid === speakerId) {
-          return { ...speaker, display_name: newName };
-        }
-        return speaker;
-      });
-      // Backend provides pre-sorted speakers
+    const speakerUuid = String(speakerId);
+    const speaker = speakerList.find(s => s.uuid === speakerId);
+    if (!speaker?.uuid) return;
 
-    // Update the transcript store FIRST - this will trigger reactive updates in TranscriptModal
-    transcriptStore.updateSpeakerName(String(speakerId), newName);
+    // Captured before the optimistic write so a failed save can be undone.
+    const previousName = speaker.display_name || '';
+    const speakerLabel = speaker.name;
 
-    // Update transcript segment speaker names in file object (for other components)
-    const transcriptData = file?.transcript_segments;
-    if (transcriptData && Array.isArray(transcriptData)) {
-      transcriptData.forEach(segment => {
-        if (segment.speaker_id === speakerId) {
-          // Update ALL speaker name fields that components might use
-          segment.resolved_speaker_name = newName;
-          if (segment.speaker) {
-            segment.speaker.display_name = newName;
-          } else {
-            // Create speaker object if it doesn't exist
-            segment.speaker = {
-              id: speakerId,
-              name: segment.speaker_label || `SPEAKER_${speakerId}`,
-              display_name: newName
-            };
-          }
-        }
-      });
-
-      // Update file data
-      file.transcript_segments = transcriptData.map(segment => ({ ...segment }));
-      file = { ...file }; // Trigger reactivity
-      reactiveFile.set(file);
-    }
-
-    // Update subtitles in the video player with new speaker names
-    if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
-      try {
-        await videoPlayerComponent.updateSubtitles();
-      } catch (error) {
-        console.warn('Failed to update subtitles after speaker update:', error);
-      }
-    }
+    applySpeakerRename(speakerUuid, speakerLabel, newName);
 
     // Persist to database with the action decision
     try {
-      const speaker = speakerList.find(s => s.uuid === speakerId);
-      if (speaker && speaker.uuid) {
-        const payload: any = {
-          display_name: newName
-          // NEVER update 'name' field - it contains the original speaker ID for color consistency
-        };
+      const payload: any = {
+        display_name: newName
+        // NEVER update 'name' field - it contains the original speaker ID for color consistency
+      };
 
-        // Add profile action if needed
-        if (action !== 'normal') {
-          payload.profile_action = action;
-        }
-
-        await axiosInstance.put(`/speakers/${speaker.uuid}`, payload);
-
-        // Refresh speakers to get updated profile data from GET endpoint
-        // This ensures speaker.profile.name is current before the next edit
-        await loadSpeakers();
-
-        // Show success feedback with appropriate message
-        const successMessage = action === 'update_profile'
-          ? $t('speakerProfile.updatedGlobally', { name: newName })
-          : action === 'create_new_profile'
-          ? $t('speakerProfile.newCreated', { name: newName })
-          : $t('speakerProfile.renamed', { name: newName });
-
-        toastStore.success(successMessage);
+      // Add profile action if needed
+      if (action !== 'normal') {
+        payload.profile_action = action;
       }
+
+      await axiosInstance.put(`/speakers/${speaker.uuid}`, payload);
+
+      // Postgres has committed — confirm now rather than after the refresh below.
+      const successMessage = action === 'update_profile'
+        ? $t('speakerProfile.updatedGlobally', { name: newName })
+        : action === 'create_new_profile'
+        ? $t('speakerProfile.newCreated', { name: newName })
+        : $t('speakerProfile.renamed', { name: newName });
+
+      toastStore.success(successMessage);
+
+      // Move the change-detection baseline with it, or the unsaved-changes indicator
+      // lights up for a name that just saved.
+      originalSpeakerNames = new Map(originalSpeakerNames).set(speakerUuid, newName.trim());
+
+      // Speaker labels appear in talk-time and turn-taking analytics.
+      handleAnalyticsRefreshNeeded();
+
+      // Refresh speakers to get updated profile data from GET endpoint
+      // This ensures speaker.profile.name is current before the next edit
+      await loadSpeakers();
     } catch (error: unknown) {
       console.error('Failed to update speaker name in database:', error);
 
@@ -1052,9 +1101,10 @@
         ? $t('speakerProfile.permissionDenied')
         : $t('speakerProfile.saveFailed');
 
-      toastStore.error($t('speakerProfile.errorWithLocal', { error: errorMessage }));
-
-      // Note: We don't revert frontend changes as they're useful even without backend persistence
+      // Undo the optimistic write. Leaving it would render the new name across the
+      // transcript, subtitles, modal and exports as though it had saved.
+      applySpeakerRename(speakerUuid, speakerLabel, previousName);
+      toastStore.error($t('speakerProfile.saveFailedReverted', { error: errorMessage }));
     }
   }
 
@@ -1081,59 +1131,29 @@
       const response = await axiosInstance.put(`/files/${fileId}/transcript/segments/${segmentUuid}`, segmentUpdate);
 
       if (response.data) {
-        // Update the transcript store FIRST for reactivity
+        // Update the transcript store FIRST for reactivity (feeds TranscriptModal)
         transcriptStore.updateSegmentText(segmentUuid, editingSegmentText);
 
-        // Update the specific segment in local data
-        const transcriptData = file?.transcript_segments;
-        if (transcriptData && file) {
-          const segmentIndex = transcriptData.findIndex((s: any) => s.uuid === segmentUuid);
+        // Patch only `text`. The old code merged the whole response and then restored the
+        // speaker fields it had just clobbered; a targeted patch can't clobber them.
+        file = patchSegmentInFile(file, segmentUuid, { text: response.data.text ?? editingSegmentText });
 
-          if (segmentIndex !== -1) {
-            // Create a new array with the updated segment, preserving speaker data
-            const updatedSegments = [...transcriptData];
-            const originalSegment = updatedSegments[segmentIndex];
-
-            // CRITICAL: Merge response data but preserve original speaker information
-            updatedSegments[segmentIndex] = {
-              ...originalSegment, // Keep all original data (including speaker info)
-              ...response.data,   // Apply backend updates
-              // Explicitly preserve speaker-related fields that determine colors
-              speaker_label: originalSegment.speaker_label,
-              speaker_id: originalSegment.speaker_id,
-              speaker: originalSegment.speaker,
-              resolved_speaker_name: originalSegment.resolved_speaker_name
-            };
-
-
-            // Update file with new segments array
-            file = {
-              ...file,
-              transcript_segments: updatedSegments
-            };
-            reactiveFile.set(file);
-
-
-            // Clear cached processed videos so downloads will use updated transcript
-            try {
-              await axiosInstance.delete(`/files/${file.uuid}/cache`);
-            } catch (error) {
-              console.warn('Could not clear video cache:', error);
-            }
-          }
-        }
-
+        // The write is committed — close the editor now. Everything below only affects
+        // future downloads and the subtitle track, so it must not hold the UI open.
         editingSegmentId = null;
         editingSegmentText = '';
 
-        // Update subtitles in the video player
-        if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
-          try {
-            await videoPlayerComponent.updateSubtitles();
-          } catch (error) {
-            console.warn('Failed to update subtitles after segment edit:', error);
-          }
-        }
+        // Clear cached processed videos so downloads use the updated transcript.
+        axiosInstance.delete(`/files/${file.uuid}/cache`).catch((error: unknown) => {
+          console.warn('Could not clear video cache:', error);
+        });
+
+        tick()
+          .then(() => videoPlayerComponent?.updateSubtitles?.())
+          .catch(error => console.warn('Failed to update subtitles after segment edit:', error));
+
+        // Word counts and talk-time are derived from segment text; refresh them.
+        handleAnalyticsRefreshNeeded();
       }
     } catch (error: unknown) {
       console.error('Error saving segment:', error);
@@ -1191,17 +1211,10 @@
     let transcriptData = file?.transcript_segments;
     if (!file || !transcriptData) return;
 
-    // Check if there are any comments for this file
-    let hasComments = false;
-    try {
-      const endpoint = `/comments/files/${file.uuid}/comments`;
-      const response = await axiosInstance.get(endpoint);
-      const fetchedComments = response.data || [];
-      hasComments = fetchedComments.length > 0;
-    } catch (error) {
-      console.error('Error checking for comments:', error);
-      hasComments = false;
-    }
+    // CommentSection already holds this and reports it as it changes — refetching it here
+    // just to set a boolean put a round trip between clicking a format and seeing the
+    // options dialog.
+    const hasComments = commentCount > 0;
 
     if (format === 'txt') {
       // Show TXT-specific options modal (timestamps, speakers, comments)
@@ -1234,7 +1247,7 @@
     let transcriptData = file?.transcript_segments;
     if (!file || !transcriptData) return;
     // Fetch comments if user wants to include them
-    let fileComments: any[] = [];
+    let fileComments: Comment[] = [];
     if (includeComments) {
       try {
         const endpoint = `/comments/files/${file.uuid}/comments`;
@@ -1245,7 +1258,7 @@
         const userData = $authStore.user || {} as any;
 
         // Add current user data to each comment
-        fileComments = fileComments.map((comment: any) => {
+        fileComments = fileComments.map((comment: Comment) => {
           // If the comment is from the current user, add their details
           if (!comment.user && comment.user_id === userData.uuid) {
             comment.user = {
@@ -1266,7 +1279,7 @@
         });
 
         // Sort comments by timestamp
-        fileComments.sort((a: any, b: any) => a.timestamp - b.timestamp);
+        fileComments.sort((a: Comment, b: Comment) => a.timestamp - b.timestamp);
       } catch (error) {
         console.error('Error fetching comments for export:', error);
         // Continue with export even if comments can't be fetched
@@ -1428,9 +1441,9 @@
     // STEP 1: Optimistic UI updates - immediately update voice suggestions with new names
     const nameChanges = new Map(); // Track profile name changes for voice suggestions
 
-    speakersToUpdate.forEach((speaker: any) => {
+    speakersToUpdate.forEach((speaker: SpeakerItem) => {
       const decision = decisions.get(speaker.uuid);
-      const newName = speaker.display_name.trim();
+      const newName = (speaker.display_name ?? '').trim();
 
       // If updating a profile globally, track the name change
       if (decision && decision.decision === 'update_profile' && speaker.profile) {
@@ -1457,88 +1470,83 @@
 
     // STEP 2: Update speakers in the backend with decisions
     // Backend returns immediately after saving to PostgreSQL - heavy processing happens in background
-    const updatePromises = speakersToUpdate.map(async (speaker: any) => {
-      const decision = decisions.get(speaker.uuid);
-      const payload: any = {
-        display_name: speaker.display_name.trim(),
-        name: speaker.name
-      };
+    // `allSettled`, not `all`: with `all` a single rejection discarded the outcome of every
+    // other speaker, so the page could neither confirm the ones that saved nor undo the
+    // one that didn't.
+    const results = await Promise.allSettled(
+      speakersToUpdate.map((speaker: SpeakerItem) => {
+        const decision = decisions.get(speaker.uuid);
+        const payload: any = {
+          display_name: (speaker.display_name ?? '').trim(),
+          name: speaker.name
+        };
 
-      // Add profile action if there's a decision for this speaker
-      if (decision) {
-        payload.profile_action = decision.decision;
+        // Add profile action if there's a decision for this speaker
+        if (decision) {
+          payload.profile_action = decision.decision;
+        }
+
+        return axiosInstance.put(`/speakers/${speaker.uuid}`, payload);
+      })
+    );
+
+    const failed = speakersToUpdate.filter((_, i) => results[i].status === 'rejected');
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        console.error(`Failed to save speaker ${speakersToUpdate[i].uuid}:`, result.reason);
       }
-
-      return axiosInstance.put(`/speakers/${speaker.uuid}`, payload);
     });
 
-    await Promise.all(updatePromises);
+    // Restore the names that did not save, so nothing renders as though it persisted.
+    if (failed.length > 0) {
+      const failedUuids = new Set(failed.map(speaker => speaker.uuid));
+      speakerList = speakerList.map(speaker =>
+        failedUuids.has(speaker.uuid)
+          ? { ...speaker, display_name: originalSpeakerNames.get(speaker.uuid) ?? speaker.display_name }
+          : speaker
+      );
+    }
 
     // STEP 4: PostgreSQL updates complete - stop save button spinner immediately!
     savingSpeakers = false;
     isEditingSpeakers = false;
-    toastStore.success($t('speakerProfile.savedSuccess'));
+    if (failed.length > 0) {
+      toastStore.error($t('speakerProfile.bulkSavePartialFailure', { count: failed.length }));
+    } else {
+      toastStore.success($t('speakerProfile.savedSuccess'));
+    }
 
     // Reset original names to current values (no changes after save)
     originalSpeakerNames = new Map(
       speakerList.map(speaker => [speaker.uuid, (speaker.display_name || '').trim()])
     );
 
-    // STEP 5: Update the transcript store for reactive updates (instant)
-    speakerList.forEach((speaker: any) => {
-      if (speaker.uuid && speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
-        transcriptStore.updateSpeakerName(speaker.uuid, speaker.display_name.trim());
-      }
-    });
+    // STEP 5: Apply the saved names everywhere the page renders them (instant).
+    // Blank and still-unnamed speakers are skipped deliberately — clearing a label back to
+    // the raw SPEAKER_XX does not rewrite the segments.
+    const renames = speakerList
+      .filter((speaker: SpeakerItem) =>
+        speaker.uuid &&
+        speaker.display_name &&
+        speaker.display_name.trim() !== '' &&
+        !speaker.display_name.startsWith('SPEAKER_')
+      )
+      .map((speaker: SpeakerItem) => ({
+        uuid: speaker.uuid,
+        label: speaker.name,
+        displayName: (speaker.display_name ?? '').trim()
+      }));
 
-    // Update local transcript data with new display names
-    const transcriptData = file?.transcript_segments;
-    if (transcriptData) {
-      const speakerMapping = new Map();
-      speakerList.forEach((speaker: any) => {
-        if (speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
-          speakerMapping.set(speaker.name, speaker.display_name.trim());
-        }
-      });
-
-      transcriptData.forEach((segment: any) => {
-        const speakerName = segment.speaker_label || segment.speaker?.name;
-        const newDisplayName = speakerMapping.get(speakerName);
-        if (newDisplayName) {
-          segment.resolved_speaker_name = newDisplayName;
-          if (segment.speaker) {
-            segment.speaker.display_name = newDisplayName;
-          } else {
-            segment.speaker = {
-              id: segment.speaker_id,
-              name: speakerName,
-              display_name: newDisplayName
-            };
-          }
-        }
-      });
-
-      file.transcript_segments = [...transcriptData];
-      file = { ...file };
-      reactiveFile.set(file);
-    }
+    renames.forEach(rename => transcriptStore.updateSpeakerName(rename.uuid, rename.displayName));
+    file = renameSpeakersInFile(file, renames);
 
     // Update subtitles and clear cache (async, don't block)
-    if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
-      videoPlayerComponent.updateSubtitles().catch((error: unknown) => {
-        console.warn('Failed to update subtitles after saving speaker names:', error);
-      });
-    }
+    tick()
+      .then(() => videoPlayerComponent?.updateSubtitles?.())
+      .catch(error => console.warn('Failed to update subtitles after saving speaker names:', error));
 
     axiosInstance.delete(`/files/${file.uuid}/cache`).catch(error => {
       console.warn('Could not clear video cache:', error);
-    });
-
-    // Refresh speakers from the backend to sync local state
-    speakerList.forEach((speaker: any) => {
-      if (speaker.uuid && speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
-        transcriptStore.updateSpeakerName(speaker.uuid, speaker.display_name.trim());
-      }
     });
   }
 
@@ -1562,10 +1570,11 @@
     }
   }
 
-  function handleTagsUpdated(event: any) {
+  // `file.tags` is the update path: assigning a member of the reactive `file`
+  // invalidates it, which re-renders TagsSection with the new tag objects.
+  function handleTagsUpdated(event: CustomEvent<{ tags: Tag[] }>) {
     if (file) {
       file.tags = event.detail.tags;
-      reactiveFile.set(file);
     }
   }
 
@@ -1579,7 +1588,6 @@
     if (file) {
       file.collections = updatedCollections;
       file = { ...file }; // Trigger reactivity
-      reactiveFile.set(file);
     }
   }
 
@@ -1779,15 +1787,51 @@
   // Handler for speaker-updated CustomEvent (dispatched by websocket.ts, never enters store)
   function handleSpeakerUpdatedEvent(e: Event) {
     const detail = (e as CustomEvent).detail;
+    // Publishers disagree on the field name: speaker_attribute_task sends `file_id`,
+    // the speaker endpoints send `media_file_id`. Accept both.
+    const eventFileId = detail?.file_id ?? detail?.media_file_id;
     // Only refresh if this event is for the current file
-    if (detail?.file_id && String(detail.file_id) === String(fileId)) {
+    if (eventFileId && String(eventFileId) === String(fileId)) {
       loadSpeakers();
+    }
+  }
+
+  /**
+   * Eventual-consistency backstop for a speaker rename.
+   *
+   * Renaming a speaker kicks off a background task that projects the change into
+   * OpenSearch and retroactively labels matching speakers in other files. This event is
+   * how those downstream effects reach an open page. It was dispatched but never listened
+   * for, so auto-applied labels only appeared after a manual reload.
+   */
+  function handleSpeakerProcessingCompleteEvent(e: Event) {
+    const detail = (e as CustomEvent).detail;
+    if (!detail?.media_file_id || String(detail.media_file_id) !== String(fileId)) return;
+
+    // Repaint the renamed speaker directly: loadSpeakers() refreshes the speaker list but
+    // touches neither the segments nor the transcript store.
+    if (detail.speaker_uuid && detail.display_name) {
+      const speakerUuid = String(detail.speaker_uuid);
+      const speakerLabel = speakerList.find(s => s.uuid === speakerUuid)?.name;
+      applySpeakerRename(speakerUuid, speakerLabel, String(detail.display_name));
+    }
+
+    // Picks up labels the task auto-applied to OTHER speakers in this file.
+    loadSpeakers();
+
+    const autoApplied = detail.auto_applied_count || 0;
+    const suggested = detail.suggested_count || 0;
+    if (autoApplied > 0) {
+      toastStore.info($t('speakerProfile.autoAppliedToOthers', { count: autoApplied }));
+    } else if (suggested > 0) {
+      toastStore.info($t('speakerProfile.suggestionsCreated', { count: suggested }));
     }
   }
 
   onMount(() => {
     // Listen for speaker-updated CustomEvents (gender detection, attribute changes)
     window.addEventListener('speaker-updated', handleSpeakerUpdatedEvent);
+    window.addEventListener('speaker-processing-complete', handleSpeakerProcessingCompleteEvent);
 
     // Use dynamic URL based on current location (works with reverse proxy)
     apiBaseUrl = getAppBaseUrl();
@@ -1872,7 +1916,6 @@
               getRedactionStatus: () => redactionStatus,
               getVideoPlayerComponent: () => videoPlayerComponent,
               setFile: (f) => (file = f),
-              setReactiveFile: (f) => reactiveFile.set(f),
               setCurrentProcessingStep: (s) => (currentProcessingStep = s),
               setSummaryGenerating: (v) => (summaryGenerating = v),
               setGeneratingSummary: (v) => (generatingSummary = v),
@@ -1916,6 +1959,7 @@
 
     // Clean up CustomEvent listeners
     window.removeEventListener('speaker-updated', handleSpeakerUpdatedEvent);
+    window.removeEventListener('speaker-processing-complete', handleSpeakerProcessingCompleteEvent);
 
     // Clear the transcript store when leaving the page
     transcriptStore.clear();
@@ -1965,7 +2009,7 @@
   function scrollToSegmentAtTime(time: number) {
     const transcriptData = file?.transcript_segments;
     if (!transcriptData || !Array.isArray(transcriptData)) return;
-    const segment = transcriptData.find((s: any) => time >= s.start_time && time <= s.end_time);
+    const segment = transcriptData.find((s: Segment) => time >= s.start_time && time <= s.end_time);
     if (!segment) return;
     const segId = segment.uuid || segment.id || `${segment.start_time}-${segment.end_time}`;
     // Wait for DOM to update with the active-segment class
@@ -2007,7 +2051,12 @@
     </div>
   {:else if file}
     <div class="file-header">
-      <FileHeader {file} {currentProcessingStep} sharedPermission={myPermission} />
+      <FileHeader
+        {file}
+        {currentProcessingStep}
+        sharedPermission={myPermission}
+        on:titleUpdated={(e) => { if (file) file.title = e.detail.title; }}
+      />
 
       <MetadataDisplay
         {file}
@@ -2021,81 +2070,18 @@
         <div class="video-header">
           <h4>{file?.content_type?.startsWith('audio/') ? $t('fileDetail.audio') : $t('fileDetail.video')}</h4>
           <!-- Action Buttons - right aligned above video -->
-          <div class="header-buttons">
-            <!-- View Full Transcript Button - LEFT of AI Summary -->
-            {#if file && file.transcript_segments && file.transcript_segments.length > 0 && file.status !== 'processing'}
-              <button
-                class="view-transcript-btn"
-                on:click={() => showTranscriptModal = true}
-                title={$t('fileDetail.viewTranscript')}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="transcript-icon">
-                  <path d="M4 2a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H4zm0 1h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
-                  <path d="M5 5h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z"/>
-                </svg>
-                {$t('fileDetail.transcript')}
-              </button>
-            {/if}
-          <!-- Debug: Summary button state: hasSummary={!!(file?.has_summary || file?.summary_opensearch_id)}, summaryGenerating={summaryGenerating}, generatingSummary={generatingSummary}, fileStatus={file?.status} -->
-          {#if file?.has_summary || file?.summary_opensearch_id}
-            <button
-              class="view-summary-btn"
-              on:click={handleShowSummary}
-              title={$t('fileDetail.viewSummaryTooltip')}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
-                <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
-              </svg>
-              {$t('fileDetail.summary')}
-            </button>
-          {:else if summaryGenerating || generatingSummary}
-            <!-- Show generating state even when no summary exists yet -->
-            <button
-              class="generate-summary-btn"
-              disabled
-              title={$t('fileDetail.aiSummaryGenerating')}
-            >
-              <Spinner size="small" color="white" />
-              <span>{$t('fileDetail.aiSummary')}</span>
-            </button>
-          {:else if file?.status === 'completed' && canEdit}
-            <button
-              class="generate-summary-btn"
-              on:click={handleGenerateSummary}
-              disabled={generatingSummary || summaryGenerating || !llmAvailable}
-              title={!llmAvailable ? $t('fileDetail.aiNotAvailable') :
-                     (generatingSummary || summaryGenerating) ? $t('fileDetail.aiSummaryGenerating') :
-                     $t('fileDetail.generateSummaryTooltip')}
-            >
-              {#if generatingSummary || summaryGenerating}
-                <div class="spinner-small"></div>
-                <span>{$t('fileDetail.aiSummary')}</span>
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
-                  <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
-                </svg>
-                {$t('fileDetail.generateSummary')}
-              {/if}
-            </button>
-          {/if}
-          <!-- Reprocess Button (opens SelectiveReprocessModal) - editors/owners only -->
-          {#if canEdit && file && (file.status === 'error' || file.status === 'completed' || file.status === 'failed')}
-            <button
-              class="reprocess-button-header"
-              on:click={() => showReprocessModal = true}
-              disabled={reprocessing}
-              title={reprocessing ? $t('fileDetail.reprocessingTooltip') : $t('fileDetail.reprocessTooltip')}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 4v6h-6"></path>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-              </svg>
-              {#if reprocessing}
-                <Spinner size="small" />
-              {/if}
-            </button>
-          {/if}
-          </div>
+          <FileActionButtons
+            {file}
+            {canEdit}
+            {llmAvailable}
+            {summaryGenerating}
+            {generatingSummary}
+            {reprocessing}
+            on:viewTranscript={() => (showTranscriptModal = true)}
+            on:showSummary={handleShowSummary}
+            on:generateSummary={handleGenerateSummary}
+            on:openReprocess={() => (showReprocessModal = true)}
+          />
         </div>
 
         <VideoPlayer
@@ -2154,24 +2140,19 @@
           fileId={file?.uuid ? String(file.uuid) : ''}
           {currentTime}
           on:seekTo={handleSeekTo}
+          on:commentsChanged={(e) => (commentCount = e.detail.count)}
         />
       </section>
 
       <!-- Right column: Transcript -->
       {#if redactionPending}
         <section class="transcript-column">
-          <div class="redaction-pending">
-            <div class="redaction-pending-chip">
-              <span class="chip-dot"></span>
-              {$t('settings.contentRedaction.processingChip')}
-            </div>
-            <p class="redaction-pending-msg">{$t('settings.contentRedaction.processingMessage')}</p>
-          </div>
+          <RedactionPendingPanel />
         </section>
       {:else if file && file.transcript_segments}
         <section class="transcript-column">
           <TranscriptDisplay
-          {file}
+          bind:file
           {currentTime}
           {isEditingTranscript}
           {editedTranscript}
@@ -2207,55 +2188,14 @@
         />
           <!-- Content-redaction controls: kept BELOW the transcript so the video and -->
           <!-- transcript columns stay top-aligned. -->
-          {#if showRedactionToggle}
-            <div class="redaction-footer">
-              <span class="redaction-status">
-                {showOriginal
-                  ? $t('settings.contentRedaction.showingOriginal')
-                  : $t('settings.contentRedaction.showingRedacted')}
-              </span>
-              <div class="redaction-bar-actions">
-                {#if canViewOriginal}
-                  <button
-                    type="button"
-                    class="redaction-link-btn"
-                    on:click={triggerRedaction}
-                    title={$t('settings.contentRedaction.rescanTooltip')}
-                  >
-                    {$t('settings.contentRedaction.rescan')}
-                  </button>
-                {/if}
-                <button
-                  type="button"
-                  class="redaction-link-btn"
-                  on:click={toggleShowOriginal}
-                  disabled={redactionToggleBusy}
-                  title={showOriginal
-                    ? $t('settings.contentRedaction.showRedactedTooltip')
-                    : $t('settings.contentRedaction.showOriginalTooltip')}
-                >
-                  {#if redactionToggleBusy}
-                    <Spinner size="small" />
-                  {/if}
-                  {showOriginal
-                    ? $t('settings.contentRedaction.showRedacted')
-                    : $t('settings.contentRedaction.showOriginal')}
-                </button>
-              </div>
-            </div>
-          {:else if canViewOriginal}
-            <div class="redaction-footer">
-              <span class="redaction-status">{$t('settings.contentRedaction.notRedacted')}</span>
-              <button
-                type="button"
-                class="redaction-link-btn"
-                on:click={triggerRedaction}
-                title={$t('settings.contentRedaction.rescanTooltip')}
-              >
-                {$t('settings.contentRedaction.runRedaction')}
-              </button>
-            </div>
-          {/if}
+          <RedactionControls
+            {showRedactionToggle}
+            {canViewOriginal}
+            {showOriginal}
+            {redactionToggleBusy}
+            on:rescan={triggerRedaction}
+            on:toggleOriginal={toggleShowOriginal}
+          />
         </section>
       {:else}
         <section class="transcript-column">
@@ -2318,48 +2258,13 @@
 
 <!-- Speaker Profile Confirmation Modal -->
 {#if showSpeakerProfileConfirmation}
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-overlay" on:wheel|stopPropagation on:touchmove|stopPropagation>
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 class="modal-title">{profileUpdateTitle}</h2>
-          <button
-            class="modal-close-btn"
-            on:click={handleProfileConfirmationCancel}
-            aria-label={$t('modal.closeDialog')}
-          >
-            ×
-          </button>
-        </div>
-
-        <div class="modal-body">
-          <p class="modal-message">{profileUpdateMessage}</p>
-        </div>
-
-        <div class="modal-footer">
-          <button
-            class="btn btn-primary"
-            on:click={() => handleProfileConfirmation('update_profile')}
-          >
-            {$t('speakerProfile.updateGlobally')}
-          </button>
-          <button
-            class="btn btn-secondary"
-            on:click={() => handleProfileConfirmation('create_new_profile')}
-          >
-            {$t('speakerProfile.createNew')}
-          </button>
-          <button
-            class="btn btn-cancel"
-            on:click={handleProfileConfirmationCancel}
-          >
-            {$t('common.cancel')}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <SpeakerProfileConfirmModal
+    title={profileUpdateTitle}
+    message={profileUpdateMessage}
+    on:updateProfile={() => handleProfileConfirmation('update_profile')}
+    on:createNewProfile={() => handleProfileConfirmation('create_new_profile')}
+    on:cancel={handleProfileConfirmationCancel}
+  />
 {/if}
 
 <!-- Summary Modal -->
@@ -2505,79 +2410,6 @@
     min-height: 32px;
   }
 
-  .header-buttons {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-
-  .view-transcript-btn {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.6rem 1rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    height: 40px;
-    white-space: nowrap;
-  }
-
-  .view-transcript-btn:hover {
-    background-color: var(--hover-bg);
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  }
-
-  .view-transcript-btn:active {
-    transform: scale(0.98);
-  }
-
-  .view-transcript-btn .transcript-icon {
-    flex-shrink: 0;
-    opacity: 0.8;
-  }
-
-  .reprocess-button-header {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.6rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.25rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    width: 40px;
-    height: 40px;
-  }
-
-  .reprocess-button-header:hover:not(:disabled) {
-    background-color: var(--hover-bg);
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  }
-
-  .reprocess-button-header:active {
-    transform: scale(0.98);
-  }
-
-  .reprocess-button-header:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   .video-column h4 {
     margin: 0;
     font-size: 18px;
@@ -2589,64 +2421,6 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-  }
-
-  .view-summary-btn {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0.6rem 1rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    height: 40px;
-    white-space: nowrap;
-  }
-
-  .view-summary-btn:hover {
-    background-color: var(--hover-bg);
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  }
-
-  .view-summary-btn:active {
-    transform: scale(0.98);
-  }
-
-  .view-summary-btn .ai-icon {
-    flex-shrink: 0;
-    opacity: 0.8;
-  }
-
-  .generate-summary-btn {
-    background-color: var(--primary-color, #3b82f6);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .generate-summary-btn:hover:not(:disabled) {
-    background-color: var(--primary-color-dark, #2563eb);
-    transform: translateY(-1px);
-  }
-
-  .generate-summary-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .waveform-section {
@@ -2674,36 +2448,6 @@
       flex-wrap: wrap;
       gap: 0.5rem;
     }
-
-    .header-buttons {
-      width: 100%;
-      justify-content: flex-start;
-    }
-
-    .view-transcript-btn,
-    .view-summary-btn,
-    .generate-summary-btn {
-      font-size: 0.8rem;
-      padding: 0.4rem 0.6rem;
-      height: 36px;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .view-transcript-btn,
-    .view-summary-btn,
-    .generate-summary-btn {
-      font-size: 0.75rem;
-      padding: 0.35rem 0.5rem;
-      height: 32px;
-      gap: 0.25rem;
-    }
-
-    .reprocess-button-header {
-      width: 32px;
-      height: 32px;
-      padding: 0.4rem;
-    }
   }
 
   /* Transcript segment highlighting styles */
@@ -2725,253 +2469,4 @@
   }
 
   /* All Plyr styling is now handled in VideoPlayer.svelte */
-
-  /* Speaker Profile Confirmation Modal */
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1300;
-    padding: 1rem;
-    overflow: hidden;
-    overscroll-behavior: none;
-  }
-
-  .modal-dialog {
-    background: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    max-width: 500px;
-    width: 100%;
-    overflow: hidden;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    animation: slideIn 0.2s ease-out;
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-title {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--text-color);
-    line-height: 1.4;
-  }
-
-  .modal-close-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.5rem;
-    color: var(--text-secondary);
-    transition: color 0.2s ease;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-    line-height: 1;
-  }
-
-  .modal-close-btn:hover {
-    color: var(--text-color);
-    background: var(--button-hover);
-  }
-
-  .modal-body {
-    padding: 1.5rem;
-  }
-
-  .modal-message {
-    margin: 0;
-    color: var(--text-secondary);
-    line-height: 1.5;
-    font-size: 0.95rem;
-  }
-
-  /* Content redaction: transcript show-original toggle bar + export note */
-  .redaction-pending {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    padding: 3rem 1rem;
-    text-align: center;
-  }
-  .redaction-pending-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.9rem;
-    border-radius: 999px;
-    background: rgba(var(--primary-color-rgb), 0.12);
-    color: var(--primary-color);
-    font-size: 0.85rem;
-    font-weight: 600;
-  }
-  .redaction-pending-chip .chip-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--primary-color);
-    animation: redaction-pulse 1.2s ease-in-out infinite;
-  }
-  @keyframes redaction-pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
-  }
-  .redaction-pending-msg {
-    color: var(--text-secondary);
-    font-size: 0.85rem;
-    max-width: 360px;
-  }
-
-  /* Compact redaction controls placed under the transcript (keeps columns top-aligned). */
-  .redaction-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.5rem 0.25rem 0;
-    margin-top: 0.5rem;
-    border-top: 1px solid var(--border-color);
-    flex-wrap: wrap;
-  }
-  .redaction-status {
-    font-size: 0.78rem;
-    color: var(--text-muted);
-  }
-  .redaction-bar-actions {
-    display: flex;
-    gap: 0.9rem;
-    align-items: center;
-  }
-  /* Small, unobtrusive link-style button. Hover shifts to the primary-hover color with
-     a subtle tinted background (consistent with the app) — no underline. */
-  .redaction-link-btn {
-    background: none;
-    border: none;
-    padding: 0.15rem 0.35rem;
-    border-radius: 4px;
-    font-size: 0.78rem;
-    font-weight: 500;
-    color: var(--primary-color);
-    cursor: pointer;
-    white-space: nowrap;
-    transition:
-      color 0.12s ease,
-      background-color 0.12s ease;
-  }
-  .redaction-link-btn:hover {
-    color: var(--primary-hover);
-    background-color: rgba(var(--primary-color-rgb), 0.1);
-  }
-  .redaction-link-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
-  .redaction-link-btn:disabled {
-    opacity: 0.6;
-    cursor: wait;
-  }
-  .modal-footer {
-    display: flex;
-    gap: 0.75rem;
-    padding: 1rem 1.5rem 1.5rem;
-    justify-content: flex-end;
-    border-top: 1px solid var(--border-color);
-    flex-wrap: wrap;
-  }
-
-  .btn {
-    padding: 0.6rem 1.2rem;
-    border: none;
-    border-radius: 10px;
-    font-size: 0.95rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    min-width: 120px;
-  }
-
-  .btn-primary {
-    background: #3b82f6;
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .btn-primary:hover {
-    background: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .btn-primary:active {
-    transform: translateY(0);
-  }
-
-  .btn-secondary {
-    background: var(--success-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
-  }
-
-  .btn-secondary:hover {
-    background: #059669; /* Darker green to match app pattern */
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
-  }
-
-  .btn-cancel {
-    background: var(--card-background);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    box-shadow: var(--card-shadow);
-  }
-
-  .btn-cancel:hover {
-    background: var(--button-hover);
-    border-color: var(--primary-color);
-    transform: translateY(-1px);
-  }
-
-  /* Responsive design */
-  @media (max-width: 480px) {
-    .modal-dialog {
-      margin: 1rem;
-      max-width: none;
-    }
-
-    .modal-footer {
-      flex-direction: column-reverse;
-    }
-
-    .btn {
-      width: 100%;
-    }
-  }
-
-  /* Dark mode adjustments */
-  :global([data-theme='dark']) .modal-overlay {
-    background: rgba(0, 0, 0, 0.7);
-  }
-
-  :global([data-theme='dark']) .modal-dialog {
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-  }
-
 </style>

@@ -41,6 +41,10 @@ ADMIN_PFX = CERTS_DIR / "clients" / "admin.p12"
 TESTUSER_PFX = CERTS_DIR / "clients" / "testuser.p12"
 PFX_PASSPHRASE = "changeit"
 
+# Sidebar nav item that owns the security/certificate panel
+# (settings.profile.title, English UI).
+PROFILE_NAV_LABEL = "Profile & Security"
+
 
 def _make_client_cert_config(pfx_path: Path, origin: str):
     """Build Playwright client_certificates config for a .p12 file."""
@@ -76,6 +80,20 @@ def _open_settings(page: Page):
     page.wait_for_selector(".dropdown-item", state="visible", timeout=5000)
     page.click(".dropdown-item:has-text('Settings')")
     page.wait_for_selector(".settings-sidebar", state="visible", timeout=10000)
+
+
+def _open_security_settings(page: Page):
+    """Open Settings -> Profile & Security (where CertificateInfo renders).
+
+    There is no "Security" nav item: SecuritySettings.svelte — which renders
+    CertificateInfo for PKI users — is a child of UserProfileSettings.svelte,
+    reachable only through the Profile nav item.
+    """
+    _open_settings(page)
+    profile_nav = page.locator(".settings-sidebar .nav-item", has_text=PROFILE_NAV_LABEL).first
+    profile_nav.wait_for(state="visible", timeout=5000)
+    profile_nav.click()
+    page.wait_for_selector(".security-settings", state="visible", timeout=10000)
 
 
 @pytest.fixture
@@ -188,13 +206,7 @@ class TestPKICertificateDisplay:
         """After PKI login, certificate/PKI info should be visible in settings."""
         page = admin_cert_context.new_page()
         _pki_login(page, pki_origin)
-        _open_settings(page)
-
-        # Click Security nav item to see MFA/PKI info
-        security_nav = page.locator(".settings-sidebar button.nav-item:has-text('Security')")
-        if security_nav.count() > 0:
-            security_nav.first.click()
-            page.wait_for_timeout(2000)
+        _open_security_settings(page)
 
         # PKI users see "MFA is handled by your identity provider (PKI/Keycloak)"
         # or certificate-related text in the security section
@@ -216,13 +228,7 @@ class TestPKICertificateDisplay:
         """Certificate Subject DN should be displayed in settings."""
         page = admin_cert_context.new_page()
         _pki_login(page, pki_origin)
-        _open_settings(page)
-
-        # Click Security nav item
-        security_nav = page.locator(".settings-sidebar button.nav-item:has-text('Security')")
-        if security_nav.count() > 0:
-            security_nav.first.click()
-            page.wait_for_timeout(2000)
+        _open_security_settings(page)
 
         # Admin cert CN is "Admin User" — should appear in settings
         page_text = page.text_content("body")

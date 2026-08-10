@@ -19,7 +19,14 @@
     pki_revocation_soft_fail: config.pki_revocation_soft_fail ?? true,
     pki_trusted_proxies: config.pki_trusted_proxies ?? '',
     pki_mode: config.pki_mode ?? 'header',
-    pki_allow_password_fallback: config.pki_allow_password_fallback ?? false
+    // MUST default true, matching `PKIConfig` in backend/app/schemas/auth_config.py.
+    // This flag is a deployment-level CEILING: effective fallback is
+    // `user.allow_local_fallback AND pki_allow_password_fallback`. A `true`
+    // ceiling restricts nothing (the per-user flag already defaults to false),
+    // while a `false` one revokes fallback from every account a super_admin
+    // deliberately granted it to — which is what saving this panel on an
+    // unconfigured deployment used to do.
+    pki_allow_password_fallback: config.pki_allow_password_fallback ?? true
   };
 
   let saving = false;
@@ -37,7 +44,8 @@
       pki_revocation_soft_fail: config.pki_revocation_soft_fail ?? true,
       pki_trusted_proxies: config.pki_trusted_proxies ?? '',
       pki_mode: config.pki_mode ?? 'header',
-      pki_allow_password_fallback: config.pki_allow_password_fallback ?? false
+      // Ceiling, not a grant — see the comment on the initial value above.
+      pki_allow_password_fallback: config.pki_allow_password_fallback ?? true
     };
   }
 
@@ -248,6 +256,14 @@
       <span>{$t('settings.pki.allowPasswordFallback')}</span>
     </label>
     <span class="help-text indented">{$t('settings.pki.allowPasswordFallbackHelp')}</span>
+
+    {#if !formData.pki_allow_password_fallback}
+      <!-- Clearing a ceiling is subtractive and silent: it revokes fallback from
+           accounts a super_admin granted it to, one by one, with no other signal. -->
+      <p class="ceiling-warning" role="status">
+        {$t('settings.pki.allowPasswordFallbackWarning')}
+      </p>
+    {/if}
   </div>
 
   <div class="actions">
@@ -433,6 +449,16 @@
   .help-text.indented {
     margin-left: 1.5rem;
     margin-bottom: 0.75rem;
+  }
+
+  .ceiling-warning {
+    margin: 0.5rem 0 0 1.5rem;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid var(--color-warning-border);
+    border-radius: 6px;
+    background: var(--color-warning-bg);
+    color: var(--color-warning-text);
+    font-size: 0.75rem;
   }
 
   .checkbox-label {

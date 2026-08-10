@@ -18,7 +18,6 @@
   import { loadProtectedMediaAuthConfig } from '$lib/services/configService';
   import type { ExtractedAudio } from '$lib/types/audioExtraction';
   import { getAudioExtractionSettings, type AudioExtractionSettings } from '$lib/api/audioExtractionSettings';
-  import { audioExtractionService } from '$lib/services/audioExtractionService';
   import {
     getTranscriptionSettings,
     getTranscriptionSystemDefaults,
@@ -27,6 +26,7 @@
     DEFAULT_TRANSCRIPTION_SETTINGS
   } from '$lib/api/transcriptionSettings';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
+  import { MAX_UPLOAD_BYTES, exceedsUploadLimit, warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
   import { listTags } from '$lib/api/tags';
 
   // Step components
@@ -57,10 +57,23 @@
     timestamp: number;
   }
 
+  /**
+   * Load the FFmpeg.wasm wrapper on first use.
+   *
+   * A static import pulled `@ffmpeg/ffmpeg` + `@ffmpeg/util` into the home-page
+   * chunk, so every visitor downloaded the wrapper even though client-side audio
+   * extraction is an opt-in path taken only for video uploads. The dynamic
+   * `import()` moves it to its own chunk, fetched the first time a user actually
+   * extracts. The module caches itself, so repeat calls are free.
+   */
+  async function loadAudioExtractionService() {
+    const { audioExtractionService } = await import('$lib/services/audioExtractionService');
+    return audioExtractionService;
+  }
+
   // ── Constants ──
   const MEDIA_URL_REGEX = /^https?:\/\/.+$/;
   const PREVIOUS_VALUES_KEY = 'opentr:uploadPreviousValues';
-  const FILE_SIZE_LIMIT = 2 * 1024 * 1024 * 1024;
   const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024;
 
   // ── Stepper State ──
@@ -422,14 +435,13 @@
       return;
     }
 
-    const MAX_FILE_SIZE = 15 * 1024 * 1024 * 1024;
-    if (selectedFile.size > MAX_FILE_SIZE) {
-      error = $t('uploader.fileTooLargeError', { fileSize: formatFileSize(selectedFile.size), maxSize: formatFileSize(MAX_FILE_SIZE) });
+    if (exceedsUploadLimit(selectedFile.size)) {
+      error = $t('uploader.fileTooLargeError', { fileSize: formatFileSize(selectedFile.size), maxSize: formatFileSize(MAX_UPLOAD_BYTES) });
       file = null;
       return;
     }
 
-    if (selectedFile.size > 2 * 1024 * 1024 * 1024) {
+    if (warrantsLargeUploadWarning(selectedFile.size)) {
       error = $t('uploader.largeFileWarning', { fileSize: formatFileSize(selectedFile.size) });
     }
 
@@ -462,7 +474,7 @@
     const invalidFiles: string[] = [];
 
     files.forEach(f => {
-      if (f.size > FILE_SIZE_LIMIT) {
+      if (exceedsUploadLimit(f.size)) {
         invalidFiles.push(`${f.name} (${$t('uploader.tooLarge', { size: formatFileSize(f.size) })})`);
         return;
       }
@@ -480,6 +492,12 @@
 
     if (invalidFiles.length > 0) {
       toastStore.error($t('uploader.skippedInvalidFiles', { count: invalidFiles.length, files: invalidFiles.join('\n') }));
+    }
+
+    // Same soft warning the single-file path gives — large files are accepted, just slow.
+    const largeFiles = validFiles.filter(f => warrantsLargeUploadWarning(f.size));
+    if (largeFiles.length > 0) {
+      toastStore.warning($t('uploader.largeFilesWarning', { count: largeFiles.length }));
     }
 
     if (validFiles.length > 0) {
@@ -547,7 +565,7 @@
     toastStore.info($t('uploader.extractingAudioFrom', { count: videoFiles.length }));
     videoFiles.forEach(async (videoFile) => {
       try {
-        const ea = await audioExtractionService.extractAudio(videoFile);
+        const ea = await (await loadAudioExtractionService()).extractAudio(videoFile);
         uploadsStore.addExtractedAudio(ea.blob, ea.filename, ea.metadata, ea.metadata.compressionRatio);
       } catch {
         toastStore.error($t('uploader.failedToExtractAudio', { filename: videoFile.name }));
@@ -605,7 +623,8 @@
       // Extraction runs in background — result is queued when done
       (async () => {
         try {
-          const extractedAudio = await audioExtractionService.extractAudio(fileToExtract);
+          const extractionService = await loadAudioExtractionService();
+          const extractedAudio = await extractionService.extractAudio(fileToExtract);
           uploadsStore.addExtractedAudio(
             extractedAudio.blob,
             extractedAudio.filename,
@@ -734,7 +753,7 @@
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <div class="uploader-container" on:keydown={handleStepKeydown}>
   <!-- Stepper Indicator (always visible so users see the full journey) -->
-  <div class="step-indicator" role="navigation" aria-label="Upload steps">
+  <div class="step-indicator" role="navigation" aria-label={$t('uploader.stepsNav')}>
     {#each activeSteps as step, i}
       <button
         class="step-item"
@@ -744,7 +763,7 @@
         on:click={() => goToStep(i)}
         disabled={i > maxStepReached}
         type="button"
-        aria-label="{$t(step.labelKey)} (step {i + 1} of {activeSteps.length})"
+        aria-label={$t('uploader.stepAria', { label: $t(step.labelKey), step: i + 1, total: activeSteps.length })}
         aria-current={currentStepIndex === i ? 'step' : undefined}
       >
         <span class="step-dot">

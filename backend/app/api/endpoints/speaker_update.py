@@ -160,7 +160,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
         return True
 
     except Exception as e:
-        logger.error(f"Error in auto profile creation/assignment: {e}")
+        logger.exception(f"Error in auto profile creation/assignment: {e}")
         return False
 
 
@@ -195,7 +195,7 @@ def _sync_speaker_to_opensearch(speaker: Speaker, db: Session) -> None:
             f"display_name='{speaker.display_name}', profile_id={speaker.profile_id}, verified={speaker.verified}"
         )
     except Exception as e:
-        logger.error(f"Failed to sync speaker {speaker.id} to OpenSearch: {e}")
+        logger.exception(f"Failed to sync speaker {speaker.id} to OpenSearch: {e}")
 
 
 def _update_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> None:
@@ -299,7 +299,7 @@ def _sync_suggestion_speakers_to_opensearch(updated_speaker: Speaker, db: Sessio
         if suggestion_speakers:
             logger.info(f"Synced {len(suggestion_speakers)} speaker suggestions to OpenSearch")
     except Exception as e:
-        logger.error(f"Error during batch OpenSearch sync for suggestions: {e}")
+        logger.exception(f"Error during batch OpenSearch sync for suggestions: {e}")
 
 
 def _send_bulk_update_notification(
@@ -414,7 +414,7 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
         return {"auto_applied_count": auto_applied_count, "suggested_count": suggested_count}
 
     except Exception as e:
-        logger.error(f"Error in retroactive matching: {e}")
+        logger.exception(f"Error in retroactive matching: {e}")
         db.rollback()
         return {"auto_applied_count": 0, "suggested_count": 0}
 

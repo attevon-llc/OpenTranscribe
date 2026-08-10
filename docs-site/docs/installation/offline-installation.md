@@ -77,7 +77,7 @@ tar -czf ai-models.tar.gz ~/.cache/huggingface ~/.cache/torch
 
 ```bash
 # Clone repository
-git clone https://github.com/davidamacey/OpenTranscribe.git
+git clone https://github.com/attevon-llc/OpenTranscribe.git
 cd OpenTranscribe
 
 # Create offline package

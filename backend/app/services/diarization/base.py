@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import re
 from abc import ABC
 from abc import abstractmethod
 from collections.abc import Callable
+
+from app.services.asr.base import normalize_speaker_label
+from app.services.asr.base import sanitize_provider_error
 
 from .types import DiarizeConfig
 from .types import DiarizeResult
@@ -49,26 +51,11 @@ class DiarizationProvider(ABC):
     def _normalize_speaker_label(self, label: str | int | None) -> str | None:
         """Normalize any speaker label format to 0-indexed SPEAKER_XX.
 
-        Delegates to the shared ASR normalization logic to avoid duplicating
-        the 60+ lines of format handling across provider hierarchies.
+        Delegates to the shared module-level helper so the ASR and diarization
+        hierarchies cannot drift apart.
         """
-        from app.services.asr.base import ASRProvider
-
-        # The method is stateless — instantiation-free call via a throwaway proxy.
-        _proxy: ASRProvider = object.__new__(ASRProvider)  # type: ignore[type-abstract]
-        return _proxy._normalize_speaker_label(label)
+        return normalize_speaker_label(label)
 
     def _sanitize_error(self, message: str, api_key: str | None = None) -> str:
         """Strip API keys and credential-like tokens from error messages."""
-        if not message:
-            return message
-
-        scrubbed = message
-        # Pass 1 — exact match of the provided key
-        if api_key:
-            scrubbed = scrubbed.replace(api_key, "***")
-        # Pass 2 — Bearer tokens in Authorization headers
-        scrubbed = re.sub(r"(Bearer\s+)\S+", r"\1***", scrubbed)
-        # Pass 3 — Known key prefixes
-        scrubbed = re.sub(r"(sk-|dg_|aai_|sk_live_|sk_test_)\S+", r"\1***", scrubbed)
-        return scrubbed
+        return sanitize_provider_error(message, api_key)

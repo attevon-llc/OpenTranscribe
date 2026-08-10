@@ -29,7 +29,7 @@ router = APIRouter()
 
 
 @router.get("/capabilities")
-async def get_system_capabilities(request: Request) -> dict[str, Any]:
+def get_system_capabilities(request: Request) -> dict[str, Any]:
     """Edition + capability map driving server-side feature gating.
 
     The frontend calls this once at bootstrap and renders only the surfaces
@@ -92,9 +92,7 @@ def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 @router.get("/stats", response_model=dict[str, Any])
-async def get_system_stats(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
-):
+def get_system_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Get system statistics accessible to all authenticated users.
 
@@ -114,7 +112,7 @@ async def get_system_stats(
                 "uptime": get_system_uptime(),
             }
         except Exception as e:
-            logger.error(f"Error getting system stats: {e}")
+            logger.exception(f"Error getting system stats: {e}")
             system_stats = {
                 "cpu": {
                     "total_percent": "Unknown",
@@ -215,7 +213,7 @@ async def get_system_stats(
 
 
 @router.get("/config/protected-media-auth", response_model=list[dict[str, Any]])
-async def get_protected_media_auth(current_user: User = Depends(get_current_user)):
+def get_protected_media_auth(current_user: User = Depends(get_current_user)):
     """Return public auth configuration for protected media providers.
 
     Used by the frontend to decide when to prompt for username/password
@@ -224,7 +222,7 @@ async def get_protected_media_auth(current_user: User = Depends(get_current_user
     try:
         return get_protected_media_auth_config()
     except Exception as e:
-        logger.error(f"Error getting protected media auth config: {e}")
+        logger.exception(f"Error getting protected media auth config: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving protected media configuration",

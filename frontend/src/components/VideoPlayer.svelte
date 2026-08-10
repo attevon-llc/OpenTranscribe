@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import Plyr from 'plyr';
   import 'plyr/dist/plyr.css';
@@ -12,7 +13,7 @@
   export let isPlayerBuffering: boolean = false;
   export let loadProgress: number = 0;
   export let errorMessage: string = '';
-  export let speakerList: any[] = [];
+  export let speakerList: Speaker[] = [];
 
   const dispatch = createEventDispatcher();
 
@@ -114,7 +115,7 @@
 
       // Create speaker display name mapping
       const speakerMapping = new Map();
-      speakerList.forEach((speaker: any) => {
+      speakerList.forEach((speaker: Speaker) => {
         speakerMapping.set(speaker.name, speaker.display_name || speaker.name);
       });
 

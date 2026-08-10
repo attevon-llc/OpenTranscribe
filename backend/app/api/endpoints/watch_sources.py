@@ -20,8 +20,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+
+# Deployment configuration is the super_admin tier: this router
+# holds SMTP/S3/SMB credentials for automated import.
+from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.auth import get_current_admin_user
 from app.core.config import settings
 from app.db.base import get_db
 from app.models.email_notification_config import EmailNotificationConfig
@@ -38,6 +41,7 @@ from app.schemas.watch_source import CapabilitiesResponse
 from app.schemas.watch_source import ConnectionTestResponse
 from app.schemas.watch_source import DirectoryListResponse
 from app.schemas.watch_source import EmailLinkCreate
+from app.schemas.watch_source import FsEventsStatus
 from app.schemas.watch_source import MultipartRegexTestRequest
 from app.schemas.watch_source import MultipartRegexTestResponse
 from app.schemas.watch_source import ScanResponse
@@ -47,6 +51,8 @@ from app.schemas.watch_source import WatchSourceResponse
 from app.schemas.watch_source import WatchSourcesList
 from app.schemas.watch_source import WatchSourceStats
 from app.schemas.watch_source import WatchSourceUpdate
+from app.services.auth_mail_config_service import IN_USE_MESSAGE
+from app.services.auth_mail_config_service import is_designated
 from app.utils.encryption import encrypt_api_key
 
 logger = logging.getLogger(__name__)
@@ -95,7 +101,37 @@ _PLAIN_FIELDS = (
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
-def _source_to_response(source: WatchSource, current_user: User) -> WatchSourceResponse:
+def _fs_events_status(
+    source: WatchSource, fs_status_map: dict[int, dict] | None = None
+) -> FsEventsStatus | None:
+    """Read the live observer status the beat supervisor publishes to Redis.
+
+    ``None`` means nothing is watching this source, so the UI reports the
+    Celery poll interval instead. The status key has a short TTL, so a dead
+    beat container degrades to that answer on its own rather than lying.
+    ``fs_status_map`` is the list endpoint's single-round-trip prefetch.
+    """
+    if not source.use_fs_events or source.source_type != "local":
+        return None
+    if fs_status_map is not None:
+        raw = fs_status_map.get(int(source.id))
+    else:
+        from app.services.watch_sources.fs_events import status as fs_status
+
+        raw = fs_status.get(int(source.id))
+    if not raw:
+        return None
+    try:
+        parsed: FsEventsStatus = FsEventsStatus.model_validate(raw)
+        return parsed
+    except Exception as e:  # noqa: BLE001 - a stale blob must not 500 the list
+        logger.debug("Ignoring unreadable FS-event status for source %s: %s", source.id, e)
+        return None
+
+
+def _source_to_response(
+    source: WatchSource, current_user: User, fs_status_map: dict[int, dict] | None = None
+) -> WatchSourceResponse:
     owner = source.user
     return WatchSourceResponse(
         uuid=str(source.uuid),
@@ -120,6 +156,7 @@ def _source_to_response(source: WatchSource, current_user: User) -> WatchSourceR
         has_smb_password=source.has_smb_password,
         polling_interval_minutes=source.polling_interval_minutes,
         use_fs_events=source.use_fs_events,
+        fs_events=_fs_events_status(source, fs_status_map),
         file_extensions=source.file_extensions,
         skip_files_older_than_days=source.skip_files_older_than_days,
         recursive=source.recursive,
@@ -156,7 +193,7 @@ def _get_source_or_404(db: Session, source_uuid: str, current_user: User) -> Wat
     if not source:
         raise HTTPException(status_code=404, detail="Watch source not found")
     # Owner or admin may access.
-    if source.user_id != current_user.id and current_user.role != "admin":
+    if source.user_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized for this watch source")
     return source
 
@@ -195,6 +232,7 @@ def get_capabilities(
         watch_source_enabled=watch_settings_service.is_enabled(db),
         local_enabled=bool(settings.WATCH_FOLDER_PATH),
         fs_events_enabled=watch_settings_service.fs_events_enabled(db),
+        fs_events_mode=watch_settings_service.fs_events_mode(db),
     )
 
 
@@ -240,7 +278,7 @@ def test_multipart_regex(
 @router.get("/settings")
 def get_global_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     from app.services import watch_settings_service
 
@@ -251,7 +289,7 @@ def get_global_settings(
 def update_global_settings(
     payload: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     from app.services import watch_settings_service
 
@@ -259,8 +297,14 @@ def update_global_settings(
         db,
         enabled=payload.get("enabled"),
         file_stability_seconds=payload.get("file_stability_seconds"),
-        max_concurrent_imports=payload.get("max_concurrent_imports"),
+        # Accept the pre-#295 field name so an older client keeps working; the
+        # response only ever carries the new name.
+        max_imports_per_scan=payload.get(
+            "max_imports_per_scan", payload.get("max_concurrent_imports")
+        ),
         fs_events_enabled=payload.get("fs_events_enabled"),
+        fs_events_mode=payload.get("fs_events_mode"),
+        fs_events_poll_seconds=payload.get("fs_events_poll_seconds"),
     )
     logger.info("Admin %s updated global watch settings", current_user.email)
     return result
@@ -301,7 +345,7 @@ def _email_to_response(cfg: EmailNotificationConfig) -> dict:
 @router.get("/email-configs", response_model=EmailConfigsList)
 def list_email_configs(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     configs = db.query(EmailNotificationConfig).order_by(EmailNotificationConfig.name).all()
     return {"configs": [_email_to_response(c) for c in configs]}
@@ -311,7 +355,7 @@ def list_email_configs(
 def create_email_config(
     data: EmailConfigCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     cfg = EmailNotificationConfig(
         uuid=uuid_pkg.uuid4(),
@@ -349,7 +393,7 @@ def update_email_config(
     config_uuid: str,
     data: EmailConfigUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     cfg = (
         db.query(EmailNotificationConfig)
@@ -359,6 +403,11 @@ def update_email_config(
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
     payload = data.model_dump(exclude_unset=True)
+    # Disabling the designated auth mailer silently routes password resets to the
+    # env SMTP transport, which is unset in every stock deployment — so it stops
+    # them altogether, visible only as an ERROR log. Refuse and name the remedy.
+    if payload.get("is_enabled") is False and is_designated(db, str(cfg.uuid)):
+        raise HTTPException(status_code=409, detail=IN_USE_MESSAGE)
     secret_map = {
         "smtp_password": "encrypted_smtp_password",
         "m365_client_secret": "encrypted_m365_client_secret",
@@ -379,7 +428,7 @@ def update_email_config(
 def delete_email_config(
     config_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
     cfg = (
         db.query(EmailNotificationConfig)
@@ -388,6 +437,9 @@ def delete_email_config(
     )
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
+    # Same reasoning as the disable guard, plus the row itself is unrecoverable.
+    if is_designated(db, str(cfg.uuid)):
+        raise HTTPException(status_code=409, detail=IN_USE_MESSAGE)
     db.delete(cfg)
     db.commit()
     return {"success": True}
@@ -397,7 +449,7 @@ def delete_email_config(
 def test_email_config(
     config_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> EmailTestResponse:
     from app.services import watch_email_service
 
@@ -426,14 +478,22 @@ def list_watch_sources(
     current_user: User = Depends(get_current_active_user),
 ) -> WatchSourcesList:
     query = db.query(WatchSource)
-    if scope == "all" and current_user.role == "admin":
+    if scope == "all" and current_user.is_admin:
         query = query.order_by(WatchSource.created_at.desc())
     else:
         query = query.filter(WatchSource.user_id == current_user.id).order_by(
             WatchSource.created_at.desc()
         )
     sources = query.all()
-    return WatchSourcesList(sources=[_source_to_response(s, current_user) for s in sources])
+    # One Redis MGET for every FS-watched source instead of one GET per row.
+    from app.services.watch_sources.fs_events import status as fs_status
+
+    fs_status_map = fs_status.get_many(
+        [int(s.id) for s in sources if s.use_fs_events and s.source_type == "local"]
+    )
+    return WatchSourcesList(
+        sources=[_source_to_response(s, current_user, fs_status_map) for s in sources]
+    )
 
 
 @router.post("", response_model=WatchSourceResponse)
@@ -449,7 +509,7 @@ def create_watch_source(
 
     # Admins may assign the source (and its imported files) to another user.
     owner_id = current_user.id
-    if data.assign_to_user_uuid and current_user.role == "admin":
+    if data.assign_to_user_uuid and current_user.is_admin:
         target = db.query(User).filter(User.uuid == data.assign_to_user_uuid).first()
         if not target:
             raise HTTPException(status_code=404, detail="assign_to_user not found")
@@ -527,6 +587,9 @@ def test_watch_source(
         with create_client(source) as client:
             ok, message = client.test_connection()
     except Exception as e:  # noqa: BLE001
+        # This endpoint's whole purpose is to report whether the connection
+        # works, so any failure is a successful *test* with a negative result.
+        logger.exception(f"Connection test failed for watch source {source_uuid}")
         return ConnectionTestResponse(success=False, message=str(e))
     return ConnectionTestResponse(
         success=ok, message=message, latency_ms=round((time.perf_counter() - started) * 1000, 1)

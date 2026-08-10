@@ -22,7 +22,10 @@ from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.endpoints.auth import get_current_admin_user
+
+# Deployment configuration is the super_admin tier: this router
+# holds the mirror destination and its stored S3 secret.
+from app.api.endpoints.auth import get_current_active_superuser
 from app.db.base import get_db
 from app.services import backup_service
 from app.services import media_mirror_service
@@ -139,7 +142,7 @@ def _settings_response(cfg: dict, db: Session) -> MediaMirrorSettings:
 @router.get("", response_model=MediaMirrorSettings)
 def get_mirror_settings(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> MediaMirrorSettings:
     """Return media-mirror settings + destination status + last run (admin only)."""
     return _settings_response(media_mirror_service.get_settings(db), db)
@@ -149,7 +152,7 @@ def get_mirror_settings(
 def update_mirror_settings(
     body: MediaMirrorSettingsUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> MediaMirrorSettings:
     """Update media-mirror settings (only provided fields)."""
     updates = body.model_dump(exclude_none=True)
@@ -168,7 +171,7 @@ def update_mirror_settings(
 def test_mirror_s3_connection(
     body: MediaMirrorSettingsUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> MirrorS3TestResponse:
     """Test destination-bucket reachability with saved (or just-submitted) credentials.
 
@@ -194,7 +197,7 @@ def test_mirror_s3_connection(
 @router.post("/run", response_model=MirrorRunResponse)
 def run_mirror_now(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> MirrorRunResponse:
     """Dispatch a media mirror run immediately (bypasses the schedule).
 

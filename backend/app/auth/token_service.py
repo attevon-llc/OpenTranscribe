@@ -21,19 +21,90 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
-from jose import JWTError
-from jose import jwt
+from joserfc import jwt
+from joserfc.errors import ExpiredTokenError
+from joserfc.errors import JoseError
+from joserfc.jwk import OctKey
 from sqlalchemy.orm import Session
 
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
 from app.auth.session import InMemoryStore
 from app.auth.session import get_redis_client
 from app.core.config import settings
 from app.models.refresh_token import RefreshToken
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
 # Redis key prefix for revoked tokens (not a password)
 REVOKED_TOKEN_PREFIX = "revoked:jti:"  # noqa: S105 # nosec B105
+
+#: Per-user revocation epoch. Access tokens are stateless — nothing durable
+#: records their JTIs — so revoking "all of a user's tokens" could only ever
+#: blacklist their *refresh* tokens, leaving the current access token valid for
+#: up to its full lifetime. That made ``/auth/logout/all`` strictly weaker than
+#: ``/auth/logout``, which does blacklist the access JTI. Stamping a timestamp
+#: per user and rejecting any access token issued before it closes the gap for
+#: every revocation path at once.
+USER_REVOCATION_EPOCH_PREFIX = "revoked:user:"  # noqa: S105 # nosec B105
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Coerce a timestamp read back from the database to an aware UTC datetime.
+
+    The session columns are ``TIMESTAMP WITH TIME ZONE``, but a row constructed in
+    memory (or read through a driver configured otherwise) can still carry a naive
+    value, and comparing naive to aware raises ``TypeError`` — inside an auth path
+    that would surface as a 500 rather than a denial.
+    """
+    if value is None:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _session_lifetime_minutes(db: Session) -> tuple[int, int]:
+    """Return ``(idle_timeout_minutes, absolute_timeout_minutes)`` for this deployment.
+
+    DB-backed (admin UI) over ``.env`` over the coded default, like the rest of the
+    auth configuration. Never raises: a configuration read must not be able to
+    break token issue or verification, so an unavailable database degrades to the
+    environment values.
+    """
+    try:
+        from app.core.auth_settings import get_auth_settings
+
+        auth_settings = get_auth_settings(db)
+        return (
+            auth_settings.session_idle_timeout_minutes,
+            auth_settings.session_absolute_timeout_minutes,
+        )
+    except Exception:  # pragma: no cover - defensive
+        logger.debug("Could not read session lifetime config; using .env values", exc_info=True)
+        return (
+            settings.SESSION_IDLE_TIMEOUT_MINUTES,
+            settings.SESSION_ABSOLUTE_TIMEOUT_MINUTES,
+        )
+
+
+def _record_degradation(control: str, fallback: str) -> None:
+    """Count a security control running without its shared state store.
+
+    Imported lazily and never allowed to raise: metrics must not be able to break
+    an authentication path. Prometheus is optional in some deployments, and this
+    runs on the request path for every revocation check while Redis is down.
+    """
+    try:
+        from app.core.metrics import security_state_degraded_total
+
+        security_state_degraded_total.labels(control=control, fallback=fallback).inc()
+    except Exception:  # pragma: no cover - metrics must never break auth
+        # Swallowed on purpose, but never silently: PR #322 removed the blanket
+        # S110 exemption precisely because silent handlers hide real faults. A
+        # broken counter must not turn into a failed login, so this degrades to a
+        # log line instead of propagating.
+        logger.debug("Could not record security degradation metric", exc_info=True)
 
 
 class TokenService:
@@ -53,6 +124,18 @@ class TokenService:
     def __init__(self):
         """Initialize the token service."""
         self._store = None
+        self._degraded = False
+
+    @property
+    def degraded(self) -> bool:
+        """Whether the revocation blacklist is running without shared state.
+
+        True means Redis was unreachable and this process fell back to a
+        per-process store. The blacklist is then neither shared across replicas
+        nor durable across restarts, so it must not be trusted as the answer to
+        "is this token revoked?" — see :meth:`is_token_revoked`.
+        """
+        return self._degraded
 
     @property
     def store(self):
@@ -61,10 +144,20 @@ class TokenService:
             redis_client = get_redis_client()
             if redis_client:
                 self._store = redis_client
+                self._degraded = False
             else:
-                logger.warning(
-                    "Redis unavailable for token revocation. "
-                    "Using in-memory store (not recommended for production)."
+                self._degraded = True
+                # Not a warning. Without shared state, revocation stops working
+                # across replicas: a token revoked on one replica still passes on
+                # every other, so "log out all devices" and password-reset
+                # revocation silently mean nothing (issue #324). This used to log
+                # at warning level and scrolled past unnoticed.
+                _record_degradation("token_revocation", "database")
+                logger.critical(
+                    "Redis unavailable for token revocation — falling back to the "
+                    "database for refresh-token revocation checks. Revocation is "
+                    "NOT shared across replicas while this persists. Restore Redis; "
+                    "on AWS use ElastiCache with Multi-AZ and automatic failover."
                 )
                 self._store = InMemoryStore()
         return self._store
@@ -97,7 +190,7 @@ class TokenService:
             The decoded token payload as a dictionary
 
         Raises:
-            JWTError: If token verification fails with all algorithms
+            JoseError: If token verification fails with all algorithms
         """
         algorithms_to_try = []
 
@@ -107,20 +200,21 @@ class TokenService:
         else:
             algorithms_to_try = ["HS256", "HS512"]
 
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
         last_error = None
         for algorithm in algorithms_to_try:
             try:
-                payload = jwt.decode(
-                    token,
-                    settings.JWT_SECRET_KEY,
-                    algorithms=[algorithm],
-                )
-                return dict(payload)
-            except JWTError as e:
+                token_obj = jwt.decode(token, key, algorithms=[algorithm])
+                # joserfc verifies the signature/algorithm only — exp is not
+                # checked automatically (unlike python-jose), so it's validated
+                # explicitly here.
+                jwt.JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
+                return dict(token_obj.claims)
+            except JoseError as e:
                 last_error = e
                 continue
 
-        raise last_error or JWTError("Token verification failed")
+        raise last_error or JoseError("Token verification failed")
 
     def create_token(
         self,
@@ -167,13 +261,8 @@ class TokenService:
             else "HS256"
         )
 
-        return str(
-            jwt.encode(
-                to_encode,
-                settings.JWT_SECRET_KEY,
-                algorithm=algorithm,
-            )
-        )
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
+        return jwt.encode({"alg": algorithm}, to_encode, key, algorithms=[algorithm])
 
     def token_needs_upgrade(self, token: str) -> bool:
         """
@@ -191,10 +280,11 @@ class TokenService:
         """
         try:
             # Try to decode with HS256 only - if it works, token is legacy
-            jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
+            key = OctKey.import_key(settings.JWT_SECRET_KEY)
+            jwt.decode(token, key, algorithms=["HS256"])
             # If we're in FIPS 140-3 mode, this token needs upgrade
             return settings.FIPS_VERSION == "140-3"
-        except JWTError:
+        except JoseError:
             return False
 
     def create_refresh_token(
@@ -205,6 +295,7 @@ class TokenService:
         role: str,
         user_agent: str | None = None,
         ip_address: str | None = None,
+        absolute_expires_at: datetime | None = None,
     ) -> tuple[str, RefreshToken]:
         """
         Create a new refresh token for a user.
@@ -224,6 +315,10 @@ class TokenService:
             role: User's role (for inclusion in token)
             user_agent: Optional user agent for session tracking
             ip_address: Optional IP address for session tracking
+            absolute_expires_at: The session's existing hard ceiling, carried
+                forward by :meth:`rotate_refresh_token`. ``None`` establishes a
+                NEW session and stamps a fresh ceiling — passing the predecessor's
+                value is what stops rotation from renewing a session forever.
 
         Returns:
             Tuple of (token_string, RefreshToken model instance)
@@ -235,6 +330,12 @@ class TokenService:
         now = datetime.now(UTC)
         expires_delta = timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
         expires_at = now + expires_delta
+
+        # The session ceiling. Only computed when none was carried in, so a
+        # rotated session keeps the ceiling of the login that established it.
+        if absolute_expires_at is None:
+            _idle_minutes, absolute_minutes = _session_lifetime_minutes(db)
+            absolute_expires_at = now + timedelta(minutes=absolute_minutes)
 
         # Create token payload
         token_data = {
@@ -248,11 +349,8 @@ class TokenService:
 
         # Encode token with FIPS-compliant algorithm
         algorithm = settings.JWT_ALGORITHM_V3 if settings.FIPS_VERSION == "140-3" else "HS256"
-        token = jwt.encode(
-            token_data,
-            settings.JWT_SECRET_KEY,
-            algorithm=algorithm,
-        )
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
+        token = jwt.encode({"alg": algorithm}, token_data, key, algorithms=[algorithm])
 
         # Hash token for storage
         token_hash = self._hash_token(token)
@@ -265,6 +363,8 @@ class TokenService:
             expires_at=expires_at,
             user_agent=user_agent,
             ip_address=ip_address,
+            last_activity_at=now,
+            absolute_expires_at=absolute_expires_at,
         )
 
         db.add(refresh_token)
@@ -274,6 +374,18 @@ class TokenService:
         logger.info(
             f"Created refresh token for user {user_id} "
             f"(jti={jti[:8]}..., expires={expires_at.isoformat()})"
+        )
+
+        # Single choke point: every session (refresh_token row) is created here,
+        # whatever the auth method or whether this is a fresh login or a rotation
+        # — so this is the one place that needs to emit it, not every call site.
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_SESSION_CREATED,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=user_id,
+            source_ip=ip_address,
+            user_agent=user_agent,
+            details={"jti": jti},
         )
 
         return token, refresh_token
@@ -291,6 +403,15 @@ class TokenService:
         4. Check token is not revoked in database
         5. Check token is not on Redis blacklist
         6. Check token is not expired
+        7. Check the SESSION is still within its idle and absolute caps
+
+        Step 7 is what makes ``session_idle_timeout_minutes`` and
+        ``session_absolute_timeout_minutes`` real. It fires once per access-token
+        lifetime rather than per request, deliberately: per-request activity
+        tracking would be refreshed continuously by polling endpoints (progress,
+        notifications, task status) and WebSocket keepalives, so idle timeout
+        would appear to work and never actually fire — worse than not having it,
+        because it reads as a satisfied control.
 
         Args:
             db: Database session
@@ -314,7 +435,7 @@ class TokenService:
                 return None, None
 
             # Check Redis blacklist first (fast path)
-            if self.is_token_revoked(jti):
+            if self.is_token_revoked(jti, db=db):
                 logger.warning(f"Token verification failed: JTI {jti[:8]}... is revoked")
                 return None, None
 
@@ -341,20 +462,78 @@ class TokenService:
             # Check expiration (should be caught by JWT decode, but double-check)
             if refresh_token.is_expired:
                 logger.warning("Token verification failed: token expired")
+                audit_logger.log(
+                    event_type=AuditEventType.AUTH_SESSION_EXPIRED,
+                    outcome=AuditOutcome.FAILURE,
+                    user_id=refresh_token.user_id,
+                    details={"jti": jti},
+                )
+                return None, None
+
+            if not self._session_within_lifetime(db, refresh_token):
                 return None, None
 
             logger.debug(f"Refresh token verified successfully (jti={jti[:8]}...)")
             return payload, refresh_token
 
-        except jwt.ExpiredSignatureError:
+        except ExpiredTokenError:
             logger.warning("Token verification failed: token expired")
             return None, None
-        except jwt.JWTError as e:
+        except JoseError as e:
             logger.warning(f"Token verification failed: JWT error - {e}")
             return None, None
         except Exception as e:
             logger.error(f"Token verification error: {e}")
             return None, None
+
+    @staticmethod
+    def _session_within_lifetime(db: Session, refresh_token: RefreshToken) -> bool:
+        """Whether *refresh_token*'s session is still inside its idle and absolute caps.
+
+        Both columns are nullable and a NULL is treated as "no cap recorded", not
+        as an expiry. Sessions that predate ``v375`` carry NULL in both, and
+        invalidating them on upgrade would sign every user out for a second time
+        in the same release (the token-type change already does it once). The next
+        rotation stamps real values on the successor row.
+
+        Args:
+            db: Database session, used to resolve the DB-backed timeouts.
+            refresh_token: The stored session row being verified.
+
+        Returns:
+            True when the session may continue.
+        """
+        now = datetime.now(UTC)
+
+        absolute_expires_at = _as_utc(refresh_token.absolute_expires_at)
+        if absolute_expires_at is not None and now > absolute_expires_at:
+            logger.info(
+                "Session refused: absolute timeout reached at %s (jti=%s...)",
+                absolute_expires_at.isoformat(),
+                str(refresh_token.jti)[:8],
+            )
+            return False
+
+        idle_minutes, _absolute_minutes = _session_lifetime_minutes(db)
+        last_activity_at = _as_utc(refresh_token.last_activity_at)
+        # 0 disables the idle cap. The admin UI's schema bounds it at 1, but
+        # SESSION_IDLE_TIMEOUT_MINUTES is a plain .env integer with no bound, and
+        # `now - last_activity > 0` would refuse every session on sight.
+        idle_exceeded = (
+            idle_minutes > 0
+            and last_activity_at is not None
+            and now - last_activity_at > timedelta(minutes=idle_minutes)
+        )
+        if idle_exceeded:
+            logger.info(
+                "Session refused: idle for more than %s minutes (last activity %s, jti=%s...)",
+                idle_minutes,
+                last_activity_at.isoformat() if last_activity_at else "unknown",
+                str(refresh_token.jti)[:8],
+            )
+            return False
+
+        return True
 
     def revoke_token(self, db: Session, jti: str, expires_at: datetime | None = None) -> bool:
         """
@@ -388,77 +567,299 @@ class TokenService:
                 db.commit()
 
             logger.info(f"Revoked token (jti={jti[:8]}..., ttl={ttl_seconds}s)")
+
+            # Single choke point for every revocation path (logout, logout-all,
+            # admin termination, password reset, federated SAML/OIDC logout) —
+            # covering it here means none of those call sites has to remember to.
+            audit_logger.log(
+                event_type=AuditEventType.AUTH_TOKEN_REVOKE,
+                outcome=AuditOutcome.SUCCESS,
+                user_id=refresh_token.user_id if refresh_token else None,
+                details={"jti": jti},
+            )
             return True
 
         except Exception as e:
             logger.error(f"Error revoking token: {e}")
             return False
 
+    def stamp_user_revocation_epoch(self, user_uuid: str | None) -> None:
+        """Invalidate every access token already issued to *user_uuid*.
+
+        Access tokens are stateless, so there is no JTI list to blacklist. This
+        records "nothing issued before now is acceptable" instead, and
+        :meth:`is_token_revoked` compares each token's ``iat`` against it.
+
+        The key only needs to outlive the longest access token, so it expires
+        with a small margin over ``JWT_ACCESS_TOKEN_EXPIRE_MINUTES``. Best-effort:
+        a Redis failure here degrades to the database heuristic in
+        :meth:`_is_revoked_without_redis`, which reaches the same conclusion from
+        the user's revoked refresh tokens.
+        """
+        if not user_uuid:
+            return
+        ttl = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 60
+        try:
+            self.store.set(
+                f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}",
+                str(int(datetime.now(UTC).timestamp())),
+                ex=ttl,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Could not stamp revocation epoch for user %s: %s", user_uuid, exc)
+
+    def _issued_before_user_epoch(self, user_uuid: str | None, issued_at: int | None) -> bool:
+        """Whether an access token predates the user's revocation epoch."""
+        if not user_uuid or issued_at is None or self._degraded:
+            return False
+        try:
+            marker = self.store.get(f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}")
+        except Exception:
+            return False
+        if marker is None:
+            return False
+        try:
+            epoch = int(marker.decode() if isinstance(marker, bytes) else marker)
+        except (TypeError, ValueError):
+            return False
+        # `<` not `<=`: a token minted in the same second as the epoch is the one
+        # a re-authentication just issued, and must not be killed by its own stamp.
+        return issued_at < epoch
+
+    def revoke_all_user_tokens_in_transaction(
+        self, db: Session, user_id: int, user_uuid: str | None = None
+    ) -> int:
+        """
+        Revoke all refresh tokens for a user **without** committing.
+
+        The caller owns the transaction and MUST commit. Exceptions propagate
+        rather than being swallowed, so a caller that is changing credentials in
+        the same transaction can abort the whole unit of work instead of
+        reporting success for changes that were rolled back underneath it.
+
+        Use this whenever ``db`` already holds uncommitted work. Use
+        :meth:`revoke_all_user_tokens` only for a standalone revocation.
+
+        Args:
+            db: Database session (transaction owned by the caller)
+            user_id: User ID whose tokens should be revoked
+
+        Returns:
+            Number of tokens revoked
+        """
+        tokens = (
+            db.query(RefreshToken)
+            .filter(
+                RefreshToken.user_id == user_id,
+                RefreshToken.revoked_at.is_(None),
+            )
+            .all()
+        )
+
+        now = datetime.now(UTC)
+        count = 0
+
+        for token in tokens:
+            # Add to Redis blacklist. Not transactional — if the commit later
+            # fails, these keys stay set. Revoking a token that turns out to
+            # still be valid fails closed (the user re-authenticates), which is
+            # the safe direction for the inverse mistake.
+            ttl_seconds = max(1, int((token.expires_at - now).total_seconds()))
+            key = f"{REVOKED_TOKEN_PREFIX}{token.jti}"
+            self.store.set(key, "revoked", ex=ttl_seconds)
+
+            # Update database record
+            token.revoked_at = now  # type: ignore[assignment]
+            count += 1
+
+        # Access tokens have no rows to revoke — kill them by epoch instead.
+        self.stamp_user_revocation_epoch(
+            user_uuid or self._user_uuid_for(db, user_id),
+        )
+
+        return count
+
+    @staticmethod
+    def _user_uuid_for(db: Session, user_id: int) -> str | None:
+        """Resolve a user's UUID, for callers that only have the integer id."""
+        row = db.query(User.uuid).filter(User.id == user_id).first()
+        return str(row[0]) if row else None
+
     def revoke_all_user_tokens(self, db: Session, user_id: int) -> int:
         """
-        Revoke all refresh tokens for a user.
+        Revoke all refresh tokens for a user, committing on success.
+
+        Best-effort: returns 0 and logs on failure rather than raising.
 
         Used for:
         - Logout from all devices
-        - Password change
         - Account security concerns
+
+        **Do not call this while ``db`` holds uncommitted work.** It commits, and
+        on failure it rolls the whole session back — which silently discards the
+        caller's unrelated changes. ``confirm_password_reset`` used to do exactly
+        that: a failure here reverted the new password hash while the caller went
+        on to report success (issue #324). Use
+        :meth:`revoke_all_user_tokens_in_transaction` for that case.
 
         Args:
             db: Database session
             user_id: User ID whose tokens should be revoked
 
         Returns:
-            Number of tokens revoked
+            Number of tokens revoked, or 0 if the revocation failed
         """
         try:
-            # Get all active refresh tokens for user
-            tokens = (
-                db.query(RefreshToken)
-                .filter(
-                    RefreshToken.user_id == user_id,
-                    RefreshToken.revoked_at.is_(None),
-                )
-                .all()
-            )
-
-            now = datetime.now(UTC)
-            count = 0
-
-            for token in tokens:
-                # Add to Redis blacklist
-                ttl_seconds = max(1, int((token.expires_at - now).total_seconds()))
-                key = f"{REVOKED_TOKEN_PREFIX}{token.jti}"
-                self.store.set(key, "revoked", ex=ttl_seconds)
-
-                # Update database record
-                token.revoked_at = now  # type: ignore[assignment]
-                count += 1
-
+            count = self.revoke_all_user_tokens_in_transaction(db, user_id)
             db.commit()
             logger.info(f"Revoked {count} tokens for user {user_id}")
             return count
 
-        except Exception as e:
-            logger.error(f"Error revoking user tokens: {e}")
+        except Exception:
+            logger.exception(f"Error revoking user tokens for user {user_id}")
             db.rollback()
             return 0
 
-    def is_token_revoked(self, jti: str) -> bool:
+    def is_token_revoked(
+        self,
+        jti: str,
+        db: Session | None = None,
+        user_uuid: str | None = None,
+        issued_at: int | None = None,
+    ) -> bool:
         """
         Check if a token JTI is on the revocation blacklist.
 
+        Redis is a **cache** here, not the system of record: ``refresh_token``
+        carries a durable ``revoked_at``. So when Redis is unreachable this does
+        NOT trust the per-process fallback store (which is empty on a fresh
+        process and unshared between replicas, i.e. it answers "not revoked" to
+        everything). It consults the database instead — authoritative, durable,
+        and shared by every replica — and denies when it cannot (issue #324).
+
         Args:
             jti: The JWT ID to check
+            db: Session used for the authoritative fallback. Without it, a
+                degraded check fails **closed**.
+            user_uuid: Subject of the token. Lets the fallback answer for
+                *access* tokens, which have no ``refresh_token`` row of their own.
 
         Returns:
-            True if revoked, False if valid
+            True if revoked (or if revocation cannot be verified), False if valid
         """
         if not settings.TOKEN_REVOCATION_ENABLED:
             return False
 
         key = f"{REVOKED_TOKEN_PREFIX}{jti}"
-        result = self.store.get(key)
-        return result is not None
+
+        # Touch `store` first: it sets `_degraded` on the first failed connect.
+        store = self.store
+        if self._degraded:
+            return self._is_revoked_without_redis(jti, db, user_uuid)
+
+        try:
+            result = store.get(key)
+        except Exception:
+            # Redis was reachable at startup and died since.
+            self._degraded = True
+            logger.critical(
+                "Redis lookup failed for token revocation (jti=%s...); falling back "
+                "to the database. Revocation is NOT shared across replicas while "
+                "this persists.",
+                jti[:8],
+            )
+            return self._is_revoked_without_redis(jti, db, user_uuid)
+        if result is not None:
+            return True
+
+        # A stateless access token has no JTI entry of its own; the per-user
+        # epoch is what makes logout-all / password reset / admin termination
+        # take effect on it immediately rather than at its natural expiry.
+        return self._issued_before_user_epoch(user_uuid, issued_at)
+
+    def _is_revoked_without_redis(
+        self,
+        jti: str,
+        db: Session | None,
+        user_uuid: str | None,
+    ) -> bool:
+        """Answer "is this token revoked?" from the database instead of Redis.
+
+        Cache-aside: on cache failure, consult the system of record. Returning
+        the per-process store's answer instead would report "not revoked" for
+        everything, because that store is empty in a fresh process and is never
+        shared between replicas.
+
+        Two cases, because access tokens have no ``refresh_token`` row:
+
+        1. **The JTI is a refresh token.** ``revoked_at`` is authoritative.
+        2. **The JTI is an access token.** Nothing durable records it, so fall
+           back to the user: if every one of their refresh tokens is revoked,
+           their sessions were terminated (logout-all, password reset, admin
+           action) and this access token goes with them. That covers the reason
+           revocation is actually used. Access tokens are short-lived, so an
+           unrevoked-user access token is bounded by its own expiry anyway.
+
+        Without a session, or if the query itself fails, this **denies**. A
+        wrongly-denied request costs a re-authentication; a wrongly-allowed one
+        honours a token someone explicitly revoked.
+        """
+        if db is None:
+            _record_degradation("token_revocation", "deny")
+            logger.critical(
+                "Cannot verify revocation for jti=%s... — Redis is down and no database "
+                "session was supplied. Denying (fail closed).",
+                jti[:8],
+            )
+            return True
+
+        try:
+            row = db.query(RefreshToken).filter(RefreshToken.jti == jti).first()
+            if row is not None:
+                _record_degradation("token_revocation", "database")
+                return row.revoked_at is not None
+
+            if user_uuid is None:
+                _record_degradation("token_revocation", "deny")
+                return True
+
+            # Access token: no durable row of its own, so infer from the user's
+            # sessions — but only on POSITIVE evidence of revocation.
+            #
+            # "This user has no refresh tokens" is NOT such evidence. Some auth
+            # paths never mint one, so treating absence as revocation would lock
+            # those users out every time Redis blinked. Deny only when the user
+            # demonstrably had sessions and every one of them was revoked, which
+            # is what logout-all / password reset / admin termination produce.
+            # Otherwise allow, bounded by the access token's own short expiry.
+            has_any = (
+                db.query(RefreshToken)
+                .join(User, User.id == RefreshToken.user_id)
+                .filter(User.uuid == user_uuid)
+                .first()
+            )
+            _record_degradation("token_revocation", "database")
+            if has_any is None:
+                return False
+
+            live = (
+                db.query(RefreshToken)
+                .join(User, User.id == RefreshToken.user_id)
+                .filter(
+                    User.uuid == user_uuid,
+                    RefreshToken.revoked_at.is_(None),
+                    RefreshToken.expires_at > datetime.now(UTC),
+                )
+                .first()
+            )
+            return live is None
+        except Exception:
+            _record_degradation("token_revocation", "deny")
+            logger.critical(
+                "Database revocation fallback failed for jti=%s...; denying (fail closed).",
+                jti[:8],
+            )
+            return True
 
     def cleanup_expired_tokens(self, db: Session) -> int:
         """
@@ -518,6 +919,14 @@ class TokenService:
                 "jti": token.jti,
                 "created_at": token.created_at.isoformat(),
                 "expires_at": token.expires_at.isoformat(),
+                # Null on a session established before v375 — "no cap recorded",
+                # not "never expires"; the next rotation stamps both.
+                "last_activity_at": (
+                    token.last_activity_at.isoformat() if token.last_activity_at else None
+                ),
+                "absolute_expires_at": (
+                    token.absolute_expires_at.isoformat() if token.absolute_expires_at else None
+                ),
                 "user_agent": token.user_agent,
                 "ip_address": token.ip_address,
             }
@@ -543,6 +952,13 @@ class TokenService:
         - Creates a new refresh token with fresh expiration
         - Limits the impact of stolen refresh tokens
 
+        The successor row inherits ``absolute_expires_at`` **unchanged**, so the
+        session's ceiling is fixed by the login that established it. Recomputing
+        it here would mean a client that refreshes before every expiry never has
+        to re-authenticate, which is exactly the gap this column closes.
+        ``last_activity_at``, by contrast, is stamped fresh on the new row — that
+        is what "activity" means for the idle cap.
+
         Args:
             db: Database session
             old_token: The old refresh token string
@@ -557,6 +973,9 @@ class TokenService:
             Tuple of (new_token_string, new_RefreshToken model instance)
         """
         # Create new refresh token FIRST (atomic safety: if this fails, user keeps old token)
+        # A legacy row (pre-v375) carries NULL here; passing it through means the
+        # successor gets a freshly-stamped ceiling rather than the session being
+        # refused, which is how NULL is grandfathered.
         new_token, new_token_record = self.create_refresh_token(
             db=db,
             user_id=user_id,
@@ -564,6 +983,7 @@ class TokenService:
             role=role,
             user_agent=user_agent,
             ip_address=ip_address,
+            absolute_expires_at=_as_utc(old_token_record.absolute_expires_at),
         )
 
         logger.info(

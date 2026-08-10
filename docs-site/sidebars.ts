@@ -22,6 +22,7 @@ const sidebars: SidebarsConfig = {
         'getting-started/introduction',
         'getting-started/quick-start',
         'getting-started/first-transcription',
+        'getting-started/screenshots',
       ],
     },
     {
@@ -45,6 +46,7 @@ const sidebars: SidebarsConfig = {
         'user-guide/speaker-management',
         'user-guide/ai-summarization',
         'user-guide/search-and-filters',
+        'user-guide/chatting-with-transcripts',
         'user-guide/collections',
         'user-guide/admin-panel',
       ],
@@ -59,6 +61,8 @@ const sidebars: SidebarsConfig = {
         'features/content-redaction',
         'features/watch-sources',
         'features/llm-integration',
+        'features/rag-chat',
+        'features/usage-tracking',
         'features/authentication',
         'features/pipeline-optimization',
       ],
@@ -68,7 +72,12 @@ const sidebars: SidebarsConfig = {
       label: 'Authentication',
       items: [
         'authentication/overview',
-        // Detailed guides are in main docs/ folder, linked from overview
+        'authentication/ldap',
+        'authentication/oidc',
+        'authentication/saml',
+        'authentication/pki',
+        'authentication/proxy',
+        'authentication/groups',
       ],
     },
     {
@@ -107,6 +116,7 @@ const sidebars: SidebarsConfig = {
         'developer-guide/architecture',
         'developer-guide/diarization-boundary-correction',
         'developer-guide/watch-sources',
+        'developer-guide/rag-chat',
         'developer-guide/contributing',
         'developer-guide/testing',
       ],

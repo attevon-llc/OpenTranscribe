@@ -1,6 +1,6 @@
 // Curated pleasant color palette for speaker identification (expandable to 30+ speakers)
 // Each color has both light and dark theme variants for optimal readability
-export const speakerColors = [
+const speakerColors = [
   // Primary set - most distinct and pleasant colors (first 15)
   {
     bg: 'rgba(99, 102, 241, 0.15)',

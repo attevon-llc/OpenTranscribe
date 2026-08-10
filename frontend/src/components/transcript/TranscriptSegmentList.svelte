@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import type { GroupedSegmentView } from '$lib/types/media';
+  import type { Segment, Speaker } from '$lib/types/speaker';
+  import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import ScrollbarIndicator from '$components/ScrollbarIndicator.svelte';
   import SegmentSpeakerDropdown from '$components/SegmentSpeakerDropdown.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -10,9 +12,9 @@
   import { translateSpeakerLabel } from '$lib/i18n';
 
   export let file: any = null;
-  export let groupedTranscriptSegments: any[] = [];
+  export let groupedTranscriptSegments: GroupedSegmentView[] = [];
   export let transcriptSegments: TranscriptSegment[] = [];
-  export let speakerList: any[] = [];
+  export let speakerList: Speaker[] = [];
   export let currentTime: number = 0;
   export let diarizationDisabled: boolean = false;
   export let isEditingTranscript: boolean = false;
@@ -47,34 +49,91 @@
   // Calculate loaded segments info
   $: loadedSegments = file?.transcript_segments?.length || 0;
 
-  // Handle scroll to update progress bar based on segment index (not scroll position)
-  // This ensures progress is relative to total transcript size, not just loaded segments
-  function handleTranscriptScroll(event: Event) {
-    const target = event.target as HTMLElement;
-    if (!target || totalSegments === 0) return;
+  // Reading progress is measured in SEGMENT INDEX, not scroll offset, so the bar
+  // reflects position in the whole transcript rather than in the loaded page.
+  //
+  // This used to run from an unthrottled `on:scroll` handler that, on every single
+  // scroll event, did a `querySelectorAll('[data-seg-index]')` across the entire
+  // list and then walked it reading `offsetTop` — an O(n) DOM query plus a forced
+  // synchronous layout per event, on a list that holds thousands of segments.
+  // An IntersectionObserver gets the same answer with no scroll handler, no DOM
+  // query and no layout read: the browser tells us which segments are on screen
+  // and the smallest index among them is the top one.
+  // Plain Set on purpose: nothing in the markup reads it, so making it reactive
+  // would only add invalidation churn on every intersection callback.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  const visibleSegmentIndices = new Set<number>();
+  let progressObserver: IntersectionObserver | null = null;
 
-    // Find all segment elements with data-seg-index attribute
-    const segmentElements = target.querySelectorAll('[data-seg-index]');
-    if (segmentElements.length === 0) {
+  function updateScrollProgress() {
+    if (totalSegments === 0 || visibleSegmentIndices.size === 0) {
       scrollProgress = 0;
       return;
     }
+    scrollProgress = Math.round((Math.min(...visibleSegmentIndices) / totalSegments) * 100);
+  }
 
-    // Find the first visible segment (at top of viewport)
-    const viewportTop = target.scrollTop;
-    let firstVisibleSegmentIndex = 0;
-
-    for (const el of Array.from(segmentElements)) {
-      const segmentTop = (el as HTMLElement).offsetTop - target.offsetTop;
-      if (segmentTop >= viewportTop) {
-        const dataIndex = el.getAttribute('data-seg-index');
-        firstVisibleSegmentIndex = dataIndex ? parseInt(dataIndex, 10) : 0;
-        break;
+  function handleSegmentVisibility(entries: IntersectionObserverEntry[]) {
+    for (const entry of entries) {
+      const raw = (entry.target as HTMLElement).dataset.segIndex;
+      if (raw === undefined) continue;
+      const index = parseInt(raw, 10);
+      if (Number.isNaN(index)) continue;
+      if (entry.isIntersecting) {
+        visibleSegmentIndices.add(index);
+      } else {
+        visibleSegmentIndices.delete(index);
       }
     }
+    updateScrollProgress();
+  }
 
-    // Calculate progress as percentage of total segments
-    scrollProgress = Math.round((firstVisibleSegmentIndex / totalSegments) * 100);
+  // Identifies the observed row set. Rebuilding is O(n) over the DOM, and
+  // `groupedTranscriptSegments` is a fresh array on every `file` change — including
+  // renames and text edits, which add no rows. Only rebuild when the rows actually
+  // differ, or a rename on a 500-row transcript costs a full re-observe.
+  let observedRowSignature = '';
+
+  // Re-target the observer when the segment set changes (pagination appends rows).
+  // O(n) once per data change instead of O(n) per scroll event.
+  async function refreshProgressObserver() {
+    if (typeof IntersectionObserver === 'undefined') return;
+
+    const signature = `${groupedTranscriptSegments.length}:${groupKey(groupedTranscriptSegments[0] ?? {})}:${groupKey(groupedTranscriptSegments[groupedTranscriptSegments.length - 1] ?? {})}`;
+    if (signature === observedRowSignature && progressObserver) return;
+    observedRowSignature = signature;
+
+    await tick();
+    if (!transcriptDisplayElement) return;
+
+    if (progressObserver) {
+      progressObserver.disconnect();
+    } else {
+      progressObserver = new IntersectionObserver(handleSegmentVisibility, {
+        root: transcriptDisplayElement,
+      });
+    }
+    visibleSegmentIndices.clear();
+    transcriptDisplayElement
+      .querySelectorAll('[data-seg-index]')
+      .forEach((el) => progressObserver?.observe(el));
+  }
+
+  $: if (transcriptDisplayElement && groupedTranscriptSegments) {
+    void refreshProgressObserver();
+  }
+
+  // A group renders as one row, so it needs a key that is stable across reorders and
+  // appends. The first segment's uuid is both stable and unique — a segment belongs to
+  // exactly one group. Keying overlap groups by `overlapGroupId` instead would collide
+  // whenever two non-adjacent runs share an id, and a duplicate key takes down the
+  // entire list at render time.
+  function groupKey(group: {
+    segments?: { uuid?: string | number }[];
+    startSegmentIndex?: number;
+  }): string {
+    const uuid = group?.segments?.[0]?.uuid;
+    return uuid != null ? `s:${uuid}` : `i:${group?.startSegmentIndex}`;
   }
 
   // Set up infinite scroll observer
@@ -97,6 +156,10 @@
       infiniteScrollObserver.disconnect();
       infiniteScrollObserver = null;
     }
+    if (progressObserver) {
+      progressObserver.disconnect();
+      progressObserver = null;
+    }
   });
 
   // Observe the sentinel element when it's available
@@ -110,14 +173,14 @@
   // `indexOf` returns -1 and highlights silently vanish. Look up by uuid instead.
   $: segmentIndexByUuid = (() => {
     const map = new Map<string | number, number>();
-    (file?.transcript_segments || []).forEach((s: any, i: number) => {
+    (file?.transcript_segments || []).forEach((s: Segment, i: number) => {
       if (s?.uuid != null) map.set(s.uuid, i);
     });
     return map;
   })();
 
   // Helper to get original segment index for search highlighting
-  function getOriginalSegmentIndex(segment: any): number {
+  function getOriginalSegmentIndex(segment: Segment): number {
     if (segment?.uuid != null && segmentIndexByUuid.has(segment.uuid)) {
       return segmentIndexByUuid.get(segment.uuid) as number;
     }
@@ -164,11 +227,11 @@
     dispatch('segmentClick', { startTime });
   }
 
-  function editSegment(segment: any) {
+  function editSegment(segment: Segment) {
     dispatch('editSegment', { segment });
   }
 
-  function saveSegment(segment: any) {
+  function saveSegment(segment: Segment) {
     dispatch('saveSegment', { segment });
   }
 
@@ -198,9 +261,8 @@
   <div
     class="transcript-display"
     bind:this={transcriptDisplayElement}
-    on:scroll={handleTranscriptScroll}
   >
-  {#each groupedTranscriptSegments as group}
+  {#each groupedTranscriptSegments as group (groupKey(group))}
     {#if group.isOverlapGroup}
       <!-- Overlap Group Container -->
       <div class="{diarizationDisabled ? '' : 'overlap-group'}" data-overlap-group-id="{group.overlapGroupId}" data-seg-index={group.startSegmentIndex}>
@@ -217,7 +279,7 @@
         </div>
         <div class="overlap-connector"></div>
         {/if}
-        {#each group.segments as segment, segIdx}
+        {#each group.segments as segment, segIdx (segment.uuid)}
           <div
             class="transcript-segment{diarizationDisabled ? '' : ' in-overlap'}"
             class:first-in-overlap={!diarizationDisabled && segIdx === 0}
@@ -527,7 +589,12 @@
        Unlike JS windowing, every segment stays in the DOM, so infinite-scroll, the
        scrollbar indicator, search-scroll-to, segment editing, and the highlight-flash
        all keep working unchanged. `auto` remembers each row's real rendered height,
-       so the intrinsic-size estimate only affects never-yet-rendered far-offscreen rows. */
+       so the intrinsic-size estimate only affects never-yet-rendered far-offscreen rows.
+       This is why $components/gallery/VirtualList.svelte is NOT reused here: it windows
+       a fixed 44px row into a spacer-padded slice, which would evict off-screen segments
+       from the DOM and break every one of those features (they all reach segments by
+       `document.querySelector('[data-segment-id=…]')`). Variable-height rows — wrapped
+       text, multi-segment overlap groups, the expanded edit textarea — rule it out too. */
     content-visibility: auto;
     contain-intrinsic-size: auto 56px;
   }

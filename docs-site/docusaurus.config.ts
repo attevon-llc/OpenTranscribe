@@ -1,8 +1,35 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
+
+// The released version, single-sourced from the repo-root VERSION file so the
+// homepage badge can never drift from what was actually shipped.
+// The Docker build context is ./docs-site, so ../VERSION is unreachable there —
+// opentr.sh passes it through as the OT_VERSION build arg instead. An empty
+// string is a valid result: the badge is simply omitted rather than showing a lie.
+function resolveVersion(): string {
+  // opentr.sh sets APP_VERSION (and therefore OT_VERSION) to the literal "unknown"
+  // when VERSION is unreadable, so validate the shape rather than trusting the value.
+  const normalize = (raw: string | undefined): string => {
+    const trimmed = raw?.trim().replace(/^v/, '') ?? '';
+    return /^\d+\.\d+\.\d+/.test(trimmed) ? trimmed : '';
+  };
+
+  const fromEnv = normalize(process.env.OT_VERSION);
+  if (fromEnv) return fromEnv;
+  try {
+    return normalize(fs.readFileSync(path.join(__dirname, '..', 'VERSION'), 'utf8'));
+  } catch {
+    return '';
+  }
+}
+
+const version = resolveVersion();
+const githubRepo = 'https://github.com/attevon-llc/OpenTranscribe';
 
 // When building for in-app embedding (DOCS_BASE_URL=/docs/), the NGINX proxy strips
 // the /docs/ prefix before forwarding to this container. So with routeBasePath='docs'
@@ -40,10 +67,18 @@ const config: Config = {
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'davidamacey', // Usually your GitHub org/user name.
+  organizationName: 'attevon-llc', // Usually your GitHub org/user name.
   projectName: 'OpenTranscribe', // Usually your repo name.
 
-  onBrokenLinks: 'warn', // Changed from 'throw' to allow build with broken links during development
+  // Fail the build on a bad cross-reference rather than shipping a dead link.
+  onBrokenLinks: 'throw',
+  onBrokenAnchors: 'throw',
+
+  // Exposed to the client via useDocusaurusContext().siteConfig.customFields
+  customFields: {
+    version,
+    githubRepo,
+  },
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
@@ -60,7 +95,7 @@ const config: Config = {
         docs: {
           sidebarPath: './sidebars.ts',
           editUrl:
-            'https://github.com/davidamacey/OpenTranscribe/tree/master/docs-site/',
+            `${githubRepo}/tree/master/docs-site/`,
           routeBasePath: isEmbedded ? '' : 'docs',
         },
         blog: {
@@ -69,7 +104,7 @@ const config: Config = {
           blogDescription: 'Updates, releases, and insights about OpenTranscribe development',
           postsPerPage: 'ALL',
           editUrl:
-            'https://github.com/davidamacey/OpenTranscribe/tree/master/docs-site/',
+            `${githubRepo}/tree/master/docs-site/`,
         },
         theme: {
           customCss: './src/css/custom.css',
@@ -107,7 +142,7 @@ const config: Config = {
         // },
         {to: '/blog', label: 'Blog', position: 'left'},
         {
-          href: 'https://github.com/davidamacey/OpenTranscribe',
+          href: githubRepo,
           label: 'GitHub',
           position: 'right',
         },
@@ -147,15 +182,15 @@ const config: Config = {
           items: [
             {
               label: 'GitHub Discussions',
-              href: 'https://github.com/davidamacey/OpenTranscribe/discussions',
+              href: `${githubRepo}/discussions`,
             },
             {
               label: 'GitHub Issues',
-              href: 'https://github.com/davidamacey/OpenTranscribe/issues',
+              href: `${githubRepo}/issues`,
             },
             {
               label: 'GitHub Repository',
-              href: 'https://github.com/davidamacey/OpenTranscribe',
+              href: githubRepo,
             },
             // TODO: Add when page is created
             // {
@@ -173,7 +208,7 @@ const config: Config = {
             },
             {
               label: 'GitHub',
-              href: 'https://github.com/davidamacey/OpenTranscribe',
+              href: githubRepo,
             },
             {
               label: 'Docker Hub',

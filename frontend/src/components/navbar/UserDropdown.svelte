@@ -3,6 +3,7 @@
     full_name?: string | null;
     email?: string | null;
     auth_type?: string | null;
+    role?: string | null;
   }
 </script>
 
@@ -13,6 +14,10 @@
 
   /** The currently signed-in user (null when unauthenticated). */
   export let user: NavbarUser | null = null;
+
+  // Flower exposes task arguments (file/user IDs) and worker topology, so the
+  // entry is admin-only. Cosmetic only — nginx auth_request is the real gate.
+  $: isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const dispatch = createEventDispatcher<{
     open: void;
@@ -61,8 +66,10 @@
     // Dynamically construct Flower URL from current location
     const url = getFlowerUrl();
 
-    // Open Flower in a new tab with the correct URL
-    window.open(url, '_blank');
+    // Open Flower in a new tab with the correct URL. 'noopener' — unlike
+    // <a target="_blank">, window.open() gets no implicit noopener, so the new
+    // tab would otherwise keep a live window.opener handle back into the SPA.
+    window.open(url, '_blank', 'noopener');
     showDropdown = false;
     dispatch('itemSelected');
   }
@@ -110,7 +117,7 @@
     </div>
     <span class="username">{user ? user.full_name : $t('nav.user')}</span>
     {#if user?.auth_type === 'pki'}
-      <div class="pki-badge" title={$t('nav.pkiAuthenticated') || 'Authenticated with X.509 Certificate'}>
+      <div class="pki-badge" title={$t('nav.pkiAuthenticated')}>
         <svg class="shield-icon" viewBox="0 0 24 24" width="16" height="16">
           <path fill="#059669" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
           <path fill="white" d="M10 17l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
@@ -156,17 +163,19 @@
         <span>{$t('nav.docs')}</span>
       </a>
 
-      <button
-        class="dropdown-item"
-        on:click={handleFlower}
-        aria-label={$t('nav.flowerDashboard')}
-        title={$t('nav.flowerDashboard')}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-        </svg>
-        <span>{$t('nav.flowerDashboard')}</span>
-      </button>
+      {#if isAdmin}
+        <button
+          class="dropdown-item"
+          on:click={handleFlower}
+          aria-label={$t('nav.flowerDashboard')}
+          title={$t('nav.flowerDashboard')}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          <span>{$t('nav.flowerDashboard')}</span>
+        </button>
+      {/if}
       <div class="dropdown-divider"></div>
       <button
         class="dropdown-item logout"

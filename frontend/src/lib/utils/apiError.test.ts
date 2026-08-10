@@ -1,7 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { initI18n } from '$lib/i18n';
 import { getErrorMessage, withAsync } from './apiError';
 
 describe('getErrorMessage', () => {
+  // The default fallback is translated, so the locale bundle must be registered
+  // before asserting on it — otherwise `t` returns the raw dot-notation key.
+  beforeAll(async () => {
+    await initI18n('en');
+  });
+
   it('prefers the FastAPI response.data.detail', () => {
     expect(getErrorMessage({ response: { data: { detail: 'Not authorized' } } })).toBe(
       'Not authorized'

@@ -133,7 +133,7 @@ async def retry_summary(
     try:
         llm_available = await is_llm_available(user_id=current_user.id)
     except Exception as e:
-        logger.error(f"Failed to check LLM availability for retry of file {file_id}: {e}")
+        logger.exception(f"Failed to check LLM availability for retry of file {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to verify LLM service availability. Please try again later.",

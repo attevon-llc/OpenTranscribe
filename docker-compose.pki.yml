@@ -20,6 +20,20 @@
 #
 
 services:
+  backend:
+    environment:
+      # The PKI frontend is an nginx that terminates mTLS and proxies /api to the
+      # backend (frontend/nginx-pki.conf), so `request.client.host` is that proxy for
+      # every API request. Without a trusted-proxy list all callers share one
+      # rate-limit bucket and the audit log records the proxy instead of the user.
+      # See docker-compose.nginx.yml for why the default is Docker's own pool rather
+      # than the full RFC1918 set. Override in .env if Docker's pool is customised.
+      #
+      # Note this is the RATE LIMIT / audit resolver, which is separate from
+      # PKI_TRUSTED_PROXIES (which governs whether a DN header may be believed at
+      # all). Both need to be set for a proxied PKI deployment.
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}
+
   frontend:
     volumes:
       # Mount PKI nginx config (replaces default)

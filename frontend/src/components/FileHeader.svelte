@@ -1,9 +1,13 @@
 <script lang="ts">
+  import type { MediaFileDetail } from '$lib/types/media';
+  import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import { t } from '$stores/locale';
 
-  export let file: any = null;
+  const dispatch = createEventDispatcher();
+
+  export let file: MediaFileDetail | null = null;
   export let currentProcessingStep: string = '';
   export let sharedPermission: string | null = null;
 
@@ -28,7 +32,7 @@
     isExpanded = !isExpanded;
   }
 
-  function getDisplayName(file: any): string {
+  function getDisplayName(file: MediaFileDetail | null): string {
     return file?.title || file?.filename || $t('fileDetail.unknownFile');
   }
 
@@ -65,8 +69,12 @@
       });
 
       if (response.data) {
-        // Update the file object with the new title
+        // Update the file object with the new title, and tell the page so its own `file`
+        // is invalidated. Mutating this prop alone updates the header but leaves every
+        // other consumer of `file` on the old title until a reload — the same trap #338
+        // removed elsewhere.
         file.title = response.data.title;
+        dispatch('titleUpdated', { title: response.data.title });
         isEditingTitle = false;
         editedTitle = '';
       } else {

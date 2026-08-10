@@ -52,10 +52,13 @@ from sqlalchemy.orm import Session
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.models.chat import ChatConversation
 from app.models.media import Collection
+from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import SpeakerCollection
 from app.models.media import SpeakerProfile
+from app.models.media import Tag
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.user import User
@@ -68,7 +71,10 @@ ERASURE_SLA_DAYS = 30
 
 
 def _erase_speaker_voiceprints(
-    *, user_id: int | None = None, organization_id: int | None = None
+    *,
+    user_id: int | None = None,
+    organization_id: int | None = None,
+    errors: list[dict[str, Any]] | None = None,
 ) -> int:
     """Delete speaker/profile embedding docs (biometric data) from OpenSearch.
 
@@ -79,11 +85,30 @@ def _erase_speaker_voiceprints(
     storage erasure (those are the legally-binding deletions; this catches
     orphaned biometric docs).
 
+    Args:
+        user_id: Scope the deletion to one user.
+        organization_id: Scope the deletion to one organization.
+        errors: The caller's ``summary["errors"]`` list. Failures are appended
+            here so the erasure is audited as PARTIAL rather than SUCCESS —
+            biometric data surviving an Art. 17 request must not be recorded as
+            a completed erasure.
+
     Returns the number of voiceprint documents deleted (0 if OpenSearch is
     unavailable).
     """
     if user_id is None and organization_id is None:
         return 0
+
+    def _record(reason: str) -> None:
+        if errors is not None:
+            errors.append(
+                {
+                    "stage": "voiceprints",
+                    "user_id": user_id,
+                    "org_id": organization_id,
+                    "error": reason,
+                }
+            )
 
     deleted = 0
     try:
@@ -94,6 +119,7 @@ def _erase_speaker_voiceprints(
 
         if opensearch_client is None:
             logger.warning("OpenSearch unavailable — skipping voiceprint erasure (orphan docs)")
+            _record("OpenSearch client unavailable")
             return 0
 
         terms = []
@@ -117,8 +143,10 @@ def _erase_speaker_voiceprints(
                 deleted += int(resp.get("deleted", 0))
             except Exception as idx_err:  # noqa: BLE001 — best-effort per index
                 logger.warning(f"Voiceprint erasure failed on index {idx}: {idx_err}")
+                _record(f"index {idx}: {idx_err}")
     except Exception as e:  # noqa: BLE001 — OpenSearch optional
         logger.warning(f"Voiceprint erasure skipped (OpenSearch error): {e}")
+        _record(str(e))
 
     if deleted:
         logger.info(
@@ -163,6 +191,12 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     ``purge_media_file`` deliberately preserves ``SpeakerProfile`` (and never
     touches empty ``Collection`` shells), so erasure must remove them
     explicitly. Their profile embeddings are cleared from OpenSearch first.
+
+    Tags owned by the subject go too (v374): tag names are user-authored free
+    text, i.e. personal data, and ``tag.user_id`` is a plain FK that would block
+    the user-row delete. Their ``file_tag`` rows are detached first — one may
+    hang off another user's file — while system tags (``user_id IS NULL``) are
+    shared vocabulary and are left alone.
     """
     profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == user_id).all()
     for profile in profiles:
@@ -176,11 +210,21 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     for model, key in (
         (SpeakerCollection, "speaker_collections_deleted"),
         (Collection, "collections_deleted"),
+        # Chat threads quote transcript content back to the user, so they must
+        # be erased even when a legal hold retains the user row and its files.
+        (ChatConversation, "chat_conversations_deleted"),
     ):
         rows = db.query(model).filter(model.user_id == user_id).all()
         for row in rows:
             db.delete(row)
             summary[key] += 1
+
+    tag_ids = [t.id for t in db.query(Tag.id).filter(Tag.user_id == user_id).all()]
+    if tag_ids:
+        db.query(FileTag).filter(FileTag.tag_id.in_(tag_ids)).delete(synchronize_session=False)
+        db.query(Tag).filter(Tag.user_id == user_id).delete(synchronize_session=False)
+        summary["tags_deleted"] = len(tag_ids)
+
     db.commit()
 
 
@@ -192,6 +236,8 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "speaker_profiles_deleted": 0,
         "speaker_collections_deleted": 0,
         "collections_deleted": 0,
+        "tags_deleted": 0,
+        "chat_conversations_deleted": 0,
         "voiceprints_deleted": 0,
         "users_deleted": 0,
         "legal_holds_skipped": 0,
@@ -240,7 +286,9 @@ def erase_user(
     _purge_files(db, files, summary)
     _delete_owner_scoped_rows(db, user_id, summary)
 
-    summary["voiceprints_deleted"] = _erase_speaker_voiceprints(user_id=user_id)
+    summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
+        user_id=user_id, errors=summary["errors"]
+    )
 
     if summary["legal_holds_skipped"]:
         logger.warning(
@@ -331,6 +379,9 @@ def erase_org_member_data(
     for model, key in (
         (SpeakerCollection, "speaker_collections_deleted"),
         (Collection, "collections_deleted"),
+        # Only this member's conversations stamped with THIS org — their
+        # personal-scope chats stay, exactly like their personal files.
+        (ChatConversation, "chat_conversations_deleted"),
     ):
         rows = (
             db.query(model).filter(model.user_id == user_id, model.organization_id == org_id).all()
@@ -341,7 +392,7 @@ def erase_org_member_data(
     db.commit()
 
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
-        user_id=user_id, organization_id=org_id
+        user_id=user_id, organization_id=org_id, errors=summary["errors"]
     )
 
     audit_logger.log(
@@ -429,7 +480,9 @@ def erase_organization(
         summary["collections_deleted"] += 1
     db.commit()
 
-    summary["voiceprints_deleted"] = _erase_speaker_voiceprints(organization_id=org_id)
+    summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
+        organization_id=org_id, errors=summary["errors"]
+    )
 
     # Drop the org row (organization_membership rows CASCADE on delete).
     member_count = (

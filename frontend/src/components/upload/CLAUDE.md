@@ -45,11 +45,16 @@ addRecording` → `$lib/services/uploadService`; the progress UI is `UploadManag
   `UploadStepSpeakers`. The same suite guards the parent's `.uploader-container`,
   `.step-indicator`, `.tab-navigation .tab-button`, `.message.error-msg`, and
   `.nav-btn.nav-next` / `.nav-submit` / `.nav-review-defaults`.
-- **Three copies of the size limit, and they disagree**: `MediaFilePanel`'s `MAX_FILE_SIZE`
-  (15 GB) is dead — every branch dispatches `fileSelect` regardless, deliberately letting the
-  parent render the error. `FileUploader` enforces 15 GB on the single-file path (extra warning
-  above 2 GB), but `handleMultipleFiles` rejects at its own 2 GB `FILE_SIZE_LIMIT`. **The same
-  5 GB file uploads when dropped alone and is rejected when dropped alongside another** — the
-  reject is reported via a `skippedInvalidFiles` toast, not silent. Change all three together.
-- Hardcoded English survives in `UploadStepExtraction` ("Recommended", the choice descriptions),
-  `UploadStepModel` ("AI Summary"), and `UploadStepReview` ("Processing") — bugs, not the pattern.
+- **Size limits live in `$lib/utils/uploadLimits.ts` — never re-declare one in a component.**
+  `MAX_UPLOAD_BYTES` (15 GB, matching the backend's `max_filesize`) is the hard reject;
+  `LARGE_UPLOAD_WARNING_BYTES` (2 GB) is a warning on _every_ path, never a reject on any.
+  Both the single-file and multi-file paths in `FileUploader` use them. Until #298 there were
+  three copies with two different values, so the same 5 GB file uploaded when dropped alone and
+  was rejected as "too large" when dropped alongside another. `MediaFilePanel` still validates
+  nothing by design — it normalizes the MIME type and dispatches `fileSelect`; the parent owns
+  rejection and error rendering.
+- Every string in these steps is keyed (#284 A3.1 fixed the last hardcoded English in
+  `UploadStepExtraction`, `UploadStepModel`, `UploadStepReview`, `UploadStepTags`,
+  `UploadStepCollections` and `UploadStepSpeakers`). Keep it that way — only the active locale is
+  loaded at runtime, so a bare English literal here is a live regression for 7 of 8 languages.
+  New copy needs a key in all 8 locale files (`npm run check:i18n` gates it).

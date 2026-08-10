@@ -23,6 +23,13 @@ indexing → WebSocket notification.
   alive; must stay in `celery_app`'s `include=` list.
 - `recovery.py` / `recovery_tasks.py` — `system.startup_recovery` and the periodic
   `cleanup.health_check` reclaim files stuck in PROCESSING with no live Celery task.
+- `directory_sync_task.py` — LDAP reconciliation/deprovisioning, **cpu** queue.
+  `directory.sync_check_schedule` runs from beat every 15 min, reads the DB-stored cron
+  (`directory_sync.schedule`), and dispatches `directory.sync_run` when due — so changing the
+  schedule needs **no beat restart**. It claims the window by stamping
+  `directory_sync.last_run_at` *before* dispatch, and the run itself takes a Redis lock, so a
+  double tick cannot start two passes. Policy and safety rules live in
+  `services/directory_sync_service.py`; this module is only the scheduling shell.
 
 ## Conventions / patterns
 
@@ -59,9 +66,10 @@ indexing → WebSocket notification.
   only on the GPU workers; `PRELOAD_REDACTION_MODELS=true` only on `celery-redaction`
   (dedicated CPU service owning the `redaction` queue, run under `nice`). Importing a
   model-loading module into a task that runs on the wrong queue wastes 15+ GB of VRAM.
-- Redaction detection is **not** unconditional despite the stale comment in `postprocess.py`:
-  `_dispatch_redaction` returns early unless `resolve_effective_config(db, user_id).enabled`.
-  Enabling redaction later triggers lazy detection on first file open.
+- Redaction detection is **not** unconditional: `_dispatch_redaction` returns early unless
+  `resolve_effective_config(db, user_id).enabled`, and redaction is opt-out by default.
+  Enabling redaction later triggers lazy detection on first file open. (Both the
+  `postprocess.py` comment and the `redaction_task.py` docstring claimed "always" until #296.)
 - Multi-GPU scaling: `./opentr.sh start dev --gpu-scale` sets `COMPOSE_PROFILES=gpu-scale`
   and loads `docker-compose.gpu-scale.yml` (N threads on `GPU_SCALE_DEVICE_ID`, tune
   `GPU_SCALE_WORKERS` to VRAM). **`GPU_SCALE_ENABLED` does not enable scaling** — only the

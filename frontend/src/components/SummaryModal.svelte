@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { SummaryData, SummaryResponse } from '$lib/types/summary';
-  import axiosInstance, { getCsrfToken } from '$lib/axios';
+  import axiosInstance from '$lib/axios';
   import { isLLMAvailable } from '../stores/llmStatus';
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { t } from '$stores/locale';
@@ -90,11 +90,16 @@
           // No summary exists yet
           summary = null;
         } else {
-          throw new Error(`Failed to load summary: ${getErrorMessage(summaryErr, 'Failed to load summary')}`);
+          throw new Error(
+            $t('summary.loadFailedDetail', {
+              error: getErrorMessage(summaryErr, $t('summary.loadFailed')),
+            }),
+            { cause: summaryErr }
+          );
         }
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to load summary';
+      error = err instanceof Error ? err.message : $t('summary.loadFailed');
       console.error('Error loading summary:', err);
     } finally {
       loading = false;
@@ -108,25 +113,16 @@
     error = null;
 
     try {
-      const response = await fetch(`/api/files/${fileId}/summarize`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' }
-      });
+      await axiosInstance.post(`/files/${fileId}/summarize`);
 
-      if (response.ok) {
-        // Poll for completion (simplified - you might want to use WebSockets)
-        setTimeout(() => {
-          loadSummary();
-        }, 5000);
+      // Poll for completion (simplified - you might want to use WebSockets)
+      setTimeout(() => {
+        loadSummary();
+      }, 5000);
 
-        dispatch('generateSummary', { fileId });
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || $t('summary.startFailed'));
-      }
+      dispatch('generateSummary', { fileId });
     } catch (err) {
-      error = err instanceof Error ? err.message : $t('summary.generateFailed');
+      error = getErrorMessage(err, $t('summary.startFailed'));
     } finally {
       generating = false;
     }
@@ -139,25 +135,16 @@
     error = null;
 
     try {
-      const response = await fetch(`/api/files/${fileId}/retry-summary`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-CSRF-Token': getCsrfToken() || '' }
-      });
+      await axiosInstance.post(`/files/${fileId}/retry-summary`);
 
-      if (response.ok) {
-        // Poll for completion
-        setTimeout(() => {
-          loadSummary();
-        }, 5000);
+      // Poll for completion
+      setTimeout(() => {
+        loadSummary();
+      }, 5000);
 
-        dispatch('generateSummary', { fileId });
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || $t('summary.retryFailed'));
-      }
+      dispatch('generateSummary', { fileId });
     } catch (err) {
-      error = err instanceof Error ? err.message : $t('summary.retryFailed');
+      error = getErrorMessage(err, $t('summary.retryFailed'));
     } finally {
       generating = false;
     }

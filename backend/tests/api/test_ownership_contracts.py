@@ -427,7 +427,7 @@ class TestSummaryPromptOwnership:
         p = _make_prompt(db_session, normal_user)
         resp = client.get(f"/api/prompts/{p.uuid}", headers=other_user_auth_headers)
         assert resp.status_code == 403
-        assert resp.json()["detail"] == "Not enough permissions"
+        assert resp.json()["detail"].startswith("Not enough permissions")
 
     def test_prompt_set_active_private_403_other_user(
         self, client, db_session, normal_user, other_user, other_user_auth_headers

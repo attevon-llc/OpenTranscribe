@@ -18,13 +18,43 @@ from typing import Any
 from fastapi import Request
 from sqlalchemy.orm import Session
 
+from app.core.auth_settings import prime_process_auth_settings
 from app.core.config import settings
 from app.models.auth_config import AuthConfig
 from app.models.auth_config import AuthConfigAudit
+from app.schemas.auth_config import CATEGORY_SCHEMAS
+from app.schemas.auth_config import CROSS_FIELD_KEYS
+from app.schemas.auth_config import coded_default
+from app.schemas.auth_config import validate_category_config
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 
 logger = logging.getLogger(__name__)
+
+#: Spellings accepted for a stored boolean. Anything else is a parse FAILURE, not
+#: a false: ``oidc_verify_issuer`` and friends are security controls, and
+#: ``value.lower() in ("true", "1", "yes", "on")`` quietly turned a typo into
+#: "validation off".
+BOOL_TRUE_VALUES = frozenset({"true", "1", "yes", "on", "t", "y"})
+BOOL_FALSE_VALUES = frozenset({"false", "0", "no", "off", "f", "n"})
+
+#: Ceiling for a single audit-log page. ``?limit=10000000`` used to be honoured.
+MAX_AUDIT_LOG_LIMIT = 500
+
+#: Marker returned in place of a stored secret. It exists so the admin UI can show
+#: "a value is set" without receiving the value — but it must NEVER be written back
+#: as if it were one. The API used to return the literal ``***REDACTED***``, the
+#: panel bound it into the password field, and clicking Save on any OTHER field in
+#: the same tab re-encrypted the placeholder over the real LDAP bind password /
+#: OIDC client secret, with a success toast. Writes now reject it outright.
+SENSITIVE_SET_SENTINEL = "__SECRET_IS_SET__"  # noqa: S105 # nosec B105
+
+#: Values that mean "the user did not type a new secret" and must leave the stored
+#: one untouched. Empty is the deliberate "leave blank to keep current" case;
+#: the rest are placeholders older clients may echo back.
+SENSITIVE_NO_CHANGE_VALUES = frozenset(
+    {SENSITIVE_SET_SENTINEL, "***REDACTED***", "***ENCRYPTED***", ""}
+)
 
 
 class AuthConfigService:
@@ -38,8 +68,63 @@ class AuthConfigService:
     # Keys that contain sensitive data and should be encrypted
     SENSITIVE_KEYS = {
         "ldap_bind_password",
-        "keycloak_client_secret",
+        "oidc_client_secret",
+        "proxy_shared_secret",
+        "saml_sp_private_key",
     }
+
+    #: Keys whose new value does NOT take effect until the process restarts.
+    #: Written to ``auth_config.requires_restart`` so the admin UI can say so
+    #: instead of implying the change is live. That column has existed since the
+    #: table was created and was never written by anything.
+    #:
+    #: A visible "requires restart" badge is an acceptable outcome. A control that
+    #: saves with a success toast and enforces nothing is not — so a key belongs
+    #: here only when the value is genuinely frozen before any request runs, and
+    #: the reason is recorded next to it. ``tests/unit/test_auth_config_has_readers``
+    #: enforces the membership in both directions.
+    #:
+    #: * ``jwt_*`` — read at **import time** by ``app/auth/cookies.py`` to compute
+    #:   ``ACCESS_MAX_AGE`` / ``REFRESH_MAX_AGE``. Honouring a live change for the
+    #:   token but not the cookie would end sessions early (cookie expires first)
+    #:   or leave a dead cookie behind (token expires first). Everything else in
+    #:   the session category is enforced against ``refresh_token`` rows at
+    #:   request time and is genuinely live.
+    #: * ``rate_limit_enabled`` — ``auth/rate_limit.py`` builds the module-level
+    #:   ``Limiter(enabled=settings.RATE_LIMIT_ENABLED)`` at import.
+    #: * ``rate_limit_auth_per_minute`` — every auth endpoint is decorated
+    #:   ``@limiter.limit(get_auth_rate_limit())``, and a decorator argument is
+    #:   evaluated once, at import. slowapi accepts a *callable* limit, so making
+    #:   this live is a real refactor (drop the call parentheses at ~20 decorator
+    #:   sites and read the effective value inside ``get_auth_rate_limit``), not a
+    #:   bridge — until then the badge is the truthful answer.
+    RESTART_REQUIRED_KEYS = frozenset(
+        {
+            "jwt_access_token_expire_minutes",
+            "jwt_refresh_token_expire_days",
+            "rate_limit_enabled",
+            "rate_limit_auth_per_minute",
+        }
+    )
+
+    #: Keys the API once accepted that are now removed from the category schemas.
+    #: Each was an orphan alias of a real key — ``mfa_issuer`` for
+    #: ``mfa_issuer_name``, ``password_require_numbers`` for
+    #: ``password_require_digit``, ``max_login_attempts`` for
+    #: ``account_lockout_threshold``, ``lockout_duration_minutes`` for
+    #: ``account_lockout_duration_minutes`` — written by an older admin panel and
+    #: read by nothing. Writes are now rejected by ``validate_category_config``
+    #: (they are unknown keys); this set additionally keeps a stale row from being
+    #: served back by ``get_config_by_category``, which filters by category and
+    #: would otherwise still hand the ``local`` tab a control that does nothing.
+    RETIRED_KEYS = frozenset(
+        {
+            "mfa_issuer",
+            "password_require_numbers",
+            "max_login_attempts",
+            "lockout_duration_minutes",
+        }
+    )
 
     # Mapping of config keys to their data types
     DATA_TYPE_MAPPING = {
@@ -47,6 +132,7 @@ class AuthConfigService:
         "local_enabled": "bool",
         "allow_registration": "bool",
         "require_email_verification": "bool",
+        "require_account_approval": "bool",
         # LDAP settings
         "ldap_enabled": "bool",
         "ldap_port": "int",
@@ -54,12 +140,12 @@ class AuthConfigService:
         "ldap_use_tls": "bool",
         "ldap_timeout": "int",
         "ldap_recursive_groups": "bool",
-        # Keycloak settings
-        "keycloak_enabled": "bool",
-        "keycloak_timeout": "int",
-        "keycloak_verify_audience": "bool",
-        "keycloak_use_pkce": "bool",
-        "keycloak_verify_issuer": "bool",
+        # OIDC settings
+        "oidc_enabled": "bool",
+        "oidc_timeout": "int",
+        "oidc_verify_audience": "bool",
+        "oidc_use_pkce": "bool",
+        "oidc_verify_issuer": "bool",
         # PKI settings
         "pki_enabled": "bool",
         "pki_verify_revocation": "bool",
@@ -67,9 +153,10 @@ class AuthConfigService:
         "pki_crl_cache_seconds": "int",
         "pki_revocation_soft_fail": "bool",
         "pki_allow_password_fallback": "bool",
-        "pki_support_cac": "bool",
-        "pki_support_piv": "bool",
         "pki_mode": "string",
+        # Trusted-header (reverse-proxy) settings
+        "proxy_enabled": "bool",
+        "proxy_jit_provisioning": "bool",
         # Password policy settings
         "password_policy_enabled": "bool",
         "password_min_length": "int",
@@ -101,17 +188,19 @@ class AuthConfigService:
         "account_lockout_enabled": "bool",
         "rate_limit_auth_per_minute": "int",
         "rate_limit_enabled": "bool",
-        # Local auth lockout (frontend naming)
-        "max_login_attempts": "int",
-        "lockout_duration_minutes": "int",
-        # Frontend MFA naming
-        "mfa_issuer": "string",
-        # Frontend password naming
-        "password_require_numbers": "bool",
     }
+
+    #: Lazily-built reverse of ``ENV_TO_CONFIG_MAPPING`` (config key -> env var).
+    _CONFIG_TO_ENV: dict[str, str] = {}
 
     # Environment variable to config key mapping
     ENV_TO_CONFIG_MAPPING = {
+        # Local / identity source. ALLOW_OPEN_REGISTRATION was missing here, which
+        # is why the admin UI's self-registration toggle did nothing: the endpoint
+        # read the env var and the DB key had no env counterpart to migrate from.
+        "ALLOW_OPEN_REGISTRATION": "allow_registration",
+        "LOCAL_AUTH_ENABLED": "local_enabled",
+        "REQUIRE_ACCOUNT_APPROVAL": "require_account_approval",
         # LDAP
         "LDAP_ENABLED": "ldap_enabled",
         "LDAP_SERVER": "ldap_server",
@@ -131,20 +220,31 @@ class AuthConfigService:
         "LDAP_RECURSIVE_GROUPS": "ldap_recursive_groups",
         "LDAP_GROUP_ATTR": "ldap_group_attr",
         "LDAP_USER_SEARCH_FILTER": "ldap_user_search_filter",
-        # Keycloak
-        "KEYCLOAK_ENABLED": "keycloak_enabled",
-        "KEYCLOAK_SERVER_URL": "keycloak_server_url",
-        "KEYCLOAK_INTERNAL_URL": "keycloak_internal_url",
-        "KEYCLOAK_REALM": "keycloak_realm",
-        "KEYCLOAK_CLIENT_ID": "keycloak_client_id",
-        "KEYCLOAK_CLIENT_SECRET": "keycloak_client_secret",
-        "KEYCLOAK_CALLBACK_URL": "keycloak_callback_url",
-        "KEYCLOAK_ADMIN_ROLE": "keycloak_admin_role",
-        "KEYCLOAK_TIMEOUT": "keycloak_timeout",
-        "KEYCLOAK_VERIFY_AUDIENCE": "keycloak_verify_audience",
-        "KEYCLOAK_AUDIENCE": "keycloak_audience",
-        "KEYCLOAK_USE_PKCE": "keycloak_use_pkce",
-        "KEYCLOAK_VERIFY_ISSUER": "keycloak_verify_issuer",
+        # OIDC. Only the canonical spellings appear here: every retired variable
+        # name is translated onto its OIDC_* counterpart before Settings is built,
+        # by core/legacy_auth_env.py. That is the one place the old spelling lives,
+        # so `getattr(settings, env_var_for(key))` below resolves correctly for a
+        # deployment that still sets the historical names, without this table having
+        # to know they exist.
+        "OIDC_ENABLED": "oidc_enabled",
+        "OIDC_SERVER_URL": "oidc_server_url",
+        "OIDC_INTERNAL_URL": "oidc_internal_url",
+        "OIDC_DISCOVERY_URL": "oidc_discovery_url",
+        "OIDC_ISSUER": "oidc_issuer",
+        "OIDC_ROLES_CLAIM": "oidc_roles_claim",
+        "OIDC_SCOPES": "oidc_scopes",
+        "OIDC_ALLOWED_GROUPS": "oidc_allowed_groups",
+        "OIDC_BLOCKED_GROUPS": "oidc_blocked_groups",
+        "OIDC_REALM": "oidc_realm",
+        "OIDC_CLIENT_ID": "oidc_client_id",
+        "OIDC_CLIENT_SECRET": "oidc_client_secret",
+        "OIDC_CALLBACK_URL": "oidc_callback_url",
+        "OIDC_ADMIN_ROLE": "oidc_admin_role",
+        "OIDC_TIMEOUT": "oidc_timeout",
+        "OIDC_VERIFY_AUDIENCE": "oidc_verify_audience",
+        "OIDC_AUDIENCE": "oidc_audience",
+        "OIDC_USE_PKCE": "oidc_use_pkce",
+        "OIDC_VERIFY_ISSUER": "oidc_verify_issuer",
         # PKI
         "PKI_ENABLED": "pki_enabled",
         "PKI_CA_CERT_PATH": "pki_ca_cert_path",
@@ -156,6 +256,17 @@ class AuthConfigService:
         "PKI_CRL_CACHE_SECONDS": "pki_crl_cache_seconds",
         "PKI_REVOCATION_SOFT_FAIL": "pki_revocation_soft_fail",
         "PKI_TRUSTED_PROXIES": "pki_trusted_proxies",
+        # Trusted-header (reverse proxy)
+        "PROXY_ENABLED": "proxy_enabled",
+        "PROXY_TRUSTED_PROXIES": "proxy_trusted_proxies",
+        "PROXY_EMAIL_HEADER": "proxy_email_header",
+        "PROXY_NAME_HEADER": "proxy_name_header",
+        "PROXY_GROUPS_HEADER": "proxy_groups_header",
+        "PROXY_GROUPS_SEPARATOR": "proxy_groups_separator",
+        "PROXY_ROLE_HEADER": "proxy_role_header",
+        "PROXY_SHARED_SECRET": "proxy_shared_secret",
+        "PROXY_ALLOWED_DOMAINS": "proxy_allowed_domains",
+        "PROXY_JIT_PROVISIONING": "proxy_jit_provisioning",
         # Password policy
         "PASSWORD_POLICY_ENABLED": "password_policy_enabled",
         "PASSWORD_MIN_LENGTH": "password_min_length",
@@ -193,113 +304,17 @@ class AuthConfigService:
         "RATE_LIMIT_ENABLED": "rate_limit_enabled",
     }
 
-    # Config keys grouped by category
-    CONFIG_CATEGORIES = {
-        "local": [
-            "local_enabled",
-            "allow_registration",
-            "require_email_verification",
-            "password_min_length",
-            "password_require_uppercase",
-            "password_require_lowercase",
-            "password_require_numbers",
-            "password_require_special",
-            "password_max_age_days",
-            "password_history_count",
-            "mfa_enabled",
-            "mfa_required",
-            "mfa_issuer",
-            "max_login_attempts",
-            "lockout_duration_minutes",
-        ],
-        "ldap": [
-            "ldap_enabled",
-            "ldap_server",
-            "ldap_port",
-            "ldap_use_ssl",
-            "ldap_use_tls",
-            "ldap_bind_dn",
-            "ldap_bind_password",
-            "ldap_search_base",
-            "ldap_username_attr",
-            "ldap_email_attr",
-            "ldap_name_attr",
-            "ldap_user_search_filter",
-            "ldap_timeout",
-            "ldap_admin_users",
-            "ldap_admin_groups",
-            "ldap_user_groups",
-            "ldap_recursive_groups",
-            "ldap_group_attr",
-        ],
-        "keycloak": [
-            "keycloak_enabled",
-            "keycloak_server_url",
-            "keycloak_internal_url",
-            "keycloak_realm",
-            "keycloak_client_id",
-            "keycloak_client_secret",
-            "keycloak_callback_url",
-            "keycloak_admin_role",
-            "keycloak_timeout",
-            "keycloak_verify_audience",
-            "keycloak_audience",
-            "keycloak_use_pkce",
-            "keycloak_verify_issuer",
-        ],
-        "pki": [
-            "pki_enabled",
-            "pki_ca_cert_path",
-            "pki_verify_revocation",
-            "pki_cert_header",
-            "pki_cert_dn_header",
-            "pki_admin_dns",
-            "pki_ocsp_timeout_seconds",
-            "pki_crl_cache_seconds",
-            "pki_revocation_soft_fail",
-            "pki_trusted_proxies",
-            "pki_mode",
-            "pki_allow_password_fallback",
-        ],
-        "password_policy": [
-            "password_policy_enabled",
-            "password_min_length",
-            "password_require_uppercase",
-            "password_require_lowercase",
-            "password_require_digit",
-            "password_require_special",
-            "password_history_count",
-            "password_max_age_days",
-        ],
-        "mfa": [
-            "mfa_enabled",
-            "mfa_required",
-            "mfa_issuer_name",
-            "mfa_backup_code_count",
-            "mfa_token_expire_minutes",
-        ],
-        "session": [
-            "jwt_access_token_expire_minutes",
-            "jwt_refresh_token_expire_days",
-            "session_idle_timeout_minutes",
-            "session_absolute_timeout_minutes",
-            "max_concurrent_sessions",
-            "concurrent_session_policy",
-        ],
-        "banner": [
-            "login_banner_enabled",
-            "login_banner_text",
-            "login_banner_classification",
-        ],
-        "lockout": [
-            "account_lockout_threshold",
-            "account_lockout_duration_minutes",
-            "account_lockout_progressive",
-            "account_lockout_max_duration_minutes",
-            "account_lockout_enabled",
-            "rate_limit_auth_per_minute",
-            "rate_limit_enabled",
-        ],
+    #: Config keys grouped by category, derived from the per-category Pydantic
+    #: models in ``app/schemas/auth_config.py``.
+    #:
+    #: It was a hand-maintained literal that drifted from those models and listed
+    #: eight keys under TWO categories each (the password-policy and MFA keys the
+    #: admin UI's Local tab also renders). ``auth_config.config_key`` is globally
+    #: UNIQUE, so such a key kept whichever category wrote it first and then went
+    #: missing from the other tab's ``GET /{category}``. One source of truth means
+    #: the duplicate cannot come back: a key lives in exactly one model.
+    CONFIG_CATEGORIES: dict[str, list[str]] = {
+        category: list(model.model_fields) for category, model in CATEGORY_SCHEMAS.items()
     }
 
     @staticmethod
@@ -320,42 +335,102 @@ class AuthConfigService:
 
         value: str | None = config.config_value  # type: ignore[assignment]
         if config.is_sensitive and decrypt and value:
+            # Undecryptable means UNSET, never "hand back the ciphertext".
+            #
+            # This used to return the stored ciphertext on failure, and returned it
+            # silently when decrypt_api_key merely returned falsy without raising
+            # (issue #324). Callers use these values as real credentials — an LDAP
+            # bind password, an OIDC client secret — so ciphertext is at best a
+            # baffling auth failure and at worst an encrypted blob shipped to an
+            # external IdP or rendered in the admin UI.
+            #
+            # Returning None makes the sole caller (`_get_effective`, which tests
+            # `if db_value is not None`) fall through to the env value and then the
+            # coded default: a known source instead of garbage.
             try:
                 decrypted = decrypt_api_key(value)
-                if decrypted:
-                    value = decrypted
-            except Exception as e:
-                logger.warning(f"Failed to decrypt config value for {key}: {e}")
-                # Return encrypted value if decryption fails
+            except Exception:
+                logger.exception(
+                    "Failed to decrypt sensitive auth config %s; treating it as unset. "
+                    "Check ENCRYPTION_KEY — a rotated or lost key makes stored secrets "
+                    "unrecoverable and they must be re-entered.",
+                    key,
+                )
+                return None
+
+            if not decrypted:
+                logger.error(
+                    "Decrypting sensitive auth config %s produced an empty value; "
+                    "treating it as unset rather than returning the stored ciphertext.",
+                    key,
+                )
+                return None
+
+            value = decrypted
 
         return value
 
     @staticmethod
-    def _convert_value(value: str | None, data_type: str) -> Any:
-        """Convert string value to appropriate type.
+    def _convert_value(value: str | None, data_type: str, key: str | None = None) -> Any:
+        """Convert a stored string value to its declared type.
+
+        A value that does not parse falls back to *key*'s schema default, never to
+        the zero value. ``value.lower() in ("true", "1", "yes", "on")`` read every
+        malformed string as ``False``, so one bad character in
+        ``oidc_verify_issuer``, ``oidc_verify_audience`` or
+        ``ldap_use_ssl`` silently turned that security control OFF. Failing open
+        because a string did not parse is the bug; the declared default is a known,
+        safe source. Parse failures are logged so the bad row is fixable.
 
         Args:
-            value: String value from database
-            data_type: Target data type (string, bool, int, json)
+            value: String value from the database.
+            data_type: Target data type (string, bool, int, json).
+            key: Configuration key, used to look up the schema default. Without it
+                only the generic zero value is available.
 
         Returns:
-            Converted value
+            Converted value.
         """
         if value is None:
-            defaults = {"bool": False, "int": 0, "json": {}}
-            return defaults.get(data_type)
+            generic = {"bool": False, "int": 0, "json": {}}.get(data_type)
+            return coded_default(key, generic) if key else generic
 
         if data_type == "bool":
-            return value.lower() in ("true", "1", "yes", "on")
+            lowered = value.strip().lower()
+            if lowered in BOOL_TRUE_VALUES:
+                return True
+            if lowered in BOOL_FALSE_VALUES:
+                return False
+            fallback = coded_default(key, False) if key else False
+            logger.error(
+                "Auth config %s holds %r, which is not a boolean; using the coded default %r. "
+                "A security control must not be disabled just because a value failed to parse.",
+                key or "<unknown>",
+                value,
+                fallback,
+            )
+            return fallback
         elif data_type == "int":
             try:
                 return int(value)
             except (ValueError, TypeError):
-                return 0
+                fallback = coded_default(key, 0) if key else 0
+                logger.error(
+                    "Auth config %s holds %r, which is not an integer; using the coded default %r.",
+                    key or "<unknown>",
+                    value,
+                    fallback,
+                )
+                return fallback
         elif data_type == "json":
             try:
                 return json.loads(value)
             except (json.JSONDecodeError, TypeError):
+                logger.error(
+                    "Auth config %s holds %r, which is not valid JSON; using an empty object.",
+                    key or "<unknown>",
+                    value,
+                )
                 return {}
 
         return value
@@ -366,7 +441,7 @@ class AuthConfigService:
 
         Args:
             db: Database session
-            category: Configuration category (ldap, keycloak, pki, etc.)
+            category: Configuration category (ldap, oidc, pki, etc.)
             decrypt: Whether to decrypt sensitive values
 
         Returns:
@@ -376,17 +451,53 @@ class AuthConfigService:
         result: dict[str, Any] = {}
 
         for config in configs:
+            if config.config_key in AuthConfigService.RETIRED_KEYS:
+                # A row an older panel wrote for a key that no longer exists.
+                # Serving it would re-render a control that changes nothing.
+                continue
+
             value = config.config_value  # type: ignore[assignment]
+
+            # A sensitive value NEVER leaves this function in readable form when
+            # the caller did not ask for it decrypted. The masking below used to
+            # live inside the `and decrypt` branch, so the one caller that passes
+            # decrypt=False (the admin GET /{category} endpoint) skipped it and
+            # returned the raw CIPHERTEXT to the browser — the opposite of what
+            # the endpoint's own comment claimed.
+            if config.is_sensitive and not decrypt:
+                result[config.config_key] = SENSITIVE_SET_SENTINEL if value else None
+                continue
+
             if config.is_sensitive and decrypt and value:
                 try:
                     decrypted = decrypt_api_key(value)  # type: ignore[call-overload]
+                    if not decrypted:
+                        logger.error(
+                            "Decrypting sensitive auth config %s produced an empty value; "
+                            "masking it. Check ENCRYPTION_KEY.",
+                            config.config_key,
+                        )
+                    # Masked, not the ciphertext. This surface feeds the admin UI, so
+                    # the placeholder is deliberate — but it must never be usable as a
+                    # credential, and the failure must be visible (issue #324): both
+                    # branches previously masked in silence.
                     value = decrypted or "***ENCRYPTED***"  # type: ignore[assignment]
                 except Exception:
+                    logger.exception(
+                        "Failed to decrypt sensitive auth config %s; masking it. "
+                        "Check ENCRYPTION_KEY — a rotated or lost key makes stored "
+                        "secrets unrecoverable and they must be re-entered.",
+                        config.config_key,
+                    )
                     value = "***ENCRYPTED***"  # type: ignore[assignment]
 
             # Convert to appropriate type
             data_type = config.data_type or "string"
-            result[config.config_key] = AuthConfigService._convert_value(value, data_type)  # type: ignore[index,arg-type]
+            result[config.config_key] = AuthConfigService._convert_value(  # type: ignore[index]
+                value,  # type: ignore[arg-type]
+                data_type,
+                config.config_key,  # type: ignore[arg-type]
+            )
 
         return result
 
@@ -435,6 +546,8 @@ class AuthConfigService:
         # Encrypt sensitive values
         encrypted_value = encrypt_api_key(str_value) if is_sensitive and str_value else str_value
 
+        requires_restart = key in AuthConfigService.RESTART_REQUIRED_KEYS
+
         # Get existing config
         config: AuthConfig | None = (
             db.query(AuthConfig).filter(AuthConfig.config_key == key).first()
@@ -445,6 +558,21 @@ class AuthConfigService:
             # Update existing
             config.config_value = encrypted_value  # type: ignore[assignment]
             config.data_type = data_type  # type: ignore[assignment]
+            # Re-derived on every write, not just on create: rows written before
+            # the flag was populated would otherwise stay False forever.
+            config.requires_restart = requires_restart  # type: ignore[assignment]
+            # Heal a stale category. `config_key` is globally UNIQUE and this branch
+            # never rewrote `category`, so a key that used to be listed under two
+            # categories stayed pinned to whichever tab wrote it first — and then
+            # vanished from the other tab's GET, which filters by category.
+            if config.category != category:
+                logger.info(
+                    "Auth config '%s' moving from category '%s' to '%s'",
+                    key,
+                    config.category,
+                    category,
+                )
+                config.category = category  # type: ignore[assignment]
             config.updated_by = user_id  # type: ignore[assignment]
             config.updated_at = datetime.now(UTC)  # type: ignore[assignment]
             if description is not None:
@@ -459,6 +587,7 @@ class AuthConfigService:
                 category=category,
                 data_type=data_type,
                 description=description,
+                requires_restart=requires_restart,
                 created_by=user_id,
                 updated_by=user_id,
             )
@@ -481,6 +610,12 @@ class AuthConfigService:
 
         db.commit()
         db.refresh(config)
+
+        # Publish the new value to the enforcement points that hold no session —
+        # the password policy and the lockout counter read through the
+        # process-wide layer, and without this they would keep enforcing the
+        # previous value for up to a cache generation after a successful save.
+        prime_process_auth_settings(db, key)
 
         logger.info(
             f"Auth config '{key}' {change_type}d by user {user_id} "
@@ -531,6 +666,10 @@ class AuthConfigService:
         db.delete(config)
         db.commit()
 
+        # The row is gone, so the effective value reverts to .env / the coded
+        # default. Re-resolve rather than leaving the deleted value cached.
+        prime_process_auth_settings(db, key)
+
         logger.info(f"Auth config '{key}' deleted by user {user_id}")
         return True
 
@@ -544,6 +683,10 @@ class AuthConfigService:
     ) -> dict[str, AuthConfig]:
         """Update multiple configuration values for a category.
 
+        Every key is checked against the category's schema before anything is
+        written: unknown keys, unparseable values, out-of-range numbers and
+        rejected combinations all fail here rather than being stored verbatim.
+
         Args:
             db: Database session
             category: Configuration category
@@ -553,14 +696,29 @@ class AuthConfigService:
 
         Returns:
             Dictionary of updated AuthConfig objects
+
+        Raises:
+            ValueError: The payload is invalid. The HTTP layer turns this into a
+                400 naming the offending keys.
         """
+        config_dict = validate_category_config(
+            category,
+            config_dict,
+            current=AuthConfigService._cross_field_state(db, category, config_dict),
+        )
+
         results: dict[str, AuthConfig] = {}
 
         for key, value in config_dict.items():
             is_sensitive = key in AuthConfigService.SENSITIVE_KEYS
 
-            # Skip empty sensitive values (don't overwrite with empty)
-            if is_sensitive and (value is None or value == ""):
+            # Leave the stored secret alone unless the caller actually typed a new
+            # one. Skipping only None/"" was not enough: the read path handed the
+            # client a placeholder, the client submitted it back verbatim, and it
+            # was encrypted over the real credential.
+            if is_sensitive and (
+                value is None or (isinstance(value, str) and value in SENSITIVE_NO_CHANGE_VALUES)
+            ):
                 continue
 
             config = AuthConfigService.set_config(
@@ -575,6 +733,32 @@ class AuthConfigService:
             results[key] = config
 
         return results
+
+    @staticmethod
+    def _cross_field_state(
+        db: Session | None, category: str, config_dict: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Load the currently effective values a category's joint rules need.
+
+        Only keys the payload does NOT carry are read; the payload wins for the
+        rest. Without this the joint rules would only ever see one half of the
+        pair and could be walked around by saving one field at a time.
+
+        Args:
+            db: Database session, or None when no DB is available.
+            category: Configuration category being written.
+            config_dict: The incoming payload.
+
+        Returns:
+            Currently effective values for the category's cross-field keys.
+        """
+        state: dict[str, Any] = {}
+        for key in CROSS_FIELD_KEYS.get(category, ()):
+            if key in config_dict:
+                continue
+            value = AuthConfigService.get_effective_config(db, key) if db is not None else None
+            state[key] = coded_default(key) if value is None else value
+        return state
 
     @staticmethod
     def get_effective_config(db: Session, key: str) -> Any:
@@ -592,11 +776,26 @@ class AuthConfigService:
         if db_value is not None:
             # Convert to appropriate type
             data_type = AuthConfigService.DATA_TYPE_MAPPING.get(key, "string")
-            return AuthConfigService._convert_value(db_value, data_type)
+            return AuthConfigService._convert_value(db_value, data_type, key)
 
         # Fall back to environment/settings
-        env_key = key.upper()
-        return getattr(settings, env_key, None)
+        return getattr(settings, AuthConfigService.env_var_for(key), None)
+
+    @staticmethod
+    def env_var_for(config_key: str) -> str:
+        """Return the ``Settings`` attribute backing *config_key*.
+
+        Most keys are just the upper-cased name, but a handful deliberately are
+        not — ``allow_registration`` is ``ALLOW_OPEN_REGISTRATION``, for instance.
+        ``ENV_TO_CONFIG_MAPPING`` recorded those pairs and nothing consulted it,
+        so the mismatched keys silently resolved to ``None`` and could never be
+        migrated out of the environment.
+        """
+        if not AuthConfigService._CONFIG_TO_ENV:
+            AuthConfigService._CONFIG_TO_ENV.update(
+                {v: k for k, v in AuthConfigService.ENV_TO_CONFIG_MAPPING.items()}
+            )
+        return AuthConfigService._CONFIG_TO_ENV.get(config_key, config_key.upper())
 
     @staticmethod
     def get_audit_log(
@@ -612,21 +811,34 @@ class AuthConfigService:
             db: Database session
             category: Optional category filter
             config_key: Optional specific key filter
-            limit: Maximum number of entries to return
+            limit: Maximum number of entries to return (clamped to
+                ``MAX_AUDIT_LOG_LIMIT``)
             offset: Number of entries to skip
 
         Returns:
             List of audit log entries
+
+        Raises:
+            ValueError: *category* is not a known category. It used to fall through
+                ``CONFIG_CATEGORIES.get(category, [])`` to an EMPTY key list, which
+                skipped the filter entirely — so ``/audit/anything`` returned the
+                whole unfiltered audit log for every category at once.
         """
         query = db.query(AuthConfigAudit)
 
         if config_key:
             query = query.filter(AuthConfigAudit.config_key == config_key)
         elif category:
-            # Get all keys for this category
-            category_keys = AuthConfigService.CONFIG_CATEGORIES.get(category, [])
-            if category_keys:
-                query = query.filter(AuthConfigAudit.config_key.in_(category_keys))
+            category_keys = AuthConfigService.CONFIG_CATEGORIES.get(category)
+            if category_keys is None:
+                raise ValueError(
+                    f"Unknown configuration category '{category}'. "
+                    f"Must be one of: {', '.join(AuthConfigService.CONFIG_CATEGORIES)}"
+                )
+            query = query.filter(AuthConfigAudit.config_key.in_(category_keys))
+
+        limit = max(1, min(limit, MAX_AUDIT_LOG_LIMIT))
+        offset = max(0, offset)
 
         results: list[AuthConfigAudit] = (
             query.order_by(AuthConfigAudit.created_at.desc()).offset(offset).limit(limit).all()
@@ -656,8 +868,10 @@ class AuthConfigService:
                 if existing:
                     continue
 
-                # Find corresponding env variable
-                env_key = key.upper()
+                # Find corresponding env variable. Not simply key.upper(): a few
+                # keys deliberately differ (allow_registration is
+                # ALLOW_OPEN_REGISTRATION), and those silently resolved to None.
+                env_key = AuthConfigService.env_var_for(key)
                 env_value = getattr(settings, env_key, None)
 
                 if env_value is not None:
@@ -690,10 +904,9 @@ class AuthConfigService:
         """
         return {
             "ldap_enabled": bool(AuthConfigService.get_effective_config(db, "ldap_enabled")),
-            "keycloak_enabled": bool(
-                AuthConfigService.get_effective_config(db, "keycloak_enabled")
-            ),
+            "oidc_enabled": bool(AuthConfigService.get_effective_config(db, "oidc_enabled")),
             "pki_enabled": bool(AuthConfigService.get_effective_config(db, "pki_enabled")),
+            "proxy_enabled": bool(AuthConfigService.get_effective_config(db, "proxy_enabled")),
             "mfa_enabled": bool(AuthConfigService.get_effective_config(db, "mfa_enabled")),
             "password_policy_enabled": bool(
                 AuthConfigService.get_effective_config(db, "password_policy_enabled")

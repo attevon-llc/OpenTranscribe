@@ -26,6 +26,7 @@
     watch_source_enabled: true,
     local_enabled: false,
     fs_events_enabled: false,
+    fs_events_mode: 'auto',
   };
 
   const dispatch = createEventDispatcher();
@@ -330,7 +331,7 @@
       const res = await testWatchSource(editingSource.uuid);
       testResult = { success: res.success, message: res.message };
     } catch (err) {
-      testResult = { success: false, message: getErrorMessage(err, 'Test failed') };
+      testResult = { success: false, message: getErrorMessage(err, $t('settings.watchSources.testFailed')) };
     } finally {
       testing = false;
     }
@@ -362,7 +363,7 @@
           })
         : res.error || $t('settings.watchSources.regexNoMatch');
     } catch (err) {
-      regexResult = getErrorMessage(err, 'Test failed');
+      regexResult = getErrorMessage(err, $t('settings.watchSources.testFailed'));
     }
   }
 

@@ -40,6 +40,10 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   `redaction` queue → the `celery-redaction` container (the only `PRELOAD_REDACTION_MODELS=true`).
 - Read surfaces: `formatting_service::_apply_redaction`, `subtitle_service` (SRT/VTT/TXT),
   `utils/transcript_builders` (redact-before-LLM), `search/hybrid_search_service` (snippets).
+- **Redact-before-LLM is centralized in `llm_guard.py`.** Every path that ships transcript text
+  to a provider resolves its config through `resolve_llm_masking(db, media_file)` — summarization,
+  speaker identification and topic extraction (chat has its own, see below). Do not call
+  `resolve_effective_config` directly from a new LLM path; see the gotcha below for why.
 - Reveal via `?redact=false` → `cfg.reveal_categories(...)` in `api/endpoints/files/crud.py`
   (`_resolve_redaction_for_request`) and `files/subtitles.py`; audited as
   `transcript.view_unredacted`. **Admin-forced categories never reveal.**
@@ -52,10 +56,28 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
 
 ## Gotchas
 
+- **⚠️ `mask_segment` with no cached spans masks NOTHING and returns the text unchanged.** This is
+  the trap behind redact-before-LLM: `_dispatch_redaction` queues detection from the *same*
+  post-processing step that queues summarization / speaker-ID / topic-extraction, onto a
+  *different* queue. Nothing orders them, so the LLM tasks routinely reach a transcript whose
+  `TranscriptSegment.redactions` are still NULL — the call looks masked and isn't.
+  `resolve_llm_masking` is what closes this: it gates on `redaction_status == done` and raises
+  `RedactionNotReadyError` otherwise, and `defer_for_redaction(self, exc)` re-queues the bound task
+  (bounded by `REDACTION_LLM_MAX_DEFERRALS`) instead of sending raw text.
+  Chat can't wait mid-request, so it masks inline instead (`services/chat/redactor.py`) — same
+  guarantee, different tradeoff.
+- **Celery's `Retry` subclasses `Exception`.** All three LLM tasks wrap their body in a broad
+  `except Exception` that would swallow the deferral and report a failure, so each re-raises
+  `Retry` first. Any new deferring task needs that arm too.
+- **`transcript_builders.mask_segment_text` fails CLOSED** — a masking error yields
+  `REDACTION_LLM_FAILSAFE_TEXT` (`[redacted]`), never the original text. It used to return the
+  input, which turned any masking bug into a silent leak. `build_speaker_segments` masks *before*
+  truncating to 200 chars so the window can't slice a mask open.
 - **Redaction is OPT-OUT (`DEFAULT_REDACTION_ENABLED = False`) and detection is gated on it.**
   `tasks/transcription/postprocess.py::_dispatch_redaction` skips the scan when the owner has it
-  off; `redaction_task.py`'s docstring still claims it "runs unconditionally" — **stale**.
-  Never-scanned files are dispatched lazily on first read.
+  off. Never-scanned files are dispatched lazily on first read, so an existing transcript with no
+  spans is expected rather than a bug. (`redaction_task.py`'s docstring claimed the opposite until
+  #296 — it now documents the gate.)
 - **Enabling redaction withholds the transcript** until detection finishes:
   `crud.py::_redaction_pending` returns `redaction_pending: True` for `None|pending|processing`
   (`done`/`failed` never block). Usual cause of "my transcript is empty".

@@ -150,12 +150,13 @@ class TestConcurrentSessionEnforcementAC10:
         Verifies that the implementation uses SELECT FOR UPDATE or similar
         mechanism to prevent race conditions when checking/modifying sessions.
         """
-        # Read the auth module source to verify atomic locking
-        import inspect
+        # Read the auth package source to verify atomic locking. auth is a
+        # package, so inspect.getsource() on it would only see __init__.py.
+        from pathlib import Path
 
         from app.api.endpoints import auth
 
-        source = inspect.getsource(auth)
+        source = "\n".join(p.read_text() for p in sorted(Path(auth.__file__).parent.glob("*.py")))
 
         # Should use with_for_update() for atomic locking
         assert "with_for_update" in source, (
@@ -171,6 +172,18 @@ class TestLoginBannerAcknowledgmentAC8:
     proceeding.
     """
 
+    # get_login_banner() resolves login_banner_* via auth_settings.get_bool(), which is
+    # DB > .env > coded default (app/api/endpoints/auth/methods.py). Patching
+    # settings.LOGIN_BANNER_ENABLED only moves the .env layer and is silently ignored
+    # whenever a real login_banner_enabled row already exists in auth_config — which it
+    # does on any environment where the banner was ever configured through the admin UI.
+    # These tests write the DB row directly (the same path AuthConfigService.set_config
+    # takes for a real admin change) so they exercise the precedence the endpoint actually
+    # implements and pass independent of ambient DB state. Serialized to one xdist worker
+    # like test_auth_config_integration.py, since both write the same shared
+    # login_banner_* rows and racing UPDATEs against them can deadlock under -n auto.
+    pytestmark = pytest.mark.xdist_group("auth_config")
+
     def test_login_banner_config_exists(self):
         """Verify login banner configuration settings exist."""
         from app.core.config import settings
@@ -179,29 +192,65 @@ class TestLoginBannerAcknowledgmentAC8:
         assert hasattr(settings, "LOGIN_BANNER_TEXT")
         assert hasattr(settings, "LOGIN_BANNER_CLASSIFICATION")
 
-    def test_get_login_banner_when_disabled(self, client):
+    def test_get_login_banner_when_disabled(self, client, db_session, admin_user):
         """Test banner endpoint returns disabled state when banner is off."""
-        with patch("app.core.config.settings.LOGIN_BANNER_ENABLED", False):
-            response = client.get("/api/auth/banner")
-            assert response.status_code == 200
-            data = response.json()
-            assert data["enabled"] is False
+        from app.services.auth_config_service import AuthConfigService
 
-    def test_get_login_banner_when_enabled(self, client):
+        AuthConfigService.set_config(
+            db=db_session,
+            key="login_banner_enabled",
+            value=False,
+            is_sensitive=False,
+            category="banner",
+            user_id=admin_user.id,
+            data_type="bool",
+        )
+
+        response = client.get("/api/auth/banner")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["enabled"] is False
+
+    def test_get_login_banner_when_enabled(self, client, db_session, admin_user):
         """Test banner endpoint returns banner content when enabled."""
+        from app.services.auth_config_service import AuthConfigService
+
         test_banner_text = "This is a US Government system. Unauthorized access prohibited."
         test_classification = "UNCLASSIFIED"
 
-        with (
-            patch("app.core.config.settings.LOGIN_BANNER_ENABLED", True),
-            patch("app.core.config.settings.LOGIN_BANNER_TEXT", test_banner_text),
-            patch("app.core.config.settings.LOGIN_BANNER_CLASSIFICATION", test_classification),
-        ):
-            response = client.get("/api/auth/banner")
-            assert response.status_code == 200
-            data = response.json()
-            assert data["enabled"] is True
-            assert data["requires_acknowledgment"] is True
+        AuthConfigService.set_config(
+            db=db_session,
+            key="login_banner_enabled",
+            value=True,
+            is_sensitive=False,
+            category="banner",
+            user_id=admin_user.id,
+            data_type="bool",
+        )
+        AuthConfigService.set_config(
+            db=db_session,
+            key="login_banner_text",
+            value=test_banner_text,
+            is_sensitive=False,
+            category="banner",
+            user_id=admin_user.id,
+        )
+        AuthConfigService.set_config(
+            db=db_session,
+            key="login_banner_classification",
+            value=test_classification,
+            is_sensitive=False,
+            category="banner",
+            user_id=admin_user.id,
+        )
+
+        response = client.get("/api/auth/banner")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["enabled"] is True
+        assert data["requires_acknowledgment"] is True
+        assert data["text"] == test_banner_text
+        assert data["classification"] == test_classification
 
     def test_banner_acknowledgment_requires_authentication(self, client):
         """Test that banner acknowledgment requires authentication."""
@@ -589,16 +638,26 @@ class TestAtomicLockoutMechanism:
         assert isinstance(is_locked, bool)
 
     def test_check_and_record_attempt_atomic_redis(self):
-        """Test that Redis implementation uses atomic operations."""
+        """Test that the Redis implementation uses a genuinely atomic operation.
+
+        This used to assert that the source mentioned ``pipeline`` and ``watch``.
+        Both strings were present and the code was still NOT atomic: ``WATCH`` was
+        issued on a pooled connection while ``pipeline(True)`` acquired a different
+        one, so the transaction guarded nothing and two concurrent failed logins
+        could both write the same attempt count. It is now a server-side
+        compare-and-set script, so assert on that instead.
+        """
         import inspect
 
         from app.auth import lockout
 
         source = inspect.getsource(lockout)
 
-        # Should use Redis WATCH/pipeline for atomic operations
-        assert "pipeline" in source, "Should use Redis pipeline for atomic operations"
-        assert "watch" in source.lower(), "Should use Redis WATCH for optimistic locking"
+        assert "_CAS_LUA" in source, "Should use a compare-and-set Lua script"
+        assert "register_script" in source or "eval" in source, (
+            "The CAS script must actually be executed server-side"
+        )
+        assert hasattr(lockout, "_cas_write"), "Conditional write helper should exist"
 
     def test_check_and_record_attempt_atomic_memory(self):
         """Test that in-memory implementation uses thread locking."""

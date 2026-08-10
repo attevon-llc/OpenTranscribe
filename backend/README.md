@@ -353,7 +353,6 @@ Alembic is the sole authority for database schema in all environments. Migration
 # Development
 ./opentr.sh reset dev              # Drop and recreate with full migration chain
 python scripts/db_inspect.py       # Inspect database state
-python scripts/create_admin.py     # Manually create admin user
 
 # Migrations
 alembic upgrade head               # Apply pending migrations
@@ -366,7 +365,7 @@ alembic downgrade -1               # Roll back one migration
 ### Task System
 - **Celery** with Redis broker (three worker types: GPU worker, CPU worker, embedding worker)
 - **Flower** monitoring at http://localhost:5175/flower
-- **3-stage transcription pipeline**: `preprocess_task` → `gpu_transcription_task` → `postprocess_task`
+- **3-stage transcription pipeline**: `preprocess_for_transcription` → `transcribe_gpu_task` → `finalize_transcription`
 - Async enrichment decoupling — postprocess no longer blocks GPU for enrichment
 
 ### Worker Types

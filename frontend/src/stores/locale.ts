@@ -1,11 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import i18next from 'i18next';
-import {
-  DEFAULT_LANGUAGE,
-  isValidLanguageCode,
-  SUPPORTED_LANGUAGES,
-  type Language,
-} from '$lib/i18n/languages';
+import { DEFAULT_LANGUAGE, isValidLanguageCode, SUPPORTED_LANGUAGES } from '$lib/i18n/languages';
 
 // Get initial locale (mirrors theme.js pattern)
 const getInitialLocale = (): string => {
@@ -32,6 +27,20 @@ if (typeof window !== 'undefined') {
 }
 
 // Create the locale store
+/**
+ * Switch i18next to `newLocale`, fetching that locale's chunk first.
+ *
+ * Locale strings are code-split (one chunk per language), so `changeLanguage`
+ * must not run before the chunk lands or every `$t(...)` renders its raw
+ * dot-notation key. The UI keeps showing the previous language for the duration
+ * of the fetch instead of flashing keys.
+ */
+const applyLanguage = async (newLocale: string): Promise<void> => {
+  const { ensureLocaleLoaded } = await import('$lib/i18n');
+  await ensureLocaleLoaded(newLocale);
+  await i18next.changeLanguage(newLocale);
+};
+
 const createLocaleStore = () => {
   const { subscribe, set, update } = writable<string>(getInitialLocale());
 
@@ -47,9 +56,9 @@ const createLocaleStore = () => {
           localStorage.setItem('locale', newLocale);
         }
 
-        // Update i18next language
+        // Update i18next language (loads the locale chunk first)
         if (i18next.isInitialized) {
-          i18next.changeLanguage(newLocale);
+          void applyLanguage(newLocale);
         }
 
         // Update document lang attribute for accessibility
@@ -89,4 +98,4 @@ export const t = derived(locale, () => {
 });
 
 // Export supported languages for UI
-export { SUPPORTED_LANGUAGES, type Language };
+export { SUPPORTED_LANGUAGES };

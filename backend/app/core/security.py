@@ -1,3 +1,4 @@
+import contextlib
 import uuid
 from datetime import UTC
 from datetime import datetime
@@ -7,11 +8,16 @@ from typing import Any
 from fastapi import Cookie
 from fastapi import HTTPException
 from fastapi import status
-from jose import JWTError
-from jose import jwt
+from joserfc import jwt
+from joserfc.errors import JoseError
+from joserfc.jwk import OctKey
+from joserfc.jws import extract_compact
+from joserfc.jwt import JWTClaimsRegistry
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
+from app.auth.constants import TOKEN_TYPE_ACCESS
+from app.auth.utils import local_password_allowed
 from app.core.config import settings
 from app.models.user import User
 
@@ -128,13 +134,15 @@ def create_access_token(
         "iat": now,
         "jti": str(uuid.uuid4()),  # JWT ID for token revocation support
         "alg_version": "v3" if algorithm == "HS512" else "v2",  # Track algorithm version
+        # Purpose binding — see auth.constants.TOKEN_TYPE_ACCESS.
+        "type": TOKEN_TYPE_ACCESS,
     }
 
     if additional_claims:
         to_encode.update(additional_claims)
 
-    encoded_jwt: str = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=algorithm)  # type: ignore[no-any-return]
-    return encoded_jwt
+    key = OctKey.import_key(settings.JWT_SECRET_KEY)
+    return jwt.encode({"alg": algorithm}, to_encode, key, algorithms=[algorithm])
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -241,9 +249,14 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
     if not user:
         return None
 
-    # Only allow password auth for local users or users with local fallback enabled.
-    # LDAP users never have a local password; PKI/Keycloak users need explicit opt-in.
-    if user.auth_type != "local" and not getattr(user, "allow_local_fallback", False):
+    # One definition of the rule, shared with the raw-SQL path in
+    # app.auth.direct_auth. This check used to be inlined here WITHOUT the LDAP
+    # hard-block that direct_auth had, so an LDAP account with
+    # allow_local_fallback set reached the password comparison below.
+    allowed, _reason = local_password_allowed(
+        str(user.auth_type), bool(getattr(user, "allow_local_fallback", False))
+    )
+    if not allowed:
         return None
 
     # Empty password hash means user cannot authenticate locally
@@ -268,9 +281,18 @@ def get_token_from_cookie(access_token: str | None = Cookie(None)) -> str:
     return access_token
 
 
-def verify_token(token: str) -> dict[str, Any]:
+def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> dict[str, Any]:
     """
     Verify a JWT token and return its payload.
+
+    Args:
+        token: The encoded JWT.
+        expected_type: Required value of the ``type`` claim. Defaults to
+            ``access`` so a caller must opt out deliberately; pass ``None`` only
+            when the token's purpose is checked elsewhere. This is what stops an
+            MFA half-token or a refresh token from being replayed as an access
+            token — both are signed with the same key and, in non-FIPS mode, an
+            algorithm this function accepts.
 
     Supports dual algorithm verification for FIPS 140-3 migration:
     - In compatible mode: tries HS512 first, falls back to HS256
@@ -285,11 +307,8 @@ def verify_token(token: str) -> dict[str, Any]:
     """
     # Check token header algorithm for audit logging
     token_algorithm = None
-    try:
-        header = jwt.get_unverified_header(token)
-        token_algorithm = header.get("alg")
-    except JWTError:
-        pass  # Will be handled by decode below
+    with contextlib.suppress(JoseError):  # unparseable header is handled by decode below
+        token_algorithm = extract_compact(token.encode()).headers().get("alg")
 
     # Determine which algorithms to accept
     is_fips_140_3 = (
@@ -312,9 +331,19 @@ def verify_token(token: str) -> dict[str, Any]:
             allowed_algorithms.append(settings.JWT_ALGORITHM_V3)
 
     try:
-        payload: dict[str, Any] = jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=allowed_algorithms
-        )  # type: ignore[no-any-return]
+        key = OctKey.import_key(settings.JWT_SECRET_KEY)
+        token_obj = jwt.decode(token, key, algorithms=allowed_algorithms)
+        # joserfc verifies the signature/algorithm only — exp is not checked
+        # automatically (unlike python-jose), so it's validated explicitly here.
+        JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
+        payload: dict[str, Any] = token_obj.claims
+
+        if expected_type is not None and payload.get("type") != expected_type:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
         # Audit log algorithm fallback in FIPS 140-3 mode
         if token_algorithm == "HS256" and is_fips_140_3:  # noqa: S105 - JWT algorithm name, not a password  # nosec B105
@@ -333,7 +362,7 @@ def verify_token(token: str) -> dict[str, Any]:
             )
 
         return payload
-    except JWTError as e:
+    except JoseError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",

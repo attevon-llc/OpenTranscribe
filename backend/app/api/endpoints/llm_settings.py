@@ -150,6 +150,27 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
     ]
 
 
+def _assert_safe_llm_endpoint(base_url: str | None, purpose: str) -> None:
+    """Refuse a user-supplied LLM endpoint that points at internal infrastructure.
+
+    These endpoints take an arbitrary ``base_url`` from any authenticated user and fetch
+    it server-side. With open self-registration that is effectively anonymous reach into
+    the deployment's private network and cloud instance metadata (issue #284 A0.1).
+    Set ``LLM_ALLOW_PRIVATE_ENDPOINTS=true`` on a single-tenant deployment that genuinely
+    runs Ollama/vLLM on a private LAN.
+    """
+    if not base_url:
+        return
+    from app.core.config import settings
+    from app.utils.url_validation import assert_safe_outbound_url
+
+    assert_safe_outbound_url(
+        base_url,
+        purpose=purpose,
+        allow_private=settings.LLM_ALLOW_PRIVATE_ENDPOINTS,
+    )
+
+
 @router.get("/providers", response_model=schemas.SupportedProvidersResponse)
 def get_supported_providers() -> Any:
     """Get list of supported LLM providers with their default configurations.
@@ -603,7 +624,7 @@ def delete_all_user_configurations(
 
 
 @router.post("/test", response_model=schemas.ConnectionTestResponse)
-async def test_llm_connection(
+def test_llm_connection(
     *,
     test_request: schemas.ConnectionTestRequest,
     db: Session = Depends(get_db),
@@ -613,6 +634,7 @@ async def test_llm_connection(
     Test connection to LLM provider without saving settings.
     If config_id is provided and no api_key, will use the stored API key from that config.
     """
+    _assert_safe_llm_endpoint(test_request.base_url, "LLM test-connection")
     start_time = time.time()
 
     try:
@@ -675,7 +697,7 @@ async def test_llm_connection(
 
     except Exception as e:
         response_time = int((time.time() - start_time) * 1000)
-        logger.error(f"LLM connection test failed: {e}")
+        logger.exception(f"LLM connection test failed: {e}")
 
         return schemas.ConnectionTestResponse(
             success=False,
@@ -686,7 +708,7 @@ async def test_llm_connection(
 
 
 @router.post("/test-current", response_model=schemas.ConnectionTestResponse)
-async def test_active_configuration(
+def test_active_configuration(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
@@ -747,7 +769,7 @@ async def test_active_configuration(
         base_url=str(user_config.base_url) if user_config.base_url else None,
     )
 
-    result = await test_llm_connection(test_request=test_request, current_user=current_user)
+    result = test_llm_connection(test_request=test_request, current_user=current_user)
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -762,7 +784,7 @@ async def test_active_configuration(
 
 
 @router.post("/test-config/{config_uuid}", response_model=schemas.ConnectionTestResponse)
-async def test_specific_configuration(
+def test_specific_configuration(
     config_uuid: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
@@ -794,7 +816,7 @@ async def test_specific_configuration(
         base_url=str(user_config.base_url) if user_config.base_url else None,
     )
 
-    result = await test_llm_connection(test_request=test_request, current_user=current_user)
+    result = test_llm_connection(test_request=test_request, current_user=current_user)
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -809,7 +831,7 @@ async def test_specific_configuration(
 
 
 @router.get("/config/{config_uuid}/api-key")
-async def get_config_api_key(
+def get_config_api_key(
     config_uuid: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
@@ -845,6 +867,7 @@ async def get_ollama_models(
     """
     Get available models from an Ollama instance
     """
+    _assert_safe_llm_endpoint(base_url, "Ollama model discovery")
     import aiohttp
 
     try:
@@ -901,7 +924,7 @@ async def get_ollama_models(
             "message": f"Connection error: {str(e)}",
         }
     except Exception as e:
-        logger.error(f"Error fetching Ollama models from {base_url}: {e}")
+        logger.exception(f"Error fetching Ollama models from {base_url}: {e}")
         return {
             "success": False,
             "models": [],
@@ -1024,6 +1047,8 @@ async def get_openai_compatible_models(
     Supports: OpenAI, vLLM, OpenRouter, and other OpenAI-compatible providers.
     If config_id is provided and no api_key, will use the stored API key from that config.
     """
+    _assert_safe_llm_endpoint(base_url, "OpenAI-compatible model discovery")
+
     import aiohttp
 
     # Resolve effective API key

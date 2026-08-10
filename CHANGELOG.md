@@ -17,6 +17,45 @@ This release also incorporates the substantial pipeline work that landed since v
 
 ### Added
 
+#### AI Chat with RAG over your transcripts (issue #52)
+
+- **Chat is a first-class page** alongside Search and Speakers. Ask questions across your recordings and get answers grounded in what was actually said, streamed token by token, with numbered citations that deep-link to the exact timestamp in the player (`/files/{uuid}?t=`).
+- **Retrieval pipeline**: conversational query rewriting (expands "what about her?" into a standalone query) → hybrid BM25 + vector search over speaker-turn transcript chunks with RRF fusion → CPU cross-encoder reranking → round-robin diversity sampling so one long recording cannot crowd out the rest of a multi-file selection → short-lived retrieval cache. Every stage is an admin-tunable, DB-backed setting applied on the next message — **no new `.env` vars**.
+- **Ask about one person**: a **Speakers** scope filter that is exact rather than approximate — because transcripts are indexed as speaker turns, selecting a speaker retrieves only their own words, so "what did Dana commit to?" can never be answered from someone else's sentence *about* Dana. Speakers are an axis orthogonal to recordings/collections/tags (use together, or alone for "everything Dana said, anywhere"), and the model is told about the filter so it reports a person as out of scope rather than claiming they were never discussed.
+- **ChatGPT/Open WebUI interaction parity**: edit a question and re-answer from that point (later turns superseded, not deleted), regenerate, stop mid-stream, per-message and per-code-block copy, message timestamps, conversation export (Markdown or JSON with sources as deep links), archive/restore, date-grouped searchable history, per-conversation model switching with a smaller-context warning, token-usage panel, and keyboard shortcuts (`Cmd/Ctrl+Shift+O`, `Cmd/Ctrl+/`, `Escape` to stop).
+- **Scope by recordings, collections, or tags** — or leave it as "All transcripts". Collections and tags resolve to files at query time, so a recording added to a collection later is automatically in scope for existing conversations. The picker estimates context-window usage before you commit. The gallery gains a **"Chat with N"** bulk action that hands the selection straight to a scoped conversation.
+- **Optional transcript context**: any conversation can turn retrieval off and act as a plain assistant, with an unmistakable *Context off* chip so an ungrounded answer never looks like a grounded one. Four-layer system prompt (immutable base rules → per-user default from Settings → Chat → project → per-conversation) where every layer appends and none can replace the base rules.
+- **Redaction is honoured before the LLM**: the OpenSearch chunk index stores transcript text unredacted (correct for searching your own words), so retrieved excerpts are re-masked with full categories whenever the owner's or an admin-forced `redact_before_llm` policy applies — and masking **fails closed**, withholding a passage it cannot mask rather than sending it raw. Stored answers and citation snippets keep that masking.
+- **Prompt-injection hardening**: excerpts are delimited, the base rules state that excerpt content is data and never instructions, closing-tag sequences in transcript text are defused, and the prompt is assembled by concatenation only — never a format string over untrusted text.
+- **Abuse controls & audit**: 20/min per-IP, a configurable per-user hourly ceiling, and a concurrent-stream cap, all failing open on a Redis outage. Chat events (`chat.conversation.create/delete`, `chat.message.send`) join the audit trail with metadata only — **never message content**.
+- **Projects** (issue #360, migration `v376`): group conversations by client, recurring meeting or case. A project pins a **default transcript scope** every chat inside it inherits — so a project pinned to a client's collection searches that client's recordings without re-picking context — and a **project-level instruction layer** carrying standing background. Deleting a project **keeps its conversations** (`ON DELETE SET NULL`); they become ungrouped. `chat_conversation.project_id` is nullable, so every existing conversation is unaffected.
+- **Per-conversation answer length and focus** (issue #359): `max_tokens` and `top_p` alongside the existing creativity and model controls, behind an *Advanced* disclosure. The reply budget is resolved **before** the prompt is built, since prompt assembly reserves context for the answer; it is clamped to the model's window and any plan cap rather than failing the request. `top_p` is omitted entirely when unset, because some models reject sampling parameters outright.
+- **Per-user RAG preferences**: users can lower *Excerpts per answer* and turn *Rerank excerpts* off for their own chats. Both are **ceilings, never overrides** — applied after the tenant limit so a preference can only tighten what the administrator allows. Reranking is one-way: it can be switched off, never on when the admin has it off.
+- **Mock LLM provider for development and testing**: `./opentr.sh start dev --with-mock-llm` runs an OpenAI-compatible server on the app network so chat and AI features work without a GPU, an API key, or an internet connection. Scenario models (`mock-echo` returns the prompt it was given, `mock-error`, `mock-empty`, `mock-slow`) drive the app's real error paths, and the pytest fixtures fall back to a subprocess so CI needs no setup.
+- **LLM streaming** is new across the board: `LLMService.chat_completion_stream()` with parsers for OpenAI-style SSE, Anthropic events, and Ollama NDJSON, plus stop-generation, a first-token watchdog, and token accounting (estimated where a provider does not report usage).
+- **Optional retention**: `chat.retention_days` (default 0 = keep forever) with a daily beat sweep. Conversations join GDPR erasure in both the account and org-member paths.
+
+#### Amazon Bedrock provider
+
+- **New LLM provider: Amazon Bedrock**, via the unified **Converse / ConverseStream** API — one integration that reaches Claude, Nova, Llama and Mistral, rather than a per-vendor adapter. Set `BEDROCK_REGION` and `BEDROCK_MODEL_NAME`; there is deliberately **no API-key setting**, because boto3 resolves credentials through the standard AWS chain (instance role, task role, profile, environment), so an EC2/ECS/EKS deployment provisions no secret at all.
+- **Cross-region inference profiles** are handled for you: a bare foundation-model ID is prefixed with the geography derived from your region (`us.`, `eu.`, `apac.`), which lets AWS route around a saturated home region. An explicitly prefixed ID or a full inference-profile ARN is used verbatim, so you can pin an exact profile (for example one carrying cost-allocation tags).
+- **Tenant attribution**: each request carries `requestMetadata`, so Bedrock's own invocation logs can be reconciled against the usage records below rather than merely trusted.
+- Streaming, cancellation and error handling match every other provider. Bedrock reports throttling and server faults as *members of the event stream* rather than as raised exceptions — unhandled, those look like a silently truncated answer — so each is surfaced as a normal error.
+
+#### Usage tracking (all editions)
+
+- **New: see what you are using.** `GET /usage/me` returns totals and a per-model breakdown over a trailing window; `GET /usage/me/daily` returns the daily series behind a chart. This is a **core, open-source** feature — anyone paying an LLM bill has the same question a hosted tenant does.
+- One `usage_event` per assistant message, keyed on the message UUID so a retry cannot double-count. Usage is stored in **tokens, not currency** (provider-neutral, so a vendor price change does not invalidate stored history), and cost is derived at read time.
+- **Costs are labelled estimates, and unpriced is not free.** A model with no known rate reports tokens only and sets `cost_incomplete`, because a confident `$0.00` is a worse answer than an honest blank. Local runtimes (Ollama, vLLM) are reported as explicitly free — a distinct state. Amazon Bedrock is deliberately unpriced: it is AWS-operated with its own rate card, and pricing it from Anthropic's published rates would be confidently wrong.
+- **Prompt-cache tokens are tracked and priced separately** from ordinary input tokens throughout. Cache reads bill far below the uncached input rate and cache writes above it, so folding either into the input count would misprice every cache-enabled deployment.
+
+#### Per-tenant chat limits (cloud-edition seam)
+
+- Two new resolvers on `core.tenant_limits` — chat ceilings (messages/hour, concurrent streams, output tokens, retrieved chunks) and a model allowlist. Both default to community no-ops, so **the self-hosted edition is unchanged**: no limits, no model restriction.
+- A tenant limit can only ever **tighten** an operator's setting, never widen it. The model allowlist is enforced server-side, because the per-conversation model comes from a user-supplied setting.
+- New `chat.ungrounded` capability gates the *"use my transcripts: off"* toggle. Enabled everywhere by default — it has legitimate uses — and when disabled it **degrades to a grounded answer rather than rejecting the request**.
+- Migration `v374`; new capability key `chat.rag` (community default: on); 141 new i18n keys across all 8 locales.
+
 #### Open-core cloud seams & strict edition separation (PR #250)
 
 - **Vendor-clean extension seams**: the commercial managed edition now layers onto generic, open extension points — a pluggable external token-verifier registry with JIT provisioning onto generic `external_id`/`external_org_id` columns, transcription pipeline hooks (quota reservation before dispatch, usage metering on completion — no-ops in community), a capabilities/entitlements resolver, per-tenant retention/upload-limit resolvers, and a frontend `$lib/cloud` seam whose community version is an inert stub. **No vendor noun appears anywhere in the open-source backend or frontend source** — enforced by a `seam-guard` CI gate (grep over `backend/app` + `frontend/src`) and an import-linter contract. The paid UI (hosted-auth wrapper, billing/usage/team panels, quota stores, cloud i18n packs) lives in the commercial repo and is overlaid at cloud-image build time only.
@@ -27,6 +66,187 @@ This release also incorporates the substantial pipeline work that landed since v
 - **JIT provisioning hardening**: linking an external identity to an existing account by email match requires the IdP to assert the address verified (fail-closed `email_verified` on `ExternalIdentity`); `super_admin` accounts are never JIT-linked by email; external IdPs grant at most `admin` and never demote.
 - **Tenant/privacy hardening follow-ups (issue #262, migration v372)**: audit events now carry a nullable `organization_id` stamped at write time where the writer has tenant context (takedown/release, GDPR erasures, unredacted-view, prompt share/clone), and the org-admin audit read scopes on it — org-stamped events (including `user_id`-NULL failed logins) plus legacy un-stamped events attributed via member ids; other orgs' stamped events are never visible. Background imports capture the org at CREATION time instead of guessing from memberships: `watch_source.organization_id` (backfilled by v372) stamps every watch import, and playlist/URL placeholders receive the originating request's org through task kwargs (`resolve_owner_org_id` demoted to a documented last-resort for storage recovery). Remaining collection sub-surfaces (get/update/delete, share list/create/update/revoke, collection-media add/remove/list) are tenant-gated via `ctx.org_id`; group-targeted shares of an org collection now require every group member to belong to that org; org-context media adds reject cross-scope files. `SpeakerProfile` rows created via the API inherit the request's (or the speaker's) org. Collection member counts and the paginated collection-media list exclude quarantined files for non-admins. User-triggered re-diarization fires the before-dispatch access seam with a zero-hours reservation so a suspended/canceled cloud org can no longer burn GPU (402; community no-op, `CLOUD_SEAM_VERSION` unchanged).
 - **Speaker-cluster tenant scope (issue #262, migration v373)**: cross-video speaker clusters are now tenant-scoped like the rest of the speaker plane. `speaker_cluster.organization_id` (NULL = personal) is stamped at creation from the member speakers' file org and mirrored onto the OpenSearch centroid doc, so org files join org clusters and personal files join personal clusters — previously org-file speakers could never join ANY cluster (isolation-safe but degraded to per-speaker singletons). `batch_recluster` now partitions the Phase-2 similarity graph per tenant scope, so a member's org and personal recordings of the same voice are never merged into one cluster. The one-off tenant backfill stamps existing cluster rows + docs from their member speakers' file orgs (all-same-org rule; legacy mixed-scope clusters stay NULL, are counted in the summary, and dissolve into per-scope clusters on the next re-cluster), replacing the earlier strip-all-org cluster repair. Community edition: org is NULL everywhere, one partition, no org field on any doc — behavior unchanged.
+
+#### Authentication & identity (issues #353, #354, #355; migrations `v377`–`v383`)
+
+- **Generic OpenID Connect — any conforming provider, not one vendor (issue #353)**: endpoints are
+  resolved from the provider's `.well-known/openid-configuration` when a **Discovery URL** is set,
+  and only fall back to the realm URL template (`<server>/realms/<realm>/protocol/openid-connect/…`)
+  when it is not. That template is one product's URL shape, and it was the *only* code path, so
+  Authentik, Authelia, Okta, Entra ID, Auth0 and Zitadel were all handed a 404 on the login
+  redirect. Discovery documents and JWKS are TTL-cached for 15 minutes (the JWKS was previously
+  refetched on **every** token validation), a document missing required endpoints is not cached so
+  a broken configuration is not pinned for the whole TTL, and a discovery failure degrades to the
+  realm URLs rather than taking a working deployment down. The **Roles Claim** is a configurable
+  dotted path (`realm_access.roles` by default, `groups` for Authentik/Okta, `roles` for Entra ID)
+  and falls back to the userinfo endpoint when the claim is absent from the token. The internal-URL
+  swap applies to discovered endpoints too.
+- **The OIDC surface is renamed `oidc_*`, and `KEYCLOAK_*` keeps working forever
+  (`v377`, `v378`)**: configuration keys, Pydantic schema, service, admin-panel tab, i18n across
+  all 8 locales, and the routes (`/api/auth/oidc/login`, `/api/auth/oidc/callback`) are all
+  provider-neutral. **No identity provider needs reconfiguring** — the registered redirect URI
+  points at the SPA's `/login` page, never at the backend routes. Stored database configuration is
+  renamed by `v377` carrying the ciphertext across unchanged (no decrypt/re-encrypt), and `v378`
+  renames `user.keycloak_id` → `user.oidc_subject` (named for what it is: a `sub` is unique per
+  *issuer*, not globally), `keycloak_refresh_token` → `oidc_refresh_token`, and the `auth_type`
+  value `keycloak` → `oidc`. `KEYCLOAK_*` environment variables are translated onto the canonical
+  `OIDC_*` names before settings are built — an input adapter, not a second implementation — with
+  the legacy spelling winning when both are set and a single deprecation line at startup. A unit
+  test fails the build if the retired noun appears under `backend/app/` outside a three-entry
+  allow-list, each carrying a written reason. `docs/KEYCLOAK_SETUP.md` → `docs/OIDC_SETUP.md`
+  (the old path is a redirect stub), and `docs-site/docs/authentication/keycloak.md` →
+  `oidc.md` likewise.
+- **The identity-source model (issue #354)** — `local_enabled`, `allow_registration`, per-user
+  `auth_type` + `allow_local_fallback`, and `pki_allow_password_fallback` as a deployment ceiling
+  over the per-user flag. Previously `/token` always accepted a local password, so an
+  LDAP- or OIDC-owned deployment could not actually turn local authentication off; the intended
+  auth method was advisory. The API also refuses the incoherent combination
+  (`allow_registration` on while `local_enabled` is off — self-registration mints local-password
+  accounts that could never sign in), and re-checks the *resulting* state so it cannot be
+  assembled one save at a time. **An active `super_admin` with a password path is exempt**: auth
+  configuration is super_admin-gated, so without the exemption a deployment that disabled local
+  login while its IdP was misconfigured would have no way back in.
+- **Admission control — "does this deployment want you", separately from "are you who you say"
+  (`v379`)**: `oidc_allowed_groups` / `oidc_blocked_groups` evaluated against the roles claim
+  (semicolon-delimited, because a directory group value is a DN and contains commas; blocked is
+  evaluated first and means *denied*), and `require_account_approval`, which lands a newly
+  provisioned account — self-registered **or** JIT-provisioned by any external IdP — in a
+  `pending` state with an admin queue at `GET`/`POST /api/admin/user-approvals`. An empty
+  allow-list admits everyone, so upgrading changes nothing until an operator sets one. Refusals
+  return the same generic 401 an unusable token gets, and are audited.
+- **IdP group mapping (`v378`)**: a `group_mapping` row binds one directory claim value —
+  an LDAP group DN or an OIDC role/group name — to an in-app `UserGroup`, to a role grant, or to
+  both. Both directory paths already carried the caller's full group list and discarded everything
+  but a single "is this an admin" bit. Applied at login for LDAP **and** OIDC, and on the periodic
+  LDAP sweep, through **one** implementation. `grants_role` is capped at `admin` in the wire
+  contract, in the service, and by a database CHECK constraint — **`super_admin` is unreachable
+  from any identity provider**, and a `super_admin` is never demoted by reconciliation either.
+  `user_group_member.source` marks directory-derived membership, so reconciliation removes only
+  what it added and a hand-added membership is never touched; the column defaults to `manual`, so
+  the default *is* the backfill. Super_admin API at `/api/admin/group-mappings`, with an admin
+  panel (Settings → Authentication → **Group mappings**, LDAP/OIDC sources — `proxy`-sourced
+  mappings are still API-only) and a dry-run `POST /test` that resolves a claim list (or a real
+  LDAP account) and reports matched vs unmatched claims without writing anything.
+- **Trusted-header (reverse-proxy) authentication (`auth_type='proxy'`)**: a front-line
+  authenticating proxy (oauth2-proxy, Authelia, Cloudflare Access) can assert an already-verified
+  identity in a header instead of the user presenting credentials to OpenTranscribe directly. One
+  shared trust module (`header_trust.py`, also used by PKI's header mode) decides whether to
+  believe the assertion: the **immediate socket peer**, never `X-Forwarded-For`, must be in a
+  configured CIDR allowlist, and an empty allowlist refuses every assertion rather than trusting
+  the network. An optional shared secret is compared in constant time, the role header is capped
+  at `admin` (never `super_admin`), and every refusal — including from an untrusted peer — is
+  audited. Settings → Authentication → **Trusted Header** configures it (previously API/`.env`
+  only).
+- **PKI trusted-proxy allowlist and header names are now genuinely DB-backed**: the Settings UI's
+  PKI panel has had "Trusted Proxies" and header-name fields since PKI shipped, but
+  `pki_authenticate()` only ever consulted a module-level list parsed from `.env` at process
+  start — a Settings UI save silently did nothing. `DynamicAuthSettings` gained the missing
+  `pki_trusted_proxies` / `pki_cert_header` / `pki_cert_dn_header` properties (the same DB > env
+  > default layering every other PKI field already had), so narrowing or widening the allowlist
+  through the UI now takes effect immediately, matching trusted-header auth's equivalent
+  `ProxyConfig.from_db` resolution.
+- **SAML 2.0 service-provider support (`auth_type='saml'`, `v383`)**: a fourth external identity
+  source (issue #35) via python3-saml — SP metadata at `GET /saml/metadata`, SP-initiated login
+  at `GET /saml/login`, and the IdP's own POST/redirect callback targets (`/saml/acs`, `/saml/sls`).
+  Signature verification is python3-saml's, never hand-rolled. Reuses the same admission control,
+  approval-state, account-linking and session machinery already built for OIDC — SAML's
+  `email_verified` is always treated as unasserted (no standard SAML claim for it), so an
+  email-match account link is refused unconditionally rather than being a togglable setting. IdP
+  group mapping and SP-initiated logout notifying the IdP are deliberately out of scope for this
+  release. Configurable end-to-end at Settings → Authentication → **SAML 2.0** (SP identity, SP
+  certificate/key, IdP identity, signing posture, attribute mapping, group admission) — previously
+  API/`.env` only.
+- **SCIM 2.0 provisioning (`/scim/v2`, RFC 7643/7644, `v382`)**: mounted at root rather than under
+  `/api` because RFC 7644 §3.1 fixes the base path and every connector appends `/Users`/`/Groups`
+  to it. Bearer-token authenticated against a hashed, revocable token a super_admin issues at
+  Settings → Users → SCIM Tokens (`/api/admin/scim-tokens`). Every write goes through the same
+  services the admin UI and directory sync already use — no SCIM call ever writes a role, and
+  `super_admin` is untouchable through it; `DELETE` and `active: false` both disable the account
+  and revoke its sessions rather than deleting the row, matching an IdP dropping someone from
+  scope rather than actually removing them. Filtering supports exactly
+  `<attribute> eq "<value>"` on the documented attributes; anything else is a clean
+  `400 invalidFilter`. Not rate-limited (a 256-bit token bursts hundreds of requests from a small
+  IdP egress pool by design).
+- **Directory sync and deprovisioning (LDAP)**: there was previously **no deprovisioning at all**.
+  Sync ran only at login and only upward, so an account deleted or disabled in Active Directory
+  kept a live row forever — and because refresh tokens rotate on every use, an actively-used
+  session survived the user's termination indefinitely. A beat-driven pass now probes every active
+  LDAP account, reconciles groups and role for the ones still present, and disables **and revokes
+  the sessions of** the ones that are provably gone. Fail closed on *ambiguity*, not on error:
+  "the directory says gone" acts, "I could not ask the directory" aborts the pass. `super_admin`
+  and `local` accounts are never touched, it disables rather than deletes, and
+  `directory_sync.max_disables_per_run` bounds the blast radius — a directory answering "gone" for
+  everyone (wrong search base, wrong group DN) is indistinguishable from mass offboarding.
+  Defaults are deliberately timid (`enabled=false`, `dry_run=true`), so an operator opts in twice.
+  Six DB-backed `SystemSettings` rows, no new environment variables; **no endpoint and no admin
+  panel yet**.
+- **Admin invitations**: an admin names an address plus the target `role` and `auth_type`; the
+  invitee proves control of the address and chooses their own credential, or is handed to the IdP
+  for an external `auth_type`. This closes a real gap — disabling self-registration was only half
+  a feature, because `POST /api/admin/users` could not set `auth_type`, so every admin-created
+  account was `local` and could not authenticate at all on a deployment where local passwords are
+  off. Tokens are SHA-256 hashed at rest, single-use and expiring, and every rejection (unknown,
+  expired, revoked, already used, address already registered) returns one identical message.
+  Admin-created accounts can now set `auth_type` too, omitting the password field entirely for an
+  external type.
+- **Email verification**: `require_email_verification` was a declared auth-config key, rendered as
+  a switch, stored on save, and **read by nothing**. It now gates local password login (only —
+  an LDAP/OIDC/PKI address is asserted by the provider, and blocking those logins would
+  second-guess the IdP), with 24-hour tokens rate-limited to 3 issues per hour and
+  `/auth/verify-email` + `/auth/verify-email/resend` endpoints.
+- **Account lifecycle enforcement**: `must_change_password` and `account_expires_at` were both
+  written and never read — the admin "force change on next login" flag let the user sign in with
+  the admin-chosen password and never prompted, and a time-boxed contractor account stayed usable
+  forever. Both are enforced at the one dependency every user-facing route passes through, with
+  machine-readable `detail.code` values (`password_change_required`, `account_expired`,
+  `banner_acknowledgment_required`, `account_pending_approval`, `account_rejected`) so clients
+  branch on a contract rather than on English prose. Password expiry (`password_max_age_days`,
+  FedRAMP IA-5(1)) now feeds the same flag rather than inventing a second mechanism; an account
+  with no recorded `password_changed_at` is warned about rather than force-changed, because
+  nothing stamped that column on older accounts and forcing all of them would be a self-inflicted
+  outage.
+- **The login banner is enforced, not merely displayed (FedRAMP AC-8)**: `banner_acknowledged_at`
+  was written by the acknowledgment endpoint and read by nothing; the SPA approximated the control
+  with a `sessionStorage` flag that clears per tab, is trivially removed, and never reaches the
+  server. The consent AC-8 requires was therefore never a precondition for anything. It is now a
+  server-side gate — and **an acknowledgment expires when the banner text changes**, compared
+  against that config row's `updated_at`, because someone who accepted one classification notice
+  has not accepted a later, stricter one.
+- **Session controls that actually apply (`v377`)**: idle timeout, absolute timeout and the
+  concurrent-session limit + policy were read from `.env` while the admin UI wrote the database,
+  so the Session tab was inert. All three are DB-backed now and take effect without a restart. The
+  panel also offered `oldest`/`newest`/`all` for the concurrency policy, none of which the backend
+  compares against, so the AC-10 limit silently enforced nothing whichever option was chosen; the
+  vocabulary is now `terminate_oldest`/`reject` on both sides, and hitting the cap is audited
+  either way. `absolute_expires_at` is carried forward through rotation and never recomputed — it
+  is the only thing that caps a client that refreshes forever. Both timeout columns are nullable
+  and un-backfilled, so upgrading does not sign everyone out a second time. Users see and revoke
+  their own sessions in Settings → Profile; admins can list and revoke another account's.
+- **One session store, not two.** `auth/session.py` carried a Redis `SessionManager` implementing
+  the timeout half with **zero call sites**. It was deleted rather than wired up: two owners would
+  enforce against different session sets the moment Redis and Postgres diverged, and issue #324
+  already established that Redis is a cache here, not the system of record. A session is a
+  `refresh_token` row.
+- **Transactional auth email through the deployment's real mail configuration**: password resets,
+  invitations and verification links are delivered by a designated `EmailNotificationConfig` row
+  (super_admin; `PUT /api/admin/auth-config/email/designation`), falling back to the `SMTP_*`
+  environment transport when no row is designated. A designation naming a missing or disabled
+  configuration is rejected at **write** time, and deleting or disabling the designated row is
+  refused — the read path degrades quietly enough that a bad designation would surface only as
+  undelivered password resets.
+- **Auth-config audit is visible in the product**: `auth_config_audit.changed_by` is a NOT NULL
+  foreign key that was never serialised, so the answer to "who turned MFA off / changed the LDAP
+  bind password" sat in Postgres and was invisible. Settings → Authentication → **Audit** now
+  shows configuration changes with the account that made each one.
+- **Three privilege tiers, with a stated rule.** *Anything that changes how the deployment runs,
+  or stores infrastructure credentials, is `super_admin`; anything that manages users and their
+  content is `admin`.* Creating another `super_admin` is now a UI action (Settings → Users →
+  Role) rather than something reachable only through direct API access, it is audited, and the
+  last remaining `super_admin` cannot be demoted or deleted. A unit test walks the live dependency
+  tree and fails if a new route lands at the wrong tier or is accidentally public.
+- **Admin user management** gained lock/unlock (unlock is now the true inverse of lock: it clears
+  **both** the deactivation and any failed-login lockout), force-logout, MFA reset, per-account
+  session listing, and an `auth_type` column.
 
 #### Backend observability & monitoring
 
@@ -51,6 +271,14 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Recovery-key companion (#243)**: a database dump alone is **unrecoverable** without the `.env` master keys that wrote its AES-256-GCM ciphertext, so every successful run now makes the destination self-describing. With backup encryption ON, `opentranscribe-recovery.env.gpg` lands beside the dumps carrying `ENCRYPTION_KEY` / `JWT_SECRET_KEY` (and `MINIO_KMS_SECRET_KEY` when set) under the **same gpg passphrase** — the passphrase in your password manager then unlocks a complete restore. With encryption OFF, a no-secrets `RECOVERY-README.txt` (key names + SHA-256 fingerprints only) documents what to preserve separately, and admins get a **one-time warning notification** that the dumps alone are not restorable. One always-current companion per destination; a companion failure never fails the backup; key values never appear in logs or the recorded result.
 - **Failure surfacing (#244)**: scheduled-backup outcomes are now surfaced proactively instead of only on the admin page. New Prometheus metrics — `backup_last_success_timestamp_seconds` (alert on staleness), `backup_last_status` (1/0), and `backup_runs_total{result}` — persisted by the worker and projected onto `/metrics` at scrape time (restart-proof, same sample-at-scrape pattern as queue depths). Failed runs (pg_dump error, missing mount, unreachable bucket) send a `backup_status` WebSocket notification to every admin with the error message; successes with non-fatal warnings notify too. **Retention-prune errors no longer fail a completed dump** — they're recorded as `prune_error` warnings (matching the OpenSearch-snapshot warn-only design), and the Backups panel now shows prune + recovery-companion status per run.
 - **Media Mirror (#242)**: the backup system now covers the irreplaceable media originals, not just the database. A new **default-OFF** admin subsection (Settings → Backups → Media Mirror) schedules an **incremental copy of the MinIO media bucket** to a **separate destination** — a mounted folder (`BACKUP_MIRROR_HOST_PATH` → `/media-mirror`, via the same `docker-compose.backup.yml` overlay) or an **S3-compatible bucket** (AES-256-GCM encrypted write-only secret, Test Connection) for a true off-host copy. Objects are compared by size + ETag so only new/changed media transfers (write-once media makes nightly deltas tiny); regenerable data (temp preprocessed audio, derived/bulk caches) is excluded; per-object failures never abort a run; a configurable throttle caps I/O pressure; a Redis lock prevents overlapping runs; the run executes on the download worker (never the GPU queue). **The mirror never deletes at the destination** — a fat-fingered or malicious source-side delete cannot propagate (explicit tested invariant). Observability follows the #244 pattern: `media_mirror_last_success_timestamp_seconds`, `media_mirror_last_status`, `media_mirror_runs_total{result}`, per-outcome object counts, admin WebSocket notification on failure (success silent), last-run status + Run Now in the panel. Settings are DB-backed `backup.mirror_*` SystemSettings (cron schedule, no restarts). Closes the backup audit's High-severity media gap; restore-from-mirror documented in `docs-site/docs/operations/backup-restore.md`.
+
+#### Configurable external storage & search backends (issue #284 Phase 1B — A1.11/A1.12/A1.13)
+
+- **Native AWS S3 storage backend (`STORAGE_BACKEND=s3`)**: object storage is no longer hardwired to the bundled MinIO container. The `s3` backend targets the real regional endpoint (or any S3-compatible provider via `S3_ENDPOINT_URL`), signs SigV4 with `S3_REGION`, and uses virtual-host addressing. Credentials come from the **AWS provider chain by default** (`S3_USE_IAM_ROLE=true` — environment, EKS/IRSA web identity, ECS task role, EC2 instance metadata), so a deployment needs no static keys and gets automatic rotation; `S3_USE_IAM_ROLE=false` signs with `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` instead. Optional `S3_CONFIGURE_BUCKET_CORS` applies a browser-upload CORS policy (`ETag` exposed) so direct-to-bucket PUTs pass preflight. **`STORAGE_BACKEND=minio` is the default and self-hosted behaviour is unchanged** — same endpoint, credentials, addressing, and presigned-URL rewriting as before.
+- **Uploads above 5 GiB on S3**: AWS rejects a single PUT over 5 GiB (`EntityTooLarge`) only after the browser has streamed the whole body, so `POST /files/prepare` now withholds the presigned URL for oversized objects and the client falls back to the API-mediated upload, which spools to disk and writes multipart in 64 MiB parts. MinIO's 5 TiB single-PUT ceiling means the browser-direct path is untouched on the default backend.
+- **Configurable presigned-URL public host + STS-safe TTL**: `STORAGE_PUBLIC_URL` is a backend-agnostic alias for `MINIO_PUBLIC_URL` and decides the browser-facing origin (empty keeps today's `/s3` proxy path on MinIO and leaves native-S3 URLs untouched). All presigned lifetimes are now clamped to `PRESIGNED_URL_MAX_SECONDS` (default 6 h): a presigned URL cannot outlive the credentials that signed it, and IAM-role STS sessions expire well inside the previous 24 h default, so long URLs silently began returning 403. The host rewrite also matches `https://` endpoints (previously `MINIO_SECURE=true` defeated it) and the last hardcoded `http://minio:9000` → `localhost:5178` rewrite (plus the undocumented `EXTERNAL_MINIO_URL`) is gone.
+- **Configurable OpenSearch auth (`OPENSEARCH_AUTH=basic|sigv4`)**: every OpenSearch client is now built from one place. `sigv4` signs with the AWS credential chain (`OPENSEARCH_AWS_REGION`, `OPENSEARCH_AWS_SERVICE=es|aoss`) and forces TLS, which is what an Amazon OpenSearch Service domain with an IAM access policy requires; `basic` is the default and unchanged.
+- **Embedding-mode switch (`OPENSEARCH_EMBEDDING_MODE=local|managed`)**: `managed` adopts a model the domain already hosts (`OPENSEARCH_NEURAL_MODEL_ID`) instead of mutating ML Commons cluster settings and registering a model by URL — operations a managed AWS domain does not permit, which previously made neural search fail to initialise there. `local` is the default and unchanged.
 
 #### Storage recovery: in-place re-ingestion of orphaned MinIO objects
 
@@ -84,6 +312,10 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Multi-part recording stitching**: split recordings (`name_P001.ext`, `name_P002.ext`, …) from dropped VTC/podcast connections are auto-detected by configurable regex, grouped within a time window, and stitched with ffmpeg (stream-copy when codecs match, re-encode fallback otherwise). Incomplete groups wait a bounded number of scans for missing parts before stitching what arrived.
 - **Multi-provider email notifications**: optional SMTP / Microsoft 365 (Graph OAuth2) / Exchange notifications on scan completion, with BLUF summary and per-file status. Encrypted credentials (AES-256-GCM), never returned in API responses.
 - **Folder browser, connection testing, and per-source file history** in the UI; new `docker-compose.watch.yml` overlay and `./opentr.sh start dev --with-watch` (plus `--with-smb-test` for a local Samba test share).
+- **Event-driven watching for local folders (issue #294)**: `watch.fs_events_enabled` and the per-source **Watch for file-system events** checkbox previously did nothing — no `watchdog` observer existed anywhere, so an admin could enable them and still wait a full scan interval (15 min by default) with no explanation. They are now real: a supervisor in **celery-beat** watches each opted-in local source and dispatches the existing per-source scan seconds after a file lands. **The scheduled scan is untouched and remains the safety net** — this layer only makes it fire sooner, and every failure path degrades to polling rather than raising.
+  - **Cross-platform by construction.** A plain `Observer()` would appear to work on a Linux host and silently do nothing for everyone else, because inotify does not see host-side writes through a macOS Docker bind mount (VirtioFS/gRPC-FUSE) or a Windows drive under WSL2, and never sees a remote writer on NFS/SMB/a NAS. `auto` mode therefore rejects those mount families by filesystem type and then **verifies delivery with a live probe** before trusting native events, falling back to watchdog's `PollingObserver` (works everywhere) otherwise.
+  - **The UI says which mode a source actually got** — an "FS events" / "FS polling" / "Watch failed" / "Every N min" badge with the backend's own explanation on hover, published through Redis with a short TTL so a stopped beat container degrades the badge honestly instead of lying.
+  - Bursts are coalesced into one scan per source (debounce = the file-stability window + 5 s, so the scan never races the "still being written" check), dispatches are Redis-locked, and the watched set is reconciled from the database every 30 s. Two new DB-backed admin settings: `watch.fs_events_mode` (`auto` | `native` | `polling` | `off`) and `watch.fs_events_poll_seconds`. `docker-compose.watch.yml` now mounts the watch folder into `celery-beat` as well.
 
 #### Downloads & storage
 
@@ -120,14 +352,21 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Orphan upload sweeper + retry-aware timing + error-path flush**: a new `cleanup.orphan_upload_sweeper` (beat every 15 min) reclaims PENDING `MediaFile` rows and MinIO objects orphaned by client disconnects (>30 min); failed pipelines now write a terminal `pipeline_error_end` marker and flush timing so they leave a durable row.
 - **Scratch janitor**: an hourly `cleanup.scratch_janitor` purges per-file scratch dirs older than 1 h to keep crashed pipelines from filling the shared volume.
 
+#### Summary prompt sharing (issue #78)
+
+- **Admin prompt sharing completed — clone, attribution, audit, popularity**: any accessible summary prompt (system / shared / your own) can be cloned into your editable library via `POST /api/prompts/{uuid}/clone` and a Clone button in the "Shared by Others" section (clones count toward the 50-prompt cap). Shared prompts carry attribution — a new nullable `summary_prompt.shared_by` column (migration `v365`) records who flipped sharing on, distinct from the creator, surfaced as `shared_by_name` in the UI. `usage_count` now actually increments once per successful summarization on the resolved prompt, so the shared library's "popular" ordering and "most used" metric are meaningful. `PROMPT_SHARE` / `PROMPT_UNSHARE` / `PROMPT_CLONE` events flow through the audit log; clone strings are translated across all 8 locales.
+
 #### Operations
 
 - **Encrypted database backups**: `./opentr.sh backup --encrypt` pipes `pg_dump` directly into GPG symmetric AES-256 (the plaintext dump never touches disk); `./opentr.sh restore` transparently detects and decrypts `.gpg`/`.asc` backups. Plain backups now print a reminder that dumps contain all user transcripts in plaintext.
 - **Multi-GPU pipeline split overlay (`docker-compose.gpu-split.yml`)**: a new opt-in overlay that runs transcription and diarization on **separate GPUs** for higher throughput on a 2+ GPU host. `./opentr.sh start dev --with-gpu-split` (alias `--gpu-split`) activates the `gpu-transcribe` / `gpu-diarize` worker services (already defined in the base compose under the `gpu-split` profile) and appends the overlay, which grants each worker a dedicated GPU reservation (`GPU_TRANSCRIBE_DEVICE_ID` / `GPU_DIARIZE_DEVICE_ID`). Docker remaps each reserved card to container index 0, so both workers run on `CUDA_VISIBLE_DEVICES=0` (same pattern as `--gpu-scale`). Pairs with `ENGINE_GPU_SPLIT=true`.
 - **Deployment-configuration operations guide**: new `docs-site/docs/operations/deployment-configuration.md` documents every deployment type and its exact `./opentr.sh` command, the healthcheck/`start_period`/`depends_on` first-init model, the `pipeline_scratch` cross-worker handoff contract, the three GPU modes (single / dual / split), the security posture (loopback infra ports, `no-new-privileges`, secret generation), and the NAS/NVMe storage overlay.
+- **Backend tests in CI + a canonical local test gate (issues #21/#123)**: GitHub Actions now runs the backend unit/API suite on every PR (fresh PostgreSQL service, CPU-only requirements) alongside the frontend vitest job; `./scripts/run-integration-tests.sh` is the canonical local pre-merge gate (the ungated suite plus every gated security suite in both FIPS modes plus integration-marked tests); MinIO/OpenSearch-backed tests auto-enable when the live dev stack is reachable and skip cleanly otherwise; and the Playwright E2E suite gained upload, search, settings, and transcript-editing coverage with a shared one-login-per-session auth state.
+- **Engine benchmark suite (`./opentr.sh bench`)**: a durable end-to-end benchmark orchestrator that exercises the real stack in an isolated `otbench` compose project (frozen image code, fresh volumes — physically separate from live data), with single-file and queue-throughput phases plus a collate step, a fixed mixed benchmark corpus (`--corpus-file`, `--profile`, `--shuffle`), a resumable checkpointed GPU soak orchestrator with a watchdog for unattended auto-resume, dual-GPU phases, and a latency/contention collator view. An opt-in `FFMPEG_THREADS` cap protects low-core deployments from ffmpeg oversubscription. Collated results live in `docs/BENCHMARK_RESULTS.md`.
 
 ### Changed
 
+- **Removed the write-only `reactiveFile` store from the file-detail page (issue #338)**: `frontend/src/routes/files/[id]/+page.svelte` declared `const reactiveFile = writable(null)` — a page-local `const`, never exported — and wrote to it 13 times. Nothing subscribed: no `$reactiveFile`, no `.subscribe()`, no importer. A store with no subscribers does nothing on `.set()`, so all 13 calls were inert, and they actively misled review (a reader sees `reactiveFile.set(file)` after a mutation and concludes the UI will refresh). The real update path is the page's own `file` assignment/invalidation propagating to its children — which is what `frontend/src/components/fileDetail/CLAUDE.md` already documented as the pattern. The store, its 13 writes, the `setReactiveFile` member of `FileNotificationContext`, its 3 call sites in `$lib/fileDetail/notificationHandler.ts`, and the doc comment that described it as the websocket integration point are all gone. `setFile` is untouched — it performs the real `file = ...` assignment and is load-bearing.
 - **Backend code-quality overhaul (maintainability, no behavior change)**: a sweep of the FastAPI backend with characterization tests as the regression net. **SQLAlchemy 2.0 typed models** — all 26 model files converted from legacy `Column()` to `Mapped[]`/`mapped_column()`, which let mypy see real column types and drop ~165 errors, and made 257 defensive `int(current_user.id)`-style casts provably redundant (removed); a `pg_dump` before/after diff proved zero schema change. **Blocking I/O off the event loop** — 17 `async` handlers that made synchronous MinIO/OpenSearch calls were either converted to `def` (FastAPI threadpools them) or wrapped in `run_in_threadpool`. **Endpoint dedup** — a message-parameterized `require_resource_owner` helper consolidated 17 copy-pasted ownership checks, a shared `paginate()` helper and an `ErrorHandler.internal_error()` replaced repeated boilerplate, all behavior-preserving and snapshot-gated. **Comprehensive endpoint test coverage** — characterization suites for all 39 previously-untested endpoint modules (~720 new tests across auth, files, speakers, settings, collaboration, and system/admin), with a byte-exact ownership-contract spec; coverage floor ratcheted 35 → 37 %. Celery task DB sessions standardized on `session_scope()`. **UUIDv7 generation** — all primary `uuid` columns now mint time-ordered RFC 9562 v7 identifiers (better index locality than random uuid4) via a small dependency-free generator; backward-compatible (existing rows coexist), with a defensive idempotent migration (`v368`) that converts any legacy `varchar(36)` uuid column to native `uuid` so older deployments upgrade without breaking.
 - **In-place storage recovery / re-ingestion**: a new `python -m app.scripts.reingest_minio` registers media objects that exist in MinIO but have no database row — pointing each `MediaFile` at the existing object key (zero copy/duplication) and dispatching the standard pipeline — plus rate-limited yt-dlp metadata-only recovery for orphaned YouTube thumbnails. Built for disaster recovery where media survives but the database is lost.
 - **Fresh / isolated deployments**: `./opentr.sh start dev --fresh <name>` runs a fully isolated stack (own compose project + volumes, NAS overlay never loaded) for safe experimentation; explicit `--nas`/`--no-nas` directives replace the silent auto-load; `.opentranscribe-live-data` marker files and a `data-paths` subcommand guard live bind-mounts against accidental cleanup.
@@ -143,7 +382,7 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Single canonical `purge_media_file` for all delete paths**: every delete path (interactive single/force/bulk, N-day retention, orphan cleanup) now routes through one implementation that removes storage artifacts (original + thumbnail + derived cache), OpenSearch data (speakers v3/v4, transcript, chunks, summaries), the DB row, Redis state, and empty clusters — eliminating drift where retention deletes left the derived cache and orphaned data behind.
 - **nginx**: dedicated no-buffering location for the SSE download/bulk-export streams (defined before `/api/`); the `/s3/` MinIO proxy brought to parity with `proxy_buffering off` + `proxy_max_temp_file_size 0` + extended timeouts for large presigned downloads.
 - **Download spinner accuracy**: processed downloads now use `fetch()` so the button holds its "Processing…" state for the real ffmpeg duration, and backend errors surface as toasts; loading skeletons aligned with the search and profile layouts.
-- **Dependencies**: `speechmatics-python` → `speechmatics-batch`; added `meeteval`, `presidio-analyzer`, `presidio-anonymizer`, `gliner`, `detoxify`; bumped `uvicorn`, `qrcode[pil]`, `onnx`, `yt-dlp`, `sentence-transformers`, `google-cloud-speech`, and `mypy`. Frontend dependency bumps (`@typescript-eslint`, `vite-plugin-pwa`, `devalue`; svelte pinned to avoid a 5.56.x parser regression) and `npm audit fix` to 0 vulnerabilities. CI action bumps (codeql, setup-python, cache, upload-pages-artifact, setup-buildx, anchore/scan). Dependabot reconfigured to weekly grouped updates (one frontend + one backend PR).
+- **Dependencies**: `speechmatics-python` → `speechmatics-batch`; added `meeteval`, `presidio-analyzer`, `presidio-anonymizer`, `gliner`, `detoxify`; bumped `uvicorn`, `qrcode[pil]`, `onnx`, `yt-dlp`, `sentence-transformers`, `google-cloud-speech`, and `mypy`. Frontend dependency bumps (`@typescript-eslint`, `vite-plugin-pwa`, `devalue`; svelte pinned to avoid a 5.56.x parser regression) and `npm audit fix` to 0 vulnerabilities. CI action bumps (codeql, setup-python, cache, upload-pages-artifact, setup-buildx, anchore/scan). Dependabot reconfigured to weekly grouped updates (one frontend + one backend PR). July 2026 refresh: ~42 backend bumps (fastapi capped `<0.137` — 0.137+ breaks templated-route labeling in the observability middleware, tracked follow-up; presidio pins constrain numpy `<2.5` and cryptography `<47` transitively) and 12 frontend bumps (axios 1.18.1, dompurify 3.4.11, SvelteKit 2.69) with known-breaking majors held by policy (`@eslint/js` 10, `@types/node` 26, torch/torchaudio managed by hand, typescript-eslint trio pending the eslint 10 migration); CI + tooling aligned to the Python 3.13 runtime.
 - **Model-aware Whisper batch sizing**: `_get_optimal_batch_size(model_name)` now caps batch at empirically validated thresholds per model and GPU class (from the Phase B VRAM study), replacing over-aggressive defaults (e.g. 32 on an A6000) that burned VRAM for no throughput gain (throughput plateaus at batch≈8).
 - **GPU concurrency auto-detection recalibrated**: the `GPU_CONCURRENT_REQUESTS=auto` formula changed from `(vram−6000)//1000` (cap 4) to `(vram−7000)//4000` (cap 12), based on a measured ~7 GB warm baseline + ~4 GB/task — an RTX A6000 now runs up to 10 concurrent transcriptions (was capped at 4).
 - **Diarization embedding batch pinned at 16**: the per-run VRAM-budget knobs were replaced by a fixed `EMBEDDING_BATCH_SIZE = 16` that forces the fork's auto-scaler off (`PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE=16`), giving a predictable ~1 GB peak so ~25 diarization pipelines fit on an A6000.
@@ -189,12 +428,23 @@ This release also incorporates the substantial pipeline work that landed since v
 
 ### Performance
 
+#### Backend request-path hardening (issue #284 Phase 2 — A2.4–A2.8)
+
+- **Blocking work no longer runs on the event loop**: ~30 API handlers were declared `async def` with no `await` anywhere in their bodies — only synchronous SQLAlchemy, Redis reads and Celery dispatch — so each one held the asyncio loop for the whole request and stalled every other request the process was serving, WebSocket traffic included. They are now plain `def`, which FastAPI dispatches to Starlette's threadpool: **all 13 collection handlers, all 8 topic handlers, the 9 async task-system handlers** (plus their nested `BackgroundTasks` callables), and **`POST /files/process-url`**, whose body runs yt-dlp's synchronous `extract_info` — a full metadata fetch against YouTube/Vimeo/… that can take tens of seconds. Responses, status codes and payloads are unchanged; a new AST-based test fails the build if an awaitless `async def` handler reappears in those modules.
+- **Speaker merge and profile rename return immediately**: `POST /speakers/{uuid}/merge/{target}` used to average both voiceprints in OpenSearch, clear the MinIO video cache for both files, delete the source document, recompute *each* profile's consolidated embedding (one kNN read per profile member) and refresh analytics for both files — **9+ OpenSearch round trips minimum, ~17 ms each measured against the dev cluster** — all before answering. That tail now runs in a new `process_speaker_merge_background` Celery task on the CPU queue. `PUT /speakers/{uuid}` with `profile_action="update_profile"` likewise deferred its per-linked-speaker OpenSearch fan-out to the existing speaker-update task, and its duplicate profile-embedding recompute (the background task already performed the identical recompute) was deleted. Postgres stays synchronous in both paths, so responses remain authoritative.
+- **Media-file formatting validates once**: `FormattingService.format_media_file` ran two full Pydantic passes plus a dump per row (~200 validations for a 100-item gallery page); it now validates once and applies the pre-formatted display fields with `model_copy(update=...)`. Measured **7.02 ms → 4.92 ms median per 100-row page (−30%)** with byte-identical JSON output. `format_transcript_segment` was measured too and deliberately left alone — the same change there was inside the noise (44.6 → 44.2 ms per 1000 segments).
+- **Upload prep batches its lookups**: `add_file_to_collections` and `add_tags_to_file` issued two queries per named collection/tag. Both now resolve with `IN (...)`: **6 collections 12 → 2 SELECTs**, **5 tags 10 → 3**, and 20 tags still costs 3. The same helpers back yt-dlp playlist ingestion and watch-source auto-import, which call them once per imported file.
+
+#### Other
+
 - **Backend read-path query reduction (measured)**: the new `db_queries_per_request` instrumentation surfaced duplicate queries on hot paths, which were then eliminated — file detail **18 → 11** queries (−39%) and the segments endpoint **13 → 6** (−54%). The dominant win was the content-redaction admin policy load going from 8 sequential `get_setting` SELECTs to a single batched `get_settings_map` SELECT (it runs on every transcript read), plus `selectinload`/`joinedload` on the speaker-and-profile relationships. `EXPLAIN` confirmed every hot lookup is already indexed, so no new index was warranted.
 - **In-process settings cache**: a TTL cache (`SETTINGS_CACHE_TTL`, default 30 s) fronts `SystemSettings` reads with bust-on-write across every writer; **Redis read-side caching** is enabled for the tag list (the one provably-safe, user-keyed surface) with a full invalidation audit that also closed previously-missing tag/speaker cache-busting on several mutation paths. Cache hit/miss is exported as `cache_operations_total`.
 - **Settings reads batched app-wide**: `get_settings_map` (one SELECT for N keys) adopted in the redaction, backup, watch, user-settings, and engine config paths.
 - **Backend Docker image slimmed ~820 MB** (9.68 GB → 8.86 GB): removed `triton` (~540 MB) and the `gcc`/`g++` toolchain tied to opt-in `torch.compile` (~150 MB) from the runtime stage, dropped `pytest` from runtime requirements, and removed the direct pandas dependency.
 - **Removed the TensorRT pip dependency + `LD_LIBRARY_PATH` entry (−4.5 GB)**: the Phase 6.3 TensorRT execution-provider experiment never produced an end-to-end win (per-shape engine-rebuild storms on pyannote), so the image returned to its pre-spike size. The ONNX Runtime CUDA EP is retained.
 - **ONNX Phase 6.2 — CPU execution-provider integration**: the one shipping ONNX win, giving 1.87–2.12× on the CPU-only tier (the CUDA / CoreML / TensorRT EPs regressed and were not shipped).
+- **Measured end-to-end throughput (engine benchmark)**: with this release's pipeline work, a single RTX A6000 sustains **45.9× aggregate realtime** at concurrency 4 on a bursty mixed corpus (~12× per file), and a dual-A6000 host clears a 58-hour mixed corpus in **~43 minutes (81.3× aggregate realtime)**. The concurrency-4 plateau is tail-limited (a few long files dominate the tail), not a compute ceiling. Full sweeps and methodology: `docs/BENCHMARK_RESULTS.md`.
+- **Local diarization accuracy ties the best commercial engine**: on the hand-labeled reference clip, the local pipeline with the default-on boundary smoother reaches **0.27% WSER at ~41× realtime** — tied with the best of six commercial cloud engines (Gladia) and ahead of AssemblyAI, Speechmatics, AWS Transcribe, pyannote.ai, and Deepgram, offline and free (`docs/diarization-boundary-results/cloud-comparison.md`).
 
 ### Removed
 
@@ -203,8 +453,214 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Per-GPU diarization VRAM-budget env vars** (`DIARIZATION_VRAM_BUDGET_MB`, `DIARIZATION_MIXED_PRECISION`, `DIARIZATION_ONNX_CPU`) removed, superseded by the fixed batch-16 policy.
 - **`docs/performance-whitepaper/` untracked** (main.tex + main.pdf): WIP pending human review; remains on disk and in `.gitignore`.
 
+### Fixed
+
+#### Chat: bugs the E2E suite could not see until it had a model to talk to
+
+Wiring the mock LLM into `backend/tests/e2e/test_chat.py` made its streaming tests run for the first time — they had been self-skipping without a provider while the file still reported green. They immediately found three real defects:
+
+- **Editing a question did nothing.** `ChatThread` forwarded `regenerate` and `retry` up from `ChatMessage` but not `edit`, so the event died mid-chain: the editor closed, the question stayed as it was, and no request ever reached the backend.
+- **Stop leaked a concurrency slot.** Releasing the slot from the wrapping generator's `finally` does not survive Starlette tearing that generator down on client disconnect — exactly what Stop and a closed tab do — so two aborted generations consumed both slots and locked the user out of chat. The release now runs inside `stream_reply`'s own shielded `finally`, in its own `finally` so a failing finalisation cannot skip it.
+- **Concurrency slots could never recover.** The cap was a single counter whose TTL was refreshed on every acquire, so a slot leaked by a died-mid-stream request never aged out for an active user: usable concurrency degraded 2 → 1 → 0 permanently. Slots are now tracked individually and pruned by age, release is idempotent, and the stale-slot window is 5 minutes rather than 15. An upgraded deployment's legacy counter is retired on first contact — every sorted-set command against it raised `WRONGTYPE`, which the fail-open handler would have swallowed while silently disabling the cap.
+
+Also fixed: the E2E API session never sent a CSRF token, so every mutation returned 403 — which broke arranging test state *and* `cleanup_conversations`, meaning each run had been leaving its conversations behind in dev data.
+
+#### Chat: no LLM configured is no longer reported as a failure
+
+- **Topic extraction and summarization notified per file when no provider was configured.** Having no LLM is a deployment choice, not a task outcome, so a user who simply had not set one up got a warning on every recording for something they could not act on from a notification — burying real failures. Topic extraction was worse: it announced "Preparing AI analysis…" *before* checking for a provider, and that notification is progressive, so it sat unresolved until a second replaced it — two entries per file for work that never started. The availability check now runs before anything is announced. Summarization still records `summary_status = "not_configured"` for the file detail page; only the push notification is gone. A configured provider that errors or returns nothing still notifies.
+
+#### Chat: reranking no longer disables itself permanently
+
+- **One transient failure retired the reranker for the process lifetime.** `get_reranker` set its "attempted" flag *before* the load, so a container starting before its model-cache volume was mounted ran unranked retrieval for its whole life, signalled by a single warning. It now retries on a cooldown, so a cache that appears later is picked up without a restart.
+
+#### Chat settings and navigation
+
+- **Chat occupied two sidebar rows** in Settings ("Chat" and "Chat & RAG"), leaving users to guess which held the knob they wanted. They are now tabs behind one entry, user defaults first and platform tuning second. The admin tab is server-gated, not merely hidden.
+- **Global form CSS leaked into three chat surfaces**: checkboxes stretched to fill their row (733px in the settings modal), pushing labels to the far edge, and sidebar action icons collapsed to zero width inside inherited button padding, leaving shadow-only rectangles. Selected conversations also read as two colours in dark mode, where a global `button:hover` painted `rgba(255,255,255,0.1)` across only the title's width of a tinted row.
+- **Plural labels rendered as "12 source"** — the keys used i18next v3 `_plural` suffixes on a v25 install, which silently falls back to the singular. Migrated to `_one`/`_other` across all eight locales.
+- **The primary navigation kept a two-page shape.** Gallery appeared only when you were elsewhere, labelled "Back to Gallery", so the item set changed between routes and links shifted under the cursor; Gallery could never show an active state, and Search had no active binding at all. All four destinations are now permanent with `aria-current="page"`.
+
+#### Redact-before-LLM now fails closed on every path that reaches a provider
+
+- **`redact_before_llm` was inert on three of the four paths that send transcript text off-box.** Speaker identification passed no redaction config at all, `build_speaker_segments` sent raw `text[:200]`, and topic extraction sent raw text — so a user with the setting enabled still had unmasked transcript content posted to their provider. Summarization honoured the setting but swallowed config-resolution errors into "no policy".
+- **The dominant leak was structural, not a coding slip.** Redaction detection is dispatched from the *same* post-processing step that dispatches summarization, speaker ID and topic extraction, onto a *different* queue, with nothing ordering them. `mask_segment` called with an empty span list masks nothing and returns its input — so those tasks routinely "masked" a transcript whose spans were still NULL and sent it verbatim. The call site looked correct; only the file's `redaction_status` could reveal otherwise.
+- All four paths now resolve masking through a single guard (`services/redaction/llm_guard.py`) that gates on detection having completed, defers the task while a scan is in flight (dispatching one itself if the file was never scanned), and refuses to send when detection failed. `transcript_builders` fails closed — a masking error substitutes a placeholder, never the original text — and masks *before* truncating, so a 200-character window cannot slice a mask open.
+
+#### Chat answers were capped below the configured budget
+
+- `LLMConfig.response_tokens` was never assigned, so every request sent `max_tokens=4000` while callers — chat's prompt budget and summarization — reserved the *derived* value of up to 16,384. On a large-context model the prompt was under-filled by up to ~12k tokens of excerpts it had room for, and answers were capped lower than intended. The service now keeps the two in sync.
+
+#### Stale default models
+
+- The Anthropic default fell through to `claude-3-haiku-20240307` (deprecated) because no values file pins a model; it is now `claude-haiku-4-5`. `OPENROUTER_MODEL_NAME` likewise moves from `anthropic/claude-3-haiku` to `anthropic/claude-haiku-4.5` — note OpenRouter's slug uses a **dot** where the first-party ID uses dashes.
+
+#### Transcript and speaker curation now render a single source of segment data (issue #352, PR #356)
+
+- **Renaming a speaker saved to the database and then did nothing on screen** — only a full page reload showed the new name. Editing a segment's text and reassigning a segment's speaker were broken the same way, and both failed silently. The page rendered from `file.grouped_segments`, whose `GroupedTranscriptSegment` schema **embedded a full copy of every segment it grouped**, while every optimistic update patched `file.transcript_segments` — a different set of objects. Groups now carry `segment_uuids` and `TranscriptDisplay` resolves them against the flat list, so there is one segment object per segment and a patch cannot miss it. The payload shrinks rather than doubling, and the client-side grouping fallback is deleted (a second implementation of the grouping rule is what let the two representations diverge unnoticed). Measured on the dev stack with the write stubbed at the network boundary: before, **0 of 28 labels repainted, ever**; after, **28 of 28 in ~31 ms** (37 ms dark) after the PUT resolves. All segment mutations now go through `$lib/fileDetail/segmentSync`.
+- **Files over 500 segments never rendered past the first page**: `GET /files/{uuid}/segments` returned no grouping, so infinite scroll advanced its "N of M loaded" counter while rendering nothing and jump-to-timestamp scrolled to a row that was never mounted. Verified on a 732-segment file: **500 rendered before, 732 after**. The endpoint now serves grouping (O(n) over already-materialized objects — no new query, so its two-query profile is unchanged), with `start_segment_index` made global (it restarted at 0 per page, which inverted the reading-progress bar) and `segment_limit` bounded at 2000 (a jump to the end of a 50k-segment transcript requested the whole thing in one call; the SPA now pages in a loop). The endpoint also gains a `TranscriptSegmentsPage` response model — it was an untyped `dict[str, Any]`.
+- **An overlap run split across a page boundary could take down the entire transcript list.** Both halves carry the same `overlap_group_id`, and group rows were keyed by it — a duplicate key makes Svelte throw at render time, killing the whole list rather than one row. Reproducible on real data. Rows are now keyed by their first segment's uuid, the halves are stitched on append, and `TranscriptDisplay` claims each segment for exactly one group while resolving references, so the invariant holds for every payload source (initial load, refetch, redaction reload, pagination) rather than the pagination path alone. Note this is **not** a backend defect: every individual response is internally consistent; the collision exists only in the combined client-side list.
+- **The `speaker_processing_complete` websocket handler was dead code**: `stores/websocket.ts` dispatched the event and returned before the notification store, and nothing listened for the resulting CustomEvent, so labels auto-applied to other speakers required a manual reload and the "auto-applied to N other speakers" toast had never fired for any user. Now wired up and gated to the current file, with the unreachable handler branches removed.
+- **A failed speaker save left the new name on screen looking saved.** It is now reverted (`speakerProfile.errorWithLocal`, "changes are saved locally only", replaced by `saveFailedReverted` across all 8 locales; the dead `speakerProfile.localOnly` removed). Bulk save moves from `Promise.all` to `allSettled` and restores only the speakers that failed — one rejection previously discarded every other speaker's outcome.
+- **Two latent bugs fixed by construction** when the per-path write loops were consolidated: a synthesized speaker written with an `id` key instead of `uuid` (fixed in bulk save, never in single rename, leaving the speaker unmatchable), and a colour-drift bug that interpolated a UUID into `SPEAKER_${id}` — the value the speaker-colour hash reads — so a renamed segment changed colour.
+- Smaller curation fixes: the transcript search index went stale after a rename (searching the name just typed found nothing); an open speaker dropdown showed stale names; `handleSpeakersMerged` dropped `?redact=false`, silently re-masking a revealed transcript; `FileHeader`'s title write never invalidated the page's `file`; the export flow blocked on a comments fetch routed through a bridge whose target element exists nowhere in the app; cluster and profile renames re-skeletoned the entire grid instead of patching one card; delete/merge refetched the cluster list twice; speaker merge issued its merges serially; and the gallery's bulk "Speaker ID" was N serial POSTs (the bulk-action endpoint had no `identify_speakers` handler — now added).
+- **Hybrid search returned one file for queries that densely matched a single transcript**: with hybrid + collapse + RRF, a query hitting every chunk of one file (e.g. a speaker name boosted on a heavily-labeled file) filled the entire rank window and starved every other file group — searching a speaker name returned 1 file from a 2,500-file library. The hybrid pass now backfills missing file groups from a plain BM25 collapse query (immune to window starvation), rescored strictly below the lowest hybrid score so backfilled hits never outrank hybrid-ranked ones. Live-verified: 1 → 201 files with the hybrid-ranked file still first. (Aggs-based diversification remains blocked by an OpenSearch 3.4 hybrid+collapse+RRF crash.)
+- **Neural-search degradation guardrails**: investigating silently-BM25-only search found three infrastructure failure modes, all addressed — OpenSearch's percentage-based disk flood-stage watermarks tripped on a mostly-full shared drive and turned every index `read_only_allow_delete` (compose now sets absolute 10/20/30 GB free-space watermarks); a dead (`DEPLOY_FAILED`) embedding model silently degraded every hybrid query to BM25-only; and the ML memory circuit breaker flapped on a 4 GB heap carrying 1.3M kNN chunks (threshold raised to 95, persistent). The search-quality harness now asserts the active embedding model is actually DEPLOYED so this failure class can't go unnoticed again.
+- **On-demand file analytics never computed (issue #272)**: `str(FileStatus.X)` renders `"FileStatus.X"`, so status guards comparing against bare value strings never matched — the completed-only gate on `_get_or_compute_analytics` was always-True at both call sites yet the compute path never fired correctly, and the redaction don't-run-mid-reprocess guard was dead (redaction could race a reprocess). All comparisons now use enum members, with regression tests pinning the now-active behavior.
+- **`DELETE /api/files/{uuid}` unshadowed for completed files**: the upload-cancel route registered first and shadowed the full-delete handler, so deleting any non-PENDING file via the API returned 404 ("No pending upload found"). One route now handles both — PENDING uploads keep the lightweight cancel cleanup; everything else performs the full ownership-checked delete with storage + index cleanup. (The UI was unaffected: the gallery deletes through the bulk-action endpoint.)
+- **Comment fallback routes 500'd**: `POST /api/comments` read a field its request schema didn't carry (every call 500'd — the error had been silenced with a `type: ignore`), and `GET /api/comments` expected `media_file_uuid` while the frontend fallback sends `media_file_id`. Both repaired; the legacy parameter name is still accepted.
+- **PKI admin DNs configured via the admin UI were silently ignored**: `_is_pki_admin` read only the `PKI_ADMIN_DNS` env var, skipping the documented DB-over-env auth config precedence — admin DNs now resolve DB → env → default like the rest of the PKI settings.
+- **Thumbnail fallback returned 500 for missing objects**: a MinIO `NoSuchKey` on the thumbnail fallback endpoint was flattened into a generic exception; it now maps to a clean 404.
+- **Floating preview players unified + seek fixed**: the search and speaker pop-out players now share one `FloatingPreviewPlayer` component (identical chrome, hour-aware timestamps, title + speaker layout — fixing the speaker player's jumbled time display), timestamp jumps wait for `loadedmetadata` so deep seeks no longer restart playback from 0 on slow links, a refreshed presigned URL is hot-swapped preserving position and play state, and the speaker media-preview honors `MEDIA_URL_EXPIRE_SECONDS` (was hardcoded to 1 hour). The search preview also no longer auto-reopens on back-navigation, and its close button is translated in all 8 locales.
+- **Concurrent speaker-attribute detection deduplicated**: rediarize/recovery flows could stack multiple identical gender-inference tasks for one file (minutes of CPU-bound wav2vec2 each, holding DB sessions idle-in-transaction); a Redis idempotency guard (2 h TTL, released on completion, fail-open without Redis) now skips duplicates while still chaining LLM speaker identification.
+- **Blackwell image build un-broken**: `backend/.dockerignore` excluded `scripts/` wholesale, so `Dockerfile.blackwell` could never COPY its SM_121 patch script; that file is now whitelisted.
+- **Installer re-runs are idempotent**: `setup-opentranscribe.sh` now creates `.env` immediately and writes each value as it is entered (an interrupted setup no longer loses progress), skips prompts already answered on re-run, and its HuggingFace gate instructions point at the correct `speaker-diarization-community-1` model agreement (was the outdated 3.1 URL).
+- **`./opentr.sh rebuild-backend` preserves NAS/NVMe storage mounts**: it previously recreated the datastore containers without the NAS overlay, re-pointing them at empty default Docker volumes — the bind-mounted data was never at risk, but the stack behaved as if wiped until restarted correctly. The NAS overlay is now applied by every code path that recreates containers.
+- **Out-of-range LLM temperature reported the wrong error**: the range check sat inside the float-conversion `try`, so its message was swallowed and re-raised as "must be a valid number".
+- **Production images report their real version**: `/health` and the admin About panel showed `"unknown"` for Docker Hub images because the `VERSION` file was never inside the image build contexts. `Dockerfile.prod`/`Dockerfile.lite`/`Dockerfile.blackwell` now accept an `APP_VERSION` build arg (baked as env), and `scripts/docker-build-push.sh` passes the release version to every backend build.
+- **Frontend prod-image healthcheck probes `127.0.0.1`**: under `read_only` container deployments nginx can't enable its IPv6 listener, so the healthcheck's `localhost → ::1` resolution was refused and the container reported permanently unhealthy while serving fine on IPv4.
+
 ### Security
 
+#### Authentication audit (issues #353, #354, #355)
+
+A production user reported that LDAP was enabled yet users could still self-register. Auditing
+that turned up a set of defects across the authentication surface, listed here by class and
+impact. Everything below is fixed in this release.
+
+- **MFA could be bypassed with the token the login endpoint hands out before the second factor.**
+  Access, refresh and MFA tokens are all signed with the same key, and the request-authentication
+  path verified the subject, the JTI and the revocation list but never *what kind of token it
+  was*. The short-lived MFA token — issued to a client that has supplied only a password — was
+  therefore accepted as a full session. Every token now carries a purpose claim and every
+  consumer verifies the one it expects; refresh tokens are likewise no longer accepted as
+  sessions, including on the WebSocket handshake, where one already worked.
+- **A cross-origin page could strip a victim's MFA enrolment.** The CSRF middleware exempted the
+  whole `/api/auth/mfa/` prefix so the pre-authentication verify step could work, which also
+  exempted the cookie-authenticated setup endpoint — an endpoint that regenerates the TOTP secret
+  and clears every backup code, with no code required. Only the pre-authentication path is exempt
+  now. The middleware also skipped any request without an access-token cookie, which left token
+  refresh unprotected for the seven days the refresh cookie outlives it; the CSRF cookie's own
+  lifetime was raised to match so the check applies uniformly rather than being waived.
+- **PKI header trust failed open in a relaxed environment.** With PKI enabled and no trusted-proxy
+  allowlist, a forwarded certificate DN was accepted from any source with only a warning, and a
+  DN header alone could authenticate without a certificate ever being parsed. The reverse proxy is
+  what terminates mTLS and vouches for that header, so it is now refused outright when no proxy is
+  allow-listed, and a DN is only trusted from a configured proxy or alongside a validated
+  certificate. Hardened deployments were never exposed — startup already refused that
+  configuration — but the login route also gained the rate limit and lockout recording it lacked.
+  **`PKI_TRUSTED_PROXIES` is now required for any PKI deployment, not just hardened ones.**
+- **One rule, two implementations, and they disagreed.** Whether an account may authenticate with
+  a local password was decided in two places; only one hard-blocked LDAP. Since the login flow
+  tries the first and falls through to the second, an LDAP account with the per-user fallback flag
+  set could authenticate against a locally stored hash — breaking the invariant that directory
+  accounts never have one. There is now a single implementation, enforced when the flag is *set*
+  as well as when it is read, and the admin password-reset endpoint no longer plants a hash on an
+  account whose identity lives elsewhere.
+- **Changing a credential or a privilege did not end existing sessions.** Only the self-service
+  password reset revoked anything. Role changes, deactivation, account lock, MFA reset, and both
+  admin and self-service password changes all left every other session live — so an attacker
+  holding a session kept it through the victim's password change, which is the case revocation
+  exists for. All of those paths revoke now. Because access tokens are stateless there was nothing
+  to revoke for the current one, which made "log out everywhere" *weaker* than "log out"; a
+  per-user revocation epoch closes that.
+- **Multi-factor enforcement was advisory.** `MFA_REQUIRED` was reported by the status endpoint and
+  read by nothing at login, so on a deployment that required MFA an unenrolled user simply received
+  a full session — enforcement existed only in the frontend, and any API client ignored it. Login
+  now issues a scoped enrolment challenge instead, and completing enrolment issues the session.
+  Separately, the switch governing MFA replay protection defaulted to the fail-open setting: on a
+  Redis error both TOTP codes and MFA tokens became replayable. It now defaults secure in a
+  hardened environment. A backup code used to disable MFA was verified but never consumed, so the
+  same code worked indefinitely.
+- **Account lockout was neither atomic nor crash-safe.** The Redis path issued its optimistic lock
+  on one connection and its write on another, so the transaction guarded nothing and concurrent
+  failures could both record the same attempt count; its error path passed the wrong object to the
+  in-memory fallback and turned a Redis blip into a 500 on every login. It is a server-side
+  compare-and-set now, with a working fallback. The super_admin lockout exemption was computed only
+  on *successful* attempts, so the emergency-access account still locked out and a success never
+  cleared its counter.
+- **The interactive API documentation was published unconditionally**, enumerating the entire admin
+  and authentication surface to anonymous visitors in production. It is withheld when hardened
+  (`ENABLE_API_DOCS=true` opts back in) and denied at the reverse proxy as well.
+- **Account takeover via an unverified email change.** Changing your own address required no
+  password, notified nobody, and was unaudited — change the address, request a password reset, own
+  the account. It now requires the current password, notifies the previous address, and is audited.
+- **Password-reset links were written to the application log** whenever SMTP was unconfigured —
+  the default, and set in none of the shipped compose files — and again on any send failure. A
+  reset URL is a single-use credential; it is no longer logged, and SMTP sends now time out
+  instead of holding a request thread open indefinitely.
+- **Directory login could not promote an admin, and demoted platform owners.** Converting a local
+  account to LDAP wrote a role/flag combination the database forbids, so any user in an LDAP admin
+  group got a server error on first login and could never convert; the same path also demoted an
+  existing `super_admin`. All derived-privilege writes across the LDAP, OIDC and PKI sync paths now
+  go through the single canonical derivation.
+- **The role invariant was not actually enforced.** The constraints added in v369 make the
+  superuser flag a mirror of the role, but the role column remained nullable — and PostgreSQL
+  passes a constraint that evaluates to unknown, so a row could carry the superuser flag with no
+  role at all and satisfy the very check meant to prevent it. Migration `v375` makes the column
+  NOT NULL, does the same for `auth_type`, and adds the missing `auth_type` constraint (an
+  unrecognised value silently exempted an account from MFA enrolment).
+- **Assorted**: an inactive account produced a distinguishable response that both disclosed the
+  account's existence and skipped lockout recording; lockout was keyed on the submitted identifier,
+  giving accounts reachable by two identifiers two independent budgets; logout could leave valid
+  cookies in place when Redis was down, and a failed federated logout was reported to the user as a
+  clean sign-out; several authentication routes had no rate limit; audit records attributed every
+  failed login to LDAP whenever LDAP was enabled, regardless of how the attempt was actually made.
+- **An external identity could take over an existing account by email coincidence.** Every
+  external path — LDAP, PKI, and the JIT seam — resolved a user by the provider's own identifier
+  and then fell back to matching on email address. The address is an *attribute of the external
+  source*, so anyone who could write it (a directory administrator, a self-service directory, or
+  anyone who could get a certificate issued) could point it at an existing account and inherit it,
+  including its content and its privileges. There is now **one** rule for all four paths: link on
+  an email match only when the source asserts the address is verified, and **never** link a
+  `super_admin`. A refusal fails the login rather than silently creating a duplicate account, and
+  returns the *same* generic error as a bad credential so it cannot be used to probe which
+  addresses exist. **See Upgrade Notes — this changes behaviour on providers that do not assert
+  `email_verified`.**
+- **OIDC token validation accepted the wrong credential on failure.** Validation tried the ID
+  token and, if it did not verify, **fell back to the access token**, accepting whichever one did.
+  That turns an ID token failing audience or issuer validation into a silent downgrade onto a
+  credential RFC 9068 §6 forbids the relying party from inspecting, whose `aud` means something
+  else entirely, and which several major providers issue as an opaque string no JWKS can verify at
+  all. Only the ID token authenticates now; a missing or invalid one is a hard 401, and `openid`
+  is forced into the requested scopes so a provider cannot be configured into issuing no ID token.
+  The access token is still used as a bearer credential against `userinfo`, which is what it is
+  for.
+- **OIDC had no admission control at all.** JIT provisioning created an account
+  **unconditionally**, and the only group-shaped setting (`oidc_admin_role`) *elevates* rather
+  than *admits* — so pointing the integration at a corporate realm provisioned every identity in
+  it. Allow/block group lists and an optional approval queue now gate provisioning, evaluated
+  before the account row is created and before any email-match link, and re-evaluated on every
+  login so a group removal locks the account out rather than only affecting new users. An empty
+  allow-list admits everyone, which is what preserves existing deployments on upgrade.
+- **The privilege ceiling on directory-driven grants is now enforced at three layers.** IdP group
+  mappings can grant at most `admin`; `super_admin` is refused by the wire contract, by the
+  service before anything is persisted, and by a database CHECK constraint. `super_admin` is
+  local-only by design — it is the break-glass account for exactly the identity provider that is
+  failing — and directory reconciliation never demotes one either.
+
+- **Security controls no longer weaken silently when Redis is unavailable (issue #284 A0/A1 follow-up, issue #324)**: Redis holds the state several controls depend on — the token-revocation blacklist, account-lockout counters, MFA single-use replay protection, and auth rate limiting — and that state is *shared across replicas*. When Redis was unreachable each process fell back to its own in-memory store, which is empty on start and never shared, so **a token revoked on one replica was still honoured by every other**: "log out all devices" and password-reset revocation quietly stopped meaning anything, on the exact control you reach for during an incident. It logged at `warning` and scrolled past. Redis here is a **cache**, not the system of record, so the degraded path now consults the system of record instead: `refresh_token.revoked_at` is durable and shared by every replica, so revocation keeps working and nobody is logged out during an outage. An access token (which has no durable row of its own) is denied only on **positive evidence** — the user demonstrably had sessions and every one was revoked — because "this user has no refresh tokens" is not evidence of revocation and denying on absence would lock out valid users whose auth path never mints one. With no database session, or if the fallback query itself fails, the check **denies**. Degradation now logs at `CRITICAL` and increments a new `security_state_degraded_total{control,fallback}` Prometheus counter — **alert on it**. Behaviour is identical for self-hosted single-node and cloud (the gate is `ENVIRONMENT`, which defaults to `production`; only a developer laptop keeps the in-memory convenience), and there is deliberately **no flag to disable it** — an off-switch on a security control gets flipped during exactly the incident it guards against.
+- **A password reset that could not revoke sessions reported success anyway (issue #324)**: `confirm_password_reset` called a helper that commits on success and calls `db.rollback()` on *any* error — and it ran **before** the caller's own commit, so a Redis outage or failed commit silently reverted the new password hash, the history row and the used-token markers, while the function still returned success. **The user was told their password had changed when it had not, and their existing sessions were left live** — the outcome FedRAMP AC-12 exists to prevent, arriving at the moment it matters most, since a reset is frequently triggered by a suspected compromise. Revocation now runs inside the caller's transaction and a failure aborts the whole reset with a real error. The two revocation entry points are split by contract so the mistake cannot recur: `revoke_all_user_tokens_in_transaction` (commits nothing, propagates) and `revoke_all_user_tokens` (best-effort, commits, documented as unsafe to call mid-transaction).
+- **An undecryptable auth secret is now treated as unset instead of returned as ciphertext (issue #324)**: `AuthConfigService.get_config` handed back the stored ciphertext when decryption failed — the comment said so outright — and had a quieter second path where a decrypt returning falsy *without raising* left the ciphertext in place and logged **nothing at all**. These values are used as real credentials (an LDAP bind password, an OIDC client secret), so ciphertext is at best a baffling authentication failure and at worst an encrypted blob shipped to an external IdP or rendered in the admin UI. Both paths now return `None` and log, naming `ENCRYPTION_KEY` as the usual cause; the caller falls through to the env value and then the coded default — a known source rather than garbage. A test had been *asserting* the old behaviour, which is how it survived.
+- **A failed content-redaction scan is no longer cached as "clean" (issue #324)**: detection is deliberately detect-once/cache-forever, but the run was marked `done` **unconditionally** while the detectors underneath swallowed their own failures (per-segment PII, batch toxicity at `debug` level, and the LLM detector). A transient failure — model not loaded, out of VRAM, LLM provider down — therefore produced empty spans and a `done` status, permanently recording a transcript as containing no PII, never re-scanned. Detector exceptions are now collected and the run is marked `failed` rather than `done`. Spans that *did* succeed are still committed (they are real findings; discarding them would be strictly worse) — only the status stops claiming the pass was complete. Language-gated skips are untouched, since those are deliberate rather than failures. **See Upgrade Notes for what `failed` does and does not do.**
+- **An unverifiable password-history entry is no longer silently counted as "not a match" (issue #324)**: the reuse check treated a hash it could not verify as a non-match and logged at `debug`, so if every stored hash became unverifiable — plausible after a hashing-scheme or FIPS-mode change — the control **silently stopped enforcing anything** while looking identical to a clean pass. This one is deliberately **not** fail-closed, unlike the rest of the above: rejecting the new password would leave the user on their *current* password, which is a guaranteed reuse, so permitting a *possibly* reused old one is strictly better. The fix is visibility — `ERROR` when the check is degraded, `CRITICAL` when it was completely blind, naming `FIPS_MODE`/`FIPS_VERSION` as the usual cause.
+- **Breaking — tags are now per-user; tag names no longer leak across accounts (migration `v374_add_tag_user_id`)**: `tag` had **no owner column** — `id, uuid, name (globally UNIQUE), source, normalized_name` — so tags were a shared vocabulary *by schema* and `_get_or_create_tag()` reused any row by name. `GET /api/tags/unused` was literally `db.query(Tag).filter(~Tag.id.in_(used_tag_ids))` with **no user filter at all**, so any authenticated user could enumerate every unattached tag name in the deployment; `GET /api/tags` leaked the same set through its `MediaFile.id IS NULL` arm. Tag names are user-authored free text — a client name, a case number, "Project Falcon Layoffs" — so this disclosed one account's work to every other. `tag` gains a nullable `user_id` (NULL = *system* tag, i.e. the seeded `Important`/`Meeting`/`Interview`/`Personal` vocabulary everyone sees; non-NULL = that user's own), the global `UNIQUE (name)` is replaced by partial unique indexes `uq_tag_user_name` (`(user_id, name) WHERE user_id IS NOT NULL`) and `uq_tag_system_name` (`(name) WHERE user_id IS NULL`), and every read applies one visibility rule: a tag is visible if it is a system tag, owned by the caller, **or** attached to a file in `PermissionService.get_accessible_file_ids_subquery` — which already covers files shared directly and via groups plus the org tenant gate, so sharing keeps working with no second rule. `_get_or_create_tag` now takes an owner and every writer passes one: interactive endpoints attribute to the caller, background writers (auto-labeling, watch-source imports, yt-dlp playlist/URL imports, upload tag application) to the **file owner** — an unattributed tag would be a system tag and therefore published to every account. Because names are only unique per owner, `remove_tag_from_file` and `remove_tags_from_file` resolve the tag by joining `file_tag` for that file rather than by name, and the gallery's ALL-tags filter counts `DISTINCT Tag.name` instead of `Tag.id`. `tag.user_id` is a plain FK, so account deletion (`admin`) and GDPR erasure now detach and delete the subject's tags before the `user` row.
+- **Breaking — deployment hardening now fails closed (issue #284 A0.3/A0.4)**: every production security control was gated on `ENVIRONMENT in ("production", "prod")`, and **nothing ever set `ENVIRONMENT`** — not `.env.example`, not any compose file. `opentr.sh` uses a shell-local variable of the same name for its own dev/prod switch and exports `BUILD_ENV` instead, so `settings.ENVIRONMENT` was always its `"development"` default in *every* deployment, including `./opentr.sh start prod`. The default-secret refusal, `DEBUG` enforcement, `REDIS_PASSWORD` requirement, PKI proxy hard-stop, and the session-cookie `Secure` flag therefore never ran anywhere. `ENVIRONMENT` now defaults to `production`, every gate routes through a new `settings.is_hardened`, and relaxation requires explicitly naming one of `development`/`dev`/`testing`/`test`/`local` — an unset, empty, or misspelled value is treated as production. The dev stack declares `ENVIRONMENT=development` itself in `docker-compose.override.yml` (never loaded in prod), so `./opentr.sh start dev` is unaffected.
+- **Legacy multipart upload no longer buffers the whole file in RAM (issue #284 A1.20)**: it extended a `bytearray` to EOF, so a multi-GB upload was held entirely in memory and OOMKilled the API process — taking every *other* in-flight request, WebSocket, and SSE stream down with it, so one user's large upload could end everyone's session. It now spools to a `SpooledTemporaryFile` (RAM up to 32 MB, then disk), closed on every exit path so a failed upload cannot leave a backing file behind. The fingerprint switched from `compute_from_bytes` to `compute_from_stream`, which samples 3x128 KiB regardless of size and therefore never re-materializes the file.
+- **WebSockets are drained on shutdown, and an inert GPU setting now says so (issue #284 A1.21/A1.7)**: nothing closed WebSockets during shutdown — the lifespan cancelled its background tasks but left sockets open, so the process waited on them until the orchestrator's grace period expired and SIGKILLed it, dropping every stream mid-message. They now receive a clean `1001 going away`, which the frontend's reconnect logic treats as a retry. Separately, `--max-tasks-per-child` is a **prefork-pool** feature that Celery silently ignores under `--pool=threads` — which is what the GPU workers use by design, to keep model weights pinned in VRAM. Lowering `GPU_MAX_TASKS` to bound a VRAM leak therefore did nothing at all. The worker now warns at startup when a meaningful value is set on the threads pool, and `.env.example` states the constraint; `GPU_WORKER_POOL=prefork` remains the real lever, at the cost of reloading the model per task.
+- **Degraded-mode fallbacks no longer latch (issue #284 A1.16/A1.19)**: the account-lockout store fell back to per-process in-memory tracking when Redis was unreachable **and never retried** — one transient blip and that replica counted failed logins in its own memory for the rest of its life. Behind a load balancer that is an auth-throttling bypass: each replica keeps its own counter, so an attacker gets N x the allowed attempts and lockouts stop being visible across replicas at all. It now re-probes Redis (rate-limited to one attempt per 30 s, so a hard outage doesn't add a connection attempt to every login). Separately, `PIPELINE_SCRATCH_SHARED=false` now disables the scratch-volume fast path: staging the preprocessed WAV to local scratch and skipping the MinIO upload is correct only when every worker shares one filesystem, and on a multi-node deployment the CPU pod stages audio the GPU pod cannot read — failing every file with a confusing missing-file error rather than anything pointing at the mount.
+- **Task time limits and worker DB-pool sizing (issue #284 A1.2/A1.5)**: there were **no** global Celery time limits, so a hung CUDA call held the single GPU slot indefinitely and no later transcription could start. A deliberately generous 3 h soft / 3 h 15 m hard ceiling now bounds it — tight limits would truncate legitimate long transcriptions (media is capped at 4 h and hybrid/CPU runs are slow), and the limits sit under the 6 h `visibility_timeout` so a timeout kill cannot race redelivery. Note `soft_time_limit` uses SIGALRM, which is unreliable under `--pool=threads` (what the GPU workers use); there the real protection remains `visibility_timeout` plus DB-status crash recovery. Separately, `DB_POOL_SIZE`/`DB_MAX_OVERFLOW` defaulted to 20 + 40 = up to **60 connections per process**, which across ~10 worker services is ~660 against a Postgres whose default `max_connections` is 100. Workers now get a small pool (2 + 3), dropping the worker ceiling to 40; the API keeps the larger default as the latency-sensitive path.
+- **Startup steps that assumed a single instance are now elected (issue #284 A1.3/A1.15)**: `_clear_stale_task_state()` deletes **all** `task_progress:*` keys and every coordination lock, so with more than one API replica the second to boot wiped progress and locks belonging to work the first was actively coordinating. It — and the OpenSearch index repair — now run once per boot window via a Redis `SET NX` election that fails **open** (Redis unreachable → run the step, since skipped cleanup is worse than duplicated). `startup_recovery_task` also gained the `with_task_lock` guard it was missing, so a rollout no longer re-dispatches recovery for the same stuck files once per replica.
+- **Celery broker and migration-lock correctness (issue #284 A1.1/A1.4/A1.6/A1.17/A1.18)**: no `visibility_timeout` was configured, so the Redis broker kept kombu's 3600 s default — and because the transcription tasks are `acks_late=True`, **any run over an hour was redelivered and the same file transcribed twice on the GPU, concurrently**. The migration advisory lock did nothing: it was taken on a pooled connection that `engine.dispose()` then closed *before* `command.upgrade()` ran, and the matching unlock used a fresh session, which cannot release a session-scoped lock. Per-task `engine.dispose()` defeated connection pooling entirely. `rediss://` broker URLs crashed every worker because kombu requires an explicit SSL context. `backup.run` had no overlap lock, so a double tick started two concurrent `pg_dump`s.
+- **Download SSE lost-wakeup race (issue #284 A1.22)**: readiness was checked *before* subscribing to the progress channel, so a prepare finishing in that window published to an empty channel and the stream waited forever for an event that had already happened. Now check → subscribe → **re-check**, which keeps the Redis-free fast path for an already-ready download while closing the gap.
+- **`file_created` reached only one replica (issue #284 A1.14)**: it used the in-process `ConnectionManager`, so behind a load balancer a user connected to a different replica never saw the new file appear. Routed through Redis pub/sub.
+- **SSRF: every server-side fetch of a user-supplied URL is now validated (issue #284 A0.1/A0.2/A0.10)**: `is_safe_url` existed but had exactly **one** caller — the yt-dlp ingest path. The LLM/ASR "test connection" and model-discovery endpoints, and the watch-source S3/SMB connectors, took an arbitrary host from any authenticated user and fetched it server-side with no validation, which with open self-registration is effectively anonymous reach into the deployment's private network and cloud instance metadata. The guard itself also had two holes: `0.0.0.0` passed every check (it is neither private, loopback, nor reserved) and multicast was unchecked. It now also handles IPv6-mapped IPv4, IPv6 ULA/link-local, AWS IMDSv6, malformed ports, and multi-A-record hosts where only one record is private. Rejection reasons are logged but never returned, since distinguishing "private IP" from "cannot resolve" turns the endpoint into a network scanner. `LLM_ALLOW_PRIVATE_ENDPOINTS` (default off) and `WATCH_ALLOW_PRIVATE_ENDPOINTS` (default on — a LAN NAS is the normal single-tenant case) re-enable private targets. yt-dlp URLs are re-validated at fetch time, closing the queue-delay DNS-rebinding window; full TOCTOU closure additionally needs egress restriction on the download worker.
+- **Client IP is resolved through the trusted-proxy chain everywhere (issue #284 A0.5)**: three call sites disagreed. The rate limiter honoured `RATE_LIMIT_TRUSTED_PROXIES` but took the **first** `X-Forwarded-For` entry, which a client controls when more than one proxy sits in front; `_get_client_info` used the raw peer, so every audited login recorded the reverse proxy instead of the user; and the audit middleware trusted `X-Forwarded-For`/`X-Real-IP` **unconditionally**, letting any client forge its own address in the security audit trail. All three now share `utils/client_ip.resolve_client_ip`, which walks the chain right-to-left past trusted hops and ignores forwarding headers entirely when no trusted proxy is configured. `Dockerfile.prod` gains `--proxy-headers` with `--forwarded-allow-ips` scoped to private ranges (never `*`).
+- **Authorization results are no longer masked as 500s (issue #284 A0.6)**: `clear_video_cache` and `refresh_analytics` wrapped their ownership lookup in a broad `except Exception`, re-wrapping a legitimate 403/404 as a 500 and then referencing the still-unassigned `file_id` in the handler's own log line — crashing a second time with `NameError`. Both now hoist the lookup out of the `try`, re-raise `HTTPException`, and stop echoing `str(e)` in the 500 body.
+- **WebSocket auth reaches parity with HTTP (issue #284 A0.7)**: the local-JWT path skipped the `is_active` and token-revocation checks the HTTP path performs, so a revoked token or a deactivated account still opened a socket and kept receiving that user's events.
+- **TOTP codes are single-use (issue #284 A0.13)**: `verify_totp` never tracked used codes, so a valid code stayed valid for its whole 30-second step plus the drift window, contrary to RFC 6238 §5.2. Codes are now claimed in Redis with `SET NX`, scoped per user, with a TTL covering the full acceptance envelope. Fails open when Redis is unavailable unless `MFA_REQUIRE_REDIS=true`.
+- **`/register` is rate-limited and can be closed (issue #284 A0.11)**: it was the only auth route with no limiter, while creating accounts that are immediately active and GPU-capable. Adds the standard auth limiter plus `ALLOW_OPEN_REGISTRATION` (default true for self-host; set false when an external IdP owns identity).
+- **Wildcard CORS with credentials refuses to boot, and `TESTING` shortcuts are inert in production (issue #284 A0.8)**: `TESTING=true` makes the auth layer fabricate a user from the token UUID when the DB lookup fails; every such shortcut now additionally requires `not settings.is_hardened`, so the flag cannot take effect in a real deployment even if it leaks into the environment.
+- **Breaking — the well-known admin credential is no longer seeded in production (issue #284 A0.9)**: `initial_data.py` created `admin@example.com` / `password` as a **`super_admin`** on every boot, with no environment gate, so any public deployment shipped with a publicly-known platform-owner login. That credential is now created only in a relaxed environment (the e2e suite and local workflow depend on it). A hardened deployment uses `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD`, or — when no password is supplied — a generated 192-bit password logged **once** at `CRITICAL` on first startup. The seeder also no longer creates a bootstrap admin when any super-admin already exists.
 - **Production placeholder-key guard hardened**: the backend's production startup check refused known weak defaults but did **not** recognize the `.env.example` placeholder (`CHANGE_ME_auto_generated_on_install`), so a hand-copied `.env` could boot production with publicly-known JWT/encryption keys. Both the `JWT_SECRET_KEY` and `ENCRYPTION_KEY` checks now also reject any `change_me` placeholder value.
 - **Predictable secret fallback removed from the installer**: when neither `openssl` nor `python3` was available, `setup-opentranscribe.sh` derived all credentials — including the MinIO at-rest encryption key — from the current timestamp (`date +%s`), making them brute-forceable. The fallback now reads `/dev/urandom` (cryptographically secure, coreutils-only), and setup aborts rather than ever generating predictable secrets.
 - **Offline installer now generates the MinIO encryption key**: `install-offline-package.sh` left `MINIO_KMS_SECRET_KEY` at its invalid placeholder (with `MINIO_KMS_AUTO_ENCRYPTION=on`), which prevents MinIO from starting; it now generates a real key (and a `FLOWER_PASSWORD`) like the main installer.
@@ -220,15 +676,296 @@ This release also incorporates the substantial pipeline work that landed since v
 - **Installer `.env` locked to owner-only (0600)**: `install-offline-package.sh` previously left the generated `.env` world-readable (`644`) after a recursive `755`; it is now `chmod 600` *after* the recursive pass so the file holding all generated secrets isn't re-loosened.
 - **`OPENSEARCH_ADMIN_PASSWORD` now generated by the installers**: both `setup-opentranscribe.sh` and `install-offline-package.sh` generate a complexity-compliant admin password (upper+lower+digit+special, ≥8) so enabling the OpenSearch security plugin doesn't fail its bootstrap password check. It is only consumed when `OPENSEARCH_SECURITY_ENABLED=true`.
 - **API keys no longer echoed at the setup prompt**: `setup-opentranscribe.sh` reads LLM provider API keys with `read -s` (no terminal echo) instead of plain `read`, so keys don't appear on-screen or in the scrollback during interactive setup.
+- **Role is now the single source of truth for admin privileges**: `role ∈ {user, admin, super_admin}` is the sole authorization concept — `is_superuser` became a derived mirror of `role == 'super_admin'`, enforced by a DB CHECK constraint (migration `v369`, which also promotes the legacy default admin to `super_admin` and reconciles every existing row). `POST /admin/users` now requires `super_admin` to create admin/super-admin accounts, closing a privilege-escalation path where a regular admin could create a `super_admin`; `is_superuser` is always derived server-side, never taken from the client. (Authorization was already server-enforced — the JWT role claim is ignored and privileges load from the DB — but the two divergent concepts were checked inconsistently.) External IdPs (LDAP/Keycloak/PKI) grant at most `admin`: `super_admin` is local-only, and an existing local super-admin is never demoted by IdP group sync — important when the platform owner also belongs to an IdP admin group. New invariant test suite proves the constraint, derive-on-create, the escalation block, and that a forged token role claim is ignored.
+- **Non-FIPS deployments issued FIPS-profile credentials**: token algorithm selection and the MFA backup-code hash context keyed off `FIPS_VERSION` — which defaults to `140-3` on every deployment — instead of the `FIPS_MODE` master switch, so ordinary installs issued HS512 JWTs (with a JWT key shorter than the 64 bytes HS512 requires) and PBKDF2 backup codes. Both now gate on `FIPS_MODE`, matching `core/security.py`; backup codes hashed under the old branch remain verifiable.
+
+### Documentation
+
+- **Authentication documentation rewritten against the shipped behaviour.**
+  `docs-site/docs/authentication/` now carries `overview`, `ldap`, `oidc`, `pki` and a new
+  `groups` page (IdP group mapping), all wired into the sidebar — previously only `overview` was,
+  and the detail pages were unreachable from navigation. `keycloak.md` becomes a stub pointing at
+  `oidc.md` (Docusaurus has no client-redirects plugin here, so the stub *is* the redirect), and
+  `docs/KEYCLOAK_SETUP.md` is likewise a one-hop stub to the new `docs/OIDC_SETUP.md` because ~17
+  links across the repo — including `scripts/test-all-auth.sh` and the release blog post — point
+  at it. `docs-site/docs/features/authentication.md` and `docs-site/docs/user-guide/admin-panel.md`
+  were rewritten too: both still described `AUTH_TYPE` (a setting nothing ever read), a two-tier
+  privilege model, and a Keycloak-only SSO story. Surfaces that exist without an admin screen —
+  IdP group mappings, `require_email_verification`, directory sync — are documented as
+  API/settings-only rather than implied to have a panel.
+- **Superseded planning prose removed from `docs/`**: `ProjectPlan.md`,
+  `FORK_IMPLEMENTATION_PLAN.md`, `FORK_COMPARISON_vfilon.md`,
+  `FRONTEND_AUTH_IMPLEMENTATION_PLAN.md`, `RELEASE_PLAN_v0.4.0.md`,
+  `E2E_TEST_EXPANSION_PLAN.md`, `SPEAKER_PROFILE_FIX_PLAN.md`, `IMPLEMENTATION_AUDIT_REPORT.md`,
+  `DOCUMENTATION_IMPLEMENTATION_SUMMARY.md`, `DOCUMENTATION_STRATEGY.md`,
+  `DECEMBER_2025_INTEGRATION.md`, `OPTIMIZATION_ROADMAP.md` (superseded by
+  `GPU_PIPELINE_OPTIMIZATION_PLAN.md`) and a stray `run.txt`. Each was checked for inbound
+  references first; the only surviving mentions are inside historical CHANGELOG entries for
+  already-published releases, which are left alone as a matter of record.
+- **Homepage version badge single-sourced from `VERSION`**: the docs site hard-coded `v0.4.0` in `src/pages/index.tsx` and had drifted a release behind. `docusaurus.config.ts` now reads the repo-root `VERSION` file at build time and exposes it via `customFields`, so the badge can never disagree with what shipped. The Docker build context is `docs-site/`, which cannot reach `../VERSION`, so the value is threaded through as an `OT_VERSION` build arg (`opentr.sh` and both compose overlays pass the existing `APP_VERSION`); an unreadable or malformed version omits the badge rather than rendering a stale or `unknown` value. `VERSION` was added to the `deploy-docs` workflow's trigger paths so a release bump actually redeploys the site.
+- **Mobile layout fixes (phone / tablet)**: the homepage scrolled sideways on every phone viewport (~200 px of overflow on a 375 px screen). Two independent flexbox bugs caused it — the hero install command and the comparison table were both centered flex items whose default `min-width: auto` prevented them from shrinking, pushing their left edges off-screen where no scrolling could reach them. Both are now block-level scroll containers. Document-level horizontal overflow is 0 px at 375/393/412/768/1366/1440 px.
+- **Comparison table usability**: the 12-column homepage table now scrolls horizontally with the "Feature" column pinned via `position: sticky`, so a value in the rightmost column is still attributable to its row on a phone. Sticky cells were initially transparent because Infima leaves `--ifm-background-color` as `transparent` in light mode; a new opaque `--ot-bg` token backs anything that must occlude scrolling content.
+- **All markdown tables are scrollable and accessible**: a new `ScrollableTable` component (wired in through `src/theme/MDXComponents.tsx`) wraps every markdown table in a scroll container with edge-fade affordances. This replaces Infima's `table { display: block; overflow: auto }`, which scrolled but stripped the element's implicit table semantics for screen readers; tables are now real `display: table` elements again, and only genuinely scrollable ones become keyboard tab stops.
+- **Broken-link enforcement**: `onBrokenLinks` and `onBrokenAnchors` are both `throw` (previously `warn`), so a bad cross-reference fails the build instead of shipping. The site currently builds clean.
+- **Reference corrections**: repository links across `docs-site/docs/` now point at `attevon-llc/OpenTranscribe` following the org transfer (Docker Hub images remain `davidamacey/opentranscribe-*` — that account did not move); two blog posts linked the never-registered `docs.opentranscribe.io` and now use the live `docs.opentranscribe.app`; the "pin a specific version" example in the upgrade guide no longer suggests the long-superseded `v0.3.0` tag.
+- **Dark-mode parity**: the comparison table's supported/unsupported markers used hard-coded hex values that lost contrast on dark backgrounds; both now follow theme tokens and carry accessible labels.
+- **Screenshots & Visual Guide published** (`getting-started/screenshots`): a 15-section visual walkthrough covering login through upload, processing, transcripts, speaker management, AI features, collections, bulk operations, and administration. The page existed but was disabled behind an underscore prefix and was unreachable — its image component was defined as `export const Img = ({src}) => <Img src={useBaseUrl(src)} />`, which rendered itself and recursed until the stack blew, and its 51 captions were indented inside their JSX wrapper so MDX parsed them as markdown paragraphs, emitting `<p>` inside `<p>` (invalid HTML, React hydration failure on every viewport). Both are fixed, images are lazy-loaded with async decoding (51 full-size screenshots on one page), and its four dead category-index links (`/docs/user-guide`, `/docs/installation`, `/docs/configuration`, and `/docs/api`, which never existed) now point at real pages. This surfaces 50 screenshots that were on disk but referenced by no published page.
+- **Removed the superseded `_intro.mdx` orphan**: same self-referential image component, imported by nothing, excluded from the build, and factually stale (claimed OpenSearch 3.3.1 against the shipped 3.4, and a 7-language UI against the current 8 locales). Its content is covered by the published `getting-started/introduction`.
+
+### Breaking Changes
+
+#### Deployment configuration moved from `admin` to `super_admin`
+
+Six admin panels now require the `super_admin` role instead of `admin`: **ASR provider**,
+**Engine configuration**, **Backups**, **Media Mirror**, **Watch sources**, and the
+**Redaction policy** floor. They configure how the deployment runs, and four of them store
+infrastructure credentials (S3 keys, SMB passwords, SMTP passwords) that a team-level admin has
+no reason to read or replace.
+
+**If a plain `admin` administers those panels today, promote them to `super_admin`** (Settings →
+Users → Role) before upgrading, or move the work to an existing super_admin. Nothing else changes
+tier: user accounts, tasks, search and speaker maintenance stay at `admin`.
+
+#### An OIDC login no longer takes over a local account with the same email address
+
+Signing in through an identity provider used to adopt any existing account whose `email` matched,
+regardless of what the provider actually asserted about that address. It now does so only when the
+provider sets `email_verified: true`, and **never** for a `super_admin` account.
+
+**This closes the path on two common providers**: Authentik hardcodes `email_verified` to `false`,
+and Entra ID omits the claim entirely (absent is treated as unverified — the check fails closed).
+On those, an OIDC login that previously absorbed a pre-existing local account now fails with the
+same generic error as a bad credential, and is audited with `error_code ACCOUNT_LINK_REFUSED`.
+
+**Remedy — pick one, per account:**
+
+1. **Link it deliberately.** Set that account's `oidc_subject` (LDAP: `ldap_uid`; PKI:
+   `pki_subject_dn`) to the provider's identifier for the person. A subject match is never
+   re-litigated, so the login proceeds normally afterwards.
+2. **Change one of the two addresses**, so there is no coincidental match and the OIDC login
+   provisions its own account.
+
+Doing nothing leaves the person unable to sign in via OIDC while the duplicate address exists.
+There is no setting to restore the old behaviour: the address is an attribute the external
+directory controls, so "trust it unconditionally" is the account-takeover vector this closes.
+
+#### The OIDC surface is renamed — configuration keys, routes and the admin tab
+
+Config keys are `oidc_*`, the admin tab is **OIDC**, and the routes are `/api/auth/oidc/login`
+and `/api/auth/oidc/callback`. **No identity provider needs reconfiguring** (the registered
+redirect URI points at the SPA's `/login` page), and **every `KEYCLOAK_*` environment variable
+keeps working permanently** — the legacy spelling even wins when both are set. Stored database
+configuration is renamed automatically by migration `v377`.
+
+What does break: a script that writes `PUT /api/admin/auth-config/keycloak`, reads a
+`keycloak_*` key out of `GET /api/admin/auth-config`, or calls
+`/api/auth/keycloak/{login,callback}` directly. `GET /api/auth/methods` reports `"oidc"` in
+`methods`; its `keycloak_enabled` field is retained for **one minor release** so a cached SPA
+bundle keeps rendering the SSO button, and will be removed after that.
+
+#### `PKI_TRUSTED_PROXIES` is now required whenever PKI is enabled
+
+Header-sourced PKI authentication is **refused** when no trusted proxy is allow-listed, instead of
+being accepted with a warning. Hardened deployments already refused to *start* in that
+configuration, so this is a change only for development and evaluation stacks that enabled PKI
+through the admin UI. Set it to the address the backend sees the reverse proxy arrive from.
+
+#### `POST /api/auth/token/refresh` now requires the CSRF header for cookie-authenticated clients
+
+It mints a new session from the refresh cookie alone, which is exactly what a forged cross-site
+request would target, so it is no longer CSRF-exempt. Browsers are unaffected — the SPA already
+double-submits the token, and the CSRF cookie's lifetime was extended to match the refresh
+cookie's so an idle session still has one. **A non-browser API client that sends cookies must now
+send `X-CSRF-Token` too**; clients using `Authorization: Bearer` are exempt as before.
+
+#### `GET /api/auth/methods` no longer always advertises `local`
+
+`methods` previously contained `"local"` unconditionally. It now reflects
+`local_enabled`, so a deployment whose identity lives entirely in an external IdP reports only the
+methods it actually accepts. The response also gained `local_enabled` and `allow_registration`.
+
+#### Interactive API docs are withheld in a hardened environment
+
+`/api/docs`, `/api/redoc` and `/api/openapi.json` return 404 unless `ENABLE_API_DOCS=true`. They
+remain available in development.
+
+#### API — `GET /api/files/{uuid}` returns tag objects instead of tag names (issue #326)
+
+`MediaFileDetail.tags` was `list[str]` — the serializer selected `Tag.name` and nothing else — while
+`GET /api/tags`, `POST /api/tags`, and `POST /api/tags/files/{uuid}/tags` all returned `Tag`
+objects. Three surfaces, two shapes. The file-detail payload now carries the **same object** the tag
+endpoints serve, so there is one definition of a tag on the API.
+
+**Before** (`GET /api/files/{uuid}`):
+
+```json
+{
+  "uuid": "019ec90a-1b2c-7def-8000-000000000001",
+  "filename": "quarterly-review.mp4",
+  "tags": ["Important", "Meeting"]
+}
+```
+
+**After** (`GET /api/files/{uuid}`):
+
+```json
+{
+  "uuid": "019ec90a-1b2c-7def-8000-000000000001",
+  "filename": "quarterly-review.mp4",
+  "tags": [
+    { "uuid": "019ec90a-3f41-7aaa-8000-0000000000a1", "name": "Important", "source": "manual" },
+    { "uuid": "019ec90a-3f41-7aaa-8000-0000000000a2", "name": "Meeting", "source": "auto_ai" }
+  ]
+}
+```
+
+`uuid` (string, UUID) and `name` (string) are always present; `source` is nullable and is `"manual"`
+for a user-applied tag, `"auto_ai"` for one applied by the auto-labeling LLM.
+
+**Why**: `source` is the only thing that distinguishes an AI-applied tag from a manual one, so
+dropping it meant the file-detail page could not badge AI tags after a reload without a second
+request; and `uuid` matters now that `v374_add_tag_user_id` makes tag names unique only **per
+owner**, so a name is no longer a stable identifier for a tag row.
+
+**Scope — exactly one endpoint changed.** `GET /api/files` (the gallery/list endpoint) has **no
+`tags` field at all**, before or after; its response schema `MediaFile` never carried one, and none
+was added here (the list serializer would need a per-row tag query). `GET /api/tags`, `POST
+/api/tags`, `GET /api/tags/unused`, `POST /api/tags/files/{uuid}/tags`, and `DELETE
+/api/tags/files/{uuid}/tags/{tag_name}` are all unchanged — they already returned objects, and the
+delete route is still keyed by tag **name**.
+
+**Not changed**: routes (no route added, removed, or re-pathed), permissions, and tag visibility.
+The serializer returns exactly the tags attached to the file, as it did before; `endpoints/tags.py`
+already made every tag on an accessible file fully visible to that caller via the
+"attached to a file in the accessible-files subquery" arm of `_visible_to`, so the extra fields
+disclose nothing `GET /api/tags` did not already return to the same user. The OpenSearch search
+index still stores tags as a `keyword` array of names, so `tags` on a **search hit** is still
+`string[]`.
+
+**Frontend**: this deletes the shim that made the mismatch survivable — `TagsEditor` no longer
+coerces incoming strings into objects with fabricated `temp-<name>` uuids, and `TagsSection` is
+typed `MediaFileDetail` instead of `any`.
 
 ### Upgrade Notes
 
+- **ACTION REQUIRED if a plain `admin` manages deployment settings**: the ASR provider, Engine
+  configuration, Backups, Media Mirror, Watch sources and Redaction policy panels now require
+  `super_admin`. Promote those accounts (Settings → Users → Role → Super Admin) before upgrading,
+  or hand the work to an existing super_admin. **Creating additional super_admins is now possible
+  from the UI** — the role select previously offered only `user` and `admin`, so the tier could not
+  be granted at all without direct API access.
+- **ACTION REQUIRED if you use OIDC with Authentik or Entra ID (or any provider that does not
+  assert `email_verified`): an OIDC login will no longer take over a pre-existing local account
+  with the same email address.** Authentik hardcodes `email_verified` to `false` and Entra ID
+  omits the claim, and an absent claim is treated as unverified, so on those providers the
+  takeover path is now closed. Affected users get the same generic login failure as a bad
+  credential (deliberately — a distinct message would tell an attacker which addresses exist);
+  look for `error_code ACCOUNT_LINK_REFUSED` in the audit log to identify them.
+  **Remedy, per account:** either link it deliberately — set that account's `oidc_subject` (or
+  `ldap_uid` / `pki_subject_dn`) to the provider's identifier for that person, after which the
+  match is on the subject and is never re-litigated — or change one of the two email addresses so
+  there is no coincidence and the login provisions its own account. There is no flag to restore
+  the old behaviour: the address is an attribute the external directory controls, and trusting it
+  unconditionally is an account-takeover path. `super_admin` accounts are **never** linked by
+  email, verified or not.
+- **The OIDC configuration surface is renamed, and existing setups keep working.** Your
+  `KEYCLOAK_*` environment variables need no change — ever — and stored database configuration is
+  renamed automatically by migration `v377`. **No identity-provider reconfiguration is needed**:
+  the registered redirect URI points at the SPA's `/login` page, not at the backend routes that
+  were renamed. Update only if you have a script that writes
+  `PUT /api/admin/auth-config/keycloak`, reads `keycloak_*` keys from the config API, or calls
+  `/api/auth/keycloak/*` — those become `oidc`. `GET /api/auth/methods` reports `"oidc"`; the
+  `keycloak_enabled` field is kept for one more minor release so a cached SPA bundle keeps
+  working.
+- **New auth settings are all opt-in and default to today's behaviour.** `oidc_allowed_groups`
+  empty = admit everyone (previously JIT provisioned every identity unconditionally);
+  `require_account_approval` false = accounts usable immediately; `directory_sync.enabled` false
+  with `dry_run` true; `pki_allow_password_fallback` true; `password_max_age_days` only forces a
+  change for accounts that actually have a recorded `password_changed_at`. **If you point OIDC at
+  a corporate realm, set `oidc_allowed_groups`** — otherwise every identity in that realm can
+  provision an account.
+- **Directory sync is worth arming deliberately.** Enable it with `directory_sync.dry_run=true`,
+  read `directory_sync.last_result` for a few days, and only then set `dry_run=false`. The pass
+  **disables accounts and revokes their sessions**; `directory_sync.max_disables_per_run`
+  (default 10) is what stops a wrong search base or group DN from disabling the deployment in one
+  run. There is no admin panel for it yet — it is six `SystemSettings` rows.
+- **Password resets, invitations and verification links need a working mail transport.**
+  Designate one email configuration to carry authentication mail (Settings → Watch Sources →
+  Email configurations, then the auth-mail designation), or leave it undesignated and configure
+  the `SMTP_*` environment transport. **A stock deployment has neither**, so invitations and
+  self-service password resets will not be delivered until you set one up. Reset links are no
+  longer written to the application log as a fallback.
+- **ACTION REQUIRED for PKI deployments: set `PKI_TRUSTED_PROXIES`.** Header-sourced PKI
+  authentication is refused when no trusted proxy is allow-listed, where it was previously accepted
+  with a warning. Hardened deployments already refused to start without it, so this affects
+  development and evaluation stacks that enabled PKI through the admin UI. Set it to the address
+  the backend sees your reverse proxy arrive from (e.g. `127.0.0.1,10.0.0.0/8`).
+- **Existing sessions end on upgrade.** Access tokens now carry a purpose claim and tokens minted
+  before the upgrade do not have one, so they are rejected and users sign in again once. This is
+  deliberate: accepting an unmarked token would leave the MFA-bypass path open for the lifetime of
+  every token already in circulation.
+- **Self-registration and local password login are now real switches.** The admin UI has shown an
+  "Allow self-registration" toggle since v0.4.0 that was wired to nothing — the endpoint read the
+  `ALLOW_OPEN_REGISTRATION` environment variable instead, and that variable had no mapping to the
+  database key, so flipping the switch did nothing. It works now, as does a new `local_enabled`
+  companion. **If you set `ALLOW_OPEN_REGISTRATION=false` in `.env` as a workaround, that still
+  applies** (the environment remains the fallback), but the database value now takes precedence
+  once you save the panel — check Settings → Authentication → Local reflects what you intend.
+  For an LDAP- or OIDC-owned deployment the combination is `local_enabled=false`,
+  `allow_registration=false`; an **active `super_admin` is always exempt** from `local_enabled` so
+  you cannot lock yourself out of the screen that undoes it.
+- **API clients that authenticate with cookies must send `X-CSRF-Token` on token refresh.** Bearer
+  clients and browsers are unaffected.
+- **`GET /api/auth/methods` may no longer list `local`**, and gained `local_enabled` /
+  `allow_registration`. Anything asserting `"local" in methods` should assert on the flag instead.
+- **Interactive API docs are withheld when hardened.** Set `ENABLE_API_DOCS=true` to restore
+  `/api/docs`, `/api/redoc` and `/api/openapi.json` on a hardened deployment.
+- **Every session ends once more at the login-banner and session-timeout rollout.** If
+  `login_banner_enabled` is on, every user is asked to acknowledge the banner again the first time
+  they load the app after upgrading — the acknowledgment is now enforced server-side, and an
+  acknowledgment recorded before the wording last changed no longer counts. Session idle and
+  absolute timeouts do **not** retroactively invalidate anything: their columns are nullable and
+  un-backfilled, treated as "no cap recorded", and stamped on each session's first rotation.
+- **Migrations `v378_idp_group_mapping`, `v379_rename_keycloak_config_to_oidc`,
+  `v380_oidc_identity_columns` and `v381` apply automatically on backend startup** (dev) or via
+  `alembic upgrade head` (production). `v379` moves the stored auth-config keys and carries the
+  ciphertext across **unchanged** — no decrypt/re-encrypt, so `ENCRYPTION_KEY` is not needed for
+  the rename. `v380` is a **single transaction** on purpose: a half-applied state would either
+  lock out every OIDC user or exempt them from MFA enrolment. It also drops a duplicate
+  `auth_type` CHECK constraint that had been re-asserted by three earlier revisions — one rule,
+  one owner — and its consistency test pins that exactly one remains.
+- **Migration `v377_harden_user_auth_invariants` applies automatically on backend startup** (dev)
+  or via `alembic upgrade head` (production). It makes `user.role` and `user.auth_type` NOT NULL and
+  adds an `auth_type` CHECK. Rows carrying a NULL role are repaired to `user` with the superuser
+  mirror recomputed, and an unrecognised `auth_type` is repaired to `local` — both backfills only
+  ever remove privilege, never grant it. A correctly-migrated database has neither and the backfills
+  are no-ops.
+- **Flower's persistent database moved off the code directory.** It was mounted at `/app`, which is
+  where the application code lives, so the named volume shadowed the image's code and pinned Flower
+  to whatever it contained when the volume was first created — a rebuilt image was never picked up.
+  It now lives under `/app/temp`. Existing deployments can delete the old `flower_data` volume
+  (`docker volume rm <project>_flower_data`); it holds only task history.
+- **The Queue Dashboard link now works on every deployment, and is admin-only.** `/flower/` was
+  served only by the optional nginx overlay, so the button 404'd on prod and PKI stacks; it is now
+  proxied by the frontend image too, gated by an `auth_request` check against the app session, and
+  hidden from non-admins. Flower exposes task names and arguments, so it was previously reachable
+  by any logged-in user (and, where the overlay injected credentials, by anyone who could load the
+  origin).
+
+- **Redaction runs that hit a detector failure are now marked `failed`, and are NOT retried automatically**: previously such a run was recorded as `done` with empty spans, so a transcript that was never fully scanned looked permanently clean. It is now recorded honestly as `failed`, with the failed detector names logged at `ERROR`. Two consequences worth knowing:
+  - **Nothing blocks.** `failed` never withholds a transcript (only `pending`/`processing` do), so users see their transcripts exactly as before. You may simply start seeing `failed` where you previously saw `done` — that is the fix surfacing pre-existing failures, not a new fault.
+  - **Re-detection is a deliberate action, not automatic.** The lazy re-dispatch on read only fires for files that have *never* been scanned (status `NULL`), so a `failed` file stays failed until you re-run detection — `redaction.reindex_all`, or the admin re-detect path. This is intentional: retrying on every read would let a persistently failing detector (missing model, no VRAM, dead LLM provider) hammer the `celery-redaction` worker with a job that cannot succeed. Bounded automatic retry with an attempt counter is deliberately left as future work. **Treat `failed` as "a human should look"** — check the worker logs for the detector names.
+- **Alert on `security_state_degraded_total`**: a non-zero rate on this new Prometheus counter means a security control is running without its shared state store (see Security). On AWS, run **ElastiCache for Redis with Multi-AZ and automatic failover** rather than a single Redis container, so the degraded window is seconds of failover instead of the length of an outage. Note Redis is also the Celery broker, so a Redis outage stops transcription regardless — highly available Redis protects throughput and security posture together. Managed Redis with encryption in transit: point `REDIS_URL` at `rediss://` and Celery enables TLS for both the broker and the result backend. Full detail in `docs-site/docs/operations/production-deployment.md`.
+- **ACTION REQUIRED — production deployments must set real secrets before upgrading**: hardening now fails closed (see Security), so a deployment still running a default or placeholder `JWT_SECRET_KEY` / `ENCRYPTION_KEY`, or with no `REDIS_PASSWORD`, will **refuse to start** instead of booting insecurely as it silently did before. Set real values (the installer generates them; `.env.example` documents each) before upgrading. To relax intentionally — a LAN-only or evaluation stack — set `ENVIRONMENT=development` explicitly. `./opentr.sh start dev` needs no change.
+- **ACTION REQUIRED — production admin login changes**: the `admin@example.com` / `password` super-admin is no longer seeded outside development. Existing accounts are untouched and you keep signing in as before. On a **new** production deployment, either set `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD`, or grep the backend startup log for `GENERATED password` to retrieve the one-time generated credential and change it after first login.
 - **Breaking — removed media endpoints**: external consumers of `GET /api/files/{uuid}/video`, `/simple-video`, `/content`, `/download`, and `/download-with-token` must migrate to `GET /api/files/{uuid}/stream-url` (playback) and `POST /api/files/{uuid}/prepare-download` (downloads).
 - **Breaking — bulk export endpoint**: `POST /api/files/bulk-export` (sync streamed ZIP) is replaced by `POST /api/files/bulk-export/prepare` + the SSE `GET /api/files/bulk-export-stream`.
+- **Breaking — file-detail `tags` payload (issue #326)**: **if your script reads `tags` from `GET /api/files/{uuid}` as strings, read `tag.name` instead** — e.g. `file.tags.map(t => t.name)` in JS, `[t["name"] for t in file["tags"]]` in Python. `"Important" in file["tags"]` and `", ".join(file["tags"])` are the two patterns that break. There is no migration and no server-side action: this is a response-shape change only, routes/permissions/tag-visibility are unchanged, and `GET /api/files` (list) still sends no `tags` field. Full before/after JSON in Breaking Changes above.
 - **Breaking — file fingerprints regenerated**: the server-side `imohash` fingerprint now uses the real `imohash` package (murmur3 over sampled windows + size) instead of the previous hand-rolled blake2b stand-in, so **every existing `media_file.imohash` value changes**. A one-time recompute runs automatically on first startup after upgrade (`asyncio` task gated by the `imohash_package_recompute_complete` system-settings flag, same pattern as the thumbnail/embedding migrations) and overwrites all rows via fast ranged reads — no manual action required. Cross-pipeline dedup (watch sources, re-upload detection) is unreliable for not-yet-recomputed rows until it finishes; an admin "Recompute File Fingerprints" button is available to re-trigger it.
 - **New required service**: deployments must run the new `celery-redaction` worker — redaction detection runs once per transcript regardless of user settings. It is included in the standard compose overlays; no action is needed when using `./opentr.sh`.
 - **Breaking (unreleased-master only) — v367 schema rewritten**: the cloud-seams migration was rewritten in place to be vendor-neutral (`external_id`/`external_org_id`; billing columns removed from core). No tagged release shipped the old shape; deployments tracking unreleased master (or commercial pins) are repaired automatically by the new `v371` migration, which renames the legacy columns idempotently on startup — no manual action required.
-- **Database migrations** `v360_add_file_pipeline_timing`, `v361_add_media_file_imohash`, `v362_add_pipeline_timing_markers`, `v363_add_asr_access_key_id`, `v364_add_content_redaction`, `v365_add_prompt_shared_by`, `v366_add_watch_sources`, `v367_add_cloud_seams` (rewritten), `v368_uuid_native_type_guard`, `v369_superuser_role_invariant`, `v370_add_media_file_quarantine`, and `v371_repair_cloud_seams_columns` apply automatically on backend startup (idempotent, additive). No manual `alembic` step is required in dev.
+- **Breaking — tag ownership split (`v374_add_tag_user_id`)**: `tag.name` is **no longer globally unique**, so anything reading the table directly (a report, an export script, a `SELECT ... FROM tag WHERE name = ?`) can now get several rows back and must scope by `user_id` or join through `file_tag`. The migration backfills automatically on backend startup and needs no manual step: every tag attached to at least one file is claimed by the **lowest-numbered** owning user, and a tag attached to files owned by *several* users is **split** — each additional owner gets their own copy (same name/source/normalized name, fresh uuid) with only their `file_tag` rows repointed at it, so no file loses a tag and nobody inherits another account's row. Tags attached to no file stay ownerless and become **system tags**, visible to everyone — this is what keeps the seeded picker defaults in place. A seeded default that happened to be in use (someone had tagged a file "Meeting") is claimed like any other attached tag; the seeder recreates the ownerless row on the same startup, so the shared vocabulary is whole again and the claiming user keeps their attachment. Expect the tag list to *shrink* for most users after upgrade — that is the fix: you now see your own tags, the system vocabulary, and tags on files shared with you, instead of everyone's. `DELETE /api/tags/cleanup` (admin) still sweeps deployment-wide but now skips system tags, which are unattached by nature. The `downgrade()` is deliberately partial: it drops the column and indexes but does **not** restore the global `UNIQUE (name)` when the split produced duplicate names, since merging them would silently re-share one user's tag with another. One residue to be aware of: `GET /api/tags` is read-through cached in Redis for 5 minutes (`TTL_TAGS`), so a user whose list was cached just before the upgrade can still be served the pre-fix (leaky) payload until that key expires — flush `cache:tags:*` if you want the fix to take effect instantly.
+- **Database migrations** `v360_add_file_pipeline_timing`, `v361_add_media_file_imohash`, `v362_add_pipeline_timing_markers`, `v363_add_asr_access_key_id`, `v364_add_content_redaction`, `v365_add_prompt_shared_by`, `v366_add_watch_sources`, `v367_add_cloud_seams` (rewritten), `v368_uuid_native_type_guard`, `v369_superuser_role_invariant`, `v370_add_media_file_quarantine`, `v371_repair_cloud_seams_columns`, `v372_add_audit_organization_id`, `v373_add_cluster_organization_id`, `v374_add_tag_user_id`, `v375_add_chat_tables`, `v376_add_chat_projects`, `v377_harden_user_auth_invariants`, `v378_idp_group_mapping`, `v379_rename_keycloak_config_to_oidc`, `v380_oidc_identity_columns`, `v381_approval_state`, `v382_scim_tokens`, and `v383_saml_auth_type` apply automatically on backend startup (idempotent). No manual `alembic` step is required in dev.
 - **New env vars** are optional (sensible coded defaults): redaction tuning (`REDACTION_*`, `DOWNLOAD_REDACTION_MODELS`, `PRELOAD_REDACTION_MODELS`), derived-cache retention (`DERIVED_CACHE_RETENTION_DAYS`), hybrid mode (`WHISPER_HYBRID_MODE`, `WHISPER_HYBRID_CPU_MODEL`), engine/multi-GPU (`ENGINE_GPU_SPLIT`, `ENGINE_TRANSCRIBER_BACKEND`, `ENGINE_DIARIZER_BACKEND`, `GPU_TRANSCRIBE_DEVICE_ID`, `GPU_DIARIZE_DEVICE_ID`), DB pool (`DB_POOL_SIZE`, `DB_MAX_OVERFLOW`), `SEARCH_LARGE_TRANSCRIPT_CHUNKS`, `FFMPEG_THREADS`, and timing (`ENABLE_BENCHMARK_TIMING`). Boundary-correction and redaction behavior is primarily DB/admin-UI driven. `MEDIA_URL_EXPIRE_SECONDS` default changed 300→21600 (6h).
 - **Optional multi-GPU split**: enable with `ENGINE_GPU_SPLIT=true` and launch via `./opentr.sh start dev --with-gpu-split` (runs dedicated `gpu-transcribe` / `gpu-diarize` workers). Without those workers, leave it off — tasks would otherwise wait on an unstaffed queue.
 - **Hybrid mode** auto-activates on small-VRAM CUDA GPUs and on macOS (`WHISPER_HYBRID_MODE=auto`); force with `true`/`false`. No action needed for standard A6000-class GPUs.

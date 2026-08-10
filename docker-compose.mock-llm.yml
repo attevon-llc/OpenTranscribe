@@ -1,0 +1,45 @@
+# Mock LLM provider for development and testing.
+#
+# Runs scripts/mock-llm-server.py on the app network so the backend can reach it
+# at http://mock-llm:5199/v1 without a GPU, an API key, or an internet
+# connection. Everything except token generation stays real: retrieval runs
+# against actual transcripts, redaction masking applies, citations are built
+# from real chunk metadata, and usage is recorded on its normal path.
+#
+#   ./opentr.sh start dev --with-mock-llm
+#
+# Then in Settings → AI, or via the chat_llm_provider pytest fixture:
+#   Provider: Custom (OpenAI-compatible)
+#   Base URL: http://mock-llm:5199/v1
+#   Model:    mock-gpt | mock-echo | mock-empty | mock-error | mock-slow
+#
+# Bind-mounts the script rather than baking an image: editing a scenario is then
+# a container restart, not a rebuild. Uses the stock python image for the same
+# reason — the server is stdlib-only, so there is nothing to install.
+services:
+  mock-llm:
+    image: python:3.12-slim
+    container_name: ${MOCK_LLM_CONTAINER_NAME:-opentranscribe-mock-llm}
+    command: python /app/mock-llm-server.py --port 5199
+    working_dir: /app
+    volumes:
+      - ./scripts/mock-llm-server.py:/app/mock-llm-server.py:ro
+    ports:
+      # Loopback only: it answers every prompt without authentication, so it
+      # must never be reachable off-host. Published at all only so host-side
+      # pytest can drive it directly.
+      - "127.0.0.1:${MOCK_LLM_PORT:-5199}:5199"
+    healthcheck:
+      # Stdlib probe — the slim image has neither curl nor wget.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request;urllib.request.urlopen('http://localhost:5199/v1/models',timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped

@@ -170,7 +170,7 @@ OpenTranscribe applies diarization boundary correction to fix speaker mislabelin
 
 ### Can OpenTranscribe redact PII, profanity, or toxic content?
 
-Yes. Content redaction detects PII, profanity, and toxic/offensive words and masks them with `[CATEGORY]` placeholders at every display and export surface. Masking is a read-time transform -- the full original transcript is always kept in the database. It is a per-user feature, **on by default** (Settings → Content Redaction), with an admin enforcement floor (Redaction Policy) that can force categories on and mandate censored exports for all users. See [Content Redaction](./features/content-redaction.md).
+Yes. Content redaction detects PII, profanity, and toxic/offensive words and masks them with `[CATEGORY]` placeholders at every display and export surface. Masking is a read-time transform -- the full original transcript is always kept in the database. It is a per-user feature, **off by default (opt-in)** (Settings → Content Redaction), with an admin enforcement floor (Redaction Policy) that can force categories on and mandate censored exports for all users. See [Content Redaction](./features/content-redaction.md).
 
 ### How many speakers can it detect?
 
@@ -529,13 +529,17 @@ ACCOUNT_LOCKOUT_PROGRESSIVE=true
 
 ### Does OpenTranscribe support SSO?
 
-Yes! OpenTranscribe supports Single Sign-On via Keycloak/OIDC:
-- Integrate with your existing identity provider
-- Support for LDAP/AD federation through Keycloak
-- Social login (Google, GitHub, etc.) via Keycloak
-- Role synchronization from Keycloak
+Yes — via **any conforming OpenID Connect provider**, discovered from its
+`.well-known/openid-configuration`: Keycloak, Authentik, Authelia, Okta, Entra ID, Auth0,
+Zitadel, and so on.
 
-See the [Keycloak Setup Guide](./authentication/keycloak) for configuration.
+- Authorization-code flow with PKCE, ID-token-only validation
+- Group and role synchronization through a configurable roles claim
+- [Group mapping](./authentication/groups) from directory groups to in-app groups and roles
+- RP-initiated (federated) logout where the provider publishes an end-session endpoint
+
+See the [OIDC Setup Guide](./authentication/oidc) for configuration. Existing `KEYCLOAK_*`
+environment variables keep working permanently.
 
 ### Can I use CAC/PIV cards for authentication?
 
@@ -644,6 +648,6 @@ All are permissive licenses compatible with commercial use.
 
 ## Still Have Questions?
 
-- **GitHub Discussions**: [github.com/davidamacey/OpenTranscribe/discussions](https://github.com/davidamacey/OpenTranscribe/discussions)
-- **GitHub Issues**: [github.com/davidamacey/OpenTranscribe/issues](https://github.com/davidamacey/OpenTranscribe/issues)
+- **GitHub Discussions**: [github.com/attevon-llc/OpenTranscribe/discussions](https://github.com/attevon-llc/OpenTranscribe/discussions)
+- **GitHub Issues**: [github.com/attevon-llc/OpenTranscribe/issues](https://github.com/attevon-llc/OpenTranscribe/issues)
 - **Documentation**: Browse the rest of the docs!

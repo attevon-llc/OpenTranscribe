@@ -718,7 +718,7 @@ def cleanup_orphaned_embeddings(
             "message": f"Cleaned up {deleted_count} orphaned speaker embeddings",
         }
     except Exception as e:
-        logger.error(f"Error during cleanup: {e}")
+        logger.exception(f"Error during cleanup: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -858,6 +858,9 @@ def debug_cross_media_data(
                     )
 
         except Exception as e:
+            # Diagnostic endpoint: the OpenSearch section is optional, and the
+            # error is surfaced in the payload rather than failing the report.
+            logger.exception("OpenSearch section of the speaker debug report failed")
             debug_info["opensearch_error"] = str(e)
 
         # Add summary analysis
@@ -872,7 +875,7 @@ def debug_cross_media_data(
         return debug_info
 
     except Exception as e:
-        logger.error(f"Error in debug endpoint: {e}")
+        logger.exception(f"Error in debug endpoint: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -983,7 +986,7 @@ def debug_cross_media_by_name(
         return results
 
     except Exception as e:
-        logger.error(f"Error in cross-media-by-name debug endpoint: {e}")
+        logger.exception(f"Error in cross-media-by-name debug endpoint: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -1041,7 +1044,7 @@ def get_speaker_cross_media_occurrences(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting cross-media occurrences: {e}")
+        logger.exception(f"Error getting cross-media occurrences: {e}")
         raise ErrorHandler.internal_error() from e
 
 
@@ -1083,7 +1086,7 @@ def verify_speaker_identification(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error verifying speaker: {e}")
+        logger.exception(f"Error verifying speaker: {e}")
         db.rollback()
         raise ErrorHandler.internal_error() from e
 
@@ -1130,7 +1133,19 @@ def merge_speakers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Merge two speakers into one (target absorbs source)."""
+    """Merge two speakers into one (target absorbs source).
+
+    Postgres is updated synchronously so the response is authoritative. Everything
+    downstream — averaging the two voiceprints in OpenSearch, deleting the source
+    document, recomputing both profiles' consolidated embeddings, clearing the MinIO
+    video cache and refreshing analytics for both files — is handed to
+    ``process_speaker_merge_background`` (issue #284 A2.6). Inline, that was roughly
+    2 + N OpenSearch round trips (N = members of the target profile), a numpy mean,
+    a MinIO listing per affected file and two analytics recomputations, all before
+    the merge could answer.
+    """
+    from app.tasks.speaker_merge_task import process_speaker_merge_background
+
     # Get both speakers by UUID
     source_speaker = get_speaker_by_uuid(db, speaker_uuid)
     target_speaker = get_speaker_by_uuid(db, target_speaker_uuid)
@@ -1158,30 +1173,30 @@ def merge_speakers(
         {"speaker_id": target_speaker.id}
     )
 
-    # Merge the embedding vectors by averaging them
-    _merge_speaker_embeddings(source_speaker, target_speaker)
-
     # Get media file IDs that are affected
     affected_media_files = {int(source_speaker.media_file_id), int(target_speaker.media_file_id)}
+
+    # Capture the source identity before the row disappears
+    source_speaker_uuid = str(source_speaker.uuid)
 
     # Delete the source speaker
     db.delete(source_speaker)
     db.commit()
     db.refresh(target_speaker)
 
-    # Clear video cache for affected media files
-    _clear_speaker_video_cache(db, affected_media_files)
-
-    # Update OpenSearch index
-    _update_opensearch_speaker_merge(str(source_speaker.uuid), str(target_speaker.uuid))
-
-    # Update profile embeddings
-    _update_profile_embeddings_after_merge(
-        db, source_profile_id, target_profile_id, source_speaker_id
+    # Hand the OpenSearch / MinIO / analytics work to the background worker
+    process_speaker_merge_background.delay(
+        source_speaker_uuid=source_speaker_uuid,
+        target_speaker_uuid=str(target_speaker.uuid),
+        user_id=current_user.id,
+        source_speaker_id=source_speaker_id,
+        source_profile_id=source_profile_id,
+        target_profile_id=target_profile_id,
+        media_file_ids=sorted(affected_media_files),
     )
-
-    # Recalculate analytics for affected media files
-    _refresh_analytics_after_merge(db, affected_media_files)
+    logger.info(
+        f"Queued background merge processing for {source_speaker_uuid} -> {target_speaker.uuid}"
+    )
 
     # Invalidate caches
     try:
@@ -1290,7 +1305,7 @@ def _handle_profile_embedding_updates(
                 )
 
     except Exception as e:
-        logger.error(f"Error updating profile embeddings for speaker {speaker_id}: {e}")
+        logger.exception(f"Error updating profile embeddings for speaker {speaker_id}: {e}")
         # Don't fail the operation if embedding update fails
 
 
@@ -1299,7 +1314,7 @@ def _update_opensearch_speaker_name(speaker_uuid: str, display_name: str) -> Non
     try:
         update_speaker_display_name(speaker_uuid, display_name)
     except Exception as e:
-        logger.error(f"Failed to update speaker display name in OpenSearch: {e}")
+        logger.exception(f"Failed to update speaker display name in OpenSearch: {e}")
 
 
 def _handle_speaker_labeling_workflow(
@@ -1336,13 +1351,26 @@ def _clear_video_cache_for_speaker(db: Session, media_file_id: int) -> None:
         video_processing_service = VideoProcessingService(minio_service)
         video_processing_service.clear_cache_for_media_file(db, media_file_id)
     except Exception as e:
-        logger.error(f"Warning: Failed to clear video cache after speaker update: {e}")
+        logger.exception(f"Warning: Failed to clear video cache after speaker update: {e}")
 
 
 def _handle_update_profile_action(
     profile_id: int, new_name: str, current_user: User, db: Session
-) -> None:
-    """Handle 'update_profile' action - update profile name globally."""
+) -> bool:
+    """Handle 'update_profile' action - update profile name globally.
+
+    Postgres only. The OpenSearch fan-out this used to do inline — one
+    ``update_speaker_display_name`` round trip per linked speaker plus a full
+    ``ProfileEmbeddingService.update_profile_embedding`` (one kNN fetch per profile
+    member, a numpy mean, and an index write) — is deferred to
+    ``process_speaker_update_background`` (issue #284 A2.6). Renaming a profile with
+    a dozen linked speakers used to cost a dozen-plus synchronous OpenSearch calls
+    before the PUT could answer.
+
+    Returns:
+        True when a profile was found and renamed, so the caller knows to ask the
+        background task to replay the rename into OpenSearch.
+    """
     profile = (
         db.query(SpeakerProfile)
         .filter(SpeakerProfile.id == profile_id, SpeakerProfile.user_id == current_user.id)
@@ -1350,7 +1378,7 @@ def _handle_update_profile_action(
     )
 
     if not profile:
-        return
+        return False
 
     profile.name = new_name  # type: ignore[assignment]
     logger.info(f"Updated profile {profile.id} name to '{new_name}' globally")
@@ -1363,23 +1391,32 @@ def _handle_update_profile_action(
 
     for linked_speaker in linked_speakers:
         linked_speaker.display_name = new_name  # type: ignore[assignment]
-        _update_opensearch_speaker_name(str(linked_speaker.uuid), new_name)
 
     logger.info(f"Updated {len(linked_speakers)} speakers with new profile name '{new_name}'")
+    return True
 
-    # Update the profile embedding in OpenSearch
-    try:
-        from app.services.profile_embedding_service import ProfileEmbeddingService
 
-        success = ProfileEmbeddingService.update_profile_embedding(db, profile_id)
-        if success:
-            logger.info(
-                f"Updated profile {profile_id} embedding in OpenSearch with new name '{new_name}'"
-            )
-        else:
-            logger.warning(f"Failed to update profile {profile_id} embedding in OpenSearch")
-    except Exception as e:
-        logger.error(f"Error updating profile embedding in OpenSearch: {e}")
+def _sync_profile_rename_to_opensearch(db: Session, profile_id: int) -> None:
+    """Replay a profile rename onto every linked speaker's OpenSearch document.
+
+    Runs in ``process_speaker_update_background`` (issue #284 A2.6), never in the
+    request path. Names are re-read from Postgres rather than passed in, so a rename
+    that landed while the task was queued still wins.
+
+    The profile's consolidated embedding is deliberately NOT recomputed here:
+    ``_handle_profile_embedding_updates`` case 4 (display name changed, same profile)
+    already calls ``ProfileEmbeddingService.update_profile_embedding`` earlier in the
+    same task, and a profile rename always satisfies that case.
+    """
+    linked_speakers = (
+        db.query(Speaker.uuid, Speaker.display_name).filter(Speaker.profile_id == profile_id).all()
+    )
+    for speaker_uuid, display_name in linked_speakers:
+        if display_name:
+            _update_opensearch_speaker_name(str(speaker_uuid), str(display_name))
+    logger.info(
+        f"Synced renamed profile {profile_id} to OpenSearch for {len(linked_speakers)} speakers"
+    )
 
 
 def _handle_create_new_profile_action(
@@ -1412,17 +1449,24 @@ def _handle_profile_action(
     old_profile_id: int | None,
     current_user: User,
     db: Session,
-) -> None:
-    """Handle profile actions (update_profile or create_new_profile)."""
+) -> int | None:
+    """Handle profile actions (update_profile or create_new_profile).
+
+    Returns:
+        The id of a profile that was renamed in place, so the caller can hand the
+        OpenSearch replay to the background task; None otherwise.
+    """
     if not (profile_action and speaker_update.display_name):
-        return
+        return None
 
     new_name = speaker_update.display_name.strip()
 
     if profile_action == "update_profile" and old_profile_id:
-        _handle_update_profile_action(old_profile_id, new_name, current_user, db)
+        if _handle_update_profile_action(old_profile_id, new_name, current_user, db):
+            return old_profile_id
     elif profile_action == "create_new_profile":
         _handle_create_new_profile_action(speaker, new_name, current_user, db)
+    return None
 
 
 def _get_profile_uuid(speaker: Speaker, db: Session) -> str | None:
@@ -1561,8 +1605,9 @@ def update_speaker(
             continue
         setattr(speaker, field, value)
 
-    # Handle profile actions (synchronous - needed for immediate response)
-    _handle_profile_action(
+    # Handle profile actions. Postgres writes only — they shape the immediate
+    # response; the OpenSearch replay rides along with the background task below.
+    renamed_profile_id = _handle_profile_action(
         profile_action, speaker_update, speaker, old_profile_id, current_user, db
     )
 
@@ -1591,6 +1636,7 @@ def update_speaker(
             was_auto_labeled=was_auto_labeled,
             display_name_changed=display_name_changed,
             media_file_id=media_file_id,
+            renamed_profile_id=renamed_profile_id,
         )
         logger.info(f"Queued background processing for speaker {speaker_uuid}")
 
@@ -1697,7 +1743,7 @@ def _accept_speaker_profile_match(
                 f"Failed to update profile {profile_id} embedding for speaker {speaker_id}"
             )
     except Exception as e:
-        logger.error(f"Error updating profile embedding: {e}")
+        logger.exception(f"Error updating profile embedding: {e}")
 
     return {
         "status": "accepted",
@@ -1735,7 +1781,7 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
                     f"Failed to update profile {old_profile_id} embedding after removing speaker {speaker_id}"
                 )
         except Exception as e:
-            logger.error(f"Error updating profile embedding after rejection: {e}")
+            logger.exception(f"Error updating profile embedding after rejection: {e}")
 
     return {
         "status": "rejected",
@@ -1793,7 +1839,7 @@ def _create_new_speaker_profile(
                 f"Failed to update new profile {new_profile.id} embedding for speaker {speaker_id}"
             )
     except Exception as e:
-        logger.error(f"Error updating new profile embedding: {e}")
+        logger.exception(f"Error updating new profile embedding: {e}")
 
     return {
         "status": "created_and_assigned",
@@ -1855,8 +1901,15 @@ def _dispatch_verify_action(
 # --- Helper functions for merge_speakers ---
 
 
-def _merge_speaker_embeddings(source_speaker: Speaker, target_speaker: Speaker) -> None:
-    """Merge and average speaker embeddings in OpenSearch."""
+def _merge_speaker_embeddings(source_speaker_uuid: str, target_speaker: Speaker) -> None:
+    """Merge and average speaker embeddings in OpenSearch.
+
+    Takes the source speaker's UUID rather than the ORM row: this now runs in
+    ``process_speaker_merge_background`` (issue #284 A2.6), by which time the source
+    Speaker row has already been deleted from Postgres. Only its OpenSearch document
+    is still needed, and that is removed later in the same task by
+    ``_update_opensearch_speaker_merge`` — so the read here still precedes the delete.
+    """
     try:
         import numpy as np
 
@@ -1864,7 +1917,7 @@ def _merge_speaker_embeddings(source_speaker: Speaker, target_speaker: Speaker) 
         from app.services.opensearch_service import get_speaker_embedding
 
         # Get embeddings for both speakers
-        source_embedding = get_speaker_embedding(str(source_speaker.uuid))
+        source_embedding = get_speaker_embedding(str(source_speaker_uuid))
         target_embedding = get_speaker_embedding(str(target_speaker.uuid))
 
         if source_embedding and target_embedding:
@@ -1892,7 +1945,7 @@ def _merge_speaker_embeddings(source_speaker: Speaker, target_speaker: Speaker) 
         else:
             logger.warning("Could not retrieve embeddings for speaker merge")
     except Exception as e:
-        logger.error(f"Error averaging speaker embeddings during merge: {e}")
+        logger.exception(f"Error averaging speaker embeddings during merge: {e}")
 
 
 def _clear_speaker_video_cache(db: Session, affected_media_files: set[int]) -> None:
@@ -1907,7 +1960,7 @@ def _clear_speaker_video_cache(db: Session, affected_media_files: set[int]) -> N
         for media_file_id in affected_media_files:
             video_processing_service.clear_cache_for_media_file(db, media_file_id)
     except Exception as e:
-        logger.error(f"Warning: Failed to clear video cache after speaker merge: {e}")
+        logger.exception(f"Warning: Failed to clear video cache after speaker merge: {e}")
 
 
 def _update_opensearch_speaker_merge(source_speaker_uuid: str, target_speaker_uuid: str) -> None:
@@ -1920,7 +1973,7 @@ def _update_opensearch_speaker_merge(source_speaker_uuid: str, target_speaker_uu
             f"Merged speaker embeddings in OpenSearch: {source_speaker_uuid} -> {target_speaker_uuid}"
         )
     except Exception as e:
-        logger.error(f"Error merging speaker embeddings in OpenSearch: {e}")
+        logger.exception(f"Error merging speaker embeddings in OpenSearch: {e}")
 
 
 def _refresh_analytics_after_merge(db: Session, affected_media_files: set[int]) -> None:
@@ -1936,7 +1989,7 @@ def _refresh_analytics_after_merge(db: Session, affected_media_files: set[int]) 
             else:
                 logger.warning(f"Failed to refresh analytics for media file {media_file_id}")
     except Exception as e:
-        logger.error(f"Error refreshing analytics after speaker merge: {e}")
+        logger.exception(f"Error refreshing analytics after speaker merge: {e}")
 
 
 def _update_profile_embeddings_after_merge(
@@ -1966,7 +2019,7 @@ def _update_profile_embeddings_after_merge(
             logger.info(f"Updated target profile {target_profile_id} embedding after speaker merge")
 
     except Exception as e:
-        logger.error(f"Error updating profile embeddings after speaker merge: {e}")
+        logger.exception(f"Error updating profile embeddings after speaker merge: {e}")
 
 
 # --- Helper functions for get_speaker_cross_media_occurrences ---

@@ -4,8 +4,11 @@
     <!-- Immediate theme initialization to prevent flashing.
          Render-blocking external script (runs before first paint), served from
          /static/theme.js — kept external so the CSP can omit script-src unsafe-inline
-         (SvelteKit's kit.csp hash-mode meta governs scripts; see svelte.config.js). -->
-    <script src="/theme.js"></script>
+         (SvelteKit's kit.csp hash-mode meta governs scripts; see svelte.config.js).
+         Vite doesn't hash files in static/, and nginx caches *.js for a year, so the
+         ?v= digest (content hash of theme.js, computed in vite.config.ts) is what
+         stops a stale copy from being pinned in browser caches. -->
+    <script src="/theme.js?v=%sveltekit.env.PUBLIC_THEME_VERSION%"></script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />

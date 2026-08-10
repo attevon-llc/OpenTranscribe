@@ -9,9 +9,14 @@ is configured for the user.
 import logging
 from typing import Any
 
+from celery.exceptions import Retry
+
 from app.core.celery import celery_app
 from app.core.constants import NLPPriority
 from app.db.session_utils import session_scope
+from app.services.redaction.llm_guard import RedactionNotReadyError
+from app.services.redaction.llm_guard import defer_for_redaction
+from app.services.redaction.llm_guard import resolve_llm_masking
 from app.services.topic_extraction_service import TopicExtractionService
 
 logger = logging.getLogger(__name__)
@@ -71,6 +76,25 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
 
             logger.info(f"Starting topic extraction for file {file_id} (user {user_id})")
 
+            # Resolve the LLM BEFORE announcing any work. Having no provider
+            # configured is a deployment choice, not a task outcome: notifying
+            # about it puts a warning on every file for something the user
+            # already knows and cannot fix from a notification. Announcing
+            # "Preparing AI analysis..." first made it worse — that notification
+            # is progressive, so it sat unresolved until the second one replaced
+            # it, giving two entries per file for work that never started.
+            #
+            # A genuine failure — a provider that IS configured but errors or
+            # returns nothing — still notifies, which is the case worth flagging.
+            extraction_service = TopicExtractionService.create_from_settings(user_id=user_id, db=db)
+
+            if not extraction_service:
+                logger.info(f"LLM not configured for user {user_id}, skipping topic extraction")
+                return {
+                    "status": "skipped",
+                    "reason": "LLM not configured",
+                }
+
             # Send initial processing notification
             send_topic_extraction_notification(
                 user_id=user_id,
@@ -78,23 +102,6 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
                 status="processing",
                 message="Preparing AI analysis...",
             )
-
-            # Create topic extraction service
-            extraction_service = TopicExtractionService.create_from_settings(user_id=user_id, db=db)
-
-            if not extraction_service:
-                logger.info(f"LLM not configured for user {user_id}, skipping topic extraction")
-                # Send notification that LLM is not configured
-                send_topic_extraction_notification(
-                    user_id=user_id,
-                    file_id=file_id,
-                    status="not_configured",
-                    message="Topic extraction not available - no LLM provider configured in settings",
-                )
-                return {
-                    "status": "skipped",
-                    "reason": "LLM not configured",
-                }
 
             # Send notification before LLM processing
             send_topic_extraction_notification(
@@ -113,11 +120,20 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
                     message=message,
                 )
 
+            # Topic extraction posts the transcript to a third-party provider, so it
+            # honours redact_before_llm the same way summarization and speaker ID do.
+            try:
+                redaction_cfg = resolve_llm_masking(db, media_file)
+            except RedactionNotReadyError as not_ready:
+                defer_for_redaction(self, not_ready)
+                raise  # unreachable — defer_for_redaction always raises
+
             # Extract topics with progress callback
             suggestion = extraction_service.extract_topics(
                 media_file_id=file_id,
                 force_regenerate=force_regenerate,
                 progress_callback=notify_progress,
+                redaction_cfg=redaction_cfg,
             )
 
             if not suggestion:
@@ -214,6 +230,10 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
                 "collection_count": collection_count,
             }
 
+        except Retry:
+            # Celery signals deferral with an exception that subclasses Exception,
+            # so the handler below would otherwise report it as a failure.
+            raise
         except Exception as e:
             error_msg = f"Error extracting topics: {str(e)}"
             logger.error(f"{error_msg} for file {file_uuid}")

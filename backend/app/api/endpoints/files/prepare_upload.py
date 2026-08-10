@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -21,11 +22,10 @@ from app.models.media import CollectionMember
 from app.models.media import FileTag
 from app.models.upload_batch import UploadBatch
 from app.schemas.media import PrepareUploadRequest
-from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import on_tags_changed
-from app.services.tag_service import resolve_or_create_tag
+from app.services.tag_service import resolve_or_create_tags
 from app.utils import benchmark_timing
-from app.utils.file_hash import check_duplicate_by_hash
+from app.utils.file_hash import check_duplicate_by_fingerprint
 from app.utils.file_hash import cleanup_failed_duplicates
 
 logger = logging.getLogger(__name__)
@@ -99,59 +99,88 @@ def add_file_to_collections(
     """Add a media file to the specified collections owned by the user.
 
     Silently skips collections that don't exist or aren't owned by the user.
-    """
-    for coll_uuid in collection_ids:
-        collection = (
-            db.query(Collection)
-            .filter(Collection.uuid == str(coll_uuid), Collection.user_id == user_id)
-            .first()
-        )
-        if not collection:
-            logger.warning(f"Collection {coll_uuid} not found for user {user_id}, skipping")
-            continue
 
-        existing = (
-            db.query(CollectionMember)
-            .filter(
-                CollectionMember.collection_id == collection.id,
-                CollectionMember.media_file_id == file_id,
-            )
-            .first()
+    Two queries regardless of how many collections are named (issue #284 A2.8). This
+    used to run a `Collection` lookup and a `CollectionMember` existence check per
+    UUID — 2N round trips on the upload-prep path, which the SPA calls once per file
+    in a multi-file upload, so a 50-file batch across 5 collections paid 500 queries.
+    Bounded N is not unbounded, but it is on the hot upload path and the batched form
+    is no harder to read.
+    """
+    if not collection_ids:
+        return
+
+    wanted = [str(coll_uuid) for coll_uuid in collection_ids]
+
+    collections = (
+        db.query(Collection)
+        .filter(Collection.uuid.in_(wanted), Collection.user_id == user_id)
+        .all()
+    )
+    by_uuid = {str(collection.uuid): collection for collection in collections}
+
+    for coll_uuid in wanted:
+        if coll_uuid not in by_uuid:
+            logger.warning(f"Collection {coll_uuid} not found for user {user_id}, skipping")
+
+    resolved_ids = [collection.id for collection in collections]
+    if not resolved_ids:
+        db.flush()
+        return
+
+    already_member = {
+        row[0]
+        for row in db.query(CollectionMember.collection_id).filter(
+            CollectionMember.collection_id.in_(resolved_ids),
+            CollectionMember.media_file_id == file_id,
         )
-        if not existing:
-            db.add(CollectionMember(collection_id=collection.id, media_file_id=file_id))
+    }
+
+    # dict.fromkeys keeps insertion order while de-duplicating a repeated UUID —
+    # the per-UUID loop relied on the just-added row being visible to the next
+    # existence check, which autoflush=False sessions do not guarantee.
+    for collection_id in dict.fromkeys(resolved_ids):
+        if collection_id not in already_member:
+            db.add(CollectionMember(collection_id=collection_id, media_file_id=file_id))
 
     db.flush()
 
 
-def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> None:
+def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: int) -> None:
     """Add tags to a media file, creating tags if they don't exist.
+
+    ``user_id`` owns any tag this creates. Background importers (watch sources,
+    yt-dlp playlists) must pass the **file owner**, never leave it unset — an
+    ownerless tag is a system tag and would be published to every account.
+    A same-named system tag is reused rather than forked, so applying a seeded
+    default still attaches the shared row.
 
     Resolution (normalization, normalized-exact match, SAVEPOINT-guarded insert)
     is shared with every other tag-creation path via
-    ``app/services/tag_service.py``. These names were typed by a person, so the
-    fuzzy suggestion lookup is deliberately not consulted.
+    ``app/services/tag_service.py``, and stays batched — a constant number of
+    SELECTs regardless of list length (issue #284 A2.8), not 2N. These names
+    were typed by a person, so the fuzzy suggestion lookup is deliberately not
+    consulted.
     """
-    for name in tag_names:
-        try:
-            tag = resolve_or_create_tag(db, name, source=TAG_SOURCE_MANUAL)
-        except InvalidTagNameError:
-            continue
-        except IntegrityError:
-            logger.warning(f"Could not resolve tag '{name}' for file {file_id}, skipping")
-            continue
+    tag_ids = [tag.id for tag in resolve_or_create_tags(db, tag_names, user_id=user_id)]
 
-        existing = (
-            db.query(FileTag)
-            .filter(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id)
-            .first()
+    if not tag_ids:
+        db.flush()
+        return
+
+    already_tagged = {
+        row[0]
+        for row in db.query(FileTag.tag_id).filter(
+            FileTag.media_file_id == file_id, FileTag.tag_id.in_(tag_ids)
         )
-        if not existing:
-            db.add(FileTag(media_file_id=file_id, tag_id=tag.id, source=TAG_SOURCE_MANUAL))
+    }
+    for tag_id in dict.fromkeys(tag_ids):
+        if tag_id not in already_tagged:
+            db.add(FileTag(media_file_id=file_id, tag_id=tag_id, source=TAG_SOURCE_MANUAL))
 
     db.flush()
 
-    on_tags_changed(db, [file_id])
+    on_tags_changed(db, [file_id], user_id=user_id)
 
 
 @router.post("/prepare", response_model=dict[str, Any])
@@ -175,15 +204,27 @@ async def prepare_upload(
         duplicate_id: str | None = None
         if request.file_hash:
             # First clean up any failed files with the same hash to allow re-upload
-            await cleanup_failed_duplicates(db, request.file_hash, current_user.id)
+            await run_in_threadpool(
+                cleanup_failed_duplicates, db, request.file_hash, current_user.id
+            )
 
-            duplicate_id = await check_duplicate_by_hash(db, request.file_hash, current_user.id)
+            duplicate_id = await run_in_threadpool(
+                check_duplicate_by_fingerprint, db, request.file_hash, current_user.id
+            )
 
             if duplicate_id:
                 logger.info(
                     f"Duplicate file found for {request.filename} (Duplicate ID: {duplicate_id})"
                 )
                 return {"file_id": duplicate_id, "is_duplicate": 1}
+        else:
+            # No fingerprint means this upload was never checked against the
+            # library. That used to be the silent default for every file above
+            # ~4 GB (issue #342); it must leave a trace on both sides of the wire.
+            logger.warning(
+                f"No content fingerprint supplied for {request.filename} "
+                f"({request.file_size} bytes) - duplicate detection skipped"
+            )
 
         # Cloud-edition seam: enforce the tenant's per-tier max upload size
         # before minting a record / presigned URL. No-op in community.
@@ -243,41 +284,49 @@ async def prepare_upload(
 
         # Apply tags if specified
         if request.tag_names:
-            add_tags_to_file(db, db_file.id, request.tag_names)
+            add_tags_to_file(db, db_file.id, request.tag_names, current_user.id)
 
         # Commit all assignments (batch, collections, tags)
         db.commit()
 
         response: dict[str, Any] = {"file_id": str(db_file.uuid), "is_duplicate": 0}
 
-        # Optional: emit a presigned PUT URL so the browser can upload bytes
-        # directly to MinIO. The caller follows up with POST /files/complete
-        # once the PUT succeeds. We mint the application task_id here so all
-        # HTTP-phase markers share the benchmark:{task_id} Redis hash with
-        # the downstream pipeline.
+        # Optional: set the browser up to write bytes straight to object storage,
+        # bypassing the API container. The backend picks the transport — one
+        # presigned PUT, or a presigned multipart upload when the object is large
+        # enough to need resume (or too large for a single PUT: AWS rejects one
+        # above 5 GiB with EntityTooLarge, after the browser has already streamed
+        # the whole body). The client only executes the plan; see
+        # ``services/multipart_upload.build_upload_plan``. A None plan means
+        # neither transport is available, and the client falls back to POST /files.
+        #
+        # The application task_id is minted here so every HTTP-phase marker shares
+        # the benchmark:{task_id} Redis hash with the downstream pipeline.
         if request.use_presigned:
-            from app.services.minio_service import presigned_put_url
+            from app.services.multipart_upload import build_upload_plan
 
-            task_id = str(uuid_lib.uuid4())
-            put_url = await run_in_threadpool(presigned_put_url, storage_path)
-            benchmark_timing.mark(task_id, "prepare_upload_end")
-            benchmark_timing.set_context(
-                task_id,
-                {
-                    "file_size_bytes": int(request.file_size or 0),
-                    "content_type": request.content_type or "",
-                    "http_flow": "presigned",
-                },
+            plan = await run_in_threadpool(
+                build_upload_plan, storage_path, request.content_type, request.file_size
             )
-            response.update(
-                {
-                    "task_id": task_id,
-                    "upload_url": put_url,
-                    "upload_method": "PUT",
-                    "http_flow": "presigned",
-                    "storage_path": storage_path,
-                }
-            )
+            if plan is None:
+                logger.info(
+                    f"No browser-direct upload plan for {request.filename} "
+                    f"({request.file_size} bytes); falling back to POST /files"
+                )
+            else:
+                task_id = str(uuid_lib.uuid4())
+                benchmark_timing.mark(task_id, "prepare_upload_end")
+                benchmark_timing.set_context(
+                    task_id,
+                    {
+                        "file_size_bytes": int(request.file_size or 0),
+                        "content_type": request.content_type or "",
+                        "http_flow": plan["http_flow"],
+                    },
+                )
+                response.update(plan)
+                response["task_id"] = task_id
+                response["storage_path"] = storage_path
 
         logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
         return response
@@ -287,7 +336,7 @@ async def prepare_upload(
         # duplicate) — don't bury them in a generic 500.
         raise
     except Exception as e:
-        logger.error(f"Error preparing upload: {str(e)}")
+        logger.exception(f"Error preparing upload: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error preparing upload: {str(e)}",

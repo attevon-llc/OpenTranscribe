@@ -45,7 +45,7 @@ const SECTION_NAMESPACES: Partial<Record<SettingsSection, string[]>> = {
   authentication: [
     'settings.authentication',
     'settings.ldap',
-    'settings.keycloak',
+    'settings.oidc',
     'settings.pki',
     'settings.localAuth',
     'settings.session',
@@ -66,6 +66,8 @@ const SECTION_NAMESPACES: Partial<Record<SettingsSection, string[]>> = {
   'auto-labeling': ['autoLabel'],
   'custom-vocabulary': ['settings.customVocabulary', 'settings.vocabulary'],
   'content-redaction': ['settings.contentRedaction'],
+  chat: ['chat.settings', 'chat.controls'],
+  'chat-admin': ['chat.adminSettings'],
   'llm-provider': ['settings.llmProvider', 'llm'],
   'organization-context': ['settings.orgContext'],
   'speaker-attributes': ['settings.speakerAttributes'],

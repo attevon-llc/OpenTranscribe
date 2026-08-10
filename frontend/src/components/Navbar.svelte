@@ -34,6 +34,9 @@
   import { t } from '../stores/locale';
   import { prefetchSpeakersData, prefetchFileStatusData } from '$lib/prefetch';
 
+  // Capability gating (chat surface)
+  import { capabilities, isCapabilityEnabled } from '../stores/capabilities';
+
   // Gallery state detection based on location
   $: isGalleryPage = $page.url.pathname === '/' || ($page.url.pathname as string) === '';
 
@@ -62,6 +65,12 @@
   $: isGalleryActive = currentPath === '/' || (currentPath as string) === '';
   $: isTasksActive = currentPath === '/file-status' || currentPath.startsWith('/file-status');
   $: isSpeakersActive = currentPath === '/speakers' || currentPath.startsWith('/speakers/');
+  $: isChatActive = currentPath.startsWith('/chat');
+  $: isSearchActive = currentPath.startsWith('/search');
+  // Fail-open like every capability gate: hiding the link is cosmetic, the
+  // backend 404s the whole chat router when the capability is off. The link
+  // stays visible when the LLM is merely unconfigured — /chat shows the setup CTA.
+  $: chatEnabled = isCapabilityEnabled($capabilities, 'chat.rag');
   $: isTagsActive = currentPath === '/tags' || currentPath.startsWith('/tags/');
   $: showGalleryLink = !isGalleryActive && !isTasksActive; // Show gallery link when not on gallery or tasks
 
@@ -285,7 +294,10 @@
     <!-- Far Left: OpenTranscribe Logo -->
     <NavbarBrand on:about={() => showAboutModal = true} />
 
-    <!-- Left side: Gallery tabs (only on gallery page) -->
+    <!-- Sub-navigation for the Gallery section: which VIEW of the section you
+         are looking at. It deliberately does not repeat the section name — the
+         primary nav on the right already shows Gallery as the active
+         destination, and two highlighted "Gallery" labels read as a bug. -->
     {#if isGalleryPage}
       <div class="gallery-tabs">
         <button
@@ -297,7 +309,7 @@
             <circle cx="8.5" cy="8.5" r="1.5"></circle>
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
-          <span class="tab-label">{$t('nav.gallery')}</span>
+          <span class="tab-label">{$t('nav.allFiles')}</span>
         </button>
         <button
           class="tab-button {$galleryState.activeTab === 'status' ? 'active' : ''}"
@@ -320,27 +332,33 @@
     <div class="navbar-spacer"></div>
 
     <div class="nav-links" class:open={mobileMenuOpen}>
-      <!-- Gallery link - only show when not on gallery/file pages -->
-      {#if showGalleryLink}
-        <a
-          href="/"
-          title={$t('nav.backToGallery')}
-          class="nav-link"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <circle cx="8.5" cy="8.5" r="1.5"></circle>
-            <polyline points="21 15 16 10 5 21"></polyline>
-          </svg>
-          <span class="nav-label">{$t('nav.backToGallery')}</span>
-        </a>
-      {/if}
+      <!-- Gallery. Always present, like every other destination: a nav whose
+           items appear and disappear shifts the other items under the cursor
+           and gives no stable place to aim for. -->
+      <a
+        href="/"
+        title={$t('nav.gallery')}
+        class="nav-link"
+        class:active={isGalleryActive}
+        aria-current={isGalleryActive ? 'page' : undefined}
+        data-testid="nav-gallery"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+          <polyline points="21 15 16 10 5 21"></polyline>
+        </svg>
+        <span class="nav-label">{$t('nav.gallery')}</span>
+      </a>
 
       <!-- Search link -->
       <a
         href="/search"
         title={$t('nav.search')}
         class="nav-link"
+        class:active={isSearchActive}
+        aria-current={isSearchActive ? 'page' : undefined}
+        data-testid="nav-search"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"></circle>
@@ -349,12 +367,31 @@
         <span class="nav-label">{$t('nav.search')}</span>
       </a>
 
+      <!-- Chat link -->
+      {#if chatEnabled}
+        <a
+          href="/chat"
+          title={$t('nav.chat')}
+          class="nav-link"
+          class:active={isChatActive}
+          aria-current={isChatActive ? 'page' : undefined}
+          data-testid="nav-chat"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+          </svg>
+          <span class="nav-label">{$t('nav.chat')}</span>
+        </a>
+      {/if}
+
       <!-- Speakers link -->
       <a
         href="/speakers"
         title={$t('nav.speakers')}
         class="nav-link"
         class:active={isSpeakersActive}
+        aria-current={isSpeakersActive ? 'page' : undefined}
+        data-testid="nav-speakers"
         on:mouseenter={prefetchSpeakersData}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

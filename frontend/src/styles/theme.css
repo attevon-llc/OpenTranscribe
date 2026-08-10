@@ -8,6 +8,13 @@
   /* Default Light Theme */
   --primary-color: #3b82f6; /* Original blue color */
   --primary-color-rgb: 59, 130, 246; /* RGB values for primary color */
+  /* RGB channel triplets for the status colours below, so components can tint
+     with rgba(..., alpha). Without these the inline fallback always won, so the
+     tint stayed light-mode in dark mode and, for success, did not even match its
+     own text colour (#22c55e vs #10b981). Keep in sync with the hexes. */
+  --success-color-rgb: 16, 185, 129; /* #10b981 */
+  --error-color-rgb: 239, 68, 68; /* #ef4444 */
+  --warning-color-rgb: 245, 158, 11; /* #f59e0b */
   --primary-hover: #2563eb;
   --primary-light: #dbeafe; /* Light blue for button backgrounds */
   --primary-dark: #1d4ed8; /* Darker blue for button text */
@@ -17,8 +24,11 @@
   --text-secondary: #64748b;
   --border-color: #e5e7eb;
   --error-color: #ef4444;
+  --error-color-rgb: 239, 68, 68;
   --success-color: #10b981;
+  --success-color-rgb: 16, 185, 129;
   --warning-color: #f59e0b;
+  --warning-color-rgb: 245, 158, 11;
   --info-color: #3b82f6;
   --card-background: #ffffff;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -74,12 +84,117 @@
   --surface-secondary: #f1f5f9;
   --surface-hover: rgba(0, 0, 0, 0.04);
   --background-secondary: #f1f5f9;
+
+  /* ---------------------------------------------------------------------
+     Compatibility aliases.
+
+     Every name below was referenced by at least one component but declared
+     nowhere. `var(--card-bg)` with no fallback makes the whole declaration
+     invalid at computed-value time, so 15 call sites were painting no
+     background at all; the references that did carry an inline fallback were
+     pinned to that one literal in BOTH themes.
+
+     Declared once here rather than in both blocks: `data-theme` is set on
+     <html> (stores/theme.js), the same element :root matches, so an alias
+     pointing at a canonical variable already resolves to the active theme's
+     value. Only names whose light/dark values are not derivable from a
+     canonical variable are repeated in the dark block.
+     --------------------------------------------------------------------- */
+
+  /* Primary / accent */
+  --accent: var(--primary-color);
+  --accent-color: var(--primary-color);
+  --accent-light: var(--primary-light);
+  --secondary-color: var(--text-secondary);
+  --primary-bg: var(--primary-light);
+  --primary-border: var(--primary-color);
+  --primary-color-alpha: var(--color-primary-alpha);
+  --primary-color-dark: var(--primary-dark);
+  --primary-color-hover: var(--primary-hover);
+  --primary-color-light: var(--primary-light);
+
+  /* Surfaces / backgrounds */
+  --bg-color: var(--background-color);
+  --color-background: var(--background-color);
+  --background-main: var(--background-color);
+  --background-alt: var(--background-secondary);
+  --bg-secondary: var(--background-secondary);
+  --bg-tertiary: var(--color-bg-tertiary);
+  --card-bg: var(--card-background);
+  --bg-hover: var(--hover-color);
+  --hover-bg: var(--hover-color);
+  --color-bg-hover: var(--hover-color);
+  --card-hover: var(--hover-color);
+  --skeleton-base: var(--color-bg-secondary);
+  --disabled-background: var(--color-bg-secondary);
+  --disabled-color: var(--text-secondary);
+
+  /* Text */
+  --text-color-secondary: var(--text-secondary);
+  --text-secondary-color: var(--text-secondary);
+  --text-tertiary: var(--color-text-tertiary);
+
+  /* Buttons */
+  --button-secondary-bg: var(--surface-color);
+  --button-secondary-bg-hover: var(--hover-color);
+  --button-secondary-border: var(--border-color);
+
+  /* Tags */
+  --tag-bg: rgba(var(--primary-color-rgb), 0.1);
+  --tag-border: rgba(var(--primary-color-rgb), 0.3);
+  --tag-color: var(--primary-dark);
+
+  /* Status tints, derived from the RGB triplets so they track the theme */
+  --danger-color: var(--error-color);
+  --danger-bg: rgba(var(--error-color-rgb), 0.1);
+  --error-background: rgba(var(--error-color-rgb), 0.1);
+  --error-light: rgba(var(--error-color-rgb), 0.1);
+  --error-color-light: rgba(var(--error-color-rgb), 0.1);
+  --error-border: rgba(var(--error-color-rgb), 0.3);
+  --success-bg: rgba(var(--success-color-rgb), 0.1);
+  --color-success-bg: rgba(var(--success-color-rgb), 0.1);
+  --success-color-light: rgba(var(--success-color-rgb), 0.1);
+  --success-border: rgba(var(--success-color-rgb), 0.3);
+  --warning-bg: rgba(var(--warning-color-rgb), 0.1);
+  --warning-background: rgba(var(--warning-color-rgb), 0.1);
+  --warning-light: rgba(var(--warning-color-rgb), 0.1);
+  --warning-border: rgba(var(--warning-color-rgb), 0.3);
+  --warning-text: var(--color-warning-text);
+  --info-light: rgba(var(--primary-color-rgb), 0.1);
+
+  /* Emphasis shades — no canonical source, so light values here, dark below */
+  --border-hover: #cbd5e1;
+  --border-color-hover: #cbd5e1;
+  --border-light: #f1f5f9;
+  --border-color-soft: #eef2f6;
+  --error-dark: #b91c1c;
+  --error-hover: #dc2626;
+  --success-hover: #059669;
+  --color-success-text: #047857;
+  --warning-dark: #b45309;
+  --info-dark: #1d4ed8;
+  --color-info-text: #1d4ed8;
+
+  /* Named for dark mode and used inside already-dark-scoped rules, so these
+     intentionally hold the same dark value in both themes. */
+  --dark-border: #334155;
+  --dark-input-bg: #334155;
+  --dark-text: #f8fafc;
+
+  /* Font stacks */
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-family-sans: var(--font-family);
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+    monospace;
 }
 
 /* Dark Theme */
 [data-theme='dark'] {
   --primary-color: #60a5fa; /* Lighter blue for dark mode */
   --primary-color-rgb: 96, 165, 250; /* RGB values for primary color in dark mode */
+  --success-color-rgb: 52, 211, 153; /* #34d399 */
+  --error-color-rgb: 248, 113, 113; /* #f87171 */
+  --warning-color-rgb: 251, 191, 36; /* #fbbf24 */
   --primary-hover: #3b82f6; /* Darker on hover — same blue as light-mode base. Apple HIG: hover always darkens. */
   --primary-light: #1e3a8a; /* Deeper blue for button backgrounds in dark mode */
   --primary-dark: #93c5fd; /* Lighter blue for button text in dark mode (contrast on dark surfaces) */
@@ -89,8 +204,11 @@
   --text-secondary: #cbd5e1;
   --border-color: #334155;
   --error-color: #f87171;
+  --error-color-rgb: 248, 113, 113;
   --success-color: #34d399;
+  --success-color-rgb: 52, 211, 153;
   --warning-color: #fbbf24;
+  --warning-color-rgb: 251, 191, 36;
   --info-color: #60a5fa;
   --card-background: #1e293b;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
@@ -141,6 +259,21 @@
   --surface-secondary: #1e293b;
   --surface-hover: rgba(255, 255, 255, 0.06);
   --background-secondary: #1e293b;
+
+  /* Compatibility aliases - dark mode. Only the names whose value is not
+     derivable from a canonical variable need repeating; the rest are declared
+     once in :root and follow the theme automatically. See the light block. */
+  --border-hover: #475569;
+  --border-color-hover: #475569;
+  --border-light: #293548;
+  --border-color-soft: #263143;
+  --error-dark: #fca5a5;
+  --error-hover: #ef4444;
+  --success-hover: #10b981;
+  --color-success-text: #6ee7b7;
+  --warning-dark: #fcd34d;
+  --info-dark: #93c5fd;
+  --color-info-text: #93c5fd;
 }
 
 /* Global styles that should adapt to theme */

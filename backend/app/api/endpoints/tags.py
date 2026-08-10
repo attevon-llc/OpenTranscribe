@@ -11,7 +11,10 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import status
 from sqlalchemy import func
+from sqlalchemy import or_
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
@@ -27,6 +30,7 @@ from app.schemas.media import TagCollisionCluster as TagCollisionClusterSchema
 from app.schemas.media import TagImpact
 from app.schemas.media import TagMergeRequest
 from app.schemas.media import TagMutationResult
+from app.schemas.media import TagPromoteRequest
 from app.schemas.media import TagRenameRequest
 from app.schemas.media import TagReviewRequest
 from app.schemas.media import TagReviewResult
@@ -38,6 +42,7 @@ from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import delete_tags
 from app.services.tag_operations import merge_tags
 from app.services.tag_operations import preview_tag_impact
+from app.services.tag_operations import promote_tags_to_shared
 from app.services.tag_operations import rename_tag
 from app.services.tag_review import accept_tags
 from app.services.tag_review import preview_tag_review
@@ -50,15 +55,38 @@ from app.utils.uuid_helpers import get_by_uuid
 logger = logging.getLogger(__name__)
 
 
-def _resolve_tag(db: Session, name: str) -> Tag:
+def _owned_or_system(user_id: int) -> ColumnElement[bool]:
+    """Tags the user may write against: their own, plus the system vocabulary."""
+    return or_(Tag.user_id == user_id, Tag.user_id.is_(None))
+
+
+def _visible_to(db: Session, user_id: int, organization_id: Any) -> ColumnElement[bool]:
+    """Predicate for the tags ``user_id`` is allowed to see.
+
+    A tag is visible when it is a system tag (``user_id IS NULL``), owned by the
+    caller, or attached to a file the caller can access.
+    ``get_accessible_file_ids_subquery`` already covers files shared directly and
+    via groups and applies the org tenant gate, so sharing needs no extra rule
+    here — do not add a parallel one.
+    """
+    accessible_files = accessible_file_ids_subquery(db, user_id, organization_id)
+    attached_to_accessible = select(FileTag.tag_id).where(
+        FileTag.media_file_id.in_(select(accessible_files))
+    )
+    return or_(_owned_or_system(user_id), Tag.id.in_(attached_to_accessible))
+
+
+def _resolve_tag(db: Session, name: str, user_id: int) -> Tag:
     """Resolve a user-supplied name to a tag, mapping a blank name to a 422.
 
-    Resolution is normalized-exact (``app/services/tag_service.py``). A near
-    match is never applied here — a person typed this name, so a fuzzy hit may
-    only ever be offered as a suggestion.
+    Resolution is normalized-exact (``app/services/tag_service.py``) and scoped
+    to the caller's own vocabulary plus the system one, so a typed name can never
+    resolve onto another account's row. A near match is never applied here — a
+    person typed this name, so a fuzzy hit may only ever be offered as a
+    suggestion.
     """
     try:
-        return resolve_or_create_tag(db, name, source=TAG_SOURCE_MANUAL)
+        return resolve_or_create_tag(db, name, user_id=user_id, source=TAG_SOURCE_MANUAL)
     except InvalidTagNameError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -66,11 +94,31 @@ def _resolve_tag(db: Session, name: str) -> Tag:
         ) from exc
 
 
-def _tag_ids(db: Session, tag_uuids: list[UUID]) -> list[int]:
-    """Resolve public tag UUIDs to internal ids, 404ing on the first unknown one."""
-    return [
-        get_by_uuid(db, Tag, tag_uuid, error_message="Tag not found").id for tag_uuid in tag_uuids
-    ]
+def _writable_tag_ids(
+    db: Session, tag_uuids: list[UUID], *, user_id: int, is_admin: bool
+) -> list[int]:
+    """Resolve public tag UUIDs to internal ids the caller may **mutate**.
+
+    Reading a tag and rewriting it are different rights. ``_visible_to`` admits
+    any tag attached to a file shared with you, but renaming or deleting one of
+    those rewrites its owner's vocabulary everywhere they use it, so mutation is
+    narrower: your own tags always, system tags for an admin only (they are the
+    shared vocabulary every account's picker shows, which is why
+    ``cleanup_unused_tags`` is admin-gated and skips them).
+
+    A tag that exists but is not writable 404s rather than 403s — the same answer
+    an unknown UUID gets, so probing this endpoint cannot enumerate other
+    accounts' tags.
+    """
+    ids: list[int] = []
+    for tag_uuid in tag_uuids:
+        tag = get_by_uuid(db, Tag, tag_uuid, error_message="Tag not found")
+        owned = tag.user_id == user_id
+        system = tag.user_id is None
+        if not (owned or (system and is_admin)):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
+        ids.append(tag.id)
+    return ids
 
 
 def _apply(operation, *args, result_model=TagMutationResult, **kwargs):
@@ -86,6 +134,7 @@ def _apply(operation, *args, result_model=TagMutationResult, **kwargs):
         ) from exc
 
 
+
 router = APIRouter()
 
 
@@ -96,13 +145,13 @@ def create_tag(
     current_user: User = Depends(get_current_active_user),
 ):
     """
-    Create a new tag
+    Create a new tag owned by the current user.
     """
-    tag = _resolve_tag(db, tag_data.name)
+    tag = _resolve_tag(db, tag_data.name, current_user.id)
     db.commit()
     db.refresh(tag)
     # No file carries it yet, so there is nothing to reindex — but the new row
-    # belongs in every user's tag list, not just this one's.
+    # joins the caller's read-through tag list, so that key has to go.
     on_tags_changed(db, user_id=current_user.id)
     return tag
 
@@ -120,7 +169,11 @@ def list_tags(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """List tags with usage counts, most used first, optionally narrowed.
+    """List the tags visible to the caller with usage counts, most used first.
+
+    Visible = system tags (``user_id IS NULL``) + the caller's own tags + tags
+    attached to a file the caller can access. Usage counts only count accessible
+    files, so a shared tag never reveals how often its owner uses it.
 
     Filtering, counting, and clustering live in ``services/tag_collisions.py``;
     the filters combine (AND). Errors propagate — this used to return ``[]`` on
@@ -201,11 +254,14 @@ def list_tag_collisions(
 def cleanup_unused_tags(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
 ):
-    """Delete every tag no file anywhere carries (admin only).
+    """Delete every user-owned tag no file anywhere carries (admin only).
 
-    Deliberately **global**, unlike ``GET /tags/unused``, which is scoped to what
-    the caller can see: this deletes rows, and a tag that merely looks unused to
-    one admin may be carrying someone else's files.
+    Deliberately **deployment-wide**, unlike ``GET /tags/unused``, which is
+    scoped to what the caller can see: this deletes rows, and a tag that merely
+    looks unused to one admin may be carrying someone else's files. System tags
+    (``user_id IS NULL``) are exempt — they are the shared vocabulary every
+    user's picker shows, and being unattached is their normal state, so sweeping
+    them would empty the picker for everyone.
     """
     # Only allow admin users to perform this operation
     if not current_user.is_admin:
@@ -215,11 +271,9 @@ def cleanup_unused_tags(
         )
 
     try:
-        # Find all tags that are not used in any files
-        used_tag_ids = db.query(FileTag.tag_id).distinct().subquery()
+        used_tag_ids = select(FileTag.tag_id).where(FileTag.tag_id.is_not(None))
 
-        # Delete all tags not in use
-        delete_query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids))  # type: ignore[arg-type]
+        delete_query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids), Tag.user_id.is_not(None))
 
         # Get the count for the response
         count = delete_query.count()
@@ -235,7 +289,7 @@ def cleanup_unused_tags(
             "message": f"{count} unused tags deleted successfully",
         }
     except Exception as e:
-        logger.error(f"Error in cleanup_unused_tags: {e}")
+        logger.exception(f"Error in cleanup_unused_tags: {e}")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -257,7 +311,7 @@ def get_tag_impact(
     alone would understate its own blast radius.
     """
     report = preview_tag_impact(
-        db, _tag_ids(db, tag_uuids), user_id=current_user.id, organization_id=ctx.org_id
+        db, _writable_tag_ids(db, tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin), user_id=current_user.id, organization_id=ctx.org_id
     )
     return TagImpact.model_validate(report)
 
@@ -279,7 +333,7 @@ def preview_tag_review_endpoint(
     return _apply(
         preview_tag_review,
         db,
-        _tag_ids(db, tag_uuids),
+        _writable_tag_ids(db, tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
         action=action,
         user_id=current_user.id,
         organization_id=ctx.org_id,
@@ -302,7 +356,7 @@ def accept_tags_endpoint(
     return _apply(
         accept_tags,
         db,
-        _tag_ids(db, payload.tag_uuids),
+        _writable_tag_ids(db, payload.tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
         user_id=current_user.id,
         organization_id=ctx.org_id,
         result_model=TagReviewResult,
@@ -324,10 +378,45 @@ def reject_tags_endpoint(
     return _apply(
         reject_tags,
         db,
-        _tag_ids(db, payload.tag_uuids),
+        _writable_tag_ids(db, payload.tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
         user_id=current_user.id,
         organization_id=ctx.org_id,
         result_model=TagReviewResult,
+    )
+
+
+@router.post("/promote", response_model=TagMutationResult)
+def promote_tags_endpoint(
+    payload: TagPromoteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Publish owned tags into the shared vocabulary (admin only).
+
+    The consolidation lever for a multi-user deployment: ownership keeps one
+    account from renaming another's tag, but it also lets four private
+    "Interview" rows accumulate with nothing to point at. Promoting one makes it
+    the row every account resolves onto, and folds the same-named private rows
+    into it so their file associations are preserved rather than orphaned.
+
+    Registered **before** ``PATCH /{tag_uuid}`` and the other path-parameter
+    routes for the usual FastAPI reason — ``/promote`` would otherwise be
+    swallowed by ``/{tag_uuid}``.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can promote tags to the shared vocabulary",
+        )
+    return _apply(
+        promote_tags_to_shared,
+        db,
+        _writable_tag_ids(
+            db, payload.tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin
+        ),
+        user_id=current_user.id,
+        organization_id=ctx.org_id,
     )
 
 
@@ -346,7 +435,9 @@ def rename_tag_endpoint(
     nothing is applied until the caller retries with ``confirm_merge``. A case
     variant of the tag's own name is a plain rename.
     """
-    tag_id = get_by_uuid(db, Tag, tag_uuid, error_message="Tag not found").id
+    tag_id = _writable_tag_ids(
+        db, [tag_uuid], user_id=current_user.id, is_admin=current_user.is_admin
+    )[0]
     return _apply(
         rename_tag,
         db,
@@ -367,12 +458,14 @@ def merge_tags_endpoint(
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Fold the listed tags into the tag in the path, which survives."""
-    target_id = get_by_uuid(db, Tag, tag_uuid, error_message="Tag not found").id
+    target_id = _writable_tag_ids(
+        db, [tag_uuid], user_id=current_user.id, is_admin=current_user.is_admin
+    )[0]
     return _apply(
         merge_tags,
         db,
         target_id,
-        _tag_ids(db, payload.source_uuids),
+        _writable_tag_ids(db, payload.source_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
         user_id=current_user.id,
         organization_id=ctx.org_id,
     )
@@ -389,14 +482,14 @@ def delete_tags_endpoint(
     return _apply(
         delete_tags,
         db,
-        _tag_ids(db, tag_uuids),
+        _writable_tag_ids(db, tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
         user_id=current_user.id,
         organization_id=ctx.org_id,
     )
 
 
 @router.post("/files/{file_uuid}/tags", response_model=TagSchema)
-async def add_tag_to_file(
+def add_tag_to_file(
     request: Request,
     file_uuid: str,
     tag_data: dict = Body(...),
@@ -426,9 +519,12 @@ async def add_tag_to_file(
     # Convert to proper TagBase object
     tag_base = TagBase(name=tag_data["name"])
 
-    # Atomically resolve or create the tag (race-condition safe)
-    # Note: ownership already verified by get_file_by_uuid_with_permission above
-    tag = _resolve_tag(db, tag_base.name)
+    # Atomically resolve or create the tag (race-condition safe). The tag belongs
+    # to the caller, not the file owner: tagging a file shared with you adds the
+    # word to YOUR vocabulary, and the owner still sees it because the tag is now
+    # attached to a file they can access.
+    # Note: file access already verified by get_file_by_uuid_with_permission above
+    tag = _resolve_tag(db, tag_base.name, current_user.id)
     logger.info(f"Using tag: {tag.id}:{tag.name} for file_id={file_id}")
 
     # Check if file already has this tag
@@ -466,8 +562,15 @@ def remove_tag_from_file(
     )
     file_id = media_file.id
 
-    # Find the tag
-    tag = db.query(Tag).filter(Tag.name == tag_name).first()
+    # Resolve the tag through the file's own attachments. Names are only unique
+    # per owner now, so a bare `Tag.name == tag_name` lookup could pick another
+    # user's identically-named tag and silently detach nothing.
+    tag = (
+        db.query(Tag)
+        .join(FileTag, FileTag.tag_id == Tag.id)
+        .filter(FileTag.media_file_id == file_id, Tag.name == tag_name)
+        .first()
+    )
     if not tag:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
 

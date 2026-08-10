@@ -1153,7 +1153,43 @@ class TestDNComponentParsing:
 # the RUN_PKI_TESTS=true environment variable. They use the TestClient
 # and db_session fixtures from conftest.py, and the auth_config table
 # in the test database to enable/disable PKI dynamically.
+#
+# They all take the `trusted_pki_peer` fixture below: header-sourced PKI
+# authentication is refused unless a trusted proxy vouched for the headers,
+# so a deployment with no PKI_TRUSTED_PROXIES authenticates nobody. These
+# tests model a CORRECTLY configured deployment; the fail-closed behaviour
+# when the fixture is absent is covered by TestPKIHeaderSourceFailClosed.
 # ===================================================================
+
+
+@pytest.fixture
+def trusted_pki_peer(monkeypatch):
+    """Model a deployment whose reverse proxy terminates mTLS and is allow-listed.
+
+    TestClient's peer is the literal string ``"testclient"``, which no IP allowlist can
+    ever match, so the allowlist lookup is patched for the duration of the test rather
+    than the production trust rule being relaxed. ``app/auth/pki_auth.py`` therefore has
+    exactly one rule with no test-only branch in it.
+
+    Two independent call sites gate on that rule (``pki_authenticate``'s
+    ``_validate_pki_headers_source``, hit first, via ``header_assertion_permitted``;
+    and ``_extract_user_info_from_request``'s own ``_pki_header_source_is_trusted``),
+    and each resolves ``header_source_is_trusted`` through its own module's import
+    binding — patching one leaves the other running the real, untrusted-peer check.
+    Both were introduced together (``_validate_pki_headers_source``, PKI trust
+    hardening), but only the second was ever wired into this fixture, so this class's
+    whole suite 401'd against a real deployment shape (every DN-header request has
+    *some* PKI header, so ``asserted=True`` and the unmocked gate always refuses)
+    until a real backend/frontend run against Authentik/LDAP surfaced it (#20/#14).
+    """
+    from app.auth import header_trust
+    from app.auth import pki_auth
+
+    monkeypatch.setattr(
+        pki_auth, "_pki_header_source_is_trusted", lambda request, networks=None: True
+    )
+    monkeypatch.setattr(pki_auth, "header_source_is_trusted", lambda request, networks: True)
+    monkeypatch.setattr(header_trust, "header_source_is_trusted", lambda request, networks: True)
 
 
 @pytest.fixture
@@ -1169,7 +1205,7 @@ def pki_enabled_db(db_session):
     from app.models.auth_config import AuthConfig
 
     admin_dn_value = (
-        "emailAddress=admin@example.com,"
+        "emailAddress=pki-admin-test@example.com,"
         "CN=Admin User,OU=Users,"
         "O=OpenTranscribe Admins,L=Arlington,"
         "ST=Virginia,C=US"
@@ -1256,14 +1292,14 @@ def pki_admin_cert():
     """
     pem = _generate_test_certificate(
         common_name="Admin User",
-        email="admin@example.com",
+        email="pki-admin-test@example.com",
         organization="OpenTranscribe Admins",
         organizational_unit="Users",
         days_valid=365,
         days_before=0,
     )
     subject_dn = (
-        "emailAddress=admin@example.com,"
+        "emailAddress=pki-admin-test@example.com,"
         "CN=Admin User,OU=Users,"
         "O=OpenTranscribe Admins,L=Arlington,"
         "ST=Virginia,C=US"
@@ -1278,6 +1314,14 @@ class TestPKIEndpointIntegration:
     test database session with savepoint isolation. PKI is toggled via
     rows in the ``auth_config`` table, matching production behaviour.
     """
+
+    @pytest.fixture(autouse=True)
+    def _trusted_peer(self, trusted_pki_peer):
+        """Every test here models a deployment with a working mTLS reverse proxy.
+
+        Without it the endpoint refuses every request, which is the point of
+        TestPKIHeaderSourceFailClosed — not of these tests.
+        """
 
     def test_pki_authenticate_with_dn_header(self, client, pki_enabled_db, pki_test_cert):
         """POST /api/auth/pki/authenticate with DN header returns 200 and access_token."""
@@ -1582,6 +1626,10 @@ class TestPKICertificateInfoEndpoint:
     metadata, and that non-PKI users get has_certificate: false.
     """
 
+    @pytest.fixture(autouse=True)
+    def _trusted_peer(self, trusted_pki_peer):
+        """The PKI logins these tests perform need a vouching proxy; see the fixture."""
+
     def test_certificate_info_for_pki_user(self, client, pki_enabled_db, db_session, pki_test_cert):
         """PKI-authenticated user can see their certificate info."""
         pem, subject_dn = pki_test_cert
@@ -1656,6 +1704,302 @@ class TestPKICertificateInfoEndpoint:
         data = cert_response.json()
         assert data["has_certificate"] is True
         assert data["subject_dn"] == subject_dn
+
+
+# ===================================================================
+# Fail-closed regression tests
+#
+# These pin the two header-injection holes found in the PKI audit:
+#   1. An empty PKI_TRUSTED_PROXIES used to fail OPEN (warn + allow), so anyone
+#      who could reach the backend directly could mint an admin session with a
+#      forged DN header. That branch had no test at all, which is why the
+#      fail-open survived.
+#   2. A DN header must never be trusted unless either a certificate was
+#      presented (and passed its validity-window check) or a configured trusted
+#      proxy vouched for it.
+# ===================================================================
+
+
+@_skip_pki_unit
+class TestPKIHeaderSourceFailClosed:
+    """PKI headers must be refused when nothing can vouch for them."""
+
+    ADMIN_DN = "CN=Admin User,O=Company,C=US"
+
+    def _patch_settings(self, mock_settings, trusted_proxies=""):
+        """Apply the common PKI settings used by these tests."""
+        mock_settings.PKI_ENABLED = True
+        mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
+        mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
+        mock_settings.PKI_VERIFY_REVOCATION = False
+        mock_settings.PKI_ADMIN_DNS = self.ADMIN_DN
+        mock_settings.PKI_TRUSTED_PROXIES = trusted_proxies
+
+    def test_forged_dn_would_grant_admin(self):
+        """The DN used below really is an admin DN — the refusal is what stops it."""
+        from app.auth.pki_auth import _is_pki_admin
+
+        assert _is_pki_admin(self.ADMIN_DN, self.ADMIN_DN) is True
+
+    def test_empty_trusted_proxies_refuses_dn_header(self, mock_request):
+        """No PKI_TRUSTED_PROXIES configured => a DN header is refused, not warned about."""
+        from app.auth.pki_auth import pki_authenticate
+
+        mock_request.headers = {"X-Client-Cert-DN": self.ADMIN_DN}
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            self._patch_settings(mock_settings)
+
+            with patch("app.auth.pki_auth._pki_trusted_proxy_networks", []):
+                result = pki_authenticate(mock_request)
+
+        assert result is None
+
+    def test_empty_trusted_proxies_refuses_certificate(self, valid_certificate_pem, mock_request):
+        """No PKI_TRUSTED_PROXIES configured => even a valid certificate is refused.
+
+        Without an allowlist there is no proxy that terminated mTLS, so the certificate
+        header is just another attacker-supplied string.
+        """
+        from app.auth.pki_auth import pki_authenticate
+
+        mock_request.headers = {"X-Client-Cert": valid_certificate_pem}
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            self._patch_settings(mock_settings)
+
+            with patch("app.auth.pki_auth._pki_trusted_proxy_networks", []):
+                result = pki_authenticate(mock_request)
+
+        assert result is None
+
+    def test_empty_trusted_proxies_validator_returns_false(self, mock_request):
+        """_validate_pki_headers_source refuses (False), rather than allowing (True)."""
+        from app.auth.pki_auth import _validate_pki_headers_source
+
+        mock_request.headers = {"X-Client-Cert-DN": self.ADMIN_DN}
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            self._patch_settings(mock_settings)
+
+            with patch("app.auth.pki_auth._pki_trusted_proxy_networks", []):
+                assert _validate_pki_headers_source(mock_request) is False
+
+    def test_no_headers_still_allowed_without_trusted_proxies(self, mock_request):
+        """A request with no PKI headers is not refused — other auth methods may run."""
+        from app.auth.pki_auth import _validate_pki_headers_source
+
+        mock_request.headers = {}
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            self._patch_settings(mock_settings)
+
+            with patch("app.auth.pki_auth._pki_trusted_proxy_networks", []):
+                assert _validate_pki_headers_source(mock_request) is True
+
+    def test_trust_rule_has_no_environment_escape(self, mock_request):
+        """The trust rule is the allowlist and nothing else.
+
+        There is no TESTING / DEBUG / relaxed-environment branch that would let an empty
+        allowlist accept headers — the whole suite runs with TESTING=true and a relaxed
+        ENVIRONMENT, so if such a branch existed this assertion would flip.
+        """
+        import inspect
+
+        from app.auth import pki_auth
+
+        with patch("app.auth.pki_auth._pki_trusted_proxy_networks", []):
+            assert pki_auth._pki_header_source_is_trusted(mock_request) is False
+
+        source = inspect.getsource(pki_auth._pki_header_source_is_trusted)
+        for escape in ("TESTING", "DEBUG", "is_hardened", "ENVIRONMENT"):
+            assert escape not in source, f"{escape} must not gate the PKI trust boundary"
+
+
+@_skip_pki_unit
+class TestDNOnlyRequiresTrustedProxy:
+    """A DN header with no certificate is only credible from a trusted proxy."""
+
+    def test_dn_only_from_untrusted_peer_refused(self, mock_request):
+        """DN-only request from an IP outside PKI_TRUSTED_PROXIES is refused."""
+        import ipaddress
+
+        from app.auth.pki_auth import pki_authenticate
+
+        # mock_request.client.host is 192.168.1.100, outside 10.0.0.0/8
+        mock_request.headers = {"X-Client-Cert-DN": "CN=Test User,O=Test Organization,C=US"}
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            mock_settings.PKI_ENABLED = True
+            mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
+            mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
+            mock_settings.PKI_VERIFY_REVOCATION = False
+            mock_settings.PKI_ADMIN_DNS = ""
+            mock_settings.PKI_TRUSTED_PROXIES = "10.0.0.0/8"
+
+            networks = [ipaddress.ip_network("10.0.0.0/8")]
+            with patch("app.auth.pki_auth._pki_trusted_proxy_networks", networks):
+                result = pki_authenticate(mock_request)
+
+        assert result is None
+
+    def test_extract_user_info_refuses_untrusted_dn_only(self, mock_request):
+        """The extraction helper itself refuses a DN-only claim from an untrusted peer.
+
+        Defence in depth: even if the source validation upstream were bypassed, the DN
+        must not become an identity without a certificate or a vouching proxy.
+        """
+        import ipaddress
+
+        from app.auth.pki_auth import _extract_user_info_from_request
+
+        mock_request.headers = {"X-Client-Cert-DN": "CN=Test User,O=Test Organization,C=US"}
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
+
+            networks = [ipaddress.ip_network("10.0.0.0/8")]
+            with patch("app.auth.pki_auth._pki_trusted_proxy_networks", networks):
+                result = _extract_user_info_from_request(mock_request, None, None)
+
+        assert result is None
+
+    def test_extract_user_info_accepts_trusted_dn_only(self, mock_trusted_request):
+        """The same claim from a trusted proxy (10.0.0.1) is accepted."""
+        import ipaddress
+
+        from app.auth.pki_auth import _extract_user_info_from_request
+
+        mock_trusted_request.headers = {"X-Client-Cert-DN": "CN=Test User,O=Test Org,C=US"}
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
+
+            networks = [ipaddress.ip_network("10.0.0.0/8")]
+            with patch("app.auth.pki_auth._pki_trusted_proxy_networks", networks):
+                result = _extract_user_info_from_request(mock_trusted_request, None, None)
+
+        assert result is not None
+        assert result[0] == "CN=Test User,O=Test Org,C=US"
+        assert result[1] == "Test User"
+
+
+@_skip_pki_unit
+class TestCertificateValidityPrecedesDN:
+    """A DN header must not short-circuit the certificate validity-window check."""
+
+    def _patch_settings(self, mock_settings):
+        """Apply the common PKI settings used by these tests."""
+        mock_settings.PKI_ENABLED = True
+        mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
+        mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
+        mock_settings.PKI_VERIFY_REVOCATION = False
+        mock_settings.PKI_ADMIN_DNS = ""
+        mock_settings.PKI_TRUSTED_PROXIES = "10.0.0.0/8"
+
+    def test_expired_cert_with_dn_header_refused(
+        self, expired_certificate_pem, mock_trusted_request
+    ):
+        """An expired certificate is refused even though a valid-looking DN accompanies it."""
+        import ipaddress
+
+        from app.auth.pki_auth import pki_authenticate
+
+        mock_trusted_request.headers = {
+            "X-Client-Cert": expired_certificate_pem,
+            "X-Client-Cert-DN": "CN=Expired User,O=Test Organization,C=US",
+        }
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            self._patch_settings(mock_settings)
+
+            networks = [ipaddress.ip_network("10.0.0.0/8")]
+            with patch("app.auth.pki_auth._pki_trusted_proxy_networks", networks):
+                result = pki_authenticate(mock_trusted_request)
+
+        assert result is None
+
+    def test_not_yet_valid_cert_with_dn_header_refused(
+        self, not_yet_valid_certificate_pem, mock_trusted_request
+    ):
+        """A not-yet-valid certificate is refused even when a DN header is present."""
+        import ipaddress
+
+        from app.auth.pki_auth import pki_authenticate
+
+        mock_trusted_request.headers = {
+            "X-Client-Cert": not_yet_valid_certificate_pem,
+            "X-Client-Cert-DN": "CN=Future User,O=Test Organization,C=US",
+        }
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            self._patch_settings(mock_settings)
+
+            networks = [ipaddress.ip_network("10.0.0.0/8")]
+            with patch("app.auth.pki_auth._pki_trusted_proxy_networks", networks):
+                result = pki_authenticate(mock_trusted_request)
+
+        assert result is None
+
+    def test_valid_cert_with_dn_header_still_uses_header_dn(
+        self, valid_certificate_pem, mock_trusted_request
+    ):
+        """Backward compatibility: a checked certificate keeps the proxy's canonical DN."""
+        import ipaddress
+
+        from app.auth.pki_auth import pki_authenticate
+
+        header_dn = "CN=Test User,O=Test Organization,C=US"
+        mock_trusted_request.headers = {
+            "X-Client-Cert": valid_certificate_pem,
+            "X-Client-Cert-DN": header_dn,
+        }
+
+        with patch("app.auth.pki_auth.settings") as mock_settings:
+            self._patch_settings(mock_settings)
+
+            networks = [ipaddress.ip_network("10.0.0.0/8")]
+            with patch("app.auth.pki_auth._pki_trusted_proxy_networks", networks):
+                result = pki_authenticate(mock_trusted_request)
+
+        assert result is not None
+        assert result["subject_dn"] == header_dn
+        assert result["fingerprint"] is not None
+
+
+class TestPKIEndpointThrottling:
+    """POST /auth/pki/authenticate must be throttled like every other auth route.
+
+    It mints access AND refresh tokens, so without a limit it was the cheapest
+    brute-force surface in the app. No DB is needed: these assert the wiring.
+    """
+
+    def test_pki_route_registered_with_limiter(self):
+        """The slowapi limiter has a registered limit for the pki_login route."""
+        from app.api.endpoints.auth import pki as pki_endpoint  # noqa: F401
+        from app.auth.rate_limit import limiter
+
+        route_key = "app.api.endpoints.auth.pki.pki_login"
+        assert route_key in limiter._route_limits or route_key in limiter._dynamic_route_limits
+
+    def test_pki_route_source_has_limit_decorator(self):
+        """The decorator idiom matches login.py / registration.py."""
+        import inspect
+
+        from app.api.endpoints.auth import pki as pki_endpoint
+
+        source = inspect.getsource(pki_endpoint)
+        assert "@limiter.limit(get_auth_rate_limit())" in source
+
+    def test_pki_route_records_lockout_attempts(self):
+        """Failed PKI attempts are recorded against the subject DN for lockout."""
+        import inspect
+
+        from app.api.endpoints.auth import pki as pki_endpoint
+
+        source = inspect.getsource(pki_endpoint)
+        assert "check_and_record_attempt(" in source
+        assert "lockout_identifier" in source
 
 
 # Run with: pytest tests/test_pki_auth.py -v

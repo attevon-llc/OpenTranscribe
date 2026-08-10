@@ -4,7 +4,7 @@ import type { Notification } from '$stores/websocket';
  * Translation function shape — matches the value of the `t` derived store
  * (`$t` inside the page): `(key, options?) => string`.
  */
-export type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
 
 /**
  * Context object the file-detail page passes into {@link handleFileNotification}.
@@ -15,8 +15,8 @@ export type TranslateFn = (key: string, options?: Record<string, unknown>) => st
  * switch lived inline in `onMount`.
  *
  * CRITICAL: `setFile` must perform the real `file = ...` assignment in the page
- * (not a no-op clone) so reactivity fires; `setReactiveFile` must call
- * `reactiveFile.set(...)` exactly as the inline code did.
+ * (not a no-op clone) so reactivity fires — that assignment is the only thing
+ * that propagates an update to the child components.
  */
 export interface FileNotificationContext {
   // --- current-file identity & state reads ---
@@ -28,7 +28,6 @@ export interface FileNotificationContext {
 
   // --- file object mutation (must do the real `file = ...` assignment) ---
   setFile: (f: any) => void;
-  setReactiveFile: (f: any) => void;
 
   // --- flag setters ---
   setCurrentProcessingStep: (s: string) => void;
@@ -88,7 +87,6 @@ export function handleFileNotification(
             t('fileDetail.processingDefault')
         );
         ctx.setFile({ ...file }); // Trigger reactivity
-        ctx.setReactiveFile(ctx.getFile());
       }
     } else if (
       notificationStatus === 'completed' ||
@@ -116,7 +114,6 @@ export function handleFileNotification(
         }
 
         ctx.setFile({ ...file }); // Trigger reactivity
-        ctx.setReactiveFile(ctx.getFile());
       }
 
       // Clear processing step and refresh transcript data after completion
@@ -200,7 +197,6 @@ export function handleFileNotification(
 
           // Force reactivity update by creating new object reference
           ctx.setFile({ ...file });
-          ctx.setReactiveFile(ctx.getFile());
         }
       } else if (status === 'failed' || status === 'error') {
         // Summary failed - stop spinners and show error
@@ -224,23 +220,10 @@ export function handleFileNotification(
     } // Close the else block for file ID matching
   }
 
-  // Handle speaker update notifications (for real-time voice suggestion refresh)
-  if (latestNotification.type === 'speaker_updated') {
-    ctx.loadSpeakers();
-  }
-
-  // Handle speaker background processing complete notification
-  if (latestNotification.type === 'speaker_processing_complete') {
-    ctx.loadSpeakers();
-    // Show toast if labels were auto-applied to other speakers
-    const autoAppliedCount = latestNotification.data?.auto_applied_count || 0;
-    const suggestedCount = latestNotification.data?.suggested_count || 0;
-    if (autoAppliedCount > 0) {
-      ctx.toastInfo(t('speakerProfile.autoAppliedToOthers', { count: autoAppliedCount }));
-    } else if (suggestedCount > 0) {
-      ctx.toastInfo(t('speakerProfile.suggestionsCreated', { count: suggestedCount }));
-    }
-  }
+  // `speaker_updated` and `speaker_processing_complete` are handled by window listeners in
+  // the page, not here: `stores/websocket.ts` dispatches them as CustomEvents and returns
+  // before the notification reaches the store, so branches for them in this function can
+  // never run. Two of them lived here and silently did nothing.
 
   // Handle topic extraction status updates (AI suggestions for tags/collections)
   if (latestNotification.type === 'topic_extraction_status') {

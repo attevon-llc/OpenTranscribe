@@ -34,7 +34,7 @@
 
   // Bulk reprocess modal state
   let showBulkReprocessModal = false;
-  let bulkReprocessFiles: any[] = [];
+  let bulkReprocessFiles: MediaFile[] = [];
   let bulkReprocessing = false;
 
   // Define types
@@ -927,17 +927,16 @@
     }
 
     try {
-      let successCount = 0;
-      let failCount = 0;
+      // One request for the whole selection, like every other bulk action here. This was
+      // N serial round trips with no progress indication.
+      const response = await axiosInstance.post('/files/management/bulk-action', {
+        file_uuids: completed.map(f => f.uuid),
+        action: 'identify_speakers'
+      });
 
-      for (const file of completed) {
-        try {
-          await axiosInstance.post(`/files/${file.uuid}/identify-speakers`);
-          successCount++;
-        } catch {
-          failCount++;
-        }
-      }
+      const results = response.data || [];
+      const successCount = results.filter((r: { success: boolean }) => r.success).length;
+      const failCount = results.length - successCount;
 
       if (successCount > 0) {
         toastStore.success($t('gallery.bulk.speakerIdStarted', { count: successCount }));

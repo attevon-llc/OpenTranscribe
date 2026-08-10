@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/status")
-async def get_attribute_migration_status(
+def get_attribute_migration_status(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
@@ -85,7 +85,7 @@ async def get_attribute_migration_status(
 
 
 @router.post("/start")
-async def start_attribute_migration(
+def start_attribute_migration(
     force: bool = False,
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
@@ -125,7 +125,7 @@ async def start_attribute_migration(
 
 
 @router.post("/stop")
-async def stop_attribute_migration(
+def stop_attribute_migration(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):
@@ -208,7 +208,7 @@ async def stop_attribute_migration(
 
 
 @router.delete("/progress")
-async def clear_attribute_progress(
+def clear_attribute_progress(
     current_user: User = Depends(get_current_active_superuser),
     db: Session = Depends(get_db),
 ):

@@ -12,7 +12,7 @@ This guide covers installing OpenTranscribe using Docker Compose - the recommend
 The fastest way to install OpenTranscribe is using our one-line installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 Skip to [Manual Installation](#manual-installation) if you prefer more control.
@@ -84,7 +84,7 @@ For **development from source**:
 
 ```bash
 # Clone the repository
-git clone https://github.com/davidamacey/OpenTranscribe.git
+git clone https://github.com/attevon-llc/OpenTranscribe.git
 cd OpenTranscribe
 
 # Make utility script executable
@@ -100,17 +100,17 @@ For **production deployment with Docker Hub images**:
 mkdir opentranscribe && cd opentranscribe
 
 # Download production docker-compose file
-curl -O https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/docker-compose.prod.yml
+curl -O https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/docker-compose.prod.yml
 
 # Rename for convenience
 mv docker-compose.prod.yml docker-compose.yml
 
 # Download management script
-curl -O https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/opentranscribe.sh
+curl -O https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/opentranscribe.sh
 chmod +x opentranscribe.sh
 
 # Download environment template
-curl -O https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/.env.example
+curl -O https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/.env.example
 ```
 
 ### Step 3: Configure Environment
@@ -160,7 +160,7 @@ See [Environment Variables](../configuration/environment-variables.md) for all o
 OpenTranscribe supports multiple authentication methods. For enterprise deployments, you may want to configure:
 
 - **LDAP/Active Directory** - `LDAP_ENABLED=true`
-- **Keycloak/OIDC** - `KEYCLOAK_ENABLED=true`
+- **OpenID Connect** - `OIDC_ENABLED=true` (any conforming provider; `KEYCLOAK_*` names still work)
 - **PKI/X.509** - `PKI_ENABLED=true`
 
 See [Authentication Overview](../authentication/overview.md) for setup guides.
@@ -602,5 +602,5 @@ Updates everything:
 ## Getting Help
 
 - **[FAQ](../faq.md)** - Common questions
-- **[GitHub Issues](https://github.com/davidamacey/OpenTranscribe/issues)** - Report bugs
-- **[GitHub Discussions](https://github.com/davidamacey/OpenTranscribe/discussions)** - Ask questions
+- **[GitHub Issues](https://github.com/attevon-llc/OpenTranscribe/issues)** - Report bugs
+- **[GitHub Discussions](https://github.com/attevon-llc/OpenTranscribe/discussions)** - Ask questions

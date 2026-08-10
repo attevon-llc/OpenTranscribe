@@ -15,6 +15,7 @@ See ``docs/PIPELINE_TIMING.md`` for the marker reference.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -38,6 +39,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class UploadedPart(BaseModel):
+    """One finished part of a browser-side multipart upload."""
+
+    part_number: int = Field(..., ge=1, description="1-based part number")
+    etag: str = Field(..., description="ETag the storage backend returned for the part")
+
+
 class CompleteUploadRequest(BaseModel):
     """Payload for POST /files/complete.
 
@@ -46,12 +54,22 @@ class CompleteUploadRequest(BaseModel):
     ``*_ms`` fields are epoch-millisecond timestamps measured client-side;
     they are optional but strongly recommended so the timing report can
     show the full client → server → done wall-clock.
+
+    ``upload_id`` marks the multipart flow (issue #327): the object does not
+    exist until its parts are assembled, so completion happens here, before the
+    existing verify → fingerprint → dispatch tail runs unchanged.
     """
 
     file_id: str = Field(..., description="UUID of the MediaFile from /prepare")
     task_id: str | None = Field(None, description="Application task_id from /prepare response")
-    file_hash: str | None = Field(None, description="Client-computed SHA-256")
+    file_hash: str | None = Field(
+        None, description="Client-computed content fingerprint (imohash); see PrepareUploadRequest"
+    )
     file_size: int | None = Field(None, description="Client-observed size in bytes")
+    upload_id: str | None = Field(None, description="Multipart upload_id from /prepare")
+    parts: list[UploadedPart] | None = Field(
+        None, description="Uploaded parts; omitted means read them back from storage"
+    )
     # Optional client-side timing markers (epoch-ms)
     client_hash_start_ms: int | None = None
     client_hash_end_ms: int | None = None
@@ -80,6 +98,35 @@ def _record_client_markers(task_id: str | None, req: CompleteUploadRequest) -> N
     ):
         if val is not None and val > 0:
             benchmark_timing.mark(task_id, name, val / 1000.0)
+
+
+def _assemble_multipart(req: CompleteUploadRequest, object_name: str) -> None:
+    """Turn the uploaded parts into the final object.
+
+    The client's part list is used when it sent one and the bucket's own list
+    otherwise, so a completion whose response was lost in transit can be retried:
+    the second attempt reads the parts back rather than failing on an empty list.
+    A genuinely dead ``upload_id`` surfaces as 400 here instead of the misleading
+    "no object at storage_path" the next step would raise.
+    """
+    from app.services import multipart_upload
+
+    parts = [{"part_number": p.part_number, "etag": p.etag} for p in (req.parts or [])]
+    try:
+        if not parts:
+            parts = multipart_upload.list_uploaded_parts(object_name, req.upload_id or "")
+        if not parts:
+            raise ValueError("multipart upload has no parts")
+        multipart_upload.complete_upload(object_name, req.upload_id or "", parts)
+    except Exception as e:
+        # Leave the upload for the abort path / lifecycle rule rather than
+        # aborting here: a retry of /complete is the cheap recovery, and
+        # aborting would throw away gigabytes the client could still assemble.
+        logger.warning(f"Multipart completion failed for {object_name}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not complete multipart upload: {e}",
+        ) from e
 
 
 @router.post("/complete", response_model=dict[str, Any])
@@ -116,6 +163,13 @@ def complete_upload(
 
     # Verify the object actually landed in MinIO — trust but verify.
     minio_size = object_exists_and_size(str(db_file.storage_path))
+
+    # A multipart upload has no object until its parts are assembled. Doing this
+    # only when the object is absent makes a retried /complete idempotent: the
+    # second call sees the finished object and skips straight to verification.
+    if minio_size is None and request.upload_id:
+        _assemble_multipart(request, str(db_file.storage_path))
+        minio_size = object_exists_and_size(str(db_file.storage_path))
     if minio_size is None:
         # The presigned PUT never completed, so the prepared row is an orphan.
         # Drop it (parity with the legacy path's failure cleanup) so it doesn't
@@ -133,6 +187,29 @@ def complete_upload(
         logger.warning(
             f"size mismatch for {request.file_id}: client={request.file_size} server={minio_size}"
         )
+
+    # Enforce the upload ceiling against the size MinIO ACTUALLY observed, not the size
+    # the client declared at /prepare. The declared value only gates minting the
+    # presigned URL; the object is written browser→MinIO directly, so this is the first
+    # authoritative number and the only place an oversized upload can be caught
+    # (issue #284 A0.12). Delete the object and the row rather than leaving either behind.
+    from app.api.endpoints.files.upload import validate_file_size_for_tenant
+
+    try:
+        validate_file_size_for_tenant(minio_size, db_file.organization_id)
+    except HTTPException:
+        logger.warning(
+            "Rejecting oversized upload %s: %d bytes exceeds the ceiling",
+            request.file_id,
+            minio_size,
+        )
+        from app.services.minio_service import delete_file
+
+        with contextlib.suppress(Exception):
+            delete_file(str(db_file.storage_path))
+        db.delete(db_file)
+        db.commit()
+        raise
 
     # Magic-byte validation — parity with the legacy path. The bytes went
     # browser→MinIO directly, so verify the object's real signature matches

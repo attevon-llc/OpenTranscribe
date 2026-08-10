@@ -10,13 +10,23 @@ The Admin Panel provides system-wide management capabilities for OpenTranscribe 
 
 ## Access Requirements
 
-The Admin Panel is role-gated. Different sections require different privilege levels:
+The Admin Panel is role-gated. The dividing rule is:
+
+> **Anything that changes how the deployment runs, or that stores infrastructure credentials,
+> is `super_admin`. Anything that manages users and their content is `admin`.**
 
 | Role | Access |
 |------|--------|
-| **User** | Profile, recording, transcription, and personal settings only |
-| **Admin** | All user sections plus user management, system statistics, task health, search, data integrity, retention, and media sources |
-| **Super Admin** | All admin sections plus authentication configuration and audit logs |
+| **User** | Profile, recording, transcription, personal settings, own MFA, own active sessions |
+| **Admin** | All user sections plus user management, system statistics, task health, search & indexing, data integrity, embedding consistency/migration, retention, retry settings, and media sources |
+| **Super Admin** | All admin sections plus authentication configuration, role changes, audit logs, ASR provider, engine configuration, backups, media mirror, watch sources, and the redaction policy floor |
+
+:::warning Changed in v0.5.0
+Six panels moved from `admin` to `super_admin`: **ASR provider**, **Engine configuration**,
+**Backups**, **Media Mirror**, **Watch sources**, and the **Redaction policy** floor. If a plain
+`admin` administers any of them today, promote that account (Settings → Users → Role) before
+upgrading, or hand the work to an existing super admin.
+:::
 
 To access admin features, open **Settings** (gear icon) and scroll to the admin sections in the sidebar.
 
@@ -44,35 +54,71 @@ In multi-GPU scaling mode, stats are reported per active GPU worker.
 
 ## User Management
 
-The **Users** section allows admins to manage all user accounts.
+The **Users** section manages all user accounts, pending invitations, and per-account
+authentication settings.
 
-### Creating Users
+### Inviting users
 
-Click **Add User** to expand the creation form. Required fields:
+**Invite User** is the supported way to onboard when self-registration is off. You name:
 
-- **Full Name**
-- **Email** (must be unique)
-- **Password** (minimum 8 characters)
-- **Role** -- `user` or `admin`
+- **Email**
+- **Full name** (optional)
+- **Role** -- `user`, `admin`, or `super_admin`
+- **Auth type** -- `local`, `ldap`, `oidc`, or `pki`
+- **Expiry** in hours
 
-### User Table
+The invitee receives an emailed link, proves control of the address, and chooses their own
+credential. For an external **auth type** no password is set at all — the account is handed to
+the identity provider. Invitation tokens are hashed at rest, single-use, and expiring.
 
-The user table displays all accounts with columns for name, email, role, and creation date. A search bar filters users by name or email.
+Pending invitations are listed with a pre-computed status (`pending`, `accepted`, `revoked`,
+`expired`) and can be revoked.
 
-### Available Actions
+:::note
+Inviting or creating a `super_admin` raises a confirmation dialog. Invitations require a working
+transactional-mail transport — see [auth email designation](#auth-email-designation) below.
+:::
+
+### Pending approvals
+
+When a super admin turns on **Authentication → Local → Require account approval**, every newly
+provisioned account — self-registered *or* created just-in-time by an external identity
+provider — lands in a pending state instead of becoming usable. Administrators approve or reject
+them (`GET`/`POST /api/admin/user-approvals`).
+
+Approval is not the same as activation: deactivation revokes an account that was once usable,
+approval gates one that never has been. Turning the setting off releases everything still
+pending; **rejected accounts stay rejected**, and rejecting never deletes the row.
+
+### Creating users directly
+
+**Add User** creates an account immediately. Fields: full name, email (unique), role, **auth
+type**, and — for `auth_type: local` only — a password. Choosing an external auth type omits the
+password field entirely rather than storing a credential the account will never accept.
+
+### User table
+
+Columns for name, email, role, auth type and creation date, with badges for **inactive** and
+**unverified** accounts. A search bar filters by name or email.
+
+### Available actions
 
 For each user (except yourself):
 
-| Action | Icon | Description |
-|--------|------|-------------|
-| **Change Role** | Dropdown | Switch between `user` and `admin` roles |
-| **Reset Password** | Lock icon | Opens a modal to set a new password (minimum 8 characters, confirmation required) |
-| **Recover Files** | Refresh icon | Triggers file recovery for the user |
-| **Delete User** | Trash icon | Permanently deletes the account (confirmation required) |
-| **Toggle Local Fallback** | Login icon | Super admin only -- enables/disables local password login for external auth users (PKI, Keycloak) |
+| Action | Description |
+|--------|-------------|
+| **Change role** | `user` / `admin` / **`super_admin`** — the super_admin option is visible only to a super admin, is audited, and raises a confirmation dialog |
+| **Reset password** | Super admin only. Applies the password policy and the reuse history, revokes every session, and optionally flags the account for a forced change on next sign-in. Refused for an account whose identity lives in a directory |
+| **Lock / unlock account** | Lock deactivates the account; unlock is its true inverse — it clears **both** the deactivation and any failed-login lockout |
+| **Force logout** | Revokes every session for the account |
+| **Reset MFA** | Super admin only. Clears the user's TOTP enrolment and backup codes so they can re-enrol |
+| **Toggle local fallback** | Super admin only — allows an external (`pki` / `oidc`) account to also sign in with a local password. Rejected for `ldap` accounts, which never have one |
+| **Recover files** | Triggers file recovery for the user |
+| **Delete user** | Permanently deletes the account (confirmation required) |
 
 :::note
-You cannot modify your own role or delete your own account from this interface. Your row displays "Current User" instead of action buttons.
+You cannot change your own role or delete your own account here; your row shows "Current User".
+**The last remaining super admin cannot be demoted or deleted.**
 :::
 
 ## Engine Configuration
@@ -102,50 +148,126 @@ The admin enforcement floor for content redaction. While per-user redaction pref
 
 ## Authentication Configuration
 
-**Super Admin only.** The **Authentication** section provides runtime configuration of all supported authentication methods without restarting services. Database configuration takes precedence over `.env` variables.
+**Super Admin only.** The **Authentication** section configures every identity source at
+runtime, without restarting services. Precedence is **database → environment variable → coded
+default**, so once you save a panel the stored value wins.
 
-### Provider Tabs
+### Tabs
 
 | Tab | Purpose |
 |-----|---------|
-| **Local** | Password policies, registration settings, MFA enforcement |
-| **LDAP** | LDAP/Active Directory server connection, base DN, bind credentials, attribute mapping |
-| **Keycloak** | OIDC provider URL, client ID/secret, realm configuration |
-| **PKI** | X.509 certificate settings, CA trust chain, certificate field mapping |
-| **Session** | JWT token lifetimes, refresh token rotation, session timeout |
+| **Local** | Local password login, self-registration, password policy, MFA enforcement, account lockout, login banner |
+| **LDAP** | Directory connection, search base, bind credentials, attribute mapping, admission and admin groups |
+| **OIDC** | Any OpenID Connect provider — discovery URL, client ID/secret, callback, roles claim, token-validation controls |
+| **PKI** | X.509 settings, CA path, trusted proxies, mode, revocation checking |
+| **SAML** | SAML 2.0 service provider — IdP metadata/entity ID, ACS/SLS endpoint settings, attribute mapping, admission groups (same group-list syntax as OIDC) |
+| **Mappings** | Bind LDAP/OIDC group claims to an in-app group and/or a role grant, with a dry-run tester ([IdP group mapping](../authentication/groups)) |
+| **SCIM** | Bearer tokens for SCIM 2.0 provisioning from an IdP — create, view status, and revoke (see [SCIM Provisioning](#scim-provisioning) below) |
+| **Session** | Token lifetimes, idle and absolute session timeouts, concurrent-session limit and policy |
+| **Audit** | Who changed which auth setting, and when |
 
-Each tab has a **Save** button that persists changes to the database and a **Test Connection** button (where applicable) to verify connectivity before committing.
+Each tab has **Save**, and LDAP and OIDC have **Test Connection** to verify before committing.
+
+:::note Renamed in v0.5.0
+The **Keycloak** tab is now **OIDC** and works with any conforming provider. Existing `KEYCLOAK_*`
+environment variables keep working permanently; stored database keys were renamed automatically
+by migration `v377`.
+:::
+
+Two behaviours worth knowing:
+
+- **Secrets are never sent back to the browser.** A sensitive field shows "configured — leave
+  blank to keep it"; the API returns `null` plus an `is_set` flag rather than a placeholder.
+- **A typo'd key is rejected.** Writes are validated against a per-category schema, and
+  incoherent combinations (self-registration on with local login off) are refused with a message
+  naming which switch to change first.
+
+The **Audit** tab reads `auth_config_audit` in PostgreSQL and shows configuration changes with
+the account that made each one. It is a different source from the **Audit Logs** section below,
+which streams security events from OpenSearch and carries no configuration changes.
 
 ```mermaid
 flowchart LR
-    A[Admin saves config] --> B[Database updated]
-    B --> C[Next auth request uses new config]
-    C --> D{Auth method?}
-    D -->|Local| E[Password + optional MFA]
-    D -->|LDAP| F[Directory lookup]
-    D -->|Keycloak| G[OIDC flow]
-    D -->|PKI| H[Certificate verification]
+    A[Super admin saves config] --> B[auth_config row updated + audited]
+    B --> C[Next auth request reads new config]
+    C --> D{Identity source}
+    D -->|local| E[Password + policy + optional MFA]
+    D -->|ldap| F[Directory bind + group mapping]
+    D -->|oidc| G[Auth-code + PKCE, ID token verified]
+    D -->|pki| H[Certificate via trusted proxy]
 ```
+
+### Auth email designation
+
+Password resets, invitations and email-verification links need a mail transport. The provider
+rows themselves live in **Settings → Watch Sources → Email configurations**; one of them is
+*designated* to carry authentication mail (super admin only). Clearing the designation falls
+back to the `SMTP_*` environment transport. A designation naming a missing or disabled
+configuration is rejected when you save it, and deleting or disabling the designated row is
+refused while it holds the designation.
+
+### SCIM Provisioning
+
+The **SCIM** tab manages the bearer tokens that authenticate an identity provider's SCIM 2.0
+push provisioning against `/scim/v2` — this is the only place tokens are created, viewed, or
+revoked. See [SCIM 2.0 provisioning](../authentication/overview#scim-20-provisioning) for the
+protocol-level detail.
+
+| Field | Description |
+|-------|--------------|
+| **Name** | A label to tell tokens apart (e.g. "Okta production") |
+| **Expires** | Optional expiry date; leave blank for a token that never expires |
+| **Status** | Active or Revoked |
+| **Last used** | Timestamp of the most recent SCIM request authenticated with this token |
+
+Click **Add Token** to create one. The plaintext token is shown exactly once, immediately after
+creation — only its SHA-256 digest is stored, so if it's lost there is no way to retrieve it,
+only to revoke it and create a replacement.
+
+**Rotating a token** means creating a new one, updating the directory's SCIM connector to use
+it, and then revoking the old one — there is no in-place "regenerate" that keeps the same token
+row. Revocation is one-way and immediate: every SCIM request bearing that token is refused from
+that point on.
+
+A SCIM connector authenticated this way can create, update, and deactivate user accounts, but it
+can never create or modify a `super_admin`, and it can never write a role directly — group
+membership it creates is tagged `source='scim'`, kept separate from LDAP/OIDC directory-sync
+reconciliation. Deactivating a user (`active: false` or `DELETE`) disables the account and
+revokes its sessions without deleting it or its transcripts.
 
 ## Security Settings
 
-The **Security** section in the user settings area manages per-user MFA (Multi-Factor Authentication). Admin-level security policies are configured in the Authentication section above.
+The **Security** section in the user settings area manages per-user MFA. Deployment-wide
+security policy lives in the Authentication section above.
 
-### MFA Setup Flow
+### MFA setup flow
 
-1. Admin enables MFA globally via **Authentication > Local > MFA Enabled**
+1. A super admin enables MFA at **Authentication → Local → MFA Enabled**
 2. Users see the MFA setup option in their **Security** settings
 3. Click **Enable MFA** to generate a QR code
 4. Scan with any TOTP authenticator app (Google Authenticator, Microsoft Authenticator, Authy)
-5. Enter the 6-digit verification code to confirm
-6. Save the generated **backup codes** -- these are shown only once
+5. Enter the 6-digit code to confirm
+6. Save the generated **backup codes** — they are shown only once
 
-### MFA Details
+### MFA details
 
-- **Standard**: RFC 6238 TOTP with 6-digit codes
-- **Backup Codes**: One-time-use recovery codes (copy or download as text file)
-- **Disable**: Requires entering a valid TOTP code or backup code
-- **External IdP Users**: PKI and Keycloak users bypass local MFA (handled by the identity provider)
+- **Standard**: RFC 6238 TOTP, 6-digit codes, single-use (a code cannot be replayed inside its
+  step window)
+- **Backup codes**: one-time-use recovery codes; a code used to disable MFA is consumed
+- **Disable**: requires a valid TOTP code or backup code
+- **Required MFA is enforced at the server.** With `mfa_required` on, a user who has not
+  enrolled receives an enrolment-scoped half-token that authorizes only the two setup endpoints
+  — an API client that ignores the hint gets no session
+- **External IdP users**: PKI and OIDC users bypass local MFA **only when they authenticated
+  with their native method**. If such an account falls back to a local password, local MFA
+  applies
+- **Admin reset**: Settings → Users → Reset MFA clears a user's enrolment so they can re-enrol
+
+### Active sessions
+
+Every user sees their own sessions (device, IP, last activity) in **Settings → Profile** and can
+revoke any of them. Admins can list and revoke another account's sessions from the Users
+section; changing a credential or a privilege revokes sessions automatically.
 
 ## Audit Log Viewer
 
@@ -155,11 +277,28 @@ The **Security** section in the user settings area manages per-user MFA (Multi-F
 
 | Category | Events |
 |----------|--------|
-| **Authentication** | Login success/failure, logout, token refresh, session created |
-| **MFA** | Setup, verify, disable |
-| **Password** | Password changes |
-| **Account** | Lockout, unlock |
-| **Admin** | User create, update, delete, role change, settings change |
+| **Authentication** | `auth.login.success`, `auth.login.failure`, `auth.logout`, `auth.logout.all` |
+| **MFA** | `auth.mfa.setup`, `auth.mfa.verify`, `auth.mfa.disable`, `auth.mfa.backup_used` |
+| **Password** | `auth.password.change`, `auth.password.reset_request`, `auth.password.reset_complete`, `auth.password.expired` |
+| **Account lifecycle** | `auth.account.lockout`, `auth.account.unlock`, `auth.account.disabled`, `auth.account.expired` |
+| **Tokens** | `auth.token.refresh`, `auth.token.revoke`, `auth.token.verify` |
+| **Sessions** | `auth.session.created`, `auth.session.expired`, `auth.session.terminated`, `auth.session.limit_exceeded` |
+| **Banner** | `auth.banner.acknowledged` |
+| **Admin** | `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.role.change`, `admin.settings.change` |
+| **Content moderation** | `admin.file.quarantine`, `admin.file.release` |
+| **Prompt sharing** | `prompt.share`, `prompt.unshare`, `prompt.clone` |
+
+A few of these are worth knowing about specifically:
+
+- **`auth.login.failure` with `error_code: ACCOUNT_LINK_REFUSED`** is an external identity that
+  was refused a takeover of an existing account by email match — see
+  [Account linking](../authentication/overview#account-linking).
+- **`auth.session.limit_exceeded`** records the concurrent-session cap (FedRAMP AC-10), whether
+  the policy evicted the oldest session or rejected the new one.
+- **`admin.role.change` with an actor of `idp_login` or `directory_sync`** is a privilege change
+  driven by a directory group mapping rather than by a person.
+- **Login-banner refusals are deliberately not audited per request** — they would fire on every
+  request of every pre-acknowledgment session. The acknowledgment itself is the artefact.
 
 ### Filtering
 

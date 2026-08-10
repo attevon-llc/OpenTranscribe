@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Collection } from '$lib/types/collection';
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
@@ -8,9 +9,11 @@
 
   export let selectedCollectionId: string | null = null;
 
-  let collections: any[] = [];
+  let collections: Collection[] = [];
   let loading = false;
-  let dropdownCollections: any[] = [];
+  /** The option shape SearchableMultiSelect expects (its own `Option` type is component-local). */
+  type MultiSelectOption = { id: string; name: string; count: number };
+  let dropdownCollections: MultiSelectOption[] = [];
 
   const dispatch = createEventDispatcher();
 
@@ -32,7 +35,7 @@
         async () => {
           const response = await axiosInstance.get('/collections', { params: { ownership: 'all' } });
           // Sort collections by media_count descending (most used first)
-          return (response.data || []).sort((a: any, b: any) => {
+          return (response.data || []).sort((a: Collection, b: Collection) => {
             return (b.media_count || 0) - (a.media_count || 0);
           });
         },

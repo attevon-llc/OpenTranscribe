@@ -665,8 +665,17 @@ class HybridSearchService:
 
             with session_scope() as db:
                 cfg = resolve_effective_config(db, user_id)
-        except Exception as exc:  # noqa: BLE001 — never break search on redaction failure
-            logger.debug("Snippet redaction config unavailable: %s", exc)
+        except Exception:  # noqa: BLE001 — never break search on redaction failure
+            # FAIL CLOSED. Returning here rendered every snippet unmasked. The
+            # scope is narrow (profanity + custom wordlist only — this path
+            # never carries PII spans), but it is still a policy bypass, so drop
+            # the snippets rather than show unmasked ones. Results, counts and
+            # ranking are unaffected; only the preview text is withheld.
+            logger.exception("Snippet redaction config unavailable; withholding snippet text")
+            for hit in getattr(result, "results", []) or []:
+                for occ in getattr(hit, "occurrences", []) or []:
+                    if getattr(occ, "snippet", None):
+                        occ.snippet = "[redacted — masking unavailable]"
             return
 
         if not cfg.enabled:
@@ -1066,6 +1075,7 @@ class HybridSearchService:
         title_filter: str | None = None,
         organization_id: int | None = None,
         file_uuid: str | None = None,
+        file_uuids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Build OpenSearch filter clauses.
 
@@ -1077,6 +1087,11 @@ class HybridSearchService:
         ``file_uuid`` scopes results to a single file — used by the in-page
         transcript find bar so it can list every match across the whole
         (paginated) transcript, including segments not yet loaded in the browser.
+
+        ``file_uuids`` scopes to an explicit set of files — used by RAG chat,
+        whose scope (files / collections / tags) is resolved to file uuids in
+        Postgres first, so share and quarantine semantics are decided there
+        rather than trusting the denormalized fields on the OpenSearch doc.
         """
         from app.services.search.tenant_scope import org_filter_clauses
 
@@ -1085,6 +1100,9 @@ class HybridSearchService:
 
         if file_uuid:
             filters.append({"term": {"file_uuid": file_uuid}})
+        if file_uuids is not None:
+            # An empty resolved scope must match nothing, NOT everything.
+            filters.append({"terms": {"file_uuid": list(file_uuids)}})
         if speakers:
             filters.append({"terms": {"speaker": speakers}})
         if tags:

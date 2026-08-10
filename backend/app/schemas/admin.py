@@ -290,3 +290,47 @@ class QuarantineActionResponse(BaseModel):
     is_quarantined: bool
     legal_hold: bool
     status: str
+
+
+class LinkExternalIdentityRequest(BaseModel):
+    """Deliberately link an existing account to an external identity (P1.3).
+
+    The operator remedy referenced by ``auth/account_linking.py``: when a source
+    cannot assert ``email_verified`` (Authentik hardcodes it false for every
+    account) or an address simply collides, the automatic email-match link is
+    refused and the login fails rather than guessing. This is the explicit
+    alternative — an administrator sets the provider's own identifier on the
+    account, so the *next* login matches by that identifier first and never
+    reaches the email-match branch at all.
+    """
+
+    provider: str = Field(..., description="'oidc', 'ldap', or 'pki'")
+    identifier: str = Field(..., min_length=1, description="The provider's subject/uid/DN to link")
+
+    @field_validator("provider")
+    @classmethod
+    def _provider_is_linkable(cls, value: str) -> str:
+        from app.auth.constants import AUTH_TYPE_LDAP
+        from app.auth.constants import AUTH_TYPE_OIDC
+        from app.auth.constants import AUTH_TYPE_PKI
+
+        linkable = {AUTH_TYPE_OIDC, AUTH_TYPE_LDAP, AUTH_TYPE_PKI}
+        if value not in linkable:
+            raise ValueError(f"provider must be one of {sorted(linkable)}")
+        return value
+
+    @field_validator("identifier")
+    @classmethod
+    def _identifier_is_not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("identifier must not be blank")
+        return stripped
+
+
+class LinkExternalIdentityResponse(BaseModel):
+    """Result of linking an external identity to an account."""
+
+    success: bool
+    provider: str
+    identifier: str

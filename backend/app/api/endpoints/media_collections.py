@@ -1,4 +1,14 @@
-"""API endpoints for media collections with sharing support."""
+"""API endpoints for media collections with sharing support.
+
+Every route handler here is declared ``def``, not ``async def`` (issue #284 A2.5).
+They do nothing but blocking work — synchronous SQLAlchemy queries plus a Redis
+``PUBLISH`` for share notifications — and none of them ``await`` anything. Declared
+``async def``, that work ran directly on the event loop, so one slow collection
+query stalled every other request the process was serving. FastAPI dispatches a
+plain ``def`` handler to Starlette's threadpool instead, which is where blocking
+I/O belongs. Do not "modernise" these back to ``async def`` unless the body
+genuinely gains an ``await``.
+"""
 
 import logging
 from datetime import datetime
@@ -214,7 +224,7 @@ def _build_share_response(db: Session, share: CollectionShare) -> Share:
 
 
 @router.get("/shared-with-me", response_model=list[SharedCollectionInfo])
-async def list_shared_collections(
+def list_shared_collections(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
@@ -307,7 +317,7 @@ async def list_shared_collections(
 
 
 @router.get("", response_model=list[CollectionWithCount])
-async def list_collections(
+def list_collections(
     ownership: str = Query(
         "mine",
         pattern="^(mine|shared|all)$",
@@ -493,7 +503,7 @@ def _populate_shared_by(
 
 
 @router.post("", response_model=CollectionSchema)
-async def create_collection(
+def create_collection(
     collection: CollectionCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -546,7 +556,7 @@ async def create_collection(
 
 
 @router.get("/{collection_uuid}", response_model=CollectionResponse)
-async def get_collection(
+def get_collection(
     collection_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -601,7 +611,7 @@ async def get_collection(
 
 
 @router.put("/{collection_uuid}", response_model=CollectionSchema)
-async def update_collection(
+def update_collection(
     collection_uuid: str,
     collection_update: CollectionUpdate,
     db: Session = Depends(get_db),
@@ -663,7 +673,7 @@ async def update_collection(
 
 
 @router.delete("/{collection_uuid}")
-async def delete_collection(
+def delete_collection(
     collection_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -698,7 +708,7 @@ async def delete_collection(
 
 
 @router.post("/{collection_uuid}/media", response_model=dict)
-async def add_media_to_collection(
+def add_media_to_collection(
     collection_uuid: str,
     media_data: CollectionMemberAdd,
     db: Session = Depends(get_db),
@@ -784,7 +794,7 @@ async def add_media_to_collection(
 
 
 @router.delete("/{collection_uuid}/media", response_model=dict)
-async def remove_media_from_collection(
+def remove_media_from_collection(
     collection_uuid: str,
     media_data: CollectionMemberRemove,
     db: Session = Depends(get_db),
@@ -834,7 +844,7 @@ async def remove_media_from_collection(
 
 
 @router.get("/{collection_uuid}/media", response_model=PaginatedMediaFileResponse)
-async def get_collection_media(
+def get_collection_media(
     collection_uuid: str,
     # Pagination parameters
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
@@ -984,7 +994,7 @@ def _require_collection_owner(collection: Collection, user_id: int) -> None:
 
 
 @router.get("/{collection_uuid}/shares", response_model=list[Share])
-async def list_collection_shares(
+def list_collection_shares(
     collection_uuid: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -1020,7 +1030,7 @@ async def list_collection_shares(
     response_model=Share,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_collection_share(
+def create_collection_share(
     collection_uuid: str,
     share_in: ShareCreate,
     db: Session = Depends(get_db),
@@ -1195,7 +1205,7 @@ async def create_collection_share(
 
 
 @router.put("/{collection_uuid}/shares/{share_uuid}", response_model=Share)
-async def update_collection_share(
+def update_collection_share(
     collection_uuid: str,
     share_uuid: str,
     share_update: ShareUpdate,
@@ -1256,7 +1266,7 @@ async def update_collection_share(
     "/{collection_uuid}/shares/{share_uuid}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_collection_share(
+def delete_collection_share(
     collection_uuid: str,
     share_uuid: str,
     db: Session = Depends(get_db),

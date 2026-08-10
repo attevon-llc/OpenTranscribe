@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import { type SearchMatch } from '$lib/utils/searchHighlight';
@@ -10,7 +11,7 @@
   import SearchBar from '$components/ui/SearchBar.svelte';
 
   export let transcriptSegments: TranscriptSegment[] = [];
-  export let speakerList: any[] = [];
+  export let speakerList: Speaker[] = [];
   export let disabled: boolean = false;
   /** File UUID — enables the whole-transcript completeness probe (backend, file-scoped). */
   export let fileUuid: string = '';
@@ -51,7 +52,7 @@
     if (!normalizedQuery || !transcriptSegments?.length) return [];
 
     const speakerMapping = new Map<string, string>();
-    speakerList.forEach((speaker: any) => {
+    speakerList.forEach((speaker: Speaker) => {
       speakerMapping.set(speaker.name, translateSpeakerLabel(speaker.display_name || speaker.name));
     });
 
@@ -230,9 +231,25 @@
     dispatch('navigateToMatch', { match, segment, segmentIndex: match.segmentIndex, autoSeek: true });
   }
 
-  // When the page appends newly loaded segments, re-index and (if the user pressed
-  // "next" past the loaded window) advance to the first newly revealed match.
-  $: if (isVisible && searchQuery.trim() && transcriptSegments.length !== lastSegmentCount) {
+  // Renaming a speaker changes what `computeMatches` produces without changing the
+  // segment count, so a count-only trigger left `type: 'speaker'` matches pointing at the
+  // old name — searching the name the user had just typed found nothing. Fold the current
+  // display names into the trigger.
+  $: speakerNameSignature = speakerList
+    .map((speaker: Speaker) => `${speaker.name}=${speaker.display_name || ''}`)
+    .join('|');
+  let lastSpeakerNameSignature = '';
+
+  // When the page appends newly loaded segments or a speaker is renamed, re-index and (if
+  // the user pressed "next" past the loaded window) advance to the first newly revealed
+  // match.
+  $: if (
+    isVisible &&
+    searchQuery.trim() &&
+    (transcriptSegments.length !== lastSegmentCount ||
+      speakerNameSignature !== lastSpeakerNameSignature)
+  ) {
+    lastSpeakerNameSignature = speakerNameSignature;
     const prevTotal = reindexLocal();
     if (pendingAdvance) {
       if (totalMatches > prevTotal) {

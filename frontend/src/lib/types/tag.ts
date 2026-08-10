@@ -7,11 +7,25 @@
  * `backend/app/api/endpoints/files/management.py`.
  */
 
-/** A tag row. `source` records what created it (e.g. `manual`, `auto_ai`). */
+/**
+ * Canonical tag shape, mirroring `backend/app/schemas/media.py:Tag`.
+ *
+ * Import via `$lib/types/tag`. This is the **only** tag shape on the API:
+ * `/tags`, `POST /tags/files/{uuid}/tags` and `MediaFileDetail.tags` all serve
+ * it (#326). The gallery list endpoint `GET /files` sends no tags at all, which
+ * is why `MediaFile` has no `tags` field — only `MediaFileDetail` does.
+ *
+ * `is_shared` marks a system tag (`user_id IS NULL` on the backend): the seeded
+ * vocabulary every account sees and attaches to. Only an admin may rename,
+ * merge or delete one.
+ */
 export interface Tag {
   uuid: string;
   name: string;
+  /** How the tag was created — e.g. `auto_ai` for LLM-suggested tags. */
   source?: string | null;
+  /** True for a system tag in the shared vocabulary. */
+  is_shared?: boolean;
 }
 
 /**
@@ -56,8 +70,8 @@ export interface TagCollisionCluster {
 /**
  * File counts for a single tag in a pending rename / merge / delete.
  *
- * The two counts are deliberately separate: tags are global rows, so
- * `accessible_file_count` is what the caller can see while
+ * The two counts are deliberately separate: a shared tag reaches files you
+ * cannot see, so `accessible_file_count` is what the caller can see while
  * `total_file_count` is what the operation actually changes. Carry both
  * through — a confirmation built from the accessible number alone would
  * read "3 files" in front of a delete that strips the tag from 500.

@@ -92,6 +92,18 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Speaker Usage Counts**: See which speakers appear most frequently across your media library
 - **Hybrid Search Fixed**: Critical OpenSearch 3.4 compatibility fix — semantic/vector search now fully operational with dramatically improved result quality
 
+### 💬 **AI Chat (RAG) over your transcripts**
+- **Ask questions across your recordings**: answers grounded in what was actually said, streamed token by token, with numbered citations that deep-link to the exact moment in the player
+- **Scope a conversation** by recordings, collections, or tags — collections and tags resolve at query time, so a recording added later is automatically in scope
+- **Ask about one person**: a Speakers filter that is exact rather than approximate. Transcripts are indexed as speaker turns, so selecting a speaker retrieves only their own words — "what did Dana commit to?" can never be answered from someone else's sentence *about* Dana
+- **Familiar chat interactions**: edit a question and re-answer from that point, regenerate, stop mid-stream, copy, export to Markdown or JSON, archive, and a searchable conversation history
+- **Projects**: group conversations by client, meeting or case. A project pins the recordings its chats search and standing instructions they all inherit, so you stop re-picking context and re-typing background. Deleting a project keeps its conversations
+- **Per-conversation model choice**, creativity, answer length and focus — or turn transcript context off entirely to use the model as a plain assistant
+- **Instructions stack** rather than replace: built-in rules → your default → the project → this chat, and the built-in rules always win
+- **Redaction is honoured** — retrieved excerpts are re-masked before they reach a provider, and masking fails closed
+- **Usage visibility**: `GET /usage/me` shows tokens and estimated cost per model, so you can see what you are spending
+- **Test it without a model**: `./opentr.sh start dev --with-mock-llm` runs an OpenAI-compatible mock so chat works with no GPU, API key, or internet — including scenario models that exercise the real error paths
+
 ### 📊 **Analytics & Insights**
 - **Advanced Content Analysis**: Comprehensive speaker analytics including talk time, interruption detection, and turn-taking patterns
 - **Speaker Performance Metrics**: Speaking pace (WPM), question frequency, and conversation flow analysis
@@ -102,7 +114,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **BLUF Format Support**: Default Bottom Line Up Front structured summaries with action items
 - **Custom Summary Formats**: Create unlimited AI prompts with ANY JSON structure
 - **Flexible Schema Storage**: JSONB storage supporting multiple prompt types simultaneously
-- **Multi-Provider LLM Support**: Use local vLLM, OpenAI, Ollama, Claude, or OpenRouter for AI features
+- **Multi-Provider LLM Support**: Use local vLLM or Ollama, or OpenAI, Anthropic, OpenRouter, or **Amazon Bedrock** (AWS-native, no API key needed — credentials come from the IAM chain)
 - **Intelligent Section Processing**: Automatically handles transcripts of any length using section-by-section analysis
 - **Custom AI Prompts**: Create and manage custom summarization prompts for different content types
 - **LLM Configuration Management**: User-specific LLM settings with encrypted API key storage
@@ -154,11 +166,14 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Per-Upload Toggles**: Disable diarization or AI summarization on a per-file basis at upload or reprocess time
 
 ### 🔐 **Enterprise Authentication & Security**
-- **Enterprise Authentication System**: Support for 4 authentication methods with hybrid configuration
+- **Enterprise Authentication System**: Support for 6 authentication methods, running simultaneously, with hybrid (DB > env > default) configuration
   - **Local Authentication**: Username/password with bcrypt hashing
   - **LDAP/Active Directory**: Enterprise directory integration for corporate deployments
-  - **OIDC/Keycloak**: OAuth 2.0 with PKCE for single sign-on (SSO) capabilities
+  - **OpenID Connect (OIDC)**: OAuth 2.0 with PKCE for single sign-on (SSO) against any conforming provider (Keycloak, Authentik, Okta, Entra ID, Authelia, Auth0, Zitadel)
+  - **SAML 2.0**: Service-provider role for IdPs that only speak SAML (ADFS, Shibboleth, Okta-classic)
   - **PKI/X.509 Certificates**: CAC/PIV smart card support for government and high-security deployments
+  - **Trusted-header (reverse proxy)**: Delegate authentication to oauth2-proxy, Authelia, Cloudflare Access or a similar SSO gateway
+- **SCIM 2.0 Provisioning**: `/scim/v2` for IdP-driven account creation/deactivation, alongside per-method JIT provisioning
 - **Multi-Factor Authentication (MFA)**: TOTP-based authentication (Google Authenticator, Authy) with backup codes for account recovery
 - **Comprehensive Audit Logging**: All authentication events logged for compliance and security monitoring
 - **FedRAMP Compliance Features**: Password complexity policies (IA-5), account lockout after failed attempts, classification banners (AC-8)
@@ -246,7 +261,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### **Infrastructure**
 - **PostgreSQL** - Reliable relational database with JSONB support for flexible schemas
-- **MinIO** - S3-compatible object storage
+- **MinIO** - S3-compatible object storage (default, self-hosted)
+- **Native AWS S3 Backend** - Optional `STORAGE_BACKEND=s3` targets a real S3 (or S3-compatible) endpoint directly, with SigV4 signing and IAM-role credentials (no static keys required) for AWS-native deployments
 - **OpenSearch 3.4.0** - Full-text and neural search engine with Apache Lucene 10
   - Native neural search for advanced semantic capabilities
   - 9.5x faster vector search performance
@@ -274,7 +290,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 Run this one-liner to download and set up OpenTranscribe using our pre-built Docker Hub images:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 Then follow the on-screen instructions. The setup script will:
@@ -289,10 +305,10 @@ Then follow the on-screen instructions. The setup script will:
 
 ```bash
 # Piped install
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
 
 # Unattended / CI equivalent
-OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 The CPU-only choice is persisted to `.env` as `FORCE_CPU_MODE=true` so subsequent `./opentranscribe.sh start`/`restart` calls continue to skip the GPU overlay automatically.
@@ -325,7 +341,7 @@ Access the web interface at http://localhost:5173
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/davidamacey/OpenTranscribe.git
+   git clone https://github.com/attevon-llc/OpenTranscribe.git
    cd OpenTranscribe
 
    # Make utility script executable
@@ -356,8 +372,8 @@ Access the web interface at http://localhost:5173
    - 🌐 **Web Interface**: http://localhost:5173
    - 📚 **API Documentation**: http://localhost:5174/docs
    - 🌺 **Task Monitor**: http://localhost:5175/flower
-   - 🔍 **Search Engine**: http://localhost:9200
-   - 📁 **File Storage**: http://localhost:9091
+   - 🔍 **Search Engine**: http://localhost:5180 (OpenSearch, loopback-only)
+   - 📁 **File Storage**: http://localhost:5179 (MinIO console, loopback-only)
    - 📖 **Documentation**: http://localhost:5183/docs/
    - 📈 **Prometheus**: http://localhost:5186 (with `--with-monitoring`)
    - 📊 **Grafana**: http://localhost:5185 (with `--with-monitoring`)
@@ -382,8 +398,8 @@ Two independent scaling modes are available — choose based on your hardware an
 
 **Option A — GPU Scale** (multiple parallel pipelines on one GPU):
 ```bash
-# Configure in .env
-GPU_SCALE_ENABLED=true      # Enable multi-GPU scaling
+# The --gpu-scale flag is what enables scaling — GPU_SCALE_ENABLED in .env does
+# NOT turn it on (it only affects which GPU the system-stats display queries).
 GPU_SCALE_DEVICE_ID=2       # Which GPU to use (default: 2)
 GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
 
@@ -681,32 +697,47 @@ MINIO_BUCKET_NAME=transcribe-app
 ```
 
 #### **Authentication**
-```bash
-# Authentication method: local, ldap, keycloak, pki
-AUTH_TYPE=local
 
-# LDAP/Active Directory (when AUTH_TYPE=ldap)
+There is no single `AUTH_TYPE` switch — every method is enabled independently, and all of them
+can run at once (each account records which one owns it). These `.env` values are only a
+bootstrap seed / fallback: **Settings → Authentication** in the admin UI is DB-backed and takes
+precedence over `.env`, with no restart required.
+
+```bash
+# LDAP/Active Directory
+LDAP_ENABLED=false
 LDAP_SERVER=ldap://your-ldap-server:389
 LDAP_BASE_DN=dc=example,dc=com
 LDAP_BIND_DN=cn=admin,dc=example,dc=com
 LDAP_BIND_PASSWORD=your-bind-password
 
-# OIDC/Keycloak (when AUTH_TYPE=keycloak)
-KEYCLOAK_URL=https://your-keycloak-server/auth
-KEYCLOAK_REALM=your-realm
-KEYCLOAK_CLIENT_ID=opentranscribe
-KEYCLOAK_CLIENT_SECRET=your-client-secret
+# OpenID Connect (any conforming provider, including Keycloak — the surface used to
+# be Keycloak-specific; the legacy KEYCLOAK_* names still work as a permanent alias
+# for OIDC_*, and win if both are set)
+OIDC_ENABLED=false
+OIDC_SERVER_URL=https://your-idp-server
+OIDC_REALM=your-realm
+OIDC_CLIENT_ID=opentranscribe
+OIDC_CLIENT_SECRET=your-client-secret
 
-# PKI/X.509 (when AUTH_TYPE=pki)
+# SAML 2.0
+SAML_ENABLED=false
+
+# PKI/X.509
+PKI_ENABLED=false
 PKI_CA_CERT_PATH=/path/to/ca-cert.pem
-PKI_VERIFY_CRL=true
+PKI_TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8   # required whenever PKI is enabled
+
+# Trusted-header (reverse proxy)
+PROXY_ENABLED=false
+PROXY_TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8 # required whenever proxy auth is enabled
 
 # MFA (optional, works with any auth type)
 MFA_ENABLED=false
 MFA_ISSUER=OpenTranscribe
 ```
 
-See detailed setup guides: [LDAP](docs/LDAP_AUTH.md) | [Keycloak](docs/KEYCLOAK_SETUP.md) | [PKI](docs/PKI_SETUP.md)
+See detailed setup guides: [LDAP](docs/LDAP_AUTH.md) | [OIDC](docs/OIDC_SETUP.md) | [PKI](docs/PKI_SETUP.md) | [SAML](docs-site/docs/authentication/saml.md) | [Trusted-header proxy](docs-site/docs/authentication/proxy.md)
 
 #### **AI Processing**
 ```bash
@@ -850,7 +881,7 @@ Add your token to the environment configuration:
 **For Production Installation:**
 ```bash
 # The setup script will prompt you for your token
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
 **For Manual Installation:**
@@ -975,7 +1006,7 @@ pytest backend/tests/e2e/test_visual_regression.py -v   # screenshot baselines
 ```
 
 ### **Contributing**
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
 ## 🔍 Troubleshooting
 
@@ -1021,7 +1052,7 @@ sudo chmod -R 755 ./models
 - The latest setup script automatically creates directories with correct permissions
 - Re-run the one-line installer for new deployments:
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
   ```
 
 **Why This Happens:**
@@ -1159,8 +1190,11 @@ WHISPER_HYBRID_CPU_MODEL=small    # small (good accuracy) or base (faster, lower
 OpenTranscribe supports multiple authentication methods for enterprise and government deployments:
 - **Local Authentication**: Username/password with bcrypt hashing
 - **LDAP/Active Directory**: Enterprise directory integration - see [LDAP Authentication Guide](docs/LDAP_AUTH.md)
-- **OIDC/Keycloak**: OAuth 2.0 with PKCE for SSO - see [Keycloak Setup Guide](docs/KEYCLOAK_SETUP.md)
+- **OIDC**: OAuth 2.0 / OpenID Connect with PKCE for SSO against any conforming provider (Keycloak, Authentik, Authelia, Okta, Entra ID, Auth0, Zitadel) - see [OIDC Setup Guide](docs/OIDC_SETUP.md)
+- **SAML 2.0**: Service-provider role for IdPs that only speak SAML (ADFS, Shibboleth, Okta-classic) - see [SAML setup](docs-site/docs/authentication/saml.md)
 - **PKI/X.509 Certificates**: CAC/PIV smart card support - see [PKI Setup Guide](docs/PKI_SETUP.md)
+- **Trusted-header (reverse proxy)**: Delegate authentication to oauth2-proxy, Authelia, Cloudflare Access or a similar SSO gateway - see [Trusted-header setup](docs-site/docs/authentication/proxy.md)
+- **SCIM 2.0**: IdP-driven account provisioning at `/scim/v2` (RFC 7643/7644)
 
 ### **Multi-Factor Authentication**
 - TOTP-based MFA with authenticator apps (Google Authenticator, Authy, etc.)
@@ -1217,17 +1251,17 @@ The AGPL-3.0 license ensures that:
 - 📚 **Documentation**:
   - [Database Schema & Architecture](docs/database-schema.md) - ERD diagrams and system architecture
   - [Backend Documentation](docs/BACKEND_DOCUMENTATION.md)
-  - [Prompt Engineering Guide](docs/PROMPT_ENGINEERING_README.md) - Best practices for LLM prompts
+  - [Prompt Engineering Guide](docs/PROMPT_ENGINEERING_GUIDE.md) - Best practices for LLM prompts
   - [Scripts Documentation](scripts/README.md) - Docker build and deployment guide
 - 🔐 **Authentication Guides**:
   - [LDAP/Active Directory Setup](docs/LDAP_AUTH.md) - Enterprise directory integration
-  - [Keycloak/OIDC Setup](docs/KEYCLOAK_SETUP.md) - OAuth 2.0 SSO configuration
+  - [OpenID Connect Setup](docs/OIDC_SETUP.md) - OAuth 2.0 / OIDC SSO configuration
   - [PKI/X.509 Setup](docs/PKI_SETUP.md) - Certificate-based authentication (CAC/PIV)
 - 🛠️ **API Reference**: http://localhost:5174/docs (when running)
 - 🌺 **Task Monitor**: http://localhost:5175/flower (when running)
-- 🤝 **Contributing**: [Contribution guidelines](CONTRIBUTING.md)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/yourusername/OpenTranscribe/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/yourusername/OpenTranscribe/discussions)
+- 🤝 **Contributing**: [Contribution guidelines](docs/CONTRIBUTING.md)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/attevon-llc/OpenTranscribe/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/attevon-llc/OpenTranscribe/discussions)
 
 ---
 

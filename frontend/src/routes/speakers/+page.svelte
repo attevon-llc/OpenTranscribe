@@ -322,8 +322,12 @@
 
   async function handleClusterUpdate(e: CustomEvent<{ uuid: string; label: string }>) {
     try {
-      await updateCluster(e.detail.uuid, { label: e.detail.label });
-      await loadClusters();
+      const updated = await updateCluster(e.detail.uuid, { label: e.detail.label });
+      // Patch the one card from the response. Reloading the page of clusters put the whole
+      // grid back into its skeleton state for a single-field edit.
+      clusters = clusters.map(cluster =>
+        cluster.uuid === e.detail.uuid ? { ...cluster, ...updated } : cluster
+      );
     } catch {
       toastStore.error($t('speakers.error.updateCluster'));
     }
@@ -335,15 +339,25 @@
     showDeleteModal = true;
   }
 
+  /**
+   * Clamp the current page for a list that just lost `removed` entries.
+   *
+   * Do this BEFORE reloading: clamping afterwards meant deleting the last item on the last
+   * page fetched that page, discovered it was now out of range, and fetched again —
+   * two round trips and two skeleton flashes.
+   */
+  function clampClusterPage(removed: number) {
+    const remaining = Math.max(0, clusterTotal - removed);
+    const pages = Math.max(1, Math.ceil(remaining / 20));
+    if (clusterPage > pages) clusterPage = pages;
+  }
+
   async function confirmDelete() {
     try {
       await deleteCluster(deleteTargetUuid);
       toastStore.success($t('speakers.cluster.deleted'));
+      clampClusterPage(1);
       await loadClusters();
-      if (clusterPage > clusterPages && clusterPages > 0) {
-        clusterPage = clusterPages;
-        await loadClusters();
-      }
     } catch {
       toastStore.error($t('speakers.error.delete'));
     }
@@ -385,11 +399,8 @@
         toastStore.success($t('speakers.merge.success'));
         mergeMode = false;
         mergeSourceUuid = null;
+        clampClusterPage(1); // the source cluster is absorbed into the target
         await loadClusters();
-        if (clusterPage > clusterPages && clusterPages > 0) {
-          clusterPage = clusterPages;
-          await loadClusters();
-        }
       } catch {
         mergeMode = false;
         mergeSourceUuid = null;
@@ -567,8 +578,12 @@
   async function saveProfile(uuid: string) {
     if (!editProfileName.trim()) { cancelEditProfile(); return; }
     try {
-      await updateProfile(uuid, { name: editProfileName.trim() });
-      await loadProfiles();
+      const updated = await updateProfile(uuid, { name: editProfileName.trim() });
+      // Patch from the response, as the avatar and gender handlers already do — reloading
+      // the list skeletoned the whole Profiles tab for a one-field edit.
+      profiles = profiles.map(profile =>
+        profile.uuid === uuid ? { ...profile, ...updated } : profile
+      );
     } catch {
       toastStore.error($t('speakers.error.updateProfile'));
     }

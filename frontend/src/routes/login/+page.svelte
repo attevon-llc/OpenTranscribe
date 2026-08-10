@@ -1,7 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithKeycloak, handleKeycloakCallback, loginWithPKI, verifyMFA, type AuthMethods } from "$stores/auth";
+  import { login, loginWithExternalAuth, authStore, isAuthenticated, getAuthMethods, loginWithOIDC, handleOIDCCallback, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, acknowledgeBanner, logout, type AuthMethods } from "$stores/auth";
+  import { resendEmailVerification } from '$lib/api/invitations';
   import { onMount, onDestroy } from 'svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
@@ -9,6 +10,7 @@
   import { isCloudEdition } from '$lib/edition';
   import ClassificationBanner from '$lib/components/ClassificationBanner.svelte';
   import LoginBanner from '$components/LoginBanner.svelte';
+  import MfaEnrollment from '$components/mfa/MfaEnrollment.svelte';
   import Spinner from '../../components/ui/Spinner.svelte';
 
   // Cloud edition: the hosted sign-in component mounts into this node; an
@@ -25,40 +27,98 @@
   let email = "";
   let password = "";
   let loading = false;
-  let keycloakLoading = false;
+  let oidcLoading = false;
   let pkiLoading = false;
   let formSubmitted = false;
   let showPassword = false;
   let successMessage = "";
   let loginSuccess = false;
 
-  // MFA state
+  // MFA state. `mfaToken` is a short-lived half-token: memory only, never
+  // localStorage/sessionStorage, and cleared on every exit from the MFA steps.
   let mfaRequired = false;
+  let mfaEnrollmentRequired = false;
   let mfaToken = "";
   let mfaCode = "";
   let mfaLoading = false;
   let useBackupCode = false;
 
-  // Banner state
-  let bannerAcknowledged = false;
-  let showBannerConsent = false;
+  // Email verification (v375). `/auth/login` raises exactly ONE 403 — an
+  // unverified address on a deployment that requires verification — so the HTTP
+  // status identifies this state and no substring match on the localised
+  // message is needed.
+  let emailNotVerified = false;
+  let resendPending = false;
+  let resendNotice = "";
+
+  // Forced password change (403 `detail.code === password_change_required`).
+  // The session is alive; PUT /users/me is the only route that answers.
+  let forcedCurrentPassword = "";
+  let forcedNewPassword = "";
+  let forcedConfirmPassword = "";
+  let forcedChangeLoading = false;
+
+  // Login banner (FedRAMP AC-8).
+  //
+  // Consent is a SERVER record — `POST /auth/banner/acknowledge` — because
+  // `get_current_active_user` refuses every non-exempt route with
+  // `detail.code === "banner_acknowledgment_required"` until that timestamp
+  // exists and post-dates the current banner wording. The old
+  // `sessionStorage['banner_acknowledged']` flag never reached the server, so a
+  // deployment with the banner enabled was unusable after login.
+  //
+  // `bannerConsentPending` is in-memory ONLY, by design: it gates nothing but
+  // this page's own modal, and persisting it is what made the fake look real.
   let bannerEnabled = false;
   let bannerText = "";
   let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
-  let showLoginBanner = false;
+  let bannerConsentPending = false;
+  let bannerAckPending = false;
+  let bannerAckError = "";
+
+  // A banner hold means we are ALREADY signed in and the gate bounced us here,
+  // so acknowledging must hit the API rather than merely dismiss the modal.
+  $: bannerHold = $accountLifecycle?.code === 'banner_acknowledgment_required';
+  // `banner_text_changed`: the user did consent — to different wording. Saying so
+  // is the difference between "the notice was updated" and "this is broken".
+  $: bannerNoticeUpdated = $accountLifecycle?.reason === 'banner_text_changed';
+  // The banner hold has its own UI (the consent modal), so it must not fall
+  // through to the account-lifecycle panels below — which would show an expired
+  // account screen for a user whose account is perfectly fine.
+  $: lifecyclePanel = $accountLifecycle && !bannerHold ? $accountLifecycle : null;
+
+  // A hold can land after mount (the banner text changed under a live session),
+  // so re-arm the modal rather than assuming onMount saw it. The hold itself is
+  // proof the banner is enabled — better evidence than the /auth/methods probe,
+  // whose fail-closed default reports it OFF and would leave a held user staring
+  // at a sign-in form that no longer works. LoginBanner fetches the current
+  // wording from /auth/banner regardless of what we hold here.
+  $: if (bannerHold && !bannerConsentPending) {
+    bannerEnabled = true;
+    bannerConsentPending = true;
+  }
 
   // Authentication methods
   let authMethods: AuthMethods = {
     methods: ["local"],
-    keycloak_enabled: false,
+    oidc_enabled: false,
     pki_enabled: false,
     ldap_enabled: false,
+    local_enabled: true,
+    allow_registration: false,
     mfa_enabled: false,
     mfa_required: false,
     login_banner_enabled: false,
     login_banner_text: "",
     login_banner_classification: "UNCLASSIFIED",
   };
+
+  // The username/password form serves BOTH local accounts and LDAP — LDAP
+  // credentials are posted to the same /auth/login endpoint — so it must not be
+  // gated on `local_enabled` alone, or an LDAP-only deployment loses its only
+  // way in.
+  $: credentialFormEnabled = authMethods.local_enabled || authMethods.ldap_enabled;
+  $: ssoButtonsEnabled = authMethods.oidc_enabled || authMethods.pki_enabled;
 
   // Validation
   let emailValid = true;
@@ -71,19 +131,19 @@
 
     (async () => {
       // Reset loading states on mount (handles browser back button)
-      keycloakLoading = false;
+      oidcLoading = false;
       pkiLoading = false;
       loading = false;
 
       // Cloud edition: the hosted IdP owns login, registration, and MFA. Mount
       // its sign-in component and hydrate our store when it reports a session.
-      // The community local-login / Keycloak-callback flow below is skipped.
+      // The community local-login / OIDC-callback flow below is skipped.
       if (isCloudEdition) {
         await setupExternalSignIn();
         return;
       }
 
-      // Check for Keycloak callback parameters
+      // Check for OIDC callback parameters
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       const state = urlParams.get('state');
@@ -93,7 +153,7 @@
         window.history.replaceState({}, document.title, window.location.pathname);
 
         // Check if we already processed this callback (prevents double toast)
-        const processedKey = `keycloak_callback_${state}`;
+        const processedKey = `oidc_callback_${state}`;
         if (sessionStorage.getItem(processedKey)) {
           // Already processed this callback, skip
           window.location.href = "/";
@@ -101,10 +161,10 @@
         }
         sessionStorage.setItem(processedKey, 'true');
 
-        // Handle Keycloak callback
-        keycloakLoading = true;
-        const result = await handleKeycloakCallback(code, state);
-        keycloakLoading = false;
+        // Handle the OIDC callback
+        oidcLoading = true;
+        const result = await handleOIDCCallback(code, state);
+        oidcLoading = false;
 
         if (result.success) {
           loginSuccess = true;
@@ -128,36 +188,30 @@
       // Fetch available auth methods
       authMethods = await getAuthMethods();
 
-      // Check for banner settings
+      // Check for banner settings. The notice is shown on every visit: there is
+      // no client-side "already acknowledged" shortcut any more, because the only
+      // acknowledgment that counts is the one recorded server-side after sign-in.
       if (authMethods.login_banner_enabled) {
         bannerEnabled = true;
         bannerText = authMethods.login_banner_text || "";
         bannerClassification = (authMethods.login_banner_classification as typeof bannerClassification) || "UNCLASSIFIED";
-
-        // Check if user has previously acknowledged banner (session-based)
-        const acknowledged = sessionStorage.getItem('banner_acknowledged');
-        if (!acknowledged) {
-          showBannerConsent = true;
-          showLoginBanner = true;
-        } else {
-          bannerAcknowledged = true;
-        }
+        bannerConsentPending = true;
       }
 
       const emailInput = document.getElementById('email');
-      if (emailInput && !showBannerConsent) emailInput.focus();
+      if (emailInput && !bannerConsentPending) emailInput.focus();
 
       // Handle page visibility change (user returns via back button)
       handleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {
           // Reset loading states when page becomes visible again
-          keycloakLoading = false;
+          oidcLoading = false;
           pkiLoading = false;
         }
       };
 
       handlePageShow = () => {
-        keycloakLoading = false;
+        oidcLoading = false;
         pkiLoading = false;
       };
 
@@ -304,15 +358,48 @@
       // Call the login function from our auth store
       const result = await login(email.trim(), password);
 
-      // Check if MFA is required
+      // Two different MFA challenges can come back here. Enrolment wins when
+      // both flags are set: the account has no factor to verify yet, so the
+      // TOTP prompt would have nothing to check against.
       if (result.mfa_required && result.mfa_token) {
-        mfaRequired = true;
         mfaToken = result.mfa_token;
+        if (result.mfa_enrollment_required) {
+          mfaEnrollmentRequired = true;
+        } else {
+          mfaRequired = true;
+        }
+        loading = false;
+        return;
+      }
+
+      // The credentials were accepted but the address is unverified. Offer the
+      // resend action instead of the generic "check your credentials" toast.
+      if (!result.success && result.email_not_verified) {
+        emailNotVerified = true;
+        resendNotice = "";
+        password = "";
         loading = false;
         return;
       }
 
       if (result.success) {
+        // A session exists now, so the consent captured by the banner modal can
+        // finally be recorded. Ahead of the forced-password-change branch below
+        // because the server checks the banner FIRST — clearing the password
+        // hold without this one would just produce a banner 403 next.
+        await recordBannerConsent();
+
+        // The account carries `must_change_password`: a session exists, but the
+        // lifecycle gate refuses every route bar PUT /users/me until it clears.
+        // Publishing the hold here shows the remedy immediately, instead of the
+        // app shell failing its first request with a 403.
+        if (result.must_change_password) {
+          accountLifecycle.set({ code: 'password_change_required', message: '' });
+          password = "";
+          loading = false;
+          return;
+        }
+
         loginSuccess = true;
         loading = false;
 
@@ -325,13 +412,17 @@
         console.error('Login.svelte: Login failed:', result.message);
         toastStore.error(result.message || $t('auth.loginFailed'));
 
-        // Focus appropriate field based on error type
-        if (result.message && result.message.toLowerCase().includes('email')) {
-          document.getElementById('email')?.focus();
-        } else if (result.message && (result.message.toLowerCase().includes('password') || result.message.toLowerCase().includes('credentials'))) {
+        // Steer focus from the HTTP status, never from the message text: the
+        // message is localised, so matching English substrings ('email',
+        // 'credentials', …) silently no-ops in the other seven locales.
+        // 401/403 = the credentials were rejected; 400/422 = the identifier
+        // itself was malformed.
+        if (result.status === 401 || result.status === 403) {
           document.getElementById('password')?.focus();
           // Clear password on failed authentication for security
           password = "";
+        } else if (result.status === 400 || result.status === 422) {
+          document.getElementById('email')?.focus();
         }
       }
     } catch (err) {
@@ -347,31 +438,113 @@
     showPassword = !showPassword;
   }
 
-  // Handle Keycloak login with timeout
-  async function handleKeycloakLogin() {
-    keycloakLoading = true;
+  /**
+   * Ask for a fresh verification link.
+   *
+   * The endpoint always answers 200 with ONE constant message — for a
+   * registered address, an unknown one, and an already-verified one alike — and
+   * that message is rendered verbatim. Branching on the outcome (or reporting
+   * "no such account") would rebuild the account-existence oracle the endpoint
+   * exists to remove, and it needs no session to query.
+   */
+  async function handleResendVerification() {
+    const address = email.trim();
+    if (!address) {
+      toastStore.error($t('auth.emailRequired'));
+      document.getElementById('verify-email-address')?.focus();
+      return;
+    }
+
+    resendPending = true;
+    try {
+      const { message } = await resendEmailVerification(address);
+      resendNotice = message || $t('auth.verifyEmail.resendSent');
+    } catch {
+      // Transport/rate-limit failure — a condition of the request, not of the
+      // address, so this text must not vary with who was typed in.
+      resendNotice = $t('auth.verifyEmail.resendUnavailable');
+    } finally {
+      resendPending = false;
+    }
+  }
+
+  /** Leave the unverified-address state and show the credential form again. */
+  function dismissEmailNotVerified() {
+    emailNotVerified = false;
+    resendNotice = "";
+    setTimeout(() => document.getElementById('password')?.focus(), 0);
+  }
+
+  /**
+   * Clear `must_change_password` via the one route that still answers.
+   *
+   * On success the flag is cleared server-side, the lifecycle hold drops, and
+   * the next request goes through — so we proceed exactly as after a login.
+   */
+  async function handleForcedPasswordChange() {
+    if (!forcedCurrentPassword || !forcedNewPassword || !forcedConfirmPassword) {
+      toastStore.error($t('auth.allFieldsRequired'));
+      return;
+    }
+    if (forcedNewPassword !== forcedConfirmPassword) {
+      toastStore.error($t('auth.passwordsNoMatch'));
+      return;
+    }
+
+    forcedChangeLoading = true;
+    const result = await changeOwnPassword(forcedCurrentPassword, forcedNewPassword);
+    forcedChangeLoading = false;
+
+    if (!result.success) {
+      toastStore.error(result.message || $t('auth.forcedChange.failed'));
+      return;
+    }
+
+    forcedCurrentPassword = "";
+    forcedNewPassword = "";
+    forcedConfirmPassword = "";
+    toastStore.success($t('auth.forcedChange.success'));
+    import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
+    // Navigate immediately rather than through the usual 600 ms "signing in"
+    // flourish: the hold has already dropped, so the shell would render its
+    // redirect placeholder over this page for the whole delay.
+    goto('/', { replaceState: true });
+  }
+
+  /** Abandon the forced change: end the session and return to the sign-in form. */
+  async function abandonForcedChange() {
+    forcedCurrentPassword = "";
+    forcedNewPassword = "";
+    forcedConfirmPassword = "";
+    password = "";
+    await logout();
+  }
+
+  // Handle OIDC login with timeout
+  async function handleOIDCLogin() {
+    oidcLoading = true;
 
     try {
-      // Add timeout to prevent infinite spinner if Keycloak is down
+      // Add timeout to prevent infinite spinner if the provider is down
       const timeoutPromise = new Promise<{ success: false; message: string }>((_, reject) =>
         setTimeout(() => reject(new Error('Connection timeout')), 10000)
       );
 
       const result = await Promise.race([
-        loginWithKeycloak(),
+        loginWithOIDC(),
         timeoutPromise
       ]);
 
-      // If successful, user will be redirected to Keycloak
+      // If successful, the user is redirected to the identity provider
       // If failed, show error
       if (!result.success) {
-        keycloakLoading = false;
+        oidcLoading = false;
         toastStore.error(result.message || $t('auth.loginFailed'));
       }
-      // Note: keycloakLoading stays true during redirect to Keycloak
+      // Note: oidcLoading stays true during the redirect to the provider
     } catch (error) {
-      keycloakLoading = false;
-      toastStore.error('Unable to connect to Keycloak. Please try again later.');
+      oidcLoading = false;
+      toastStore.error($t('auth.error.oidcUnreachable'));
     }
   }
 
@@ -382,6 +555,7 @@
     pkiLoading = false;
 
     if (result.success) {
+      await recordBannerConsent();
       loginSuccess = true;
       setTimeout(() => goto('/', { replaceState: true }), 600);
     } else {
@@ -392,7 +566,7 @@
   // Handle MFA verification
   async function handleMFASubmit() {
     if (!mfaCode.trim()) {
-      toastStore.error($t('auth.mfaCodeRequired') || 'Please enter your verification code');
+      toastStore.error($t('auth.mfaCodeRequired'));
       return;
     }
 
@@ -402,10 +576,11 @@
       const result = await verifyMFA(mfaToken, mfaCode.trim(), useBackupCode);
 
       if (result.success) {
+        await recordBannerConsent();
         loginSuccess = true;
         setTimeout(() => goto('/', { replaceState: true }), 600);
       } else {
-        toastStore.error(result.message || $t('auth.mfaVerificationFailed') || 'Verification failed');
+        toastStore.error(result.message || $t('auth.mfaVerificationFailed'));
         mfaCode = "";
       }
     } catch (err) {
@@ -426,22 +601,108 @@
     password = "";
   }
 
-  // Handle banner acknowledgment
-  function handleBannerAcknowledge() {
-    bannerAcknowledged = true;
-    showBannerConsent = false;
-    showLoginBanner = false;
-    sessionStorage.setItem('banner_acknowledged', 'true');
-    // Focus email field after acknowledgment
-    setTimeout(() => {
-      document.getElementById('email')?.focus();
-    }, 100);
+  // Enrolment finished: /mfa/verify-setup already set the session cookies and
+  // the store is hydrated, so proceed exactly as after a normal login. Calling
+  // /auth/login again here would start a second challenge.
+  async function handleEnrollmentComplete() {
+    mfaEnrollmentRequired = false;
+    mfaToken = "";
+    password = "";
+    await recordBannerConsent();
+    loginSuccess = true;
+    import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
+    setTimeout(() => goto('/', { replaceState: true }), 600);
   }
 
-  // Handle banner decline
-  function handleBannerDecline() {
-    // Close the window or redirect away
-    window.location.href = 'about:blank';
+  // Half-token spent/expired, or the user backed out — drop it and show the
+  // credential form so they can mint a fresh one. The component owns the toast.
+  function exitEnrollment() {
+    mfaEnrollmentRequired = false;
+    mfaToken = "";
+    password = "";
+    setTimeout(() => document.getElementById('password')?.focus(), 0);
+  }
+
+  /**
+   * Accept the login banner.
+   *
+   * Two situations reach this, and only one of them can talk to the API:
+   *
+   * - **Signed in** (a banner hold bounced us back here): the acknowledgment IS
+   *   the remedy, so it must reach `POST /auth/banner/acknowledge` before any
+   *   other route will answer. A failure is shown in place — dismissing the modal
+   *   would drop the user into an app where every request 403s.
+   * - **Anonymous**: there is no session to record against yet. The modal is the
+   *   AC-8 notice; the consent it captures is POSTed by `recordBannerConsent()`
+   *   the moment sign-in produces a session.
+   */
+  async function handleBannerAcknowledge() {
+    bannerAckError = "";
+
+    if (bannerHold) {
+      bannerAckPending = true;
+      const result = await acknowledgeBanner();
+      bannerAckPending = false;
+
+      if (!result.success) {
+        bannerAckError = result.message || $t('loginBanner.acknowledgeFailed');
+        return;
+      }
+
+      bannerConsentPending = false;
+      loginSuccess = true;
+      import('$lib/prefetch').then(m => m.prefetchDashboardData()).catch(() => {});
+      setTimeout(() => goto('/', { replaceState: true }), 600);
+      return;
+    }
+
+    bannerConsentPending = false;
+    setTimeout(() => document.getElementById('email')?.focus(), 100);
+  }
+
+  /**
+   * Refuse the banner.
+   *
+   * This used to be `window.location.href = 'about:blank'`, which modern
+   * browsers commonly block — leaving the user pinned to the banner with no
+   * feedback whatsoever. End the session and return to a clean sign-in page
+   * instead. The notice reappears because consent is a precondition for access,
+   * not a dismissible dialog.
+   */
+  async function handleBannerDecline() {
+    bannerAckError = "";
+    bannerAckPending = false;
+    email = "";
+    password = "";
+    emailNotVerified = false;
+    mfaRequired = false;
+    mfaEnrollmentRequired = false;
+    mfaToken = "";
+    mfaCode = "";
+
+    // Clears the hold, the cookies and every user store; also empties the toast
+    // queue, which is why the explanation below is raised afterwards.
+    await logout();
+
+    bannerConsentPending = bannerEnabled;
+    toastStore.info($t('loginBanner.mustAcknowledge'));
+  }
+
+  /**
+   * Record banner consent now that a session exists.
+   *
+   * Called from every path that produces one. Best-effort on purpose: if the
+   * write fails, the AC-8 gate refuses the next request, the lifecycle
+   * interceptor publishes the hold, and the user lands back here with the banner
+   * and a real error message — a strictly better outcome than blocking the
+   * sign-in on a transient failure.
+   */
+  async function recordBannerConsent() {
+    if (!bannerEnabled) return;
+    const result = await acknowledgeBanner();
+    if (!result.success) {
+      console.warn('Login.svelte: banner acknowledgment not recorded:', result.message);
+    }
   }
 </script>
 
@@ -450,8 +711,11 @@
   <ClassificationBanner
     classification={bannerClassification}
     bannerText={bannerText}
-    requireAcknowledgment={showBannerConsent}
+    requireAcknowledgment={bannerConsentPending}
     position="top"
+    pending={bannerAckPending}
+    errorMessage={bannerAckError}
+    noticeUpdated={bannerNoticeUpdated}
     on:acknowledge={handleBannerAcknowledge}
     on:decline={handleBannerDecline}
   />
@@ -463,11 +727,17 @@
   <div class="login-success-fullpage">
     <img src="/icons/icon-192x192.png" class="login-success-logo" alt="" />
     <Spinner size="small" />
-    <p class="login-success-text">{$t('auth.signingIn') || 'Signing in...'}</p>
+    <p class="login-success-text">{$t('auth.signingIn')}</p>
   </div>
 {:else}
-{#if showLoginBanner && !bannerAcknowledged}
-  <LoginBanner onAcknowledge={handleBannerAcknowledge} />
+{#if bannerConsentPending}
+  <LoginBanner
+    pending={bannerAckPending}
+    errorMessage={bannerAckError}
+    noticeUpdated={bannerNoticeUpdated}
+    on:acknowledge={handleBannerAcknowledge}
+    on:decline={handleBannerDecline}
+  />
 {/if}
 
 <div class="auth-container" class:banner-offset={bannerEnabled}>
@@ -476,23 +746,171 @@
       <div class="auth-logo">
         <img src={logoBanner} alt="OpenTranscribe" class="logo-banner" />
       </div>
-      <h1>{$t('auth.login')}</h1>
-      <p>{$t('auth.signInToAccount')}</p>
+      <!-- The lifecycle and unverified-address panels carry their own heading;
+           "Sign in to your account" would misdescribe them. -->
+      {#if !lifecyclePanel && !emailNotVerified}
+        <h1>{$t('auth.login')}</h1>
+        <p>{$t('auth.signInToAccount')}</p>
+      {/if}
     </div>
-    {#if isCloudEdition}
+    {#if lifecyclePanel}
+      <!-- Account-lifecycle hold. These states arrive as a 403 whose `detail` is
+           an OBJECT carrying a machine-readable `code`; we branch on that code,
+           never on the prose, which is server-owned and rendered as-is. The third
+           code, `banner_acknowledgment_required`, is handled by the consent modal
+           above and is excluded from `lifecyclePanel`. -->
+      {#if lifecyclePanel.code === 'password_change_required'}
+        <div class="lifecycle-panel">
+          <h2>{$t('auth.forcedChange.title')}</h2>
+          <p class="lifecycle-message">
+            {lifecyclePanel.message || $t('auth.forcedChange.description')}
+          </p>
+
+          <form on:submit|preventDefault={handleForcedPasswordChange} class="auth-form">
+            <div class="form-group">
+              <label for="forced-current-password">{$t('auth.forcedChange.currentPassword')}</label>
+              <input
+                type="password"
+                id="forced-current-password"
+                bind:value={forcedCurrentPassword}
+                autocomplete="current-password"
+                disabled={forcedChangeLoading}
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="forced-new-password">{$t('auth.newPassword')}</label>
+              <input
+                type="password"
+                id="forced-new-password"
+                bind:value={forcedNewPassword}
+                placeholder={$t('auth.newPasswordPlaceholder')}
+                autocomplete="new-password"
+                disabled={forcedChangeLoading}
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="forced-confirm-password">{$t('auth.confirmPassword')}</label>
+              <input
+                type="password"
+                id="forced-confirm-password"
+                bind:value={forcedConfirmPassword}
+                placeholder={$t('auth.confirmPasswordPlaceholder')}
+                autocomplete="new-password"
+                disabled={forcedChangeLoading}
+              />
+            </div>
+
+            <div class="password-policy">
+              <strong>{$t('auth.passwordRequirements')}</strong>
+              <ul>
+                <li>{$t('auth.passwordReqLength')}</li>
+                <li>{$t('auth.passwordReqUppercase')}</li>
+                <li>{$t('auth.passwordReqLowercase')}</li>
+                <li>{$t('auth.passwordReqNumber')}</li>
+                <li>{$t('auth.passwordReqSpecial')}</li>
+              </ul>
+            </div>
+
+            <button type="submit" class="auth-button" disabled={forcedChangeLoading}>
+              {#if forcedChangeLoading}
+                <Spinner size="small" color="white" /> {$t('auth.forcedChange.submitting')}
+              {:else}
+                {$t('auth.forcedChange.submit')}
+              {/if}
+            </button>
+          </form>
+
+          <div class="mfa-options">
+            <button
+              type="button"
+              class="text-button cancel-button"
+              on:click={abandonForcedChange}
+              disabled={forcedChangeLoading}
+            >
+              {$t('nav.logout')}
+            </button>
+          </div>
+        </div>
+      {:else if lifecyclePanel.code === 'account_pending_approval'}
+        <!-- Awaiting an administrator's decision (v379). The session is still
+             live — the hold clears the instant the queue is worked — but no route
+             is exempt from the gate, so this is a blocking screen rather than a
+             toast that would otherwise fire once per refused request, forever.
+             Logout must stay reachable or a pending user is stuck in the app with
+             no way out. -->
+        <div class="lifecycle-panel">
+          <h2>{$t('auth.pendingApproval.title')}</h2>
+          <p class="lifecycle-message">
+            {lifecyclePanel.message || $t('auth.pendingApproval.description')}
+          </p>
+          <p class="lifecycle-hint">{$t('auth.pendingApproval.hint')}</p>
+          <div class="mfa-options">
+            <button type="button" class="text-button" on:click={() => window.location.reload()}>
+              {$t('auth.pendingApproval.checkAgain')}
+            </button>
+            <button type="button" class="text-button cancel-button" on:click={logout}>
+              {$t('nav.logout')}
+            </button>
+          </div>
+        </div>
+      {:else if lifecyclePanel.code === 'account_rejected'}
+        <!-- Refused by an administrator. Unlike "pending" this bites whether or
+             not approval is still required, the session has already been torn
+             down, and there is nothing to wait for. Terminal by design. -->
+        <div class="lifecycle-panel">
+          <h2>{$t('auth.accountRejected.title')}</h2>
+          <p class="lifecycle-message">
+            {lifecyclePanel.message || $t('auth.accountRejected.description')}
+          </p>
+          <p class="lifecycle-hint">{$t('auth.accountRejected.contactAdmin')}</p>
+          <div class="mfa-options">
+            <button type="button" class="text-button" on:click={clearAccountLifecycle}>
+              {$t('auth.backToLogin')}
+            </button>
+          </div>
+        </div>
+      {:else}
+        <!-- Expired account: no self-service remedy exists, and the session has
+             already been torn down. Terminal state by design. -->
+        <div class="lifecycle-panel">
+          <h2>{$t('auth.accountExpired.title')}</h2>
+          <p class="lifecycle-message">
+            {lifecyclePanel.message || $t('auth.accountExpired.description')}
+          </p>
+          <p class="lifecycle-hint">{$t('auth.accountExpired.contactAdmin')}</p>
+          <div class="mfa-options">
+            <button type="button" class="text-button" on:click={clearAccountLifecycle}>
+              {$t('auth.backToLogin')}
+            </button>
+          </div>
+        </div>
+      {/if}
+    {:else if isCloudEdition}
       <!-- Cloud edition: the hosted IdP owns login + registration + MFA. Its
            sign-in component mounts here; org context is resolved server-side
            from the IdP's org claim, and the IdP handles MFA factors itself. -->
       {#if externalAuthLoading}
         <div class="external-auth-loading">
           <Spinner size="small" />
-          <p>{$t('auth.signingIn') || 'Loading...'}</p>
+          <p>{$t('auth.signingIn')}</p>
         </div>
       {/if}
       <div class="external-auth-mount" bind:this={externalSignInNode}></div>
     {:else}
+    <!-- Forced MFA enrolment: the deployment requires a second factor and this
+         account has none, so login returned an enrolment half-token instead of
+         a session. There is no way past this step. -->
+    {#if mfaEnrollmentRequired}
+      <MfaEnrollment
+        {mfaToken}
+        on:complete={handleEnrollmentComplete}
+        on:expired={exitEnrollment}
+        on:cancel={exitEnrollment}
+      />
     <!-- MFA Verification Form -->
-    {#if mfaRequired}
+    {:else if mfaRequired}
       <div class="mfa-form">
         <div class="mfa-icon">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -501,12 +919,12 @@
             <circle cx="12" cy="16" r="1"/>
           </svg>
         </div>
-        <h2>{$t('auth.mfaRequired') || 'Multi-Factor Authentication Required'}</h2>
+        <h2>{$t('auth.mfaRequired')}</h2>
         <p class="mfa-description">
           {#if useBackupCode}
-            {$t('auth.mfaEnterBackupCode') || 'Enter one of your backup codes'}
+            {$t('auth.mfaEnterBackupCode')}
           {:else}
-            {$t('auth.mfaEnterCode') || 'Enter the 6-digit code from your authenticator app'}
+            {$t('auth.mfaEnterCode')}
           {/if}
         </p>
 
@@ -514,9 +932,9 @@
           <div class="form-group">
             <label for="mfaCode">
               {#if useBackupCode}
-                {$t('auth.backupCode') || 'Backup Code'}
+                {$t('auth.backupCode')}
               {:else}
-                {$t('auth.mfaCode') || 'Authentication Code'}
+                {$t('auth.mfaCode')}
               {/if}
             </label>
             <!-- svelte-ignore a11y_autofocus -->
@@ -539,9 +957,9 @@
             disabled={mfaLoading}
           >
             {#if mfaLoading}
-              <Spinner size="small" color="white" /> {$t('auth.verifying') || 'Verifying...'}
+              <Spinner size="small" color="white" /> {$t('auth.verifying')}
             {:else}
-              {$t('auth.mfaVerify') || 'Verify'}
+              {$t('auth.mfaVerify')}
             {/if}
           </button>
         </form>
@@ -553,9 +971,9 @@
             on:click={() => useBackupCode = !useBackupCode}
           >
             {#if useBackupCode}
-              {$t('auth.useAuthenticatorApp') || 'Use authenticator app'}
+              {$t('auth.useAuthenticatorApp')}
             {:else}
-              {$t('auth.useBackupCode') || 'Use a backup code'}
+              {$t('auth.useBackupCode')}
             {/if}
           </button>
           <button
@@ -563,12 +981,56 @@
             class="text-button cancel-button"
             on:click={cancelMFA}
           >
-            {$t('auth.cancel') || 'Cancel'}
+            {$t('auth.cancel')}
+          </button>
+        </div>
+      </div>
+    {:else if emailNotVerified}
+      <!-- Credentials accepted, address unverified. Distinct from a credential
+           failure: there is nothing to retype, so offer the resend instead. -->
+      <div class="lifecycle-panel">
+        <h2>{$t('auth.verifyEmail.notVerifiedTitle')}</h2>
+        <p class="lifecycle-message">{$t('auth.verifyEmail.notVerifiedDescription')}</p>
+
+        <form on:submit|preventDefault={handleResendVerification} class="auth-form">
+          <div class="form-group">
+            <label for="verify-email-address">{$t('auth.email')}</label>
+            <input
+              type="email"
+              id="verify-email-address"
+              bind:value={email}
+              placeholder={$t('auth.emailPlaceholder')}
+              autocomplete="email"
+              disabled={resendPending}
+            />
+          </div>
+
+          <button type="submit" class="auth-button" disabled={resendPending}>
+            {#if resendPending}
+              <Spinner size="small" color="white" /> {$t('auth.verifyEmail.resending')}
+            {:else}
+              {$t('auth.verifyEmail.resend')}
+            {/if}
+          </button>
+        </form>
+
+        {#if resendNotice}
+          <!-- Rendered verbatim and identically for every address: this notice
+               must never imply whether the account exists. -->
+          <p class="lifecycle-hint" role="status" aria-live="polite">{resendNotice}</p>
+        {/if}
+
+        <div class="mfa-options">
+          <button type="button" class="text-button cancel-button" on:click={dismissEmailNotVerified}>
+            {$t('auth.backToLogin')}
           </button>
         </div>
       </div>
     {:else}
-      <!-- Normal Login Form -->
+      <!-- Normal Login Form. Hidden entirely when neither local nor LDAP
+           credentials are accepted — otherwise the user fills it in and the
+           backend rejects every submission. -->
+      {#if credentialFormEnabled}
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
       {#if successMessage}
         <div class="success-message" role="alert" aria-live="polite">
@@ -646,11 +1108,16 @@
         {/if}
       </div>
 
-      <div class="forgot-password-row">
-        <a href="/forgot-password" class="forgot-password-link">
-          {$t('auth.forgotPassword')}
-        </a>
-      </div>
+      <!-- Self-service reset only exists for passwords stored here. An
+           LDAP-only deployment renders the form above but no reset link — the
+           directory owns those credentials. -->
+      {#if authMethods.local_enabled}
+        <div class="forgot-password-row">
+          <a href="/forgot-password" class="forgot-password-link">
+            {$t('auth.forgotPassword')}
+          </a>
+        </div>
+      {/if}
 
       <button
         type="submit"
@@ -664,28 +1131,31 @@
         {/if}
       </button>
     </form>
+    {/if}
 
-    {#if authMethods.keycloak_enabled || authMethods.pki_enabled}
-      <div class="auth-divider">
-        <span>{$t('auth.orContinueWith') || 'Or continue with'}</span>
-      </div>
+    {#if ssoButtonsEnabled}
+      {#if credentialFormEnabled}
+        <div class="auth-divider">
+          <span>{$t('auth.orContinueWith')}</span>
+        </div>
+      {/if}
 
       <div class="external-auth-buttons">
-        {#if authMethods.keycloak_enabled}
+        {#if authMethods.oidc_enabled}
           <button
             type="button"
-            class="external-auth-button keycloak-button"
-            on:click={handleKeycloakLogin}
-            disabled={keycloakLoading || loading}
+            class="external-auth-button oidc-button"
+            on:click={handleOIDCLogin}
+            disabled={oidcLoading || loading}
           >
-            {#if keycloakLoading}
+            {#if oidcLoading}
               <Spinner size="small" color="white" />
             {:else}
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
               </svg>
             {/if}
-            <span>{$t('auth.loginWithKeycloak') || 'Sign in with Keycloak'}</span>
+            <span>{$t('auth.loginWithOidc')}</span>
           </button>
         {/if}
 
@@ -705,18 +1175,26 @@
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
               </svg>
             {/if}
-            <span>{$t('auth.loginWithCertificate') || 'Sign in with Certificate'}</span>
+            <span>{$t('auth.loginWithCertificate')}</span>
           </button>
         {/if}
       </div>
     {/if}
 
-    <div class="auth-links">
-      <span class="auth-link-text">{$t('auth.needAccountPrefix')} <a
-        href="/register"
-        class="auth-link"
-      >{$t('auth.register')}</a></span>
-    </div>
+    {#if !credentialFormEnabled && !ssoButtonsEnabled}
+      <p class="no-auth-methods" role="alert">{$t('auth.noAuthMethodsAvailable')}</p>
+    {/if}
+
+    <!-- Only advertise signup when the backend actually accepts it; otherwise
+         the user fills the whole registration form and gets a 403. -->
+    {#if authMethods.allow_registration}
+      <div class="auth-links">
+        <span class="auth-link-text">{$t('auth.needAccountPrefix')} <a
+          href="/register"
+          class="auth-link"
+        >{$t('auth.register')}</a></span>
+      </div>
+    {/if}
     {/if}
     {/if}
   </div>
@@ -837,6 +1315,18 @@
     cursor: not-allowed;
   }
 
+
+  /* Shown when the deployment advertises no usable sign-in method at all. */
+  .no-auth-methods {
+    margin: 0;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--background-color);
+    color: var(--text-light);
+    font-size: 0.9rem;
+    text-align: center;
+  }
 
   .auth-links {
     margin-top: 1.5rem;
@@ -996,11 +1486,11 @@
     flex-shrink: 0;
   }
 
-  .keycloak-button {
+  .oidc-button {
     border-color: #4d4d4d;
   }
 
-  .keycloak-button:hover:not(:disabled) {
+  .oidc-button:hover:not(:disabled) {
     border-color: #666;
     background-color: rgba(77, 77, 77, 0.05);
   }
@@ -1021,6 +1511,51 @@
   /* Banner offset for classification banner */
   .banner-offset {
     padding-top: 30px;
+  }
+
+  /* Account-lifecycle / email-verification panels. Colours come from theme vars
+     so light and dark stay in parity. */
+  .lifecycle-panel h2 {
+    font-size: 1.25rem;
+    color: var(--text-color);
+    margin-bottom: 0.5rem;
+    text-align: center;
+  }
+
+  .lifecycle-message {
+    color: var(--text-light);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+  }
+
+  .lifecycle-hint {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--background-color);
+    color: var(--text-light);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  .password-policy {
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--background-color);
+    color: var(--text-light);
+    font-size: 0.8rem;
+  }
+
+  .password-policy ul {
+    margin: 0.5rem 0 0;
+    padding-left: 1.1rem;
+  }
+
+  .password-policy li {
+    margin-bottom: 0.2rem;
   }
 
   /* MFA Form Styles */

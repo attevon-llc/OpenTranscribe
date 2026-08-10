@@ -172,9 +172,21 @@ def stitch_files(local_paths: list[str], output_path: str) -> bool:
     compatible = _compatible(local_paths)
 
     # ffmpeg concat demuxer needs a list file with absolute, escaped paths.
+    #
+    # The list format is line-oriented and has NO escape for a newline, so a path
+    # containing one would terminate its `file '...'` directive early and let the
+    # remainder be parsed as further directives — arbitrary extra inputs chosen by
+    # whoever named the file. Watch-source names come from a remote listing (SMB/S3),
+    # so they are untrusted. Refuse rather than attempt to escape (issue #284 low/QW).
+    absolute_paths = [os.path.abspath(p) for p in local_paths]
+    for path in absolute_paths:
+        if "\n" in path or "\r" in path:
+            logger.error("Refusing to stitch: path contains a newline: %r", path)
+            return False
+
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as listf:
-        for p in local_paths:
-            escaped = os.path.abspath(p).replace("'", "'\\''")
+        for path in absolute_paths:
+            escaped = path.replace("'", "'\\''")
             listf.write(f"file '{escaped}'\n")
         list_path = listf.name
 

@@ -25,8 +25,11 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
+
+# Deployment configuration is the super_admin tier: this router
+# pins the deployment's ASR engine/model.
+from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.auth import get_current_admin_user
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
 from app.db.base import get_db
@@ -824,7 +827,9 @@ def test_saved_asr_config(
     """Test a saved ASR configuration and persist the result (test_status, test_message, last_tested)."""
     config = _get_config_or_404(db, config_uuid, current_user.id, allow_shared=True)
 
-    # Decrypt the stored key (if any)
+    # Decrypt the stored key only for error sanitization below — provider construction
+    # (and its own decryption) goes through the shared factory helper so this path and
+    # the transcription-job path cannot drift apart (issue #300).
     api_key = None
     if config.api_key:
         api_key = decrypt_api_key(str(config.api_key))
@@ -832,23 +837,11 @@ def test_saved_asr_config(
             logger.error("Failed to decrypt API key for ASR config %s", config_uuid)
             raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
 
-    access_key_id = None
-    if getattr(config, "access_key_id", None):
-        access_key_id = decrypt_api_key(str(config.access_key_id))
-        if access_key_id is None:
-            logger.error("Failed to decrypt access key ID for ASR config %s", config_uuid)
-            raise HTTPException(status_code=500, detail="Failed to decrypt stored access key ID")
-
     start_time = time.time()
     try:
-        provider = _create_asr_provider(
-            provider=config.provider,
-            api_key=api_key,
-            model=config.model_name,
-            base_url=config.base_url,
-            region=config.region,
-            access_key_id=access_key_id,
-        )
+        from app.services.asr.factory import ASRProviderFactory
+
+        provider = ASRProviderFactory.create_from_db_config(config)
         success, message, response_time_ms = provider.validate_connection()
     except Exception as exc:
         success = False
@@ -950,7 +943,7 @@ def set_active_local_model(
     body: _SetLocalModelRequest,
     response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """Set the active local Whisper model (admin only).
 
@@ -1023,7 +1016,7 @@ def restart_gpu_worker(
     request: Request,
     response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """Gracefully restart the GPU Celery worker to apply a new model (admin only).
 
@@ -1058,10 +1051,10 @@ def restart_gpu_worker(
         try:
             celery_app.control.broadcast("shutdown")
         except Exception as exc:
-            logger.error("Failed to broadcast shutdown: %s", exc)
+            logger.exception("Failed to broadcast shutdown")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to signal worker restart: {exc}",
+                detail="Failed to signal worker restart.",
             ) from exc
         return {
             "status": "restart_signaled",
@@ -1071,10 +1064,12 @@ def restart_gpu_worker(
             "they may already be restarting.",
         }
 
-    # Check for active GPU tasks
+    # Check for active GPU tasks. Best-effort: this only produces an advisory
+    # count in the response, so a broker hiccup must not block the restart.
     try:
         active_result = inspector.active() or {}
     except Exception:
+        logger.exception("Failed to inspect active GPU tasks; reporting 0")
         active_result = {}
 
     active_gpu_tasks = 0
@@ -1086,10 +1081,10 @@ def restart_gpu_worker(
     try:
         celery_app.control.broadcast("shutdown", destination=gpu_workers)
     except Exception as exc:
-        logger.error("Failed to send shutdown to GPU workers: %s", exc)
+        logger.exception("Failed to send shutdown to GPU workers")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to signal worker restart: {exc}",
+            detail="Failed to signal worker restart.",
         ) from exc
 
     logger.info(

@@ -233,7 +233,9 @@ SEARCH_DEFAULT_PAGE_SIZE = 20
 SEARCH_MAX_PAGE_SIZE = 100
 SEARCH_MAX_SNIPPETS_PER_FILE = 10  # Top occurrences per file (reduces memory/latency)
 SEARCH_MAX_SEMANTIC_SNIPPETS_PER_FILE = 2  # Display limit for card view (deprecated)
-SEARCH_HYBRID_MIN_SCORE = 0.01
+# SEARCH_HYBRID_MIN_SCORE lives in config.Settings (env-tunable, default 0.005) —
+# hybrid_search_service reads settings.SEARCH_HYBRID_MIN_SCORE. A same-named
+# constant here was dead and shadowed the real value when tuning.
 SEARCH_CACHE_TTL_SECONDS = 300
 SEARCH_CACHE_MAX_SIZE = 256
 
@@ -433,11 +435,48 @@ DEFAULT_GARBAGE_CLEANUP_THRESHOLD = 50
 # no restart). Coded defaults here are the single source of truth — there are
 # NO watch tuning .env vars (only the physical WATCH_FOLDER_PATH mount).
 # SystemSettings keys: watch.enabled / watch.file_stability_seconds /
-# watch.max_concurrent_imports / watch.fs_events_enabled.
+# watch.max_imports_per_scan / watch.fs_events_enabled / watch.fs_events_mode /
+# watch.fs_events_poll_seconds.
 DEFAULT_WATCH_ENABLED = True
 DEFAULT_WATCH_FILE_STABILITY_SECONDS = 30  # skip files modified within N s (still writing)
-DEFAULT_WATCH_MAX_CONCURRENT_IMPORTS = 5  # files imported concurrently per scan
+# Per-scan cap on how many standalone files one scan imports, NOT a concurrency
+# limit — imports run serially inline inside scan_single. Raising this lengthens a
+# single scan task rather than parallelizing it (issue #295).
+DEFAULT_WATCH_MAX_IMPORTS_PER_SCAN = 5
 DEFAULT_WATCH_FS_EVENTS_ENABLED = False  # optional watchdog layer (polling is the baseline)
+# How the FS-event layer picks an observer per local source (issue #294):
+#   auto    — filesystem heuristic + live delivery probe, falling back to the
+#             cross-platform PollingObserver when native events don't arrive
+#             (macOS/Windows Docker bind mounts, NFS/SMB/NAS mounts).
+#   native  — force the platform observer (inotify in our Linux containers).
+#   polling — force watchdog's PollingObserver (works everywhere, costs a stat sweep).
+#   off     — run no observer at all; Celery polling remains the only mechanism.
+DEFAULT_WATCH_FS_EVENTS_MODE = "auto"
+WATCH_FS_EVENTS_MODES = ("auto", "native", "polling", "off")
+# Stat-sweep interval for the PollingObserver fallback. Lower = lower latency,
+# higher = cheaper on a large or network-mounted tree.
+DEFAULT_WATCH_FS_EVENTS_POLL_SECONDS = 15
+
+# Transactional auth email (password reset / invitation / verification / security
+# notice). The transport is DB-backed: a super_admin designates ONE of the shared
+# EmailNotificationConfig rows — the same admin-UI-managed, AES-256-GCM-encrypted
+# smtp/m365/exchange stack watch-source notifications use — and auth mail goes out
+# through it. The designation is a SystemSettings key rather than a column so it
+# needs no migration and no restart.
+#
+# Empty default = nothing is designated, and app/services/email_service.py falls
+# back to the SMTP_* env vars. It deliberately does NOT auto-pick a config: those
+# rows are created for specific notification purposes, and mailing password resets
+# out of an unrelated mailbox leaks the deployment's auth mail through it.
+AUTH_EMAIL_CONFIG_SETTING_KEY = "email.auth_config_uuid"
+DEFAULT_AUTH_EMAIL_CONFIG_UUID = ""
+
+# The coded default of settings.FRONTEND_URL, restated here because it is a value
+# to REJECT rather than to use: it is set in none of the 23 compose files, so a
+# deployment that configures mail but not FRONTEND_URL would mail every user a
+# credential link pointing at their own machine. email_service refuses to send
+# such a link once a real transport exists.
+DEFAULT_FRONTEND_URL = "http://localhost:5173"
 
 # Scheduled database backups (Feature C, issue: data-loss incident).
 # DB-backed via SystemSettings (admin-UI managed, no beat restart). Coded defaults
@@ -490,6 +529,26 @@ DEFAULT_BACKUP_MIRROR_S3_REGION = ""
 DEFAULT_BACKUP_MIRROR_S3_BUCKET = ""  # target bucket (must already exist)
 DEFAULT_BACKUP_MIRROR_S3_PREFIX = "opentranscribe-media/"  # key prefix within the bucket
 DEFAULT_BACKUP_MIRROR_S3_ACCESS_KEY_ID = ""
+
+# Directory reconciliation / deprovisioning (LDAP).
+# DB-backed via SystemSettings (admin-UI managed, no beat restart). Coded defaults
+# here are the single source of truth — there are NO directory-sync .env vars; the
+# directory connection itself reuses the existing LDAP auth config.
+# SystemSettings keys: directory_sync.enabled / directory_sync.schedule /
+# directory_sync.dry_run / directory_sync.max_disables_per_run /
+# directory_sync.last_run_at / directory_sync.last_result.
+#
+# Defaults are deliberately the timid ones. The sweep DISABLES accounts, so
+# shipping it on-by-default would let a first-boot LDAP misconfiguration lock a
+# whole deployment out before anyone saw a log line. Enabled=False + dry_run=True
+# means an operator must opt in twice — once to run it, once to let it act.
+DEFAULT_DIRECTORY_SYNC_ENABLED = False  # opt-in: disables accounts
+DEFAULT_DIRECTORY_SYNC_SCHEDULE = "0 4 * * *"  # cron: daily 04:00 UTC, after the backups
+DEFAULT_DIRECTORY_SYNC_DRY_RUN = True  # report what WOULD be disabled, change nothing
+# Blast radius per pass. A directory that answers "gone" for everyone (wrong
+# search_base, wrong group DN) is indistinguishable from mass offboarding, so the
+# cap is what stops one bad config from disabling the deployment in a single run.
+DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN = 10
 
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
 DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)
@@ -820,6 +879,34 @@ DEFAULT_REDACTION_TOXICITY_THRESHOLD = 0.5
 DEFAULT_REDACTION_REDACT_BEFORE_LLM = True
 DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED = True
 
+# Substituted for a segment whose masking raised. Never fall back to the original
+# text: under redact_before_llm the whole point is that unmaskable content must not
+# reach a third-party provider. See services/redaction/llm_guard.py.
+# =============================================================================
+# Amazon Bedrock
+# =============================================================================
+# Cross-region inference profiles are addressed by a geography-prefixed model ID.
+# The prefix is derived from the AWS region's leading segment so an operator only
+# has to set a bare model ID; a fully-qualified ID or profile ARN bypasses this.
+# `us-gov` is intentionally absent: GovCloud regions split as "us"/"gov"/"west" and
+# would otherwise pick up the commercial "us." prefix, so GovCloud deployments must
+# set BEDROCK_MODEL_NAME to an explicit `us-gov.`-prefixed ID.
+BEDROCK_GEO_PREFIX_BY_REGION = {
+    "us": "us.",
+    "eu": "eu.",
+    "ap": "apac.",
+    "ca": "us.",  # Canada routes into the US geography
+    "sa": "us.",  # South America likewise
+    "me": "eu.",  # Middle East routes into the EU geography
+    "af": "eu.",
+}
+
+REDACTION_LLM_FAILSAFE_TEXT = "[redacted — masking unavailable]"
+# How many times an LLM task may defer itself waiting for detection spans before
+# failing. 10 × 60s covers a slow CPU scan; past that something is wrong, and a
+# loud failure beats an unbounded retry loop.
+REDACTION_LLM_MAX_DEFERRALS = 10
+
 # PII detection confidence floor (Presidio/GLiNER scores below this are dropped).
 DEFAULT_REDACTION_PII_CONFIDENCE = 0.4
 
@@ -831,3 +918,52 @@ REDACTION_STATUS_PENDING = "pending"
 REDACTION_STATUS_PROCESSING = "processing"
 REDACTION_STATUS_DONE = "done"
 REDACTION_STATUS_FAILED = "failed"
+
+# =============================================================================
+# RAG chat (issue #52) — coded defaults for DB-backed SystemSettings.
+# Every knob below is editable in the admin UI under its `chat.*` settings key
+# with no restart; there are deliberately NO `.env` vars for chat.
+# =============================================================================
+
+# Retrieval shape. The candidate pool is what OpenSearch returns before
+# reranking; final_chunks is what actually reaches the prompt. Capping chunks
+# per file keeps one long recording from crowding out the rest of a multi-file
+# selection — the whole point of chatting across transcripts.
+DEFAULT_CHAT_RAG_CANDIDATE_POOL = 48  # chat.rag.candidate_pool
+DEFAULT_CHAT_RAG_FINAL_CHUNKS = 12  # chat.rag.final_chunks
+DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE = 4  # chat.rag.max_chunks_per_file
+
+# Cross-encoder reranking (CPU-only, lazily loaded in the backend container).
+DEFAULT_CHAT_RAG_RERANK_ENABLED = True  # chat.rag.rerank_enabled
+DEFAULT_CHAT_RAG_RERANK_MAX_PAIRS = 50  # chat.rag.rerank_max_pairs
+CHAT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+# Conversational query rewriting: expands pronouns/references ("what about her?")
+# into a standalone query before retrieval.
+DEFAULT_CHAT_RAG_QUERY_REWRITE_ENABLED = True  # chat.rag.query_rewrite_enabled
+
+# Retrieval caching. Tier 1 is an exact-query cache; tier 2 (opt-in) reuses
+# results for semantically near-identical questions.
+DEFAULT_CHAT_RAG_CACHE_TTL_SECONDS = 300  # chat.rag.cache_ttl_seconds
+DEFAULT_CHAT_RAG_SEMANTIC_CACHE_ENABLED = False  # chat.rag.semantic_cache_enabled
+DEFAULT_CHAT_RAG_SEMANTIC_CACHE_THRESHOLD = 0.97  # chat.rag.semantic_cache_threshold
+
+# Conversation shape and abuse controls.
+DEFAULT_CHAT_HISTORY_MAX_TURNS = 10  # chat.history_max_turns
+DEFAULT_CHAT_MESSAGES_PER_HOUR = 120  # chat.limits.messages_per_hour
+DEFAULT_CHAT_MAX_CONCURRENT_STREAMS = 2  # chat.limits.max_concurrent_streams
+DEFAULT_CHAT_RETENTION_DAYS = 0  # chat.retention_days (0 = keep forever)
+
+# A provider that accepts the request but never emits a first token would
+# otherwise hold the stream open until the read timeout.
+DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S = 90
+
+# Per-user preferences (UserSetting keys `chat.system_prompt`,
+# `chat.use_context_default`, `chat.default_search_mode`).
+DEFAULT_CHAT_SYSTEM_PROMPT = ""
+DEFAULT_CHAT_USE_CONTEXT = True
+DEFAULT_CHAT_SEARCH_MODE = "hybrid"
+
+# Resolved-scope ceiling: a selection resolving to more files than this is
+# rejected (HTTP 400) rather than silently truncated.
+CHAT_MAX_SCOPE_FILES = 500

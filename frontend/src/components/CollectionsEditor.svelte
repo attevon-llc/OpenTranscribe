@@ -7,13 +7,8 @@
   import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
 
-  type Collection = {
-    uuid: string;
-    name: string;
-    description?: string;
-    source?: string;
-    media_count?: number;
-  };
+  import type { Collection } from '$lib/types/collection';
+
   type AISuggestion = { name: string; confidence: number; rationale?: string; description?: string };
 
   export let fileId = "";

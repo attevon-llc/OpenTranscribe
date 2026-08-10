@@ -77,12 +77,19 @@ while (( $# > 0 )); do
         --help|-h)
             cat <<EOF
 Usage: $0 [--cleanup] [--force] [--yes]
+
+Prerequisite: stop the live deployment first with \`./opentr.sh stop\`.
+This scenario runs under the one-liner's stock container names and ports so it
+exercises what a real user gets; it cannot run alongside the live stack.
+After the test, restart it with \`./opentr.sh start dev\` (or whichever
+mode you were using).
+
 Env:
-  TEST_PROJECT_NAME      default ot-reltest-upgrade
+  TEST_PROJECT_NAME      default ot-reltest-upgrade  (used as label namespace)
   TEST_ROOT              default /mnt/nvm/opentranscribe-test-runs/<name>-<ts>
   FROM_VERSION           default v0.3.3   (Docker Hub tag for the "before" stack)
   LOCAL_IMAGE_TAG        default 0.4.0    (locally built tag for the "after" stack)
-  TEST_FRONTEND_PORT..   default 6273-6280
+  FRONTEND_PORT..        default 5173-5180 (one-liner defaults; see README)
 EOF
             exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -243,7 +250,7 @@ phase_03_prepare_v033_compose() {
     cp_force_pull_policy "$stage/docker-compose.prod.yml" always
     cp_pin_image_tag "$stage/docker-compose.prod.yml" backend "$FROM_VERSION"
     cp_pin_image_tag "$stage/docker-compose.prod.yml" frontend "$FROM_VERSION"
-    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
+    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-redaction celery-cloud-asr-worker celery-beat flower; do
         cp_pin_image_tag "$stage/docker-compose.prod.yml" "$svc" "$FROM_VERSION" 2>/dev/null || true
     done
 
@@ -466,7 +473,7 @@ phase_07_swap_to_new() {
     cp_force_pull_policy "$stage_after/docker-compose.prod.yml" never
     cp_pin_image_tag "$stage_after/docker-compose.prod.yml" backend "$LOCAL_IMAGE_TAG"
     cp_pin_image_tag "$stage_after/docker-compose.prod.yml" frontend "$LOCAL_IMAGE_TAG"
-    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-beat flower; do
+    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-redaction celery-cloud-asr-worker celery-beat flower; do
         cp_pin_image_tag "$stage_after/docker-compose.prod.yml" "$svc" "$LOCAL_IMAGE_TAG" 2>/dev/null || true
     done
 

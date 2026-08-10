@@ -11,6 +11,14 @@ should import `app.api` or `app.services` at module scope.
 - `config.py` — pydantic-settings `Settings`; the module-level `settings` singleton is the only
   supported import. `extra="ignore"`, so an undeclared/typo'd compose env var is silently
   dropped rather than crashing startup.
+  **Gate every security control on `settings.is_hardened`, never on
+  `ENVIRONMENT in ("production", "prod")`.** `ENVIRONMENT` defaults to `production` and only the
+  closed `RELAXED_ENVIRONMENTS` set (`development`/`dev`/`testing`/`test`/`local`) relaxes
+  anything, so an unset, empty, or misspelled value fails closed. The old form fails **open**,
+  and because nothing passed `ENVIRONMENT` into the containers it was never true in any
+  deployment — the default-secret refusal, `DEBUG` enforcement, Redis-password requirement, and
+  cookie `Secure` flag were all dead code until #284 A0.3. Dev declares itself via the
+  `x-dev-environment` anchor in `docker-compose.override.yml`, which prod never loads.
 - `constants.py` — magic numbers, `CeleryQueues` (**single source of truth for queue names**),
   the `OPENSEARCH_EMBEDDING_MODELS` tiers, and the `DEFAULT_*` values backing DB-stored settings
   (redaction, watch sources, engine/boundary). **Check here before adding a `.env` var.**
@@ -27,8 +35,34 @@ should import `app.api` or `app.services` at module scope.
 - `capabilities.py` — server-driven feature gating; `require_capability()` dependency,
   `set_capability_resolver()` for the cloud edition, plus the audience taxonomy.
 - `settings_cache.py` — in-process TTL cache in front of `SystemSettings` reads.
+- `opensearch_auth.py` — `opensearch_connection_kwargs()`, the single builder for every
+  `OpenSearch(...)` client (search plane ×2, audit writer + reader, admin audit export).
+  `OPENSEARCH_AUTH=basic` (default) reproduces the previous inline kwargs exactly;
+  `sigv4` signs with the AWS credential chain for a managed domain and **forces
+  `RequestsHttpConnection`** — `AWSV4SignerAuth` is a `requests` AuthBase, so under
+  opensearch-py's default urllib3 transport it is silently ignored and every request
+  goes out unsigned (a blanket 403). Don't build a client inline again.
 - `security.py` — password hashing (FIPS-aware PBKDF2 iteration counts), `create_access_token`,
-  `verify_token`. `auth_settings.py` layers DB config over `.env` for auth.
+  `verify_token`. `auth_settings.py` layers DB config over `.env` for auth —
+  `get_auth_settings(db)` returns a `DynamicAuthSettings` that resolves **DB > .env > coded
+  default**. Resolve it **once per request** and pass it down: a handler that resolves it for
+  enforcement but reads `settings.*` for the audit record documents a policy nobody applied.
+- `auth_settings.py`'s `proxy_*` properties are the layered readers for trusted-header auth;
+  the `.env` fallbacks (`PROXY_*` in `config.py`) exist mainly so `main.py`'s fail-closed
+  boot guard can see `PROXY_ENABLED`/`PROXY_TRUSTED_PROXIES` before a DB session exists.
+- `legacy_auth_env.py` — **input adapter, not a second implementation.** It translates the
+  historical `KEYCLOAK_*` environment names onto the canonical `OIDC_*` ones *before* `Settings`
+  is built, so nothing downstream (including `AuthConfigService.ENV_TO_CONFIG_MAPPING`) ever
+  sees the old spelling. The legacy name **wins** when both are set. No removal is planned —
+  renaming a user-owned `.env` is not something this project gets to do — but
+  `deprecated_oidc_env_names()` drives one startup log line. This is one of only two files under
+  `backend/app/` allowed to name the retired provider; `tests/unit/test_oidc_naming_invariant.py`
+  fails the build otherwise.
+- `request_context.py` — **the** per-request correlation `ContextVar`, in one place. There were
+  two objects both *named* `"request_id"` (`middleware/audit.py` set one, `auth/audit.py` read
+  the other); a `ContextVar`'s display name is documentation, not identity, so every audit event
+  fell back to a fresh random id and a multi-event flow could not be reconstructed. Stdlib-only,
+  so `middleware`, `auth`, `core` and the Celery hooks can all import it without a cycle.
 - `metrics.py`, `db_metrics.py`, `celery_metrics.py`, `backup_metrics.py`, `route_template.py` —
   Prometheus collectors on the default registry, plus the bounded route-label resolver.
 - `tenancy.py` — `UNSCOPED` sentinel + `OrgScope`; stdlib-only so any layer can import it.
@@ -44,9 +78,12 @@ should import `app.api` or `app.services` at module scope.
 
 ## Gotchas
 
-- **Import-linter (pre-commit) forbids `app.*` from importing `cloud`, `clerk`, or `stripe`.**
-  Contract: `backend/pyproject.toml [tool.importlinter]`; the hook runs `lint-imports` from
-  `backend/`. Keep seams as resolver hooks so the static AST check stays clean.
+- **Import-linter (pre-commit) forbids `app.*` from importing `cloud` or the managed edition's
+  vendor packages.** The authoritative list is the contract itself —
+  `backend/pyproject.toml [tool.importlinter]`; the hook runs `lint-imports` from `backend/`.
+  Keep seams as resolver hooks so the static AST check stays clean. Don't restate the vendor
+  names here: CI's seam guard greps `backend/app` and `frontend/src` for them and fails the
+  build on any match, **including in docs** — that is what took master red at `2a71fb1`.
 - `SETTINGS_CACHE_TTL` (30 s) staleness is **cross-process by design**: an admin change is
   instant in the API process but up to 30 s stale in Celery workers. The cache fully bypasses
   when `TESTING=true`, read from `os.environ` at call time.

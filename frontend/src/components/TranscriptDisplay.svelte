@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { GroupedSegmentView, GroupedTranscriptSegment } from '$lib/types/media';
+  import type { Segment, Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onDestroy } from 'svelte';
   import TranscriptSearch from './TranscriptSearch.svelte';
   import SpeakerEditorPanel from './transcript/SpeakerEditorPanel.svelte';
@@ -9,6 +11,7 @@
   import { toastStore } from '$stores/toast';
   import { type SearchMatch } from '$lib/utils/searchHighlight';
   import { updateSegmentSpeaker } from '$lib/api/transcripts';
+  import { patchSegmentInFile } from '$lib/fileDetail/segmentSync';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -23,7 +26,7 @@
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
   export let isEditingSpeakers: boolean = false;
-  export let speakerList: any[] = [];
+  export let speakerList: Speaker[] = [];
   export let reprocessing: boolean = false;
   export let currentTime: number = 0;
   export let diarizationDisabled: boolean = false;
@@ -59,98 +62,63 @@
   // Reactive transcript segments (passed to search + segment list children)
   $: transcriptSegments = (file?.transcript_segments || []) as TranscriptSegment[];
 
-  // Interface for grouped segments (including overlap groups)
-  interface GroupedSegment {
-    isOverlapGroup: boolean;
-    overlapGroupId?: string;
-    startTime: number;
-    endTime: number;
-    segments: any[];
-    startSegmentIndex: number;  // Track starting index in original array for reading progress
-  }
+  // Index the flat segment list once per change, not once per group — resolving each
+  // group with a linear scan would be O(n²) on a 500-segment page.
+  $: segmentsByUuid = (() => {
+    const map = new Map<string, TranscriptSegment>();
+    for (const segment of transcriptSegments) {
+      if (segment?.uuid != null) map.set(String(segment.uuid), segment);
+    }
+    return map;
+  })();
 
-  // Map a backend-shaped grouped segment (snake_case) to the camelCase shape the
-  // template consumes. Keeps downstream rendering identical to the client path.
-  function mapBackendGroup(group: any): GroupedSegment {
+  // Resolve a backend group's uuid references against the flat segment list, into the
+  // camelCase shape the template consumes.
+  //
+  // `transcript_segments` is the SINGLE representation of segment data. Groups used to
+  // embed copies, which gave the page two objects per segment; every optimistic update
+  // patched only the flat one, so renames and text edits rendered stale until a full
+  // reload (#352). Resolving by uuid here makes that desync impossible.
+  //
+  // `claimed` enforces the invariant the render layer depends on: a segment belongs to
+  // exactly one group. The rows are a keyed each, so the same uuid reaching two groups is
+  // a duplicate key — Svelte throws and the whole transcript list fails to render, not
+  // just the offending row. Enforcing it here covers every payload source (initial load,
+  // refetch, redaction reload, pagination), which a guard on any single path would not.
+  function mapBackendGroup(
+    group: GroupedTranscriptSegment,
+    claimed: Set<string>
+  ): GroupedSegmentView {
+    const segments: TranscriptSegment[] = [];
+    for (const raw of group.segment_uuids || []) {
+      const uuid = String(raw);
+      if (claimed.has(uuid)) continue;
+      // A group can reference segments from a page that hasn't loaded yet; skip those
+      // rather than rendering holes.
+      const segment = segmentsByUuid.get(uuid);
+      if (!segment) continue;
+      claimed.add(uuid);
+      segments.push(segment);
+    }
     return {
-      isOverlapGroup: group.is_overlap_group ?? false,
+      // A run reduced to one member by the checks above is no longer an overlap cluster.
+      isOverlapGroup: (group.is_overlap_group ?? false) && segments.length > 1,
       overlapGroupId: group.overlap_group_id ?? undefined,
       startTime: group.start_time,
       endTime: group.end_time,
-      segments: group.segments || [],
+      segments,
       startSegmentIndex: group.start_segment_index ?? 0,
     };
   }
 
-  // Group transcript segments, keeping overlap groups together. Prefer the
-  // backend-provided `grouped_segments` (thin-frontend) and fall back to the
-  // client-side computation for older payloads that lack it.
+  // The backend owns grouping (fat backend, thin frontend) and both the detail and the
+  // paginated segments endpoints return it. `TranscriptSegmentList` dereferences
+  // `group.segments[0]`, so groups that resolved to nothing are dropped.
   $: groupedTranscriptSegments = (() => {
-    const backendGroups = file?.grouped_segments;
-    if (Array.isArray(backendGroups) && backendGroups.length) {
-      return backendGroups.map(mapBackendGroup);
-    }
-
-    const segments = file?.transcript_segments || [];
-    if (!segments.length) return [];
-
-    const groups: GroupedSegment[] = [];
-    let i = 0;
-
-    while (i < segments.length) {
-      const segment = segments[i];
-
-      if (segment.overlap_group_id) {
-        // Collect all segments with the same overlap group ID
-        const overlapGroupId = segment.overlap_group_id;
-        const overlapSegments = [segment];
-        let j = i + 1;
-
-        while (j < segments.length && segments[j].overlap_group_id === overlapGroupId) {
-          overlapSegments.push(segments[j]);
-          j++;
-        }
-
-        if (overlapSegments.length > 1) {
-          // Create an overlap group
-          const groupStartTime = Math.min(...overlapSegments.map(s => s.start_time));
-          const groupEndTime = Math.max(...overlapSegments.map(s => s.end_time));
-
-          groups.push({
-            isOverlapGroup: true,
-            overlapGroupId,
-            startTime: groupStartTime,
-            endTime: groupEndTime,
-            segments: overlapSegments,
-            startSegmentIndex: i,  // Track starting index for reading progress
-          });
-
-          i = j;
-        } else {
-          // Single segment with overlap flag, treat as regular
-          groups.push({
-            isOverlapGroup: false,
-            startTime: segment.start_time,
-            endTime: segment.end_time,
-            segments: [segment],
-            startSegmentIndex: i,  // Track starting index for reading progress
-          });
-          i++;
-        }
-      } else {
-        // Regular segment
-        groups.push({
-          isOverlapGroup: false,
-          startTime: segment.start_time,
-          endTime: segment.end_time,
-          segments: [segment],
-          startSegmentIndex: i,  // Track starting index for reading progress
-        });
-        i++;
-      }
-    }
-
-    return groups;
+    const claimed = new Set<string>();
+    return ((file?.grouped_segments || []) as GroupedTranscriptSegment[])
+      .map((group) => mapBackendGroup(group, claimed))
+      .filter((group: GroupedSegmentView) => group.segments.length > 0);
   })();
 
   // Search functionality state
@@ -213,41 +181,45 @@
     updatingSegments.add(segmentUuid);
 
     // Find the segment in our local state
-    const segmentIndex = file.transcript_segments.findIndex(
-      (s: any) => s.uuid === segmentUuid
+    const existingSegment = file.transcript_segments?.find(
+      (s: Segment) => s.uuid === segmentUuid
     );
 
-    if (segmentIndex === -1) {
+    if (!existingSegment) {
       toastStore.error($t('transcript.segmentNotFound'));
       updatingSegments.delete(segmentUuid);
       return;
     }
 
     // Store original speaker for rollback and orphan detection
-    const originalSpeaker = file.transcript_segments[segmentIndex].speaker;
+    const originalSpeaker = existingSegment.speaker;
 
     // Optimistic update - find the new speaker from our speaker list
     const newSpeaker = speakerUuid
-      ? speakerList.find((s: any) => s.uuid === speakerUuid)
+      ? speakerList.find((s: Speaker) => s.uuid === speakerUuid)
       : null;
 
-    file.transcript_segments[segmentIndex].speaker = newSpeaker;
-    file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
+    // `file` is bound, so these assignments reach the page — which is what makes the
+    // grouped view (the thing actually rendered) pick them up.
+    file = patchSegmentInFile(file, segmentUuid, {
+      speaker: newSpeaker,
+      speaker_id: newSpeaker?.uuid ?? null,
+      resolved_speaker_name: newSpeaker?.display_name || newSpeaker?.name || null
+    });
 
     try {
       // Make API call
       const updatedSegment = await updateSegmentSpeaker(segmentUuid, speakerUuid);
 
       // Update with server response
-      file.transcript_segments[segmentIndex] = updatedSegment;
-      file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
+      file = patchSegmentInFile(file, segmentUuid, updatedSegment);
 
       // Check if the old speaker is now orphaned (no remaining segments)
       // The backend auto-deletes orphaned speakers, so we need to sync the frontend
       const originalSpeakerUuid = originalSpeaker?.uuid;
       if (originalSpeaker && originalSpeakerUuid) {
         const oldSpeakerStillUsed = file.transcript_segments.some(
-          (s: any) => s.speaker?.uuid === originalSpeakerUuid
+          (s: Segment) => s.speaker?.uuid === originalSpeakerUuid
         );
 
         if (!oldSpeakerStillUsed) {
@@ -265,8 +237,11 @@
       console.error('Error updating segment speaker:', error);
 
       // Rollback on error
-      file.transcript_segments[segmentIndex].speaker = originalSpeaker;
-      file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
+      file = patchSegmentInFile(file, segmentUuid, {
+        speaker: originalSpeaker,
+        speaker_id: originalSpeaker?.uuid ?? null,
+        resolved_speaker_name: existingSegment.resolved_speaker_name ?? null
+      });
 
       toastStore.error(getErrorMessage(error, $t('transcript.failedToUpdateSpeaker')));
     } finally {

@@ -623,11 +623,18 @@ class TestAuditLogging:
         access_token = tokens["access_token"]
         return {"Authorization": f"Bearer {access_token}"}
 
-    @patch("app.api.endpoints.admin.audit_logger")
+    @patch("app.services.account_security_service.audit_logger")
     def test_password_reset_is_audited(
         self, mock_audit, client, db_session, super_admin_token_headers
     ):
-        """Test that password reset actions are audit logged."""
+        """Test that password reset actions are audit logged.
+
+        The admin reset-password endpoint delegates to
+        ``account_security_service.audit_password_change``, which resolves its own
+        ``audit_logger`` binding (imported at module scope in that file) rather than
+        the one imported into ``api.endpoints.admin`` -- so that is the name that
+        must be patched for the mock to observe the call.
+        """
         target_user = User(
             email="audit_target@example.com",
             full_name="Audit Target",
@@ -643,7 +650,7 @@ class TestAuditLogging:
         response = client.post(
             f"/api/admin/users/{target_user.uuid}/reset-password",
             headers=super_admin_token_headers,
-            json={"new_password": "AuditedPassword123!", "force_change": True},
+            json={"new_password": "Correct-Horse-Battery-9!", "force_change": True},
         )
 
         assert response.status_code == 200

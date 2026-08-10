@@ -3,6 +3,14 @@ OpenSearch Summary Service
 
 Handles indexing, searching, and analytics for AI-generated summaries
 stored in OpenSearch for advanced search capabilities.
+
+Every method here is **synchronous**, like the rest of the OpenSearch plane
+(``app/services/opensearch_service/``): ``opensearchpy.OpenSearch`` is a blocking
+client. These used to be ``async def`` with no ``await`` inside, which meant an
+``await`` on them never yielded — the event loop stayed blocked for the whole
+round trip and Celery callers paid for a throwaway loop per call via
+``asyncio.run`` (issue #320). Callers that live on the event loop must declare
+themselves ``def`` so Starlette runs them in its threadpool.
 """
 
 import datetime
@@ -92,7 +100,7 @@ class OpenSearchSummaryService:
         except Exception as e:
             logger.error(f"Error creating summary index: {e}")
 
-    async def index_summary(self, summary_data: dict[str, Any]) -> str | None:
+    def index_summary(self, summary_data: dict[str, Any]) -> str | None:
         """
         Index a summary document in OpenSearch with flexible structure support.
 
@@ -154,7 +162,7 @@ class OpenSearchSummaryService:
             )
             return None
 
-    async def get_summary(self, document_id: str) -> dict[str, Any] | None:
+    def get_summary(self, document_id: str) -> dict[str, Any] | None:
         """
         Retrieve a summary document by ID with flexible structure.
 
@@ -187,7 +195,7 @@ class OpenSearchSummaryService:
             logger.error(f"Error retrieving summary: {e}")
             return None
 
-    async def get_summary_by_file_id(self, file_id: int, user_id: int) -> dict[str, Any] | None:
+    def get_summary_by_file_id(self, file_id: int, user_id: int) -> dict[str, Any] | None:
         """
         Get the latest summary for a specific file with flexible structure support.
 
@@ -247,7 +255,7 @@ class OpenSearchSummaryService:
             logger.error(f"Error getting summary for file {file_id}: {e}")
             return None
 
-    async def search_summaries(
+    def search_summaries(
         self, query: dict[str, Any], user_id: int, size: int = 20, from_: int = 0
     ) -> dict[str, Any]:
         """
@@ -364,7 +372,7 @@ class OpenSearchSummaryService:
             logger.error(f"Error searching summaries: {e}")
             return {"hits": [], "total": 0}
 
-    async def get_summary_analytics(
+    def get_summary_analytics(
         self, user_id: int, filters: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """
@@ -461,7 +469,7 @@ class OpenSearchSummaryService:
             logger.error(f"Error getting summary analytics: {e}")
             return {}
 
-    async def update_summary(self, document_id: str, updates: dict[str, Any]) -> bool:
+    def update_summary(self, document_id: str, updates: dict[str, Any]) -> bool:
         """
         Update a summary document
 
@@ -493,7 +501,7 @@ class OpenSearchSummaryService:
             logger.error(f"Error updating summary: {e}")
             return False
 
-    async def get_max_version(self, file_id: int, user_id: int) -> int:
+    def get_max_version(self, file_id: int, user_id: int) -> int:
         """
         Get the highest version number for a file's summaries
 
@@ -529,7 +537,7 @@ class OpenSearchSummaryService:
             logger.error(f"Failed to get max version for file {file_id}: {e}")
             return 0
 
-    async def delete_summary(self, document_id: str) -> bool:
+    def delete_summary(self, document_id: str) -> bool:
         """
         Delete a summary document
 

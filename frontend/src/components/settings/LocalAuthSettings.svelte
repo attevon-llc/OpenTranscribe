@@ -13,47 +13,62 @@
     return val !== undefined ? val : defaultVal;
   }
 
-  let formData = {
-    local_enabled: getVal('local_enabled', true),
-    allow_registration: getVal('allow_registration', false),
-    // Password policy
-    password_min_length: getVal('password_min_length', 12),
-    password_require_uppercase: getVal('password_require_uppercase', true),
-    password_require_lowercase: getVal('password_require_lowercase', true),
-    password_require_numbers: getVal('password_require_numbers', true),
-    password_require_special: getVal('password_require_special', true),
-    password_max_age_days: getVal('password_max_age_days', 90),
-    password_history_count: getVal('password_history_count', 5),
-    // MFA
-    mfa_enabled: getVal('mfa_enabled', true),
-    mfa_required: getVal('mfa_required', false),
-    mfa_issuer: getVal('mfa_issuer', 'OpenTranscribe'),
-    // Rate limiting
-    max_login_attempts: getVal('max_login_attempts', 5),
-    lockout_duration_minutes: getVal('lockout_duration_minutes', 30)
-  };
+  // Every key below must be the name the BACKEND reads (app/core/auth_settings.py).
+  // Four fields used to write frontend-only aliases — password_require_numbers,
+  // mfa_issuer, max_login_attempts, lockout_duration_minutes — which were stored
+  // faithfully and then never consulted by anything, so the panel silently did
+  // nothing. Defaults below mirror the backend's coded defaults so a fresh
+  // install shows the truth rather than an invented policy.
+  function defaults() {
+    return {
+      local_enabled: getVal('local_enabled', true),
+      allow_registration: getVal('allow_registration', true),
+      // Both default false, matching the backend: turning either on is an opt-in
+      // policy change, not something an upgrade should apply to a running
+      // deployment and strand everybody behind.
+      require_email_verification: getVal('require_email_verification', false),
+      require_account_approval: getVal('require_account_approval', false),
+      // Password policy
+      password_min_length: getVal('password_min_length', 12),
+      password_require_uppercase: getVal('password_require_uppercase', true),
+      password_require_lowercase: getVal('password_require_lowercase', true),
+      password_require_digit: getVal('password_require_digit', true),
+      password_require_special: getVal('password_require_special', true),
+      password_max_age_days: getVal('password_max_age_days', 60),
+      // FedRAMP IA-5 requires 24 remembered passwords, not 5.
+      password_history_count: getVal('password_history_count', 24),
+      // MFA
+      mfa_enabled: getVal('mfa_enabled', false),
+      mfa_required: getVal('mfa_required', false),
+      mfa_issuer_name: getVal('mfa_issuer_name', 'OpenTranscribe'),
+      mfa_backup_code_count: getVal('mfa_backup_code_count', 10),
+      mfa_token_expire_minutes: getVal('mfa_token_expire_minutes', 5),
+      // Account lockout
+      account_lockout_enabled: getVal('account_lockout_enabled', true),
+      account_lockout_threshold: getVal('account_lockout_threshold', 5),
+      account_lockout_duration_minutes: getVal('account_lockout_duration_minutes', 15),
+      account_lockout_progressive: getVal('account_lockout_progressive', true),
+      account_lockout_max_duration_minutes: getVal('account_lockout_max_duration_minutes', 1440),
+      // Login banner (FedRAMP AC-8) — enforced at login, not merely displayed.
+      login_banner_enabled: getVal('login_banner_enabled', false),
+      login_banner_text: getVal('login_banner_text', ''),
+      login_banner_classification: getVal('login_banner_classification', 'UNCLASSIFIED')
+    };
+  }
+
+  let formData = defaults();
 
   let saving = false;
 
   // Update formData when config changes
   $: if (config) {
-    formData = {
-      local_enabled: getVal('local_enabled', true),
-      allow_registration: getVal('allow_registration', false),
-      password_min_length: getVal('password_min_length', 12),
-      password_require_uppercase: getVal('password_require_uppercase', true),
-      password_require_lowercase: getVal('password_require_lowercase', true),
-      password_require_numbers: getVal('password_require_numbers', true),
-      password_require_special: getVal('password_require_special', true),
-      password_max_age_days: getVal('password_max_age_days', 90),
-      password_history_count: getVal('password_history_count', 5),
-      mfa_enabled: getVal('mfa_enabled', true),
-      mfa_required: getVal('mfa_required', false),
-      mfa_issuer: getVal('mfa_issuer', 'OpenTranscribe'),
-      max_login_attempts: getVal('max_login_attempts', 5),
-      lockout_duration_minutes: getVal('lockout_duration_minutes', 30)
-    };
+    formData = defaults();
   }
+
+  // Server-side refusal: self-registration creates a LOCAL password account, so
+  // it cannot be enabled while local password login is off. Warn before saving
+  // rather than letting the save bounce.
+  $: registrationConflict = formData.allow_registration && !formData.local_enabled;
 
   function handleChange() {
     dispatch('change');
@@ -72,7 +87,7 @@
     }
     if (formData.password_require_uppercase) requirements.push($t('settings.localAuth.uppercase'));
     if (formData.password_require_lowercase) requirements.push($t('settings.localAuth.lowercase'));
-    if (formData.password_require_numbers) requirements.push($t('settings.localAuth.numbers'));
+    if (formData.password_require_digit) requirements.push($t('settings.localAuth.numbers'));
     if (formData.password_require_special) requirements.push($t('settings.localAuth.specialChars'));
     return requirements.join(', ');
   }
@@ -88,7 +103,15 @@
       />
       <span class="toggle-text">{$t('settings.localAuth.enableLocal')}</span>
     </label>
+    <span class="help-text">{$t('settings.localAuth.enableLocalHelp')}</span>
   </div>
+
+  {#if registrationConflict}
+    <!-- Lives outside the greyed-out registration section on purpose: that
+         section is dimmed and pointer-events:none the moment local login is
+         switched off, which is exactly when this warning matters. -->
+    <p class="warning-banner" role="alert">{$t('settings.localAuth.registrationRequiresLocal')}</p>
+  {/if}
 
   <div class="section" class:disabled={!formData.local_enabled}>
     <h3>{$t('settings.localAuth.registrationSettings')}</h3>
@@ -103,6 +126,44 @@
       <span>{$t('settings.localAuth.allowSelfRegistration')}</span>
     </label>
     <span class="help-text indented">{$t('settings.localAuth.selfRegistrationHelp')}</span>
+
+    <!-- Local-login specific: the gate lives in the password login path
+         (`assert_email_verified_for_local_login`), which is why it is dimmed with
+         the rest of this section when local passwords are off. -->
+    <label class="checkbox-label">
+      <input
+        type="checkbox"
+        bind:checked={formData.require_email_verification}
+        on:change={handleChange}
+        disabled={!formData.local_enabled}
+      />
+      <span>{$t('settings.localAuth.requireEmailVerification')}</span>
+    </label>
+    <span class="help-text indented">{$t('settings.localAuth.requireEmailVerificationHelp')}</span>
+  </div>
+
+  <!--
+    Deliberately NOT inside the registration section above: that block is dimmed
+    and `pointer-events: none` when local passwords are off, but approval applies
+    to EVERY newly provisioned account — self-registration and every external-IdP
+    JIT path alike. A deployment that authenticates only through OIDC still needs
+    this switch.
+  -->
+  <div class="section">
+    <h3>{$t('settings.localAuth.accountAdmission')}</h3>
+
+    <label class="checkbox-label">
+      <input
+        type="checkbox"
+        bind:checked={formData.require_account_approval}
+        on:change={handleChange}
+      />
+      <span>{$t('settings.localAuth.requireAccountApproval')}</span>
+    </label>
+    <span class="help-text indented">{$t('settings.localAuth.requireAccountApprovalHelp')}</span>
+    {#if formData.require_account_approval}
+      <p class="info-note">{$t('settings.localAuth.requireAccountApprovalQueueHint')}</p>
+    {/if}
   </div>
 
   <div class="section" class:disabled={!formData.local_enabled}>
@@ -149,7 +210,7 @@
       <label class="checkbox-label">
         <input
           type="checkbox"
-          bind:checked={formData.password_require_numbers}
+          bind:checked={formData.password_require_digit}
           on:change={handleChange}
           disabled={!formData.local_enabled}
         />
@@ -226,16 +287,46 @@
         <span class="help-text indented">{$t('settings.localAuth.requireMfaHelp')}</span>
 
         <div class="form-group">
-          <label for="mfa_issuer">{$t('settings.localAuth.mfaIssuerName')}</label>
+          <label for="mfa_issuer_name">{$t('settings.localAuth.mfaIssuerName')}</label>
           <input
-            id="mfa_issuer"
+            id="mfa_issuer_name"
             type="text"
-            bind:value={formData.mfa_issuer}
+            bind:value={formData.mfa_issuer_name}
             on:input={handleChange}
             placeholder="OpenTranscribe"
             disabled={!formData.local_enabled}
           />
           <span class="help-text">{$t('settings.localAuth.mfaIssuerHelp')}</span>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="mfa_backup_code_count">{$t('settings.localAuth.mfaBackupCodeCount')}</label>
+            <input
+              id="mfa_backup_code_count"
+              type="number"
+              bind:value={formData.mfa_backup_code_count}
+              on:input={handleChange}
+              min="1"
+              max="50"
+              disabled={!formData.local_enabled}
+            />
+            <span class="help-text">{$t('settings.localAuth.mfaBackupCodeCountHelp')}</span>
+          </div>
+
+          <div class="form-group">
+            <label for="mfa_token_expire_minutes">{$t('settings.localAuth.mfaTokenExpiry')}</label>
+            <input
+              id="mfa_token_expire_minutes"
+              type="number"
+              bind:value={formData.mfa_token_expire_minutes}
+              on:input={handleChange}
+              min="1"
+              max="60"
+              disabled={!formData.local_enabled}
+            />
+            <span class="help-text">{$t('settings.localAuth.mfaTokenExpiryHelp')}</span>
+          </div>
         </div>
       </div>
     {/if}
@@ -244,35 +335,119 @@
   <div class="section" class:disabled={!formData.local_enabled}>
     <h3>{$t('settings.localAuth.accountLockout')}</h3>
 
-    <div class="form-row">
-      <div class="form-group">
-        <label for="max_login_attempts">{$t('settings.localAuth.maxLoginAttempts')}</label>
+    <label class="checkbox-label">
+      <input
+        type="checkbox"
+        bind:checked={formData.account_lockout_enabled}
+        on:change={handleChange}
+        disabled={!formData.local_enabled}
+      />
+      <span>{$t('settings.localAuth.lockoutEnabled')}</span>
+    </label>
+    <span class="help-text indented">{$t('settings.localAuth.lockoutEnabledHelp')}</span>
+
+    {#if formData.account_lockout_enabled}
+      <div class="form-row">
+        <div class="form-group">
+          <label for="account_lockout_threshold">{$t('settings.localAuth.maxLoginAttempts')}</label>
+          <input
+            id="account_lockout_threshold"
+            type="number"
+            bind:value={formData.account_lockout_threshold}
+            on:input={handleChange}
+            min="3"
+            max="20"
+            disabled={!formData.local_enabled}
+          />
+          <span class="help-text">{$t('settings.localAuth.maxLoginAttemptsHelp')}</span>
+        </div>
+
+        <div class="form-group">
+          <label for="account_lockout_duration_minutes">{$t('settings.localAuth.lockoutDuration')}</label>
+          <input
+            id="account_lockout_duration_minutes"
+            type="number"
+            bind:value={formData.account_lockout_duration_minutes}
+            on:input={handleChange}
+            min="1"
+            max="1440"
+            disabled={!formData.local_enabled}
+          />
+          <span class="help-text">{$t('settings.localAuth.lockoutDurationHelp')}</span>
+        </div>
+      </div>
+
+      <label class="checkbox-label">
         <input
-          id="max_login_attempts"
-          type="number"
-          bind:value={formData.max_login_attempts}
-          on:input={handleChange}
-          min="3"
-          max="20"
+          type="checkbox"
+          bind:checked={formData.account_lockout_progressive}
+          on:change={handleChange}
           disabled={!formData.local_enabled}
         />
-        <span class="help-text">{$t('settings.localAuth.maxLoginAttemptsHelp')}</span>
+        <span>{$t('settings.localAuth.lockoutProgressive')}</span>
+      </label>
+      <span class="help-text indented">{$t('settings.localAuth.lockoutProgressiveHelp')}</span>
+
+      {#if formData.account_lockout_progressive}
+        <div class="form-group">
+          <label for="account_lockout_max_duration_minutes">{$t('settings.localAuth.lockoutMaxDuration')}</label>
+          <input
+            id="account_lockout_max_duration_minutes"
+            type="number"
+            bind:value={formData.account_lockout_max_duration_minutes}
+            on:input={handleChange}
+            min="1"
+            max="525600"
+            disabled={!formData.local_enabled}
+          />
+          <span class="help-text">{$t('settings.localAuth.lockoutMaxDurationHelp')}</span>
+        </div>
+      {/if}
+    {/if}
+  </div>
+
+  <!--
+    Not gated on formData.local_enabled: the banner is enforced for every user
+    regardless of how they authenticate (FedRAMP AC-8), so it stays interactive
+    even on an SSO-only deployment.
+  -->
+  <div class="section">
+    <h3>{$t('settings.localAuth.loginBannerTitle')}</h3>
+
+    <label class="checkbox-label">
+      <input
+        type="checkbox"
+        bind:checked={formData.login_banner_enabled}
+        on:change={handleChange}
+      />
+      <span>{$t('settings.localAuth.loginBannerEnable')}</span>
+    </label>
+    <span class="help-text indented">{$t('settings.localAuth.loginBannerEnableHelp')}</span>
+
+    {#if formData.login_banner_enabled}
+      <div class="form-group">
+        <label for="login_banner_classification">{$t('settings.localAuth.loginBannerClassification')}</label>
+        <input
+          id="login_banner_classification"
+          type="text"
+          bind:value={formData.login_banner_classification}
+          on:input={handleChange}
+          placeholder="UNCLASSIFIED"
+        />
       </div>
 
       <div class="form-group">
-        <label for="lockout_duration_minutes">{$t('settings.localAuth.lockoutDuration')}</label>
-        <input
-          id="lockout_duration_minutes"
-          type="number"
-          bind:value={formData.lockout_duration_minutes}
+        <label for="login_banner_text">{$t('settings.localAuth.loginBannerText')}</label>
+        <textarea
+          id="login_banner_text"
+          bind:value={formData.login_banner_text}
           on:input={handleChange}
-          min="1"
-          max="1440"
-          disabled={!formData.local_enabled}
-        />
-        <span class="help-text">{$t('settings.localAuth.lockoutDurationHelp')}</span>
+          rows="6"
+          maxlength="10000"
+        ></textarea>
+        <span class="help-text">{$t('settings.localAuth.loginBannerTextHelp')}</span>
       </div>
-    </div>
+    {/if}
   </div>
 
   <div class="actions">
@@ -315,6 +490,17 @@
     font-size: 1rem;
   }
 
+  .warning-banner {
+    margin: 0 0 1.5rem 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    border-radius: 6px;
+    background: rgba(245, 158, 11, 0.12);
+    color: var(--color-text);
+    font-size: 0.8125rem;
+    line-height: 1.45;
+  }
+
   .section {
     margin-bottom: 2rem;
     padding: 1rem;
@@ -335,6 +521,17 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-text-secondary);
+  }
+
+  .info-note {
+    margin: 0.5rem 0 0 1.5rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--color-info-border, rgba(var(--primary-color-rgb), 0.3));
+    border-radius: 6px;
+    background: var(--color-info-bg, rgba(var(--primary-color-rgb), 0.08));
+    color: var(--color-text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.5;
   }
 
   .policy-preview {
@@ -370,7 +567,8 @@
   }
 
   .form-group input[type="text"],
-  .form-group input[type="number"] {
+  .form-group input[type="number"],
+  .form-group textarea {
     width: 100%;
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--color-border);
@@ -378,9 +576,12 @@
     background: var(--color-bg);
     color: var(--color-text);
     font-size: 0.875rem;
+    font-family: inherit;
+    resize: vertical;
   }
 
-  .form-group input:focus {
+  .form-group input:focus,
+  .form-group textarea:focus {
     outline: none;
     border-color: var(--color-primary);
     box-shadow: 0 0 0 2px var(--color-primary-alpha);

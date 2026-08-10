@@ -52,6 +52,8 @@ repos:
           # Mapped[...] columns resolve to real types (not Column[Any]); this is
           # what makes the typed-models conversion's type info visible to mypy.
           - sqlalchemy>=2.0
+          # joserfc ships py.typed (app/auth/oidc/claims.py, #33) — same reason.
+          - joserfc>=1.7.4
         args: [--ignore-missing-imports, --check-untyped-defs]
 
   # Frontend formatting with Prettier

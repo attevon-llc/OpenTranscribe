@@ -12,18 +12,27 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
+from fastapi import Response
 from fastapi import status
 from sqlalchemy import and_
+from sqlalchemy import false as sa_false
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
+from app.api.endpoints.auth import get_current_active_superuser
 from app.api.endpoints.auth import get_current_admin_user
+from app.api.endpoints.auth.dependencies import _get_client_info
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.lockout import unlock_account as lockout_unlock_account
+from app.auth.password_history import add_password_to_history
+from app.auth.password_history import check_password_against_history
+from app.auth.password_policy import password_expiry_cutoff
+from app.auth.rate_limit import get_auth_rate_limit
+from app.auth.rate_limit import limiter
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
@@ -44,6 +53,7 @@ from app.models.media import Speaker
 from app.models.media import SpeakerCollection
 from app.models.media import SpeakerCollectionMember
 from app.models.media import SpeakerProfile
+from app.models.media import Tag
 from app.models.media import Task as TaskModel
 from app.models.media import TranscriptSegment
 from app.models.prompt import SummaryPrompt
@@ -55,6 +65,8 @@ from app.schemas.admin import CacheConfig
 from app.schemas.admin import CacheConfigUpdate
 from app.schemas.admin import GarbageCleanupConfig
 from app.schemas.admin import GarbageCleanupConfigUpdate
+from app.schemas.admin import LinkExternalIdentityRequest
+from app.schemas.admin import LinkExternalIdentityResponse
 from app.schemas.admin import MediaSource
 from app.schemas.admin import MediaSourceCreate
 from app.schemas.admin import MediaSourcesList
@@ -75,6 +87,11 @@ from app.schemas.user import AdminPasswordResetRequest
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.services import system_settings_service
+from app.services.account_security_service import assert_password_auth_possible
+from app.services.account_security_service import audit_password_change
+from app.services.account_security_service import audit_role_change
+from app.services.account_security_service import enforce_password_policy
+from app.services.account_security_service import revoke_all_sessions
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -101,7 +118,7 @@ def get_system_uptime():
         else:
             return f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
     except Exception as e:
-        logger.error(f"Error getting system uptime: {e}")
+        logger.exception(f"Error getting system uptime: {e}")
         return "Unknown"
 
 
@@ -119,7 +136,7 @@ def get_memory_usage():
             "percent": f"{memory.percent}%",
         }
     except Exception as e:
-        logger.error(f"Error getting memory usage: {e}")
+        logger.exception(f"Error getting memory usage: {e}")
         return {
             "total": "Unknown",
             "available": "Unknown",
@@ -148,7 +165,7 @@ def get_cpu_usage():
             "physical_cores": physical_cores,
         }
     except Exception as e:
-        logger.error(f"Error getting CPU usage: {e}")
+        logger.exception(f"Error getting CPU usage: {e}")
         return {
             "total_percent": "Unknown",
             "per_cpu": [],
@@ -175,7 +192,7 @@ def get_disk_usage():
             "percent": f"{disk.percent}%",
         }
     except Exception as e:
-        logger.error(f"Error getting disk usage: {e}")
+        logger.exception(f"Error getting disk usage: {e}")
         return {
             "total": "Unknown",
             "used": "Unknown",
@@ -270,7 +287,7 @@ def get_gpu_usage():
             }
         ]
     except Exception as e:
-        logger.error(f"Error getting GPU usage from Redis: {e}")
+        logger.exception(f"Error getting GPU usage from Redis: {e}")
         return [
             {
                 "available": False,
@@ -325,8 +342,8 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     """Delete all user-owned records that are not covered by DB-level CASCADE.
 
     Cleans up: SpeakerProfile, SpeakerCollection (+ members), Collection (+ members),
-    Comment, and Task records. Must be called BEFORE deleting MediaFile rows since
-    some of these tables have FK references to media_file.
+    Comment, Task, SummaryPrompt, and Tag records. Must be called BEFORE deleting
+    MediaFile rows since some of these tables have FK references to media_file.
     """
     # Speaker collections and their members
     sc_ids = [
@@ -392,6 +409,17 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     )
     if prompts_deleted:
         logger.info(f"Deleted {prompts_deleted} summary prompts for user {user_id}")
+
+    # Tags owned by the user (v374). tag.user_id is a plain FK, so the rows must
+    # go before the user row or the delete fails. Detach them first: a tag of
+    # theirs may hang off ANOTHER user's file (they tagged a file shared with
+    # them), and file_tag.tag_id has no ON DELETE clause. System tags
+    # (user_id IS NULL) are shared vocabulary and are never touched.
+    tag_ids = [t.id for t in db.query(Tag.id).filter(Tag.user_id == user_id).all()]
+    if tag_ids:
+        db.query(FileTag).filter(FileTag.tag_id.in_(tag_ids)).delete(synchronize_session=False)
+        db.query(Tag).filter(Tag.user_id == user_id).delete(synchronize_session=False)
+        logger.info(f"Deleted {len(tag_ids)} tags for user {user_id}")
 
 
 def _delete_user_media_files(db: Session, user_id: int) -> None:
@@ -491,7 +519,7 @@ async def get_admin_stats(
         try:
             system_stats = await asyncio.to_thread(_collect_system_stats)
         except Exception as e:
-            logger.error(f"Error getting system stats: {e}")
+            logger.exception(f"Error getting system stats: {e}")
             system_stats = {
                 "cpu": {
                     "total_percent": "Unknown",
@@ -709,7 +737,7 @@ def delete_admin_user(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"User deletion failed, all changes rolled back: {e}")
+        logger.exception(f"User deletion failed, all changes rolled back: {e}")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -718,7 +746,7 @@ def delete_admin_user(
 
 
 @router.get("/settings/retry-config", response_model=RetryConfig)
-async def get_retry_configuration(
+def get_retry_configuration(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> RetryConfig:
@@ -735,7 +763,7 @@ async def get_retry_configuration(
 
 
 @router.put("/settings/retry-config", response_model=RetryConfig)
-async def update_retry_configuration(
+def update_retry_configuration(
     config: RetryConfigUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -761,7 +789,7 @@ async def update_retry_configuration(
 
 
 @router.get("/settings/garbage-cleanup", response_model=GarbageCleanupConfig)
-async def get_garbage_cleanup_configuration(
+def get_garbage_cleanup_configuration(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> GarbageCleanupConfig:
@@ -778,7 +806,7 @@ async def get_garbage_cleanup_configuration(
 
 
 @router.put("/settings/garbage-cleanup", response_model=GarbageCleanupConfig)
-async def update_garbage_cleanup_configuration(
+def update_garbage_cleanup_configuration(
     config: GarbageCleanupConfigUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -828,7 +856,7 @@ def _get_retention_eligible_files(db: Session, retention_days: int, delete_error
 
 
 @router.get("/settings/retention-config", response_model=RetentionConfig)
-async def get_retention_configuration(
+def get_retention_configuration(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> RetentionConfig:
@@ -850,7 +878,7 @@ async def get_retention_configuration(
 
 
 @router.put("/settings/retention-config", response_model=RetentionConfig)
-async def update_retention_configuration(
+def update_retention_configuration(
     config: RetentionConfigUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -879,7 +907,7 @@ async def update_retention_configuration(
 
 
 @router.get("/settings/cache-config", response_model=CacheConfig)
-async def get_cache_configuration(
+def get_cache_configuration(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> CacheConfig:
@@ -899,7 +927,7 @@ async def get_cache_configuration(
 
 
 @router.put("/settings/cache-config", response_model=CacheConfig)
-async def update_cache_configuration(
+def update_cache_configuration(
     config: CacheConfigUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -919,7 +947,7 @@ async def update_cache_configuration(
 
 
 @router.post("/settings/cache-config/clear", response_model=CacheClearResponse)
-async def clear_cache_now(
+def clear_cache_now(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> CacheClearResponse:
@@ -935,7 +963,7 @@ async def clear_cache_now(
 
 
 @router.get("/settings/retention-config/preview", response_model=RetentionPreviewResponse)
-async def preview_retention_deletion(
+def preview_retention_deletion(
     retention_days: int = Query(..., ge=1, le=3650, description="Retention window in days"),
     delete_error_files: bool = Query(False, description="Include error-status files"),
     db: Session = Depends(get_db),
@@ -996,7 +1024,7 @@ async def preview_retention_deletion(
 
 
 @router.post("/settings/retention-config/run", response_model=RetentionRunResponse)
-async def trigger_retention_run(
+def trigger_retention_run(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> RetentionRunResponse:
@@ -1025,7 +1053,7 @@ async def trigger_retention_run(
 
 
 @router.get("/settings/retention-config/status", response_model=RetentionConfig)
-async def get_retention_status(
+def get_retention_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> RetentionConfig:
@@ -1043,7 +1071,7 @@ async def get_retention_status(
 
 
 @router.get("/settings/media-sources", response_model=MediaSourcesList)
-async def get_media_sources(
+def get_media_sources(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> MediaSourcesList:
@@ -1053,7 +1081,7 @@ async def get_media_sources(
 
 
 @router.post("/settings/media-sources", response_model=MediaSource)
-async def add_media_source(
+def add_media_source(
     source: MediaSourceCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -1104,7 +1132,7 @@ async def add_media_source(
 
 
 @router.put("/settings/media-sources/{source_id}", response_model=MediaSource)
-async def update_media_source(
+def update_media_source(
     source_id: str,
     update: MediaSourceUpdate,
     db: Session = Depends(get_db),
@@ -1142,7 +1170,7 @@ async def update_media_source(
 
 
 @router.delete("/settings/media-sources/{source_id}")
-async def delete_media_source(
+def delete_media_source(
     source_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -1179,22 +1207,24 @@ def _reload_protected_media_providers():
 
 
 # ============== Super Admin Role Verification ==============
-
-
-def get_current_super_admin_user(
-    current_user: User = Depends(get_current_admin_user),
-) -> User:
-    """Verify user has super_admin role."""
-    if current_user.role != "super_admin":
-        raise HTTPException(status_code=403, detail="Super admin access required")
-    return current_user
+#
+# Re-exported for backwards compatibility with the ~20 call sites in this module.
+# The definition lives in api/endpoints/auth/dependencies.py alongside
+# get_current_user / get_current_admin_user — it was declared here AND in
+# auth_config.py, each re-implementing the same check with its own "super_admin"
+# string literal instead of roles.ROLE_SUPER_ADMIN. Three copies of an
+# authorization rule is three chances for one of them to drift.
+get_current_super_admin_user = get_current_active_superuser
 
 
 # ============== Account Management (FedRAMP AC-2) ==============
 
 
 @router.post("/users/{user_uuid}/reset-password")
-async def admin_reset_user_password(
+@limiter.limit(get_auth_rate_limit())
+def admin_reset_user_password(
+    request: Request,
+    response: Response,
     user_uuid: str,
     request_body: AdminPasswordResetRequest,
     db: Session = Depends(get_db),
@@ -1204,44 +1234,73 @@ async def admin_reset_user_password(
 
     Security: Password is passed in request body (not query parameter) to prevent
     exposure in server logs, browser history, and HTTP referrer headers.
+
+    This path used to skip every control its sibling in ``users.py`` applies: it
+    set a hash on ANY account regardless of ``auth_type`` (planting a local
+    password on a directory-managed row), bypassed the password policy and the
+    reuse history in both directions, and left the target's existing sessions
+    alive — so an admin resetting a compromised account did not actually evict
+    the attacker.
     """
+    client_ip, user_agent = _get_client_info(request)
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.hashed_password = get_password_hash(request_body.new_password)  # type: ignore[assignment]
+    assert_password_auth_possible(user)
+    enforce_password_policy(request_body.new_password, user)
+
+    if not check_password_against_history(db, user.id, request_body.new_password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password has been used recently. Please choose a different password.",
+        )
+
+    new_hash = get_password_hash(request_body.new_password)
+    user.hashed_password = new_hash  # type: ignore[assignment]
     user.must_change_password = request_body.force_change  # type: ignore[assignment]
     user.password_changed_at = datetime.now(UTC)  # type: ignore[assignment]
+    add_password_to_history(db, user.id, new_hash)
+    revoke_all_sessions(db, user, reason="admin password reset")
     db.commit()
 
-    audit_logger.log(
-        event_type=AuditEventType.ADMIN_USER_UPDATE,
-        user_id=current_user.id,
-        username=str(current_user.email),
-        outcome=AuditOutcome.SUCCESS,
-        details={
-            "action": "password_reset",
-            "target_user": user_uuid,
-            "force_change": request_body.force_change,
-        },
+    audit_password_change(
+        user, current_user, client_ip, user_agent, forced=request_body.force_change
     )
 
     return {"success": True}
 
 
 @router.post("/users/{user_uuid}/unlock")
-async def admin_unlock_account(
+def admin_unlock_account(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Admin unlock of locked account."""
+    """Admin unlock of a locked account — the true inverse of ``/lock``.
+
+    Two different things can stop a user signing in, and this endpoint clears
+    both:
+
+    * the **failed-login lockout** (progressive, per-identifier, in Redis), and
+    * ``is_active = False``, which is what ``/lock`` sets.
+
+    It previously cleared only the first, so an account locked by an admin could
+    not be unlocked by the paired endpoint at all — the only way back was
+    ``PUT /users/{uuid}`` with ``is_active``. Two endpoints named lock/unlock
+    that are not inverses is a trap, not an API.
+    """
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Use the lockout manager to unlock the account
+    # Use the lockout manager to clear the failed-login lockout
     unlocked = lockout_unlock_account(str(user.email))
+
+    was_disabled = not bool(user.is_active)
+    if was_disabled:
+        user.is_active = True  # type: ignore[assignment]
+        db.commit()
 
     audit_logger.log(
         event_type=AuditEventType.AUTH_ACCOUNT_UNLOCK,
@@ -1252,14 +1311,15 @@ async def admin_unlock_account(
             "target_user": user_uuid,
             "unlocked_by": "admin",
             "was_locked": unlocked,
+            "was_disabled": was_disabled,
         },
     )
 
-    return {"success": True, "was_locked": unlocked}
+    return {"success": True, "was_locked": unlocked, "was_disabled": was_disabled}
 
 
 @router.post("/users/{user_uuid}/lock")
-async def admin_lock_account(
+def admin_lock_account(
     user_uuid: str,
     reason: str = Query("Admin action", description="Reason for locking the account"),
     db: Session = Depends(get_db),
@@ -1271,6 +1331,9 @@ async def admin_lock_account(
         raise HTTPException(status_code=404, detail="User not found")
 
     user.is_active = False  # type: ignore[assignment]
+    # Locking an account that keeps a live refresh token is not a lock: token
+    # rotation would carry the session past the lock for its full lifetime.
+    revoke_all_sessions(db, user, reason="account locked by admin")
     db.commit()
 
     audit_logger.log(
@@ -1289,7 +1352,7 @@ async def admin_lock_account(
 
 
 @router.delete("/users/{user_uuid}/sessions")
-async def admin_terminate_user_sessions(
+def admin_terminate_user_sessions(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -1333,7 +1396,7 @@ async def admin_terminate_user_sessions(
 
 
 @router.get("/users/{user_uuid}/sessions")
-async def admin_get_user_sessions(
+def admin_get_user_sessions(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -1368,13 +1431,15 @@ async def admin_get_user_sessions(
 
 
 @router.put("/users/{user_uuid}/role")
-async def admin_change_user_role(
+def admin_change_user_role(
+    request: Request,
     user_uuid: str,
     new_role: str = Query(..., description="New role for the user (user, admin, super_admin)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
 ):
     """Change user role. Only super_admin can promote to super_admin."""
+    client_ip, user_agent = _get_client_info(request)
     if new_role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
 
@@ -1385,32 +1450,118 @@ async def admin_change_user_role(
     if str(user.uuid) == str(current_user.uuid):
         raise HTTPException(status_code=400, detail="Cannot change your own role")
 
+    from app.api.endpoints.users import _assert_not_last_super_admin
+
+    _assert_not_last_super_admin(db, user, new_role)
+
     old_role = user.role
     user.role = new_role  # type: ignore[assignment]
     # Keep is_superuser in sync with role (derived; v369 CHECK enforces it).
     user.is_superuser = role_implies_superuser(new_role)
+    # A role change is usually a reaction to something; the target's existing
+    # sessions must not outlive it.
+    revoke_all_sessions(db, user, reason="role change")
     db.commit()
 
+    audit_role_change(user, current_user, str(old_role), new_role, client_ip, user_agent)
+
+    return {"success": True, "old_role": old_role, "new_role": new_role}
+
+
+#: Column each linkable provider's identifier lives on. Mirrors
+#: `auth/account_linking.py`'s lookup order (provider id first, email second) —
+#: setting this column is what makes a *subsequent* login match here instead of
+#: ever reaching the email-match branch that provider's `email_verified` posture
+#: might refuse.
+_LINK_IDENTITY_COLUMN = {
+    "oidc": "oidc_subject",
+    "ldap": "ldap_uid",
+    "pki": "pki_subject_dn",
+}
+
+
+@router.put("/users/{user_uuid}/link-identity", response_model=LinkExternalIdentityResponse)
+def admin_link_external_identity(
+    request: Request,
+    user_uuid: str,
+    payload: LinkExternalIdentityRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin_user),
+) -> LinkExternalIdentityResponse:
+    """Deliberately link an account to an external identity (P1.3).
+
+    The operator remedy `auth/account_linking.py` documents but that, until this
+    endpoint, did not exist: when an IdP cannot assert `email_verified` —
+    Authentik hardcodes it `false` for every account — the automatic email-match
+    link is refused, by design, and the login just fails. This is the explicit
+    alternative: a super_admin sets the provider's own identifier on the
+    account, so the identity resolves by that identifier on the very next login
+    and the email-match branch (and its refusal) is never reached at all.
+
+    Never for a `super_admin` target — that account is local-only by
+    architectural invariant, the break-glass account for exactly the IdP that
+    might be failing, and linking it to an external identity would make it
+    reachable through the login path it exists to survive.
+    """
+    client_ip, user_agent = _get_client_info(request)
+
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if str(user.role) == ROLE_SUPER_ADMIN:
+        raise HTTPException(
+            status_code=400,
+            detail="super_admin accounts are local-only and cannot be linked to an external identity",
+        )
+
+    column = _LINK_IDENTITY_COLUMN[payload.provider]
+    conflict = (
+        db.query(User)
+        .filter(getattr(User, column) == payload.identifier)
+        .filter(User.id != user.id)
+        .first()
+    )
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail=f"That {payload.provider} identifier is already linked to another account",
+        )
+
+    setattr(user, column, payload.identifier)
+    db.commit()
+
+    logger.info(
+        "super_admin %s linked %s identity %s to user %s",
+        current_user.email,
+        payload.provider,
+        payload.identifier,
+        user.email,
+    )
     audit_logger.log(
-        event_type=AuditEventType.ADMIN_ROLE_CHANGE,
+        event_type=AuditEventType.ADMIN_USER_UPDATE,
+        outcome=AuditOutcome.SUCCESS,
         user_id=current_user.id,
         username=str(current_user.email),
-        outcome=AuditOutcome.SUCCESS,
+        source_ip=client_ip,
+        user_agent=user_agent,
         details={
+            "action": "link_external_identity",
             "target_user": user_uuid,
-            "old_role": old_role,
-            "new_role": new_role,
+            "provider": payload.provider,
         },
     )
 
-    return {"success": True, "old_role": old_role, "new_role": new_role}
+    return LinkExternalIdentityResponse(
+        success=True, provider=payload.provider, identifier=payload.identifier
+    )
 
 
 # ============== MFA Management ==============
 
 
 @router.post("/users/{user_uuid}/mfa/reset")
-async def admin_reset_user_mfa(
+def admin_reset_user_mfa(
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
@@ -1425,6 +1576,9 @@ async def admin_reset_user_mfa(
         mfa_settings.totp_enabled = False  # type: ignore[assignment]
         mfa_settings.totp_secret = None  # type: ignore[assignment]
         mfa_settings.backup_codes = []  # type: ignore[assignment]
+        # Dropping the second factor must not leave sessions that were minted
+        # while it was still in force.
+        revoke_all_sessions(db, user, reason="admin MFA reset")
         db.commit()
 
     audit_logger.log(
@@ -1445,7 +1599,7 @@ async def admin_reset_user_mfa(
 
 
 @router.get("/users/search")
-async def admin_search_users(
+def admin_search_users(
     query: str | None = Query(None, description="Search query for email or name"),
     role: str | None = Query(None, description="Filter by role"),
     auth_type: str | None = Query(None, description="Filter by auth type"),
@@ -1498,17 +1652,23 @@ async def admin_search_users(
 
 
 @router.get("/reports/account-status")
-async def get_account_status_report(
+def get_account_status_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     """Account status summary for compliance reporting."""
-    # Consolidate 3 User COUNT queries into 1 using FILTER clauses
-    expiry_threshold = datetime.now(UTC) - timedelta(days=settings.PASSWORD_MAX_AGE_DAYS)
+    # Consolidate 3 User COUNT queries into 1 using FILTER clauses.
+    # The expiry cutoff comes from the password policy rather than a local
+    # timedelta(PASSWORD_MAX_AGE_DAYS): this report reimplemented the rule that
+    # password_policy already owns, so with PASSWORD_POLICY_ENABLED=false it kept
+    # reporting expired passwords that nothing would ever act on. A None cutoff
+    # means expiry is not enforced, so nothing is expired.
+    expiry_threshold = password_expiry_cutoff()
+    expired_filter = User.password_changed_at < expiry_threshold if expiry_threshold else sa_false()
     user_row = db.query(
         func.count().label("total"),
         func.count().filter(User.is_active.is_(True)).label("active"),
-        func.count().filter(User.password_changed_at < expiry_threshold).label("pwd_expired"),
+        func.count().filter(expired_filter).label("pwd_expired"),
     ).one()
 
     # MFA is a separate table, so one more query
@@ -1590,18 +1750,9 @@ def export_audit_logs(
     try:
         from opensearchpy import OpenSearch
 
-        client = OpenSearch(
-            hosts=[
-                {
-                    "host": settings.OPENSEARCH_HOST,
-                    "port": int(settings.OPENSEARCH_PORT),
-                }
-            ],
-            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
-            use_ssl=settings.OPENSEARCH_USE_TLS,
-            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
-            ssl_show_warn=False,
-        )
+        from app.core.opensearch_auth import opensearch_connection_kwargs
+
+        client = OpenSearch(**opensearch_connection_kwargs())
 
         # Build query
         must_clauses = []
@@ -1696,7 +1847,7 @@ def admin_erase_user(
 
 
 @router.post("/data-integrity")
-async def start_data_integrity_check(
+def start_data_integrity_check(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Start an OpenSearch orphan cleanup task.
@@ -1716,7 +1867,7 @@ async def start_data_integrity_check(
 
 
 @router.get("/data-integrity/status")
-async def get_data_integrity_status(
+def get_data_integrity_status(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Get data integrity check status, last run results, and index overview."""
@@ -1729,7 +1880,7 @@ async def get_data_integrity_status(
 
 
 @router.get("/data-integrity/counts")
-async def get_data_integrity_counts(
+def get_data_integrity_counts(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Quick dry-run scan to count orphaned documents without deleting."""
@@ -1744,7 +1895,7 @@ async def get_data_integrity_counts(
 
 
 @router.get("/embedding-consistency/status")
-async def get_embedding_consistency_status(
+def get_embedding_consistency_status(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Get embedding consistency check status and last run results."""
@@ -1754,7 +1905,7 @@ async def get_embedding_consistency_status(
 
 
 @router.get("/embedding-consistency/counts")
-async def get_embedding_consistency_counts(
+def get_embedding_consistency_counts(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Quick dry-run count of speakers missing from OpenSearch indices."""
@@ -1764,7 +1915,7 @@ async def get_embedding_consistency_counts(
 
 
 @router.post("/embedding-consistency/repair")
-async def start_embedding_consistency_repair(
+def start_embedding_consistency_repair(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Start an embedding consistency repair task."""
@@ -1787,7 +1938,7 @@ async def start_embedding_consistency_repair(
 
 
 @router.get("/gpu-profiles")
-async def get_gpu_profiles(
+def get_gpu_profiles(
     current_user: User = Depends(get_current_admin_user),
     limit: int = Query(default=20, ge=1, le=100),
 ) -> list[dict]:
@@ -1811,11 +1962,12 @@ async def get_gpu_profiles(
                 profiles.append(json.loads(raw))
         return profiles
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read GPU profiles: {e}") from e
+        logger.exception("Failed to read GPU profiles from Redis")
+        raise HTTPException(status_code=500, detail="Failed to read GPU profiles.") from e
 
 
 @router.post("/embedding-consistency/stop")
-async def stop_embedding_consistency_repair(
+def stop_embedding_consistency_repair(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:
     """Cancel a running embedding consistency repair."""
@@ -1825,7 +1977,7 @@ async def stop_embedding_consistency_repair(
 
 
 @router.post("/profile-embeddings/repair")
-async def repair_profile_embeddings(
+def repair_profile_embeddings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict:

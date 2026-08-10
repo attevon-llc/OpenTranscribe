@@ -1,7 +1,7 @@
 /**
  * API client for authentication configuration management.
  */
-import { axiosInstance } from '../axios';
+import axiosInstance from '../axios';
 
 export interface AuthConfigResponse {
   id: number;
@@ -9,6 +9,12 @@ export interface AuthConfigResponse {
   config_key: string;
   config_value: string | null;
   is_sensitive: boolean;
+  /**
+   * Whether a value is stored. A sensitive key always arrives with
+   * `config_value: null` — the secret never reaches the browser — so this is the
+   * only signal for rendering "a secret is configured, leave blank to keep it".
+   */
+  is_set: boolean;
   category: string;
   data_type: string;
   description: string | null;
@@ -21,11 +27,21 @@ export interface AuthConfigAuditResponse {
   id: number;
   uuid: string;
   config_key: string;
+  /** Already redacted server-side for sensitive keys — render as received. */
   old_value: string | null;
+  /** Already redacted server-side for sensitive keys — render as received. */
   new_value: string | null;
+  /** `create` | `update` | `delete`. */
   change_type: string;
   ip_address: string | null;
   created_at: string;
+  /**
+   * Actor. `auth_config_audit.changed_by` is recorded in Postgres but
+   * `AuthConfigAuditResponse` (backend/app/schemas/auth_config.py) does not expose
+   * it, so the API never sends this today. Optional so the panel lights the
+   * column up on its own once the backend serialises the actor.
+   */
+  changed_by_email?: string | null;
 }
 
 export interface AuthMethodTestResponse {
@@ -55,20 +71,48 @@ export interface LDAPConfig {
   ldap_group_attr: string;
 }
 
-export interface KeycloakConfig {
-  keycloak_enabled: boolean;
-  keycloak_server_url: string;
-  keycloak_internal_url: string;
-  keycloak_realm: string;
-  keycloak_client_id: string;
-  keycloak_client_secret?: string;
-  keycloak_callback_url: string;
-  keycloak_admin_role: string;
-  keycloak_timeout: number;
-  keycloak_verify_audience: boolean;
-  keycloak_audience: string;
-  keycloak_use_pkce: boolean;
-  keycloak_verify_issuer: boolean;
+/** Mirrors `backend/app/schemas/auth_config.py:OIDCConfig` — same names, same order. */
+export interface OIDCConfig {
+  oidc_enabled: boolean;
+  oidc_server_url: string;
+  oidc_internal_url: string;
+  /**
+   * Full `.well-known/openid-configuration` URL. When set it REPLACES the
+   * realm-based endpoint construction entirely and `oidc_realm` is ignored.
+   * `<server>/realms/<realm>/protocol/openid-connect/...` is one vendor's URL
+   * shape; Authentik and others 404 on it (issue #353).
+   */
+  oidc_discovery_url: string;
+  /** Only used when no discovery URL is set. */
+  oidc_realm: string;
+  oidc_client_id: string;
+  /** Never sent by the API — `null` on the wire, `is_set` carries the signal. */
+  oidc_client_secret?: string | null;
+  oidc_callback_url: string;
+  oidc_admin_role: string;
+  /** Dotted path to the claim carrying group/role membership. */
+  oidc_roles_claim: string;
+  /** Optional issuer override; normally taken from the discovery document. */
+  oidc_issuer: string;
+  oidc_scopes: string;
+  /**
+   * Semicolon-delimited values read from `oidc_roles_claim` that a login must
+   * carry at least one of. **An empty list admits everyone** — that is what JIT
+   * provisioning did unconditionally before this existed, so empty is the
+   * upgrade-safe default rather than a lockout.
+   *
+   * Semicolons, not commas: a directory DN (`CN=Legal,OU=Groups,DC=example,DC=com`)
+   * contains commas, so a comma-delimited list would split one group into four
+   * values that match nothing.
+   */
+  oidc_allowed_groups: string;
+  /** Semicolon-delimited values that DENY access, evaluated before the allow-list. */
+  oidc_blocked_groups: string;
+  oidc_timeout: number;
+  oidc_verify_audience: boolean;
+  oidc_audience: string;
+  oidc_use_pkce: boolean;
+  oidc_verify_issuer: boolean;
 }
 
 export interface PKIConfig {
@@ -86,6 +130,58 @@ export interface PKIConfig {
   pki_allow_password_fallback: boolean;
 }
 
+/** Mirrors `backend/app/schemas/auth_config.py:ProxyAuthConfig` — same names, same order. */
+export interface ProxyConfig {
+  proxy_enabled: boolean;
+  /**
+   * Comma-separated IPs/CIDRs. Empty refuses every header-sourced assertion —
+   * same fail-closed shape as `PKIConfig.pki_trusted_proxies`.
+   */
+  proxy_trusted_proxies: string;
+  proxy_email_header: string;
+  proxy_name_header: string;
+  /** No default on the backend — an absent header means "manage no groups". */
+  proxy_groups_header: string;
+  proxy_groups_separator: string;
+  /** Empty = header-driven privilege is off. Capped at `admin` server-side. */
+  proxy_role_header: string;
+  /** Never sent by the API — `null` on the wire, `is_set` carries the signal. */
+  proxy_shared_secret?: string | null;
+  proxy_allowed_domains: string;
+  proxy_jit_provisioning: boolean;
+}
+
+/** Mirrors `backend/app/schemas/auth_config.py:SAMLConfig` — same names, same order. */
+export interface SAMLConfig {
+  saml_enabled: boolean;
+  saml_sp_entity_id: string;
+  saml_sp_acs_url: string;
+  saml_sp_sls_url: string;
+  /** Public — safe to display. Only required when signing/encryption is on. */
+  saml_sp_x509_cert: string;
+  /** Never sent by the API — `null` on the wire, `is_set` carries the signal. */
+  saml_sp_private_key?: string | null;
+  saml_idp_entity_id: string;
+  saml_idp_sso_url: string;
+  saml_idp_slo_url: string;
+  /**
+   * The IdP's own signing certificate — what makes assertion signature
+   * verification real. Not sensitive (public key material the IdP itself
+   * publishes), but required before SAML can be enabled at all.
+   */
+  saml_idp_x509_cert: string;
+  saml_want_assertions_signed: boolean;
+  saml_want_messages_signed: boolean;
+  saml_sign_authn_requests: boolean;
+  saml_email_attribute: string;
+  saml_name_attribute: string;
+  saml_groups_attribute: string;
+  saml_admin_group: string;
+  /** Same empty-admits-everyone semantics as `OIDCConfig.oidc_allowed_groups`. */
+  saml_allowed_groups: string;
+  saml_blocked_groups: string;
+}
+
 export interface SessionConfig {
   jwt_access_token_expire_minutes: number;
   jwt_refresh_token_expire_days: number;
@@ -93,6 +189,51 @@ export interface SessionConfig {
   session_absolute_timeout_minutes: number;
   max_concurrent_sessions: number;
   concurrent_session_policy: string;
+}
+
+/**
+ * Page ceiling the audit endpoint enforces (`MAX_AUDIT_LOG_LIMIT` in
+ * `backend/app/services/auth_config_service.py`). Keep in sync with the backend.
+ */
+export const AUTH_CONFIG_AUDIT_MAX_LIMIT = 500;
+
+/**
+ * Categories `GET /admin/auth-config/audit/{category}` accepts — mirrors
+ * `CATEGORY_SCHEMAS` in `backend/app/schemas/auth_config.py`. Anything else is a 400.
+ */
+export const AUTH_CONFIG_CATEGORIES = [
+  'local',
+  'password_policy',
+  'mfa',
+  'lockout',
+  'session',
+  'ldap',
+  'oidc',
+  'pki',
+  'proxy',
+  'saml',
+  'banner',
+] as const;
+
+export type AuthConfigCategory = (typeof AUTH_CONFIG_CATEGORIES)[number];
+
+/**
+ * Resolution of the email config designated to carry auth mail. `active` is the
+ * only value that delivers; `missing`/`disabled` mean the designation is
+ * dangling and sends have silently fallen back to the env SMTP transport.
+ */
+type AuthMailStatus = 'not_designated' | 'active' | 'missing' | 'disabled';
+
+/** Mirrors `backend/app/schemas/email_notification.py:AuthMailDesignationResponse`. */
+export interface AuthMailDesignation {
+  config_uuid: string | null;
+  config_name: string | null;
+  provider: string | null;
+  is_enabled: boolean | null;
+  resolves: boolean;
+  status: AuthMailStatus;
+  /** Whether `SMTP_HOST` is set, i.e. whether the fallback transport exists. */
+  env_smtp_configured: boolean;
 }
 
 export class AuthConfigApi {
@@ -118,12 +259,45 @@ export class AuthConfigApi {
     return response.data;
   }
 
+  /**
+   * Audit trail for one configuration category, newest first.
+   *
+   * `limit` is clamped to {@link AUTH_CONFIG_AUDIT_MAX_LIMIT} before it is sent:
+   * the endpoint declares `le=MAX_AUDIT_LOG_LIMIT` and answers an over-large page
+   * with a 422 rather than a truncated list, so asking for an unbounded page
+   * fails the whole request. The category is validated server-side too — an
+   * unknown one is a 400, not a silent full-table read.
+   *
+   * Sensitive values arrive already redacted; there is no unmasked variant.
+   */
   static async getAuditLog(
     category: string,
-    limit: number = 100
+    limit: number = 100,
+    offset: number = 0
   ): Promise<AuthConfigAuditResponse[]> {
     const response = await axiosInstance.get(`/admin/auth-config/audit/${category}`, {
-      params: { limit },
+      params: {
+        limit: Math.min(Math.max(Math.trunc(limit), 1), AUTH_CONFIG_AUDIT_MAX_LIMIT),
+        offset: Math.max(Math.trunc(offset), 0),
+      },
+    });
+    return response.data;
+  }
+
+  /** Which email config carries password resets, invitations and verification links. */
+  static async getAuthMailDesignation(): Promise<AuthMailDesignation> {
+    const response = await axiosInstance.get('/admin/auth-config/email/designation');
+    return response.data;
+  }
+
+  /**
+   * Designate the auth mailer, or clear it with an empty string to fall back to
+   * env SMTP. A UUID that names no config — or a disabled one — is rejected with
+   * a 400 rather than stored, so the caller surfaces the message as-is.
+   */
+  static async setAuthMailDesignation(configUuid: string): Promise<AuthMailDesignation> {
+    const response = await axiosInstance.put('/admin/auth-config/email/designation', {
+      config_uuid: configUuid,
     });
     return response.data;
   }

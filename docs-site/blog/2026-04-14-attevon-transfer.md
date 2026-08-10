@@ -23,7 +23,7 @@ Specifically:
 
 - **License**: Still [AGPL-3.0](https://github.com/attevon-llc/OpenTranscribe/blob/master/LICENSE). No changes, no exceptions, no dual-licensing bait-and-switch.
 - **Docker Hub**: Images remain at `davidamacey/opentranscribe-*` on Docker Hub. Existing `docker compose pull` commands work unchanged.
-- **Docs**: Still at [docs.opentranscribe.io](https://docs.opentranscribe.io)
+- **Docs**: Still at [docs.opentranscribe.app](https://docs.opentranscribe.app)
 - **Issues & PRs**: All history transferred. Open issues, pull requests, and discussions are all intact at the new URL.
 - **Development**: Same maintainer (me), same process, same values.
 

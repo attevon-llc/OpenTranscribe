@@ -113,7 +113,7 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
                 logger.warning(f"OpenSearch speaker cleanup failed (non-fatal): {os_err}")
 
     except Exception as e:
-        logger.error(f"Error clearing transcription data for file {media_file.id}: {e}")
+        logger.exception(f"Error clearing transcription data for file {media_file.id}: {e}")
         db.rollback()
         raise
 
@@ -243,7 +243,7 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
         db.commit()
         logger.info(f"Cleared selective data for stages {stages} on file {media_file.id}")
     except Exception as e:
-        logger.error(f"Error clearing selective data for file {media_file.id}: {e}")
+        logger.exception(f"Error clearing selective data for file {media_file.id}: {e}")
         db.rollback()
         raise
 
@@ -534,7 +534,7 @@ def process_file_reprocess(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Error processing reprocess request for file {file_uuid}: {e}")
+        logger.exception(f"Error processing reprocess request for file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error processing reprocess request",

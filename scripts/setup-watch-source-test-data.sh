@@ -5,7 +5,12 @@
 # path, into:
 #   - the local watch folder (WATCH_HOST_PATH, default ./watch)   [always]
 #   - a MinIO "watch-source-test" bucket                           [if MinIO up]
-#   - the SMB test share (opentranscribe-smb-test:/share)         [if running]
+#   - the SMB test share (<prefix>-smb-test:/share)                [if running]
+#
+# Targets the main dev stack by default. To seed a fresh deployment instead
+# (./opentr.sh start dev --fresh t1 --with-smb-test), point it at that
+# deployment's containers:
+#   OT_CONTAINER_PREFIX=otfresh-t1 bash scripts/setup-watch-source-test-data.sh
 #
 # Files generated:
 #   meeting_2026_P001.mp4 / _P002.mp4 / _P003.mp4  → multi-part stitch group
@@ -28,6 +33,10 @@ err()     { echo -e "${RED}[watch-test]${NC} $1"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET_DIR="${1:-${WATCH_HOST_PATH:-$REPO_ROOT/watch}}"
+
+# Container-name prefix. The main stack pins container_name: opentranscribe-*;
+# a fresh deployment re-pins them to otfresh-<name>-* (issue #347).
+PREFIX="${OT_CONTAINER_PREFIX:-opentranscribe}"
 
 if ! command -v ffmpeg >/dev/null 2>&1; then
   err "ffmpeg not found on the host. Install ffmpeg or run inside the backend container."
@@ -76,12 +85,12 @@ success "Local folder seeded"
 # ---- MinIO S3 bucket (optional) ----
 # Seed via the backend container's boto3 (always present) rather than mc, which
 # isn't reliably available in the MinIO image.
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q opentranscribe-backend; then
-  info "Seeding MinIO bucket 'watch-source-test' via backend boto3..."
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "${PREFIX}-backend"; then
+  info "Seeding MinIO bucket 'watch-source-test' via backend boto3 (${PREFIX}-backend)..."
   for f in standalone_talk.mp4 podcast.mp3 meeting_2026_P001.mp4 meeting_2026_P002.mp4; do
-    docker cp "$WORK/$f" "opentranscribe-backend:/tmp/$f" 2>/dev/null || true
+    docker cp "$WORK/$f" "${PREFIX}-backend:/tmp/$f" 2>/dev/null || true
   done
-  docker exec -w /app opentranscribe-backend sh -c 'PYTHONPATH=/app python3 - <<PY 2>/dev/null
+  docker exec -w /app "${PREFIX}-backend" sh -c 'PYTHONPATH=/app python3 - <<PY 2>/dev/null
 import os, boto3
 c = boto3.client("s3", endpoint_url="http://minio:9000",
                  aws_access_key_id=os.getenv("MINIO_ROOT_USER", "minioadmin"),
@@ -103,10 +112,10 @@ else
 fi
 
 # ---- SMB test share (optional) ----
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q opentranscribe-smb-test; then
-  info "Seeding SMB test share..."
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "${PREFIX}-smb-test"; then
+  info "Seeding SMB test share (${PREFIX}-smb-test)..."
   for f in standalone_talk.mp4 podcast.mp3 meeting_2026_P001.mp4 meeting_2026_P002.mp4 meeting_2026_P003.mp4; do
-    docker cp "$WORK/$f" "opentranscribe-smb-test:/share/$f" 2>/dev/null || true
+    docker cp "$WORK/$f" "${PREFIX}-smb-test:/share/$f" 2>/dev/null || true
   done
   success "SMB share seeded (smb://smb-test/media — testuser/testpass)"
 else

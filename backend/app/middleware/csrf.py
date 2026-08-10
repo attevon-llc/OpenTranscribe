@@ -16,20 +16,27 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from app.auth.cookies import ACCESS_COOKIE
+from app.auth.cookies import CSRF_COOKIE
+from app.auth.cookies import REFRESH_COOKIE
+
 logger = logging.getLogger(__name__)
 
 # Methods that don't modify state — no CSRF check needed
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
-# Paths that must be exempt from CSRF (they can't send a CSRF cookie yet)
+# Cookies the browser attaches on its own, which is exactly what a forged
+# cross-site request rides on. The refresh cookie outlives the access cookie by
+# days, so a session with only the refresh cookie is a routine state, not an
+# anonymous one.
+_AUTH_COOKIES = (ACCESS_COOKIE, REFRESH_COOKIE)
+
+# Paths that must be exempt from CSRF (they can't send a CSRF cookie yet).
+# Prefixes only where EVERY sub-path is genuinely pre-authentication.
 _EXEMPT_PREFIXES = (
-    "/api/auth/login",
-    "/api/auth/token",
-    "/api/auth/register",
     "/api/auth/password-reset/",
-    "/api/auth/keycloak/",
+    "/api/auth/oidc/",
     "/api/auth/pki/",
-    "/api/auth/mfa/",
     "/api/docs",
     "/api/redoc",
     "/api/openapi.json",
@@ -40,8 +47,37 @@ _EXEMPT_PREFIXES = (
     "/api/webhooks/",
 )
 
+# Exact paths, deliberately NOT prefixes: each of these sits directly above
+# cookie-authenticated siblings that must stay protected.
+#   "/api/auth/token"      also covered POST /api/auth/token/refresh, which mints
+#                          new tokens from the refresh cookie alone.
+#   "/api/auth/mfa/"       also covered /mfa/setup (overwrites the TOTP secret and
+#                          wipes backup codes with no code required), /mfa/verify-setup
+#                          and /mfa/disable — all cookie-authenticated.
+_EXEMPT_PATHS = frozenset(
+    {
+        "/api/auth/login",
+        "/api/auth/token",
+        "/api/auth/register",
+        "/api/auth/mfa/verify",
+    }
+)
+
 # WebSocket paths are upgraded before middleware runs but check just in case
 _WS_PREFIXES = ("/api/ws",)
+
+
+def _is_exempt(path: str) -> bool:
+    """Whether a request path skips CSRF validation entirely.
+
+    Args:
+        path: Request path, e.g. ``/api/auth/mfa/setup``.
+
+    Returns:
+        True for pre-authentication, webhook, and docs paths.
+    """
+    normalized = path.rstrip("/") or "/"
+    return normalized in _EXEMPT_PATHS or path.startswith(_EXEMPT_PREFIXES)
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
@@ -55,7 +91,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # Exempt paths (login, register, etc.)
-        if any(path.startswith(p) for p in _EXEMPT_PREFIXES):
+        if _is_exempt(path):
             return await call_next(request)
 
         # WebSocket paths
@@ -68,12 +104,15 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if auth_header.startswith("Bearer "):
             return await call_next(request)
 
-        # If no access_token cookie, this isn't a cookie-auth request — skip
-        if "access_token" not in request.cookies:
+        # No auth cookie of any kind — the browser attaches no credentials, so a
+        # forged request has nothing to ride on.
+        if not any(name in request.cookies for name in _AUTH_COOKIES):
             return await call_next(request)
 
-        # Double-submit CSRF validation
-        cookie_csrf = request.cookies.get("csrf_token", "")
+        # Double-submit CSRF validation. The csrf_token cookie is minted with the
+        # REFRESH token's lifetime (app/auth/cookies.py), so an idle session still
+        # has one to submit when its access cookie has lapsed — no carve-out needed.
+        cookie_csrf = request.cookies.get(CSRF_COOKIE, "")
         header_csrf = request.headers.get("x-csrf-token", "")
 
         if not cookie_csrf or not header_csrf:

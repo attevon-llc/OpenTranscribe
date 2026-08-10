@@ -152,7 +152,7 @@
       dispatch('saved', result);
       handleClose();
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, 'Failed to save ASR configuration'), 5000);
+      toastStore.error(getErrorMessage(err, $t('settings.asrProvider.saveFailed')), 5000);
     } finally {
       saving = false;
     }
@@ -176,7 +176,7 @@
       const result = await ASRSettingsApi.testConnection(params);
       testResult = { success: result.success, message: result.message };
     } catch (err: unknown) {
-      testResult = { success: false, message: getErrorMessage(err, 'Connection test failed') };
+      testResult = { success: false, message: getErrorMessage(err, $t('settings.asrProvider.testFailed')) };
     } finally {
       testing = false;
     }
@@ -220,7 +220,7 @@
             disabled={!!editingConfig}
             title={editingConfig ? $t('settings.asrProvider.providerLockedOnEdit') : undefined}
           >
-            <option value="">Select provider...</option>
+            <option value="">{$t('settings.asrProvider.selectProvider')}</option>
             {#each providers as p}
               <option value={p.provider}>
                 {ASRSettingsApi.getProviderDisplayName(p.provider)}
@@ -238,13 +238,13 @@
           <!-- Provider capabilities -->
           <div class="capabilities">
             {#if selectedProvider.supports_diarization}
-              <span class="cap-badge">Diarization</span>
+              <span class="cap-badge">{$t('settings.asrProvider.diarizationQuality')}</span>
             {/if}
             {#if selectedProvider.supports_vocabulary}
-              <span class="cap-badge">Vocabulary Boosting</span>
+              <span class="cap-badge">{$t('settings.asrProvider.capVocabulary')}</span>
             {/if}
             {#if selectedProvider.supports_translation}
-              <span class="cap-badge">Translation</span>
+              <span class="cap-badge">{$t('settings.asrProvider.capTranslation')}</span>
             {/if}
           </div>
 
@@ -266,7 +266,7 @@
             <label for="asr-model">{$t('settings.asrProvider.fields.model')}</label>
             {#if availableModels.length > 0}
               <select id="asr-model" bind:value={formData.model_name} on:change={onModelChange} class="form-select">
-                <option value="">Select model...</option>
+                <option value="">{$t('settings.asrProvider.selectModel')}</option>
                 {#each availableModels as m}
                   <option value={m.id}>
                     {m.name}{m.price_per_min_batch ? ` — $${m.price_per_min_batch}/min` : ''}{m.description ? ` — ${m.description}` : ''}
@@ -278,7 +278,7 @@
                 id="asr-model"
                 type="text"
                 bind:value={formData.model_name}
-                placeholder="Model name"
+                placeholder={$t('settings.asrProvider.modelNamePlaceholder')}
                 class="form-input"
               />
             {/if}
@@ -327,7 +327,7 @@
             <div class="form-group">
               <label for="asr-region">{$t('settings.asrProvider.fields.region')}</label>
               <select id="asr-region" bind:value={formData.region} class="form-select">
-                <option value="">Select region...</option>
+                <option value="">{$t('settings.asrProvider.selectRegion')}</option>
                 {#each regionOptions as r}
                   <option value={r}>{r}</option>
                 {/each}
@@ -381,7 +381,7 @@
           disabled={testing || !formData.provider || !formData.model_name}
         >
           {#if testing}
-            <Spinner size="small" /> Testing...
+            <Spinner size="small" /> {$t('common.testing')}
           {:else}
             {$t('settings.asrProvider.testConnection')}
           {/if}

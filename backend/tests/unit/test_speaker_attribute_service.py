@@ -103,8 +103,16 @@ class TestServiceInitialization:
         original = mod._cached_service
         mod._cached_service = None
         try:
-            svc1 = get_cached_attribute_service()
-            svc2 = get_cached_attribute_service()
+            # get_cached_attribute_service() calls load_models(), which downloads the
+            # gender model from HuggingFace and re-raises on failure. This test asserts
+            # only the caching contract, so the real load is irrelevant to it — but
+            # unpatched it made a @pytest.mark.unit test depend on huggingface.co being
+            # reachable, and it randomly reddened CI on unrelated PRs (issue #325).
+            # CI has no model cache (requirements-ci.txt is CPU-only), so it refetched
+            # on every run.
+            with patch.object(SpeakerAttributeService, "load_models", return_value=None):
+                svc1 = get_cached_attribute_service()
+                svc2 = get_cached_attribute_service()
             assert svc1 is svc2
         finally:
             mod._cached_service = original

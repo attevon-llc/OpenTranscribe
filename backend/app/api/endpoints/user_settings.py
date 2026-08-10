@@ -871,7 +871,9 @@ def reset_transcription_settings(
 
 
 @router.get("/transcription/system-defaults", response_model=TranscriptionSystemDefaults)
-def get_transcription_system_defaults() -> TranscriptionSystemDefaults:
+def get_transcription_system_defaults(
+    current_user: models.User = Depends(get_current_active_user),
+) -> TranscriptionSystemDefaults:
     """
     Get system-level transcription defaults.
 
@@ -880,7 +882,8 @@ def get_transcription_system_defaults() -> TranscriptionSystemDefaults:
     This endpoint is useful for showing users what the default values are
     before they customize their settings.
 
-    Note: This endpoint does not require authentication as it returns
+    Note: This endpoint DOES require authentication (see the dependency above).
+    An earlier docstring claimed otherwise; it returns
     only system configuration, not user-specific data.
 
     Returns:
@@ -1259,6 +1262,7 @@ def reset_speaker_attribute_settings(
 )
 def get_speaker_attribute_system_defaults(
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
 ) -> SpeakerAttributeSystemDefaults:
     """Get system-level speaker attribute defaults."""
     import os
@@ -1411,7 +1415,9 @@ def reset_download_settings(
 
 
 @router.get("/download/system-defaults", response_model=DownloadSystemDefaults)
-def get_download_system_defaults() -> DownloadSystemDefaults:
+def get_download_system_defaults(
+    current_user: models.User = Depends(get_current_active_user),
+) -> DownloadSystemDefaults:
     """Get system-level download defaults and available options."""
     return DownloadSystemDefaults(
         video_quality=DEFAULT_VIDEO_QUALITY,
@@ -1423,7 +1429,7 @@ def get_download_system_defaults() -> DownloadSystemDefaults:
 
 
 @router.get("/auto-label")
-async def get_auto_label_settings(
+def get_auto_label_settings(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> dict:
@@ -1435,7 +1441,7 @@ async def get_auto_label_settings(
 
 
 @router.put("/auto-label")
-async def update_auto_label_settings(
+def update_auto_label_settings(
     settings_data: AutoLabelSettingsSchema = Body(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),

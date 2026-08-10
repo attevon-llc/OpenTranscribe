@@ -30,6 +30,7 @@ def process_speaker_update_background(
     was_auto_labeled: bool,
     display_name_changed: bool,
     media_file_id: int,
+    renamed_profile_id: int | None = None,
 ):
     """
     Background processing for speaker updates.
@@ -54,10 +55,16 @@ def process_speaker_update_background(
         was_auto_labeled: Whether the speaker was previously auto-labeled
         display_name_changed: Whether the display_name was changed
         media_file_id: ID of the media file the speaker belongs to
+        renamed_profile_id: Set when the request renamed a SpeakerProfile in place
+            (``profile_action="update_profile"``). The endpoint writes the new name to
+            Postgres and defers the OpenSearch fan-out — one update per linked speaker
+            — to step 3b here (issue #284 A2.6). Defaults to None so tasks published by
+            an older API replica still unpack.
     """
     from app.api.endpoints.speakers import _clear_video_cache_for_speaker
     from app.api.endpoints.speakers import _handle_profile_embedding_updates
     from app.api.endpoints.speakers import _handle_speaker_labeling_workflow
+    from app.api.endpoints.speakers import _sync_profile_rename_to_opensearch
     from app.api.endpoints.speakers import _update_opensearch_profile_info
     from app.api.endpoints.speakers import _update_opensearch_speaker_name
     from app.utils.uuid_helpers import get_speaker_by_uuid
@@ -99,6 +106,11 @@ def process_speaker_update_background(
             # 3. Update OpenSearch profile info
             logger.debug(f"Updating OpenSearch profile info for speaker {speaker_uuid}")
             _update_opensearch_profile_info(speaker, old_profile_id, display_name_changed, db)
+
+            # 3b. Replay an in-place profile rename onto every linked speaker's doc
+            if renamed_profile_id:
+                logger.debug(f"Syncing renamed profile {renamed_profile_id} to OpenSearch")
+                _sync_profile_rename_to_opensearch(db, renamed_profile_id)
 
             # 4. Handle speaker labeling workflow (retroactive matching)
             auto_applied_count = 0

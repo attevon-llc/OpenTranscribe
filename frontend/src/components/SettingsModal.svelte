@@ -35,6 +35,7 @@
   import ASRSettings from '$components/settings/ASRSettings.svelte';
   import EngineSettings from '$components/settings/EngineSettings.svelte';
   import ContentRedactionSettings from '$components/settings/ContentRedactionSettings.svelte';
+  import ChatSettingsPanel from '$components/settings/ChatSettingsPanel.svelte';
   import RedactionPolicySettings from '$components/settings/RedactionPolicySettings.svelte';
   import CustomVocabularySettings from '$components/settings/CustomVocabularySettings.svelte';
   import SystemStatisticsPanel from '$components/settings/SystemStatisticsPanel.svelte';
@@ -46,8 +47,11 @@
   import UsageDashboard from '$lib/cloud/components/UsageDashboard.svelte';
   import TeamManagement from '$lib/cloud/components/TeamManagement.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
+  import PendingApprovalsPanel from '$components/settings/PendingApprovalsPanel.svelte';
+  import { UserApprovalsApi } from '$lib/api/userApprovals';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import ProcessingDetailsModal from '$components/settings/ProcessingDetailsModal.svelte';
+  import EmptyState from '$components/ui/EmptyState.svelte';
 
   import SettingsSearch from '$components/settings/SettingsSearch.svelte';
   import {
@@ -60,7 +64,7 @@
 
   // Import i18n
   import { t, locale } from '$stores/locale';
-  import { getErrorMessage } from '$lib/utils/apiError';
+  import { getErrorMessage, handleApiError } from '$lib/utils/apiError';
 
   // Modal state
   let modalElement: HTMLElement;
@@ -88,6 +92,60 @@
   $: isAdmin = $userStore?.role === 'admin' || $userStore?.role === 'super_admin';
   $: isSuperAdmin = $userStore?.role === 'super_admin';
 
+  /**
+   * The privilege tier each gated section needs, mirroring the FastAPI dependency
+   * on the endpoints it calls (`get_current_admin_user` vs
+   * `get_current_active_superuser`). This is the ONE place the modal decides who
+   * may open what: the sidebar, the mobile picker and the content router all read
+   * it, so a nav entry can no longer disagree with what the panel renders.
+   *
+   * Sections absent from the map are open to any signed-in user.
+   */
+  const SECTION_MIN_ROLE: Partial<Record<SettingsSection, 'admin' | 'super_admin'>> = {
+    // super_admin — deployment configuration (P4.3 moved these off the admin tier)
+    authentication: 'super_admin',
+    'audit-logs': 'super_admin',
+    backup: 'super_admin',
+    'engine-settings': 'super_admin',
+    'redaction-policy': 'super_admin',
+    // admin
+    'admin-users': 'admin',
+    'admin-task-health': 'admin',
+    'data-integrity': 'admin',
+    'embedding-migration': 'admin',
+    retention: 'admin',
+    'search-indexing': 'admin',
+  };
+
+  /**
+   * A section the user cannot open is rendered **disabled with a tooltip**, never
+   * omitted. Silently dropping the entry is what made an admin conclude the LDAP
+   * configuration page did not exist, so absence is no longer used to express
+   * "not for you" — only greyed-out presence is.
+   *
+   * Below-admin users still don't see admin groups at all: those sit inside
+   * `isAdmin`-gated sidebar groups, so there is no entry to grey out.
+   */
+  const sectionLocked = (
+    section: SettingsSection,
+    admin: boolean,
+    superAdmin: boolean
+  ): boolean => {
+    const required = SECTION_MIN_ROLE[section];
+    if (required === 'super_admin') return !superAdmin;
+    if (required === 'admin') return !admin;
+    return false;
+  };
+
+  $: activeSectionLocked = sectionLocked(activeSection, isAdmin, isSuperAdmin);
+  $: activeSectionRequires = SECTION_MIN_ROLE[activeSection];
+
+  /** Tooltip for a locked entry, worded for the tier it actually needs. */
+  const lockReason = (section: SettingsSection): string =>
+    SECTION_MIN_ROLE[section] === 'admin'
+      ? $t('settings.permission.adminTitle')
+      : $t('settings.nav.requiresSuperAdmin');
+
   // Recording settings section
   let maxRecordingDuration = 120;
   let recordingQuality: 'standard' | 'high' | 'maximum' = 'high';
@@ -98,6 +156,25 @@
   // Admin Users section
   let users: any[] = [];
   let usersLoading = false;
+
+  /**
+   * Accounts awaiting an approval decision. Owned here rather than in the panel
+   * because the sidebar badge has to show it while the user is looking at some
+   * other section — a queue nobody can see is a queue nobody works. Zero while
+   * `require_account_approval` is off, which is when the badge disappears.
+   *
+   * A failed fetch leaves it at 0: an admin whose deployment 404s or 403s this
+   * endpoint should see no badge, not a permanent phantom count.
+   */
+  let pendingApprovalCount = 0;
+
+  async function loadPendingApprovalCount() {
+    try {
+      pendingApprovalCount = (await UserApprovalsApi.list()).length;
+    } catch {
+      pendingApprovalCount = 0;
+    }
+  }
 
   // Admin Stats section
   let stats: any = {
@@ -115,17 +192,21 @@
     },
     speakers: { total: 0, avg_per_file: 0 },
     models: {
-      whisper: { name: 'N/A', description: 'N/A', purpose: 'N/A' },
-      diarization: { name: 'N/A', description: 'N/A', purpose: 'N/A' }
+      whisper: { name: $t('common.notAvailable'), description: $t('common.notAvailable'), purpose: $t('common.notAvailable') },
+      diarization: { name: $t('common.notAvailable'), description: $t('common.notAvailable'), purpose: $t('common.notAvailable') }
     },
     system: {
       cpu: { total_percent: '0%', per_cpu: [], logical_cores: 0, physical_cores: 0 },
       memory: { total: '0 B', available: '0 B', used: '0 B', percent: '0%' },
       disk: { total: '0 B', used: '0 B', free: '0 B', percent: '0%' },
+      // These stay the untranslated literal "N/A" on purpose: it is the backend's
+      // wire sentinel for an unreadable GPU metric (admin.py / tasks/utility.py) and
+      // SystemStatisticsPanel compares `utilization_percent !== 'N/A'` against it.
+      // The placeholder entry is `available: false`, so none of it ever renders.
       gpus: [{ available: false, name: 'N/A', memory_total: 'N/A', memory_used: 'N/A', memory_free: 'N/A', memory_percent: 'N/A', utilization_percent: 'N/A', temperature_celsius: null }],
-      uptime: 'Unknown',
-      platform: 'Unknown',
-      python_version: 'Unknown'
+      uptime: $t('common.unknown'),
+      platform: $t('common.unknown'),
+      python_version: $t('common.unknown')
     },
     throughput: { total_completed: 0, last_1h: 0, last_3h: 0, rate_1h: 0, rate_3h: 0 },
     eta: { remaining: 0, files_per_hour: 0, hours_remaining: null, est_completion: null },
@@ -190,11 +271,10 @@
       {
         title: $t('settings.sections.administration'),
         items: [
-          ...(isSuperAdmin ? [
-            { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' },
-            { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key', cap: 'auth.config_ui' }
-          ] : []),
-          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users', cap: 'users.local_admin' }
+          // Listed for every admin, disabled for non-super_admins — see sectionLocked().
+          { id: 'audit-logs' as SettingsSection, label: $t('settings.auditLog.navLabel'), icon: 'list', cap: 'audit.logs' },
+          { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key', cap: 'auth.config_ui' },
+          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users', cap: 'users.local_admin', badge: pendingApprovalCount }
         ]
       },
       {
@@ -226,6 +306,8 @@
         { id: 'auto-labeling' as SettingsSection, label: $t('autoLabel.title'), icon: 'tag' },
         { id: 'custom-vocabulary' as SettingsSection, label: $t('settings.customVocabulary.title'), icon: 'list', cap: 'vocab.user' },
         { id: 'content-redaction' as SettingsSection, label: $t('settings.contentRedaction.title'), icon: 'eye-off', cap: 'redaction.user' },
+        // Admin platform tuning lives in this panel's Advanced tab, not a second row.
+        { id: 'chat' as SettingsSection, label: $t('chat.settings.title'), icon: 'message', cap: 'chat.rag' },
         { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain', cap: 'llm.user_settings' },
         { id: 'organization-context' as SettingsSection, label: isCloudEdition ? $t('settings.orgContext.cloudTitle') : $t('settings.orgContext.title'), icon: 'briefcase' },
         { id: 'speaker-attributes' as SettingsSection, label: $t('settings.speakerAttributes.navTitle'), icon: 'user' },
@@ -245,14 +327,29 @@
   ]
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => capOn(capState, (item as { cap?: string }).cap))
+      items: section.items
+        .filter((item) => capOn(capState, (item as { cap?: string }).cap))
+        // A capability the deployment lacks is genuinely absent, so it stays
+        // filtered out above. A privilege the *user* lacks is not: the entry
+        // remains, flagged `locked`, and renders greyed out with a reason.
+        // `badge` is normalised to a number for every item so the template can
+        // read it without the union splitting on whether the property exists.
+        .map((item) => ({
+          ...item,
+          locked: sectionLocked(item.id, isAdmin, isSuperAdmin),
+          badge: (item as { badge?: number }).badge ?? 0
+        }))
     }))
     .filter((section) => section.items.length > 0);
 
   // Flat list of the sections this user can actually open — the search index is
   // limited to these so it never surfaces a section the user can't navigate to.
+  // Locked entries are excluded on purpose: they stay discoverable in the sidebar
+  // (greyed out, with a tooltip), but a search hit promises a usable destination.
   $: visibleSections = sidebarSections.flatMap((section) =>
-    section.items.map((item) => ({ id: item.id, label: item.label }) as VisibleSection)
+    section.items
+      .filter((item) => !item.locked)
+      .map((item) => ({ id: item.id, label: item.label }) as VisibleSection)
   );
 
   // Rebuild the fuzzy index only while the modal is open. `$locale` is referenced
@@ -334,6 +431,9 @@
 
     // Load admin data if admin
     if (isAdmin) {
+      // The count drives the sidebar badge, so it is fetched regardless of which
+      // section is open.
+      loadPendingApprovalCount();
       if (activeSection === 'admin-users') {
         loadAdminUsers();
       }
@@ -368,6 +468,7 @@
       } else if (activeSection === 'admin-users' && isAdmin) {
         loadAdminUsers();
       }
+      if (isAdmin) loadPendingApprovalCount();
 
       previousOpenState = true;
     } else if (!isOpen && previousOpenState) {
@@ -453,8 +554,12 @@
       recordingSettingsChanged = false;
     } catch (err: unknown) {
       console.error('Error loading recording settings:', err);
-      const message = getErrorMessage(err, $t('settings.toast.recordingSettingsSaveFailed'));
-      toastStore.error(message);
+      // Via handleApiError, not a bare toast: this modal mounts before the first
+      // account-lifecycle 403 lands, so a pending-approval user got a raw
+      // "Request failed with status code 403" toast in front of the blocking
+      // screen. handleApiError swallows lifecycle refusals the way it already
+      // swallows cancellations.
+      handleApiError(err, $t('settings.toast.recordingSettingsSaveFailed'));
     } finally {
       recordingSettingsLoading = false;
     }
@@ -676,10 +781,25 @@
                       class="nav-item"
                       class:active={activeSection === item.id}
                       class:dirty={$settingsModalStore.dirtyState[item.id]}
+                      class:locked={item.locked}
+                      disabled={item.locked}
+                      title={item.locked ? lockReason(item.id) : undefined}
                       on:click={() => switchSection(item.id)}
                     >
                       <span class="nav-item-label">{item.label}</span>
-                      {#if $settingsModalStore.dirtyState[item.id]}
+                      {#if !item.locked && item.badge > 0}
+                        <span class="nav-badge" title={$t('settings.approvals.badgeTooltip')}>
+                          {item.badge}
+                        </span>
+                      {/if}
+                      {#if item.locked}
+                        <span class="lock-indicator" aria-hidden="true">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                          </svg>
+                        </span>
+                      {:else if $settingsModalStore.dirtyState[item.id]}
                         <span class="dirty-indicator" title={$t('settings.unsavedChanges')}>●</span>
                       {/if}
                     </button>
@@ -711,7 +831,13 @@
                 {#each sidebarSections as section}
                   <optgroup label={section.title}>
                     {#each section.items as item}
-                      <option value={item.id}>{item.label}</option>
+                      <option value={item.id} disabled={item.locked}>
+                        {item.locked
+                          ? `${item.label} — ${lockReason(item.id)}`
+                          : item.badge > 0
+                            ? `${item.label} (${item.badge})`
+                            : item.label}
+                      </option>
                     {/each}
                   </optgroup>
                 {/each}
@@ -719,6 +845,22 @@
             {/if}
           </div>
 
+          {#if activeSectionLocked}
+            <!-- A deep link (or a demotion mid-session) can land on a section this
+                 user may not open. Say so explicitly — the old behaviour was to
+                 render nothing, which looked like a broken blank pane. -->
+            <div class="content-section">
+              <EmptyState
+                icon="🔒"
+                title={activeSectionRequires === 'super_admin'
+                  ? $t('settings.permission.superAdminTitle')
+                  : $t('settings.permission.adminTitle')}
+                description={activeSectionRequires === 'super_admin'
+                  ? $t('settings.permission.superAdminMessage')
+                  : $t('settings.permission.adminMessage')}
+              />
+            </div>
+          {:else}
           <!-- Profile Section -->
           {#if activeSection === 'profile'}
             <UserProfileSettings />
@@ -893,7 +1035,7 @@
           {/if}
 
           <!-- Engine Configuration Section (admin only) -->
-          {#if activeSection === 'engine-settings' && isAdmin}
+          {#if activeSection === 'engine-settings'}
             <div class="content-section">
               <h3 class="section-title">{$t('settings.engineSettings.title')}</h3>
               <p class="section-description">{$t('settings.engineSettings.description')}</p>
@@ -918,8 +1060,22 @@
             </div>
           {/if}
 
+          <!-- Chat: per-user defaults + (admin) platform tuning, as tabs.
+               'chat-admin' is kept as a section id so the settings search and any
+               existing deep link still resolve — it just opens the Advanced tab
+               of the same panel instead of a second sidebar entry. -->
+          {#if activeSection === 'chat' || activeSection === 'chat-admin'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('chat.settings.title')}</h3>
+              <ChatSettingsPanel
+                {isAdmin}
+                initialTab={activeSection === 'chat-admin' && isAdmin ? 'advanced' : 'general'}
+              />
+            </div>
+          {/if}
+
           <!-- Redaction Policy Section (admin governance) -->
-          {#if activeSection === 'redaction-policy' && isAdmin}
+          {#if activeSection === 'redaction-policy'}
             <div class="content-section">
               <h3 class="section-title">{$t('settings.redactionPolicy.title')}</h3>
               <RedactionPolicySettings />
@@ -943,13 +1099,21 @@
           {/if}
 
           <!-- Admin Users Section -->
-          {#if activeSection === 'admin-users' && isAdmin}
+          {#if activeSection === 'admin-users'}
             <div class="content-section">
               <h3 class="section-title">{$t('settings.users.title')}</h3>
               <p class="section-description">{$t('settings.users.description')}</p>
               {#if isSuperAdmin}
                 <AccountStatusDashboard />
               {/if}
+              <!-- Above the table on purpose: a queue is work waiting, and the
+                   accounts in it are not in the table's list until they are
+                   admitted. `onDecided` refreshes the user list so an approved
+                   account appears there in the same interaction. -->
+              <PendingApprovalsPanel
+                onDecided={refreshAdminUsers}
+                on:countchange={(e) => (pendingApprovalCount = e.detail)}
+              />
               <UserManagementTable
                 {users}
                 loading={usersLoading}
@@ -973,7 +1137,7 @@
           {/if}
 
           <!-- Admin Task Health Section -->
-          {#if activeSection === 'admin-task-health' && isAdmin}
+          {#if activeSection === 'admin-task-health'}
             <AdminTaskHealthPanel on:requestConfirm={handleTaskHealthConfirm} />
           {/if}
 
@@ -1007,7 +1171,7 @@
           <!-- Admin System Settings: removed (retry config moved to task health) -->
 
           <!-- Embedding Migration Section -->
-          {#if activeSection === 'embedding-migration' && isAdmin}
+          {#if activeSection === 'embedding-migration'}
             <div class="content-section">
               <EmbeddingMigrationSettings />
               <EmbeddingConsistencySettings />
@@ -1015,28 +1179,28 @@
           {/if}
 
           <!-- Data Integrity Section -->
-          {#if activeSection === 'data-integrity' && isAdmin}
+          {#if activeSection === 'data-integrity'}
             <div class="content-section">
               <DataIntegritySettings />
             </div>
           {/if}
 
           <!-- File Retention Section (includes derived media cache) -->
-          {#if activeSection === 'retention' && isAdmin}
+          {#if activeSection === 'retention'}
             <div class="content-section">
               <RetentionSettings />
             </div>
           {/if}
 
           <!-- Scheduled Database Backups Section -->
-          {#if activeSection === 'backup' && isAdmin}
+          {#if activeSection === 'backup'}
             <div class="content-section">
               <BackupSettings />
             </div>
           {/if}
 
           <!-- Authentication Settings Section (Super Admin only) -->
-          {#if activeSection === 'authentication' && isSuperAdmin}
+          {#if activeSection === 'authentication'}
             <div class="content-section">
               <h3 class="section-title">{$t('settings.authentication.title')}</h3>
               <p class="section-description">{$t('settings.authentication.description')}</p>
@@ -1046,12 +1210,13 @@
 
 
           <!-- Audit Log Viewer (Super Admin only) -->
-          {#if activeSection === 'audit-logs' && isSuperAdmin}
+          {#if activeSection === 'audit-logs'}
             <div class="content-section">
               <h3 class="section-title">{$t('settings.auditLog.sectionTitle')}</h3>
               <p class="section-description">{$t('settings.auditLog.sectionDescription')}</p>
               <AuditLogViewer />
             </div>
+          {/if}
           {/if}
         </main>
       </div>
@@ -1239,14 +1404,57 @@
     font-weight: 500;
   }
 
+  /* Present but not openable: the entry has to stay legible enough to read as a
+     real feature (that is the whole point of not omitting it) while clearly not
+     being actionable. Same token in both themes, so light/dark stay in parity. */
+  .nav-item.locked {
+    color: var(--text-secondary);
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .nav-item.locked:hover {
+    background-color: transparent;
+    color: var(--text-secondary);
+  }
+
   .nav-item-label {
     flex: 1;
+  }
+
+  .lock-indicator {
+    display: flex;
+    align-items: center;
+    color: var(--text-secondary);
+    flex-shrink: 0;
   }
 
   .dirty-indicator {
     color: var(--warning-color);
     font-size: 1.2em;
     line-height: 1;
+  }
+
+  /* Pending-work count (currently the account-approval queue). Amber rather than
+     the primary colour so it reads as "needs attention", and it uses explicit
+     light/dark values because the amber tokens are not defined in both themes. */
+  .nav-badge {
+    flex-shrink: 0;
+    min-width: 1.25rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.18);
+    color: #b45309;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 1.4;
+    text-align: center;
+  }
+
+  :global([data-theme='dark']) .nav-badge {
+    background: rgba(245, 158, 11, 0.22);
+    color: #fbbf24;
   }
 
   .settings-content {

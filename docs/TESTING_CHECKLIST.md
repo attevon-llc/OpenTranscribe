@@ -142,7 +142,7 @@ docker compose restart backend
 docker compose -f docker-compose.keycloak.yml up -d keycloak
 
 # Wait for startup (check http://localhost:8180)
-# Configure realm, client, users per docs/KEYCLOAK_SETUP.md
+# Configure realm, client, users per docs/OIDC_SETUP.md
 
 # Configure in .env
 KEYCLOAK_ENABLED=true

@@ -22,7 +22,7 @@ Before upgrading, complete these steps:
    # or check the UI footer / API response
    curl -s http://localhost:5174/api/health | python3 -m json.tool
    ```
-3. **Read the changelog** for the target version at [CHANGELOG.md](https://github.com/davidamacey/OpenTranscribe/blob/master/CHANGELOG.md)
+3. **Read the changelog** for the target version at [CHANGELOG.md](https://github.com/attevon-llc/OpenTranscribe/blob/master/CHANGELOG.md)
 4. **Check for breaking changes** -- major version bumps or migration notes
 5. **Test in staging first** if you have a staging environment
 
@@ -56,9 +56,10 @@ docker compose up -d --force-recreate
 To pin to a specific release instead of `latest`:
 
 ```bash
-# Pull specific version tags
-docker pull davidamacey/opentranscribe-frontend:v0.3.0
-docker pull davidamacey/opentranscribe-backend:v0.3.0
+# Pull specific version tags — substitute the release you want.
+# Available tags: https://github.com/attevon-llc/OpenTranscribe/releases
+docker pull davidamacey/opentranscribe-frontend:v0.4.1
+docker pull davidamacey/opentranscribe-backend:v0.4.1
 
 # Update image tags in docker-compose.prod.yml or .env, then restart
 docker compose up -d --force-recreate
@@ -179,6 +180,101 @@ The migration runs through the Admin UI:
 :::tip
 Embedding migration can take significant time depending on the number of speakers and media files. Plan accordingly and run during a maintenance window.
 :::
+
+### Breaking Changes (v0.5.0)
+
+These affect operators upgrading to v0.5.0 regardless of whether you call the REST API
+directly.
+
+#### Six deployment-configuration panels now require `super_admin`, not `admin`
+
+**ASR provider**, **Engine configuration**, **Backups**, **Media Mirror**, **Watch sources**,
+and the **Redaction policy** floor now require the `super_admin` role instead of `admin`. They
+configure how the deployment runs, and several store infrastructure credentials (S3 keys, SMB
+passwords, SMTP passwords) that a team-level admin has no reason to read or replace.
+
+:::danger ACTION REQUIRED if a plain `admin` manages any of those six panels
+Promote that account to `super_admin` (Settings → Users → Role → Super Admin) **before
+upgrading**, or hand the work to an existing super admin. Nothing else changes tier: user
+accounts, tasks, search, and speaker maintenance stay at `admin`. Creating additional super
+admins from the UI is new in this release — the role selector previously offered only `user`
+and `admin`.
+:::
+
+#### The OIDC surface is renamed — configuration keys, routes, and the admin tab
+
+Config keys are now `oidc_*`, the admin tab is **OIDC**, and the routes are
+`/api/auth/oidc/login` and `/api/auth/oidc/callback`. No identity provider needs
+reconfiguring (the registered redirect URI still points at the SPA's `/login` page), and every
+`KEYCLOAK_*` environment variable keeps working permanently — the legacy spelling even wins
+when both are set. Stored database configuration is renamed automatically by migration `v377`.
+
+What does break: a script that writes `PUT /api/admin/auth-config/keycloak`, reads a
+`keycloak_*` key out of `GET /api/admin/auth-config`, or calls
+`/api/auth/keycloak/{login,callback}` directly. `GET /api/auth/methods` now reports `"oidc"`
+in `methods`; its `keycloak_enabled` field is retained for one minor release so a cached SPA
+bundle keeps rendering the SSO button, then removed.
+
+#### `POST /api/auth/token/refresh` now requires the CSRF header for cookie-authenticated clients
+
+Minting a new session from the refresh cookie alone is no longer CSRF-exempt — that's exactly
+what a forged cross-site request would target. Browsers are unaffected; the SPA already
+double-submits the token, and the CSRF cookie's lifetime was extended to match the refresh
+cookie's. **A non-browser API client that sends cookies must now also send `X-CSRF-Token`**;
+clients using `Authorization: Bearer` are exempt as before.
+
+#### `PKI_TRUSTED_PROXIES` is now required whenever PKI is enabled
+
+Header-sourced PKI authentication is refused when no trusted proxy is allow-listed, instead of
+being accepted with a warning. Hardened deployments already refused to *start* in that
+configuration, so this only changes development and evaluation stacks that enabled PKI through
+the admin UI. Set it to the address the backend sees the reverse proxy arrive from.
+
+#### `GET /api/auth/methods` no longer always advertises `local`
+
+`methods` previously contained `"local"` unconditionally. It now reflects `local_enabled`, so a
+deployment whose identity lives entirely in an external IdP reports only the methods it
+actually accepts. The response also gained `local_enabled` and `allow_registration` fields.
+
+### Breaking API Changes
+
+These only affect you if you call the OpenTranscribe REST API directly — from a script,
+an integration, or another service. The web UI ships with each release and is always in sync.
+
+The authoritative, always-current schema is the deployment's own OpenAPI document at
+`/api/openapi.json` (browsable at `/api/docs`). Check it against your client after any upgrade.
+
+#### `GET /api/files/{uuid}` — `tags` is now an array of objects
+
+`tags` on the **file-detail** response used to be an array of tag name strings. It is now an array
+of tag objects, matching what `GET /api/tags` has always returned:
+
+```json
+// Before
+"tags": ["Important", "Meeting"]
+
+// After
+"tags": [
+  { "uuid": "019ec90a-3f41-7aaa-8000-0000000000a1", "name": "Important", "source": "manual" },
+  { "uuid": "019ec90a-3f41-7aaa-8000-0000000000a2", "name": "Meeting",   "source": "auto_ai" }
+]
+```
+
+**If you were reading `tags` as strings, read `tag.name` instead** — `file.tags.map(t => t.name)`
+in JavaScript, `[t["name"] for t in file["tags"]]` in Python. The two patterns that break are
+`", ".join(file["tags"])` and `"Important" in file["tags"]`.
+
+`uuid` and `name` are always present. `source` is nullable: `"manual"` for a tag a user applied,
+`"auto_ai"` for one applied by auto-labeling, `null` for tags predating the field.
+
+What did **not** change:
+
+- `GET /api/files` (the list endpoint) has **no** `tags` field, before or after.
+- `GET /api/tags`, `POST /api/tags`, `GET /api/tags/unused`,
+  `POST /api/tags/files/{uuid}/tags` and `DELETE /api/tags/files/{uuid}/tags/{tag_name}` are
+  unchanged — they already returned objects, and the delete route is still keyed by tag **name**.
+- Search results still carry `tags` as plain strings (the search index stores tag names).
+- No routes, permissions, or tag-visibility rules changed. No database migration is involved.
 
 ### Other Major Upgrade Considerations
 

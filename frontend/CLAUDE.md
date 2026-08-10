@@ -9,6 +9,11 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   **client-side SPA** (`fallback: index.html`, no SSR, no `+page.server.ts`). Data is fetched
   client-side (`onMount`/reactive) from the FastAPI backend.
 - i18n via i18next (8 locales in `src/lib/i18n/locales`). Node pinned to 22 (`.nvmrc`).
+  Locales are **code-split, one chunk per language** — `src/lib/i18n/index.ts` globs them
+  non-eagerly and `ensureLocaleLoaded()` fetches only the active one. Never static-import a
+  locale JSON: that puts all ~2.3 MB back into the entry chunk. Only the active language is
+  loaded (not the `en` fallback), which is safe because `npm run check:i18n` enforces exact
+  key parity — keep it green.
 
 ## Commands (run in `frontend/`)
 
@@ -37,12 +42,29 @@ already-downloaded data (TXT/SRT/VTT/CSV export).
 - **prod**: `frontend/Dockerfile.prod` builds static assets served by **nginx** (`nginx.conf`,
   `nginx-pki.conf`) with CSP/HSTS/security headers. Any change touching `app.html`, asset paths,
   env (`import.meta.env.VITE_*`), or CSP must be verified in BOTH. No secrets in the bundle.
+- **No service worker, deliberately.** This is an authenticated always-online SPA, so a worker
+  buys nothing and risks plenty: a cache-first worker would cache the app shell _and_ same-origin
+  `/s3/` media, and Cache Storage is not cleared by `$lib/session/clearUserState`. Chrome dropped
+  the service-worker requirement for installability (M108/M112), so the manifest alone keeps the
+  PWA installable. `$lib/serviceWorkerCleanup` unregisters strays on boot — don't re-add one.
+- **Anything in `static/` is unhashed** and nginx caches `*.js`/`*.css`/images for a year. `app.html`
+  busts `/theme.js` with a `?v=` content digest (`%sveltekit.env.PUBLIC_THEME_VERSION%`, computed in
+  `vite.config.ts`); a new unhashed asset needs the same treatment. `static/fonts/` and
+  `static/ffmpeg/` are gitignored and fetched by the `prebuild` scripts — a clean checkout must
+  still produce a complete image.
+- **Build identity**: `__APP_VERSION__` / `__BUILD_TIME__` are `define`d in `vite.config.ts` (and
+  mirrored in `vitest.config.ts`). The About dialog compares `__APP_VERSION__` against the
+  backend's `/health` version so a stale cached tab is visible rather than silent.
 
 ## Where things live
 
 - `src/components/ui` — shared primitives (see its CLAUDE.md). `src/lib/utils` — pure helpers
   (time formatting lives ONLY in `formatting.ts`). `src/lib/api` — typed API clients.
   `src/stores` — Svelte stores. `src/routes` — pages.
+- `src/components/chat` — RAG chat surface (see its CLAUDE.md). Assistant output is the only
+  model-authored HTML in the app; it renders through `renderChatMarkdown`'s dedicated
+  DOMPurify profile, which blocks relative URLs so model text can never mint an
+  app-internal link. Never route it through `sanitizeHighlightHtml` instead.
 - `src/lib/cloud` — **managed-edition seam stub** (see its README). The commercial repo replaces
   this directory at image-build time. Core code imports only `$lib/cloud` (+ its `components/`),
   gates every call site with `isCloudEdition` from `$lib/edition`, and must never name the

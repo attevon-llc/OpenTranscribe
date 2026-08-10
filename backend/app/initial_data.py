@@ -11,17 +11,21 @@ All operations are idempotent (safe to run multiple times).
 """
 
 import logging
+import secrets
+from datetime import UTC
+from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.approval import APPROVAL_APPROVED
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import role_implies_superuser
 from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.models.prompt import SummaryPrompt
 from app.models.user import User
-from app.services.tag_service import resolve_or_create_tag
+from app.services.tag_service import normalize_tag_name
 
 # No module-level basicConfig: this module is imported during app startup and
 # a default root handler here would double every log line. configure_logging()
@@ -29,51 +33,176 @@ from app.services.tag_service import resolve_or_create_tag
 logger = logging.getLogger(__name__)
 
 
-def _ensure_admin_user(db: Session) -> None:
-    """Create the default admin user if it doesn't exist.
+#: The well-known development credential. NEVER seeded in a hardened environment.
+_DEV_ADMIN_EMAIL = "admin@example.com"
+_DEV_ADMIN_PASSWORD = "password"  # noqa: S105  # nosec B105  # gitleaks:allow
 
-    The default admin is the platform owner, so it gets ``super_admin`` (which
+
+def _resolve_bootstrap_admin() -> tuple[str, str, bool]:
+    """Decide which admin credential to seed.
+
+    Returns:
+        ``(email, password, generated)`` — *generated* is True when the password was
+        randomly generated and must be surfaced to the operator exactly once.
+    """
+    from app.core.config import settings
+
+    if not settings.is_hardened:
+        # Dev/test: the well-known credential the e2e suite and local workflow expect.
+        return _DEV_ADMIN_EMAIL, _DEV_ADMIN_PASSWORD, False
+
+    if settings.INITIAL_ADMIN_PASSWORD:
+        return settings.INITIAL_ADMIN_EMAIL, settings.INITIAL_ADMIN_PASSWORD, False
+
+    # Hardened with no password supplied: generate one rather than shipping a known
+    # default. token_urlsafe(24) is 192 bits of entropy.
+    return settings.INITIAL_ADMIN_EMAIL, secrets.token_urlsafe(24), True
+
+
+def _ensure_admin_user(db: Session) -> None:
+    """Create the bootstrap admin user if no admin exists yet.
+
+    The bootstrap admin is the platform owner, so it gets ``super_admin`` (which
     can configure authentication, change roles, etc.). ``is_superuser`` is the
     derived mirror of ``role == super_admin`` — see ``app.auth.roles``.
+
+    **The hardcoded dev super_admin credential is only ever created in
+    a relaxed environment** (issue #284 A0.9). It used to be seeded unconditionally on
+    every boot with no env gate, so any public deployment shipped with a known
+    super-admin credential. A hardened deployment instead gets ``INITIAL_ADMIN_EMAIL``
+    with ``INITIAL_ADMIN_PASSWORD``, or a generated password logged once at startup.
+
+    Repairing an existing account whose derived mirror drifted is
+    :func:`_heal_superuser_mirror`'s job, not this function's.
     """
-    user = db.query(User).filter(User.email == "admin@example.com").first()
+    email, password, generated = _resolve_bootstrap_admin()
+
+    user = db.query(User).filter(User.email == email).first()
+
+    # In a hardened environment, never resurrect the dev credential — and don't create
+    # a second bootstrap admin if the operator already has one under another address.
+    if not user and _admin_exists(db):
+        logger.debug("An admin already exists; skipping bootstrap admin creation")
+        return
+
     if not user:
         user = User(
-            email="admin@example.com",
+            email=email,
             full_name="Admin User",
-            hashed_password=get_password_hash("password"),
+            hashed_password=get_password_hash(password),
             role=ROLE_SUPER_ADMIN,
             is_superuser=role_implies_superuser(ROLE_SUPER_ADMIN),
+            # System-created: there is no inbox to prove control of, and an
+            # unverified bootstrap admin is the one account a
+            # require_email_verification deployment could strand.
+            email_verified=True,
+            # Password expiry keys off this column. Leaving it NULL made the
+            # bootstrap admin indistinguishable from an account whose password
+            # age is unknown, which is the one account that must never be locked
+            # out by an expiry rule.
+            password_changed_at=datetime.now(UTC),
+            # NEVER pending, whatever require_account_approval says. This is the
+            # break-glass account, and only a signed-in administrator can clear
+            # an approval queue — a deployment whose sole administrator is IN the
+            # queue is a deployment nobody can get into. Written explicitly rather
+            # than left to the column default so the guarantee is visible here.
+            approval_status=APPROVAL_APPROVED,
+            approved_at=datetime.now(UTC),
         )
         db.add(user)
         db.commit()
-        logger.info("Created default admin user: admin@example.com (super_admin)")
-    elif user.role != ROLE_SUPER_ADMIN and user.is_superuser:
-        # Self-heal a legacy default admin (role='admin' + is_superuser=True),
-        # which could not reach the super_admin-gated surfaces. Idempotent.
-        user.role = ROLE_SUPER_ADMIN
-        user.is_superuser = True
-        db.commit()
-        logger.info("Promoted legacy default admin admin@example.com to super_admin")
+        if generated:
+            # The only time this password is ever visible. Logged at CRITICAL so it
+            # survives a production log level and the operator cannot miss it.
+            logger.critical(
+                "Created bootstrap admin %s with a GENERATED password: %s\n"
+                "Store it now and change it after first login — it is not recoverable. "
+                "Set INITIAL_ADMIN_PASSWORD to choose your own instead.",
+                email,
+                password,
+            )
+        else:
+            logger.info("Created bootstrap admin user: %s (super_admin)", email)
     else:
         logger.debug("Admin user already exists")
 
 
-def _ensure_default_tags(db: Session) -> None:
-    """Create default tags if they don't exist.
+def _heal_superuser_mirror(db: Session) -> None:
+    """Repair any row where ``is_superuser`` disagrees with ``role``.
 
-    Seeds through the shared resolver so the seeded rows carry
-    ``normalized_name``. Created inline they did not, which made them invisible
-    to normalized-exact resolution — a user typing "interview" would get a
-    second tag alongside the seeded "Interview".
+    ``is_superuser`` is a derived mirror of ``role == super_admin`` (see
+    ``app.auth.roles``). Deployments seeded before ``role`` existed carry the legacy
+    shape ``role='admin' + is_superuser=True``, which cannot reach the
+    super_admin-gated surfaces (Settings → Authentication). The repair is keyed on
+    the *shape*, not on the bootstrap email — an operator whose admin account uses
+    a different address was previously left stuck.
+
+    The role is promoted to match the flag rather than the flag cleared: the flag is
+    the privilege those deployments actually granted. Idempotent, and never creates
+    an account — only the derived mirror is repaired.
+    """
+    legacy_superusers = (
+        db.query(User).filter(User.is_superuser.is_(True), User.role != ROLE_SUPER_ADMIN).all()
+    )
+    if not legacy_superusers:
+        return
+
+    for user in legacy_superusers:
+        logger.info(
+            "Promoting legacy superuser %s (role=%s) to %s",
+            user.email,
+            user.role,
+            ROLE_SUPER_ADMIN,
+        )
+        user.role = ROLE_SUPER_ADMIN
+        user.is_superuser = role_implies_superuser(ROLE_SUPER_ADMIN)
+    db.commit()
+
+
+def _admin_exists(db: Session) -> bool:
+    """Whether any super_admin account already exists."""
+    return (
+        db.query(User).filter(User.role == ROLE_SUPER_ADMIN).first() is not None
+        or db.query(User).filter(User.is_superuser.is_(True)).first() is not None
+    )
+
+
+def _ensure_default_tags(db: Session) -> None:
+    """Create the system tag vocabulary if it doesn't exist.
+
+    These are *system* tags: ``user_id IS NULL`` makes them visible to every
+    account, which is the one case where an ownerless tag is intentional — so
+    this is the one seeding path that deliberately does **not** go through
+    ``resolve_or_create_tag`` (which always attributes an owner). The lookup
+    must carry the same predicate — a user's own "Meeting" must not satisfy the
+    seeder and leave the shared row missing.
+
+    The rows are seeded **with** ``normalized_name``. Created without it they
+    were invisible to normalized-exact resolution, so a user typing "interview"
+    got a second tag alongside the seeded "Interview" — the four most common
+    tags in every install, each able to fork a duplicate.
     """
     default_tags = ["Important", "Meeting", "Interview", "Personal"]
 
     for tag_name in default_tags:
-        try:
-            resolve_or_create_tag(db, tag_name)
-        except IntegrityError:
-            logger.debug(f"Default tag '{tag_name}' already exists (concurrent creation)")
+        tag = db.query(Tag).filter(Tag.name == tag_name, Tag.user_id.is_(None)).first()
+        if not tag:
+            try:
+                tag = Tag(
+                    name=tag_name,
+                    user_id=None,
+                    normalized_name=normalize_tag_name(tag_name),
+                )
+                db.add(tag)
+                db.flush()
+                logger.info(f"Created default tag: {tag_name}")
+            except IntegrityError:
+                db.rollback()
+                logger.debug(f"Default tag '{tag_name}' already exists (concurrent creation)")
+        elif not tag.normalized_name:
+            # Seeded before this column was maintained: repair in place, or the
+            # shared row stays invisible to normalized-exact resolution forever.
+            tag.normalized_name = normalize_tag_name(tag_name)
 
     db.commit()
 
@@ -139,6 +268,9 @@ def init_db(db: Session) -> None:
     Idempotent — safe to call on every startup.
     Creates admin user, default tags, and system prompts if missing.
     """
+    # Repair legacy superuser rows before the bootstrap check, so it sees roles that
+    # already agree with their is_superuser mirror.
+    _heal_superuser_mirror(db)
     _ensure_admin_user(db)
     _ensure_default_tags(db)
     _ensure_system_prompts(db)

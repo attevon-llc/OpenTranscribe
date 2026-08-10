@@ -77,13 +77,32 @@ Sources scan automatically on their interval. To import right away, click **Scan
 source card. Expand a source to see its per-file history, including skip reasons (duplicate,
 too old, invalid type) and stitched parts.
 
+### Near-instant pickup (local folders)
+
+A local folder can also be watched for filesystem events, so a new recording is picked up
+seconds after it lands instead of at the next scan. An administrator turns on **Allow
+file-system event watching** in Global Settings; each local source then gets a **Watch for
+file-system events** checkbox.
+
+The source card shows which method is actually in use, so this is never a silent promise:
+
+| Badge | Meaning |
+| --- | --- |
+| **FS events** | Native OS notifications — the fastest path. |
+| **FS polling** | The folder is re-checked every few seconds instead. This is normal and expected on a NAS/network share, and on Docker Desktop for macOS or a Windows drive, where the operating system does not forward change notifications into the container. |
+| **Watch failed** / **Watch unavailable** | The watcher could not start; hover for the reason. |
+| **Every N min** | Nothing is watching — the scheduled scan is the only mechanism. |
+
+The scheduled scan keeps running in every case, so imports still happen even if watching is
+unavailable.
+
 ## Email notifications (experimental)
 
 :::warning Experimental
 Email delivery has not yet been verified against a live provider — test before relying on it.
 :::
 
-Administrators can add reusable email configurations under **Settings → Watch Sources → Email
+Super admins can add reusable email configurations under **Settings → Watch Sources → Email
 Notifications**, then link them to a source. Click the info (ⓘ) icon for setup guidance:
 
 - **SMTP (Gmail, Outlook, Yahoo, …)** — host, port, username, password. If your account uses
@@ -99,12 +118,25 @@ Use **Test** on a saved email config to validate the connection.
 
 ## Admin: global settings
 
-Administrators see a **Global Settings** panel:
+:::note Changed in v0.5.0
+The Global Settings panel and the email-notification configs above now require the
+**super_admin** role rather than `admin`. Managing your own watch sources is unaffected.
+:::
+
+Super admins see a **Global Settings** panel:
 
 - **Watch Sources enabled** — master on/off.
 - **File stability wait (seconds)** — files modified within this many seconds are treated as
   "still being written" and skipped until the next scan (default 30).
 - **Max imports per scan** — bounds how many files one scan imports at once.
+- **Allow file-system event watching** — lets local sources opt into near-instant pickup. When
+  enabled, two more controls appear:
+  - **Watch method** — *Automatic* (default) checks whether the operating system really
+    delivers change notifications for each folder and quietly switches to periodic re-checking
+    when it does not. *Native events only* / *Polling observer only* force one method; *Off*
+    disables watching entirely.
+  - **Fallback sweep interval (seconds)** — how often a folder is re-checked when native events
+    are unavailable. Lower means faster pickup; raise it for very large or network folders.
 
 All of these are stored in the database and take effect on the next scan — no restart.
 
@@ -115,5 +147,12 @@ All of these are stored in the database and take effect on the next scan — no 
   picked up on the next scan.
 - **A file shows "skipped (duplicate)"** — the same content already exists in your library or
   another source; the row links to the existing file.
+- **A source shows "FS polling" instead of "FS events"** — expected on network shares and on
+  Docker Desktop for macOS/Windows: the host does not forward change notifications into the
+  container, so the folder is re-checked on a short interval instead. Hover the badge for the
+  exact reason.
+- **A local source shows "Every N min" although the box is ticked** — nothing is watching it.
+  Check that the stack was started with `--with-watch` (celery-beat needs the folder mounted
+  too) and look at `./opentr.sh logs celery-beat`.
 - **Connection test fails** — re-check credentials, endpoint/SSL (S3), and that the server/path
   is reachable from the container network.

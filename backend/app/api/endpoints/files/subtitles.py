@@ -32,14 +32,25 @@ def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
 
     Honors the admin forced-export lock: when ``export_locked`` is set, the original
     can never be exported regardless of the ``redact`` flag.
+
+    Raises:
+        HTTPException: 503 when the redaction policy cannot be resolved.
     """
     try:
         from app.services.redaction.config import resolve_effective_config
 
         cfg = resolve_effective_config(db, current_user.id)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Failed to resolve redaction config for subtitles: {e}")
-        return None, set()
+    except Exception as e:
+        # FAIL CLOSED. Returning None skipped the `export_locked` branch three
+        # lines below and handed SubtitleService a None config, whose masking
+        # step early-returns — so the user downloaded a fully unredacted
+        # SRT/VTT/TXT even under the admin `force_export_redacted` floor.
+        # An export is unrecoverable once written to disk; refuse it instead.
+        logger.exception("Failed to resolve redaction config; refusing the subtitle export")
+        raise HTTPException(
+            status_code=503,
+            detail="Redaction policy is temporarily unavailable; export withheld.",
+        ) from e
 
     if getattr(cfg, "export_locked", False):
         return cfg, set()  # forced — never reveal on export
@@ -49,7 +60,7 @@ def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
 
 
 @router.get("/{file_uuid}/subtitles", response_class=Response)
-async def get_subtitles(
+def get_subtitles(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -117,16 +128,20 @@ async def get_subtitles(
             },
         )
 
+    except HTTPException:
+        # The 404 raised above for an empty transcript is a deliberate status;
+        # the broad handler below turned it into a 500 whose detail embedded the
+        # 404's message.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to generate subtitles: {str(e)}"
-        ) from e
+        logger.exception(f"Failed to generate {subtitle_format} subtitles for file {file_uuid}")
+        raise HTTPException(status_code=500, detail="Failed to generate subtitles.") from e
 
 
 @router.get("/{file_uuid}/subtitles/validate", response_model=SubtitleValidationResult)
-async def validate_subtitles(
+def validate_subtitles(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -174,10 +189,11 @@ async def validate_subtitles(
             total_duration=float(total_duration),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to validate subtitles: {str(e)}"
-        ) from e
+        logger.exception(f"Failed to validate subtitles for file {file_uuid}")
+        raise HTTPException(status_code=500, detail="Failed to validate subtitles.") from e
 
 
 class BulkExportPrepareRequest(BaseModel):
@@ -250,15 +266,16 @@ def prepare_bulk_export(
 
 
 @router.get("/bulk-export-stream")
-async def bulk_export_stream(
+def bulk_export_stream(
     job: str = Query(..., description="Job id returned by /bulk-export/prepare"),
     current_user: User = Depends(get_current_active_user),  # cookie-auth gates the stream
 ):
     """Server-Sent Events stream for an async bulk export.
 
     Events: ``progress`` (status text), ``ready`` (``{url, filename, exported, skipped}``),
-    ``error`` (``{message}``). On connect the reconnect-safe result cache is checked first,
-    so a dropped EventSource still delivers once the worker has finished — no polling.
+    ``error`` (``{message}``). The reconnect-safe result cache is read both before and
+    after subscribing, so a dropped EventSource — or a job that finishes inside the
+    subscribe window (issue #334) — still delivers without polling.
     """
     import asyncio
     import contextlib
@@ -269,58 +286,86 @@ async def bulk_export_stream(
     from redis.exceptions import TimeoutError as RedisTimeoutError
 
     from app.core.config import settings
-    from app.core.redis import get_redis
     from app.services.download_events import bulk_export_channel
 
     def sse(event: str, payload: dict) -> str:
         return f"event: {event}\ndata: {_json.dumps(payload)}\n\n"
 
     async def event_stream():
-        # 1. Already finished? deliver immediately (covers reconnects after completion).
-        cached = get_redis().get(f"bulk_export_result:{job}")
-        if cached:
-            yield sse("ready", _json.loads(cached))
-            return
-
+        # The whole generator is iterated ON the event loop, so every Redis call in it
+        # must be async. The result-cache read used to go through the synchronous
+        # ``get_redis()`` singleton, stalling every other request for the round trip
+        # (issue #320); it now shares the async client already used for the pub/sub.
         client = aioredis.from_url(
             settings.REDIS_URL, health_check_interval=30, socket_keepalive=True
         )
-        pubsub = client.pubsub()
-        await pubsub.subscribe(bulk_export_channel(job))
-        yield sse("progress", {"message": "Preparing export…", "progress": 0})
+
+        async def ready_frame() -> str | None:
+            """SSE ``ready`` frame if the worker already cached a result, else None."""
+            cached = await client.get(f"bulk_export_result:{job}")
+            return sse("ready", _json.loads(cached)) if cached else None
+
         try:
-            while True:
-                try:
-                    msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
-                except (TimeoutError, RedisTimeoutError):
-                    yield ": keepalive\n\n"
-                    continue
-                except RedisError as e:
-                    logger.warning(f"Bulk export SSE pubsub error for job {job}: {e}")
-                    yield sse("error", {"message": "Connection interrupted."})
+            # 1. Already finished? deliver immediately (covers reconnects after completion).
+            frame = await ready_frame()
+            if frame:
+                yield frame
+                return
+
+            pubsub = client.pubsub()
+            await pubsub.subscribe(bulk_export_channel(job))
+            try:
+                # 2. RE-CHECK after subscribing (issue #334, mirroring #284 A1.22).
+                #
+                # A single check-then-subscribe has a lost-wakeup race: a worker that
+                # finishes in the gap writes the result key and publishes to an empty
+                # channel, and this stream then waits on `get_message` forever for an
+                # event that already happened — the export appears to hang while the
+                # ZIP sits ready in object storage. Re-reading after subscribing means
+                # the completion is either buffered on the subscription or visible to
+                # this second read; it cannot fall between them.
+                frame = await ready_frame()
+                if frame:
+                    yield frame
                     return
-                if msg is None:
-                    yield ": keepalive\n\n"
-                    continue
-                try:
-                    data = _json.loads(msg["data"])
-                except Exception:
-                    logger.debug("Skipping malformed bulk export event payload")
-                    continue
-                status = data.get("status")
-                if status == "completed" and data.get("url"):
-                    yield sse("ready", data)
-                    return
-                if status == "error":
-                    yield sse("error", data)
-                    return
-                yield sse("progress", data)
+
+                yield sse("progress", {"message": "Preparing export…", "progress": 0})
+                while True:
+                    try:
+                        msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
+                    except (TimeoutError, RedisTimeoutError):
+                        yield ": keepalive\n\n"
+                        continue
+                    except RedisError as e:
+                        logger.warning(f"Bulk export SSE pubsub error for job {job}: {e}")
+                        yield sse("error", {"message": "Connection interrupted."})
+                        return
+                    if msg is None:
+                        yield ": keepalive\n\n"
+                        continue
+                    try:
+                        data = _json.loads(msg["data"])
+                    except Exception:
+                        logger.debug("Skipping malformed bulk export event payload")
+                        continue
+                    status = data.get("status")
+                    if status == "completed" and data.get("url"):
+                        yield sse("ready", data)
+                        return
+                    if status == "error":
+                        yield sse("error", data)
+                        return
+                    yield sse("progress", data)
+            finally:
+                # Only reached once subscribed — unsubscribing an unsubscribed pubsub
+                # would open a connection just to tear it down.
+                with contextlib.suppress(Exception):
+                    await pubsub.unsubscribe(bulk_export_channel(job))
+                    await pubsub.close()
         except asyncio.CancelledError:
             raise
         finally:
             with contextlib.suppress(Exception):
-                await pubsub.unsubscribe(bulk_export_channel(job))
-                await pubsub.close()
                 await client.close()
 
     return StreamingResponse(
@@ -335,7 +380,7 @@ async def bulk_export_stream(
 
 
 @router.get("/supported-formats")
-async def get_supported_formats():
+def get_supported_formats():
     """
     Get list of supported subtitle formats.
 

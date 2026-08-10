@@ -134,7 +134,7 @@ class PrepareUploadRequest(BaseModel):
         filename: Name of the file to be uploaded
         file_size: Size of the file in bytes
         content_type: MIME type of the file
-        file_hash: SHA-256 hash of the file for duplicate detection
+        file_hash: Content fingerprint of the source, for duplicate detection
         extracted_from_video: Optional metadata from original video file (if audio was extracted client-side)
         min_speakers: Optional minimum number of speakers for diarization
         max_speakers: Optional maximum number of speakers for diarization
@@ -147,7 +147,15 @@ class PrepareUploadRequest(BaseModel):
     file_size: int = Field(..., description="Size of the file in bytes")
     content_type: str = Field(..., description="MIME type of the file")
     file_hash: str | None = Field(
-        None, description="SHA-256 hash of the file for duplicate detection"
+        None,
+        description=(
+            "Client-computed content fingerprint used for pre-upload duplicate "
+            "detection. The browser sends an imohash (32-char hex) — the same "
+            "constant-time fingerprint the server computes into MediaFile.imohash, "
+            "so a 15 GB file costs the same to fingerprint as a 1 MB one. For "
+            "client-extracted audio this is the fingerprint of the SOURCE VIDEO. "
+            "A legacy SHA-256 from an older client still matches historical rows."
+        ),
     )
     extracted_from_video: dict[str, Any] | None = Field(
         None, description="Metadata from original video file if audio was extracted client-side"
@@ -376,21 +384,31 @@ class TranscriptSegment(TranscriptSegmentBase, UUIDBaseSchema):
 
 
 class GroupedTranscriptSegment(BaseModel):
-    """A display group of transcript segments, mirroring the frontend's grouping.
+    """A display group of transcript segments, referencing them by UUID.
 
     Consecutive segments sharing an ``overlap_group_id`` (with more than one member)
     are collapsed into a single overlap group; every other segment is its own
-    single-member group. This replicates the ``groupedTranscriptSegments`` logic in
-    ``TranscriptDisplay.svelte`` so the frontend can render groups directly.
+    single-member group. This is the authoritative grouping — the SPA renders it
+    directly rather than recomputing it.
+
+    Groups carry **UUID references**, never copies. ``transcript_segments`` is the
+    single representation of segment data on the wire and on the client; embedding
+    copies here previously gave the SPA two objects per segment, and every optimistic
+    update patched only one of them — the transcript then rendered stale names and
+    text until a full page reload (issue #352).
 
     Attributes:
         is_overlap_group: True when this group represents an overlapping-speech cluster.
-        overlap_group_id: The shared overlap group id (only set for overlap groups).
+        overlap_group_id: The shared overlap group id. Set on every group that has one,
+            including single-member groups, so a group split across a pagination
+            boundary can be stitched back together by the client.
         start_time: Minimum start time across the group's segments.
         end_time: Maximum end time across the group's segments.
         start_segment_index: Index of the first segment of this group in the flat
-            transcript list (used by the frontend for reading-progress tracking).
-        segments: The segments belonging to this group, in order.
+            transcript list, **global** across pagination (used by the frontend for
+            reading-progress tracking).
+        segment_uuids: UUIDs of the segments in this group, in order. Resolve them
+            against ``transcript_segments``.
     """
 
     is_overlap_group: bool = False
@@ -398,7 +416,31 @@ class GroupedTranscriptSegment(BaseModel):
     start_time: float
     end_time: float
     start_segment_index: int
-    segments: list[TranscriptSegment] = []
+    segment_uuids: list[UUID] = []
+
+
+class TranscriptSegmentsPage(BaseModel):
+    """One page of transcript segments, as served by ``GET /files/{uuid}/segments``.
+
+    Mirrors the transcript half of ``MediaFileDetail``: the flat segment list plus the
+    grouping that references it. ``grouped_segments`` is always present (empty when the
+    transcript is withheld) so the SPA can concatenate pages without a null guard.
+
+    Attributes:
+        transcript_segments: This page's segments, in order.
+        grouped_segments: Display grouping for this page, with **global**
+            ``start_segment_index`` values.
+        total_segments: Total segment count for the file, across all pages.
+        redaction_pending: True when the transcript is withheld because redaction
+            detection has not finished.
+        redaction_status: Redaction pipeline status, when withheld.
+    """
+
+    transcript_segments: list[TranscriptSegment] = []
+    grouped_segments: list[GroupedTranscriptSegment] = []
+    total_segments: int = 0
+    redaction_pending: bool = False
+    redaction_status: str | None = None
 
 
 class MediaFileBase(BaseModel):
@@ -502,7 +544,27 @@ class MediaFileDetail(MediaFile):
     # Pre-grouped view of transcript_segments (overlap groups kept together).
     # Mirrors the frontend grouping so it can render groups without recomputing.
     grouped_segments: list[GroupedTranscriptSegment] = []
-    tags: list[str] = []
+    # Full tag objects (uuid + name + source), the same shape `/api/tags` returns.
+    # Names alone lost `source`, so the detail page could not badge AI-applied tags
+    # without a second lookup. BREAKING wire change (issue #326) — see CHANGELOG.
+    tags: list["Tag"] = Field(
+        default=[],
+        description=(
+            "Tags attached to this file, as full tag objects — the same shape "
+            "`GET /api/tags` returns. BREAKING (issue #326): this was an array of tag "
+            "*name strings*; clients reading `tags` as strings must now read `tag.name`. "
+            "Note `GET /api/files` (list) carries no `tags` field at all."
+        ),
+        json_schema_extra={
+            "example": [
+                {
+                    "uuid": "019ec90a-3f41-7aaa-8000-0000000000a1",
+                    "name": "Important",
+                    "source": "manual",
+                }
+            ]
+        },
+    )
     collections: list["Collection"] = []
     analytics: Optional["Analytics"] = None
     speakers: list[Speaker] = []
@@ -546,9 +608,55 @@ class TagBase(BaseModel):
 
 
 class Tag(TagBase, UUIDBaseSchema):
-    """Tag with UUID as public identifier"""
+    """Tag with UUID as public identifier.
 
-    source: str | None = None
+    The single tag shape on the API: served by ``GET /api/tags`` (as
+    ``TagWithCount``), ``POST /api/tags``, ``POST /api/tags/files/{uuid}/tags``,
+    and — since issue #326 — ``MediaFileDetail.tags``. Tag names are unique only
+    per owner (``v374_add_tag_user_id``), so ``uuid`` is the stable identifier.
+    """
+
+    source: str | None = Field(
+        default=None,
+        description=(
+            "How the tag was applied: 'manual' for a user action, 'auto_ai' for the "
+            "auto-labeling LLM. Null on tags created before this field existed."
+        ),
+    )
+    is_shared: bool = Field(
+        default=False,
+        description=(
+            "True for a system tag (`user_id IS NULL`): the shared vocabulary every "
+            "account sees and can attach. Only an admin may rename, merge, delete or "
+            "promote one. Derived from ownership, never stored."
+        ),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_is_shared(cls, data: Any) -> Any:
+        """Project ownership onto the wire without exposing the owner's id.
+
+        ``user_id`` is deliberately never serialized — which account owns a tag
+        is nobody else's business, and the SPA only needs to know whether the row
+        is shared, so it can gate the admin-only actions.
+
+        Runs **before** ``UUIDBaseSchema.prepare_uuid_response`` (a subclass's
+        before-validator is the outer one), so it takes the raw ORM row and
+        hands back a plain dict, which the base validator then passes through
+        untouched. Fields are read from ``cls.model_fields`` rather than listed,
+        so ``TagWithCount``/``TagClusterMember``/``TagClusterSuggestion`` keep
+        their own extra fields without this needing to know about them.
+        """
+        if isinstance(data, dict) or not hasattr(data, "user_id"):
+            return data
+        values: dict[str, Any] = {
+            name: getattr(data, name)
+            for name in cls.model_fields
+            if name != "is_shared" and hasattr(data, name)
+        }
+        values["is_shared"] = data.user_id is None
+        return values
 
 
 class TagWithCount(Tag):
@@ -657,6 +765,17 @@ class TagMutationResult(BaseModel):
 
 class TagReviewRequest(BaseModel):
     """Accept or reject one or more auto-labeled tags."""
+
+    tag_uuids: list[UUID] = Field(..., min_length=1)
+
+
+class TagPromoteRequest(BaseModel):
+    """Publish one or more owned tags into the shared vocabulary.
+
+    Admin-only: a shared tag appears in every account's picker, and same-named
+    tags owned by other users are folded into the promoted row, so this changes
+    what every account sees.
+    """
 
     tag_uuids: list[UUID] = Field(..., min_length=1)
 

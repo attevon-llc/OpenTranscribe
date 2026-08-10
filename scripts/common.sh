@@ -313,15 +313,18 @@ print_access_info() {
     echo "   If you see certificate warnings, trust the certificate on your device."
     echo "   See: docs/NGINX_SETUP.md for instructions"
   else
-    # Direct container access mode (development default)
+    # Direct container access mode (development default).
+    # Read the same *_PORT variables compose interpolates into its `ports:`
+    # entries, so a custom .env layout — or a fresh stack's --port-offset,
+    # which exports them offset — prints the ports actually published.
     echo "🌐 Access the application at:"
-    echo "   - Frontend:            http://localhost:5173"
-    echo "   - API:                 http://localhost:5174/api"
-    echo "   - API Documentation:   http://localhost:5174/docs"
-    echo "   - MinIO Console:       http://localhost:5179"
-    echo "   - Flower Dashboard:    http://localhost:5175/flower"
-    echo "   - OpenSearch:          http://localhost:5180"
-    echo "   - Documentation:       http://localhost:5183/docs/"
+    echo "   - Frontend:            http://localhost:${FRONTEND_PORT:-5173}"
+    echo "   - API:                 http://localhost:${BACKEND_PORT:-5174}/api"
+    echo "   - API Documentation:   http://localhost:${BACKEND_PORT:-5174}/docs"
+    echo "   - MinIO Console:       http://localhost:${MINIO_CONSOLE_PORT:-5179}"
+    echo "   - Flower Dashboard:    http://localhost:${FLOWER_PORT:-5175}/flower"
+    echo "   - OpenSearch:          http://localhost:${OPENSEARCH_PORT:-5180}"
+    echo "   - Documentation:       http://localhost:${DOCS_PORT:-5183}/docs/"
     echo ""
     echo "📝 Note: Microphone recording only works on localhost in this mode."
     echo "   For HTTPS access from other devices, set NGINX_SERVER_NAME in .env"

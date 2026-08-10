@@ -1,6 +1,6 @@
-import { axiosInstance } from '../axios';
+import axiosInstance from '../axios';
 
-export type ProtectedMediaField = {
+type ProtectedMediaField = {
   name: string;
   label: string;
   type: string;

@@ -40,16 +40,18 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "__init__.py" = ["F401"]
 # Speaker clustering uses mathematical variable names (M, MT, Z) and complex algorithms
 "**/speaker_clustering_service.py" = ["N806", "C901"]
-# OpenSearch service has complex index rebuild/repair logic and best-effort cleanup
-"**/opensearch_service.py" = ["C901", "S110"]
-# Embedding migration has best-effort index detection
-"**/speaker_embedding_migration.py" = ["S110"]
+# Long linear index-rebuild / bulk-scroll routines (rebuild_speaker_index,
+# iter_speaker_embeddings). Narrowed from the whole opensearch_service package
+# to these two files in #284 A3.3; S110 (try-except-pass) is no longer exempt
+# anywhere outside tests.
+"**/opensearch_service/repair.py" = ["C901"]
+"**/opensearch_service/speaker_read.py" = ["C901"]
 # Migrations and alembic versions use string-based SQL construction
 "**/migrations/**" = ["E501", "F401"]
 "**/alembic/**" = ["S608"]
 
 [tool.ruff.lint.mccabe]
-# Auth functions (login, LDAP, Keycloak, PKI) are inherently complex.
+# Auth functions (login, LDAP, OIDC, PKI) are inherently complex.
 # 16 is standard for auth-heavy codebases.
 max-complexity = 16
 
@@ -88,15 +90,22 @@ forbidden_modules = ["cloud", "clerk", "stripe"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-n auto --dist loadgroup --tb=short -q -m 'not integration'"
+# --strict-markers turns an unregistered marker into a collection error. Without it,
+# `gpu` sat unregistered and silently ungated for months: the modules using it carried no
+# `integration` marker, so they ran in the fast suite AND in CPU-only CI, passing only on
+# their own runtime skip guards, while the gate's `-m integration` phase never selected
+# them. Register every marker you use — see scripts/run-integration-tests.sh for the phases.
+addopts = "-n auto --dist loadgroup --tb=short -q --strict-markers -m 'not integration and not gpu'"
 markers = [
     "slow: marks tests as slow",
+    "unit: pure unit test, no external service",
     "pki: PKI certificate tests",
     "e2e: end-to-end browser tests",
     "integration: integration tests requiring running dev environment",
+    "gpu: tests requiring a physical GPU — deselected from the fast suite, run by the gate",
     "models: tests requiring ML model weights (Presidio/GLiNER/toxicity) — skipped in fast CI",
+    "ddl_exclusive: performs schema DDL (DROP/ALTER TABLE) needing full DB-wide exclusivity, not just self-consistency — see tests/conftest.py's advisory-lock isolation (issue #389)",
 ]
-filterwarnings = ["ignore::pytest.PytestUnknownMarkWarning"]
 norecursedirs = ["tests/e2e"]
 
 # Coverage runs via `pytest --cov=app` (CI backend-tests job + the local gate's

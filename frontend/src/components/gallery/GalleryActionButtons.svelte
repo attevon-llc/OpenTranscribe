@@ -1,6 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { galleryStore, galleryState, selectedCount, allFilesSelected } from '../../stores/gallery';
+  import { chatStore } from '../../stores/chat';
+  import { toastStore } from '../../stores/toast';
+
+  /** Mirrors ChatScope.file_uuids max_length in backend/app/schemas/chat.py. */
+  const CHAT_MAX_FILES = 100;
+  import { goto } from '$app/navigation';
   import { t } from '../../stores/locale';
   import type { MediaFile } from '$lib/types/media';
 
@@ -65,6 +71,33 @@
   function handleExport(format: string) { galleryStore.triggerExport(format); closeAllMenus(); }
   function handleSpeakerId() { galleryStore.triggerSpeakerId(); closeAllMenus(); }
   function handleCancelProcessing() { galleryStore.triggerCancelProcessing(); closeAllMenus(); }
+
+  /**
+   * Hand the selection to /chat.
+   *
+   * Passed through the store rather than the URL: a bulk selection can run to
+   * hundreds of uuids, well past what a query string can carry. The gallery
+   * selection is left intact, matching how bulk export behaves.
+   */
+  async function handleChat() {
+    const completed = selectedFileObjects
+      .filter((f) => f.status === 'completed')
+      .map((f) => f.uuid);
+    if (!completed.length) return;
+
+    // ChatScope.file_uuids is capped at 100 server-side. Truncating with a
+    // notice beats letting the create/estimate calls 422 with no explanation.
+    const capped = completed.slice(0, CHAT_MAX_FILES);
+    if (completed.length > CHAT_MAX_FILES) {
+      toastStore.info(
+        $t('gallery.bulk.chatTruncated', { used: CHAT_MAX_FILES, total: completed.length })
+      );
+    }
+
+    chatStore.setPendingContext(capped);
+    closeAllMenus();
+    await goto('/chat');
+  }
 </script>
 
 <div class="gallery-action-buttons">
@@ -93,7 +126,7 @@
             <polyline points="1 20 1 14 7 14"></polyline>
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
           </svg>
-          <span>Process ({$selectedCount})</span>
+          <span>{$t('gallery.bulk.processCount', { count: $selectedCount })}</span>
           <svg class="chevron" class:open={showProcessMenu} xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
@@ -114,6 +147,23 @@
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
               </svg>
               {$t('gallery.bulk.reprocess')}
+            </button>
+            <button
+              class="dropdown-item"
+              on:click={handleChat}
+              disabled={!hasCompletedSelected}
+              title={$t('gallery.bulk.chatWithSelectedTooltip')}
+              data-testid="gallery-chat-with-selected"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+              </svg>
+              {$t('gallery.bulk.chatWithSelected', {
+                count: Math.min(
+                  selectedFileObjects.filter((f) => f.status === 'completed').length,
+                  CHAT_MAX_FILES
+                ),
+              })}
             </button>
             <button
               class="dropdown-item"
@@ -195,7 +245,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
           </svg>
-          <span>Organize ({$selectedCount})</span>
+          <span>{$t('gallery.bulk.organizeCount', { count: $selectedCount })}</span>
           <svg class="chevron" class:open={showOrganizeMenu} xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>

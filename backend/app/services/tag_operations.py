@@ -4,14 +4,18 @@ Split out of :mod:`app.services.tag_service`, which owns *resolution* (one
 supplied name → one ``Tag`` row). This module owns the destructive side, and it
 carries a different set of hazards:
 
-* **Tags are global rows.** ``Tag`` has no ``user_id``/``organization_id`` and
-  ``name`` is globally unique, so every operation here acts on every user's
-  files at once — while ``GET /tags`` reports counts scoped to what the caller
-  can see. A confirmation reading "3 files" in front of a delete that strips the
-  tag from 500 is a lie, so :func:`preview_tag_impact` reports the caller-visible
-  count and the true global count as **separate** numbers.
+* **A tag reaches files the caller cannot see.** Since ``v374_add_tag_user_id``
+  a tag is owned (``Tag.user_id``) or *system* (``user_id IS NULL``), and a
+  system tag is attached across every account. ``GET /tags`` reports counts
+  scoped to what the caller can see, so a confirmation reading "3 files" in
+  front of a delete that strips the tag from 500 is a lie:
+  :func:`preview_tag_impact` reports the caller-visible count and the true
+  deployment-wide count as **separate** numbers. Which tags a caller may reach
+  at all is decided before this module runs, by
+  ``endpoints/tags.py:_writable_tag_ids`` — own tags always, system tags for an
+  admin, never another account's.
 * **``file_tag`` carries ``UNIQUE(media_file_id, tag_id)``** (declared in the DDL
-  at ``alembic/versions/v010_baseline.py``, not on the ORM model). A bare
+  at ``alembic/versions/v010_baseline.py``, and now on the ORM model too). A bare
   ``UPDATE file_tag SET tag_id = survivor`` therefore aborts the transaction the
   first time a file carries both tags — which is the common case for exactly the
   near-duplicate pairs merge exists for. Merge collapses those pairs instead.
@@ -502,7 +506,7 @@ def rename_tag(
     if tag is None:
         raise TagNotFoundError(f"Tag {tag_id} no longer exists")
 
-    existing = lookup_existing_tag(db, normalized, cleaned)
+    existing = lookup_existing_tag(db, normalized, cleaned, user_id)
     if existing is not None and existing.id != tag.id:
         if not confirm_merge:
             impact = preview_tag_impact(
@@ -575,3 +579,110 @@ def delete_tags(
 
     on_tags_changed(db, affected_file_ids, user_id=user_id)
     return TagMutationOutcome(impact=impact, deleted_uuids=deleted_uuids)
+
+
+def promote_tags_to_shared(
+    db: Session,
+    tag_ids: Sequence[int],
+    *,
+    user_id: int,
+    organization_id: int | None = None,
+) -> TagMutationOutcome:
+    """Publish owned tags into the shared vocabulary (``user_id`` → NULL).
+
+    The consolidation half of tag management. Ownership stops one account's
+    "Interview" from being renamed out from under another's, but it also lets a
+    deployment accumulate one "Interview" per user with nothing to point them
+    at. Promotion makes one row the canonical answer: a system tag is visible to
+    every account, and ``resolve_or_create_tag`` prefers a same-named system row
+    over creating a private one, so from here on a person typing "interview"
+    attaches to *this* row instead of forking their own.
+
+    Any same-named tags owned by other users are folded into the promoted row by
+    :func:`merge_tags`, so promotion converges the deployment on one row rather
+    than adding a fifth spelling beside four private ones. Their file
+    associations carry over — nobody loses a tag they applied.
+
+    Admin-gated at the endpoint (``_writable_tag_ids``): the result appears in
+    every account's picker, so this is a deployment-level act, not a personal
+    one. Already-shared tags are a no-op rather than an error, which keeps a
+    repeated click idempotent.
+
+    Args:
+        db: Database session. Committed here.
+        tag_ids: Tags to publish.
+        user_id: The acting admin, for cache invalidation.
+        organization_id: Tenant scope for the impact preview.
+
+    Returns:
+        The outcome, whose ``impact`` covers the promoted tags and everything
+        merged into them.
+
+    Raises:
+        TagNotFoundError: A tag no longer exists.
+    """
+    wanted = sorted({int(tag_id) for tag_id in tag_ids})
+    if not wanted:
+        return TagMutationOutcome(impact=TagImpactReport())
+
+    locked = lock_tags(db, wanted)
+    missing = [tag_id for tag_id in wanted if tag_id not in locked]
+    if missing:
+        raise TagNotFoundError(f"Tags no longer exist: {missing}")
+
+    promoted = [locked[tag_id] for tag_id in wanted if locked[tag_id].user_id is not None]
+    if not promoted:
+        # Every requested tag is already shared. Idempotent, not an error.
+        return TagMutationOutcome(
+            impact=preview_tag_impact(
+                db, wanted, user_id=user_id, organization_id=organization_id
+            )
+        )
+
+    # Claim the shared namespace first. `uq_tag_name_system` is UNIQUE(name)
+    # WHERE user_id IS NULL, so a name already shared cannot be promoted twice —
+    # fold the private row into the existing shared one instead.
+    outcome_impact = preview_tag_impact(
+        db, [tag.id for tag in promoted], user_id=user_id, organization_id=organization_id
+    )
+    affected_file_ids: list[int] = []
+    for tag in promoted:
+        normalized = stored_normalized_name(tag)
+        already_shared = (
+            db.query(Tag)
+            .filter(Tag.user_id.is_(None), Tag.normalized_name == normalized, Tag.id != tag.id)
+            .first()
+        )
+        if already_shared is not None:
+            merge_tags(
+                db,
+                already_shared.id,
+                [tag.id],
+                user_id=user_id,
+                organization_id=organization_id,
+            )
+            continue
+
+        tag.user_id = None
+        affected_file_ids.extend(_affected_file_ids(db, [tag.id]))
+
+        # Fold every other account's same-named row into the new shared one, so
+        # promotion collapses the duplicates rather than sitting beside them.
+        duplicates = [
+            row.id
+            for row in db.query(Tag)
+            .filter(Tag.normalized_name == normalized, Tag.id != tag.id)
+            .all()
+        ]
+        if duplicates:
+            merge_tags(
+                db, tag.id, duplicates, user_id=user_id, organization_id=organization_id
+            )
+
+    db.flush()
+    db.commit()
+
+    # A system tag is in every account's list, so nothing narrower than a global
+    # cache drop is correct here.
+    on_tags_changed(db, affected_file_ids, user_id=user_id, system_scope=True)
+    return TagMutationOutcome(impact=outcome_impact)

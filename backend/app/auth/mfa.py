@@ -33,6 +33,7 @@ import pyotp
 import qrcode
 from passlib.context import CryptContext
 
+from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
@@ -218,12 +219,18 @@ class MFAService:
         Args:
             secret: Base32-encoded TOTP secret
             email: User's email address (used as account name)
-            issuer_name: Name of the issuer (defaults to settings.MFA_ISSUER_NAME)
+            issuer_name: Name of the issuer. Callers holding a request session
+                should pass ``get_auth_settings(db).mfa_issuer_name`` so the
+                value is exactly what was last saved; omitting it resolves the
+                same setting through the process-wide layer, which is up to one
+                cache generation behind. It used to fall back to
+                ``settings.MFA_ISSUER_NAME`` — .env only — so an admin could edit
+                the issuer, see it save, and watch the QR code never change.
 
         Returns:
             str: otpauth:// URI for QR code generation
         """
-        issuer = issuer_name or settings.MFA_ISSUER_NAME
+        issuer = issuer_name or get_process_auth_settings().mfa_issuer_name
         algorithm = get_totp_algorithm()
         totp = pyotp.TOTP(
             secret,
@@ -271,7 +278,43 @@ class MFAService:
         return img_base64
 
     @staticmethod
-    def verify_totp(secret: str, code: str) -> bool:
+    def _consume_totp_code(user_id: int, code: str) -> bool:
+        """Claim a TOTP code for *user_id*, returning False if already used.
+
+        RFC 6238 §5.2 requires each code be accepted **once**. Without this, a code
+        observed in transit (shoulder-surfed, phished, or replayed from a proxy log) stays
+        valid for the whole 30s step plus the drift window — enough to reuse (#284 A0.13).
+
+        Keyed on the code itself rather than the time step because ``pyotp.verify`` does
+        not report which step matched under ``valid_window``; the TTL covers the full
+        acceptance envelope, so a code cannot be replayed anywhere inside it.
+        """
+        from app.core.config import settings
+
+        ttl = MFAService.TOTP_INTERVAL * (2 * settings.TOTP_VALID_WINDOW + 1)
+        key = f"mfa:totp:used:{user_id}:{code}"
+        try:
+            from app.core.redis import get_redis
+
+            claimed = get_redis().set(key, "1", nx=True, ex=ttl)
+        except Exception as exc:  # noqa: BLE001 - Redis availability is a deployment concern
+            if settings.MFA_REQUIRE_REDIS:
+                logger.error("TOTP replay protection unavailable (%s); refusing code", exc)
+                return False
+            logger.warning(
+                "TOTP replay protection unavailable (%s); accepting code. "
+                "Set MFA_REQUIRE_REDIS=true to fail closed instead.",
+                exc,
+            )
+            return True
+
+        if not claimed:
+            logger.warning("Rejected replayed TOTP code for user %s", user_id)
+            return False
+        return True
+
+    @staticmethod
+    def verify_totp(secret: str, code: str, user_id: int | None = None) -> bool:
         """
         Verify a TOTP code against the secret.
 
@@ -282,6 +325,9 @@ class MFAService:
         Args:
             secret: Base32-encoded TOTP secret
             code: 6-digit TOTP code from user
+            user_id: Owner of the secret. **Pass this on every authentication path** —
+                it enables single-use enforcement. Omitted only where the same code is
+                intentionally re-checked without consuming it.
 
         Returns:
             bool: True if the code is valid, False otherwise
@@ -308,12 +354,16 @@ class MFAService:
             # verify() accepts valid_window parameter for clock drift tolerance
             is_valid: bool = totp.verify(code, valid_window=settings.TOTP_VALID_WINDOW)  # type: ignore[no-any-return]
 
-            if is_valid:
-                logger.debug("TOTP verification successful")
-            else:
+            if not is_valid:
                 logger.debug("TOTP verification failed - invalid code")
+                return False
 
-            return is_valid
+            # Cryptographically valid — now claim it so it cannot be replayed.
+            if user_id is not None and not MFAService._consume_totp_code(user_id, code):
+                return False
+
+            logger.debug("TOTP verification successful")
+            return True
         except Exception as e:
             logger.error(f"TOTP verification error: {str(e)}")
             return False
@@ -328,12 +378,17 @@ class MFAService:
         (0, O, I, 1, L) for readability.
 
         Args:
-            count: Number of backup codes to generate (defaults to settings.MFA_BACKUP_CODE_COUNT)
+            count: Number of backup codes to generate. Callers holding a request
+                session should pass ``get_auth_settings(db).mfa_backup_code_count``;
+                omitting it resolves the same setting through the process-wide
+                layer. It used to fall back to ``settings.MFA_BACKUP_CODE_COUNT``
+                — .env only — and the enrolment endpoint called it with no
+                argument, so the admin's value was never used.
 
         Returns:
             list[str]: List of plaintext backup codes formatted as XXXX-XXXX
         """
-        num_codes = count or settings.MFA_BACKUP_CODE_COUNT
+        num_codes = count or get_process_auth_settings().mfa_backup_code_count
         codes = []
 
         for _ in range(num_codes):

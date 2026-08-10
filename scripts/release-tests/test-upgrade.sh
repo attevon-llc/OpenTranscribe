@@ -993,14 +993,7 @@ phase_11_new_data_post_upgrade() {
     fi
 
     local seg_count
-    seg_count=$(ac_get_segments "$fid" 2>/dev/null | python3 -c '
-import sys, json
-try:
-    d = json.load(sys.stdin)
-except Exception:
-    print(0); sys.exit()
-print(len(d) if isinstance(d, list) else len(d.get("segments") or []))
-' 2>/dev/null || echo 0)
+    seg_count=$(ac_segment_count "$fid")
     as_assert_ge "NEW transcript has segments" "$seg_count" 1
 
     # And the new content must be reachable through search — proving the

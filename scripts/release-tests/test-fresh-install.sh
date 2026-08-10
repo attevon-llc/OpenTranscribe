@@ -470,15 +470,7 @@ phase_06_api_smoke() {
                 if ac_wait_for_file_status "$fid" 1800; then
                     as_record PASS "transcription completed for file $fid"
                     local seg_count
-                    seg_count=$(ac_get_segments "$fid" | python3 -c '
-import sys, json
-d = json.load(sys.stdin)
-if isinstance(d, list):
-    print(len(d))
-else:
-    segs = d.get("segments") or d.get("transcript_segments") or d.get("results") or []
-    print(len(segs))
-' 2>/dev/null || echo 0)
+                    seg_count=$(ac_segment_count "$fid")
                     as_assert_ge "segments[] non-empty for $fid" "$seg_count" 1
                 else
                     as_record FAIL "transcription for file $fid"

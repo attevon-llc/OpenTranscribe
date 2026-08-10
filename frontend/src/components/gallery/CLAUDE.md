@@ -12,7 +12,12 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
 - `GalleryGrid.svelte` — switches between `VirtualGrid`/`VirtualList`; empty/skeleton/loading states.
 - `VirtualGrid.svelte` / `VirtualList.svelte` — virtualized renderers (thumbnail cache, prefetch).
 - `GalleryActionButtons.svelte` — bulk select/reprocess/delete toolbar (reads `galleryStore`).
-- `BulkTagModal.svelte` — adds or removes one tag across the selection (Organize menu).
+- `BulkTagModal.svelte` — adds or removes one tag across the selection. Reached from the
+  Organize menu, and from the **Tags** button when files are selected.
+- The **Tags** button (`GalleryActionButtons`) sits beside Collections and picks its mode
+  from the selection, exactly as Collections does: a selection opens this modal, nothing
+  selected opens `components/tags/TagManagerModal.svelte`. There is no `/tags` route —
+  a tag is metadata over the library, not a destination.
 - `GallerySortDropdown.svelte`, `GalleryViewToggle.svelte`, `GalleryCountChip.svelte` — small controls.
 
 ## Conventions / patterns

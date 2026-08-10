@@ -260,7 +260,7 @@ describe('tag manager modal', () => {
       render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
 
-      // `is_shared` is derived from ownership on the wire; the badge is the only
+      // `ownership` is derived per request on the wire; the badge is the only
       // signal a user has that renaming this tag rewrites it for everyone.
       const [owned, shared] = tagRows();
       expect(within(owned).queryByText('Shared')).toBeNull();

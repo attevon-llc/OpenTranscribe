@@ -17,6 +17,29 @@ This release also incorporates the substantial pipeline work that landed since v
 
 ### Added
 
+#### Tag management (PR #381, by [@forrestsatterfield](https://github.com/forrestsatterfield))
+
+Tags could be created but never corrected — no rename, no merge, no way to delete a single one, and the only cleanup was an admin-only purge of every unused tag in the deployment. Meanwhile the app generated duplicates itself: the auto-labeler resolved a name against its normalized form before creating anything, while the paths a person types into matched on the exact stored string, so typing `Interview` beside an existing `interview` made a second tag the AI would then match.
+
+- **One resolver for every creation path.** Manual tagging, upload prepare, URL ingest, watch-source polls and auto-labeling all resolve through `services/tag_service.py`: normalized-exact (case, hyphens, underscores and repeated whitespace collapse), a 50-character clamp, and a SAVEPOINT-guarded insert. Bulk paths use a batched sibling that costs a constant number of queries regardless of list length.
+- **Rename, merge and delete**, each showing what it would touch **before** it acts — including a count of files beyond the caller's own library, since a shared tag reaches further than you can see. Merge collapses the duplicate-association case rather than aborting on it, and locks rows in id order so two merges in opposite directions cannot each delete the other's survivor.
+- **Accept / reject for auto-labeled tags.** Rejecting removes only the associations the AI created; a tag people have also applied by hand survives with that work intact.
+- **Collision clusters** group tags that normalize to the same name, with a preselected survivor and separately-ranked near matches that are never cluster members.
+- **Bulk apply across a gallery selection**, from the Tags button or Organize → Add / Remove tag.
+- **Tag management is a modal**, reached from a **Tags** button beside Collections; with a selection it applies to those files, with none it manages the library. Tags are metadata over the library, not a destination.
+- **Ownership is explicit.** Every tag reports `mine`, `system` (the shared vocabulary every account sees) or `shared_with_me` (someone else's, visible because they shared the media it sits on). The UI offers Rename/Delete only where the backend will accept them, and `GET /tags?scope=` takes the same three values so a scoped request returns rows reporting that ownership. Admins can promote a tag into the shared vocabulary, which folds identically-named tags into it so a deployment converges on one `Interview`.
+- **Tags travel with shared media.** Sharing a collection makes its files' tags visible to the recipients — in the picker, the gallery filter and search — computed from the file rather than copied, so unsharing removes them again with no cleanup. A second person tagging a shared file reuses the existing tag rather than adding the same word twice.
+
+### Fixed
+
+#### Search by tag never worked (PR #381)
+
+Transcript indexing read `media_file.tags` and `media_file.collections`, but the model declares `file_tags` and `collection_memberships` — so both `hasattr` guards were permanently false and **every transcript was indexed with an empty tag array and no collection ids**. A manual reindex read the same data correctly, which is why the gap stayed invisible. Indexing now reads the association rows, and every tag mutation enqueues a targeted refresh so filtering by a tag and searching for it agree.
+
+Five further defects this work surfaced, all predating it: `list_tags` dropped a tag entirely when its only file was inaccessible (rather than showing it with usage 0); both tag read endpoints swallowed query errors and returned an empty list with a 200, rendering a broken query as an empty library; seeded default tags were created without a normalized name, leaving the four most common tags in every install invisible to normalized-exact resolution; the bulk rail admitted any non-null permission, so viewer access to a shared collection was enough to mutate its files; and the bulk rail's per-file handler continued without rolling back, so one file's database error aborted the transaction and every later file failed.
+
+Redis pattern deletes now use `SCAN` rather than `KEYS`, which is O(keyspace) *and* blocks the instance that also carries the Celery broker.
+
 #### AI Chat with RAG over your transcripts (issue #52)
 
 - **Chat is a first-class page** alongside Search and Speakers. Ask questions across your recordings and get answers grounded in what was actually said, streamed token by token, with numbered citations that deep-link to the exact timestamp in the player (`/files/{uuid}?t=`).

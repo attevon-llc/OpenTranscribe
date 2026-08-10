@@ -31,8 +31,36 @@ fresh_rc=0; upgrade_rc=0
 echo -e "${BLUE}Scenario A — fresh install${NC}" >&2
 ./scripts/release-tests/test-fresh-install.sh --yes || fresh_rc=$?
 
-echo -e "${BLUE}Scenario B — upgrade from the previous published release${NC}" >&2
-REQUIRE_PREVIOUS=1 ./scripts/release-tests/test-upgrade.sh --yes || upgrade_rc=$?
+# Scenario A ends with its stack UP, deliberately: run standalone, you want to
+# poke at the thing you just installed. But both scenarios bind the same stock
+# container names and ports 5173-5180, so Scenario B's guardrails refuse to
+# start while A's stack exists — meaning this stage could never get past A.
+#
+# So the ORCHESTRATOR tears A down before B. That is different from stopping
+# the operator's live deployment, which this stage still refuses to do: these
+# are containers this stage created moments ago.
+echo -e "${BLUE}Tearing down Scenario A's stack so Scenario B can bind its ports${NC}" >&2
+./scripts/release-tests/test-fresh-install.sh --cleanup --yes || {
+    echo -e "${YELLOW}Scenario A cleanup reported a problem; continuing to B${NC}" >&2
+}
+
+# Cleanup is asynchronous at the docker level — a container in 'Removing' still
+# holds its port bindings, and B's preflight would see a stale name. Wait for
+# the names to actually disappear rather than racing them.
+for _ in $(seq 1 30); do
+    docker ps -a --format '{{.Names}}' | grep -q '^opentranscribe-' || break
+    sleep 2
+done
+if docker ps -a --format '{{.Names}}' | grep -q '^opentranscribe-'; then
+    echo -e "${RED}Scenario A's containers did not go away; Scenario B cannot start${NC}" >&2
+    docker ps -a --format '  {{.Names}}\t{{.Status}}' | grep '^  opentranscribe-' >&2
+    upgrade_rc=3
+fi
+
+if [[ $upgrade_rc -eq 0 ]]; then
+    echo -e "${BLUE}Scenario B — upgrade from the previous published release${NC}" >&2
+    REQUIRE_PREVIOUS=1 ./scripts/release-tests/test-upgrade.sh --yes || upgrade_rc=$?
+fi
 
 rc=0
 [[ $fresh_rc -eq 0 && $upgrade_rc -eq 0 ]] || rc=1

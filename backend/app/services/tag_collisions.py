@@ -59,6 +59,7 @@ from app.services.tag_service import accessible_file_ids_subquery
 from app.services.tag_service import is_awaiting_review
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import owned_or_system
+from app.services.tag_service import visible_to
 
 logger = logging.getLogger(__name__)
 
@@ -379,6 +380,13 @@ def list_tags_filtered(
             other three filters, which is why it is a separate parameter rather
             than a fourth boolean — "my unused tags" has to be expressible.
 
+    Note:
+        The base scope here is ``visible_to``, not ``owned_or_system``: a tag
+        attached to a file shared with the caller belongs in their list, or they
+        cannot filter by a tag they can see on screen. The narrower scope is for
+        the *write* surfaces and for ``/unused``, where the shared-file arm is
+        vacuous by definition.
+
     Returns:
         Entries ordered by usage (descending) then name, matching the order the
         list has always shipped in.
@@ -387,7 +395,7 @@ def list_tags_filtered(
     collision_ids = colliding_tag_ids(db, user_id=user_id) if colliding else set()
 
     entries: list[TagListEntry] = []
-    query = db.query(Tag).filter(owned_or_system(user_id))
+    query = db.query(Tag).filter(visible_to(db, user_id, organization_id))
     if scope == SCOPE_MINE:
         query = query.filter(Tag.user_id == user_id)
     elif scope == SCOPE_SHARED:

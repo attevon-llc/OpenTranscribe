@@ -75,11 +75,21 @@ def _count_tags(db_session, normalized: str) -> int:
     return db_session.query(Tag).filter(Tag.normalized_name == normalized).count()
 
 
-def _commit_tag_on_other_connection(name: str) -> None:
+def _commit_tag_on_other_connection(name: str, user_id: int) -> None:
+    """Commit the contested name as ``user_id`` — the owner matters.
+
+    ``uq_tag_user_name`` is UNIQUE(user_id, name) WHERE user_id IS NOT NULL and
+    ``uq_tag_name_system`` is UNIQUE(name) WHERE user_id IS NULL, so a row
+    committed *ownerless* does not collide with an owned insert at all. Racing
+    from a different owner would produce two legitimate rows and prove nothing.
+    """
     with engine.connect() as conn:
         conn.execute(
-            text("INSERT INTO tag (name, source, normalized_name) VALUES (:n, 'manual', :norm)"),
-            {"n": name, "norm": normalize_tag_name(name)},
+            text(
+                "INSERT INTO tag (name, user_id, source, normalized_name) "
+                "VALUES (:n, :uid, 'manual', :norm)"
+            ),
+            {"n": name, "uid": user_id, "norm": normalize_tag_name(name)},
         )
         conn.commit()
 
@@ -90,14 +100,45 @@ def _delete_tag_on_other_connection(name: str) -> None:
         conn.commit()
 
 
+def _commit_user_on_other_connection(email: str) -> int:
+    """Create a committed user the racing connection can attribute a tag to.
+
+    ``db_session`` runs inside a savepoint that is never committed, so the
+    fixture users it creates do not exist for any other connection —
+    ``tag.user_id`` would fail its foreign key. Since ``v374_add_tag_user_id``
+    the racer needs a *real* owner: an ownerless row lands in a different
+    partial unique index (``uq_tag_name_system``) and would not collide at all,
+    so the race it is supposed to reproduce would silently stop happening.
+    """
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                'INSERT INTO "user" (email, hashed_password, full_name, is_active, role) '
+                "VALUES (:e, 'x', 'Race Writer', true, 'user') RETURNING id"
+            ),
+            {"e": email},
+        ).one()
+        conn.commit()
+        return int(row[0])
+
+
+def _delete_user_on_other_connection(user_id: int) -> None:
+    with engine.connect() as conn:
+        conn.execute(text('DELETE FROM "user" WHERE id = :i'), {"i": user_id})
+        conn.commit()
+
+
 @contextlib.contextmanager
 def _competing_writer(db_session, contested: str):
     """Commit ``contested`` from another connection just before we insert it.
 
     Reproduces a genuinely lost race: the pre-check SELECT misses, another
-    worker commits the row, and our INSERT hits the unique constraint.
+    worker commits the row, and our INSERT hits the unique constraint. Yields
+    the owner id to resolve as — racing a *different* owner produces two
+    legitimate rows and proves nothing.
     """
     fired = {"done": False}
+    racer_id = _commit_user_on_other_connection(f"race-{uuid.uuid4().hex[:10]}@example.com")
 
     @event.listens_for(db_session, "before_flush")
     def _race(session, flush_context, instances):  # noqa: ANN001 - SQLAlchemy signature
@@ -105,14 +146,15 @@ def _competing_writer(db_session, contested: str):
             return
         if any(isinstance(obj, Tag) and obj.name == contested for obj in session.new):
             fired["done"] = True
-            _commit_tag_on_other_connection(contested)
+            _commit_tag_on_other_connection(contested, racer_id)
 
     try:
-        yield
+        yield racer_id
     finally:
         event.remove(db_session, "before_flush", _race)
         db_session.rollback()
         _delete_tag_on_other_connection(contested)
+        _delete_user_on_other_connection(racer_id)
 
 
 def test_case_only_difference_returns_existing_tag(db_session, normal_user):
@@ -202,8 +244,8 @@ def test_concurrent_insert_returns_winning_row_without_raising(db_session, norma
     """Losing the insert race returns the winner instead of propagating the error."""
     contested = f"race-{_suffix()}"
 
-    with _competing_writer(db_session, contested):
-        resolved = resolve_or_create_tag(db_session, contested, user_id=normal_user.id)
+    with _competing_writer(db_session, contested) as racer_id:
+        resolved = resolve_or_create_tag(db_session, contested, user_id=racer_id)
 
         assert resolved.name == contested
         assert resolved.id is not None
@@ -214,10 +256,10 @@ def test_collision_leaves_callers_pending_writes_intact(db_session, normal_user)
     """A lost race rolls back only the SAVEPOINT, never the caller's transaction."""
     contested = f"race-{_suffix()}"
     pending_name = f"pending-{_suffix()}"
-    _make_tag(db_session, pending_name)
+    _make_tag(db_session, pending_name, user_id=normal_user.id)
 
-    with _competing_writer(db_session, contested):
-        resolve_or_create_tag(db_session, contested, user_id=normal_user.id)
+    with _competing_writer(db_session, contested) as racer_id:
+        resolve_or_create_tag(db_session, contested, user_id=racer_id)
 
         survivor = db_session.query(Tag).filter(Tag.name == pending_name).first()
         assert survivor is not None, "the caller's pending write was discarded"
@@ -235,7 +277,7 @@ def test_long_name_truncated_identically_across_paths(db_session, normal_user):
 
     # The upload path supplies the same over-long name and must land on that row.
     media_file = _make_file(db_session, normal_user)
-    add_tags_to_file(db_session, media_file.id, [long_name])
+    add_tags_to_file(db_session, media_file.id, [long_name], normal_user.id)
 
     links = (
         db_session.query(FileTag)
@@ -268,30 +310,32 @@ def test_upload_path_skips_blank_names(db_session, normal_user):
     media_file = _make_file(db_session, normal_user)
     good_name = f"usable-{_suffix()}"
 
-    add_tags_to_file(db_session, media_file.id, ["   ", good_name, "-"])
+    add_tags_to_file(db_session, media_file.id, ["   ", good_name, "-"], normal_user.id)
 
     links = db_session.query(FileTag).filter(FileTag.media_file_id == media_file.id).all()
     assert len(links) == 1
     assert links[0].tag.name == good_name
 
 
-def test_auto_labeling_still_resolves_through_fuzzy_path(db_session):
+def test_auto_labeling_still_resolves_through_fuzzy_path(db_session, normal_user):
     """Auto-labeling keeps its fuzzy dedup after delegating creation to the service."""
     suffix = _suffix()
     existing = _make_tag(db_session, f"q3 earnings review {suffix}", source="manual")
 
     service = AutoLabelService(db_session)
-    resolved = service._get_or_create_tag_with_dedup(f"q3 earnings reviews {suffix}")
+    resolved = service._get_or_create_tag_with_dedup(
+        f"q3 earnings reviews {suffix}", normal_user.id
+    )
 
     assert resolved.id == existing.id
 
 
-def test_auto_labeling_creates_through_shared_service(db_session):
+def test_auto_labeling_creates_through_shared_service(db_session, normal_user):
     """A genuinely new auto-label name is created with normalization stored."""
     name = f"AI_Topic-{_suffix()}"
     service = AutoLabelService(db_session)
 
-    created = service._get_or_create_tag_with_dedup(name)
+    created = service._get_or_create_tag_with_dedup(name, normal_user.id)
 
     assert created.normalized_name == normalize_tag_name(name)
     assert _count_tags(db_session, normalize_tag_name(name)) == 1
@@ -456,7 +500,7 @@ def test_upload_path_enqueues_reindex(db_session, normal_user, recorded_reindex)
     """Tags supplied at upload reach the index without waiting for a full reindex."""
     media_file = _make_file(db_session, normal_user)
 
-    add_tags_to_file(db_session, media_file.id, [f"uploaded-{_suffix()}"])
+    add_tags_to_file(db_session, media_file.id, [f"uploaded-{_suffix()}"], normal_user.id)
 
     assert recorded_reindex.calls == [[media_file.id]]
 

@@ -198,6 +198,32 @@ def owned_or_system(user_id: int) -> ColumnElement[bool]:
     return or_(Tag.user_id == user_id, Tag.user_id.is_(None))
 
 
+def visible_to(
+    db: Session, user_id: int, organization_id: OrgScope = UNSCOPED
+) -> ColumnElement[bool]:
+    """Predicate for the tags ``user_id`` is allowed to **read**.
+
+    Wider than :func:`owned_or_system` by one arm: a tag attached to a file the
+    caller can access. Tagging a shared file has to put that word in the
+    recipient's picker, or they cannot filter by what they are looking at.
+
+    Reading and rewriting are different rights — mutation stays on the narrow
+    scope (``endpoints/tags.py:_writable_tag_ids``), since renaming a tag you can
+    merely see rewrites its owner's vocabulary everywhere they use it.
+
+    ``get_accessible_file_ids_subquery`` already covers files shared directly and
+    via groups and applies the org tenant gate, so sharing needs no second rule.
+    """
+    from sqlalchemy import select
+
+    attached_to_accessible = select(FileTag.tag_id).where(
+        FileTag.media_file_id.in_(
+            select(accessible_file_ids_subquery(db, user_id, organization_id))
+        )
+    )
+    return or_(owned_or_system(user_id), Tag.id.in_(attached_to_accessible))
+
+
 def lookup_existing_tag(db: Session, normalized: str, name: str, user_id: int) -> Tag | None:
     """Find one of the caller's tags by normalized name, else by exact name.
 
@@ -427,16 +453,19 @@ def resolve_or_create_tags(
 
     missing = {norm: name for norm, name in wanted.items() if norm not in found}
     if missing:
-        # Legacy rows predating the normalized column: match on the raw name and
-        # repair, so the next call takes the indexed path above.
+        # Fall back to an exact name match, exactly as `lookup_existing_tag`
+        # does. This is not only about rows predating the column: a row whose
+        # stored normalization is simply *wrong* is invisible to the query above
+        # yet still collides on `uq_tag_user_name`, so skipping this would make
+        # every such name cost a failed INSERT plus its recovery lookup —
+        # 2N queries, which is the regression #284 A2.8 removed.
         for row in (
-            db.query(Tag)
-            .filter(Tag.name.in_(list(missing.values())), Tag.normalized_name.is_(None), scope)
-            .order_by(Tag.user_id)
+            db.query(Tag).filter(Tag.name.in_(list(missing.values())), scope).order_by(Tag.user_id)
         ):
             normalized = normalize_tag_name(str(row.name))
             if normalized in missing and normalized not in found:
-                row.normalized_name = normalized
+                if not row.normalized_name:
+                    row.normalized_name = normalized
                 found[normalized] = row
 
     resolved: list[Tag] = []

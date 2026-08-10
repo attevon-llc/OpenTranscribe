@@ -537,20 +537,34 @@ def test_tag_mutation_endpoints_require_authentication(client, db_session):
 # ---------------------------------------------------------------------------
 
 
-def _auto_tag(db_session, name: str):
-    """Create a tag the auto-labeler owns — the API has no path that writes one."""
+def _auto_tag(db_session, name: str, user_id: int):
+    """Create a tag the auto-labeler produced — the API has no path that writes one.
+
+    ``user_id`` is required and is the **file owner**, matching
+    ``auto_apply_suggestions``: the auto-labeler runs unattended, so it
+    attributes its tags to the owner of the file it labeled rather than leaving
+    them ownerless. An ownerless row is a *system* tag, published to every
+    account and mutable only by an admin, which is not what this fixture means.
+    """
     from app.core.constants import TAG_SOURCE_AUTO_AI
     from app.models.media import Tag
     from app.services.tag_service import normalize_tag_name
 
-    tag = Tag(name=name, source=TAG_SOURCE_AUTO_AI, normalized_name=normalize_tag_name(name))
+    tag = Tag(
+        name=name,
+        user_id=user_id,
+        source=TAG_SOURCE_AUTO_AI,
+        normalized_name=normalize_tag_name(name),
+    )
     db_session.add(tag)
     db_session.commit()
     return tag
 
 
-def test_accept_endpoint_marks_the_tag_accepted(client, user_token_headers, db_session):
-    tag = _auto_tag(db_session, f"accept-me-{uuid.uuid4().hex[:8]}")
+def test_accept_endpoint_marks_the_tag_accepted(
+    client, user_token_headers, db_session, normal_user
+):
+    tag = _auto_tag(db_session, f"accept-me-{uuid.uuid4().hex[:8]}", normal_user.id)
 
     response = client.post(
         "/api/tags/accept", headers=user_token_headers, json={"tag_uuids": [str(tag.uuid)]}
@@ -566,11 +580,11 @@ def test_accept_endpoint_marks_the_tag_accepted(client, user_token_headers, db_s
 
 
 def test_accept_endpoint_reports_ineligible_tags_without_failing(
-    client, user_token_headers, db_session
+    client, user_token_headers, db_session, normal_user
 ):
     """A mixed multi-select must not 4xx the whole call."""
     suffix = uuid.uuid4().hex[:8]
-    auto = _auto_tag(db_session, f"mix-auto-{suffix}")
+    auto = _auto_tag(db_session, f"mix-auto-{suffix}", normal_user.id)
     manual = _create_tag(client, user_token_headers, f"mix-manual-{suffix}")
 
     response = client.post(
@@ -610,7 +624,7 @@ def test_review_impact_endpoint_reports_the_reject_split(
     from app.core.constants import TAG_SOURCE_MANUAL
     from app.models.media import FileTag
 
-    tag = _auto_tag(db_session, f"split-{uuid.uuid4().hex[:8]}")
+    tag = _auto_tag(db_session, f"split-{uuid.uuid4().hex[:8]}", normal_user.id)
     auto_file = _file_for(db_session, normal_user)
     manual_file = _file_for(db_session, normal_user)
     db_session.add(FileTag(media_file_id=auto_file.id, tag_id=tag.id, source=TAG_SOURCE_AUTO_AI))
@@ -632,11 +646,11 @@ def test_review_impact_endpoint_reports_the_reject_split(
 
 
 def test_reject_endpoint_removes_the_tag_when_nothing_human_remains(
-    client, user_token_headers, db_session
+    client, user_token_headers, db_session, normal_user
 ):
     from app.models.media import Tag
 
-    tag = _auto_tag(db_session, f"reject-me-{uuid.uuid4().hex[:8]}")
+    tag = _auto_tag(db_session, f"reject-me-{uuid.uuid4().hex[:8]}", normal_user.id)
 
     response = client.post(
         "/api/tags/reject", headers=user_token_headers, json={"tag_uuids": [str(tag.uuid)]}
@@ -735,10 +749,10 @@ def test_unused_filter_drops_a_tag_the_caller_uses(
 
 
 def test_awaiting_review_filter_returns_only_auto_labeled_tags(
-    client, user_token_headers, db_session
+    client, user_token_headers, db_session, normal_user
 ):
     suffix = uuid.uuid4().hex[:8]
-    auto = _auto_tag(db_session, f"await-auto-{suffix}")
+    auto = _auto_tag(db_session, f"await-auto-{suffix}", normal_user.id)
     manual = _create_tag(client, user_token_headers, f"await-manual-{suffix}")
     accepted = _raw_tag(db_session, f"await-accepted-{suffix}", source="ai_accepted")
     legacy = _raw_tag(db_session, f"await-legacy-{suffix}", source=None)

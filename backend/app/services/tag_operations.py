@@ -158,6 +158,18 @@ def _better_confidence(a: float | None, b: float | None) -> float | None:
     return max(a, b)
 
 
+def touches_system_tag(tags: Iterable[Tag | None]) -> bool:
+    """Whether any of these tags is a system tag (``user_id IS NULL``).
+
+    Decides how wide the cache invalidation has to be. A system tag is in every
+    account's list, so a mutation touching one leaves every other account's
+    cached list wrong; an owned tag concerns only its owner and the owners of
+    the files it was on. Read the flag from the rows **before** they are
+    deleted — afterwards the answer is unavailable.
+    """
+    return any(tag is not None and tag.user_id is None for tag in tags)
+
+
 def lock_tags(db: Session, tag_ids: Iterable[int]) -> dict[int, Tag]:
     """Lock the given tag rows ``FOR UPDATE`` in ascending id order.
 
@@ -455,13 +467,14 @@ def merge_tags(
 
     rewrite_stored_tag_names(db, {stored_normalized_name(tag) for tag in doomed}, target.name)
 
+    system_scope = touches_system_tag([target, *doomed])
     deleted_uuids = [tag.uuid for tag in doomed]
     for tag in doomed:
         db.delete(tag)
     db.flush()
     db.commit()
 
-    on_tags_changed(db, affected_file_ids, user_id=user_id)
+    on_tags_changed(db, affected_file_ids, user_id=user_id, system_scope=system_scope)
     return TagMutationOutcome(impact=impact, tag=target, merged=True, deleted_uuids=deleted_uuids)
 
 
@@ -521,13 +534,14 @@ def rename_tag(
     old_normalized = stored_normalized_name(tag)
     affected_file_ids = _affected_file_ids(db, [tag.id])
 
+    system_scope = touches_system_tag([tag])
     tag.name = cleaned
     tag.normalized_name = normalized
     rewrite_stored_tag_names(db, {old_normalized}, cleaned)
     db.flush()
     db.commit()
 
-    on_tags_changed(db, affected_file_ids, user_id=user_id)
+    on_tags_changed(db, affected_file_ids, user_id=user_id, system_scope=system_scope)
     return TagMutationOutcome(impact=impact, tag=tag)
 
 
@@ -570,6 +584,7 @@ def delete_tags(
 
     rewrite_stored_tag_names(db, {stored_normalized_name(tag) for tag in doomed}, None)
 
+    system_scope = touches_system_tag(doomed)
     db.query(FileTag).filter(FileTag.tag_id.in_(wanted)).delete(synchronize_session=False)
     deleted_uuids = [tag.uuid for tag in doomed]
     for tag in doomed:
@@ -577,7 +592,7 @@ def delete_tags(
     db.flush()
     db.commit()
 
-    on_tags_changed(db, affected_file_ids, user_id=user_id)
+    on_tags_changed(db, affected_file_ids, user_id=user_id, system_scope=system_scope)
     return TagMutationOutcome(impact=impact, deleted_uuids=deleted_uuids)
 
 

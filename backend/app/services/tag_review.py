@@ -48,6 +48,7 @@ from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import lock_tags
 from app.services.tag_operations import preview_tag_impact
 from app.services.tag_operations import rewrite_stored_tag_names
+from app.services.tag_operations import touches_system_tag
 from app.services.tag_service import is_awaiting_review
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import stored_normalized_name
@@ -297,14 +298,16 @@ def accept_tags(
     )
 
     accepted = [tag for tag in tags if is_awaiting_review(tag)]
+    system_scope = touches_system_tag(accepted)
     for tag in accepted:
         tag.source = TAG_SOURCE_AI_ACCEPTED
     db.flush()
     db.commit()
 
     # No file changed hands, so nothing needs reindexing — but the tag rows did
-    # change, and the cached tag list is global data behind a per-user key.
-    on_tags_changed(db, user_id=user_id)
+    # change, so the cached list they appear in has to go. Only a system tag
+    # appears in every account's list; an owned one concerns its owner alone.
+    on_tags_changed(db, user_id=user_id, system_scope=system_scope)
     logger.info("Accepted %d auto-labeled tag(s)", len(accepted))
     report.applied = True
     return report
@@ -362,6 +365,9 @@ def reject_tags(
     # exactly what the per-tag loop produced.
     rejected = [tag for tag in tags if by_uuid[tag.uuid].outcome == REVIEW_REJECTED]
     rejected_ids = [tag.id for tag in rejected]
+    # Read ownership before the deletes below — afterwards the rows are gone and
+    # the answer is unavailable.
+    system_scope = touches_system_tag(rejected)
 
     if rejected_ids:
         auto_scope = [FileTag.tag_id.in_(rejected_ids), FileTag.source == TAG_SOURCE_AUTO_AI]
@@ -387,7 +393,7 @@ def reject_tags(
     db.flush()
     db.commit()
 
-    on_tags_changed(db, affected_file_ids, user_id=user_id)
+    on_tags_changed(db, affected_file_ids, user_id=user_id, system_scope=system_scope)
     logger.info(
         "Rejected %d auto-labeled tag(s); removed %d association(s), kept %d",
         len(deleted_uuids),

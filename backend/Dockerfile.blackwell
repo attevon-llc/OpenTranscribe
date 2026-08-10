@@ -30,7 +30,7 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend (Blackwell)" \
       org.opencontainers.image.vendor="OpenTranscribe" \
       org.opencontainers.image.authors="OpenTranscribe Contributors" \
       org.opencontainers.image.licenses="AGPL-3.0" \
-      org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe"
+      org.opencontainers.image.source="https://github.com/attevon-llc/OpenTranscribe"
 
 WORKDIR /app
 

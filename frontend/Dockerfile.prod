@@ -37,8 +37,8 @@ LABEL org.opencontainers.image.title="OpenTranscribe Frontend" \
       org.opencontainers.image.vendor="OpenTranscribe" \
       org.opencontainers.image.authors="OpenTranscribe Contributors" \
       org.opencontainers.image.licenses="AGPL-3.0" \
-      org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe" \
-      org.opencontainers.image.documentation="https://github.com/davidamacey/OpenTranscribe/blob/master/README.md"
+      org.opencontainers.image.source="https://github.com/attevon-llc/OpenTranscribe" \
+      org.opencontainers.image.documentation="https://github.com/attevon-llc/OpenTranscribe/blob/master/README.md"
 
 # Upgrade system packages to pick up the latest Alpine security patches
 # (libcrypto3, libexpat, libpng, etc.) without having to chase nginx base

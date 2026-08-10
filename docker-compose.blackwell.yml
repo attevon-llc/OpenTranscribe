@@ -30,14 +30,14 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.blackwell
-    image: davidamacey/opentranscribe-backend:blackwell
+    image: davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}
 
   # Override GPU worker to use Blackwell image with SM_121 patches
   celery-worker:
     build:
       context: ./backend
       dockerfile: Dockerfile.blackwell
-    image: davidamacey/opentranscribe-backend:blackwell
+    image: davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}
     command: >
       celery -A app.core.celery worker
       --loglevel=info
@@ -82,7 +82,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.blackwell
-    image: davidamacey/opentranscribe-backend:blackwell
+    image: davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}
     deploy:
       resources:
         reservations:

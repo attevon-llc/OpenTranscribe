@@ -117,7 +117,8 @@ show_help() {
   echo "  purge               - Remove everything including images (most destructive)"
   echo ""
   echo "Advanced Commands:"
-  echo "  health              - Check health status of all services"
+  echo "  health              - Check health status of all services (human report, always exits 0)"
+  echo "  healthcheck-all     - Same probes, but EXITS NON-ZERO on failure (for scripts/CI); --json supported"
   echo "  help                - Show this help menu"
   echo ""
   echo "Benchmark Commands (isolated from NAS data):"
@@ -2208,6 +2209,62 @@ wait_for_bench_backend_health() {
 }
 
 # Function to check health of all services
+# Machine-checkable health gate.
+#
+# check_health() below is a human status dump: every probe ends in
+# `|| echo "⚠️ ..."`, so it always exits 0 and can never gate anything. That is
+# the right behaviour for someone eyeballing a stack, and the wrong behaviour for
+# a release step or a CI job, which needs a non-zero exit.
+#
+# Rather than change check_health's semantics (and break anyone parsing it), this
+# re-probes the same services and accumulates failures.
+#
+# Usage: ./opentr.sh healthcheck-all [--json]
+healthcheck_all() {
+  local as_json=false
+  [ "${1:-}" = "--json" ] && as_json=true
+
+  local failures=() results=()
+
+  _probe() {
+    local name="$1"; shift
+    if "$@" >/dev/null 2>&1; then
+      results+=("{\"service\":\"$name\",\"status\":\"ok\"}")
+      $as_json || echo "  ✅ $name"
+    else
+      failures+=("$name")
+      results+=("{\"service\":\"$name\",\"status\":\"fail\"}")
+      $as_json || echo "  ❌ $name"
+    fi
+  }
+
+  $as_json || echo "🩺 Health gate:"
+
+  _probe backend    docker compose exec -T backend curl -sf http://localhost:8080/health
+  _probe redis      docker compose exec -T redis redis-cli ping
+  _probe postgres   docker compose exec -T postgres pg_isready -U postgres
+  _probe opensearch docker compose exec -T opensearch curl -sf http://localhost:9200
+  _probe minio      docker compose exec -T minio curl -sf http://localhost:9000/minio/health/live
+
+  # Readiness carries the schema check, which is what makes this useful after an
+  # upgrade: a backend can answer /health while sitting on a stale schema.
+  _probe backend-ready docker compose exec -T backend curl -sf http://localhost:8080/health/ready
+
+  if $as_json; then
+    local joined
+    joined=$(IFS=,; echo "${results[*]}")
+    printf '{"stage":"healthcheck-all","status":"%s","checks":[%s]}\n' \
+      "$([ ${#failures[@]} -eq 0 ] && echo pass || echo fail)" "$joined"
+  fi
+
+  if [ ${#failures[@]} -eq 0 ]; then
+    $as_json || echo "✅ All services healthy."
+    return 0
+  fi
+  $as_json || echo "❌ Unhealthy: ${failures[*]}"
+  return 1
+}
+
 check_health() {
   echo "🩺 Checking health of all services..."
 
@@ -2475,6 +2532,12 @@ case "$1" in
 
   health)
     check_health
+    ;;
+
+  healthcheck-all)
+    # Same probes as `health`, but exits non-zero on any failure so scripts and
+    # CI can gate on it. `health` stays a human-readable status dump.
+    healthcheck_all "${2:-}"
     ;;
 
   build)

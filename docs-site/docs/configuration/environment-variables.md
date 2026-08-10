@@ -251,7 +251,7 @@ PYANNOTE_MODEL=parakeet  # or: whisper-large-v3-turbo
 
 # Cloud ASR Options
 CLOUD_ASR_EXTRACT_EMBEDDINGS=true  # Extract speaker embeddings locally for cross-file matching
-CLOUD_ASR_WORKER_CONCURRENCY=4     # Concurrency for cloud-asr worker
+CLOUD_ASR_CONCURRENCY=4            # Concurrency for cloud-asr worker
 ```
 
 ### Deployment Mode
@@ -326,7 +326,7 @@ NLP_CONCURRENCY=4         # Default: 4
 NLP_MAX_TASKS=50           # Restart after N tasks
 
 # Cloud ASR worker
-CLOUD_ASR_WORKER_CONCURRENCY=4
+CLOUD_ASR_CONCURRENCY=4
 ```
 
 ## Flower Monitoring Dashboard

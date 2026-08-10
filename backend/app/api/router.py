@@ -43,6 +43,7 @@ from .endpoints import usage
 from .endpoints import user_files
 from .endpoints import user_settings
 from .endpoints import users
+from .endpoints import version
 from .endpoints import watch_sources
 from .endpoints.files import router as files_router
 from .endpoints.files.management import router as file_management_router
@@ -169,6 +170,10 @@ include_router_with_consistency(
     capability="auth.config_ui",
 )
 include_router_with_consistency(system.router, prefix="/system", tags=["system"])
+# Unauthenticated and capability-ungated on purpose: the release harness, upgrade
+# smoke tests and load balancers all need the running build identity, and several
+# of them have no credentials. See app/api/endpoints/version.py.
+include_router_with_consistency(version.router, prefix="/version", tags=["version"])
 include_router_with_consistency(
     media_collections.router, prefix="/collections", tags=["collections"]
 )

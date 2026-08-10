@@ -190,6 +190,48 @@ get_compose_files() {
     echo "$compose_files"
 }
 
+# Bring the stack down for an upgrade, tolerating the stale-network race.
+#
+# `docker compose down` removes the containers and then the network. The daemon
+# occasionally keeps a stale endpoint record for an already-removed container, so
+# the network removal fails with "has active endpoints" even though every
+# container is gone. compose reports that as an overall failure and, with the
+# upgrade wired to abort on it, a routine `update` dies half-way -- containers
+# down, nothing brought back up.
+#
+# A user cannot restart the Docker daemon to get out of that, so treat it for
+# what it is: the teardown succeeded, only the cleanup of an empty network
+# raced. Verify no containers remain, clear the network if it is genuinely
+# empty, and continue. Any other failure is still fatal.
+compose_down_for_upgrade() {
+    local compose_files="$1"
+
+    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
+    if docker compose $compose_files down; then
+        return 0
+    fi
+
+    local remaining
+    remaining=$(docker ps -aq --filter "name=^opentranscribe-" | wc -l)
+    if [ "$remaining" -ne 0 ]; then
+        echo -e "${RED}❌ Teardown failed and $remaining container(s) remain${NC}"
+        return 1
+    fi
+
+    local net=opentranscribe_default
+    if docker network inspect "$net" >/dev/null 2>&1; then
+        local attached
+        attached=$(docker network inspect "$net" --format '{{len .Containers}}' 2>/dev/null || echo 0)
+        if [ "$attached" = "0" ]; then
+            echo -e "${YELLOW}⚠️  Clearing stale empty network '$net' (daemon endpoint race)${NC}"
+            docker network rm "$net" >/dev/null 2>&1 || true
+        fi
+    fi
+
+    echo -e "${GREEN}✓ All containers removed; continuing upgrade${NC}"
+    return 0
+}
+
 # Bring the stack up in phases, polling the backend's own /health rather than
 # letting compose's dependency resolver decide when the backend is ready.
 #
@@ -440,7 +482,7 @@ case "${1:-help}" in
 
         compose_files=$(get_compose_files)
 
-        docker compose $compose_files down
+        compose_down_for_upgrade "$compose_files" || exit 1
         docker compose $compose_files pull
 
         perform_phased_restart "$compose_files" || exit 1

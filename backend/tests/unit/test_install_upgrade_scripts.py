@@ -402,3 +402,27 @@ def test_unattended_install_persists_the_huggingface_token():
     assert "HUGGINGFACE_TOKEN=" in unattended and "sed" in unattended, (
         "the unattended branch returns without persisting HUGGINGFACE_TOKEN to .env"
     )
+
+
+def test_upgrade_tolerates_the_stale_network_race():
+    """A routine `update` must not die half-way on a Docker daemon race.
+
+    `docker compose down` removes containers then the network. The daemon
+    sometimes keeps a stale endpoint record for an already-removed container, so
+    network removal fails with "has active endpoints" while every container is
+    gone. compose reports that as overall failure, which aborted the upgrade with
+    the stack down and nothing brought back up -- and a user cannot restart the
+    Docker daemon to recover.
+
+    Hit during the v0.5.0 rehearsal at the real `opentranscribe.sh update` step.
+    """
+    source = MANAGER.read_text()
+    assert "compose_down_for_upgrade" in source, (
+        "the upgrade paths should use the race-tolerant teardown"
+    )
+    fn = source.split("compose_down_for_upgrade() {", 1)[1].split("\n}", 1)[0]
+    assert "active endpoints" in source or "stale" in fn.lower()
+    # Tolerating the race must NOT mean tolerating a real teardown failure.
+    assert "docker ps -aq" in fn, (
+        "must verify no containers remain before continuing past a failed down"
+    )

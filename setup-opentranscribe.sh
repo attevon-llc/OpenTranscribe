@@ -996,6 +996,68 @@ _upsert_env() {
     fi
 }
 
+# Resolve which release this install pins to.
+#
+# WHY PIN AT ALL
+#
+# Before this, the installer downloaded compose files from master HEAD while the
+# compose files pulled `:latest` images. A user therefore got tip-of-master
+# configuration married to whenever-images-were-last-pushed — two moving parts
+# that were never tested together, no way to install a specific release, and no
+# way to roll back. Pinning makes an install reproducible.
+#
+# RESOLUTION ORDER
+#   1. --version / OPENTRANSCRIBE_VERSION  — explicit wins
+#   2. --branch / OPENTRANSCRIBE_BRANCH    — testing; unpinned, loudly announced
+#   3. the latest GitHub Release           — the default
+#
+# The GitHub *Release* is deliberately the source, not the newest git tag. The
+# release is published as the LAST step of the release process, after the images
+# are promoted; a raw tag appears 30-90 minutes earlier, so resolving to it would
+# hand new users a version whose images do not exist yet.
+#
+# Sets OPENTRANSCRIBE_BRANCH (the ref every download function already reads, so
+# one assignment pins all of them) and OT_IMAGE_TAG (interpolated by the compose
+# files as ${OT_IMAGE_TAG:-latest}).
+resolve_install_ref() {
+    if [ -n "${OPENTRANSCRIBE_VERSION:-}" ]; then
+        OT_IMAGE_TAG="${OPENTRANSCRIBE_VERSION}"
+        case "$OT_IMAGE_TAG" in v*) ;; *) OT_IMAGE_TAG="v${OT_IMAGE_TAG}" ;; esac
+        OPENTRANSCRIBE_BRANCH="$OT_IMAGE_TAG"
+        print_info "Installing pinned release: $OT_IMAGE_TAG"
+        return 0
+    fi
+
+    if [ -n "${OPENTRANSCRIBE_BRANCH:-}" ]; then
+        OT_IMAGE_TAG="latest"
+        print_warning "Installing from branch '${OPENTRANSCRIBE_BRANCH}' with :latest images."
+        print_warning "This is a TESTING install: it is not reproducible and cannot be rolled back."
+        return 0
+    fi
+
+    print_info "Resolving the latest published release..."
+    local resolved=""
+    resolved=$(curl -fsSL --connect-timeout 10 --max-time 20 \
+        "https://api.github.com/repos/attevon-llc/OpenTranscribe/releases/latest" 2>/dev/null \
+        | grep -m1 '"tag_name"' | sed -E 's/.*"(v?[0-9]+\.[0-9]+\.[0-9]+)".*/\1/' || true)
+
+    if [ -z "$resolved" ] || ! echo "$resolved" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
+        # Unauthenticated GitHub API is rate-limited to 60/hour per IP, so a
+        # failure here is expected on a shared address. NEVER silently fall back
+        # to master: that would reintroduce the unpinned install this replaced.
+        print_error "Could not determine the latest release (GitHub API unavailable or rate-limited)."
+        print_info "Retry later, or choose explicitly:"
+        print_info "  --version vX.Y.Z    install a specific release"
+        print_info "  --branch master     install from master (testing, unpinned)"
+        exit 1
+    fi
+
+    case "$resolved" in v*) ;; *) resolved="v${resolved}" ;; esac
+    OT_IMAGE_TAG="$resolved"
+    OPENTRANSCRIBE_BRANCH="$resolved"
+    print_success "Installing release $OT_IMAGE_TAG"
+}
+
 # Create .env from template and write all auto-generated credentials immediately.
 # Called only on a fresh install (no existing .env).
 _create_initial_env() {
@@ -1015,7 +1077,25 @@ _create_initial_env() {
     sed -i.bak "s|MODEL_CACHE_DIR=.*|MODEL_CACHE_DIR=${MODEL_CACHE_DIR:-./models}|g" .env
     rm -f .env.bak
 
-    print_success ".env created with secure credentials"
+    # Pin the image tag this install was built against. Compose reads
+    # ${OT_IMAGE_TAG:-latest}, so writing it here is what makes `docker compose
+    # pull` fetch this exact release instead of whatever :latest happens to be.
+    # `./opentranscribe.sh update --version vX.Y.Z` rewrites this line, which is
+    # also how a rollback works.
+    if grep -q '^# *OT_IMAGE_TAG=' .env; then
+        sed -i.bak "s|^# *OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}|" .env
+    elif grep -q '^OT_IMAGE_TAG=' .env; then
+        sed -i.bak "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}|" .env
+    else
+        echo "OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}" >> .env
+    fi
+    rm -f .env.bak
+
+    # A local VERSION file so `./opentranscribe.sh version` can answer even when
+    # the stack is down and the images carry no labels.
+    echo "${OT_IMAGE_TAG:-latest}" > VERSION
+
+    print_success ".env created with secure credentials (pinned to ${OT_IMAGE_TAG:-latest})"
 }
 
 # Write (or re-write) hardware-detected values to .env.
@@ -2328,10 +2408,23 @@ main() {
                 FORCE_CPU="true"
                 shift
                 ;;
+            --version)
+                # Pin to a specific release. Equivalent to OPENTRANSCRIBE_VERSION.
+                OPENTRANSCRIBE_VERSION="${2:-}"
+                [ -n "$OPENTRANSCRIBE_VERSION" ] || { echo "--version needs a value, e.g. --version v0.5.0"; exit 2; }
+                shift 2
+                ;;
+            --branch)
+                # Install from a git ref instead of a release. Testing only:
+                # unpinned, uses :latest images, not reproducible.
+                OPENTRANSCRIBE_BRANCH="${2:-}"
+                [ -n "$OPENTRANSCRIBE_BRANCH" ] || { echo "--branch needs a value, e.g. --branch master"; exit 2; }
+                shift 2
+                ;;
             -h|--help)
                 echo "OpenTranscribe installer"
                 echo ""
-                echo "Usage: setup-opentranscribe.sh [--cpu]"
+                echo "Usage: setup-opentranscribe.sh [--cpu] [--version vX.Y.Z] [--branch <ref>]"
                 echo ""
                 echo "Options:"
                 echo "  --cpu       Install in CPU-only mode. Skips NVIDIA GPU"
@@ -2342,12 +2435,21 @@ main() {
                 echo "              (e.g. WSL2 without a WSL-capable driver), or"
                 echo "              on any machine where you simply do not want"
                 echo "              GPU acceleration."
+                echo "  --version vX.Y.Z"
+                echo "              Install a specific published release. Compose files"
+                echo "              are downloaded at that tag and images are pinned to"
+                echo "              it, so the install is reproducible and can be rolled"
+                echo "              back. Default: the latest GitHub Release."
+                echo "  --branch <ref>"
+                echo "              Install from a git ref with :latest images. TESTING"
+                echo "              ONLY - the result is not reproducible."
                 echo "  -h, --help  Show this help message."
                 echo ""
                 echo "Environment variables (see script header for the full list):"
                 echo "  OPENTRANSCRIBE_FORCE_CPU  Non-empty = same as --cpu"
                 echo "  OPENTRANSCRIBE_UNATTENDED Non-empty = skip all prompts"
-                echo "  OPENTRANSCRIBE_BRANCH     Git branch for downloaded files"
+                echo "  OPENTRANSCRIBE_VERSION    Same as --version"
+                echo "  OPENTRANSCRIBE_BRANCH     Same as --branch"
                 exit 0
                 ;;
             *)
@@ -2356,6 +2458,10 @@ main() {
                 ;;
         esac
     done
+
+    # Decide WHAT to install before downloading anything.
+    resolve_install_ref
+    export OPENTRANSCRIBE_BRANCH OT_IMAGE_TAG
 
     if [[ "$FORCE_CPU" == "true" ]]; then
         echo -e "${BLUE}ℹ️  CPU-only install mode selected${NC}"

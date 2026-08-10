@@ -39,13 +39,25 @@ git pull origin main
 ./opentr.sh start dev  # or: ./opentr.sh start prod
 ```
 
-The backend will detect your current schema version and apply all pending migrations up to `v355_add_diarization_settings`.
+The backend detects your current schema version and applies every pending
+migration up to the current head.
+
+> **The head moves.** This document was written for v0.4.0, when the head was
+> `v355_add_diarization_settings`; it is now well past that. Rather than
+> restating a value that goes stale, read it from the repo:
+>
+> ```bash
+> python3 scripts/release-tests/lib/alembic-head.py backend
+> ```
+>
+> or from a running stack — `/health/ready` reports `schema_revision` and
+> `schema_head` on every deployment.
 
 ---
 
 ## Schema Changes: v0.3.x → v0.4.0
 
-### New Migrations (v330 – v355)
+### Migrations added in v0.4.0 (v330 – v355)
 
 | Migration | Description |
 |-----------|-------------|

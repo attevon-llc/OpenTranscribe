@@ -369,7 +369,75 @@ case "${1:-help}" in
     update)
         check_environment
         fix_model_cache_permissions
-        echo -e "${YELLOW}📥 Updating to latest Docker images...${NC}"
+
+        # Optional target: `update --version vX.Y.Z` moves this install to a
+        # specific release; `--rollback` returns it to the previous one. Both
+        # work by rewriting OT_IMAGE_TAG in .env, which the compose files read as
+        # ${OT_IMAGE_TAG:-latest}. With no argument, behaviour is unchanged.
+        target_version=""
+        do_rollback=false
+        force_downgrade=false
+        shift || true
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --version) target_version="${2:-}"; shift 2 ;;
+                --rollback) do_rollback=true; shift ;;
+                --force-downgrade) force_downgrade=true; shift ;;
+                *) echo -e "${YELLOW}⚠️  Unknown argument: $1 (ignored)${NC}"; shift ;;
+            esac
+        done
+
+        current_tag=$(grep -E '^OT_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)
+        current_tag="${current_tag:-latest}"
+
+        if [ "$do_rollback" = true ]; then
+            target_version=$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)
+            if [ -z "$target_version" ]; then
+                echo -e "${RED}❌ No previous version recorded — nothing to roll back to.${NC}"
+                echo -e "${YELLOW}   A rollback target is only recorded by a prior 'update --version'.${NC}"
+                echo -e "${YELLOW}   Use: ./opentranscribe.sh update --version vX.Y.Z${NC}"
+                exit 1
+            fi
+            echo -e "${YELLOW}⏪ Rolling back: $current_tag → $target_version${NC}"
+            echo -e "${YELLOW}⚠️  The migration chain is ONE-WAY. Rolling the images back does NOT${NC}"
+            echo -e "${YELLOW}   revert the database. Restore a backup taken before the upgrade if${NC}"
+            echo -e "${YELLOW}   the newer schema is not readable by $target_version.${NC}"
+        fi
+
+        if [ -n "$target_version" ]; then
+            case "$target_version" in v*) ;; *) target_version="v${target_version}" ;; esac
+
+            # Refuse a downgrade unless asked twice. Newer releases add columns
+            # and tables the older image does not know about; the chain does not
+            # go backwards.
+            if [ "$do_rollback" = false ] && [ "$force_downgrade" = false ] && [ "$current_tag" != "latest" ]; then
+                older=$(printf '%s\n%s\n' "${current_tag#v}" "${target_version#v}" | sort -V | head -1)
+                if [ "$older" = "${target_version#v}" ] && [ "$target_version" != "$current_tag" ]; then
+                    echo -e "${RED}❌ Refusing to downgrade $current_tag → $target_version${NC}"
+                    echo -e "${YELLOW}   The migration chain is one-way. Use --rollback (which warns${NC}"
+                    echo -e "${YELLOW}   about the database) or --force-downgrade if you are certain.${NC}"
+                    exit 1
+                fi
+            fi
+
+            # Record where we came from so --rollback has a target.
+            if grep -q '^# *OT_PREVIOUS_IMAGE_TAG=' .env; then
+                sed -i.bak "s|^# *OT_PREVIOUS_IMAGE_TAG=.*|# OT_PREVIOUS_IMAGE_TAG=${current_tag}|" .env
+            else
+                echo "# OT_PREVIOUS_IMAGE_TAG=${current_tag}" >> .env
+            fi
+            if grep -q '^OT_IMAGE_TAG=' .env; then
+                sed -i.bak "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${target_version}|" .env
+            else
+                echo "OT_IMAGE_TAG=${target_version}" >> .env
+            fi
+            rm -f .env.bak
+            echo -e "${GREEN}✓ Pinned OT_IMAGE_TAG=${target_version} (was ${current_tag})${NC}"
+            echo -e "${YELLOW}📥 Updating to ${target_version}...${NC}"
+        else
+            echo -e "${YELLOW}📥 Updating to the newest images for tag '${current_tag}'...${NC}"
+        fi
+
         compose_files=$(get_compose_files)
 
         docker compose $compose_files down

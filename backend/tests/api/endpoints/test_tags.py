@@ -843,3 +843,72 @@ def test_list_unused_tags_surfaces_a_query_error(
 
 def test_collision_endpoints_require_authentication(client, db_session):
     assert client.get("/api/tags/collisions").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# The scope/ownership contract
+#
+# `GET /tags?scope=` accepts exactly the values `Tag.ownership` reports, so the
+# filter and the field it filters on cannot drift. That makes one invariant
+# worth pinning directly: whatever scope you ask for, every row you get back
+# must claim it.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("scope", ["mine", "system", "shared_with_me"])
+def test_scope_returns_only_rows_reporting_that_ownership(
+    client, user_token_headers, db_session, normal_user, other_user, scope
+):
+    """A scoped request never returns a row whose ownership disagrees with it."""
+    suffix = uuid.uuid4().hex[:8]
+    _make_tag(db_session, name=f"mine-{suffix}", user_id=normal_user.id)
+    _make_tag(db_session, name=f"sys-{suffix}", user_id=None)
+    theirs = _make_tag(db_session, name=f"theirs-{suffix}", user_id=other_user.id)
+    # Only reachable through a shared file, which is what makes it shared_with_me.
+    shared_file = _make_file(db_session, other_user)
+    _attach(db_session, shared_file, theirs)
+    _share_file(db_session, other_user, normal_user, shared_file)
+
+    response = client.get(f"/api/tags?scope={scope}", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    reported = {tag["ownership"] for tag in response.json()}
+    assert reported <= {scope}, f"scope={scope} returned rows claiming {reported - {scope}}"
+
+
+def test_all_scope_is_the_union_of_the_three(
+    client, user_token_headers, db_session, normal_user, other_user
+):
+    """`all` must not be a fourth, differently-defined set."""
+    suffix = uuid.uuid4().hex[:8]
+    _make_tag(db_session, name=f"u-mine-{suffix}", user_id=normal_user.id)
+    theirs = _make_tag(db_session, name=f"u-theirs-{suffix}", user_id=other_user.id)
+    shared_file = _make_file(db_session, other_user)
+    _attach(db_session, shared_file, theirs)
+    _share_file(db_session, other_user, normal_user, shared_file)
+
+    def uuids(scope: str) -> set[str]:
+        res = client.get(f"/api/tags?scope={scope}", headers=user_token_headers)
+        assert res.status_code == status.HTTP_200_OK, res.text
+        return {tag["uuid"] for tag in res.json()}
+
+    assert uuids("all") == uuids("mine") | uuids("system") | uuids("shared_with_me")
+
+
+def test_a_tag_on_a_shared_file_is_read_only_for_the_recipient(
+    client, user_token_headers, db_session, normal_user, other_user
+):
+    """The point of naming `shared_with_me`: it says what the 404 will say."""
+    theirs = _make_tag(db_session, name=f"theirs-{uuid.uuid4().hex[:8]}", user_id=other_user.id)
+    shared_file = _make_file(db_session, other_user)
+    _attach(db_session, shared_file, theirs)
+    _share_file(db_session, other_user, normal_user, shared_file)
+
+    listed = client.get("/api/tags", headers=user_token_headers).json()
+    entry = next(tag for tag in listed if tag["uuid"] == str(theirs.uuid))
+    assert entry["ownership"] == "shared_with_me"
+
+    renamed = client.patch(
+        f"/api/tags/{theirs.uuid}", headers=user_token_headers, json={"name": "hijacked"}
+    )
+    assert renamed.status_code == status.HTTP_404_NOT_FOUND

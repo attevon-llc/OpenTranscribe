@@ -55,21 +55,27 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import FileTag
 from app.models.media import Tag
+from app.services.tag_service import OWNERSHIP_MINE
+from app.services.tag_service import OWNERSHIP_SHARED_WITH_ME
+from app.services.tag_service import OWNERSHIP_SYSTEM
+from app.services.tag_service import TAG_OWNERSHIPS
 from app.services.tag_service import accessible_file_ids_subquery
 from app.services.tag_service import is_awaiting_review
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import owned_or_system
+from app.services.tag_service import tag_ownership
 from app.services.tag_service import visible_to
 
 logger = logging.getLogger(__name__)
 
-#: Ownership scopes for the tag list. ``all`` is everything the caller may
-#: resolve against (own + system); the other two split that set. Spelled here
-#: rather than in the endpoint so the service and its Literal stay in one file.
+#: Ownership scopes for the tag list. ``all`` is everything the caller can see;
+#: the other three are exactly the ``ownership`` values a row can carry, and
+#: partition ``all`` between them. Sharing the vocabulary with
+#: ``tag_service.TAG_OWNERSHIPS`` is the point: a scoped request returns rows
+#: whose ``ownership`` equals the scope asked for, which is a single testable
+#: invariant instead of two lists to keep in step by hand.
 SCOPE_ALL = "all"
-SCOPE_MINE = "mine"
-SCOPE_SHARED = "shared"
-TAG_SCOPES = (SCOPE_ALL, SCOPE_MINE, SCOPE_SHARED)
+TAG_SCOPES = (SCOPE_ALL, *TAG_OWNERSHIPS)
 
 
 @dataclass(frozen=True)
@@ -84,9 +90,9 @@ class TagListEntry:
         awaiting_review: True when the tag is still the auto-labeler's to accept
             or reject. Shipped as a flag so the SPA never re-derives it from the
             origin string.
-        is_shared: True for a system tag — the shared vocabulary. Derived from
-            ownership here rather than serialized from ``user_id``, which never
-            reaches the wire.
+        ownership: The caller's relationship to the tag — ``mine``, ``system``
+            or ``shared_with_me``. Computed here because it needs the caller;
+            ``user_id`` itself never reaches the wire.
     """
 
     uuid: uuid_pkg.UUID
@@ -94,7 +100,7 @@ class TagListEntry:
     source: str | None
     usage_count: int
     awaiting_review: bool
-    is_shared: bool = False
+    ownership: str = OWNERSHIP_MINE
 
 
 @dataclass(frozen=True)
@@ -106,7 +112,7 @@ class TagClusterMember:
     source: str | None
     usage_count: int
     suggested_survivor: bool
-    is_shared: bool = False
+    ownership: str = OWNERSHIP_MINE
 
 
 @dataclass(frozen=True)
@@ -122,7 +128,7 @@ class TagClusterSuggestion:
     source: str | None
     usage_count: int
     similarity: float
-    is_shared: bool = False
+    ownership: str = OWNERSHIP_MINE
 
 
 @dataclass(frozen=True)
@@ -248,6 +254,7 @@ def _suggestions_for(
     candidates: list[Tag],
     usage: dict[int, int],
     *,
+    user_id: int,
     threshold: float,
 ) -> list[TagClusterSuggestion]:
     """Rank the near matches for one cluster, most similar first.
@@ -274,7 +281,7 @@ def _suggestions_for(
             source=tag.source,
             usage_count=usage.get(tag.id, 0),
             similarity=round(ratio, 4),
-            is_shared=tag.user_id is None,
+            ownership=tag_ownership(tag, user_id),
         )
         for ratio, tag in scored
     ]
@@ -324,7 +331,7 @@ def find_tag_collisions(
                         source=tag.source,
                         usage_count=usage.get(tag.id, 0),
                         suggested_survivor=tag.id == survivor.id,
-                        is_shared=tag.user_id is None,
+                        ownership=tag_ownership(tag, user_id),
                     )
                     for tag in members
                 ],
@@ -334,6 +341,7 @@ def find_tag_collisions(
                     {tag.id for tag in members},
                     all_tags,
                     usage,
+                    user_id=user_id,
                     threshold=threshold,
                 ),
             )
@@ -375,10 +383,11 @@ def list_tags_filtered(
         unused: Keep only tags with no accessible file — the exact complement of
             ``usage_count > 0``, from the same count.
         colliding: Keep only tags sharing a normalized name with another tag.
-        scope: ``all`` (default), ``mine`` (tags this user owns), or ``shared``
-            (the system vocabulary). Ownership is a different axis from the
-            other three filters, which is why it is a separate parameter rather
-            than a fourth boolean — "my unused tags" has to be expressible.
+        scope: ``all`` (default) or one of :data:`~app.services.tag_service.
+            TAG_OWNERSHIPS` — ``mine``, ``system``, ``shared_with_me``. Ownership
+            is a different axis from the other three filters, which is why it is
+            a separate parameter rather than a fourth boolean: "my unused tags"
+            has to be expressible.
 
     Note:
         The base scope here is ``visible_to``, not ``owned_or_system``: a tag
@@ -395,11 +404,15 @@ def list_tags_filtered(
     collision_ids = colliding_tag_ids(db, user_id=user_id) if colliding else set()
 
     entries: list[TagListEntry] = []
+    # Each branch is the SQL form of the matching `tag_ownership` arm, so the
+    # filter and the field it filters on cannot disagree.
     query = db.query(Tag).filter(visible_to(db, user_id, organization_id))
-    if scope == SCOPE_MINE:
+    if scope == OWNERSHIP_MINE:
         query = query.filter(Tag.user_id == user_id)
-    elif scope == SCOPE_SHARED:
+    elif scope == OWNERSHIP_SYSTEM:
         query = query.filter(Tag.user_id.is_(None))
+    elif scope == OWNERSHIP_SHARED_WITH_ME:
+        query = query.filter(Tag.user_id.is_not(None), Tag.user_id != user_id)
 
     for tag in query.order_by(Tag.name).all():
         count = usage.get(tag.id, 0)
@@ -416,7 +429,7 @@ def list_tags_filtered(
                 source=tag.source,
                 usage_count=count,
                 awaiting_review=is_awaiting_review(tag),
-                is_shared=tag.user_id is None,
+                ownership=tag_ownership(tag, user_id),
             )
         )
 

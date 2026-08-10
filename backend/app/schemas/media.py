@@ -623,23 +623,37 @@ class Tag(TagBase, UUIDBaseSchema):
             "auto-labeling LLM. Null on tags created before this field existed."
         ),
     )
-    is_shared: bool = Field(
-        default=False,
+    ownership: Literal["mine", "system", "shared_with_me"] = Field(
+        default="mine",
         description=(
-            "True for a system tag (`user_id IS NULL`): the shared vocabulary every "
-            "account sees and can attach. Only an admin may rename, merge, delete or "
-            "promote one. Derived from ownership, never stored."
+            "The caller's relationship to this tag, and therefore what they may do "
+            "with it. `mine` — they own it, full control. `system` — the shared "
+            "vocabulary (`user_id IS NULL`) every account sees; admin-only to "
+            "rename, merge, delete or promote. `shared_with_me` — owned by another "
+            "account and visible only because it sits on a file shared with the "
+            "caller; read-only, and any mutation answers 404. These are the same "
+            "values `GET /tags?scope=` accepts, so a scoped request returns rows "
+            "carrying that ownership. Derived per request, never stored."
         ),
     )
 
     @model_validator(mode="before")
     @classmethod
-    def _derive_is_shared(cls, data: Any) -> Any:
+    def _default_ownership(cls, data: Any) -> Any:
         """Project ownership onto the wire without exposing the owner's id.
 
         ``user_id`` is deliberately never serialized — which account owns a tag
-        is nobody else's business, and the SPA only needs to know whether the row
-        is shared, so it can gate the admin-only actions.
+        is nobody else's business, and the SPA only needs to know what it may do.
+
+        This validator cannot see the **caller**, so it can only distinguish
+        ``system`` from owned. That is sufficient for the endpoints that return a
+        bare ORM row (`POST /tags`, `POST /tags/files/{uuid}/tags`): both return
+        a tag the caller just resolved through ``owned_or_system``, so it is
+        theirs or the system's by construction and can never be
+        ``shared_with_me``. Every surface where the third value **is** reachable
+        — the list, the collision clusters, the file-detail payload — computes it
+        explicitly with ``tag_service.tag_ownership(tag, user_id)`` and passes it
+        in, which this then leaves alone.
 
         Runs **before** ``UUIDBaseSchema.prepare_uuid_response`` (a subclass's
         before-validator is the outer one), so it takes the raw ORM row and
@@ -651,11 +665,10 @@ class Tag(TagBase, UUIDBaseSchema):
         if isinstance(data, dict) or not hasattr(data, "user_id"):
             return data
         values: dict[str, Any] = {
-            name: getattr(data, name)
-            for name in cls.model_fields
-            if name != "is_shared" and hasattr(data, name)
+            name: getattr(data, name) for name in cls.model_fields if hasattr(data, name)
         }
-        values["is_shared"] = data.user_id is None
+        if "ownership" not in values:
+            values["ownership"] = "system" if data.user_id is None else "mine"
         return values
 
 

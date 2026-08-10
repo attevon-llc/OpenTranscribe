@@ -183,6 +183,56 @@ def names_are_similar(a: str, b: str, threshold: float = FUZZY_MATCH_THRESHOLD) 
     return difflib.SequenceMatcher(None, norm_a, norm_b).ratio() >= threshold
 
 
+#: The caller's relationship to a tag — the single vocabulary the whole plane
+#: uses. These are **both** the values ``Tag.ownership`` reports on the wire and
+#: the values ``GET /tags?scope=`` accepts, deliberately: a filter whose terms
+#: differ from the field it filters on is the kind of mismatch nobody notices
+#: until the two disagree. The invariant is directly testable — every row a
+#: scoped request returns must carry that same ownership.
+#:
+#: Not a boolean. ``is_shared`` already means "shared *with* me, not mine" on
+#: ``CollectionWithCount``; reusing it here for "in the shared vocabulary" gave
+#: one name two opposite meanings in one schema module.
+OWNERSHIP_MINE = "mine"
+OWNERSHIP_SYSTEM = "system"
+OWNERSHIP_SHARED_WITH_ME = "shared_with_me"
+TAG_OWNERSHIPS = (OWNERSHIP_MINE, OWNERSHIP_SYSTEM, OWNERSHIP_SHARED_WITH_ME)
+
+
+def tag_ownership(tag: Tag, user_id: int) -> str:
+    """Classify a tag by the caller's relationship to it.
+
+    The single definition, so the list, the collision clusters, and the
+    file-detail payload cannot drift into three answers. Maps 1:1 onto the
+    three visibility arms and onto what the caller may do:
+
+    ===================  ==========================  ==================
+    ``ownership``        Rule                        May mutate?
+    ===================  ==========================  ==================
+    ``mine``             ``Tag.user_id == user_id``  yes
+    ``system``           ``Tag.user_id IS NULL``     admin only
+    ``shared_with_me``   neither — reachable only    no (404)
+                         via an accessible file
+    ===================  ==========================  ==================
+
+    ``shared_with_me`` is the population that had no name: visible because
+    someone shared the file it sits on, owned by them, and refused by
+    ``_writable_tag_ids``. Without it the UI offers a rename that can only 404.
+
+    Args:
+        tag: The tag row.
+        user_id: The acting user.
+
+    Returns:
+        One of :data:`TAG_OWNERSHIPS`.
+    """
+    if tag.user_id is None:
+        return OWNERSHIP_SYSTEM
+    if tag.user_id == user_id:
+        return OWNERSHIP_MINE
+    return OWNERSHIP_SHARED_WITH_ME
+
+
 def owned_or_system(user_id: int) -> ColumnElement[bool]:
     """Predicate for the tags ``user_id`` may resolve against and write.
 

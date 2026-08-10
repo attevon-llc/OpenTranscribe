@@ -165,8 +165,13 @@ def list_tags(
     colliding: bool = Query(
         False, description="Only tags sharing a normalized name with another tag"
     ),
-    scope: Literal["all", "mine", "shared"] = Query(
-        "all", description="Ownership scope: all visible, only mine, or only the shared vocabulary"
+    scope: Literal["all", "mine", "system", "shared_with_me"] = Query(
+        "all",
+        description=(
+            "Ownership scope. `all` is everything visible; the other three are the "
+            "`ownership` values a tag can carry, so a scoped request returns only rows "
+            "reporting that same ownership."
+        ),
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

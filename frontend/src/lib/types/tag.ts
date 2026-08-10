@@ -161,12 +161,6 @@ export interface TagReviewResult {
   impact: TagImpact;
 }
 
-/** Result of the admin-only global cleanup of tags no file carries. */
-export interface TagCleanupResult {
-  deleted_count: number;
-  message: string;
-}
-
 /** Bulk tagging rides the files rail (`/files/management/bulk-action`). */
 export type BulkTagAction = 'add_tag' | 'remove_tag';
 

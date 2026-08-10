@@ -22,14 +22,12 @@ import {
   acceptTags,
   addTagToFile,
   bulkTagFiles,
-  cleanupUnusedTags,
   createTag,
   deleteTags,
   getTagImpact,
   getTagReviewImpact,
   listTagCollisions,
   listTags,
-  listUnusedTags,
   mergeTags,
   rejectTags,
   removeTagFromFile,
@@ -90,22 +88,12 @@ describe('tag list + file attachment', () => {
 });
 
 describe('collision + unused discovery', () => {
-  it('reads the unused list from the server', async () => {
-    await listUnusedTags();
-    expect(mockInstance.get).toHaveBeenCalledWith('/tags/unused');
-  });
 
   it('reads collision clusters from the server', async () => {
     await listTagCollisions();
     expect(mockInstance.get).toHaveBeenCalledWith('/tags/collisions');
   });
 
-  it('requests the global cleanup', async () => {
-    mockInstance.delete.mockResolvedValue({ data: { deleted_count: 3, message: 'ok' } });
-    const result = await cleanupUnusedTags();
-    expect(mockInstance.delete).toHaveBeenCalledWith('/tags/cleanup');
-    expect(result.deleted_count).toBe(3);
-  });
 });
 
 describe('impact previews', () => {

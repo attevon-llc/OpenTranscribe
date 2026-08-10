@@ -281,10 +281,13 @@ def test_file_detail_tags_match_the_tags_endpoint_shape(
     listing = client.get("/api/tags", headers=user_token_headers).json()
     from_tags = next(t for t in listing if t["uuid"] == str(tag.uuid))
 
-    # /api/tags adds usage_count (TagWithCount); everything else is identical.
-    for field in ("uuid", "name", "source"):
+    # /api/tags adds usage_count + awaiting_review (TagWithCount); everything
+    # else is identical. `is_shared` is part of the canonical shape, not an
+    # extra on one surface: it is derived from ownership on the `Tag` schema
+    # itself, so both endpoints gained it together and must keep agreeing.
+    for field in ("uuid", "name", "source", "is_shared"):
         assert from_detail[field] == from_tags[field]
-    assert set(from_detail) == {"uuid", "name", "source"}
+    assert set(from_detail) == {"uuid", "name", "source", "is_shared"}
 
 
 def test_file_list_still_has_no_tags_field(client, user_token_headers, normal_user, db_session):

@@ -64,12 +64,32 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 
 - `require_capability(key)` (`core/capabilities.py`) returns **404, not 403** — a gated router
   must look like an unknown route. Platform superusers bypass it.
-- **`endpoints/tags.py` visibility rule** (`v374_add_tag_user_id`): a tag is visible if it is a
-  system tag (`Tag.user_id IS NULL`), owned by the caller, **or** attached to a file in the
-  accessible-files subquery — that's `_visible_to()`; `_owned_or_system()` is the narrower
-  write/`/unused` scope. `_get_or_create_tag` takes a `user_id` and reuses the caller's row
-  first, then a same-named system row. Tag names are only unique **per owner**, so
-  `remove_tag_from_file` resolves the tag by joining `FileTag` for that file, never by name.
+- **`endpoints/tags.py` has THREE scopes, and mixing them up is the bug** (`v374_add_tag_user_id`).
+  All three live in `services/tag_service.py` so nothing re-derives them:
+  | Scope | Rule | Used by |
+  |---|---|---|
+  | `visible_to()` | system **or** owned **or** attached to an accessible file | `GET /tags` (the list) |
+  | `owned_or_system()` | system **or** owned | resolution, `/unused`, `/collisions` |
+  | `_writable_tag_ids()` | owned always; system for an **admin**; else **404** | every mutation |
+  Reading and rewriting are different rights: `visible_to` admits a tag on a file shared with
+  you, but renaming it rewrites its owner's vocabulary everywhere. Narrowing the *list* to
+  `owned_or_system` silently drops shared-file tags from the recipient's picker; widening
+  *mutation* to `visible_to` lets anyone rename anyone's tag. The non-writable case answers
+  404, not 403, so probing cannot enumerate other accounts' tags.
+- **Tags are per-owner; the shared tier is `user_id IS NULL`.** `resolve_or_create_tag` takes a
+  **required** `user_id` — an ownerless row is a *system* tag, published to every account, and
+  only `initial_data._ensure_default_tags` may create one. Lookup prefers the caller's row, then
+  a same-named system row, so applying a seeded default attaches the shared row. `POST
+  /tags/promote` (admin) moves an owned tag into that tier and folds same-named rows into it.
+  Names are unique only **per owner**, so `remove_tag_from_file` resolves via `FileTag` for that
+  file, never by name.
+- **One file never carries the same word twice.** `resolve_or_create_tag(..., file_id=...)`
+  consults `lookup_tag_on_file` first, so the second person to tag a shared file reuses the row
+  instead of forking a same-named one. Without it the detail page renders the tag twice and the
+  gallery's ALL-filter has to count `DISTINCT Tag.name` to compensate.
+- **Bulk tag paths must stay batched.** `prepare_upload.add_tags_to_file` goes through
+  `resolve_or_create_tags` (constant SELECTs, issue #284 A2.8), not the per-name resolver;
+  `test_upload_prep_batching` fails if the per-name loop returns.
 - `GET /api/auth/session` must **never 401** (200 for anonymous); it is the SPA's session probe.
 - **Both SSE streams go check → subscribe → re-check.** `download_stream` (`files/__init__.py`)
   and `bulk_export_stream` (`files/subtitles.py`) read their readiness signal, subscribe to the

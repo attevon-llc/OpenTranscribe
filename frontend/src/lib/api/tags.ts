@@ -14,7 +14,6 @@ import type {
   BulkTagAction,
   BulkTagActionResult,
   Tag,
-  TagCleanupResult,
   TagCollisionCluster,
   TagImpact,
   TagListFilters,
@@ -69,12 +68,6 @@ export async function addTagToFile(fileUuid: string, name: string): Promise<Tag>
 /** Detach a tag from a file. The tag row itself survives. */
 export async function removeTagFromFile(fileUuid: string, tagName: string): Promise<void> {
   await axiosInstance.delete(`/tags/files/${fileUuid}/tags/${encodeURIComponent(tagName)}`);
-}
-
-/** Tags no file the caller can see is carrying. */
-export async function listUnusedTags(): Promise<Tag[]> {
-  const response = await axiosInstance.get('/tags/unused');
-  return response.data;
 }
 
 /** Duplicate tags grouped into clusters, each with a preselected survivor. */
@@ -163,12 +156,6 @@ export async function rejectTags(tagUuids: string[]): Promise<TagReviewResult> {
  */
 export async function promoteTags(tagUuids: string[]): Promise<TagMutationResult> {
   const response = await axiosInstance.post('/tags/promote', { tag_uuids: tagUuids });
-  return response.data;
-}
-
-/** Delete every tag no file *anywhere* carries (admin only, deliberately global). */
-export async function cleanupUnusedTags(): Promise<TagCleanupResult> {
-  const response = await axiosInstance.delete('/tags/cleanup');
   return response.data;
 }
 

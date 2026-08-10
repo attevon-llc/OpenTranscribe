@@ -21,18 +21,9 @@ function asAuthError(error: unknown): AuthRequestError {
   return (error ?? {}) as AuthRequestError;
 }
 
-// Certificate information for PKI authentication
-export interface CertificateInfo {
-  has_certificate: boolean;
-  subject_dn?: string;
-  serial_number?: string;
-  issuer_dn?: string;
-  organization?: string;
-  organizational_unit?: string;
-  valid_from?: string;
-  valid_until?: string;
-  fingerprint?: string;
-}
+// Certificate metadata lives with the endpoint that serves it
+// (`$lib/api/certificate`). It was declared here, and hung off the user type,
+// as though `/auth/me` returned it — it never has.
 
 // Define user interface
 interface User {
@@ -45,7 +36,6 @@ interface User {
   // keys off `auth_type === 'local'`.
   auth_type: 'local' | 'ldap' | 'oidc' | 'pki' | string;
   allow_local_fallback?: boolean;
-  certificate?: CertificateInfo;
   // Cloud-edition tenancy/billing context (populated by the backend from the
   // external IdP's org claim). Absent in the community edition.
   org_id?: string;

@@ -1,11 +1,35 @@
 <script lang="ts">
-  import { user as userStore, type CertificateInfo } from '$stores/auth';
+  /**
+   * The signed-in user's certificate details, for PKI-authenticated accounts.
+   *
+   * Fetches its own data. It previously read `$userStore.certificate`, a field
+   * nothing ever set — `/api/auth/me` does not serve certificate metadata, only
+   * `/api/auth/me/certificate` does — so `hasCertificate` was permanently false
+   * and this panel silently rendered the no-certificate state for every user,
+   * including those with a valid certificate.
+   */
+  import { onMount } from 'svelte';
   import { t } from '$stores/locale';
+  import { getCertificateInfo, type CertificateInfo } from '$lib/api/certificate';
 
-  $: certificate = $userStore?.certificate as CertificateInfo | undefined;
+  let certificate: CertificateInfo | undefined;
+  let loadFailed = false;
+
+  onMount(async () => {
+    try {
+      certificate = await getCertificateInfo();
+    } catch {
+      // Non-fatal: the rest of the security panel is unaffected, so this
+      // degrades to showing nothing rather than breaking the page.
+      loadFailed = true;
+    }
+  });
+
   $: hasCertificate = certificate?.has_certificate || false;
 
-  function formatDate(dateString?: string): string {
+  // The backend returns JSON null for an absent field, so this takes null as
+  // well as undefined — the widened shape is the accurate one.
+  function formatDate(dateString?: string | null): string {
     if (!dateString) return $t('common.notAvailable');
     return new Date(dateString).toLocaleString();
   }

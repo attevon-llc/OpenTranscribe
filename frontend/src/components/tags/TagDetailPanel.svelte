@@ -15,7 +15,13 @@
 
   export let tag: TagListEntry;
   /** Which mutation is in flight, if any. Disables the confirming control. */
-  export let busy: 'rename' | 'delete' | 'accept' | 'reject' | null = null;
+  export let busy: 'rename' | 'delete' | 'accept' | 'reject' | 'promote' | null = null;
+  /**
+   * Whether the caller may publish this tag into the shared vocabulary.
+   *
+   * Cosmetic — `POST /tags/promote` enforces the admin check itself.
+   */
+  export let canPromote = false;
   /** An impact preview is being fetched. */
   export let previewLoading = false;
   /** Impact of deleting this tag, once previewed. */
@@ -33,6 +39,7 @@
     confirmDelete: void;
     cancelDelete: void;
     accept: void;
+    promote: void;
     previewReject: void;
     confirmReject: void;
     cancelReject: void;
@@ -175,7 +182,27 @@
     </div>
   {/if}
 
+  {#if tag.is_shared}
+    <div class="review-flag">
+      <Badge variant="info">{$t('tags.manager.sharedBadge')}</Badge>
+      <span class="panel-note">{$t('tags.manager.detail.sharedHint')}</span>
+    </div>
+  {/if}
+
   <div class="detail-actions">
+    {#if canPromote && !tag.is_shared}
+      <button
+        type="button"
+        class="btn btn-ghost"
+        on:click={() => dispatch('promote')}
+        disabled={busy !== null}
+        title={$t('tags.manager.promote.description')}
+      >
+        {busy === 'promote'
+          ? $t('tags.manager.action.promoting')
+          : $t('tags.manager.action.promote')}
+      </button>
+    {/if}
     {#if tag.awaiting_review}
       <button
         type="button"

@@ -13,7 +13,7 @@
   import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
 
-  import type { Tag } from '$lib/types/tag';
+  import type { Tag, TagWithCount } from '$lib/types/tag';
 
   type AISuggestion = { name: string; confidence: number; rationale?: string };
 
@@ -36,7 +36,7 @@
     .filter(tag => tag.source === 'auto_ai')
     .map(tag => tag.name);
 
-  let allTags: Tag[] = [];
+  let allTags: TagWithCount[] = [];
   let newTagInput = '';
   let loading = false;
 
@@ -151,7 +151,12 @@
       }
 
       if (!allTags.some(t => t.uuid === finalTag.uuid)) {
-        allTags = [...allTags, finalTag];
+        // `addTagToFile` returns the bare `Tag` shape — the attach endpoint has
+        // no count to report. The placeholder counts are never rendered: the
+        // tag is on the file now, so `availableTags` filters it out of both the
+        // suggestion chips and the dropdown, which are the only readers of
+        // these two fields. A real count arrives with the next `listTags()`.
+        allTags = [...allTags, { ...finalTag, usage_count: 0, awaiting_review: false }];
       }
 
       if (tags.some(t => t.uuid === finalTag.uuid)) {
@@ -297,7 +302,7 @@
     }
   }
 
-  let suggestedTags: Tag[] = [];
+  let suggestedTags: TagWithCount[] = [];
   let dropdownTags: Array<{ id: string; name: string; count: number }> = []; // All available tags for dropdown
 
   $: aiSuggestionNormalizedNames = new Set(

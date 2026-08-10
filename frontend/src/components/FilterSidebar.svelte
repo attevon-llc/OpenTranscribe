@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Tag } from '$lib/types/tag';
+  import type { Tag, TagWithCount } from '$lib/types/tag';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import RangeSlider from 'svelte-range-slider-pips';
   import { DatePicker } from '@svelte-plugins/datepicker';
@@ -98,7 +98,7 @@
 
   // State
   /** @type {Tag[]} */
-  let allTags: Tag[] = [];
+  let allTags: TagWithCount[] = [];
   let showAllTags = false;  // Toggle for showing all tags vs top 9
   /** The option shape SearchableMultiSelect expects (its own `Option` type is component-local). */
   type MultiSelectOption = { id: string; name: string; count: number };

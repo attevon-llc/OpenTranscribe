@@ -1,9 +1,15 @@
 <script lang="ts">
   /** Visual variant — maps to the app's semantic status colors. */
   export let variant: 'default' | 'success' | 'warning' | 'error' | 'info' = 'default';
+  /**
+   * Optional hover/AT description, when the pill's one-word label needs
+   * expanding. The caller passes already-translated text — a primitive never
+   * bakes in copy. Omitted by default so no empty `title` reaches the DOM.
+   */
+  export let title: string | null = null;
 </script>
 
-<span class={`badge badge-${variant}`}>
+<span class={`badge badge-${variant}`} title={title ?? undefined}>
   <slot />
 </span>
 

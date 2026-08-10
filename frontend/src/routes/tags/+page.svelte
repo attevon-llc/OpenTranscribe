@@ -19,6 +19,7 @@
     getTagReviewImpact,
     listTagCollisions,
     listTags,
+    promoteTags,
     mergeTags,
     rejectTags,
     renameTag,
@@ -28,14 +29,22 @@
   import TagDetailPanel from '$components/tags/TagDetailPanel.svelte';
   import TagFilterBar from '$components/tags/TagFilterBar.svelte';
   import type { TagFilterId } from '$components/tags/TagFilterBar.svelte';
+  import type { TagScope } from '$lib/types/tag';
+  import { user } from '$stores/auth';
   import TagList from '$components/tags/TagList.svelte';
   import type { TagListEntry, TagSelectDetail } from '$components/tags/TagList.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import ListRowSkeleton from '$components/ui/ListRowSkeleton.svelte';
 
-  type Busy = 'rename' | 'merge' | 'delete' | 'accept' | 'reject' | null;
+  type Busy = 'rename' | 'merge' | 'delete' | 'accept' | 'reject' | 'promote' | null;
 
   let filter: TagFilterId = 'all';
+  // Ownership scope, a separate axis from the view above so "my unused tags"
+  // is one request rather than an unreachable combination.
+  let scope: TagScope = 'all';
+  // Cosmetic gate only: POST /tags/promote enforces the admin check server-side.
+  // `role` is the authorization truth in this app; `is_superuser` is its mirror.
+  $: canPromote = $user?.role === 'admin' || $user?.role === 'super_admin';
   let tags: TagListEntry[] = [];
   let clusters: TagCollisionCluster[] = [];
   let loading = true;
@@ -115,6 +124,7 @@
         tags = await listTags({
           awaiting_review: filter === 'awaiting_review' || undefined,
           unused: filter === 'unused' || undefined,
+          scope,
         });
         clusters = [];
       }
@@ -130,6 +140,23 @@
   }
 
   onMount(loadTags);
+
+  function handleScopeChange(event: CustomEvent<TagScope>) {
+    scope = event.detail;
+    selectedUuids = [];
+    clearPreviews();
+    loadTags();
+  }
+
+  function promoteSelection() {
+    const uuids = [...selectedUuids];
+    mutate(
+      'promote',
+      uuids,
+      () => promoteTags(uuids).then(() => undefined),
+      'tags.manager.promote.done'
+    );
+  }
 
   function handleFilterChange(event: CustomEvent<TagFilterId>) {
     filter = event.detail;
@@ -311,7 +338,13 @@
     </div>
   </div>
 
-  <TagFilterBar {filter} count={loading || loadError ? null : rowCount} on:change={handleFilterChange} />
+  <TagFilterBar
+    {filter}
+    {scope}
+    count={loading || loadError ? null : rowCount}
+    on:change={handleFilterChange}
+    on:scopeChange={handleScopeChange}
+  />
 
   <div class="tags-layout" class:has-selection={selectedUuids.length > 0}>
     <div class="list-pane">
@@ -378,7 +411,9 @@
           {mergePreview}
           {deletePreview}
           {rejectPreview}
+          {canPromote}
           on:previewMerge={previewMerge}
+          on:promote={promoteSelection}
           on:confirmMerge={confirmMerge}
           on:cancelMerge={clearPreviews}
           on:previewDelete={previewDelete}
@@ -398,7 +433,9 @@
           {deletePreview}
           {rejectPreview}
           {renameMergeImpact}
+          {canPromote}
           on:rename={(event) => submitRename(event.detail.name)}
+          on:promote={promoteSelection}
           on:confirmRenameMerge={(event) => submitRename(event.detail.name, true)}
           on:cancelRenameMerge={() => (renameMergeImpact = null)}
           on:previewDelete={previewDelete}

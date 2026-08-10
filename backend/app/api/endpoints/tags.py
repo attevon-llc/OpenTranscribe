@@ -165,6 +165,9 @@ def list_tags(
     colliding: bool = Query(
         False, description="Only tags sharing a normalized name with another tag"
     ),
+    scope: Literal["all", "mine", "shared"] = Query(
+        "all", description="Ownership scope: all visible, only mine, or only the shared vocabulary"
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -189,7 +192,7 @@ def list_tags(
     from app.services.redis_cache_service import TTL_TAGS
     from app.services.redis_cache_service import redis_cache
 
-    filtered = awaiting_review or unused or colliding
+    filtered = awaiting_review or unused or colliding or scope != "all"
     cache_key = f"cache:tags:{current_user.id}"
     use_cache = app_settings.READ_CACHE_ENABLED and ctx.org_id is None and not filtered
 
@@ -205,6 +208,7 @@ def list_tags(
         awaiting_review=awaiting_review,
         unused=unused,
         colliding=colliding,
+        scope=scope,
     )
     tags_with_counts = [TagWithCount.model_validate(entry) for entry in entries]
 

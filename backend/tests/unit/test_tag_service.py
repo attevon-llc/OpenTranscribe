@@ -35,18 +35,23 @@ from app.services.tag_service import clean_tag_name
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tag
+from app.services.tag_service import resolve_or_create_tags
 from app.services.tag_service import suggest_similar_tag
 from app.tasks.search_indexing_task import extract_file_index_metadata
 from tests.conftest import engine
 
 
 def _suffix() -> str:
-    """Tag names are globally unique — every created name needs its own suffix."""
+    """Names are unique per owner — every created name still needs its own suffix."""
     return uuid.uuid4().hex[:8]
 
 
-def _make_tag(db_session, name: str, *, source: str = "manual") -> Tag:
-    tag = Tag(name=name, source=source, normalized_name=normalize_tag_name(name))
+def _make_tag(db_session, name: str, *, source: str = "manual", user_id=None) -> Tag:
+    """Create a tag. ``user_id=None`` makes a **system** tag, so pass an owner
+    unless the test is specifically about the shared vocabulary."""
+    tag = Tag(
+        name=name, user_id=user_id, source=source, normalized_name=normalize_tag_name(name)
+    )
     db_session.add(tag)
     db_session.flush()
     return tag
@@ -112,47 +117,49 @@ def _competing_writer(db_session, contested: str):
         _delete_tag_on_other_connection(contested)
 
 
-def test_case_only_difference_returns_existing_tag(db_session):
+def test_case_only_difference_returns_existing_tag(db_session, normal_user):
     """A name matching only by case resolves to the existing tag, creating no row."""
     name = f"Interview-{_suffix()}"
     existing = _make_tag(db_session, name)
     normalized = normalize_tag_name(name)
 
-    resolved = resolve_or_create_tag(db_session, name.upper())
+    resolved = resolve_or_create_tag(db_session, name.upper(), user_id=normal_user.id)
 
     assert resolved.id == existing.id
     assert _count_tags(db_session, normalized) == 1
 
 
 @pytest.mark.parametrize("variant", ["{base} notes", "{base}_notes", "{base}-notes"])
-def test_separator_and_whitespace_variants_return_existing_tag(db_session, variant):
+def test_separator_and_whitespace_variants_return_existing_tag(db_session, variant, normal_user):
     """Hyphen / underscore / repeated-whitespace variants collapse onto one tag."""
     base = f"quarterly{_suffix()}"
     canonical = f"{base}-notes"
     existing = _make_tag(db_session, canonical)
 
-    resolved = resolve_or_create_tag(db_session, variant.format(base=base))
+    resolved = resolve_or_create_tag(
+        db_session, variant.format(base=base), user_id=normal_user.id
+    )
 
     assert resolved.id == existing.id
     assert _count_tags(db_session, normalize_tag_name(canonical)) == 1
 
 
-def test_repeated_whitespace_returns_existing_tag(db_session):
+def test_repeated_whitespace_returns_existing_tag(db_session, normal_user):
     base = f"team{_suffix()}"
     existing = _make_tag(db_session, f"{base} sync")
 
-    resolved = resolve_or_create_tag(db_session, f"  {base}   sync  ")
+    resolved = resolve_or_create_tag(db_session, f"  {base}   sync  ", user_id=normal_user.id)
 
     assert resolved.id == existing.id
 
 
-def test_unmatched_name_creates_one_tag_with_normalization_stored(db_session):
+def test_unmatched_name_creates_one_tag_with_normalization_stored(db_session, normal_user):
     """A name with no match creates exactly one tag carrying its normalized form."""
     name = f"Board_Meeting-{_suffix()}"
     normalized = normalize_tag_name(name)
     assert _count_tags(db_session, normalized) == 0
 
-    created = resolve_or_create_tag(db_session, name)
+    created = resolve_or_create_tag(db_session, name, user_id=normal_user.id)
 
     assert created.id is not None
     assert created.name == name
@@ -160,58 +167,63 @@ def test_unmatched_name_creates_one_tag_with_normalization_stored(db_session):
     assert _count_tags(db_session, normalized) == 1
 
 
-def test_near_match_creates_new_tag_when_fuzzy_not_requested(db_session):
+def test_near_match_creates_new_tag_when_fuzzy_not_requested(db_session, normal_user):
     """A near match is NOT silently resolved — resolution is normalized-exact only."""
     suffix = _suffix()
     q3 = _make_tag(db_session, f"q3-earnings-{suffix}")
     q4_name = f"q4-earnings-{suffix}"
 
     # Sanity: these two are similar enough that a fuzzy resolver would merge them.
-    assert suggest_similar_tag(db_session, q4_name) is not None
+    assert suggest_similar_tag(db_session, q4_name, user_id=normal_user.id) is not None
 
-    resolved = resolve_or_create_tag(db_session, q4_name)
+    resolved = resolve_or_create_tag(db_session, q4_name, user_id=normal_user.id)
 
     assert resolved.id != q3.id
     assert resolved.name == q4_name
 
 
-def test_suggestion_lookup_returns_near_match_when_asked(db_session):
+def test_suggestion_lookup_returns_near_match_when_asked(db_session, normal_user):
     """The fuzzy scan is available as an explicit, opt-in suggestion lookup."""
     suffix = _suffix()
     q3 = _make_tag(db_session, f"q3-earnings-{suffix}")
 
-    suggestion = suggest_similar_tag(db_session, f"q4-earnings-{suffix}")
+    suggestion = suggest_similar_tag(db_session, f"q4-earnings-{suffix}", user_id=normal_user.id)
 
     assert suggestion is not None
     assert suggestion.id == q3.id
 
 
-def test_suggestion_lookup_returns_none_for_unrelated_name(db_session):
+def test_suggestion_lookup_returns_none_for_unrelated_name(db_session, normal_user):
     _make_tag(db_session, f"q3-earnings-{_suffix()}")
 
-    assert suggest_similar_tag(db_session, f"zzz-unrelated-topic-{_suffix()}") is None
+    assert (
+        suggest_similar_tag(
+            db_session, f"zzz-unrelated-topic-{_suffix()}", user_id=normal_user.id
+        )
+        is None
+    )
 
 
-def test_concurrent_insert_returns_winning_row_without_raising(db_session):
+def test_concurrent_insert_returns_winning_row_without_raising(db_session, normal_user):
     """Losing the insert race returns the winner instead of propagating the error."""
     contested = f"race-{_suffix()}"
 
     with _competing_writer(db_session, contested):
-        resolved = resolve_or_create_tag(db_session, contested)
+        resolved = resolve_or_create_tag(db_session, contested, user_id=normal_user.id)
 
         assert resolved.name == contested
         assert resolved.id is not None
         assert _count_tags(db_session, normalize_tag_name(contested)) == 1
 
 
-def test_collision_leaves_callers_pending_writes_intact(db_session):
+def test_collision_leaves_callers_pending_writes_intact(db_session, normal_user):
     """A lost race rolls back only the SAVEPOINT, never the caller's transaction."""
     contested = f"race-{_suffix()}"
     pending_name = f"pending-{_suffix()}"
     _make_tag(db_session, pending_name)
 
     with _competing_writer(db_session, contested):
-        resolve_or_create_tag(db_session, contested)
+        resolve_or_create_tag(db_session, contested, user_id=normal_user.id)
 
         survivor = db_session.query(Tag).filter(Tag.name == pending_name).first()
         assert survivor is not None, "the caller's pending write was discarded"
@@ -222,7 +234,7 @@ def test_long_name_truncated_identically_across_paths(db_session, normal_user):
     long_name = f"retro-{_suffix()}-" + ("x" * 80)
     assert len(long_name) > MAX_TAG_NAME_LENGTH
 
-    resolved = resolve_or_create_tag(db_session, long_name)
+    resolved = resolve_or_create_tag(db_session, long_name, user_id=normal_user.id)
 
     assert len(resolved.name) == MAX_TAG_NAME_LENGTH
     assert resolved.name == clean_tag_name(long_name)
@@ -241,7 +253,7 @@ def test_long_name_truncated_identically_across_paths(db_session, normal_user):
 
 
 @pytest.mark.parametrize("blank", ["", "   ", "-", "__", " - _ "])
-def test_empty_after_normalization_is_rejected(db_session, blank):
+def test_empty_after_normalization_is_rejected(db_session, blank, normal_user):
     """A name that normalizes to nothing is rejected rather than stored blank.
 
     Asserted against this session's pending writes and the blank-name rows
@@ -250,7 +262,7 @@ def test_empty_after_normalization_is_rejected(db_session, blank):
     moves underneath an unrelated test.
     """
     with pytest.raises(InvalidTagNameError):
-        resolve_or_create_tag(db_session, blank)
+        resolve_or_create_tag(db_session, blank, user_id=normal_user.id)
 
     assert [obj for obj in db_session.new if isinstance(obj, Tag)] == []
     assert db_session.query(Tag).filter(Tag.normalized_name == "").count() == 0
@@ -291,7 +303,7 @@ def test_auto_labeling_creates_through_shared_service(db_session):
     assert _count_tags(db_session, normalize_tag_name(name)) == 1
 
 
-def test_legacy_row_without_normalized_name_is_repaired_not_duplicated(db_session):
+def test_legacy_row_without_normalized_name_is_repaired_not_duplicated(db_session, normal_user):
     """Rows seeded before this service existed carry no normalized_name.
 
     They must still resolve (via the exact-name fallback) and get backfilled, or
@@ -302,13 +314,13 @@ def test_legacy_row_without_normalized_name_is_repaired_not_duplicated(db_sessio
     db_session.add(legacy)
     db_session.flush()
 
-    resolved = resolve_or_create_tag(db_session, name)
+    resolved = resolve_or_create_tag(db_session, name, user_id=normal_user.id)
 
     assert resolved.id == legacy.id
     assert resolved.normalized_name == normalize_tag_name(name)
 
     # Now that it is backfilled, a case variant resolves onto the same row.
-    assert resolve_or_create_tag(db_session, name.upper()).id == legacy.id
+    assert resolve_or_create_tag(db_session, name.upper(), user_id=normal_user.id).id == legacy.id
     assert _count_tags(db_session, normalize_tag_name(name)) == 1
 
 
@@ -499,3 +511,119 @@ def test_global_invalidation_clears_a_bystanders_cached_tag_list(
 
     assert redis_cache.get(actor_key) is None
     assert redis_cache.get(bystander_key) is None, "another user's tag list stayed stale"
+
+
+# ---------------------------------------------------------------------------
+# Ownership scoping (v374_add_tag_user_id)
+#
+# The branch these tests arrived on was written when `tag` had no owner column.
+# Every assertion here fails against an unscoped resolver, which is the point:
+# resolving without `owned_or_system` attaches a typed name to whichever
+# account's row the planner returned first, and creating without an owner
+# publishes the tag to every account.
+# ---------------------------------------------------------------------------
+
+
+def test_created_tag_is_owned_by_the_acting_user(db_session, normal_user):
+    """A resolver-created tag is never ownerless — that would be a system tag."""
+    name = f"owned-{_suffix()}"
+
+    tag = resolve_or_create_tag(db_session, name, user_id=normal_user.id)
+
+    assert tag.user_id == normal_user.id, "an ownerless tag is published to every account"
+
+
+def test_resolution_does_not_cross_to_another_users_tag(db_session, normal_user, other_user):
+    """Typing a name another account already uses creates YOUR row, not theirs."""
+    name = f"Interview-{_suffix()}"
+    theirs = _make_tag(db_session, name, user_id=other_user.id)
+
+    mine = resolve_or_create_tag(db_session, name, user_id=normal_user.id)
+
+    assert mine.id != theirs.id
+    assert mine.user_id == normal_user.id
+
+
+def test_own_tag_beats_a_same_named_system_tag(db_session, normal_user):
+    """An owned row wins over the shared row (ORDER BY user_id is NULLS LAST)."""
+    name = f"Meeting-{_suffix()}"
+    _make_tag(db_session, name, user_id=None)
+    owned = _make_tag(db_session, name, user_id=normal_user.id)
+
+    assert resolve_or_create_tag(db_session, name, user_id=normal_user.id).id == owned.id
+
+
+def test_system_tag_is_reused_rather_than_forked(db_session, normal_user):
+    """Applying a seeded default attaches the shared row, not a private copy."""
+    name = f"Important-{_suffix()}"
+    system = _make_tag(db_session, name, user_id=None)
+
+    resolved = resolve_or_create_tag(db_session, name, user_id=normal_user.id)
+
+    assert resolved.id == system.id
+    assert resolved.user_id is None
+
+
+def test_suggestions_never_cross_accounts(db_session, normal_user, other_user):
+    """The fuzzy scan must not surface — or auto-apply — another account's tag.
+
+    The auto-labeler applies its fuzzy hit without confirmation, so an unscoped
+    pool would silently attach a row the acting user does not own.
+    """
+    suffix = _suffix()
+    _make_tag(db_session, f"q3-earnings-{suffix}", user_id=other_user.id)
+
+    assert (
+        suggest_similar_tag(db_session, f"q4-earnings-{suffix}", user_id=normal_user.id) is None
+    )
+
+
+def test_two_users_tagging_one_shared_file_reuse_the_same_row(
+    db_session, normal_user, other_user
+):
+    """The deconfliction case: one file must never carry the same word twice.
+
+    Without ``lookup_tag_on_file`` the second user forks their own row, the file
+    renders "interview" twice, and the gallery's ALL-filter has to count
+    DISTINCT names to compensate.
+    """
+    media_file = _make_file(db_session, normal_user)
+    name = f"interview-{_suffix()}"
+
+    first = resolve_or_create_tag(
+        db_session, name, user_id=normal_user.id, file_id=media_file.id
+    )
+    db_session.add(FileTag(media_file_id=media_file.id, tag_id=first.id, source="manual"))
+    db_session.flush()
+
+    second = resolve_or_create_tag(
+        db_session, name.upper(), user_id=other_user.id, file_id=media_file.id
+    )
+
+    assert second.id == first.id, "second tagger forked a duplicate row onto the same file"
+
+
+def test_batch_resolver_matches_the_single_resolver(db_session, normal_user):
+    """``resolve_or_create_tags`` is the batched path — same semantics, one query.
+
+    Upload prepare uses it, so a divergence here would mean a name typed at
+    upload resolves differently from the same name typed on the detail page.
+    """
+    base = f"quarterly{_suffix()}"
+    single = resolve_or_create_tag(db_session, f"{base}-notes", user_id=normal_user.id)
+
+    batched = resolve_or_create_tags(
+        db_session, [f"{base}_NOTES", f"{base} notes", "", "   "], user_id=normal_user.id
+    )
+
+    assert [tag.id for tag in batched] == [single.id], "variants must collapse onto one tag"
+
+
+def test_batch_resolver_owns_what_it_creates(db_session, normal_user):
+    """The bulk path must not create ownerless rows either."""
+    created = resolve_or_create_tags(
+        db_session, [f"alpha-{_suffix()}", f"beta-{_suffix()}"], user_id=normal_user.id
+    )
+
+    assert len(created) == 2
+    assert all(tag.user_id == normal_user.id for tag in created)

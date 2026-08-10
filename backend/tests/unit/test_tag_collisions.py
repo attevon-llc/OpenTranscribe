@@ -39,14 +39,25 @@ def _suffix() -> str:
     return uuid.uuid4().hex[:8]
 
 
-def _raw_tag(db_session, name: str, *, normalized: str | None = ..., source=TAG_SOURCE_MANUAL):
+def _raw_tag(
+    db_session,
+    name: str,
+    *,
+    normalized: str | None = ...,
+    source=TAG_SOURCE_MANUAL,
+    user_id: int | None = None,
+):
     """Insert a tag row directly, so a *broken* stored normalization can be staged.
 
     The resolver would never produce two rows sharing a normalized name — these
     collisions predate it, so the test has to write them the way history did.
+
+    ``user_id=None`` writes a **system** tag, which is in every caller's
+    ``owned_or_system`` scope; pass an owner when the test is about one
+    account's vocabulary specifically.
     """
     stored = normalize_tag_name(name) if normalized is ... else normalized
-    tag = Tag(name=name, source=source, normalized_name=stored)
+    tag = Tag(name=name, user_id=user_id, source=source, normalized_name=stored)
     db_session.add(tag)
     db_session.flush()
     return tag
@@ -199,14 +210,14 @@ def test_null_stored_normalization_is_corrected_and_clusters(db_session, normal_
     assert {member.uuid for member in cluster.members} == {legacy.uuid, partner.uuid}
 
 
-def test_refresh_stored_normalization_is_idempotent(db_session):
+def test_refresh_stored_normalization_is_idempotent(db_session, normal_user):
     """Running the repair twice changes nothing the second time."""
     suffix = _suffix()
-    _raw_tag(db_session, f"idem-{suffix}", normalized=None)
-    _raw_tag(db_session, f"idem-two-{suffix}", normalized="wrong")
+    _raw_tag(db_session, f"idem-{suffix}", normalized=None, user_id=normal_user.id)
+    _raw_tag(db_session, f"idem-two-{suffix}", normalized="wrong", user_id=normal_user.id)
 
-    first = refresh_stored_normalization(db_session)
-    second = refresh_stored_normalization(db_session)
+    first = refresh_stored_normalization(db_session, user_id=normal_user.id)
+    second = refresh_stored_normalization(db_session, user_id=normal_user.id)
 
     assert first >= 2
     assert second == 0

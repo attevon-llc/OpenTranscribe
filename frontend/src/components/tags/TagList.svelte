@@ -349,6 +349,11 @@
               {/if}
             </span>
           </span>
+          {#if row.kind === 'tag' && row.entry.is_shared}
+            <Badge variant="info" title={$t('tags.manager.sharedTooltip')}>
+              {$t('tags.manager.sharedBadge')}
+            </Badge>
+          {/if}
           {#if row.kind === 'tag' && row.entry.awaiting_review}
             <Badge variant="warning">{$t('tags.manager.awaitingReview')}</Badge>
           {/if}

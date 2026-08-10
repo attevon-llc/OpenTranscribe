@@ -40,11 +40,21 @@ export interface TagWithCount extends Tag {
   awaiting_review: boolean;
 }
 
+/**
+ * Ownership scope for the tag list.
+ *
+ * `all` is everything the caller may resolve against (their own tags plus the
+ * shared vocabulary); `mine` and `shared` split that set. A separate axis from
+ * the three view filters below, so "my unused tags" is expressible.
+ */
+export type TagScope = 'all' | 'mine' | 'shared';
+
 /** Server-side filters for the tag list; they combine (AND). */
 export interface TagListFilters {
   awaiting_review?: boolean;
   unused?: boolean;
   colliding?: boolean;
+  scope?: TagScope;
 }
 
 /** A tag sharing its normalized name with the rest of its cluster. */

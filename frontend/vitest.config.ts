@@ -24,6 +24,10 @@ export default defineConfig({
       $lib: path.resolve('./src/lib'),
       $components: path.resolve('./src/components'),
       $stores: path.resolve('./src/stores'),
+      // `$app/*` is injected by the SvelteKit Vite plugin, which is not loaded
+      // here. Without this, any component importing `goto` fails to resolve and
+      // its whole test file errors out before a single assertion runs.
+      '$app/navigation': path.resolve('./src/test-mocks/app-navigation.ts'),
     },
   },
   test: {

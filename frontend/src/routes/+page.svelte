@@ -715,15 +715,16 @@
     // Keep selection — user may want to perform additional actions
   }
 
-  // Bulk tagging — the Organize menu's add/remove entries.
-  // The uuids come straight from the shared selection; the tag names are whatever
-  // the selected files carry, which scopes the remove suggestions (the gallery
-  // listing omits per-file tags today, so this is usually empty and the modal
-  // falls back to offering every tag).
+  // Bulk tagging — the Organize menu's add/remove entries. The uuids come
+  // straight from the shared selection.
+  //
+  // No `presentTagNames` is passed: `GET /files` carries no per-file tags at all
+  // (#326 keeps `tags` on `MediaFileDetail` only, since the list serializer would
+  // need a per-row tag query), so scoping the remove suggestions to the selection
+  // is not possible from here. BulkTagModal's documented fallback — offer every
+  // tag — is the behavior, and reading `f.tags` only ever produced an empty list
+  // while reading as though it did something.
   $: bulkTagFileUuids = Array.from(selectedFiles);
-  $: bulkTagPresentNames = files
-    .filter(f => selectedFiles.has(f.uuid))
-    .flatMap(f => f.tags ?? []);
 
   function openBulkTagModal(action: BulkTagAction) {
     if ($galleryState.selectedFiles.size === 0) return;
@@ -1592,7 +1593,6 @@
   isOpen={showBulkTagModal}
   action={bulkTagAction}
   fileUuids={bulkTagFileUuids}
-  presentTagNames={bulkTagPresentNames}
   on:applied={handleBulkTagApplied}
   on:close={() => (showBulkTagModal = false)}
 />

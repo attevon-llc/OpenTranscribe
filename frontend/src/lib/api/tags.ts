@@ -43,10 +43,13 @@ function tagUuidParams(tagUuids: string[], extra?: Record<string, string>): URLS
  * The filters are server-side and combine (AND); omit them for the plain list.
  */
 export async function listTags(filters: TagListFilters = {}): Promise<TagWithCount[]> {
-  const params: Record<string, boolean> = {};
+  const params: Record<string, boolean | string> = {};
   if (filters.awaiting_review) params.awaiting_review = true;
   if (filters.unused) params.unused = true;
   if (filters.colliding) params.colliding = true;
+  // Ownership is a separate axis from the three view filters, so "my unused
+  // tags" is one request rather than an impossible combination.
+  if (filters.scope && filters.scope !== 'all') params.scope = filters.scope;
   const response = await axiosInstance.get('/tags', { params });
   return response.data;
 }
@@ -147,6 +150,19 @@ export async function acceptTags(tagUuids: string[]): Promise<TagReviewResult> {
  */
 export async function rejectTags(tagUuids: string[]): Promise<TagReviewResult> {
   const response = await axiosInstance.post('/tags/reject', { tag_uuids: tagUuids });
+  return response.data;
+}
+
+/**
+ * Publish owned tags into the shared vocabulary (admin only).
+ *
+ * The consolidation lever: a shared tag is visible to every account and is what
+ * a typed name resolves onto, so promoting one collapses the private duplicates
+ * of that name instead of leaving four "Interview" rows side by side. Their file
+ * associations carry over — nobody loses a tag they applied.
+ */
+export async function promoteTags(tagUuids: string[]): Promise<TagMutationResult> {
+  const response = await axiosInstance.post('/tags/promote', { tag_uuids: tagUuids });
   return response.data;
 }
 

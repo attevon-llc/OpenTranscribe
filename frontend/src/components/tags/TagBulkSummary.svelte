@@ -20,7 +20,15 @@
    * selected tag does.
    */
   export let suggestedSurvivorUuid: string | null = null;
-  export let busy: 'merge' | 'delete' | 'accept' | 'reject' | null = null;
+  export let busy: 'merge' | 'delete' | 'accept' | 'reject' | 'promote' | null = null;
+  /**
+   * Whether the caller may publish tags into the shared vocabulary.
+   *
+   * Cosmetic only — `POST /tags/promote` enforces the admin check itself. The
+   * button is hidden rather than disabled because a non-admin has no way to
+   * earn the right in this session, so a disabled control would only puzzle.
+   */
+  export let canPromote = false;
   export let previewLoading = false;
   export let mergePreview: TagImpact | null = null;
   export let deletePreview: TagImpact | null = null;
@@ -34,11 +42,16 @@
     confirmDelete: void;
     cancelDelete: void;
     accept: void;
+    promote: void;
     previewReject: void;
     confirmReject: void;
     cancelReject: void;
     clear: void;
   }>();
+
+  // An already-shared tag has nothing to promote, so a selection of only shared
+  // tags hides the button rather than offering a no-op.
+  $: promotableCount = tags.filter((tag) => !tag.is_shared).length;
 
   let survivorUuid = '';
   let lastSelectionKey = '';
@@ -124,6 +137,19 @@
         disabled={busy !== null}
       >
         {$t('tags.manager.action.reject')}
+      </button>
+    {/if}
+    {#if canPromote && promotableCount > 0}
+      <button
+        type="button"
+        class="btn btn-ghost"
+        on:click={() => dispatch('promote')}
+        disabled={busy !== null}
+        title={$t('tags.manager.promote.description')}
+      >
+        {busy === 'promote'
+          ? $t('tags.manager.action.promoting')
+          : $t('tags.manager.action.promote')}
       </button>
     {/if}
     <button

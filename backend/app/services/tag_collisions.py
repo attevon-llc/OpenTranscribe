@@ -62,6 +62,14 @@ from app.services.tag_service import owned_or_system
 
 logger = logging.getLogger(__name__)
 
+#: Ownership scopes for the tag list. ``all`` is everything the caller may
+#: resolve against (own + system); the other two split that set. Spelled here
+#: rather than in the endpoint so the service and its Literal stay in one file.
+SCOPE_ALL = "all"
+SCOPE_MINE = "mine"
+SCOPE_SHARED = "shared"
+TAG_SCOPES = (SCOPE_ALL, SCOPE_MINE, SCOPE_SHARED)
+
 
 @dataclass(frozen=True)
 class TagListEntry:
@@ -350,6 +358,7 @@ def list_tags_filtered(
     awaiting_review: bool = False,
     unused: bool = False,
     colliding: bool = False,
+    scope: str = SCOPE_ALL,
 ) -> list[TagListEntry]:
     """List tags with usage counts, optionally narrowed.
 
@@ -365,6 +374,10 @@ def list_tags_filtered(
         unused: Keep only tags with no accessible file — the exact complement of
             ``usage_count > 0``, from the same count.
         colliding: Keep only tags sharing a normalized name with another tag.
+        scope: ``all`` (default), ``mine`` (tags this user owns), or ``shared``
+            (the system vocabulary). Ownership is a different axis from the
+            other three filters, which is why it is a separate parameter rather
+            than a fourth boolean — "my unused tags" has to be expressible.
 
     Returns:
         Entries ordered by usage (descending) then name, matching the order the
@@ -374,7 +387,13 @@ def list_tags_filtered(
     collision_ids = colliding_tag_ids(db, user_id=user_id) if colliding else set()
 
     entries: list[TagListEntry] = []
-    for tag in db.query(Tag).filter(owned_or_system(user_id)).order_by(Tag.name).all():
+    query = db.query(Tag).filter(owned_or_system(user_id))
+    if scope == SCOPE_MINE:
+        query = query.filter(Tag.user_id == user_id)
+    elif scope == SCOPE_SHARED:
+        query = query.filter(Tag.user_id.is_(None))
+
+    for tag in query.order_by(Tag.name).all():
         count = usage.get(tag.id, 0)
         if awaiting_review and not is_awaiting_review(tag):
             continue

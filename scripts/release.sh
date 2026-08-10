@@ -77,8 +77,13 @@ ledger_record() {
         echo "when=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "operator=${USER:-unknown}"
         echo "sha=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-        [[ -n "$detail" ]] && echo "detail=$detail"
+        # `[[ -n "$detail" ]] && echo ...` would make this group return 1 when
+        # detail is empty (the common case), and under `set -e` that aborted the
+        # whole run immediately after a SUCCESSFUL stage — the success line never
+        # printed and release.sh exited 1 on a fully passing preflight.
+        if [[ -n "$detail" ]]; then echo "detail=$detail"; fi
     } > "$dir/$stage"
+    return 0
 }
 
 ledger_status() {

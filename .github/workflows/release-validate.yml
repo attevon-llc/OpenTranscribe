@@ -177,6 +177,7 @@ jobs:
             tests/unit/test_model_registration.py \
             tests/unit/test_version_consistency.py \
             tests/unit/test_release_manifest.py \
+            tests/unit/test_install_upgrade_scripts.py \
             tests/unit/test_env_example_coverage.py
 
   docs:

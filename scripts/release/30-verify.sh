@@ -71,10 +71,11 @@ if backend/venv/bin/pytest -o addopts="" -q \
         backend/tests/unit/test_alembic_chain.py \
         backend/tests/unit/test_model_registration.py \
         backend/tests/unit/test_release_manifest.py \
+        backend/tests/unit/test_install_upgrade_scripts.py \
         backend/tests/unit/test_env_example_coverage.py >/dev/null 2>&1; then
     record structural-tests pass
 else
-    record structural-tests fail "alembic chain / model registration / manifest / env coverage" \
+    record structural-tests fail "alembic chain / models / manifest / install+upgrade scripts / env coverage" \
         "backend/venv/bin/pytest -o addopts='' backend/tests/unit/test_alembic_chain.py backend/tests/unit/test_model_registration.py backend/tests/unit/test_release_manifest.py backend/tests/unit/test_env_example_coverage.py"
 fi
 

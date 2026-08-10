@@ -1888,7 +1888,9 @@ download_ai_models() {
         return 0
     fi
 
-    echo "OpenTranscribe requires AI models (~2.9GB) for transcription, speaker diarization, and semantic search."
+    echo "OpenTranscribe requires several GB of AI models for transcription, speaker"
+    echo "diarization, semantic search, chat reranking, and content redaction."
+    echo "The exact size depends on WHISPER_MODEL and how many neural search models you enable."
     echo ""
     echo "Configuration summary:"
     echo "  • Hardware: $DETECTED_DEVICE ($COMPUTE_TYPE precision)"
@@ -1966,7 +1968,7 @@ download_ai_models() {
     fi
 
     # Token is configured - proceed with download
-    echo -e "${YELLOW}Ready to download AI models (~2.9GB)${NC}"
+    echo -e "${YELLOW}Ready to download AI models (several GB — see the list above)${NC}"
     echo "This will take 10-30 minutes depending on your internet speed."
     echo ""
     read -p "Start model download now? (Y/n) " -n 1 -r </dev/tty

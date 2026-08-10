@@ -86,7 +86,15 @@ def test_every_selectable_compose_overlay_is_listed():
     than erroring, so this test is the only thing that catches the omission.
     """
     listed = {path for path, _ in _entries()}
-    referenced = set(re.findall(r"docker-compose[a-z0-9.-]*\.yml", MANAGER.read_text()))
+
+    # Comments are prose, not selection logic. opentranscribe.sh explains in a
+    # comment that docker-compose.offline.yml sets HF_HUB_OFFLINE=1 — that file is
+    # shipped inside the offline package and is never downloaded, so matching it
+    # made this test fail on a documentation change.
+    code = "\n".join(
+        line for line in MANAGER.read_text().splitlines() if not line.lstrip().startswith("#")
+    )
+    referenced = set(re.findall(r"docker-compose[a-z0-9.-]*\.yml", code))
 
     unlisted = sorted(referenced - listed)
     assert not unlisted, (

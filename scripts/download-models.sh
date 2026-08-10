@@ -47,6 +47,33 @@ MODEL_CACHE_DIR="${1:-./models}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# The image that does the downloading MUST be the version this deployment runs.
+#
+# This was hardcoded to `:latest`, which quietly defeats the point of a pinned
+# install: a user on v0.5.0 would fetch models using whatever :latest happened to
+# be that day. Model requirements change between releases (v0.5.0 adds the chat
+# reranker and the redaction models), so the wrong image downloads the wrong set
+# — and for an air-gapped install, "wrong set" means "missing at runtime with no
+# network to recover".
+#
+# Resolution: explicit env > OT_IMAGE_TAG from .env (written by the installer and
+# by `opentranscribe.sh update --version`) > latest.
+resolve_downloader_image() {
+    local tag="${OT_IMAGE_TAG:-}"
+    if [ -z "$tag" ] && [ -f "$REPO_ROOT/.env" ]; then
+        tag=$(grep -E '^OT_IMAGE_TAG=' "$REPO_ROOT/.env" 2>/dev/null \
+            | cut -d'=' -f2 | tr -d ' "' | head -1)
+    fi
+    # A deployment sitting in the install dir (not a git clone) keeps .env beside
+    # the compose files rather than one level up.
+    if [ -z "$tag" ] && [ -f "./.env" ]; then
+        tag=$(grep -E '^OT_IMAGE_TAG=' ./.env 2>/dev/null \
+            | cut -d'=' -f2 | tr -d ' "' | head -1)
+    fi
+    echo "${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend:${tag:-latest}"
+}
+DOWNLOADER_IMAGE="${DOWNLOADER_IMAGE:-$(resolve_downloader_image)}"
+
 print_header() {
     echo -e "\n${CYAN}================================================================${NC}"
     echo -e "${CYAN}  $1${NC}"
@@ -84,19 +111,37 @@ check_models_exist() {
         hf_size=$(du -sb "$MODEL_CACHE_DIR/huggingface" 2>/dev/null | cut -f1)
         torch_size=$(du -sb "$MODEL_CACHE_DIR/torch" 2>/dev/null | cut -f1)
 
-        # If both directories have substantial content (>100MB combined), assume models exist
-        if [ "$((hf_size + torch_size))" -gt 100000000 ]; then
+        # 1 GB, not the old 100 MB. The failure path below treats anything under
+        # 10 GB as a PARTIAL download, so a 100 MB threshold meant a interrupted
+        # download was confidently reported as "models exist" and skipped — the
+        # user then hit missing weights at first transcription instead of here.
+        # 1 GB is still conservative (WhisperX alone exceeds it) but no longer
+        # contradicts the script's own definition of complete.
+        if [ "$((hf_size + torch_size))" -gt 1000000000 ]; then
             local total_size
             total_size=$(get_dir_size "$MODEL_CACHE_DIR")
             print_success "Found existing models ($total_size)"
-            echo -e "${YELLOW}Do you want to skip model download and use existing models? (Y/n)${NC}"
-            read -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-                print_info "Skipping model download - using existing models"
-                return 0
+
+            # Unattended runs must not block on stdin. The installer supports
+            # OPENTRANSCRIBE_UNATTENDED and the release-test harness runs with no
+            # TTY at all; `read` here would hang the install forever, with no
+            # output explaining why. Reusing the cache is also the right default
+            # for an unattended run.
+            if [ -n "${OPENTRANSCRIBE_UNATTENDED:-}" ] || [ ! -t 0 ]; then
+                print_info "Non-interactive — reusing the existing model cache"
+                print_info "  (set FORCE_MODEL_REDOWNLOAD=1 to download again)"
+                [ -n "${FORCE_MODEL_REDOWNLOAD:-}" ] || return 0
+                print_info "FORCE_MODEL_REDOWNLOAD set — re-downloading"
             else
-                print_info "Re-downloading models as requested"
+                echo -e "${YELLOW}Do you want to skip model download and use existing models? (Y/n)${NC}"
+                read -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                    print_info "Skipping model download - using existing models"
+                    return 0
+                else
+                    print_info "Re-downloading models as requested"
+                fi
             fi
         fi
     fi
@@ -160,13 +205,21 @@ check_huggingface_token() {
 download_models_docker() {
     print_header "Downloading AI Models"
 
-    print_info "This will download approximately 2.9GB of AI models:"
-    print_info "  • WhisperX transcription models (~1.5GB)"
-    print_info "  • PyAnnote speaker diarization models (~500MB)"
-    print_info "  • wav2vec2 gender classifier (~380MB)"
-    print_info "  • NLTK tokenizers (~13MB)"
-    print_info "  • Sentence-transformers embeddings (~80MB)"
-    print_info "  • OpenSearch neural search models (~80MB+)"
+    # Keep this list in step with the download_* functions in download-models.py.
+    # It had drifted: two categories (the chat reranker and the redaction models)
+    # were downloaded but never mentioned, and the "~2.9GB" total contradicted
+    # this script's own failure path, which treats anything under 10GB as a
+    # partial download.
+    print_info "This will download the model set below (several GB; the exact"
+    print_info "total depends on WHISPER_MODEL and DOWNLOAD_ALL_OPENSEARCH_MODELS):"
+    print_info "  • WhisperX transcription models          (largest single item)"
+    print_info "  • PyAnnote speaker diarization models    (gated — see below)"
+    print_info "  • wav2vec2 gender classifier"
+    print_info "  • NLTK tokenizers"
+    print_info "  • Sentence-transformers embeddings"
+    print_info "  • Chat reranker (cross-encoder, RAG chat)"
+    print_info "  • OpenSearch neural search models"
+    print_info "  • Content-redaction models (PII / toxicity)"
     echo ""
     print_warning "This may take 10-30 minutes depending on your internet speed..."
     echo ""
@@ -244,13 +297,14 @@ download_models_docker() {
         -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}" \
         -e DOWNLOAD_ALL_OPENSEARCH_MODELS="${DOWNLOAD_ALL_OPENSEARCH_MODELS:-false}" \
         -e OPENSEARCH_MODELS="${OPENSEARCH_MODELS:-}" \
+        -e DOWNLOAD_REDACTION_MODELS="${DOWNLOAD_REDACTION_MODELS:-true}" \
         -v "$(realpath "$MODEL_CACHE_DIR/huggingface"):/home/appuser/.cache/huggingface" \
         -v "$(realpath "$MODEL_CACHE_DIR/torch"):/home/appuser/.cache/torch" \
         -v "$(realpath "$MODEL_CACHE_DIR/nltk_data"):/home/appuser/.cache/nltk_data" \
         -v "$(realpath "$MODEL_CACHE_DIR/sentence-transformers"):/home/appuser/.cache/sentence-transformers" \
         -v "$(realpath "$MODEL_CACHE_DIR/opensearch-ml"):/home/appuser/.cache/opensearch-ml" \
         -v "$SCRIPT_DIR/download-models.py:/app/download-models.py:ro" \
-        davidamacey/opentranscribe-backend:latest \
+        "${DOWNLOADER_IMAGE}" \
         python /app/download-models.py
 
     local docker_exit_code=$?

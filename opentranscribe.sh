@@ -558,6 +558,27 @@ case "${1:-help}" in
         # what people run when moving across releases.
         perform_phased_restart "$compose_files" || exit 1
 
+        # A release can introduce a NEW model (v0.5.0 adds the chat reranker and
+        # the content-redaction weights). Nothing in the upgrade path fetches it:
+        #
+        #   * Online deployments self-heal — the model lazy-downloads from
+        #     HuggingFace on first use, so the only symptom is a long pause the
+        #     first time someone touches that feature.
+        #   * OFFLINE deployments do not. docker-compose.offline.yml sets
+        #     HF_HUB_OFFLINE=1, so a newly-required model that is not already in
+        #     the cache is a hard failure with no network to recover from.
+        #
+        # So say so, and make refreshing the cache one command rather than
+        # something the user has to know about.
+        if [ -f scripts/download-models.sh ]; then
+            echo ""
+            echo -e "${BLUE}🧠 Model cache${NC}"
+            echo "  This release may require models your cache does not have yet."
+            echo "  Online: they download on first use (one slow request)."
+            echo "  Offline/air-gapped: pre-fetch them now, or the feature will fail:"
+            echo "    bash scripts/download-models.sh \"\${MODEL_CACHE_DIR:-./models}\""
+        fi
+
         echo ""
         echo -e "${GREEN}✅ Full update complete!${NC}"
         echo ""

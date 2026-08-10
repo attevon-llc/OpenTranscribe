@@ -136,6 +136,31 @@ else
 fi
 rm -f "$probe"
 
+# ── Case 6: the NAS dataset can never be a cleanup target ─────────────────
+# 484 GB of irreplaceable media lives at /mnt/nas/opentranscribe-minio as a
+# BIND mount. Two independent reasons it is out of reach, both asserted here
+# because "it's a bind mount so we're fine" is the kind of reasoning that stops
+# being true after a refactor.
+echo "6. protected paths are unreachable by cleanup"
+for p in /mnt/nas/opentranscribe-minio /mnt/nvm/opentranscribe /mnt/nas/opentranscribe; do
+    if gr_path_inside "$p/some/child" "$p"; then
+        ok "cleanup would refuse a TEST_ROOT under $p"
+    else
+        bad "$p is NOT recognised as protected — cleanup could delete it"
+    fi
+done
+
+# The allowlist is the second gate: even a path that dodged the protected-path
+# check has to be inside a sanctioned test area to be removed.
+for bad_root in /mnt/nas/opentranscribe-minio /home /var/lib; do
+    case "$(gr_realpath "$bad_root")" in
+        /mnt/nvm/opentranscribe-test-runs/*|/tmp/ot-reltest-*)
+            bad "$bad_root matches the cleanup allowlist" ;;
+        *)
+            ok "$bad_root is outside the cleanup allowlist" ;;
+    esac
+done
+
 echo
 echo "── $PASS passed, $FAIL failed ──"
 [[ $FAIL -eq 0 ]]

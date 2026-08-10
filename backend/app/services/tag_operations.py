@@ -634,9 +634,7 @@ def promote_tags_to_shared(
     if not promoted:
         # Every requested tag is already shared. Idempotent, not an error.
         return TagMutationOutcome(
-            impact=preview_tag_impact(
-                db, wanted, user_id=user_id, organization_id=organization_id
-            )
+            impact=preview_tag_impact(db, wanted, user_id=user_id, organization_id=organization_id)
         )
 
     # Claim the shared namespace first. `uq_tag_name_system` is UNIQUE(name)
@@ -675,9 +673,7 @@ def promote_tags_to_shared(
             .all()
         ]
         if duplicates:
-            merge_tags(
-                db, tag.id, duplicates, user_id=user_id, organization_id=organization_id
-            )
+            merge_tags(db, tag.id, duplicates, user_id=user_id, organization_id=organization_id)
 
     db.flush()
     db.commit()

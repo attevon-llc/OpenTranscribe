@@ -49,9 +49,7 @@ def _suffix() -> str:
 def _make_tag(db_session, name: str, *, source: str = "manual", user_id=None) -> Tag:
     """Create a tag. ``user_id=None`` makes a **system** tag, so pass an owner
     unless the test is specifically about the shared vocabulary."""
-    tag = Tag(
-        name=name, user_id=user_id, source=source, normalized_name=normalize_tag_name(name)
-    )
+    tag = Tag(name=name, user_id=user_id, source=source, normalized_name=normalize_tag_name(name))
     db_session.add(tag)
     db_session.flush()
     return tag
@@ -136,9 +134,7 @@ def test_separator_and_whitespace_variants_return_existing_tag(db_session, varia
     canonical = f"{base}-notes"
     existing = _make_tag(db_session, canonical)
 
-    resolved = resolve_or_create_tag(
-        db_session, variant.format(base=base), user_id=normal_user.id
-    )
+    resolved = resolve_or_create_tag(db_session, variant.format(base=base), user_id=normal_user.id)
 
     assert resolved.id == existing.id
     assert _count_tags(db_session, normalize_tag_name(canonical)) == 1
@@ -197,9 +193,7 @@ def test_suggestion_lookup_returns_none_for_unrelated_name(db_session, normal_us
     _make_tag(db_session, f"q3-earnings-{_suffix()}")
 
     assert (
-        suggest_similar_tag(
-            db_session, f"zzz-unrelated-topic-{_suffix()}", user_id=normal_user.id
-        )
+        suggest_similar_tag(db_session, f"zzz-unrelated-topic-{_suffix()}", user_id=normal_user.id)
         is None
     )
 
@@ -573,14 +567,10 @@ def test_suggestions_never_cross_accounts(db_session, normal_user, other_user):
     suffix = _suffix()
     _make_tag(db_session, f"q3-earnings-{suffix}", user_id=other_user.id)
 
-    assert (
-        suggest_similar_tag(db_session, f"q4-earnings-{suffix}", user_id=normal_user.id) is None
-    )
+    assert suggest_similar_tag(db_session, f"q4-earnings-{suffix}", user_id=normal_user.id) is None
 
 
-def test_two_users_tagging_one_shared_file_reuse_the_same_row(
-    db_session, normal_user, other_user
-):
+def test_two_users_tagging_one_shared_file_reuse_the_same_row(db_session, normal_user, other_user):
     """The deconfliction case: one file must never carry the same word twice.
 
     Without ``lookup_tag_on_file`` the second user forks their own row, the file
@@ -590,9 +580,7 @@ def test_two_users_tagging_one_shared_file_reuse_the_same_row(
     media_file = _make_file(db_session, normal_user)
     name = f"interview-{_suffix()}"
 
-    first = resolve_or_create_tag(
-        db_session, name, user_id=normal_user.id, file_id=media_file.id
-    )
+    first = resolve_or_create_tag(db_session, name, user_id=normal_user.id, file_id=media_file.id)
     db_session.add(FileTag(media_file_id=media_file.id, tag_id=first.id, source="manual"))
     db_session.flush()
 

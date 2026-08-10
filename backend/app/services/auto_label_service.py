@@ -274,9 +274,7 @@ class AutoLabelService:
         if existing:
             return existing
 
-        tag = resolve_or_create_tag(
-            self.db, name, user_id=user_id, source=source, file_id=file_id
-        )
+        tag = resolve_or_create_tag(self.db, name, user_id=user_id, source=source, file_id=file_id)
         self._invalidate_tag_cache(user_id)
         return tag
 

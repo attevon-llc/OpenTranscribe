@@ -48,6 +48,7 @@ from app.services.tag_review import accept_tags
 from app.services.tag_review import preview_tag_review
 from app.services.tag_review import reject_tags
 from app.services.tag_service import InvalidTagNameError
+from app.services.tag_service import accessible_file_ids_subquery
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tag
 from app.utils.uuid_helpers import get_by_uuid
@@ -132,7 +133,6 @@ def _apply(operation, *args, result_model=TagMutationResult, **kwargs):
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Tag name is required",
         ) from exc
-
 
 
 router = APIRouter()
@@ -315,7 +315,10 @@ def get_tag_impact(
     alone would understate its own blast radius.
     """
     report = preview_tag_impact(
-        db, _writable_tag_ids(db, tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin), user_id=current_user.id, organization_id=ctx.org_id
+        db,
+        _writable_tag_ids(db, tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
+        user_id=current_user.id,
+        organization_id=ctx.org_id,
     )
     return TagImpact.model_validate(report)
 
@@ -360,7 +363,9 @@ def accept_tags_endpoint(
     return _apply(
         accept_tags,
         db,
-        _writable_tag_ids(db, payload.tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
+        _writable_tag_ids(
+            db, payload.tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin
+        ),
         user_id=current_user.id,
         organization_id=ctx.org_id,
         result_model=TagReviewResult,
@@ -382,7 +387,9 @@ def reject_tags_endpoint(
     return _apply(
         reject_tags,
         db,
-        _writable_tag_ids(db, payload.tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
+        _writable_tag_ids(
+            db, payload.tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin
+        ),
         user_id=current_user.id,
         organization_id=ctx.org_id,
         result_model=TagReviewResult,
@@ -469,7 +476,9 @@ def merge_tags_endpoint(
         merge_tags,
         db,
         target_id,
-        _writable_tag_ids(db, payload.source_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
+        _writable_tag_ids(
+            db, payload.source_uuids, user_id=current_user.id, is_admin=current_user.is_admin
+        ),
         user_id=current_user.id,
         organization_id=ctx.org_id,
     )

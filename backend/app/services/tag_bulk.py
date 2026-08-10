@@ -102,9 +102,7 @@ class BulkTagResult:
         return self.outcome is not BulkTagOutcome.FAILED
 
 
-def resolve_bulk_tag(
-    db: Session, action: str, tag_name: str | None, *, user_id: int
-) -> Tag | None:
+def resolve_bulk_tag(db: Session, action: str, tag_name: str | None, *, user_id: int) -> Tag | None:
     """Resolve the batch's tag **once**, before the per-file loop.
 
     Add resolves through :func:`app.services.tag_service.resolve_or_create_tag`

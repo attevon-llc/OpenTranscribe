@@ -834,9 +834,7 @@ def bulk_file_action(
     tag = None
     if is_tag_action:
         try:
-            tag = resolve_bulk_tag(
-                db, request.action, request.tag_name, user_id=current_user.id
-            )
+            tag = resolve_bulk_tag(db, request.action, request.tag_name, user_id=current_user.id)
         except InvalidTagNameError as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

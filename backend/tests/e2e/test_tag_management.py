@@ -239,9 +239,7 @@ class TestTagManagerThemes:
         tag_api.post("/api/tags", {"name": _unique_tag_name()})
         _reload_tags(tags_page)
 
-        tags_page.evaluate(
-            "(t) => document.documentElement.setAttribute('data-theme', t)", theme
-        )
+        tags_page.evaluate("(t) => document.documentElement.setAttribute('data-theme', t)", theme)
         tags_page.wait_for_timeout(400)
 
         expect(tags_page.locator(".tags-page")).to_be_visible()

@@ -23,6 +23,7 @@ from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import role_implies_superuser
 from app.core.security import get_password_hash
 from app.db.base import get_db
+from app.models.media import Tag
 from app.models.prompt import SummaryPrompt
 from app.models.user import User
 from app.services.tag_service import normalize_tag_name

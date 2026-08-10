@@ -215,10 +215,7 @@ def lookup_existing_tag(db: Session, normalized: str, name: str, user_id: int) -
     """
     scope = owned_or_system(user_id)
     tag: Tag | None = (
-        db.query(Tag)
-        .filter(Tag.normalized_name == normalized, scope)
-        .order_by(Tag.user_id)
-        .first()
+        db.query(Tag).filter(Tag.normalized_name == normalized, scope).order_by(Tag.user_id).first()
     )
     if tag is not None:
         return tag
@@ -448,9 +445,7 @@ def resolve_or_create_tags(
         if tag is None:
             nested = db.begin_nested()
             try:
-                tag = Tag(
-                    name=cleaned, user_id=user_id, source=source, normalized_name=normalized
-                )
+                tag = Tag(name=cleaned, user_id=user_id, source=source, normalized_name=normalized)
                 db.add(tag)
                 db.flush()
             except IntegrityError:

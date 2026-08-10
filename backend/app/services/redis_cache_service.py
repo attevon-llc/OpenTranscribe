@@ -160,11 +160,16 @@ class RedisCacheService:
     def invalidate_tags_global(self) -> int:
         """Invalidate **every** user's cached tag list.
 
-        A ``tag`` row is global — one row is shared by all users, and
-        ``cache:tags:{user_id}`` only records how that user's files use it. So
-        renaming or merging a tag changes what every *other* user's cached list
-        should say, and busting only the actor's key leaves everyone else
-        reading the old name until ``TTL_TAGS`` expires.
+        Reserved for a mutation touching a **system** tag (``user_id IS NULL``):
+        that one row appears in every account's list, so renaming, merging or
+        promoting it changes what every *other* user's cached list should say,
+        and busting only the actor's key leaves everyone else reading the old
+        name until ``TTL_TAGS`` expires.
+
+        An owned tag needs nothing this broad — ``on_tags_changed`` busts the
+        actor and the touched files' owners instead. Calling this on every tag
+        write would drop the whole keyspace's tag cache on each attach; the
+        ``system_scope`` flag is what keeps that to the case that earns it.
 
         No WebSocket push accompanies this: ``_push_invalidation`` addresses one
         user and there is no broadcast channel. Other sessions see the change on

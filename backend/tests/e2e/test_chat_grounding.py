@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import os
 import socket
+import uuid as uuid_pkg
 from collections.abc import Iterator
 
 import pytest
@@ -120,10 +121,15 @@ def llm_config_factory(api_session: requests.Session) -> Iterator:
     created: list[str] = []
 
     def _make(context_window: int, name: str) -> str:
+        # UUID-suffixed, like the user fixtures: config names are unique per user,
+        # so a fixed name 409s against the leftovers of any run that was killed
+        # before its teardown could delete them — turning an unrelated
+        # interruption into a permanent failure for everyone afterwards.
+        unique_name = f"{name} {uuid_pkg.uuid4().hex[:8]}"
         response = api_session.post(
             f"{BACKEND_URL}/api/llm-settings",
             json={
-                "name": name,
+                "name": unique_name,
                 "provider": "custom",
                 "model_name": "mock-gpt",
                 "base_url": MOCK_LLM_URL_FOR_BACKEND,
@@ -132,7 +138,9 @@ def llm_config_factory(api_session: requests.Session) -> Iterator:
             },
             timeout=30,
         )
-        assert response.ok, f"Could not create LLM config: {response.status_code} {response.text}"
+        assert response.ok, (
+            f"Could not create LLM config {unique_name!r}: {response.status_code} {response.text}"
+        )
         uuid = str(response.json()["uuid"])
         created.append(uuid)
         return uuid
@@ -190,16 +198,44 @@ def _requirements_or_skip(api_session: requests.Session) -> None:
 
 
 def _ask(page: Page, conversation_uuid: str, question: str) -> None:
-    """Open a conversation, send one question, and wait for generation to finish."""
+    """Open a conversation, send one question, and wait for the turn to COMPLETE.
+
+    Completion is read from the assistant bubble's ``data-status``, which the
+    store sets to ``complete`` on the `done` frame.
+
+    Deliberately NOT "wait for the Send button to come back": Send is already
+    visible before the click flips it to Stop, so that assertion can pass
+    instantly against the pre-click state and hand the test a half-rendered turn.
+    It made this suite flaky in exactly the runs where the retrieval cache was
+    warm and the whole turn finished in under a second.
+    """
     page.goto(f"{FRONTEND_URL}/chat/{conversation_uuid}")
     composer = page.locator('[data-testid="chat-composer-input"]')
     expect(composer).to_be_visible(timeout=30_000)
 
+    # Wait for the route to finish LOADING the conversation, not just for the
+    # composer to paint. `chatStore.sendMessage` falls back to creating a brand
+    # new conversation when `activeConversationId` is still null — so sending
+    # into that window silently starts a different thread, one with no pinned
+    # llm_config and therefore the DEFAULT context window. The test then asks a
+    # roomy model why it did not run out of room, and fails about one run in
+    # three.
+    page.wait_for_load_state("networkidle")
+
     composer.fill(question)
     page.locator('[data-testid="chat-send"]').click()
 
-    # Send morphs into Stop while streaming and back again when it completes.
-    expect(page.locator('[data-testid="chat-send"]')).to_be_visible(timeout=STREAM_TIMEOUT_MS)
+    completed = page.locator('[data-testid="chat-message-assistant"][data-status="complete"]')
+    expect(completed.last).to_be_visible(timeout=STREAM_TIMEOUT_MS)
+
+    # Belt and braces: if the race above ever recurs the URL moves to the newly
+    # created conversation, so this fails loudly instead of quietly measuring the
+    # wrong model. It also stops such a thread leaking past the fixture, which
+    # only deletes uuids it created itself.
+    assert conversation_uuid in page.url, (
+        f"The turn was sent to {page.url} instead of conversation {conversation_uuid} — "
+        "the store created a new conversation because the route had not loaded yet."
+    )
 
 
 def _reload_thread(page: Page) -> None:

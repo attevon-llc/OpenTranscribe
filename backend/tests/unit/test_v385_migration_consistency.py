@@ -20,7 +20,13 @@ from sqlalchemy import text
 REVISION = "v385_drop_orphan_tables"
 ORPHAN_TABLES = ("upload_session", "speaker_audio_clip", "user_certificate_preferences")
 
-pytestmark = pytest.mark.ddl_exclusive
+#: `ddl_exclusive` is applied PER TEST below, never to the module. An EXCLUSIVE advisory-lock
+#: acquisition drains every other xdist worker, so spending one on a read-only schema
+#: assertion turns that assertion into a full-suite barrier — that is what made this group
+#: 414 s of a 511 s wall clock. Only the tests that actually execute ALTER/DROP/CREATE carry
+#: it; the lock's EXCLUSIVE mode already serialises them against each other across workers,
+#: so `xdist_group` is not needed on top (issue #389, #431).
+#: Both directions are enforced by `tests/unit/test_ddl_marker_discipline.py`.
 
 
 def test_v385_revision_chain():
@@ -115,6 +121,7 @@ def test_detection_recognizes_a_v385_database(db_session):
     )
 
 
+@pytest.mark.ddl_exclusive
 def test_detection_stamps_lower_when_an_orphan_table_is_present(db_session):
     """Re-create one orphan table and the fingerprint must stop matching v385.
 

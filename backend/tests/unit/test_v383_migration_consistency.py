@@ -17,12 +17,13 @@ import pytest
 from sqlalchemy import inspect
 from sqlalchemy import text
 
-#: Schema DDL (dropping a column/constraint to recreate the pre-revision shape)
-#: takes an ACCESS EXCLUSIVE lock — must not run beside other database tests.
-#: That alone only protects against other `migration_ddl` tests; `ddl_exclusive` makes
-#: `db_session` take a DB-wide advisory lock so this group can't deadlock against an
-#: unrelated worker's ordinary DML either (issue #389).
-pytestmark = [pytest.mark.xdist_group("migration_ddl"), pytest.mark.ddl_exclusive]
+#: `ddl_exclusive` is applied PER TEST below, never to the module. An EXCLUSIVE advisory-lock
+#: acquisition drains every other xdist worker, so spending one on a read-only schema
+#: assertion turns that assertion into a full-suite barrier — that is what made this group
+#: 414 s of a 511 s wall clock. Only the tests that actually execute ALTER/DROP/CREATE carry
+#: it; the lock's EXCLUSIVE mode already serialises them against each other across workers,
+#: so `xdist_group` is not needed on top (issue #389, #431).
+#: Both directions are enforced by `tests/unit/test_ddl_marker_discipline.py`.
 
 REVISION = "v383_saml_auth_type"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
@@ -78,6 +79,7 @@ def test_detection_arm_returns_v383_or_later_on_current_schema(db_session):
         ("user", "saml_subject"),
     ],
 )
+@pytest.mark.ddl_exclusive
 def test_detection_needs_every_marker(db_session, table, column):
     """Dropping the marker column must stamp lower so the rest of the DDL still runs."""
     from app.db.migrations import _detect_schema_version

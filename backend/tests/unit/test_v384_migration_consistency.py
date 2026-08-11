@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from sqlalchemy import inspect
 from sqlalchemy import text
 
@@ -63,6 +64,7 @@ def test_detection_arm_returns_v384_or_later_on_current_schema(db_session):
     assert_detected_at_or_after(conn, tables, REVISION)
 
 
+@pytest.mark.ddl_exclusive
 def test_detection_needs_the_marker_column(db_session):
     """Dropping the column must stamp lower so the DDL still runs on upgrade."""
     from app.db.migrations import _detect_schema_version

@@ -73,25 +73,34 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
   into the live dev cluster.
 - `--dist loadgroup`: tests sharing mutable global state need
   `pytestmark = pytest.mark.xdist_group("<name>")` (`test_auth_config_integration.py`,
-  `unit/test_media_mirror_service.py`, `api/test_scim.py`, `api/test_proxy_auth_endpoint.py`,
+  `unit/test_media_mirror_service.py`, `api/test_proxy_auth_endpoint.py`,
   and — group per overlapping `SystemSettings` key namespace, issue #389 — `"backup_system_settings"`
   on `unit/test_backup_metrics.py` + `unit/test_backup_service.py` + `unit/test_backup_alerts.py`,
   `"engine_system_settings"` on `test_engine_settings.py` + `api/test_engine_settings_endpoints.py`)
   or they interleave across workers and can deadlock on `system_settings_key_key`
   (two workers inserting the same overlapping keys in reversed order). User fixtures
   use UUID-suffixed emails for the same reason.
-- **DDL tests need more than `xdist_group`.** `xdist_group("migration_ddl")` only stops those
-  tests from colliding with *each other*; it does nothing about an unrelated worker's ordinary
-  DML running at the same moment. `DROP TABLE`/`ALTER TABLE ... DROP CONSTRAINT` takes
-  `ACCESS EXCLUSIVE`, and when the dropped object is a foreign key, Postgres needs that lock on
-  the *referenced* table too (removing the FK's enforcement trigger, which lives there) — e.g.
-  dropping `scim_token` also locks `user`, and `v377`/`v381`'s tests `ALTER TABLE "user"`
-  directly. Since nearly every other test touches a `user` row, this could deadlock against any
-  worker in the suite (issue #389). `@pytest.mark.ddl_exclusive` (on all six
-  `unit/test_v37{7,8}_*`/`test_v38{0,1,2,3}_migration_consistency.py` files) makes `db_session`
-  take a Postgres advisory lock (`tests/conftest.py`'s `_DDL_ISOLATION_LOCK_KEY`) — SHARED for
-  every ordinary test, EXCLUSIVE for a `ddl_exclusive` test — giving real cross-worker mutual
-  exclusion that `xdist_group` alone can't.
+- **DDL tests need more than `xdist_group`, and the marker goes on the TEST, never the module.**
+  `DROP TABLE`/`ALTER TABLE ... DROP CONSTRAINT` takes `ACCESS EXCLUSIVE`, and when the dropped
+  object is a foreign key Postgres needs that lock on the *referenced* table too (removing the
+  FK's enforcement trigger, which lives there) — dropping `scim_token` also locks `user`, and
+  `v377`/`v381` `ALTER TABLE "user"` directly. Since nearly every other test touches a `user`
+  row, that can deadlock against any worker (issue #389). `xdist_group` cannot fix it: sharing a
+  worker only stops DDL tests colliding with *each other*. `@pytest.mark.ddl_exclusive` makes
+  `db_session` take a Postgres advisory lock (`tests/db_locks.py`) — SHARED for every ordinary
+  test, EXCLUSIVE for a `ddl_exclusive` test — which is real cross-worker mutual exclusion.
+  **Every EXCLUSIVE acquisition is a stop-the-world barrier**: it drains all other workers and
+  queues every new one behind it. Applying the marker at module scope therefore turns each
+  read-only schema assertion in the module into a full-suite barrier — that is how the
+  `migration_ddl` group came to be 414 s of a 511 s wall clock with 111 tests marked and ~12
+  actually running DDL (issue #431). `unit/test_ddl_marker_discipline.py` enforces both
+  directions by AST: DDL without the marker fails, and the marker without DDL fails. It
+  discriminates *executed* DDL from DDL merely mentioned in a string, because three suites
+  assert on a migration's own source text and one passes `"'; DROP TABLE media_file; --"` as an
+  injection payload. `CREATE TEMP TABLE` is exempt (session-private `pg_temp_*` schema).
+  A test that opens its **own** connection cannot be reached by the marker — it must call
+  `tests/db_locks.py`'s `acquire_ddl_lock_exclusive[_raw]()` itself, as
+  `unit/test_uuid7_migration_guard.py` does for the raw v368 guard block.
 - E2E runs from the repo root against `backend/tests/e2e/`, so `e2e/pytest.ini` becomes the
   rootdir config — pyproject `addopts` (`-n auto`, `-m 'not integration'`) do **not** apply.
 

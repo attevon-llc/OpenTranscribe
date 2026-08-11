@@ -31,11 +31,14 @@ from app.models.group import UserGroupMember
 from app.models.user import User
 from app.services import scim_token_service
 
-#: Shares a worker with the migration DDL group: v380's tests drop and recreate
-#: `scim_token` to probe the detection ladder, which takes an ACCESS EXCLUSIVE lock
-#: that cascades to `user` via the FK. Running concurrently with this suite's inserts
-#: (RowExclusiveLock on the same table) deadlocks — see test_v380_migration_consistency.py.
-pytestmark = pytest.mark.xdist_group("migration_ddl")
+#: Deliberately NOT pinned to the migration DDL worker. The hazard is real — v382's tests
+#: drop and recreate `scim_token`, taking an ACCESS EXCLUSIVE lock that cascades to `user`
+#: via the FK, and this suite inserts into both — but `xdist_group` was the wrong tool for
+#: it: sharing a worker serialises this suite against 111 DDL-group tests and put its 28
+#: tests on the suite's critical path. The advisory lock in `db_session` already gives real
+#: cross-worker exclusion (SHARED here, EXCLUSIVE there), which is strictly stronger, so the
+#: pin bought nothing (issue #431). Rows here are uniquely named per test (`_unique_email`),
+#: so nothing else needs same-worker ordering.
 
 BASE = "/scim/v2"
 

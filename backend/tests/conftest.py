@@ -14,7 +14,6 @@ import pytest
 from dotenv import dotenv_values
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 # Add backend directory to Python path for imports
@@ -171,11 +170,11 @@ def _clear_process_auth_cache():
     clear_process_auth_settings_cache()
 
 
-#: Postgres advisory-lock namespace reserved for test-suite DDL isolation (issue #389).
-#: Uses the 2-key `(classid, objid)` form, which hashes into a lock space entirely
-#: separate from single-key `pg_advisory_lock(N)` calls (e.g. app/db/migrations.py's
-#: startup guard uses `pg_advisory_lock(42)`) — the two can never collide.
-_DDL_ISOLATION_LOCK_KEY = (990389, 1)
+#: The DDL isolation lock is defined in `tests/db_locks.py` so that this fixture and the
+#: tests that open their own DB connection share ONE definition of the key. A second copy
+#: of the literal would stop protecting anything the moment either copy changed.
+from tests.db_locks import acquire_ddl_lock_exclusive  # noqa: E402
+from tests.db_locks import acquire_ddl_lock_shared  # noqa: E402
 
 
 @pytest.fixture(scope="function")
@@ -207,6 +206,14 @@ def db_session(request):
     blocks every new one from starting until the DDL transaction ends (commit or
     rollback — `pg_advisory_xact_lock*` auto-releases either way, so a failed test
     can't leave the suite wedged).
+
+    Apply ``ddl_exclusive`` to the **individual tests that execute DDL, never to a
+    module**. Every EXCLUSIVE acquisition is a stop-the-world barrier: it drains all
+    other workers and queues every new one behind it, so a read-only schema assertion
+    that carries the marker costs a full drain for nothing. Module-scope application is
+    what made the `migration_ddl` group 414 s of a 511 s wall clock — 111 tests marked,
+    ~12 actually running DDL (issue #431). `tests/unit/test_ddl_marker_discipline.py`
+    enforces both directions and fails on either mistake.
     """
     from sqlalchemy import event
 
@@ -214,15 +221,13 @@ def db_session(request):
     transaction = connection.begin()
 
     if request.node.get_closest_marker("ddl_exclusive") is not None:
-        connection.execute(
-            text("SELECT pg_advisory_xact_lock(:k1, :k2)"),
-            {"k1": _DDL_ISOLATION_LOCK_KEY[0], "k2": _DDL_ISOLATION_LOCK_KEY[1]},
-        )
+        # Also sets lock_timeout, so a genuine cross-connection cycle fails loudly instead
+        # of hanging. This lock only covers connections that opt in; ~20 app paths open
+        # their own `SessionLocal()` during a TestClient request
+        # (app/db/session_utils.py, app/utils/prompt_manager.py, …) and are invisible to it.
+        acquire_ddl_lock_exclusive(connection)
     else:
-        connection.execute(
-            text("SELECT pg_advisory_xact_lock_shared(:k1, :k2)"),
-            {"k1": _DDL_ISOLATION_LOCK_KEY[0], "k2": _DDL_ISOLATION_LOCK_KEY[1]},
-        )
+        acquire_ddl_lock_shared(connection)
 
     # Create a session bound to this connection
     session = TestingSessionLocal(bind=connection)

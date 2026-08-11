@@ -46,6 +46,20 @@
   // Creating a tag here is the missing third of add/edit/delete. Until now a
   // tag could only be born by tagging a file, which meant the tool called "tag
   // management" could not make one — you had to leave, tag something, come back.
+  // Search and sort are client-side: the list is already fully loaded for the
+  // active filter, so round-tripping for a substring match would add latency
+  // for nothing. CollectionsPanel filters the same way.
+  let searchQuery = '';
+  let sortBy: 'usage' | 'name' = 'usage';
+
+  $: visibleTags = (() => {
+    const q = searchQuery.trim().toLowerCase();
+    const matched = q ? tags.filter((tag) => tag.name.toLowerCase().includes(q)) : tags;
+    return sortBy === 'name'
+      ? [...matched].sort((a, b) => a.name.localeCompare(b.name))
+      : matched; // the backend already orders by usage desc, then name
+  })();
+
   let newTagName = '';
   let creating = false;
 
@@ -115,7 +129,7 @@
   $: selectedEntries = selectedUuids
     .map((uuid) => tagIndex.get(uuid))
     .filter((entry): entry is TagListEntry => entry !== undefined);
-  $: rowCount = clusters.length > 0 ? clusters.length : tags.length;
+  $: rowCount = clusters.length > 0 ? clusters.length : visibleTags.length;
   $: isEmpty = !loading && !loadError && rowCount === 0;
   $: suggestedSurvivorUuid = findSuggestedSurvivor(clusters, selectedUuids);
 
@@ -380,6 +394,45 @@
     </button>
   </form>
 
+  {#if !loading && !loadError && clusters.length === 0}
+    <div class="list-controls">
+      <div class="search-wrapper">
+        <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input
+          type="text"
+          class="search-input"
+          placeholder={$t('tags.manager.searchPlaceholder')}
+          aria-label={$t('tags.manager.searchLabel')}
+          bind:value={searchQuery}
+        />
+        {#if searchQuery}
+          <button
+            type="button"
+            class="search-clear"
+            on:click={() => (searchQuery = '')}
+            title={$t('tags.manager.clearSearch')}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        {/if}
+      </div>
+
+      <label class="sort-picker">
+        <span class="sort-label">{$t('tags.manager.sortLabel')}</span>
+        <select class="form-select sort-select" bind:value={sortBy}>
+          <option value="usage">{$t('tags.manager.sort.usage')}</option>
+          <option value="name">{$t('tags.manager.sort.name')}</option>
+        </select>
+      </label>
+    </div>
+  {/if}
+
   <TagFilterBar
     {filter}
     {scope}
@@ -424,7 +477,7 @@
         {/if}
       {:else}
         <TagList
-          {tags}
+          tags={visibleTags}
           {clusters}
           {selectedUuids}
           {pendingUuids}
@@ -488,12 +541,6 @@
     </div>
   </div>
   </div>
-
-  <svelte:fragment slot="footer">
-    <button type="button" class="btn btn-ghost" on:click={() => dispatch('close')}>
-      {$t('tags.manager.close')}
-    </button>
-  </svelte:fragment>
 </BaseModal>
 
 <style>
@@ -527,6 +574,89 @@
     }
   }
 
+  .list-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  /* Copied from CollectionsPanel so the two panels read as one component. */
+  .search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    color: var(--text-secondary);
+    pointer-events: none;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 0.45rem 2rem 0.45rem 2rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.875rem;
+  }
+
+  .search-input:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+
+  .search-clear {
+    position: absolute;
+    right: 6px;
+    display: flex;
+    padding: 4px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .search-clear:hover {
+    color: var(--text-color);
+  }
+
+  .sort-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .sort-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .sort-select {
+    width: auto;
+    min-width: 7rem;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  @media (max-width: 640px) {
+    .list-controls {
+      flex-wrap: wrap;
+    }
+
+    .search-wrapper {
+      flex-basis: 100%;
+    }
+  }
+
   .tags-manager {
     /* The modal owns the outer padding; this only bounds the working area so
        the two panes keep their proportions on a wide screen. */
@@ -543,10 +673,24 @@
 
   .tags-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    /* The list is the working surface, the detail pane is the inspector — a
+       50/50 split wasted half the dialog on a short card. */
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
     gap: 20px;
-    margin-top: 20px;
+    margin-top: 16px;
     align-items: start;
+    /* Bound the panes so the list scrolls inside the dialog instead of the
+       dialog growing past the viewport — with 99 tags it pushed the detail
+       pane out of reach entirely. */
+    min-height: 0;
+  }
+
+  .list-pane {
+    /* The list scrolls; the dialog stays put. */
+    max-height: min(58vh, 520px);
+    overflow-y: auto;
+    /* Room for the scrollbar so rows do not shift under the cursor. */
+    padding-right: 4px;
   }
 
   .detail-pane {
@@ -554,6 +698,12 @@
     flex-direction: column;
     gap: 12px;
     padding: 16px;
+    /* Follows the list while you scroll it, so clicking a row 60 tags down
+       does not leave the inspector off-screen above you. */
+    position: sticky;
+    top: 0;
+    max-height: min(58vh, 520px);
+    overflow-y: auto;
     border: 1px solid var(--border-color);
     border-radius: 12px;
     background: var(--surface-color);
@@ -650,6 +800,89 @@
     .create-input {
       flex-basis: 100%;
       order: 1;
+    }
+  }
+
+  .list-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  /* Copied from CollectionsPanel so the two panels read as one component. */
+  .search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    color: var(--text-secondary);
+    pointer-events: none;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 0.45rem 2rem 0.45rem 2rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.875rem;
+  }
+
+  .search-input:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+
+  .search-clear {
+    position: absolute;
+    right: 6px;
+    display: flex;
+    padding: 4px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .search-clear:hover {
+    color: var(--text-color);
+  }
+
+  .sort-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .sort-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .sort-select {
+    width: auto;
+    min-width: 7rem;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  @media (max-width: 640px) {
+    .list-controls {
+      flex-wrap: wrap;
+    }
+
+    .search-wrapper {
+      flex-basis: 100%;
     }
   }
 

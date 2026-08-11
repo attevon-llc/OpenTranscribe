@@ -2212,6 +2212,7 @@
   "tags.manager.detail.moreFiles_other": "и ещё {{count}}",
   "tags.manager.detail.originLabel": "Происхождение",
   "tags.manager.impact.title": "Прежде чем применить",
+  "tags.manager.impact.deleteMessage": "Удалить «{{name}}»? Тег есть у {{accessible}} ваших файлов и у {{total}} всего в системе. Отменить нельзя.",
   "tags.manager.impact.accessible": "Файлов, доступных вам: {{count}}",
   "tags.manager.impact.total": "Всего файлов: {{count}}",
   "tags.manager.impact.totalNote": "Операция затронет все {{count}} файлов, включая недоступные вам.",

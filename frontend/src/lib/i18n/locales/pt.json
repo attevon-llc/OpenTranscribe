@@ -2222,6 +2222,7 @@
   "tags.manager.detail.moreFiles_other": "e mais {{count}}",
   "tags.manager.detail.originLabel": "Origem",
   "tags.manager.impact.title": "Antes de aplicar",
+  "tags.manager.impact.deleteMessage": "Eliminar «{{name}}»? Está em {{accessible}} dos seus ficheiros e em {{total}} no total na instalação. Não é possível anular.",
   "tags.manager.impact.accessible": "{{count}} ficheiros que consegue ver",
   "tags.manager.impact.total": "{{count}} ficheiros no total",
   "tags.manager.impact.totalNote": "Esta operação afeta os {{count}} ficheiros, incluindo os que não consegue ver.",

@@ -111,18 +111,13 @@ describe('TagDetailPanel', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
       expect(previewDelete).toHaveBeenCalledTimes(1);
       expect(confirmDelete).not.toHaveBeenCalled();
-      expect(screen.queryByText('500 files in total')).toBeNull();
+      expect(screen.queryByText(/500 in total/)).toBeNull();
 
       await rerender({ tag, deletePreview: impact });
-      expect(screen.getByRole('heading', { name: 'Before this is applied' })).toBeInTheDocument();
-      // Both counts, with the global one called out as what actually changes.
-      expect(screen.getByText('3 files you can see')).toBeInTheDocument();
-      expect(screen.getByText('500 files in total')).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          'This operation affects all 500 files, including files you cannot see.'
-        )
-      ).toBeInTheDocument();
+      // Delete goes through the app's shared ConfirmationModal, which carries
+      // both counts in its message — the global one matters because a shared
+      // tag reaches files this caller cannot see.
+      expect(screen.getByText(/on 3 of your files, and 500 in total/)).toBeInTheDocument();
 
       const deleteButtons = screen.getAllByRole('button', { name: 'Delete' });
       const confirm = deleteButtons[deleteButtons.length - 1];
@@ -130,11 +125,11 @@ describe('TagDetailPanel', () => {
       expect(confirmDelete).toHaveBeenCalledTimes(1);
     });
 
-    it('shows a pending label and disables the confirming control while a delete is in flight', async () => {
+    it('labels the confirming control while a delete is in flight', async () => {
       render(TagDetailPanel, { props: { tag, deletePreview: impact, busy: 'delete' } });
-      const pending = screen.getByRole('button', { name: 'Deleting…' });
-      expect(pending).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+      // The shared ConfirmationModal shows progress by swapping the label,
+      // which is what CollectionsPanel does for its own delete.
+      expect(screen.getByRole('button', { name: 'Deleting…' })).toBeInTheDocument();
     });
   });
 });

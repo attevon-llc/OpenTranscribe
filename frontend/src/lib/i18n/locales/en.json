@@ -2223,6 +2223,7 @@
   "tags.manager.detail.moreFiles_other": "and {{count}} more",
   "tags.manager.detail.originLabel": "Origin",
   "tags.manager.impact.title": "Before this is applied",
+  "tags.manager.impact.deleteMessage": "Delete \"{{name}}\"? It is on {{accessible}} of your files, and {{total}} in total across the deployment. This cannot be undone.",
   "tags.manager.impact.accessible": "{{count}} files you can see",
   "tags.manager.impact.total": "{{count}} files in total",
   "tags.manager.impact.totalNote": "This operation affects all {{count}} files, including files you cannot see.",

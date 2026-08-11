@@ -2253,6 +2253,7 @@
   "tags.manager.detail.moreFiles_other": "und {{count}} weitere",
   "tags.manager.detail.originLabel": "Herkunft",
   "tags.manager.impact.title": "Bevor dies angewendet wird",
+  "tags.manager.impact.deleteMessage": "„{{name}}“ löschen? Es ist an {{accessible}} Ihrer Dateien und an insgesamt {{total}} in der Installation. Dies kann nicht rückgängig gemacht werden.",
   "tags.manager.impact.accessible": "{{count}} für Sie sichtbare Dateien",
   "tags.manager.impact.total": "{{count}} Dateien insgesamt",
   "tags.manager.impact.totalNote": "Dieser Vorgang betrifft alle {{count}} Dateien, auch die für Sie nicht sichtbaren.",

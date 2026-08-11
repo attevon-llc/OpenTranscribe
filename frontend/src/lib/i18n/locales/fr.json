@@ -2253,6 +2253,7 @@
   "tags.manager.detail.moreFiles_other": "et {{count}} de plus",
   "tags.manager.detail.originLabel": "Origine",
   "tags.manager.impact.title": "Avant d’appliquer",
+  "tags.manager.impact.deleteMessage": "Supprimer « {{name}} » ? Elle est sur {{accessible}} de vos fichiers et sur {{total}} au total dans le déploiement. Action irréversible.",
   "tags.manager.impact.accessible": "{{count}} fichiers que vous pouvez voir",
   "tags.manager.impact.total": "{{count}} fichiers au total",
   "tags.manager.impact.totalNote": "Cette opération touche les {{count}} fichiers, y compris ceux que vous ne pouvez pas voir.",

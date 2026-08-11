@@ -2253,6 +2253,7 @@
   "tags.manager.detail.moreFiles_other": "y {{count}} más",
   "tags.manager.detail.originLabel": "Origen",
   "tags.manager.impact.title": "Antes de aplicar esto",
+  "tags.manager.impact.deleteMessage": "¿Eliminar «{{name}}»? Está en {{accessible}} de tus archivos y en {{total}} en total en la instalación. Esto no se puede deshacer.",
   "tags.manager.impact.accessible": "{{count}} archivos que puedes ver",
   "tags.manager.impact.total": "{{count}} archivos en total",
   "tags.manager.impact.totalNote": "Esta operación afecta a los {{count}} archivos, incluidos los que no puedes ver.",

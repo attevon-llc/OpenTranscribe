@@ -10,6 +10,7 @@
   import { t } from '$stores/locale';
   import Badge from '$components/ui/Badge.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import { tagOriginKey, type TagListEntry } from './TagList.svelte';
   import type { TagImpact } from '$lib/types/tag';
   import { canMutateTag } from '$lib/types/tag';
@@ -266,42 +267,30 @@
     </div>
   {/if}
 
-  {#if deletePreview}
-    <section class="panel panel-danger">
-      <h3 class="panel-title">{$t('tags.manager.impact.title')}</h3>
-      <ul class="impact-list">
-        <li>
-          {$t('tags.manager.impact.accessible', { count: deletePreview.accessible_file_count })}
-        </li>
-        <li class="impact-total">
-          {$t('tags.manager.impact.total', { count: deletePreview.total_file_count })}
-        </li>
-      </ul>
-      <p class="panel-note">
-        {$t('tags.manager.impact.totalNote', { count: deletePreview.total_file_count })}
-      </p>
-      <div class="panel-actions">
-        <button
-          type="button"
-          class="btn btn-danger"
-          on:click={() => dispatch('confirmDelete')}
-          disabled={busy !== null}
-        >
-          {busy === 'delete'
-            ? $t('tags.manager.action.deleting')
-            : $t('tags.manager.action.delete')}
-        </button>
-        <button
-          type="button"
-          class="btn btn-ghost"
-          on:click={() => dispatch('cancelDelete')}
-          disabled={busy !== null}
-        >
-          {$t('tags.manager.action.cancel')}
-        </button>
-      </div>
-    </section>
-  {/if}
+  <!-- Deletes go through the app's shared confirmation dialog, the same one
+       CollectionsPanel uses, so a destructive tag action looks and behaves
+       like every other destructive action in the app. The impact numbers ride
+       in the message: an accessible-only count would understate a shared
+       tag's blast radius. -->
+  <ConfirmationModal
+    isOpen={deletePreview !== null}
+    title={$t('tags.manager.impact.title')}
+    message={deletePreview
+      ? $t('tags.manager.impact.deleteMessage', {
+          name: tag.name,
+          accessible: deletePreview.accessible_file_count,
+          total: deletePreview.total_file_count,
+        })
+      : ''}
+    confirmText={busy === 'delete'
+      ? $t('tags.manager.action.deleting')
+      : $t('tags.manager.action.delete')}
+    cancelText={$t('tags.manager.action.cancel')}
+    confirmButtonClass="modal-delete-button"
+    cancelButtonClass="modal-cancel-button"
+    on:confirm={() => dispatch('confirmDelete')}
+    on:cancel={() => dispatch('cancelDelete')}
+  />
 
 </div>
 
@@ -460,10 +449,6 @@
     background: var(--surface-color);
   }
 
-  .panel-danger {
-    border-color: var(--error-color, #dc2626);
-    background: rgba(var(--error-color-rgb, 239, 68, 68), 0.06);
-  }
 
   .panel-warning {
     border-color: var(--warning-color, #d97706);

@@ -153,10 +153,10 @@ describe('tag manager modal', () => {
       await fireEvent.click(tagRows()[0]);
 
       await fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-      await waitFor(() => expect(screen.getByText('500 files in total')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText(/500 in total/)).toBeInTheDocument());
       expect(api.getTagImpact).toHaveBeenCalledWith([UUID_A]);
       expect(api.deleteTags).not.toHaveBeenCalled();
-      expect(screen.getByText('3 files you can see')).toBeInTheDocument();
+      expect(screen.getByText(/on 3 of your files/)).toBeInTheDocument();
 
       const deleteButtons = screen.getAllByRole('button', { name: 'Delete' });
       await fireEvent.click(deleteButtons[deleteButtons.length - 1]);

@@ -2222,6 +2222,7 @@
   "tags.manager.detail.moreFiles_other": "他 {{count}} 件",
   "tags.manager.detail.originLabel": "由来",
   "tags.manager.impact.title": "適用する前に",
+  "tags.manager.impact.deleteMessage": "「{{name}}」を削除しますか？あなたのファイル {{accessible}} 件、デプロイ全体で {{total}} 件に付いています。元に戻せません。",
   "tags.manager.impact.accessible": "表示できるファイル {{count}} 件",
   "tags.manager.impact.total": "全体で {{count}} 件のファイル",
   "tags.manager.impact.totalNote": "この操作は、表示できないものも含めて {{count}} 件すべてのファイルに影響します。",

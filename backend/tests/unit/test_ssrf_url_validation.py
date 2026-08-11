@@ -16,6 +16,7 @@ import pytest
 
 from app.utils.url_validation import assert_safe_outbound_url
 from app.utils.url_validation import is_safe_url
+from tests.helpers import does_not_raise
 
 
 @pytest.mark.parametrize(
@@ -169,11 +170,13 @@ def test_watch_private_targets_allowed_by_default(monkeypatch):
 
     monkeypatch.setattr(settings, "WATCH_ALLOW_PRIVATE_ENDPOINTS", True)
     _assert_safe_watch_target("192.168.1.10", source_type="smb")  # must not raise
-    _assert_safe_watch_target("http://10.0.0.9:9000", source_type="s3")
+    with does_not_raise("watch sources may target private hosts by default"):
+        _assert_safe_watch_target("http://10.0.0.9:9000", source_type="s3")
 
 
 def test_watch_guard_ignores_empty_target(monkeypatch):
     from app.services.watch_sources.base import _assert_safe_watch_target
 
     _assert_safe_watch_target(None, source_type="s3")
-    _assert_safe_watch_target("", source_type="smb")
+    with does_not_raise("an empty target is ignored by the guard, not rejected"):
+        _assert_safe_watch_target("", source_type="smb")

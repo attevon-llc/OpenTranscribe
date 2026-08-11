@@ -12,6 +12,7 @@ from app.models.prompt import UserSetting
 from app.models.user_asr_settings import UserASRSettings
 from app.models.user_llm_settings import UserLLMSettings
 from app.utils.encryption import encrypt_api_key
+from tests.helpers import does_not_raise
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -989,7 +990,8 @@ class TestPromptUsageCount:
         """Incrementing a non-existent prompt does not raise."""
         from app.utils.prompt_manager import increment_prompt_usage
 
-        increment_prompt_usage(db_session, 999_999_999)  # no row; must not raise
+        with does_not_raise("incrementing a prompt that does not exist is a no-op, not an error"):
+            increment_prompt_usage(db_session, 999_999_999)  # no row; must not raise
 
     def test_shared_library_popular_sort_reflects_usage(
         self, client, db_session, normal_user, other_user, other_user_auth_headers

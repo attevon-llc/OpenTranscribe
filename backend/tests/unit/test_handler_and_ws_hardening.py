@@ -21,6 +21,8 @@ from typing import cast
 
 import pytest
 
+from tests.helpers import does_not_raise
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
@@ -234,7 +236,8 @@ async def test_websocket_endpoint_survives_session_close(db_session, normal_user
 
     # No exception — especially no DetachedInstanceError — means both auth-block
     # expunges are doing their job.
-    await ws_module.websocket_endpoint(fake_ws)
+    with does_not_raise("the endpoint must survive the session closing under it"):
+        await ws_module.websocket_endpoint(fake_ws)
 
 
 # ── A0.8: startup assertions ─────────────────────────────────────────────────────
@@ -288,4 +291,5 @@ def test_development_tolerates_testing_flag_and_wildcard(monkeypatch):
     monkeypatch.setattr(settings, "CORS_ORIGINS", ["*"])
     monkeypatch.setenv("TESTING", "true")
 
-    _validate_production_secrets()  # must not raise
+    with does_not_raise("development tolerates TESTING plus a wildcard origin"):
+        _validate_production_secrets()  # must not raise

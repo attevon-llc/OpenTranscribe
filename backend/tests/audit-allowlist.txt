@@ -1,10 +1,14 @@
 # Accepted findings for scripts/audit-tests.py.
 #
-# Format: <path-relative-to-this-dir>::<function>  # reason
+# Format: <path-relative-to-this-dir>::<function>::<category>  # reason
+#
+# The CATEGORY is required. An entry keyed only by test would exempt that test from all six
+# detectors at once — which is exactly what happened: a `failure-masking` exemption for
+# test_coexistence_under_simulated_cap silently granted it a `no-assertion` pass too.
 #
 # An entry is a deliberate, reviewable decision — not a parking space. Adding one says "this
 # pattern is correct here, and here is why". Prefer fixing the test. Never add an entry to
 # restore a green run.
 
-test_selective_reprocess.py::auth_token  # narrow requests.ConnectionError only, on an integration-marked suite that talks to the live stack over HTTP by design; the gate runs it with the stack up, and the skip message names the missing dependency rather than hiding a failure
-integration/test_diarization_perf_gates.py::test_coexistence_under_simulated_cap  # narrowed from a bare `except Exception` to (RuntimeError, AssertionError, AttributeError) around torch.cuda.get_device_properties only; a gpu-marked test skipping on an absent or unusable device is the intended gate, and any other exception now propagates
+test_selective_reprocess.py::auth_token::failure-masking  # narrow requests.ConnectionError only, on an integration-marked suite that talks to the live stack over HTTP by design; the gate runs it with the stack up, and the skip message names the missing dependency rather than hiding a failure
+integration/test_diarization_perf_gates.py::test_coexistence_under_simulated_cap::failure-masking  # narrowed from a bare `except Exception` to (RuntimeError, AssertionError, AttributeError) around torch.cuda.get_device_properties only; a gpu-marked test skipping on an absent or unusable device is the intended gate, and any other exception now propagates

@@ -21,6 +21,7 @@ from app.services.chat.pricing import estimate_cost_usd
 from app.services.chat.pricing import get_rate
 from app.services.chat.usage import EVENT_TYPE_CHAT_TOKENS
 from app.services.chat.usage import record_chat_usage
+from tests.helpers import does_not_raise
 
 
 def _ctx(**overrides: Any) -> ChatCompletionContext:
@@ -204,10 +205,16 @@ def test_recording_failure_never_breaks_chat():
     """Accounting is strictly subordinate to the feature that emits it."""
     with (
         patch("app.db.session_utils.session_scope") as scope,
-        patch("app.services.usage_service.record_event", side_effect=RuntimeError("db down")),
+        patch(
+            "app.services.usage_service.record_event", side_effect=RuntimeError("db down")
+        ) as record_event,
     ):
         scope.return_value.__enter__.return_value = MagicMock()
-        record_chat_usage(_ctx())  # must not raise
+        with does_not_raise("a usage-recording failure must never break the chat response"):
+            record_chat_usage(_ctx())
+
+    # Prove the failing dependency was reached; otherwise containment is unproven.
+    record_event.assert_called_once()
 
 
 def test_a_failed_exchange_is_still_recorded():

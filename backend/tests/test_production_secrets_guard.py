@@ -10,6 +10,7 @@ import pytest
 
 from app.core.config import settings
 from app.main import _validate_production_secrets
+from tests.helpers import does_not_raise
 
 STRONG_JWT = "a" * 128
 STRONG_ENCRYPTION = "opentranscribe_" + "b" * 64
@@ -115,4 +116,5 @@ def test_placeholders_allowed_in_development(production_settings):
     production_settings.setattr(settings, "JWT_SECRET_KEY", PLACEHOLDER)
     production_settings.setattr(settings, "ENCRYPTION_KEY", PLACEHOLDER)
     production_settings.setattr(settings, "REDIS_PASSWORD", "")
-    _validate_production_secrets()  # must not raise
+    with does_not_raise("placeholders are allowed outside production, so validation must pass"):
+        _validate_production_secrets()  # must not raise

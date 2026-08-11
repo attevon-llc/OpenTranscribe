@@ -31,10 +31,12 @@ Usage::
     scripts/audit-tests.py backend/tests --json
     scripts/audit-tests.py backend/tests --category permissive-status
 
-Exits 1 when any finding is not in the allowlist, so this can gate a commit. The
-allowlist lives at ``backend/tests/audit-allowlist.txt``: one ``<file>::<test>  # reason``
-per line. Adding an entry is a deliberate, reviewable act; widening an assertion to
-restore green is not.
+Exits 1 when any finding is not in the allowlist, so this can gate a commit. The allowlist
+lives at ``backend/tests/audit-allowlist.txt``: one ``<file>::<test>::<category>  # reason``
+per line. The category is REQUIRED — an entry keyed only by test would exempt that test from
+every detector at once, which is how a `failure-masking` exemption silently granted a
+`no-assertion` one too. Adding an entry is a deliberate, reviewable act; widening an
+assertion to restore green is not.
 """
 
 from __future__ import annotations
@@ -77,7 +79,8 @@ class Finding:
 
     @property
     def key(self) -> str:
-        return f'{self.path}::{self.test}'
+        """Allowlist key. Includes the category so one exemption cannot cover all six."""
+        return f'{self.path}::{self.test}::{self.category}'
 
 
 def _is_fixture(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -107,7 +110,10 @@ def _asserts(fn: ast.AST) -> list[ast.Assert]:
 #: Assertion idioms other than a bare ``assert``. ``expect`` is Playwright's web-first
 #: assertion and is the ONLY assertion in most E2E tests — omit it and a third of the
 #: E2E suite reads as assertion-free, which is a detector bug, not a finding.
-_ASSERTING_CALLS = frozenset({'expect', 'fail', 'raises'})
+#: ``does_not_raise`` is ``tests/helpers.py``'s context manager, which calls ``pytest.fail``
+#: with a reason when the block raises — so a test using it does assert something, and the
+#: reason string is mandatory there precisely so it cannot become a silent pass.
+_ASSERTING_CALLS = frozenset({'expect', 'fail', 'raises', 'does_not_raise'})
 
 
 def _has_raises_or_helper(fn: ast.AST) -> bool:
@@ -258,7 +264,7 @@ def scan_file(path: Path, root: Path) -> list[Finding]:
 
 
 def load_allowlist(root: Path) -> dict[str, str]:
-    """Map ``<file>::<test>`` to its stated reason."""
+    """Map ``<file>::<test>::<category>`` to its stated reason."""
     path = root / _ALLOWLIST_NAME
     if not path.exists():
         return {}

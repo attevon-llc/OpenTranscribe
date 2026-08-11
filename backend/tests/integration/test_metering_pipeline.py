@@ -34,6 +34,8 @@ import uuid as uuidlib
 
 import pytest
 
+from tests.helpers import does_not_raise
+
 
 @pytest.fixture(autouse=True)
 def _clear_hooks():
@@ -115,7 +117,8 @@ def test_metering_hook_failure_never_propagates():
 
     db = _FakeSession(_FakeMediaFile(file_id=1, org_id=None, duration=None))
     # Must return cleanly despite the hook raising.
-    _fire_completion_metering(db, file_id=1, run_id="r1", provider="local", success=True)
+    with does_not_raise("a failing metering hook must never surface to the caller"):
+        _fire_completion_metering(db, file_id=1, run_id="r1", provider="local", success=True)
 
 
 def test_community_edition_is_noop():
@@ -123,7 +126,8 @@ def test_community_edition_is_noop():
     from app.tasks.transcription.postprocess import _fire_completion_metering
 
     db = _FakeSession(_FakeMediaFile(file_id=1, org_id=None, duration=10.0))
-    _fire_completion_metering(db, file_id=1, run_id="r1", provider="local", success=True)
+    with does_not_raise("the community edition has no metering hook, so dispatch is a no-op"):
+        _fire_completion_metering(db, file_id=1, run_id="r1", provider="local", success=True)
 
 
 @pytest.mark.integration

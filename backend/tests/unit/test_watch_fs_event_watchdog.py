@@ -24,6 +24,7 @@ from app.services.watch_sources.fs_events import detection
 from app.services.watch_sources.fs_events import observers
 from app.services.watch_sources.fs_events.dispatcher import ScanDispatcher
 from app.services.watch_sources.fs_events.handler import WatchEventHandler
+from tests.helpers import does_not_raise
 
 pytestmark = pytest.mark.unit
 
@@ -143,7 +144,8 @@ def test_stopping_an_observer_is_idempotent_and_quiet():
     observer.start()
     observers.stop_observer(observer, timeout=2.0)
     observers.stop_observer(observer, timeout=2.0)  # must not raise
-    observers.stop_observer(None)
+    with does_not_raise("stopping an observer twice is idempotent and must stay quiet"):
+        observers.stop_observer(None)
 
 
 def test_watchdog_available_reports_true_when_installed():

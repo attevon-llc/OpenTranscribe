@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from app.models.auth_config import AuthConfig
 from app.models.auth_config import AuthConfigAudit
 from app.services.auth_config_service import AuthConfigService
+from tests.helpers import does_not_raise
 
 
 class TestAuthConfigServiceGetConfig:
@@ -263,9 +264,10 @@ class TestAuthConfigServiceBulkUpdate:
             "ldap_server": "ldap.example.com",  # Non-sensitive
         }
 
-        AuthConfigService.bulk_update_category(
-            db=mock_db, category="ldap", config_dict=config, user_id=1
-        )
+        with does_not_raise("an empty sensitive value is skipped, not written or rejected"):
+            AuthConfigService.bulk_update_category(
+                db=mock_db, category="ldap", config_dict=config, user_id=1
+            )
 
         # ldap_server should be processed, ldap_bind_password should be skipped
         # Due to the skip, we expect fewer calls
@@ -322,7 +324,12 @@ class TestAuthConfigServiceEffectiveConfig:
         with patch("app.services.auth_config_service.settings") as mock_settings:
             mock_settings.LDAP_ENABLED = True
             result = AuthConfigService.get_effective_config(mock_db, "ldap_enabled")
-            # Should return the settings value when not in DB
+
+        # The assertion was simply never written: `result` was computed, the comment stated
+        # the expectation, and nothing checked it — so the env-fallback branch was unverified
+        # (issue #431). get_effective_config falls back to
+        # `getattr(settings, env_var_for(key))`, which is the patched True.
+        assert result is True
 
     def test_get_effective_config_bool_conversion(self, mock_db):
         """Test boolean conversion for effective config."""

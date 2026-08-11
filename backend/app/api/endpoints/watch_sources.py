@@ -280,6 +280,12 @@ def get_global_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
+    """Read the DB-backed global watch-source settings (super_admin only).
+
+    Consumed by the admin Settings UI and by ops scripts checking a deployment's
+    import tuning. These are ``SystemSettings`` rows, not ``.env`` vars — there is
+    no environment fallback to read instead, and no restart applies them.
+    """
     from app.services import watch_settings_service
 
     return watch_settings_service.get_global_settings(db)
@@ -291,6 +297,16 @@ def update_global_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
+    """Update the global watch-source settings, taking effect without a restart.
+
+    Consumed by the admin Settings UI and by ops automation. super_admin only —
+    these knobs govern every user's imports, not just the caller's.
+
+    The body is a loose ``dict`` rather than a schema so an older client keeps
+    working: ``max_concurrent_imports`` is accepted as an alias for the post-#295
+    ``max_imports_per_scan``. Only the new name is ever returned. Any key omitted
+    is left at its current value by the service.
+    """
     from app.services import watch_settings_service
 
     result = watch_settings_service.update_global_settings(
@@ -347,6 +363,13 @@ def list_email_configs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
+    """List every email-notification config, name-ordered (super_admin only).
+
+    Consumed by the admin Settings UI and by ops scripts auditing which mailers a
+    deployment has. The configs are deployment-wide, not per-user, which is why
+    this is the super_admin tier and why there is no owner filter. Secrets are
+    never returned — ``_email_to_response`` emits ``has_*`` booleans instead.
+    """
     configs = db.query(EmailNotificationConfig).order_by(EmailNotificationConfig.name).all()
     return {"configs": [_email_to_response(c) for c in configs]}
 
@@ -357,6 +380,16 @@ def create_email_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
+    """Create an email-notification config for watch-source scan reports.
+
+    Consumed by the admin Settings UI; also a scriptable way to provision a mailer
+    on a fresh deployment. super_admin only — the payload carries SMTP / M365 /
+    Exchange credentials.
+
+    All three secret fields are AES-256-GCM encrypted on write and are absent from
+    the response. Nothing here validates the credentials; call
+    ``POST /email-configs/{uuid}/test`` for that.
+    """
     cfg = EmailNotificationConfig(
         uuid=uuid_pkg.uuid4(),
         name=data.name,
@@ -395,6 +428,15 @@ def update_email_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
+    """Patch an email-notification config (super_admin only).
+
+    Consumed by the admin Settings UI. ``exclude_unset`` makes this a true partial
+    update, and a secret field sent empty or null is *skipped* rather than cleared —
+    so the UI can round-trip a form it never received the secret for.
+
+    Refuses with 409 when it would disable the config designated as the auth mailer;
+    see the inline comment for why silently breaking password resets is worse.
+    """
     cfg = (
         db.query(EmailNotificationConfig)
         .filter(EmailNotificationConfig.uuid == config_uuid)
@@ -430,6 +472,13 @@ def delete_email_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> dict:
+    """Delete an email-notification config (super_admin only).
+
+    Consumed by the admin Settings UI. Refuses with 409 for the designated auth
+    mailer — same reasoning as the disable guard in ``update_email_config``, plus
+    the encrypted credentials go with the row and cannot be recovered. Any
+    watch-source links to this config are removed by cascade.
+    """
     cfg = (
         db.query(EmailNotificationConfig)
         .filter(EmailNotificationConfig.uuid == config_uuid)
@@ -451,6 +500,17 @@ def test_email_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> EmailTestResponse:
+    """Send a live test message through one email config (super_admin only).
+
+    Consumed by the admin Settings UI's "Test" button and by ops verifying a mailer
+    after a credential rotation. Talks to the real SMTP / Graph / Exchange endpoint,
+    so it is slow and has an external side effect.
+
+    The outcome is persisted onto the config (``last_tested_at``, ``test_status``,
+    ``test_message``) so the UI can show the last known state without re-testing.
+    A failure is reported as ``success=false`` in a 200 body, not an error status —
+    a failed connection is a successful *test*.
+    """
     from app.services import watch_email_service
 
     cfg = (
@@ -477,6 +537,16 @@ def list_watch_sources(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> WatchSourcesList:
+    """List watch sources — the caller's own, or all of them for an admin.
+
+    Consumed by the Watch Sources settings page; also the natural listing call for a
+    script or agent enumerating configured imports. ``scope=all`` is honoured only
+    for an admin and is silently downgraded to ``own`` otherwise, so a normal user
+    cannot probe for other accounts' sources.
+
+    Live filesystem-watcher state is prefetched in one Redis MGET for every
+    FS-watched local source rather than one GET per row (see ``_fs_events_status``).
+    """
     query = db.query(WatchSource)
     if scope == "all" and current_user.is_admin:
         query = query.order_by(WatchSource.created_at.desc())
@@ -503,6 +573,21 @@ def create_watch_source(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ) -> WatchSourceResponse:
+    """Create a watch source (local folder, S3 bucket or SMB share) for auto-import.
+
+    Consumed by the Watch Sources settings page; equally a scriptable way to
+    provision imports on a new deployment. Any active user may create their own.
+
+    Two non-obvious rules: a ``local`` source is refused with 400 unless the server
+    has ``WATCH_FOLDER_PATH`` mounted — the path is a server-side mount, not a
+    client-supplied one — and ``assign_to_user_uuid`` is honoured **only for an
+    admin**, letting them stand up a source whose imported files land in another
+    user's library. Secrets in the payload are encrypted by ``_apply_fields``.
+
+    ``organization_id`` is captured once here from the creating request's context
+    (issue #262c) so later background scans stamp imports with that tenant instead
+    of guessing from the owner's memberships; ``None`` means personal scope.
+    """
     # local sources require the mount to be configured server-side.
     if data.source_type.value == "local" and not settings.WATCH_FOLDER_PATH:
         raise HTTPException(status_code=400, detail="Local watch folder is not configured")
@@ -538,6 +623,13 @@ def get_watch_source(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> WatchSourceResponse:
+    """One watch source with its config and last-scan summary.
+
+    Consumed by the settings page's detail/edit panel and by scripts inspecting a
+    single source. Readable by its owner or any admin (``_get_source_or_404``, which
+    answers 404 when the row is missing and 403 when it belongs to someone else).
+    Credentials are represented only as ``has_s3_secret_key`` / ``has_smb_password``.
+    """
     source = _get_source_or_404(db, source_uuid, current_user)
     return _source_to_response(source, current_user)
 
@@ -549,6 +641,17 @@ def update_watch_source(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> WatchSourceResponse:
+    """Patch a watch source's configuration (owner or admin).
+
+    Consumed by the settings page's edit form and by ops scripts retuning an import
+    (poll interval, extension filter, multipart rules, auto-transcribe).
+
+    ``exclude_unset`` makes this a genuine partial update: an omitted field is left
+    alone, while an explicit null clears a nullable one. A secret sent empty is
+    skipped rather than blanked (``_apply_fields``), so the UI can submit a form it
+    never received the secret for. Changes apply to the next scan; nothing here
+    re-scans or re-validates the connection.
+    """
     source = _get_source_or_404(db, source_uuid, current_user)
     _apply_fields(source, data.model_dump(exclude_unset=True))
     db.commit()
@@ -562,6 +665,15 @@ def delete_watch_source(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
+    """Delete a watch source and stop importing from it (owner or admin).
+
+    Consumed by the settings page. Deletes only OpenTranscribe's own record: the
+    cascade removes the per-file tracking rows and the email links, but **nothing is
+    touched on the remote source and already-imported media stays in the gallery**.
+    Losing the tracking rows loses this source's own import history; the MediaFile
+    imohash check in ``services/watch_sources/processing.py`` is a separate layer and
+    still applies if the source is later re-created.
+    """
     source = _get_source_or_404(db, source_uuid, current_user)
     db.delete(source)  # cascades to tracking rows + email links
     db.commit()
@@ -577,6 +689,16 @@ def test_watch_source(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> ConnectionTestResponse:
+    """Probe a watch source's connectivity and report latency (owner or admin).
+
+    Consumed by the settings page's "Test connection" button and by ops verifying a
+    credential rotation or a newly mounted share. Read-only: it opens a client and
+    calls ``test_connection()``, importing nothing.
+
+    Always answers 200. A failure — including an unexpected exception — is reported
+    as ``success=false`` with the message, because reporting whether the connection
+    works *is* this endpoint's job. ``latency_ms`` is present only on success.
+    """
     import time
 
     from app.services.watch_sources import create_client
@@ -602,6 +724,17 @@ def scan_watch_source(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> ScanResponse:
+    """Dispatch an out-of-band scan of one watch source (owner or admin).
+
+    Consumed by the settings page's "Scan now" button, and the main automation entry
+    point for this subsystem — a script or agent can trigger an import instead of
+    waiting for the Celery beat poll interval.
+
+    Returns immediately with the Celery ``task_id``; the scan and any imports happen
+    in the worker, so poll ``GET /api/tasks/{task_id}`` (or the source's
+    ``last_scan_*`` fields) for the outcome. Refuses with 400 on a disabled source,
+    since a scan would import into a source the user has switched off.
+    """
     from app.tasks.watch_source_tasks import scan_single
 
     source = _get_source_or_404(db, source_uuid, current_user)
@@ -623,6 +756,17 @@ def list_source_files(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
+    """Paginated per-file import history for one watch source (owner or admin).
+
+    Consumed by the settings page's history table and by scripts auditing what a
+    source did or did not import. ``?status=`` filters on the raw tracking status
+    (``imported``, ``pending``, ``importing``, ``downloading``, ``error``,
+    ``waiting_for_parts``, or a ``skipped*`` variant carrying ``skip_reason``).
+
+    Rows are the tracking records, not gallery files: ``media_file_uuid`` is null for
+    anything skipped, errored or still in flight, and stays populated for an imported
+    row. Newest first.
+    """
     source = _get_source_or_404(db, source_uuid, current_user)
     query = db.query(WatchSourceFile).filter(WatchSourceFile.watch_source_id == source.id)
     if status_filter:
@@ -664,6 +808,16 @@ def source_file_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> WatchSourceStats:
+    """Import-status counts for one watch source, as one GROUP BY (owner or admin).
+
+    Consumed by the settings page's summary badges and by monitoring scripts that
+    want a source's health without paging through ``/files``.
+
+    The buckets are coarser than the stored statuses on purpose: ``skipped`` sums
+    every ``skipped*`` variant (there are several ``skip_reason`` flavours and the
+    caller rarely cares which), and ``pending`` folds ``pending`` + ``importing`` +
+    ``downloading`` into one "in flight" number.
+    """
     from sqlalchemy import func
 
     source = _get_source_or_404(db, source_uuid, current_user)
@@ -721,6 +875,17 @@ def link_email_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
+    """Attach an email config to a watch source, or update the existing link.
+
+    Consumed by the settings page's notification panel. Authorized as the *source*
+    owner (or an admin) — note the asymmetry: creating and editing the email configs
+    themselves is super_admin, but any source owner may subscribe their own source to
+    one that already exists, and there is no separate gate on which config they pick.
+
+    Upsert, not insert: re-posting the same ``email_config_uuid`` overwrites the
+    recipients and the notify-on-success/error flags rather than 409-ing, so it is
+    safe to re-run.
+    """
     source = _get_source_or_404(db, source_uuid, current_user)
     cfg = (
         db.query(EmailNotificationConfig)
@@ -762,6 +927,15 @@ def unlink_email_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
+    """Detach an email config from a watch source (source owner or admin).
+
+    Consumed by the settings page's notification panel. Removes only the link row;
+    the email config itself survives and stays available to other sources.
+
+    Idempotent — a missing link still answers ``{"success": true}``, so a retry after
+    a dropped response does not 404. An unknown *config* uuid does 404, because that
+    is a caller mistake rather than an already-applied delete.
+    """
     source = _get_source_or_404(db, source_uuid, current_user)
     cfg = (
         db.query(EmailNotificationConfig)

@@ -301,6 +301,19 @@ def add_tag_to_file(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
+    """Attach one tag to a media file — **unreachable; see the caveat below.**
+
+    Consumed by nobody. ``app/api/endpoints/tags_pkg/`` is a leftover pre-split copy
+    of the tag endpoints: it has no ``__init__.py``, defines its own local
+    ``APIRouter``, and nothing imports it (``router.py`` mounts ``endpoints.tags``).
+    None of its routes are served, so this handler has no consumer, no authorization
+    in practice, and no behaviour at runtime.
+
+    The live implementation is ``endpoints/tags/crud.py:add_tag_to_file``, which is
+    documented and mounted. Do not extend or fix this copy — changing it has no
+    effect, and grepping for the path literal ``/files/{file_uuid}/tags`` will match
+    both files.
+    """
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     # Get file by UUID and verify permission (tenant-gated via ctx.org_id)

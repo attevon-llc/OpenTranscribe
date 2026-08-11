@@ -1686,8 +1686,21 @@ def delete_speaker(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> None:
-    """
-    Delete a speaker
+    """Delete one speaker row from a media file's diarization result.
+
+    Consumed by the file-detail speaker panel. Authorization is broader than
+    ownership: the owner or an admin always passes, and a non-owner needs
+    ``editor`` on the underlying media file via ``PermissionService`` — a ``viewer``
+    on a shared file gets 403, since deleting a speaker rewrites the transcript's
+    attribution for everyone the file is shared with.
+
+    This removes the per-file speaker, not the cross-media ``SpeakerProfile`` it may
+    be assigned to; the profile and its other occurrences survive. Two follow-up
+    steps are deliberately non-fatal and only logged if they fail — pruning the
+    voiceprint from every OpenSearch speaker index, and invalidating the speaker and
+    file caches — so a degraded search or cache backend cannot block the delete that
+    Postgres has already committed. A stale voiceprint left behind can still surface
+    in similarity results until it is cleaned up.
     """
     # Find the speaker by UUID
     speaker = get_speaker_by_uuid(db, speaker_uuid)

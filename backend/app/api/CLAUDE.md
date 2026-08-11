@@ -54,6 +54,134 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   it already covers owned files plus collections shared directly and via groups, and applies the
   org tenant gate. Never write a second sharing rule beside it.
 
+## Endpoints with no frontend caller — deliberate API surface
+
+**This is a self-hosted app; the non-UI API is a feature.** Homelab users, cron scripts, CI and
+AI agents drive it directly, so "no SPA call site" is not evidence an endpoint is dead.
+`tests/unit/test_route_has_a_caller.py` xfails **78 of 374** routes for having no frontend
+caller; the sections below say what those 78 are *for*, so the xfail list reads as intent.
+
+The detector keys on path literals in `frontend/src`, which gives it two blind spots — check
+both before believing it:
+
+- **Server-provided URLs.** `set_file_urls` (`files/crud.py`) stamps `thumbnail_url` onto file
+  responses, so the SPA consumes the field and never builds `/files/{uuid}/thumbnail`. That
+  route is normally a presigned MinIO URL but falls back to the API path under `SKIP_S3` and on
+  presign failure — genuinely reachable, invisible to the scan.
+- **Last-segment keying.** A route scores on its final segment, so a sibling route absorbing
+  the traffic looks like a caller for both. `waveform` appearing 58 times in the SPA is
+  `GET /files/{uuid}/waveform`, **not** `/waveform/peaks` — `/peaks` really has zero callers and
+  is a redundant second rendering of the same data. Same shape for `/files/{uuid}/retry` vs the
+  `POST /my-files/{uuid}/retry` the SPA actually calls (`user_files.py`).
+
+**Method matters and several of these are not GET.** `POST /files/search`,
+`DELETE /tags/cleanup`, `DELETE /custom-vocabulary/all`, `PUT /search/models/neural/active`,
+`DELETE /admin/users/{uuid}`, `DELETE /files/{uuid}/force`, and DELETE-only
+`/speakers/combined-migration/progress` + `/speaker-attributes/migration/progress`. Generating
+a client that assumes GET from the route table will collect 405s.
+
+### One-time ops / maintenance tooling
+
+Operator-invoked by curl or a runbook, not the SPA. All idempotent and safe to re-run unless
+noted. Admin (`get_current_admin_user`) unless stated.
+
+| Route | Notes |
+|---|---|
+| `POST /admin/imohash-recompute/start` · `GET .../status` | Dispatches Celery `recompute_all`; `already_running` guard, progress in Redis |
+| `POST /admin/profile-embeddings/repair` | **Synchronous in-request** over every `SpeakerProfile` deployment-wide, and no `already_running` guard — unlike its Celery-dispatching siblings, concurrent calls stack |
+| `POST /search/repair-indices` | Probes 4 indices, repairs only on failure. The speakers branch **recreates the index from Postgres**, so OpenSearch-only docs are lost |
+| `POST /speakers/cleanup-orphaned-embeddings` | `get_current_active_user` — self-scoped by `user_id`, the only unprivileged search-index mutation here |
+| `POST /files/management/cleanup-orphaned` · `GET /files/management/stuck` | Stuck-file recovery, **not** orphan cleanup — see Gotchas |
+| `GET /admin/data-integrity/counts` | `run_orphan_cleanup(dry_run=True)` inline; read-only |
+| `/speakers/combined-migration/{start,status,stop}` · `DELETE .../progress` | super_admin; `stop` revokes in-flight batches |
+| `DELETE /speaker-attributes/migration/progress` | super_admin; clears stale Redis progress, refuses while running |
+| `GET /embeddings/migration/mode` | super_admin; pure config read (declares an unused `db` dependency) |
+| `POST /tasks/system/fix-file/{uuid}` | Per-file version of the stuck-file fix; admin sees any file |
+| `GET /tags/unused` · `DELETE /tags/cleanup` | **Scopes differ** — `/unused` is caller-visible, `/cleanup` is deployment-wide. See Gotchas |
+| `POST /files/waveforms/generate` · `GET /files/waveforms/status` | Bulk waveform backfill + coverage. Admin via an **inline** `is_admin` check, not a dependency |
+| `POST /files/{uuid}/waveform/generate` · `POST /files/{uuid}/analytics/refresh` | Per-file recompute |
+| `DELETE /files/{uuid}/force` · `POST /files/{uuid}/{retry,recover,cancel}` | Recovery verbs on `files/management.py`; see the `get_current_user` gotcha |
+| `GET/POST /admin/settings/media-sources` · `PUT/DELETE .../{source_id}` | Deployment-wide protected-media credentials. Superseded for the SPA by the per-user `/user-settings/media-sources` |
+
+### Compliance
+
+Legally significant, audit-logged in the service layer, and deliberately without a
+one-click UI button.
+
+| Route | Authority |
+|---|---|
+| `POST /admin/gdpr/erase-user/{uuid}` | super_admin. `erase_user` cascades storage + OpenSearch + rows, then **deletes the account** |
+| `POST /org-admin/gdpr/erase-user/{uuid}` | `require_org_admin` + `require_capability("organizations")`. Destroys only rows stamped with **this** org; the account and personal-scope data survive |
+| `POST /org-admin/gdpr/erase-organization?confirm=true` | Same gate; refuses without `confirm`. Irreversible whole-tenant erasure; members keep their accounts |
+| `GET /org-admin/audit-logs` | Same gate; scoped to org members, and a `user_id` filter outside the org is 403 |
+| `GET /admin/files/quarantined` · `POST /admin/files/{uuid}/{quarantine,release}` | Admin. DMCA/abuse takedown + legal hold; `release` is 409 when not quarantined |
+
+An org admin has authority over the tenant's **data**, never over the **person's account** —
+that boundary is why there are two erasure entry points rather than one.
+
+### Monitoring / diagnostics
+
+Scrape targets for a homelab dashboard or an operator shell. All read-only.
+
+`GET /admin/stats` (psutil + DB aggregates + recent tasks) · `GET /admin/timing`,
+`/admin/timing/{task_id}` (merges live Redis with the persisted row), `/admin/timing-summary/recent` ·
+`GET /admin/gpu-profiles` (Redis profile history) · `GET /admin/engine-settings/metrics`
+(per-worker queue depth; **super_admin**, unlike its admin-gated `/admin/*` siblings — a plain
+admin gets 403 here and 200 on `/admin/stats`) · `GET /admin/auth-config/status` (super_admin,
+per-method enabled flags) · `GET /speaker-clusters/stats` (`get_current_active_user`, self-scoped
+counts + coverage) · `GET /files/{uuid}/subtitles/validate` (timing-issue report).
+
+For real transcription progress use `GET /tasks/progress/active`, **not** `GET /tasks/{task_id}`
+— see Gotchas.
+
+### Automation-facing
+
+Shaped for a script or agent rather than a screen.
+
+| Route | Purpose |
+|---|---|
+| `GET /files/{uuid}/info` | Lightweight identity/size/duration/language/status with no transcript — the integration read |
+| `GET /files/{uuid}/status-detail` | Status + stuck detection + retry counters + `active_task_id`. Mixed shape: also carries English `recommendations` |
+| `POST /files/search` | **POST.** Full-text search over generated summaries in OpenSearch (BLUF / decisions / action items) with `<mark>` highlighting |
+| `GET /files/supported-formats` | Static `{"subtitle_formats": [...]}`. **No auth dependency at all** — the only ungated route in that router |
+| `GET /files/{uuid}/subtitles` | Renders srt/webvtt/txt as an attachment with redaction applied; the player builds its own VTT client-side, hence no SPA caller |
+| `GET /usage/me` · `GET /usage/me/daily` | Per-user LLM token/cost reporting. **Core, not a cloud seam** — `usage.py`'s docstring is explicit that a self-hoster paying an OpenAI bill is the intended reader. Reporting only; quotas and billing are the part that was carved out. The only usage UI in this repo is the `isCloudEdition`-gated managed-edition stub, so the self-host panel these promise does not exist yet |
+| `GET /prompts/by-content-type/{type}` | System + user prompts for one of 5 content types |
+| `GET /search/filters` | Available filter facets from OpenSearch aggs; degrades to empty lists when the index is absent |
+| `GET /asr-settings/local-models` | Scans the HF cache for usable faster-whisper repos |
+| `GET /custom-vocabulary/export` · `DELETE /custom-vocabulary/all` | JSON export (attachment) and bulk delete. The **listing** is `GET /custom-vocabulary`, not `/all` |
+| `GET /files/youtube/quota` | Sliding-window quota pre-flight; `-1` means unlimited |
+| `POST /files/batch-extract` | Queues topic extraction across many files (202 + task id) |
+| `POST /files/{uuid}/identify-speakers` | Queues the LLM speaker-ID task. Suggestions are **never auto-applied** |
+| `GET /speaker-profiles/collections` · `POST` same path | Vestigial: functional, but the router has no member-management routes to go with it |
+
+### Model administration
+
+OpenSearch neural-search lifecycle, admin-gated and idempotent (`already_registered` /
+`already_deployed`): `POST /search/models/neural/{model}/{register,deploy,undeploy}`.
+Read state via `GET /search/models/neural/status` or `GET /search/models/neural`.
+**`/search/models/neural/active` is `PUT`-only and triggers a full reindex** — there is no GET.
+User administration: `GET /users` and `DELETE /admin/users/{uuid}` (creation is
+`POST /admin/users`; role/lock/reset live on their own sub-paths).
+
+### Debug
+
+`GET /speakers/debug/cross-media-{data,by-name}` — replay the cross-media speaker-matching
+decision for an operator diagnosing a bad match. **Keep them; they are correctly
+`get_current_admin_user`-gated.** Two asymmetries worth knowing: `cross-media-data` is *also*
+self-scoped to `current_user.id` (so an admin cannot inspect another user's data with it), while
+`cross-media-by-name` relies on the admin gate alone and returns every user's speakers. The
+latter also carries three `if not current_user.is_admin:` branches that are unreachable under an
+admin-only dependency.
+
+### UI-only, no caller found
+
+Real UI features whose call site the scan missed or which have no panel yet:
+`/files/{uuid}/thumbnail` (server-provided URL, above) · `/files/{uuid}/{apply,auto-label}` ·
+`/speaker-profiles/profiles/{uuid}/occurrences`, `.../assign-profile`, `.../suggestions` ·
+`/speakers/{uuid}/verify` · `/user-settings/ai-summary` (**the SPA calls the wrong path** — see
+Gotchas) · `/files/{uuid}/waveform/peaks` (redundant with `/waveform`).
+
 ## How it connects
 
 Pydantic models in `app/schemas`, logic in `app/services`, dispatch into `app/tasks`.
@@ -90,10 +218,16 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   /tags/promote` (admin) moves an owned tag into that tier and folds same-named rows into it.
   Names are unique only **per owner**, so `remove_tag_from_file` resolves via `FileTag` for that
   file, never by name.
-- **One file never carries the same word twice.** `resolve_or_create_tag(..., file_id=...)`
-  consults `lookup_tag_on_file` first, so the second person to tag a shared file reuses the row
-  instead of forking a same-named one. Without it the detail page renders the tag twice and the
-  gallery's ALL-filter has to count `DISTINCT Tag.name` to compensate.
+- **One file never carries the same word twice — but only where `file_id` is passed.**
+  `resolve_or_create_tag(..., file_id=...)` consults `lookup_tag_on_file` first, so the second
+  person to tag a shared file reuses the row instead of forking a same-named one. Without it the
+  detail page renders the tag twice and the gallery's ALL-filter has to count `DISTINCT Tag.name`
+  to compensate. **Verified Aug 2026: `services/auto_label_service.py` is the ONLY caller that
+  passes it.** The interactive path `POST /tags/files/{uuid}/tags` → `tags/_common._resolve_tag`
+  omits it, and so does `services/tag_bulk.py`, so those dedupe by tag *id* on `FileTag` — a
+  repeat post by one user is idempotent, but two users can attach same-named rows of their own to
+  one shared file. Treat this as an invariant the auto-label path upholds and the human path does
+  not, not as a global guarantee.
 - **A tag share grants vocabulary, not administration** (`v386_add_tag_share`). `tag_share`
   mirrors `collection_share` — one user or one group, CHECK-constrained, partial unique indexes —
   but deliberately has **no permission column**: the recipient can see, filter by and apply the
@@ -102,7 +236,38 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 - **Bulk tag paths must stay batched.** `prepare_upload.add_tags_to_file` goes through
   `resolve_or_create_tags` (constant SELECTs, issue #284 A2.8), not the per-name resolver;
   `test_upload_prep_batching` fails if the per-name loop returns.
+- **`DELETE /tags/cleanup` is deployment-wide; `GET /tags/unused` is caller-scoped.** The two
+  adjacent routes answer different questions. `/unused` respects `ctx.org_id`; `/cleanup` deletes
+  every owned tag (`user_id IS NOT NULL`) unreferenced by any `FileTag` across all users and orgs,
+  and gates on an **inline** `is_admin` check rather than a dependency. An admin who reads
+  `/unused` and then calls `/cleanup` deletes rows they were never shown. Irreversible.
+- **`endpoints/tags_pkg/` is dead code — do not edit it.** A leftover pre-split copy of the tag
+  endpoints (no `__init__.py`, its own local `APIRouter`, zero importers; `router.py` mounts
+  `endpoints.tags`). None of its routes are served. It still receives accidental maintenance from
+  repo-wide sweeps, and grepping a tag path literal matches both copies — always confirm you are
+  in `endpoints/tags/`.
 - `GET /api/auth/session` must **never 401** (200 for anonymous); it is the SPA's session probe.
+- **`GET /tasks/{task_id}` does not read a task.** It parses `task_N` back to a `MediaFile.id`,
+  loads the file, and synthesizes a `Task` from its status: `progress` is hardcoded
+  `0.0 / 0.5 / 1.0`, `error_message` is the literal `"Transcription failed"`, and the `Task` table
+  is never queried. The id is not a Celery id either. Anything polling it for progress sees a
+  constant `0.5` for the whole run — real progress is `GET /tasks/progress/active` (Redis
+  `ProgressTracker`). `list_tasks` compounds this: its `except Exception` returns an empty
+  successful page, so a broken query looks like "no tasks".
+- **`endpoints/files/management.py` guards with `get_current_user`, not
+  `get_current_active_user`** — every handler in the module, including `DELETE /{uuid}/force` and
+  `POST /management/bulk-action`. That skips the account-lifecycle gate
+  (`must_change_password`, `account_expires_at`) which `dependencies.py` documents as the reason
+  `get_current_admin_user` chains through the active-user dependency. Two of them also enforce
+  admin via an inline `is_admin` check, so a dependency-based authz audit will not see it.
+- **`POST /files/management/cleanup-orphaned` does not clean up orphaned anything.** It runs
+  `check_for_stuck_files` + `recover_stuck_file` — it is the bulk sibling of
+  `POST /tasks/system/fix-file/{uuid}`. Its response carries `"marked_orphaned"`, which is
+  initialized and never incremented. Real orphan cleanup is `POST /admin/data-integrity`.
+- **`/api/user-settings/ai-summary` is unreachable from the SPA.** `LLMSettings.svelte` calls
+  `/settings/ai-summary`, and no router is mounted at `/settings` — the GET 404 is swallowed by a
+  `console.warn` and the PUT surfaces a toast error. The backend route is correct; the frontend
+  path is wrong.
 - **Both SSE streams go check → subscribe → re-check.** `download_stream` (`files/__init__.py`)
   and `bulk_export_stream` (`files/subtitles.py`) read their readiness signal, subscribe to the
   pub/sub channel, then read it **again**. A single check-then-subscribe loses a worker

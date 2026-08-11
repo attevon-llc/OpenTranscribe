@@ -175,6 +175,18 @@ def get_project(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> ProjectDetail:
+    """One project with its pinned scope, prompt layer and conversation count.
+
+    Consumed by the chat UI when opening a project, and the read half of the
+    project API for a script or agent driving chat programmatically. Unlike
+    ``list_projects`` this returns the full ``ProjectDetail`` — the resolved
+    ``system_prompt``, the ``ChatScope``, and the LLM config's *uuid* rather than its
+    internal id.
+
+    Authorization is the creator's alone, enforced by ``get_owned_project``: projects
+    are private and tenant-stamped, and a project belonging to someone else (or to a
+    different ``organization_id``) answers 404, not 403.
+    """
     return to_project_detail(db, get_owned_project(db, project_uuid, ctx))
 
 

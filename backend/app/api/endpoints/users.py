@@ -166,8 +166,17 @@ def list_users(
 
 @router.get("/me", response_model=UserSchema)
 def get_current_user_info(current_user: User = Depends(get_current_active_user)):
-    """
-    Get current user info
+    """The caller's own account record.
+
+    The SPA's identity call after a successful login, and the canonical "who am I"
+    probe for a script or agent holding a session cookie — a 200 here confirms both a
+    valid session and an account that passes the lifecycle gates. Any active user;
+    it returns only the caller's own row, so there is no privilege check to make.
+
+    Distinct from ``GET /api/auth/session``, which is the SPA's *anonymous-safe*
+    probe and answers 200 with no user. This one 401s when unauthenticated.
+    ``get_current_active_user`` also rejects an account that is inactive, expired, or
+    flagged ``must_change_password``, so this is not merely a token-decode.
     """
     return current_user
 

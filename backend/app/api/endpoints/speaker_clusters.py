@@ -365,7 +365,18 @@ def delete_cluster(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Delete a cluster."""
+    """Delete a speaker cluster, detaching its members rather than deleting them.
+
+    Consumed by the speaker-cluster management UI when the operator rejects a
+    proposed grouping. Any active user, but scoped to their own clusters: the lookup
+    filters on ``user_id``, so someone else's cluster is 404.
+
+    Destroys only the grouping. Member speakers survive with ``cluster_id`` reset to
+    null, so the transcripts and their labels are untouched and the speakers become
+    candidates for re-clustering. Removing the cluster's centroid embedding from
+    OpenSearch is best-effort — a failure there is logged at debug and does not fail
+    the request, because Postgres is the source of truth for cluster membership.
+    """
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     try:
         cluster = (

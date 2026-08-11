@@ -195,6 +195,28 @@ def add_tag_to_file(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
+    """Attach one tag to a media file, creating the tag if the caller lacks it.
+
+    Consumed by the file-detail and gallery tag pickers; also the single-tag entry
+    point for a script or agent labelling an imported library (bulk paths must use
+    the batched resolver instead — see ``prepare_upload.add_tags_to_file``).
+
+    Authorized by ``get_file_by_uuid_with_permission``, which applies the sharing,
+    takedown and tenant (``ctx.org_id``) gates in one place — write access to the
+    *file* is the whole requirement, because tagging does not touch anyone else's
+    vocabulary.
+
+    The body is a raw ``dict`` rather than a schema, so a missing ``name`` is
+    rejected as 422 by hand. The resolved tag belongs to the **caller**, not the file
+    owner: tagging a shared file adds the word to your own vocabulary and the owner
+    still sees it because it is now attached to a file they can access.
+    ``_resolve_tag`` is race-safe and resolves normalized-exact against the caller's
+    own vocabulary plus the system one; it does **not** pass ``file_id``, so it does
+    not take ``resolve_or_create_tag``'s "already on this file" branch. The
+    duplicate-suppression here is by tag *id* on ``FileTag``, which makes a repeat
+    post by the same user idempotent (no second row, no second ``on_tags_changed``)
+    but lets two users attach same-named rows of their own to one shared file.
+    """
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     # Get file by UUID and verify permission (tenant-gated via ctx.org_id)

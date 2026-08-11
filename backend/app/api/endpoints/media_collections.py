@@ -560,7 +560,19 @@ def create_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Create a new collection"""
+    """Create a collection owned by the caller.
+
+    Consumed by the gallery's "New collection" dialog and by scripts organising an
+    imported library. Any active user; the collection is stamped with
+    ``current_user.id`` and there is no way to create one for someone else.
+
+    Names are unique **per owner**, not globally — a duplicate for this user is 400,
+    while another user may hold the same name. ``default_prompt_id`` arrives as a
+    prompt *uuid* and is resolved to the internal id by ``_resolve_prompt_uuid``,
+    which accepts only an active prompt the caller owns or a system default and 404s
+    otherwise; the response carries the uuid back, never the internal id. A new
+    collection starts with no members and no shares.
+    """
     # Check if collection with same name exists for user
     existing = (
         db.query(Collection)

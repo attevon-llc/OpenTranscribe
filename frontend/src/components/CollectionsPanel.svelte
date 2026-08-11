@@ -410,6 +410,8 @@
         removeLabel={(name) => $t('collectionsPanel.removeChip', { name })}
         coverageLabel={(count, total) =>
           $t('collectionsPanel.inCount', { count, total })}
+        overflowLabel={(count) => $t('collectionsPanel.moreCollections', { count })}
+        maxVisible={isSingleFile ? 40 : 10}
         on:remove={(event) => removeFromCollection(event.detail)}
       />
     </div>

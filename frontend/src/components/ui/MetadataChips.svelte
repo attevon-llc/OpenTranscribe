@@ -111,7 +111,11 @@
     color: var(--text-secondary);
   }
 
+  /* The count follows the name inside one chip; without this it renders as
+     "Interviewon 1 of 3" — the markup has to stay whitespace-free to avoid a
+     stray gap before the chip's own padding, so the gap is a margin. */
   .chip-count {
+    margin-left: 5px;
     font-size: 10px;
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;

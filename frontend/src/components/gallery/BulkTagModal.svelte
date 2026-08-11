@@ -268,6 +268,8 @@
           removeLabel={(name) => $t('gallery.bulk.tagModal.removeChip', { name })}
           coverageLabel={(count, total) =>
             $t('gallery.bulk.tagModal.onCount', { count, total })}
+          overflowLabel={(count) => $t('gallery.bulk.tagModal.moreTags', { count })}
+          maxVisible={isSingleFile ? 40 : 10}
           on:remove={(event) => {
             const match = currentTags.find((tag) => tag.uuid === event.detail.uuid);
             if (match) removeChip(match);

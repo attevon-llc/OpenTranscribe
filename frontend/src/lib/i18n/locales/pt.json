@@ -2153,6 +2153,7 @@
   "tags.nearMatch.accept": "Usar «{{name}}»",
   "tags.nearMatch.decline": "Criar «{{typed}}»",
   "tags.manager.title": "Gestor de etiquetas",
+  "tags.manager.closeDialog": "Fechar o gestor de etiquetas",
   "tags.manager.listLabel": "Etiquetas",
   "tags.manager.filterLabel": "Vistas de etiquetas",
   "tags.manager.filter.all": "Todas",

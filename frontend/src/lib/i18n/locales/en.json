@@ -2154,6 +2154,7 @@
   "tags.nearMatch.accept": "Use “{{name}}”",
   "tags.nearMatch.decline": "Create “{{typed}}”",
   "tags.manager.title": "Tag Manager",
+  "tags.manager.closeDialog": "Close tag manager",
   "tags.manager.listLabel": "Tags",
   "tags.manager.filterLabel": "Tag views",
   "tags.manager.filter.all": "All",

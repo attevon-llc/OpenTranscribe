@@ -2188,6 +2188,7 @@
   "tags.typeNewTagHint": "Tapez un nouveau nom d'étiquette et appuyez sur Entrée ou cliquez sur Ajouter pour la créer et l'appliquer à ce fichier",
   "tags.unauthorizedLogin": "Non autorisé : Veuillez vous connecter.",
   "tags.manager.title": "Gestionnaire d’étiquettes",
+  "tags.manager.closeDialog": "Fermer le gestionnaire d’étiquettes",
   "tags.manager.listLabel": "Étiquettes",
   "tags.manager.filterLabel": "Vues des étiquettes",
   "tags.manager.filter.all": "Toutes",

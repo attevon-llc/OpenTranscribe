@@ -2188,6 +2188,7 @@
   "tags.typeNewTagHint": "Geben Sie einen neuen Tag-Namen ein und drücken Sie Enter oder klicken Sie auf Hinzufügen, um ihn zu erstellen und auf diese Datei anzuwenden",
   "tags.unauthorizedLogin": "Nicht autorisiert: Bitte melden Sie sich an.",
   "tags.manager.title": "Tag-Verwaltung",
+  "tags.manager.closeDialog": "Tag-Manager schließen",
   "tags.manager.listLabel": "Tags",
   "tags.manager.filterLabel": "Tag-Ansichten",
   "tags.manager.filter.all": "Alle",

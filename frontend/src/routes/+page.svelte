@@ -1526,7 +1526,53 @@
 
 <!-- Collections Modal -->
 {#if showTagManagerModal}
-  <TagManagerModal on:close={() => (showTagManagerModal = false)} />
+  <!-- Same chrome as the collections dialog below, deliberately: the two are
+       siblings (both attach metadata to files) and were reading as different
+       components. Sharing the wrapper means they cannot drift on backdrop,
+       radius, header or close affordance. -->
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div
+    class="modal-backdrop"
+    role="presentation"
+    transition:fade={{ duration: 400 }}
+    on:click={() => (showTagManagerModal = false)}
+    on:wheel|preventDefault|self
+    on:touchmove|preventDefault|self
+    on:keydown={(e) => e.key === 'Escape' && (() => (showTagManagerModal = false))()}
+  >
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div
+      class="modal-container tag-manager-container"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      transition:scale={{ duration: 350, start: 0.9 }}
+      on:click|stopPropagation
+      on:keydown|stopPropagation
+    >
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>{$t('tags.manager.title')}</h2>
+          <button
+            class="modal-close"
+            on:click={() => (showTagManagerModal = false)}
+            aria-label={$t('tags.manager.closeDialog')}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <TagManagerModal on:close={() => (showTagManagerModal = false)} />
+        </div>
+      </div>
+    </div>
+  </div>
 {/if}
 
 {#if showCollectionsModal}
@@ -1681,6 +1727,13 @@
 
   :global(.dark) .modal-backdrop {
     background: rgba(0, 0, 0, 0.7);
+  }
+
+  /* The tag manager is a two-pane working surface (list + inspector), so it
+     needs more room than the 720px collections dialog. Everything else about
+     the chrome is deliberately identical. */
+  .tag-manager-container {
+    width: 1100px;
   }
 
   .modal-container {

@@ -2143,6 +2143,7 @@
   "tags.nearMatch.accept": "Использовать «{{name}}»",
   "tags.nearMatch.decline": "Создать «{{typed}}»",
   "tags.manager.title": "Управление тегами",
+  "tags.manager.closeDialog": "Закрыть менеджер тегов",
   "tags.manager.listLabel": "Теги",
   "tags.manager.filterLabel": "Виды тегов",
   "tags.manager.filter.all": "Все",

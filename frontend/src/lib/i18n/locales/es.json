@@ -2188,6 +2188,7 @@
   "tags.typeNewTagHint": "Escribe un nuevo nombre de etiqueta y presiona Enter o haz clic en Agregar para crearla y aplicarla a este archivo",
   "tags.unauthorizedLogin": "No autorizado: Por favor inicia sesión.",
   "tags.manager.title": "Gestor de etiquetas",
+  "tags.manager.closeDialog": "Cerrar el gestor de etiquetas",
   "tags.manager.listLabel": "Etiquetas",
   "tags.manager.filterLabel": "Vistas de etiquetas",
   "tags.manager.filter.all": "Todas",

@@ -2153,6 +2153,7 @@
   "tags.nearMatch.accept": "「{{name}}」を使う",
   "tags.nearMatch.decline": "「{{typed}}」を作成",
   "tags.manager.title": "タグ管理",
+  "tags.manager.closeDialog": "タグマネージャーを閉じる",
   "tags.manager.listLabel": "タグ",
   "tags.manager.filterLabel": "タグの表示",
   "tags.manager.filter.all": "すべて",

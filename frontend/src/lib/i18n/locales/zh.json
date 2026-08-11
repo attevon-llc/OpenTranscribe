@@ -2153,6 +2153,7 @@
   "tags.nearMatch.accept": "使用“{{name}}”",
   "tags.nearMatch.decline": "创建“{{typed}}”",
   "tags.manager.title": "标签管理",
+  "tags.manager.closeDialog": "关闭标签管理器",
   "tags.manager.listLabel": "标签",
   "tags.manager.filterLabel": "标签视图",
   "tags.manager.filter.all": "全部",

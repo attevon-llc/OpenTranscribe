@@ -15,7 +15,6 @@
    * rendered as received.
    */
   import { createEventDispatcher, onMount } from 'svelte';
-  import BaseModal from '$components/ui/BaseModal.svelte';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
@@ -409,13 +408,7 @@
   }
 </script>
 
-<BaseModal
-  isOpen
-  maxWidth="1100px"
-  title={$t('tags.manager.title')}
-  onClose={() => dispatch('close')}
->
-  <div class="tags-manager">
+<div class="tags-manager">
   <form class="create-row" on:submit|preventDefault={submitCreate}>
     <label class="create-label" for="new-tag-name">{$t('tags.manager.create.label')}</label>
     <input
@@ -588,8 +581,7 @@
       {/if}
     </div>
   </div>
-  </div>
-</BaseModal>
+</div>
 
 {#if sharingTag}
   <TagShareModal

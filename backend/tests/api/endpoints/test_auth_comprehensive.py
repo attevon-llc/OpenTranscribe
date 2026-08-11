@@ -12,8 +12,6 @@ This test module covers:
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from unittest.mock import MagicMock
-from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -491,94 +489,26 @@ class TestPasswordPolicy:
         assert response.status_code == 422, response.text
 
 
-# ============== Auth Method Tests with Mocking ==============
-
-
-@pytest.mark.skip(reason="Placeholder — needs real mocked auth flow implementation")
-class TestLDAPAuthentication:
-    """Test LDAP authentication with mocking."""
-
-    @pytest.fixture
-    def mock_ldap_settings(self):
-        """Mock LDAP settings."""
-        with patch("app.auth.ldap_auth.settings") as mock_settings:
-            mock_settings.LDAP_ENABLED = True
-            mock_settings.LDAP_HOST = "ldap.example.com"
-            mock_settings.LDAP_PORT = 389
-            mock_settings.LDAP_USE_SSL = False
-            mock_settings.LDAP_BIND_DN = "cn=admin,dc=example,dc=com"
-            mock_settings.LDAP_BIND_PASSWORD = "adminpass"
-            mock_settings.LDAP_SEARCH_BASE = "dc=example,dc=com"
-            mock_settings.LDAP_USERNAME_ATTRIBUTE = "uid"
-            yield mock_settings
-
-    def test_ldap_auth_success_mock(self, mock_ldap_settings):
-        """Test LDAP authentication flow with mocked LDAP server."""
-
-        with patch("app.auth.ldap_auth.Connection") as mock_conn_class:
-            # Mock successful LDAP bind and search
-            mock_conn = MagicMock()
-            mock_conn.bind.return_value = True
-            mock_conn.search.return_value = True
-            mock_conn.entries = [
-                MagicMock(
-                    entry_dn="cn=testuser,dc=example,dc=com",
-                    uid=MagicMock(value="testuser"),
-                    mail=MagicMock(value="testuser@example.com"),
-                    cn=MagicMock(value="Test User"),
-                )
-            ]
-            mock_conn_class.return_value.__enter__ = MagicMock(return_value=mock_conn)
-            mock_conn_class.return_value.__exit__ = MagicMock(return_value=False)
-
-            # The actual test would call ldap_authenticate
-            # This verifies the mock setup is correct
-            assert mock_conn.bind.return_value is True
-
-
-@pytest.mark.skip(reason="Placeholder — needs real mocked auth flow implementation")
-class TestOIDCAuthentication:
-    """Test OIDC authentication with mocking."""
-
-    @pytest.fixture
-    def mock_oidc_settings(self):
-        """Mock OIDC settings."""
-        with patch("app.auth.oidc.config.env_settings") as mock_settings:
-            mock_settings.OIDC_ENABLED = True
-            mock_settings.OIDC_SERVER_URL = "https://idp.example.com"
-            mock_settings.OIDC_REALM = "myrealm"
-            mock_settings.OIDC_CLIENT_ID = "myclient"
-            mock_settings.OIDC_CLIENT_SECRET = "mysecret"
-            yield mock_settings
-
-    def test_oidc_authorization_url_generation(self, mock_oidc_settings):
-        """Test OIDC authorization URL generation."""
-
-        # This would test URL generation
-        # The actual implementation may need adjustment based on the code
-        assert mock_oidc_settings.OIDC_ENABLED is True
-
-
-@pytest.mark.skip(reason="Placeholder — needs real mocked auth flow implementation")
-class TestPKIAuthentication:
-    """Test PKI/X.509 certificate authentication with mocking."""
-
-    @pytest.fixture
-    def mock_pki_settings(self):
-        """Mock PKI settings."""
-        with patch("app.auth.pki_auth.settings") as mock_settings:
-            mock_settings.PKI_ENABLED = True
-            mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
-            mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-            mock_settings.PKI_ADMIN_DNS = []
-            yield mock_settings
-
-    def test_pki_cert_header_extraction(self, mock_pki_settings):
-        """Test PKI certificate header extraction."""
-        # Test would verify certificate parsing from headers
-        assert mock_pki_settings.PKI_ENABLED is True
-
-
+# Auth-method mocking placeholders REMOVED (issue #431).
+#
+# Three classes — TestLDAPAuthentication, TestOIDCAuthentication, TestPKIAuthentication — sat
+# behind `@pytest.mark.skip(reason="Placeholder — needs real mocked auth flow implementation")`
+# and asserted only on their own mocks:
+#
+#     assert mock_conn.bind.return_value is True      # the value the test just configured
+#     assert mock_oidc_settings.OIDC_ENABLED is True  # the attribute the test just set
+#
+# That is circular: it verifies unittest.mock works, not that this application authenticates
+# anyone. Un-skipping them would have added three green tests and zero coverage, which is
+# worse than the skip because it looks like protection.
+#
+# Deleted rather than reimplemented, because every one of these flows is already covered
+# properly elsewhere and a fourth copy would duplicate ~290 real tests:
+#   PKI   tests/test_pki_auth.py (105, ungated in this branch) + tests/e2e/test_pki.py
+#   OIDC  tests/unit/test_oidc_auth.py (44) + test_oidc_discovery.py (51)
+#         + test_oidc_groups_overage_detection.py + test_oidc_session_id_token.py
+#   LDAP  tests/unit/test_ldap_group_parsing.py (36) + test_local_auth_policy.py
+#         + test_external_account_linking.py + tests/e2e/test_ldap_oidc.py
 # ============== Inactive User Tests ==============
 
 

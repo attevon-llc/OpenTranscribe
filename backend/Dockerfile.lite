@@ -45,8 +45,8 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend Lite" \
       org.opencontainers.image.vendor="OpenTranscribe" \
       org.opencontainers.image.authors="OpenTranscribe Contributors" \
       org.opencontainers.image.licenses="AGPL-3.0" \
-      org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe" \
-      org.opencontainers.image.documentation="https://github.com/davidamacey/OpenTranscribe/blob/master/README.md"
+      org.opencontainers.image.source="https://github.com/attevon-llc/OpenTranscribe" \
+      org.opencontainers.image.documentation="https://github.com/attevon-llc/OpenTranscribe/blob/master/README.md"
 
 # Install only runtime dependencies (no build tools, no CUDA libraries)
 RUN apt-get update && apt-get install -y --no-install-recommends \

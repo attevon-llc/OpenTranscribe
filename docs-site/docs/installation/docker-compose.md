@@ -190,7 +190,16 @@ docker run --rm \
   python -c "from app.tasks.transcription import download_models; download_models()"
 ```
 
-This downloads ~2.9GB of AI models.
+This downloads several GB of AI models. The exact total depends on which
+`WHISPER_MODEL` you selected and how many neural-search models you enable — see
+[HuggingFace setup](./huggingface-setup.md).
+
+:::tip Prefer the helper script
+`bash scripts/download-models.sh` fetches the whole set (transcription,
+diarization, gender classifier, NLTK, embeddings, chat reranker, neural search,
+and content redaction) using the **image version your deployment is pinned to**,
+which the raw `docker run` above does not.
+:::
 
 ### Step 6: Start OpenTranscribe
 

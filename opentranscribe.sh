@@ -190,6 +190,187 @@ get_compose_files() {
     echo "$compose_files"
 }
 
+# Refuse an upgrade that the new backend will reject, BEFORE tearing anything down.
+#
+# v0.5.0 flipped security enforcement from fail-open to fail-closed (#284 A0.3):
+# ENVIRONMENT now defaults to production, so a v0.4.x deployment that never set it
+# skipped every production secret check and now gets all of them. The first
+# symptom was the backend exiting with "REDIS_PASSWORD is required in production
+# environment" AFTER `down` had already run -- stack stopped, new one refusing to
+# boot, user holding a stack-trace (#410).
+#
+# Checking first turns that into a refusal with a remedy, while the old stack is
+# still running.
+preflight_upgrade_env() {
+    local problems=()
+
+    # Relaxed environments opt out of all of this, exactly as the backend does.
+    local env_name
+    env_name=$(grep -E '^ENVIRONMENT=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | tr '[:upper:]' '[:lower:]' | head -1)
+    case "$env_name" in
+        development|dev|testing|test|local) return 0 ;;
+    esac
+
+    local redis_pw
+    redis_pw=$(grep -E '^REDIS_PASSWORD=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
+    [ -z "$redis_pw" ] && problems+=("REDIS_PASSWORD is empty or missing")
+
+    local jwt
+    jwt=$(grep -E '^JWT_SECRET_KEY=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
+    case "$jwt" in
+        ""|*change_me*|*CHANGE_ME*) problems+=("JWT_SECRET_KEY is unset or still a placeholder") ;;
+    esac
+
+    local enc
+    enc=$(grep -E '^ENCRYPTION_KEY=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
+    case "$enc" in
+        ""|*change_me*|*CHANGE_ME*) problems+=("ENCRYPTION_KEY is unset or still a placeholder") ;;
+    esac
+
+    [ ${#problems[@]} -eq 0 ] && return 0
+
+    echo -e "${RED}❌ This release enforces production secrets that your .env does not satisfy.${NC}"
+    echo -e "${RED}   Refusing to upgrade — your current stack is untouched and still running.${NC}"
+    echo ""
+    for p in "${problems[@]}"; do echo "   • $p"; done
+    echo ""
+    echo -e "${YELLOW}Why now:${NC} security enforcement moved from fail-open to fail-closed."
+    echo "  Previously ENVIRONMENT defaulted to \"development\", so these checks were skipped"
+    echo "  on any deployment that never set it. They now apply by default."
+    echo ""
+    echo -e "${YELLOW}To fix:${NC}"
+    [ -z "$redis_pw" ] && echo "  echo \"REDIS_PASSWORD=\$(openssl rand -hex 16)\" >> .env"
+    echo "  # then re-run: ./opentranscribe.sh update"
+    echo ""
+    echo "  A single-user install on a trusted network can instead set ENVIRONMENT=development,"
+    echo "  but that disables every hardening control."
+    return 1
+}
+
+# Bring the stack down for an upgrade, tolerating the stale-network race.
+#
+# `docker compose down` removes the containers and then the network. The daemon
+# occasionally keeps a stale endpoint record for an already-removed container, so
+# the network removal fails with "has active endpoints" even though every
+# container is gone. compose reports that as an overall failure and, with the
+# upgrade wired to abort on it, a routine `update` dies half-way -- containers
+# down, nothing brought back up.
+#
+# A user cannot restart the Docker daemon to get out of that, so treat it for
+# what it is: the teardown succeeded, only the cleanup of an empty network
+# raced. Verify no containers remain, clear the network if it is genuinely
+# empty, and continue. Any other failure is still fatal.
+compose_down_for_upgrade() {
+    local compose_files="$1"
+
+    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
+    if docker compose $compose_files down; then
+        return 0
+    fi
+
+    local remaining
+    remaining=$(docker ps -aq --filter "name=^opentranscribe-" | wc -l)
+    if [ "$remaining" -ne 0 ]; then
+        echo -e "${RED}❌ Teardown failed and $remaining container(s) remain${NC}"
+        return 1
+    fi
+
+    local net=opentranscribe_default
+    if docker network inspect "$net" >/dev/null 2>&1; then
+        local attached
+        attached=$(docker network inspect "$net" --format '{{len .Containers}}' 2>/dev/null || echo 0)
+        if [ "$attached" = "0" ]; then
+            echo -e "${YELLOW}⚠️  Clearing stale empty network '$net' (daemon endpoint race)${NC}"
+            docker network rm "$net" >/dev/null 2>&1 || true
+        fi
+    fi
+
+    echo -e "${GREEN}✓ All containers removed; continuing upgrade${NC}"
+    return 0
+}
+
+# Bring the stack up in phases, polling the backend's own /health rather than
+# letting compose's dependency resolver decide when the backend is ready.
+#
+# Compose gives up on a `service_healthy` wait long before the backend's 600s
+# start_period elapses on a populated database. Running the Alembic chain plus
+# the model warm-preload on first boot after an upgrade routinely takes 60-120
+# seconds; compose reports "dependency failed to start: container
+# opentranscribe-backend is unhealthy" around the ~45s mark and SIGTERMs the
+# backend MID-MIGRATION.
+#
+# Shared by `update` and `update-full`. It used to live inline in `update` only,
+# so `update-full` — the command people run when crossing releases, and therefore
+# the one MOST likely to run a long migration chain — did a bare `up -d` and was
+# exposed to exactly this failure.
+#
+# Usage: perform_phased_restart "$compose_files"   (returns non-zero on failure)
+perform_phased_restart() {
+    local compose_files="$1"
+    local backend_port waited max_wait state
+
+    backend_port=$(grep -E '^BACKEND_PORT=' .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' | head -1)
+    backend_port="${backend_port:-5174}"
+
+    # Phase 1: infrastructure + backend only, no dependents.
+    echo -e "${BLUE}▶ Starting infrastructure + backend (phase 1/2)...${NC}"
+    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
+    docker compose $compose_files up -d postgres redis minio opensearch backend
+
+    # Phase 2: poll /health directly. 15 minutes covers any realistic cold-boot
+    # migration path.
+    echo -e "${BLUE}⏳ Waiting for backend to become healthy (up to 15 minutes)...${NC}"
+    waited=0
+    max_wait=900
+    while [ $waited -lt $max_wait ]; do
+        if curl -sf --connect-timeout 2 --max-time 4 \
+            "http://localhost:${backend_port}/health" >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ Backend healthy after ${waited}s${NC}"
+            break
+        fi
+        # Hard-fail detection: don't burn the full 15 minutes on a dead container.
+        state=$(docker inspect opentranscribe-backend \
+            --format '{{.State.Status}}:{{.State.ExitCode}}' 2>/dev/null || echo "unknown:?")
+        case "$state" in
+            exited:0|restarting:*)
+                # Clean exit or restart-policy cycling; keep polling.
+                ;;
+            exited:*)
+                echo -e "${RED}❌ Backend exited with non-zero code: $state${NC}"
+                echo -e "${YELLOW}Last 40 lines of backend logs:${NC}"
+                docker logs --tail 40 opentranscribe-backend 2>&1 || true
+                return 1
+                ;;
+        esac
+        sleep 5
+        waited=$((waited + 5))
+    done
+
+    if [ $waited -ge $max_wait ]; then
+        echo -e "${RED}❌ Backend failed to become healthy within ${max_wait}s${NC}"
+        echo -e "${YELLOW}Last 40 lines of backend logs:${NC}"
+        docker logs --tail 40 opentranscribe-backend 2>&1 || true
+        return 1
+    fi
+
+    # Phase 3: backend is healthy — safe to start everything else.
+    echo -e "${BLUE}▶ Starting remaining services (phase 2/2)...${NC}"
+    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
+    docker compose $compose_files up -d
+
+    # Report what actually came up, so an upgrade that silently ran the wrong
+    # image is visible at the point of upgrade rather than weeks later.
+    local running_version
+    running_version=$(curl -fsS --connect-timeout 3 \
+        "http://localhost:${backend_port}/api/version" 2>/dev/null \
+        | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+    if [ -n "$running_version" ]; then
+        echo -e "${GREEN}✓ Running version: ${running_version}${NC}"
+    fi
+
+    return 0
+}
+
 show_access_info() {
     # Source .env to get port values
     source .env 2>/dev/null || true
@@ -287,70 +468,82 @@ case "${1:-help}" in
     update)
         check_environment
         fix_model_cache_permissions
-        echo -e "${YELLOW}📥 Updating to latest Docker images...${NC}"
-        compose_files=$(get_compose_files)
 
-        # Read backend port from .env for direct health polling (below)
-        backend_port=$(grep -E '^BACKEND_PORT=' .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' | head -1)
-        backend_port="${backend_port:-5174}"
-
-        docker compose $compose_files down
-        docker compose $compose_files pull
-
-        # Two-phase startup to work around compose's dependency resolver, which
-        # gives up on `service_healthy` waits long before our backend's 600s
-        # start_period elapses when upgrading a populated v0.3.x database.
-        # Running the 45-migration Alembic chain + model warm-preload on first
-        # boot can take 60-120 seconds; compose would otherwise report
-        # "dependency failed to start: container opentranscribe-backend is
-        # unhealthy" around the ~45s mark and SIGTERM the backend mid-migration.
-        #
-        # Phase 1: infrastructure + backend only, no dependents
-        echo -e "${BLUE}▶ Starting infrastructure + backend (phase 1/2)...${NC}"
-        docker compose $compose_files up -d postgres redis minio opensearch backend
-
-        # Phase 2: poll the backend /health endpoint DIRECTLY (bypassing
-        # compose's dependency resolver). Wait up to 15 minutes — enough
-        # time for any realistic cold-boot migration path.
-        echo -e "${BLUE}⏳ Waiting for backend to become healthy (up to 15 minutes)...${NC}"
-        waited=0
-        max_wait=900
-        while [ $waited -lt $max_wait ]; do
-            if curl -sf --connect-timeout 2 --max-time 4 \
-                "http://localhost:${backend_port}/health" >/dev/null 2>&1; then
-                echo -e "${GREEN}✓ Backend healthy after ${waited}s${NC}"
-                break
-            fi
-            # Detect hard-fail: if backend container has exited with a non-zero
-            # code, bail out rather than waste the full 15 minutes.
-            state=$(docker inspect opentranscribe-backend \
-                --format '{{.State.Status}}:{{.State.ExitCode}}' 2>/dev/null || echo "unknown:?")
-            case "$state" in
-                exited:0|restarting:*)
-                    # Code 0 exit or restarting = docker restart policy is
-                    # cycling the container; keep polling.
-                    ;;
-                exited:*)
-                    echo -e "${RED}❌ Backend exited with non-zero code: $state${NC}"
-                    echo -e "${YELLOW}Last 40 lines of backend logs:${NC}"
-                    docker logs --tail 40 opentranscribe-backend 2>&1 || true
-                    exit 1
-                    ;;
+        # Optional target: `update --version vX.Y.Z` moves this install to a
+        # specific release; `--rollback` returns it to the previous one. Both
+        # work by rewriting OT_IMAGE_TAG in .env, which the compose files read as
+        # ${OT_IMAGE_TAG:-latest}. With no argument, behaviour is unchanged.
+        target_version=""
+        do_rollback=false
+        force_downgrade=false
+        shift || true
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --version) target_version="${2:-}"; shift 2 ;;
+                --rollback) do_rollback=true; shift ;;
+                --force-downgrade) force_downgrade=true; shift ;;
+                *) echo -e "${YELLOW}⚠️  Unknown argument: $1 (ignored)${NC}"; shift ;;
             esac
-            sleep 5
-            waited=$((waited + 5))
         done
 
-        if [ $waited -ge $max_wait ]; then
-            echo -e "${RED}❌ Backend failed to become healthy within ${max_wait}s${NC}"
-            echo -e "${YELLOW}Last 40 lines of backend logs:${NC}"
-            docker logs --tail 40 opentranscribe-backend 2>&1 || true
-            exit 1
+        current_tag=$(grep -E '^OT_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)
+        current_tag="${current_tag:-latest}"
+
+        if [ "$do_rollback" = true ]; then
+            target_version=$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)
+            if [ -z "$target_version" ]; then
+                echo -e "${RED}❌ No previous version recorded — nothing to roll back to.${NC}"
+                echo -e "${YELLOW}   A rollback target is only recorded by a prior 'update --version'.${NC}"
+                echo -e "${YELLOW}   Use: ./opentranscribe.sh update --version vX.Y.Z${NC}"
+                exit 1
+            fi
+            echo -e "${YELLOW}⏪ Rolling back: $current_tag → $target_version${NC}"
+            echo -e "${YELLOW}⚠️  The migration chain is ONE-WAY. Rolling the images back does NOT${NC}"
+            echo -e "${YELLOW}   revert the database. Restore a backup taken before the upgrade if${NC}"
+            echo -e "${YELLOW}   the newer schema is not readable by $target_version.${NC}"
         fi
 
-        # Phase 3: backend is healthy — safe to start everything else
-        echo -e "${BLUE}▶ Starting remaining services (phase 2/2)...${NC}"
-        docker compose $compose_files up -d
+        if [ -n "$target_version" ]; then
+            case "$target_version" in v*) ;; *) target_version="v${target_version}" ;; esac
+
+            # Refuse a downgrade unless asked twice. Newer releases add columns
+            # and tables the older image does not know about; the chain does not
+            # go backwards.
+            if [ "$do_rollback" = false ] && [ "$force_downgrade" = false ] && [ "$current_tag" != "latest" ]; then
+                older=$(printf '%s\n%s\n' "${current_tag#v}" "${target_version#v}" | sort -V | head -1)
+                if [ "$older" = "${target_version#v}" ] && [ "$target_version" != "$current_tag" ]; then
+                    echo -e "${RED}❌ Refusing to downgrade $current_tag → $target_version${NC}"
+                    echo -e "${YELLOW}   The migration chain is one-way. Use --rollback (which warns${NC}"
+                    echo -e "${YELLOW}   about the database) or --force-downgrade if you are certain.${NC}"
+                    exit 1
+                fi
+            fi
+
+            # Record where we came from so --rollback has a target.
+            if grep -q '^# *OT_PREVIOUS_IMAGE_TAG=' .env; then
+                sed -i.bak "s|^# *OT_PREVIOUS_IMAGE_TAG=.*|# OT_PREVIOUS_IMAGE_TAG=${current_tag}|" .env
+            else
+                echo "# OT_PREVIOUS_IMAGE_TAG=${current_tag}" >> .env
+            fi
+            if grep -q '^OT_IMAGE_TAG=' .env; then
+                sed -i.bak "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${target_version}|" .env
+            else
+                echo "OT_IMAGE_TAG=${target_version}" >> .env
+            fi
+            rm -f .env.bak
+            echo -e "${GREEN}✓ Pinned OT_IMAGE_TAG=${target_version} (was ${current_tag})${NC}"
+            echo -e "${YELLOW}📥 Updating to ${target_version}...${NC}"
+        else
+            echo -e "${YELLOW}📥 Updating to the newest images for tag '${current_tag}'...${NC}"
+        fi
+
+        compose_files=$(get_compose_files)
+
+        preflight_upgrade_env || exit 1
+        compose_down_for_upgrade "$compose_files" || exit 1
+        docker compose $compose_files pull
+
+        perform_phased_restart "$compose_files" || exit 1
 
         echo -e "${GREEN}✅ OpenTranscribe containers updated!${NC}"
         echo ""
@@ -366,7 +559,7 @@ case "${1:-help}" in
         BRANCH="${OPENTRANSCRIBE_BRANCH:-master}"
         # URL-encode the branch name (replace / with %2F for feature branches)
         ENCODED_BRANCH=$(echo "$BRANCH" | sed 's|/|%2F|g')
-        GITHUB_RAW="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${ENCODED_BRANCH}"
+        GITHUB_RAW="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${ENCODED_BRANCH}"
 
         if [ "$BRANCH" != "master" ]; then
             echo -e "${BLUE}ℹ️  Using branch: $BRANCH${NC}"
@@ -377,70 +570,117 @@ case "${1:-help}" in
 
         echo -e "${BLUE}📄 Updating configuration files...${NC}"
 
-        # Update docker-compose files
-        echo "  Downloading docker-compose.prod.yml..."
-        curl -fsSL "$GITHUB_RAW/docker-compose.prod.yml" -o docker-compose.prod.yml.new && \
-            mv docker-compose.prod.yml.new docker-compose.prod.yml && \
-            echo -e "  ${GREEN}✓${NC} docker-compose.prod.yml" || \
-            echo -e "  ${YELLOW}⚠️${NC} docker-compose.prod.yml (skipped)"
+        # Back up the base compose file too — it is now updated, so a bad release
+        # should be recoverable without re-running the installer.
+        cp docker-compose.yml docker-compose.yml.bak 2>/dev/null || true
 
-        echo "  Downloading docker-compose.nginx.yml..."
-        curl -fsSL "$GITHUB_RAW/docker-compose.nginx.yml" -o docker-compose.nginx.yml.new && \
-            mv docker-compose.nginx.yml.new docker-compose.nginx.yml && \
-            echo -e "  ${GREEN}✓${NC} docker-compose.nginx.yml" || \
-            echo -e "  ${YELLOW}⚠️${NC} docker-compose.nginx.yml (skipped)"
+        # The artifact list comes from release-manifest.txt, not from a list
+        # hardcoded here. See that file's header for the two silent-breakage bugs
+        # the old duplicated lists caused (missing docker-compose.yml on upgrade,
+        # missing blackwell overlay on fresh install).
+        echo "  Downloading release-manifest.txt..."
+        if ! curl -fsSL "$GITHUB_RAW/release-manifest.txt" -o release-manifest.txt.new; then
+            echo -e "  ${RED}✗${NC} could not fetch release-manifest.txt from $BRANCH"
+            echo -e "  ${YELLOW}Refusing to update config files from an unknown artifact list.${NC}"
+            echo -e "  ${YELLOW}Use './opentranscribe.sh update' to update images only.${NC}"
+            exit 1
+        fi
+        mv release-manifest.txt.new release-manifest.txt
 
-        echo "  Downloading docker-compose.gpu.yml..."
-        curl -fsSL "$GITHUB_RAW/docker-compose.gpu.yml" -o docker-compose.gpu.yml.new && \
-            mv docker-compose.gpu.yml.new docker-compose.gpu.yml && \
-            echo -e "  ${GREEN}✓${NC} docker-compose.gpu.yml" || \
-            echo -e "  ${YELLOW}⚠️${NC} docker-compose.gpu.yml (skipped)"
+        update_failed=0
+        while IFS= read -r manifest_line || [ -n "$manifest_line" ]; do
+            # Strip comments and blanks.
+            case "$manifest_line" in ''|'#'*) continue ;; esac
 
-        echo "  Downloading docker-compose.blackwell.yml..."
-        curl -fsSL "$GITHUB_RAW/docker-compose.blackwell.yml" -o docker-compose.blackwell.yml.new && \
-            mv docker-compose.blackwell.yml.new docker-compose.blackwell.yml && \
-            echo -e "  ${GREEN}✓${NC} docker-compose.blackwell.yml" || \
-            echo -e "  ${YELLOW}⚠️${NC} docker-compose.blackwell.yml (skipped)"
+            artifact_path=$(printf '%s' "$manifest_line" | cut -f1 | tr -d '[:space:]')
+            artifact_flags=$(printf '%s' "$manifest_line" | cut -s -f2)
+            [ -n "$artifact_path" ] || continue
 
-        # Update NGINX configuration
-        mkdir -p nginx/ssl
-        echo "  Downloading nginx/site.conf.template..."
-        curl -fsSL "$GITHUB_RAW/nginx/site.conf.template" -o nginx/site.conf.template.new && \
-            mv nginx/site.conf.template.new nginx/site.conf.template && \
-            echo -e "  ${GREEN}✓${NC} nginx/site.conf.template" || \
-            echo -e "  ${YELLOW}⚠️${NC} nginx/site.conf.template (skipped)"
+            case ",$artifact_flags," in *,preserve,*) continue ;; esac
 
-        # Update scripts
-        mkdir -p scripts
-        echo "  Downloading scripts/generate-ssl-cert.sh..."
-        curl -fsSL "$GITHUB_RAW/scripts/generate-ssl-cert.sh" -o scripts/generate-ssl-cert.sh.new && \
-            mv scripts/generate-ssl-cert.sh.new scripts/generate-ssl-cert.sh && \
-            chmod +x scripts/generate-ssl-cert.sh && \
-            echo -e "  ${GREEN}✓${NC} scripts/generate-ssl-cert.sh" || \
-            echo -e "  ${YELLOW}⚠️${NC} scripts/generate-ssl-cert.sh (skipped)"
+            artifact_dir=$(dirname "$artifact_path")
+            [ "$artifact_dir" = "." ] || mkdir -p "$artifact_dir"
 
-        echo "  Downloading scripts/fix-model-permissions.sh..."
-        curl -fsSL "$GITHUB_RAW/scripts/fix-model-permissions.sh" -o scripts/fix-model-permissions.sh.new && \
-            mv scripts/fix-model-permissions.sh.new scripts/fix-model-permissions.sh && \
-            chmod +x scripts/fix-model-permissions.sh && \
-            echo -e "  ${GREEN}✓${NC} scripts/fix-model-permissions.sh" || \
-            echo -e "  ${YELLOW}⚠️${NC} scripts/fix-model-permissions.sh (skipped)"
+            # Download to .new first so a failed fetch never truncates a working file.
+            if curl -fsSL "$GITHUB_RAW/$artifact_path" -o "${artifact_path}.new"; then
+                mv "${artifact_path}.new" "$artifact_path"
+                case ",$artifact_flags," in *,exec,*) chmod +x "$artifact_path" ;; esac
+                echo -e "  ${GREEN}✓${NC} $artifact_path"
+            else
+                rm -f "${artifact_path}.new"
+                case ",$artifact_flags," in
+                    *,optional,*)
+                        echo -e "  ${YELLOW}⚠️${NC} $artifact_path (optional, not in this release)"
+                        ;;
+                    *)
+                        echo -e "  ${RED}✗${NC} $artifact_path (REQUIRED — download failed)"
+                        update_failed=1
+                        ;;
+                esac
+            fi
+        done < release-manifest.txt
 
-        # Update this management script itself
-        echo "  Downloading opentranscribe.sh..."
-        curl -fsSL "$GITHUB_RAW/opentranscribe.sh" -o opentranscribe.sh.new && \
-            mv opentranscribe.sh.new opentranscribe.sh && \
-            chmod +x opentranscribe.sh && \
-            echo -e "  ${GREEN}✓${NC} opentranscribe.sh" || \
-            echo -e "  ${YELLOW}⚠️${NC} opentranscribe.sh (skipped)"
+        if [ "$update_failed" -ne 0 ]; then
+            echo ""
+            echo -e "${RED}❌ One or more required files failed to download.${NC}"
+            echo -e "${YELLOW}Not restarting: a partial config set is worse than the old one.${NC}"
+            echo -e "${YELLOW}Your previous docker-compose.yml is at docker-compose.yml.bak${NC}"
+            exit 1
+        fi
+
+        # Report new .env keys rather than touching the user's .env. A release that
+        # adds a required setting is otherwise invisible: Settings uses
+        # extra="ignore", so a missing var is silently defaulted, not an error.
+        if [ -f .env ] && [ -f .env.example ]; then
+            new_keys=$(grep -oE '^[A-Z_][A-Z0-9_]*=' .env.example 2>/dev/null | tr -d '=' | sort -u \
+                | while read -r key; do
+                    grep -qE "^${key}=" .env || echo "  • $key"
+                done)
+            if [ -n "$new_keys" ]; then
+                echo ""
+                echo -e "${YELLOW}📋 New settings in this release (your .env was NOT modified):${NC}"
+                echo "$new_keys"
+                echo -e "${YELLOW}   Defaults apply unless you add them to .env — see .env.example.${NC}"
+            fi
+        fi
 
         echo ""
         echo -e "${BLUE}🐳 Updating Docker images...${NC}"
         fix_model_cache_permissions
         compose_files=$(get_compose_files)
-        docker compose $compose_files down
+        # Same gate as `update`: refuse while the old stack is still running
+        # rather than after it is torn down (#410).
+        preflight_upgrade_env || exit 1
+        compose_down_for_upgrade "$compose_files" || exit 1
         docker compose $compose_files pull
-        docker compose $compose_files up -d
+
+        # Same phased startup `update` uses. This path previously did a bare
+        # `up -d`, which lets compose's dependency resolver give up on the
+        # backend's health wait and SIGTERM it mid-Alembic — and update-full is
+        # the MORE likely of the two to run a long migration chain, since it is
+        # what people run when moving across releases.
+        perform_phased_restart "$compose_files" || exit 1
+
+        # A release can introduce a NEW model (v0.5.0 adds the chat reranker and
+        # the content-redaction weights). Nothing in the upgrade path fetches it:
+        #
+        #   * Online deployments self-heal — the model lazy-downloads from
+        #     HuggingFace on first use, so the only symptom is a long pause the
+        #     first time someone touches that feature.
+        #   * OFFLINE deployments do not. docker-compose.offline.yml sets
+        #     HF_HUB_OFFLINE=1, so a newly-required model that is not already in
+        #     the cache is a hard failure with no network to recover from.
+        #
+        # So say so, and make refreshing the cache one command rather than
+        # something the user has to know about.
+        if [ -f scripts/download-models.sh ]; then
+            echo ""
+            echo -e "${BLUE}🧠 Model cache${NC}"
+            echo "  This release may require models your cache does not have yet."
+            echo "  Online: they download on first use (one slow request)."
+            echo "  Offline/air-gapped: pre-fetch them now, or the feature will fail:"
+            echo "    bash scripts/download-models.sh \"\${MODEL_CACHE_DIR:-./models}\""
+        fi
 
         echo ""
         echo -e "${GREEN}✅ Full update complete!${NC}"
@@ -450,6 +690,7 @@ case "${1:-help}" in
         echo "  • SSL certificates were preserved (if configured)"
         echo "  • Database and transcriptions were preserved"
         echo "  • Old script backed up to opentranscribe.sh.bak"
+        echo "  • Old base compose backed up to docker-compose.yml.bak"
         echo ""
         show_access_info
         ;;
@@ -554,7 +795,7 @@ case "${1:-help}" in
             echo "   Expected: scripts/generate-ssl-cert.sh"
             echo ""
             echo "   Download it from:"
-            echo "   curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/scripts/generate-ssl-cert.sh -o scripts/generate-ssl-cert.sh"
+            echo "   curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/scripts/generate-ssl-cert.sh -o scripts/generate-ssl-cert.sh"
             echo "   chmod +x scripts/generate-ssl-cert.sh"
             exit 1
         fi
@@ -565,7 +806,7 @@ case "${1:-help}" in
             echo "   Expected: docker-compose.nginx.yml"
             echo ""
             echo "   Download it from:"
-            echo "   curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/docker-compose.nginx.yml -o docker-compose.nginx.yml"
+            echo "   curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/docker-compose.nginx.yml -o docker-compose.nginx.yml"
             exit 1
         fi
 
@@ -574,7 +815,7 @@ case "${1:-help}" in
             echo -e "${YELLOW}⚠️  NGINX configuration template not found${NC}"
             echo "   Downloading nginx/site.conf.template..."
             mkdir -p nginx/ssl
-            curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/nginx/site.conf.template -o nginx/site.conf.template || {
+            curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/nginx/site.conf.template -o nginx/site.conf.template || {
                 echo -e "${RED}❌ Failed to download nginx configuration${NC}"
                 exit 1
             }
@@ -680,15 +921,30 @@ case "${1:-help}" in
         echo -e "${BLUE}OpenTranscribe Version Information${NC}"
         echo ""
 
-        # Get local version from backend container if running
+        # Ask the running backend what it is. /api/version is unauthenticated and
+        # needs no DB, so it answers even on a degraded stack.
+        #
+        # This replaced `docker compose exec -T backend python -c "from
+        # app.core.version import VERSION"`, which had never worked: the module
+        # exports APP_VERSION, not VERSION, so the import always raised and the
+        # command always fell through to "unknown". The version check was dead
+        # code from the day it was written.
         local_version="unknown"
-        if docker compose ps 2>/dev/null | grep -q "backend.*Up"; then
-            local_version=$(docker compose exec -T backend python -c "from app.core.version import VERSION; print(VERSION)" 2>/dev/null || echo "unknown")
+        local_version=$(curl -fsS --connect-timeout 3 \
+            "http://localhost:${BACKEND_PORT:-5174}/api/version" 2>/dev/null \
+            | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' \
+            | head -1 | cut -d'"' -f4 || echo "")
+        [ -n "$local_version" ] || local_version="unknown"
+
+        # Fallback: ask the container directly (backend up, port not published).
+        if [ "$local_version" = "unknown" ] && docker compose ps 2>/dev/null | grep -q "backend.*Up"; then
+            local_version=$(docker compose exec -T backend printenv APP_VERSION 2>/dev/null | tr -d '\r' || echo "unknown")
+            [ -n "$local_version" ] || local_version="unknown"
         fi
 
-        # Try to get version from docker image labels
-        if [ "$local_version" = "unknown" ]; then
-            local_version=$(docker inspect davidamacey/opentranscribe-backend:latest 2>/dev/null | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "unknown")
+        # Last resort: the VERSION file the installer wrote next to the compose files.
+        if [ "$local_version" = "unknown" ] && [ -f VERSION ]; then
+            local_version=$(tr -d '[:space:]' < VERSION)
         fi
 
         echo "  Local version: ${local_version:-unknown}"
@@ -696,7 +952,7 @@ case "${1:-help}" in
         # Check for latest version from GitHub
         echo ""
         echo -e "${BLUE}Checking for updates...${NC}"
-        latest_version=$(curl -fsSL --connect-timeout 5 "https://api.github.com/repos/davidamacey/OpenTranscribe/releases/latest" 2>/dev/null | grep '"tag_name"' | head -1 | sed -E 's/.*"v?([^"]+)".*/\1/' || echo "")
+        latest_version=$(curl -fsSL --connect-timeout 5 "https://api.github.com/repos/attevon-llc/OpenTranscribe/releases/latest" 2>/dev/null | grep '"tag_name"' | head -1 | sed -E 's/.*"v?([^"]+)".*/\1/' || echo "")
 
         if [ -n "$latest_version" ]; then
             echo "  Latest release: $latest_version"

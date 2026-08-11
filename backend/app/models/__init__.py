@@ -44,6 +44,7 @@ from .prompt import UserSetting
 from .refresh_token import RefreshToken
 from .scim_token import SCIMToken
 from .sharing import CollectionShare
+from .system_settings import SystemSettings
 from .topic import TopicSuggestion
 from .upload_batch import UploadBatch
 from .usage_event import UsageEvent
@@ -84,6 +85,7 @@ __all__ = [
     "CustomVocabulary",
     "TopicSuggestion",
     "SCIMToken",
+    "SystemSettings",
     "RefreshToken",
     "UserMFA",
     "PasswordHistory",

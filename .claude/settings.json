@@ -73,7 +73,19 @@
       "Bash(gh release create:*)",
       "Bash(gh pr merge:*)",
       "Bash(./scripts/docker-build-push.sh:*)",
-      "Bash(./opentranscribe.sh update:*)"
+      "Bash(./opentranscribe.sh update:*)",
+
+      "Bash(./scripts/build-all.sh:*)",
+      "Bash(./scripts/push-security-reports.sh:*)",
+
+      "Bash(./scripts/release.sh run:*)",
+      "Bash(./scripts/release.sh tag:*)",
+      "Bash(./scripts/release.sh publish:*)",
+      "Bash(./scripts/release.sh promote:*)",
+      "Bash(./scripts/release.sh finish:*)",
+      "Bash(./scripts/release/70-publish.sh:*)",
+      "Bash(./scripts/release/80-promote.sh:*)",
+      "Bash(./scripts/release/90-finish.sh:*)"
     ],
     "allow": [
       "Bash(./opentr.sh:*)",

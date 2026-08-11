@@ -191,8 +191,20 @@ services:
       - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
-      # Version passed as env var (avoids file bind-mount conflicts in dev mode)
-      - APP_VERSION
+      # Version. The bare `- APP_VERSION` form passed the HOST's value, and a real
+      # deployment has no host value: only opentr.sh (a git checkout) exports it.
+      # Compose then injected APP_VERSION="" and OVERRODE the value baked into the
+      # image by --build-arg, so every production container reported its version as
+      # "unknown" — the exact bug the build-arg exists to prevent, defeated one
+      # layer further out.
+      #
+      # ${APP_VERSION:-} would inject an empty string just the same. The image's
+      # ENV must survive, so this is only set when the host actually has a value,
+      # which is what dev needs (bind-mounted source against a possibly stale
+      # image). docker-compose.override.yml supplies it for dev.
+      #
+      # Verified: image baked v0.5.0, running container reported empty.
+
     healthcheck:
       # --connect-timeout 2 --max-time 4 makes curl fail FAST (exit 7) when the
       # backend isn't listening yet, instead of hanging until docker kills it

@@ -173,6 +173,33 @@ ac_get_segments() {
 # Backward-compat alias
 ac_get_transcript() { ac_get_segments "$@"; }
 
+# How many transcript segments does this file have? Echoes an integer (0 on any
+# failure, so callers can compare numerically without guarding).
+#
+# This exists because the response shape is not obvious and each caller that
+# re-derived it got it slightly wrong. The endpoint returns
+# {"transcript_segments": [...]}, but a hand-written parser reaches for
+# "segments" — which yields 0 for a file that has plenty, i.e. a FAILING
+# assertion on a working system. That is the worst kind of test bug: it accuses
+# the product. It cost a full upgrade-scenario run to diagnose.
+#
+# One parser, used by every scenario.
+ac_segment_count() {
+    ac_get_segments "$1" 2>/dev/null | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print(0); sys.exit()
+if isinstance(d, list):
+    print(len(d))
+else:
+    segs = (d.get("transcript_segments") or d.get("segments")
+            or d.get("results") or [])
+    print(len(segs))
+' 2>/dev/null || echo 0
+}
+
 ac_list_files() {
     ac_curl "$API_BASE/files"
 }

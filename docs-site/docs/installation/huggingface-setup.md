@@ -263,11 +263,18 @@ PyAnnote models require:
 - Diarization pipeline: ~250MB
 - **Total**: ~500MB
 
-Plus:
-- WhisperX models: ~1.5GB
-- Wav2Vec2 alignment: ~360MB
-- Other models: ~200MB
-- **Grand total**: ~2.9GB for all AI models
+Plus, downloaded by `scripts/download-models.sh`:
+- WhisperX transcription models — the largest single item, and the one that
+  varies most with `WHISPER_MODEL`
+- Wav2Vec2 alignment and the gender classifier
+- NLTK tokenizers and sentence-transformers embeddings
+- Chat reranker (cross-encoder, used by RAG chat)
+- OpenSearch neural-search models
+- Content-redaction models (PII / toxicity)
+
+**Total: several GB.** It is not a fixed number — it depends on `WHISPER_MODEL`
+and on whether you set `DOWNLOAD_ALL_OPENSEARCH_MODELS=true`, so budget disk
+generously rather than to a specific figure.
 
 ### Offline Use
 

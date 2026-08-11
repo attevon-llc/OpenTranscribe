@@ -46,6 +46,19 @@ et_write_env() {
 
 COMPOSE_PROJECT_NAME=${TEST_PROJECT_NAME}
 
+# ─── Image tag under test ────────────────────────────────────
+# Every service image resolves \${OT_IMAGE_TAG:-latest}, so this ONE line pins
+# all of them to the release candidate.
+#
+# The scenarios also rewrite individual `image:` lines via cp_pin_image_tag, but
+# that call takes a hand-maintained service list which had already drifted: it
+# named 11 services while docker-compose.prod.yml declares 15, missing `docs` and
+# the three GPU worker variants. Under `pull_policy: never` those would have
+# silently run whatever `:latest` happened to be in the local cache — i.e. the
+# PREVIOUS release — producing a mixed-version stack and a rehearsal that proves
+# the wrong thing. This pins the remainder and needs no list.
+OT_IMAGE_TAG=${OT_TEST_IMAGE_TAG:-latest}
+
 # ─── Ports (isolated from the live 5173-5180 range) ──────────
 FRONTEND_PORT=${TEST_FRONTEND_PORT}
 BACKEND_PORT=${TEST_BACKEND_PORT}

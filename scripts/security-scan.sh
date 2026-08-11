@@ -359,11 +359,24 @@ scan_component() {
     # === PARALLEL PHASE 1: Hadolint + Dockle + SBOM ===
     # These have no dependencies on each other
 
+    # NOTE on `|| rc=$?` in every sub-scan below — this is load-bearing, not style.
+    #
+    # This script runs under `set -e` (line 2). Written as
+    #
+    #     ( scan_trivy ...; echo $? > .../trivy.status ) &
+    #
+    # a scanner that returns non-zero — i.e. FOUND SOMETHING — kills the
+    # subshell on that very line, so the status file is never written. The
+    # collector then saw no file and scored the tool as a pass. The result was a
+    # gate that passed *because* the scan failed: 39 CRITICAL CVEs reported
+    # "All security scans passed!". Keeping the call in a `||` list exempts it
+    # from `set -e`, so the status is always recorded.
+
     # Hadolint (fast - Dockerfile only)
     if [ -f "${dockerfile}" ]; then
         (
-            lint_dockerfile "${dockerfile}" "${component}"
-            echo $? > "${status_dir}/hadolint.status"
+            rc=0; lint_dockerfile "${dockerfile}" "${component}" || rc=$?
+            echo "${rc}" > "${status_dir}/hadolint.status"
         ) &
     else
         echo "0" > "${status_dir}/hadolint.status"
@@ -371,14 +384,14 @@ scan_component() {
 
     # Dockle (medium speed)
     (
-        check_dockle && run_dockle "${image}" "${component}"
-        echo $? > "${status_dir}/dockle.status"
+        rc=0; { check_dockle && run_dockle "${image}" "${component}"; } || rc=$?
+        echo "${rc}" > "${status_dir}/dockle.status"
     ) &
 
     # SBOM generation (needed for Grype, but can start now)
     (
-        generate_sbom "${image}" "${component}" > "${status_dir}/sbom_path.txt"
-        echo $? > "${status_dir}/sbom.status"
+        rc=0; generate_sbom "${image}" "${component}" > "${status_dir}/sbom_path.txt" || rc=$?
+        echo "${rc}" > "${status_dir}/sbom.status"
     ) &
 
     # Wait for Phase 1 to complete
@@ -398,29 +411,39 @@ scan_component() {
 
     # Trivy scan
     (
-        scan_trivy "${image}" "${component}"
-        echo $? > "${status_dir}/trivy.status"
+        rc=0; scan_trivy "${image}" "${component}" || rc=$?
+        echo "${rc}" > "${status_dir}/trivy.status"
     ) &
 
     # Grype scan (uses SBOM for speed)
     (
-        scan_grype "${image}" "${component}" "${sbom_file}"
-        echo $? > "${status_dir}/grype.status"
+        rc=0; scan_grype "${image}" "${component}" "${sbom_file}" || rc=$?
+        echo "${rc}" > "${status_dir}/grype.status"
     ) &
 
     # Wait for Phase 2 to complete
     wait
     print_info "Phase 2 complete (Trivy, Grype)"
 
-    # Collect results
+    # Collect results.
+    #
+    # A MISSING status file is a FAILURE, not a pass. It means the sub-scan died
+    # before it could record anything — killed, crashed, or exited early — and
+    # "we have no idea what that scanner found" must never read as "clean". This
+    # previously fell through the `if [ -f ... ]` and scored as success, which is
+    # what let a dead scanner silently pass the gate.
     local exit_code=0
     for tool in hadolint dockle sbom trivy grype; do
         if [ -f "${status_dir}/${tool}.status" ]; then
             local status
             status=$(cat "${status_dir}/${tool}.status")
             if [ "$status" != "0" ]; then
+                print_warning "${component}: ${tool} reported status ${status}"
                 exit_code=1
             fi
+        else
+            print_error "${component}: ${tool} produced no status — treating as FAILED"
+            exit_code=1
         fi
     done
 

@@ -430,6 +430,14 @@ export async function initAuth() {
 }
 
 // Fetch current user info from API
+//
+// Deliberately does NOT fetch certificate metadata. Both this branch and PR #404
+// fixed the same dead-surface bug (the CertificateInfo panel was mounted but
+// nothing ever populated it); #404's approach won on merge and is the one kept:
+// CertificateInfo.svelte fetches its own data through `$lib/api/certificate`,
+// and the misleading `certificate?:` field is gone from the user type entirely.
+// Hydrating it here would have put those fields back on every session probe for
+// the local/LDAP/OIDC majority, for whom they are meaningless.
 export async function fetchUserInfo() {
   try {
     const response = await axiosInstance.get('/auth/me');

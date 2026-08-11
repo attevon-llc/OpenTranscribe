@@ -186,9 +186,20 @@ def test_readiness_happy_path(client, monkeypatch):
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ready"
-    assert set(body["checks"]) == {"postgres", "redis", "opensearch", "minio"}
+    # Schema state is reported UNCONDITIONALLY now, not only when a migrate job
+    # owns migrations (RUN_MIGRATIONS_ON_STARTUP=false). Reporting it always is
+    # what lets the release harness assert over HTTP that an upgrade actually
+    # migrated, instead of shelling `docker exec opentranscribe-postgres psql`
+    # (which hardcodes a container name and breaks on --fresh stacks). It stays
+    # 503-CRITICAL only in the gated-off case, so self-host readiness semantics
+    # are unchanged — see the critical-failure tests below.
+    assert {"postgres", "redis", "opensearch", "minio"} <= set(body["checks"])
     assert body["checks"]["postgres"] == "ok"
     assert body["checks"]["redis"] == "ok"
+    assert "schema" in body["checks"]
+    # Present together or not at all: they are only set when the revision was
+    # actually read, so a partial pair would mean the reporting path is broken.
+    assert ("schema_revision" in body["checks"]) == ("schema_head" in body["checks"])
 
 
 def test_readiness_critical_db_failure_returns_503(client, monkeypatch):

@@ -105,6 +105,17 @@ KNOWN_PUBLIC = {
     "/health",
     "/health/ready",
     "/metrics",
+    # Build identity: version, git SHA, build time. Public deliberately —
+    # /health already returns the version, so the only additional disclosure is a
+    # short commit SHA, and the callers (a fresh-install test with no account
+    # yet, a load balancer, a user reporting a bug) have no credentials. It is
+    # also DB-free, so it still answers when Postgres is down, which is exactly
+    # when "what is running here?" gets asked.
+    # Both spellings: the endpoint registers the trailing-slash twin explicitly so
+    # a client that appends "/" gets an answer rather than a 307 that a plain
+    # `curl -fsS` (no -L) would fail on.
+    "/api/version",
+    "/api/version/",
 }
 
 

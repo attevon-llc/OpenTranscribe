@@ -14,12 +14,16 @@ Before upgrading, complete these steps:
 
 1. **Back up the database** -- this is non-negotiable
    ```bash
-   ./opentr.sh backup
+   # An installed deployment has no backup subcommand; dump directly.
+   docker compose exec -T postgres pg_dump -U postgres opentranscribe \
+     > "opentranscribe-backup-$(date +%Y%m%d-%H%M%S).sql"
    ```
+   (In a git clone of the repo, `./opentr.sh backup` does the same thing.)
 2. **Note your current version**
    ```bash
-   cat VERSION
-   # or check the UI footer / API response
+   ./opentranscribe.sh version
+   # or, without the script:
+   curl -s http://localhost:5174/api/version
    curl -s http://localhost:5174/api/health | python3 -m json.tool
    ```
 3. **Read the changelog** for the target version at [CHANGELOG.md](https://github.com/attevon-llc/OpenTranscribe/blob/master/CHANGELOG.md)
@@ -32,14 +36,34 @@ Always back up your database before upgrading. Database migrations run automatic
 
 ## Standard Upgrade Process
 
-### Using opentr.sh (Recommended)
+### Using opentranscribe.sh (Recommended)
 
 ```bash
-# Pull latest images and restart
-./opentr.sh update
+# Pull the newest images for your pinned version and restart
+./opentranscribe.sh update
+
+# Move to a specific release
+./opentranscribe.sh update --version v0.5.0
+
+# Also refresh compose files, scripts and the .env template
+./opentranscribe.sh update-full
 ```
 
-This command pulls the latest Docker images from Docker Hub and recreates all containers. Database migrations run automatically when the backend starts.
+:::note `opentranscribe.sh`, not `opentr.sh`
+`opentranscribe.sh` is the management script the installer places next to your
+compose files — it is what you have. `opentr.sh` is the *development* script and
+only exists in a git clone of the repository. This page previously said
+`./opentr.sh update`, which no installed deployment can run.
+:::
+
+`update` pulls images and restarts in phases, polling the backend's own `/health`
+rather than letting Compose decide when the backend is ready. That matters on an
+upgrade: running the migration chain on a populated database can take minutes,
+and Compose's dependency resolver would otherwise give up and terminate the
+backend mid-migration.
+
+Migrations run automatically when the backend starts. When it is finished, the
+script prints the version that is actually running.
 
 ### Manual Upgrade
 
@@ -53,17 +77,37 @@ docker compose up -d --force-recreate
 
 ### Upgrading to a Specific Version
 
-To pin to a specific release instead of `latest`:
+Every service image resolves `${OT_IMAGE_TAG:-latest}`, so pinning is one
+setting rather than an edit to each service:
 
 ```bash
-# Pull specific version tags — substitute the release you want.
-# Available tags: https://github.com/attevon-llc/OpenTranscribe/releases
-docker pull davidamacey/opentranscribe-frontend:v0.4.1
-docker pull davidamacey/opentranscribe-backend:v0.4.1
+# Recommended — sets OT_IMAGE_TAG in .env, then pulls and restarts in phases
+./opentranscribe.sh update --version v0.5.0
 
-# Update image tags in docker-compose.prod.yml or .env, then restart
-docker compose up -d --force-recreate
+# Equivalent by hand
+echo 'OT_IMAGE_TAG=v0.5.0' >> .env
+docker compose pull && docker compose up -d --force-recreate
 ```
+
+A fresh install pins itself to the release it installed, so a deployment tracks a
+known version rather than whatever `:latest` happens to be. See the
+[releases page](https://github.com/attevon-llc/OpenTranscribe/releases) for
+available versions.
+
+### Returning to the previous version
+
+```bash
+./opentranscribe.sh update --rollback
+```
+
+This re-pins the image tag recorded by the last `update --version`.
+
+:::danger Images roll back; the database does not
+The migration chain is one-way. Rolling images back does **not** revert schema
+changes, and an older image may not be able to read the newer schema. A real
+rollback means restoring the backup you took before upgrading. `update` refuses a
+downgrade unless you pass `--rollback` or `--force-downgrade`.
+:::
 
 ## Database Migrations
 
@@ -118,8 +162,12 @@ If a migration fails on startup:
    ```
 2. **Restore your backup** if the migration left the database in a broken state:
    ```bash
-   ./opentr.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql
+   docker compose stop backend celery-worker
+   docker compose exec -T postgres psql -U postgres -d opentranscribe \
+     < opentranscribe-backup-YYYYMMDD-HHMMSS.sql
+   docker compose start backend celery-worker
    ```
+   (In a git clone, `./opentr.sh restore backups/<file>.sql`.)
 3. **Report the issue** -- migration failures are bugs. File an issue with the error output.
 
 :::note
@@ -291,7 +339,7 @@ After upgrading, verify everything is working:
 
 ```bash
 # All containers should be running and healthy
-./opentr.sh status
+./opentranscribe.sh status
 
 # Or check directly
 docker compose ps

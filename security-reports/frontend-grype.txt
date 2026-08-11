@@ -1,38 +1,8 @@
-NAME           INSTALLED   FIXED IN   TYPE  VULNERABILITY   SEVERITY  EPSS           RISK   
-tiff           4.7.1-r0               apk   CVE-2023-6277   Medium    3.8% (88th)    2.2    
-tiff           4.7.1-r0               apk   CVE-2023-52356  High      0.7% (72nd)    0.6    
-libcrypto3     3.5.5-r0    3.5.6-r0   apk   CVE-2026-28389  High      < 0.1% (18th)  < 0.1  
-libcrypto3     3.5.5-r0    3.5.6-r0   apk   CVE-2026-28390  High      < 0.1% (18th)  < 0.1  
-libssl3        3.5.5-r0    3.5.6-r0   apk   CVE-2026-28389  High      < 0.1% (18th)  < 0.1  
-libssl3        3.5.5-r0    3.5.6-r0   apk   CVE-2026-28390  High      < 0.1% (18th)  < 0.1  
-curl           8.17.0-r1              apk   CVE-2026-1965   Medium    < 0.1% (19th)  < 0.1  
-libcrypto3     3.5.5-r0    3.5.6-r0   apk   CVE-2026-2673   High      < 0.1% (13th)  < 0.1  
-libssl3        3.5.5-r0    3.5.6-r0   apk   CVE-2026-2673   High      < 0.1% (13th)  < 0.1  
-curl           8.17.0-r1              apk   CVE-2026-3805   High      < 0.1% (12th)  < 0.1  
-curl           8.17.0-r1              apk   CVE-2025-15224  Low       < 0.1% (24th)  < 0.1  
-busybox        1.37.0-r30             apk   CVE-2025-60876  Medium    < 0.1% (13th)  < 0.1  
-busybox-binsh  1.37.0-r30             apk   CVE-2025-60876  Medium    < 0.1% (13th)  < 0.1  
-ssl_client     1.37.0-r30             apk   CVE-2025-60876  Medium    < 0.1% (13th)  < 0.1  
-curl           8.17.0-r1              apk   CVE-2025-14819  Medium    < 0.1% (13th)  < 0.1  
-libcrypto3     3.5.5-r0    3.5.6-r0   apk   CVE-2026-28388  High      < 0.1% (8th)   < 0.1  
-libssl3        3.5.5-r0    3.5.6-r0   apk   CVE-2026-28388  High      < 0.1% (8th)   < 0.1  
-curl           8.17.0-r1              apk   CVE-2025-15079  Medium    < 0.1% (10th)  < 0.1  
-libcrypto3     3.5.5-r0    3.5.6-r0   apk   CVE-2026-31790  High      < 0.1% (6th)   < 0.1  
-libssl3        3.5.5-r0    3.5.6-r0   apk   CVE-2026-31790  High      < 0.1% (6th)   < 0.1  
-curl           8.17.0-r1              apk   CVE-2025-14524  Medium    < 0.1% (7th)   < 0.1  
-nghttp2-libs   1.68.0-r0              apk   CVE-2026-27135  High      < 0.1% (3rd)   < 0.1  
-musl           1.2.5-r21   1.2.5-r23  apk   CVE-2026-40200  High      < 0.1% (2nd)   < 0.1  
-musl-utils     1.2.5-r21   1.2.5-r23  apk   CVE-2026-40200  High      < 0.1% (2nd)   < 0.1  
-libcrypto3     3.5.5-r0    3.5.6-r0   apk   CVE-2026-28387  Unknown   < 0.1% (5th)   < 0.1  
-libssl3        3.5.5-r0    3.5.6-r0   apk   CVE-2026-28387  Unknown   < 0.1% (5th)   < 0.1  
-curl           8.17.0-r1              apk   CVE-2026-3784   Medium    < 0.1% (3rd)   < 0.1  
-curl           8.17.0-r1              apk   CVE-2026-3783   Medium    < 0.1% (4th)   < 0.1  
-tiff           4.7.1-r0               apk   CVE-2023-6228   Medium    < 0.1% (3rd)   < 0.1  
-musl           1.2.5-r21   1.2.5-r22  apk   CVE-2026-6042   Medium    < 0.1% (2nd)   < 0.1  
-musl-utils     1.2.5-r21   1.2.5-r22  apk   CVE-2026-6042   Medium    < 0.1% (2nd)   < 0.1  
-libpng         1.6.56-r0   1.6.57-r0  apk   CVE-2026-34757  Medium    < 0.1% (1st)   < 0.1  
-libcrypto3     3.5.5-r0    3.5.6-r0   apk   CVE-2026-31789  Unknown   < 0.1% (1st)   < 0.1  
-libssl3        3.5.5-r0    3.5.6-r0   apk   CVE-2026-31789  Unknown   < 0.1% (1st)   < 0.1  
-curl           8.17.0-r1              apk   CVE-2025-13034  Medium    < 0.1% (1st)   < 0.1  
-libuuid        2.41.2-r0   2.41.4-r0  apk   CVE-2026-27456  Medium    < 0.1% (1st)   < 0.1  
-curl           8.17.0-r1              apk   CVE-2025-14017  Medium    < 0.1% (0th)   < 0.1
+NAME           INSTALLED   TYPE  VULNERABILITY   SEVERITY  EPSS         RISK  
+tiff           4.7.1-r0    apk   CVE-2023-52356  High      2.2% (80th)  1.6   
+tiff           4.7.1-r0    apk   CVE-2023-6277   Medium    1.8% (76th)  1.0   
+tiff           4.7.1-r0    apk   CVE-2026-4775   High      0.6% (43rd)  0.4   
+tiff           4.7.1-r0    apk   CVE-2023-6228   Medium    0.4% (32nd)  0.2   
+busybox        1.37.0-r30  apk   CVE-2025-60876  Medium    0.3% (21st)  0.2   
+busybox-binsh  1.37.0-r30  apk   CVE-2025-60876  Medium    0.3% (21st)  0.2   
+ssl_client     1.37.0-r30  apk   CVE-2025-60876  Medium    0.3% (21st)  0.2

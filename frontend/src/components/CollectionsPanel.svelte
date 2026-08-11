@@ -7,6 +7,7 @@
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import MetadataChips from './ui/MetadataChips.svelte';
   import ShareCollectionModal from './sharing/ShareCollectionModal.svelte';
   import { SharingApi } from '$lib/api/sharing';
   import type { SharedCollection } from '$lib/types/groups';
@@ -43,6 +44,58 @@
   let deleting = false;
   let selectedCollectionId: string | null = null;  // UUID
   let addingToCollection = false;
+
+  /**
+   * Which collections the selection already belongs to, shown as chips.
+   *
+   * The mirror of the tag modal's chips, using the same `MetadataChips`
+   * component so both organizing modals read identically. Removable for a
+   * single file; read-only with an "in N of M" count for several, because
+   * removing across a mixed selection is ambiguous in a way adding is not.
+   */
+  let currentCollections: Array<{
+    uuid: string;
+    name: string;
+    file_count: number;
+    selection_size: number;
+  }> = [];
+  let currentLoading = false;
+
+  $: isSingleFile = selectedMediaIds.length === 1;
+
+  async function loadCurrentCollections() {
+    if (viewMode !== 'add' || selectedMediaIds.length === 0) {
+      currentCollections = [];
+      return;
+    }
+    currentLoading = true;
+    try {
+      const params = new URLSearchParams();
+      for (const uuid of selectedMediaIds) params.append('file_uuids', uuid);
+      const response = await axiosInstance.get('/collections/for-files', { params });
+      currentCollections = response.data;
+    } catch {
+      // Non-fatal: adding still works without the chips.
+      currentCollections = [];
+    } finally {
+      currentLoading = false;
+    }
+  }
+
+  $: if (selectedMediaIds) loadCurrentCollections();
+
+  async function removeFromCollection(chip: { uuid: string; name: string }) {
+    if (!isSingleFile) return;
+    try {
+      await axiosInstance.delete(`/collections/${chip.uuid}/media`, {
+        data: { media_file_ids: selectedMediaIds },
+      });
+      await loadCurrentCollections();
+      await fetchCollections();
+    } catch (error: unknown) {
+      console.error('Failed to remove from collection', error);
+    }
+  }
 
   // Search state
   let searchQuery = '';
@@ -339,6 +392,31 @@
     </button>
   </div>
 
+  {#if viewMode === 'add' && currentCollections.length > 0 && !currentLoading}
+    <div class="current-collections">
+      <span class="current-label">
+        {isSingleFile
+          ? $t('collectionsPanel.currentSingle')
+          : $t('collectionsPanel.currentMulti')}
+      </span>
+      <MetadataChips
+        chips={currentCollections.map((c) => ({
+          uuid: c.uuid,
+          name: c.name,
+          count: c.file_count,
+          total: c.selection_size,
+        }))}
+        removable={isSingleFile}
+        removeLabel={(name) => $t('collectionsPanel.removeChip', { name })}
+        coverageLabel={(count, total) =>
+          $t('collectionsPanel.inCount', { count, total })}
+        overflowLabel={(count) => $t('collectionsPanel.moreCollections', { count })}
+        maxVisible={isSingleFile ? 40 : 10}
+        on:remove={(event) => removeFromCollection(event.detail)}
+      />
+    </div>
+  {/if}
+
   <!-- Search -->
   {#if !loading && (collections.length > 0 || sharedCollections.length > 0)}
     <div class="search-wrapper">
@@ -482,6 +560,21 @@
 </div>
 
 <style>
+  .current-collections {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .current-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
   .collections-panel {
     /* No background/border — the parent modal-container provides the surface.
        Previously this created a nested "card-in-card" look with a gray inside white. */

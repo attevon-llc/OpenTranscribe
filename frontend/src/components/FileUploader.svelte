@@ -27,6 +27,7 @@
   } from '$lib/api/transcriptionSettings';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
   import { MAX_UPLOAD_BYTES, exceedsUploadLimit, warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
+  import { listTags } from '$lib/api/tags';
 
   // Step components
   import MediaFilePanel from './upload/MediaFilePanel.svelte';
@@ -217,12 +218,12 @@
 
     (async () => {
       try {
-        const [collectionsRes, tagsRes] = await Promise.all([
+        const [collectionsRes, tags] = await Promise.all([
           axiosInstance.get('/collections'),
-          axiosInstance.get('/tags'),
+          listTags(),
         ]);
         availableCollections = collectionsRes.data;
-        availableTags = tagsRes.data;
+        availableTags = tags;
         loadPreviousValues();
       } catch {
         console.error('Failed to load collections/tags');

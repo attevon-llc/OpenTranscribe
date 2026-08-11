@@ -7,8 +7,6 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
-from sqlalchemy import or_
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -20,10 +18,10 @@ from app.db.base import get_db
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import FileTag
-from app.models.media import Tag
 from app.models.upload_batch import UploadBatch
 from app.schemas.media import PrepareUploadRequest
-from app.services.auto_label_service import AutoLabelService
+from app.services.tag_service import on_tags_changed
+from app.services.tag_service import resolve_or_create_tags
 from app.utils import benchmark_timing
 from app.utils.file_hash import check_duplicate_by_fingerprint
 from app.utils.file_hash import cleanup_failed_duplicates
@@ -155,53 +153,14 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: i
     A same-named system tag is reused rather than forked, so applying a seeded
     default still attaches the shared row.
 
-    Uses SAVEPOINTs for race-condition safety without corrupting the
-    enclosing transaction.
-
-    Resolution is batched (issue #284 A2.8): one `Tag` lookup and one `FileTag`
-    lookup for the whole list instead of one of each per name (2N round trips on the
-    upload-prep path). Only names that genuinely do not exist yet still cost a query,
-    and those keep the per-name SAVEPOINT so a concurrent insert of the same name
-    cannot poison the enclosing transaction.
+    Resolution (normalization, normalized-exact match, SAVEPOINT-guarded insert)
+    is shared with every other tag-creation path via
+    ``app/services/tag_service.py``, and stays batched — a constant number of
+    SELECTs regardless of list length (issue #284 A2.8), not 2N. These names
+    were typed by a person, so the fuzzy suggestion lookup is deliberately not
+    consulted.
     """
-    owned_or_system = or_(Tag.user_id == user_id, Tag.user_id.is_(None))
-
-    names = list(dict.fromkeys(filter(None, (name.strip()[:50] for name in tag_names))))
-    if not names:
-        db.flush()
-        return
-
-    # ORDER BY user_id is ASC NULLS LAST, so an owned row beats the system row;
-    # first match per name wins, exactly as the per-name `.first()` did.
-    resolved: dict[str, Tag] = {}
-    for row in db.query(Tag).filter(Tag.name.in_(names), owned_or_system).order_by(Tag.user_id):
-        resolved.setdefault(str(row.name), row)
-
-    tag_ids: list[int] = []
-    for name in names:
-        tag: Tag | None = resolved.get(name)
-        if tag is None:
-            try:
-                nested = db.begin_nested()
-                tag = Tag(
-                    name=name,
-                    user_id=user_id,
-                    source=TAG_SOURCE_MANUAL,
-                    normalized_name=AutoLabelService.normalize_name(name),
-                )
-                db.add(tag)
-                db.flush()
-            except IntegrityError:
-                nested.rollback()
-                tag = (
-                    db.query(Tag)
-                    .filter(Tag.name == name, owned_or_system)
-                    .order_by(Tag.user_id)
-                    .first()
-                )
-                if not tag:
-                    continue
-        tag_ids.append(tag.id)
+    tag_ids = [tag.id for tag in resolve_or_create_tags(db, tag_names, user_id=user_id)]
 
     if not tag_ids:
         db.flush()
@@ -219,13 +178,7 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: i
 
     db.flush()
 
-    # Bust the owning user's read-through tag cache. Best-effort.
-    try:
-        from app.services.redis_cache_service import redis_cache
-
-        redis_cache.invalidate_tags_for_file(db, file_id)
-    except Exception as e:
-        logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
+    on_tags_changed(db, [file_id], user_id=user_id)
 
 
 @router.post("/prepare", response_model=dict[str, Any])

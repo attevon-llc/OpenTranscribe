@@ -281,10 +281,14 @@ def test_file_detail_tags_match_the_tags_endpoint_shape(
     listing = client.get("/api/tags", headers=user_token_headers).json()
     from_tags = next(t for t in listing if t["uuid"] == str(tag.uuid))
 
-    # /api/tags adds usage_count (TagWithCount); everything else is identical.
-    for field in ("uuid", "name", "source"):
+    # /api/tags adds usage_count + awaiting_review (TagWithCount); everything
+    # else is identical. `ownership` is part of the canonical shape, not an
+    # extra on one surface: both endpoints classify it against the same caller,
+    # so they must agree — a file-detail tag reported `mine` while the list
+    # calls it `shared_with_me` would have the UI offer a rename that 404s.
+    for field in ("uuid", "name", "source", "ownership"):
         assert from_detail[field] == from_tags[field]
-    assert set(from_detail) == {"uuid", "name", "source"}
+    assert set(from_detail) == {"uuid", "name", "source", "ownership"}
 
 
 def test_file_list_still_has_no_tags_field(client, user_token_headers, normal_user, db_session):

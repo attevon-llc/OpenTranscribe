@@ -15,7 +15,9 @@
   import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
   import GalleryHeader from '$components/gallery/GalleryHeader.svelte';
   import GalleryGrid from '$components/gallery/GalleryGrid.svelte';
+  import BulkTagModal from '$components/gallery/BulkTagModal.svelte';
   import type { MediaFile, DurationRange, DateRange } from '$lib/types/media';
+  import type { BulkTagAction } from '$lib/types/tag';
 
   // Modal state
   let showUploadModal = false;
@@ -25,6 +27,10 @@
   let confirmModalTitle = '';
   let confirmModalMessage = '';
   let confirmCallback: (() => void) | null = null;
+
+  // Bulk tag modal state
+  let showBulkTagModal = false;
+  let bulkTagAction: BulkTagAction = 'add_tag';
 
   // Bulk reprocess modal state
   let showBulkReprocessModal = false;
@@ -54,6 +60,7 @@
   // Import components
   import FileUploader from '../components/FileUploader.svelte';
   import CollectionsPanel from '../components/CollectionsPanel.svelte';
+  import TagManagerModal from '$components/tags/TagManagerModal.svelte';
   import UserFileStatus from '../components/UserFileStatus.svelte';
 
   // Media files state
@@ -89,6 +96,7 @@
   // View state — restore from gallery store for navigation persistence
   let selectedCollectionId: string | null = $galleryState.filterSelectedCollectionId;
   let showCollectionsModal = false;
+  let showTagManagerModal = false;
 
   // Use gallery store for state management
   $: activeTab = $galleryState.activeTab;
@@ -709,6 +717,33 @@
     // Keep selection — user may want to perform additional actions
   }
 
+  // Bulk tagging — the Organize menu's add/remove entries. The uuids come
+  // straight from the shared selection.
+  //
+  // No `presentTagNames` is passed: `GET /files` carries no per-file tags at all
+  // (#326 keeps `tags` on `MediaFileDetail` only, since the list serializer would
+  // need a per-row tag query), so scoping the remove suggestions to the selection
+  // is not possible from here. BulkTagModal's documented fallback — offer every
+  // tag — is the behavior, and reading `f.tags` only ever produced an empty list
+  // while reading as though it did something.
+  $: bulkTagFileUuids = Array.from(selectedFiles);
+
+  function openBulkTagModal(action: BulkTagAction) {
+    if ($galleryState.selectedFiles.size === 0) return;
+    bulkTagAction = action;
+    showBulkTagModal = true;
+  }
+
+  function handleBulkTagApplied(event: CustomEvent<{ changed: number }>) {
+    // Nothing the gallery renders depends on tags, so a re-query is only owed
+    // when a tag filter is active — files can enter or leave that filtered set.
+    // Refetching unconditionally would reset pagination and lose the user's
+    // scroll position for no visible gain.
+    if (event.detail.changed > 0 && selectedTags.length > 0) {
+      throttledRefresh('bulk-tag', 300);
+    }
+  }
+
   // Bulk summarize selected files
   async function bulkSummarize() {
     const selected = $galleryState.selectedFiles;
@@ -1301,6 +1336,26 @@
       showCollectionsModal = true;
     });
 
+    const unsubscribeAddTags = galleryStore.onAddTagsTrigger(() => {
+      openBulkTagModal('add_tag');
+    });
+
+    // One Tags button, two modes — the same contract CollectionsPanel uses:
+    // a selection means "apply to these", no selection means "manage the
+    // library". Keeping it on one control avoids a second entry point that
+    // would have to explain which one to reach for.
+    const unsubscribeTags = galleryStore.onTagsTrigger(() => {
+      if ($galleryState.selectedFiles.size > 0) {
+        openBulkTagModal('add_tag');
+      } else {
+        showTagManagerModal = true;
+      }
+    });
+
+    const unsubscribeRemoveTags = galleryStore.onRemoveTagsTrigger(() => {
+      openBulkTagModal('remove_tag');
+    });
+
     const unsubscribeDeleteSelected = galleryStore.onDeleteSelectedTrigger(() => {
       deleteSelectedFiles();
     });
@@ -1337,7 +1392,10 @@
     return () => {
       unsubscribeUpload();
       unsubscribeCollections();
+      unsubscribeTags();
       unsubscribeAddToCollection();
+      unsubscribeAddTags();
+      unsubscribeRemoveTags();
       unsubscribeDeleteSelected();
       unsubscribeReprocess();
       unsubscribeSummarize();
@@ -1467,6 +1525,56 @@
 {/if}
 
 <!-- Collections Modal -->
+{#if showTagManagerModal}
+  <!-- Same chrome as the collections dialog below, deliberately: the two are
+       siblings (both attach metadata to files) and were reading as different
+       components. Sharing the wrapper means they cannot drift on backdrop,
+       radius, header or close affordance. -->
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div
+    class="modal-backdrop"
+    role="presentation"
+    transition:fade={{ duration: 400 }}
+    on:click={() => (showTagManagerModal = false)}
+    on:wheel|preventDefault|self
+    on:touchmove|preventDefault|self
+    on:keydown={(e) => e.key === 'Escape' && (() => (showTagManagerModal = false))()}
+  >
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div
+      class="modal-container tag-manager-container"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      transition:scale={{ duration: 350, start: 0.9 }}
+      on:click|stopPropagation
+      on:keydown|stopPropagation
+    >
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>{$t('tags.manager.title')}</h2>
+          <button
+            class="modal-close"
+            on:click={() => (showTagManagerModal = false)}
+            aria-label={$t('tags.manager.closeDialog')}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <TagManagerModal on:close={() => (showTagManagerModal = false)} />
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
 {#if showCollectionsModal}
   <div
     class="modal-backdrop"
@@ -1545,6 +1653,15 @@
   on:close={handleConfirmModalCancel}
 />
 
+<!-- Bulk Tag Modal -->
+<BulkTagModal
+  isOpen={showBulkTagModal}
+  action={bulkTagAction}
+  fileUuids={bulkTagFileUuids}
+  on:applied={handleBulkTagApplied}
+  on:close={() => (showBulkTagModal = false)}
+/>
+
 <!-- Bulk Selective Reprocess Modal -->
 <SelectiveReprocessModal
   bind:showModal={showBulkReprocessModal}
@@ -1610,6 +1727,13 @@
 
   :global(.dark) .modal-backdrop {
     background: rgba(0, 0, 0, 0.7);
+  }
+
+  /* The tag manager is a two-pane working surface (list + inspector), so it
+     needs more room than the 720px collections dialog. Everything else about
+     the chrome is deliberately identical. */
+  .tag-manager-container {
+    width: 1100px;
   }
 
   .modal-container {

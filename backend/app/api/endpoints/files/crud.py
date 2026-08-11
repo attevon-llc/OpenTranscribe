@@ -30,6 +30,7 @@ from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
 from app.services.opensearch_service import update_transcript_title
 from app.services.speaker_status_service import SpeakerStatusService
+from app.services.tag_service import tag_ownership
 from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -104,7 +105,7 @@ def get_media_file_by_id(
     return db_file  # type: ignore[no-any-return]
 
 
-def get_file_tags(db: Session, file_id: int) -> list[TagSchema]:
+def get_file_tags(db: Session, file_id: int, user_id: int) -> list[TagSchema]:
     """Get the tags attached to a media file as full tag objects.
 
     Returns the same ``{uuid, name, source}`` shape ``/api/tags`` serves, so the
@@ -117,9 +118,16 @@ def get_file_tags(db: Session, file_id: int) -> list[TagSchema]:
     reachable here is one ``GET /api/tags`` would already return in full to the
     same caller. Widening the fields therefore discloses nothing new.
 
+    ``ownership`` is classified against ``user_id`` rather than left to the
+    schema default. This is the one tag surface where ``shared_with_me`` is
+    reachable: a file shared with the caller carries its owner's tags, and
+    reporting those as ``mine`` would have the UI offer a rename that can only
+    404 (``endpoints/tags.py:_writable_tag_ids``).
+
     Args:
         db: Database session.
         file_id: Internal media file ID.
+        user_id: The caller, for the ownership classification.
 
     Returns:
         Tag schemas for the file, or an empty list if the query fails.
@@ -131,7 +139,17 @@ def get_file_tags(db: Session, file_id: int) -> list[TagSchema]:
             .filter(FileTag.media_file_id == file_id)
             .all()
         )
-        return [TagSchema.model_validate(tag) for tag in tags]
+        return [
+            TagSchema.model_validate(
+                {
+                    "uuid": tag.uuid,
+                    "name": tag.name,
+                    "source": tag.source,
+                    "ownership": tag_ownership(tag, user_id),
+                }
+            )
+            for tag in tags
+        ]
     except Exception as tag_error:
         logger.exception(f"Error getting tags: {tag_error}")
         db.rollback()
@@ -682,7 +700,7 @@ def get_media_file_detail(
         file_id = db_file.id
 
         # Get related data
-        tags = get_file_tags(db, file_id)
+        tags = get_file_tags(db, file_id, current_user.id)
         collections = get_file_collections(db, file_id, current_user.id)
 
         # Get speakers and add computed status. Eager-load the linked profile so

@@ -44,6 +44,7 @@ from .prompt import UserSetting
 from .refresh_token import RefreshToken
 from .scim_token import SCIMToken
 from .sharing import CollectionShare
+from .sharing import TagShare
 from .system_settings import SystemSettings
 from .topic import TopicSuggestion
 from .upload_batch import UploadBatch
@@ -98,6 +99,7 @@ __all__ = [
     "UserGroupMember",
     "GroupMapping",
     "CollectionShare",
+    "TagShare",
     "UploadBatch",
     "FilePipelineTiming",
     "WatchSource",

@@ -1,10 +1,11 @@
 <script lang="ts">
-  import type { Tag } from '$lib/types/tag';
+  import type { Tag, TagWithCount } from '$lib/types/tag';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import RangeSlider from 'svelte-range-slider-pips';
   import { DatePicker } from '@svelte-plugins/datepicker';
   import { format } from 'date-fns';
   import axiosInstance from '../lib/axios';
+  import { listTags } from '$lib/api/tags';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import CollectionsFilter from './CollectionsFilter.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
@@ -97,7 +98,7 @@
 
   // State
   /** @type {Tag[]} */
-  let allTags: Tag[] = [];
+  let allTags: TagWithCount[] = [];
   let showAllTags = false;  // Toggle for showing all tags vs top 9
   /** The option shape SearchableMultiSelect expects (its own `Option` type is component-local). */
   type MultiSelectOption = { id: string; name: string; count: number };
@@ -209,14 +210,7 @@
     errorTags = null;
 
     try {
-      allTags = await apiCache.getOrFetch(
-        cacheKey.tags(),
-        async () => {
-          const response = await axiosInstance.get('/tags');
-          return response.data;
-        },
-        CacheTTL.TAGS
-      );
+      allTags = await apiCache.getOrFetch(cacheKey.tags(), () => listTags(), CacheTTL.TAGS);
     } catch (err) {
       console.error('[FilterSidebar] Error fetching tags:', err);
       allTags = [];

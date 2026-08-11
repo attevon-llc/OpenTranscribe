@@ -22,7 +22,15 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
 from app.models.media import FileStatus
+from app.models.media import Tag
 from app.models.user import User
+from app.services.tag_bulk import CHANGED_OUTCOMES
+from app.services.tag_bulk import TAG_ACTIONS
+from app.services.tag_bulk import BulkTagOutcome
+from app.services.tag_bulk import apply_tag_to_file
+from app.services.tag_bulk import refresh_tagged_files
+from app.services.tag_bulk import resolve_bulk_tag
+from app.services.tag_service import InvalidTagNameError
 from app.tasks.summarization import summarize_transcript_task
 from app.tasks.transcription import dispatch_transcription_pipeline
 from app.utils.task_utils import cancel_active_task
@@ -61,9 +69,13 @@ class BulkActionRequest(BaseModel):
     """Request for bulk file operations."""
 
     file_uuids: list[str]
-    action: str  # delete|retry|cancel|recover|reprocess|summarize|redact|identify_speakers
+    # delete | retry | cancel | recover | reprocess | summarize | redact
+    # | identify_speakers | add_tag | remove_tag
+    action: str
     force: bool = False
     reset_retry_count: bool = False
+    # Tag actions (required when action='add_tag' or 'remove_tag')
+    tag_name: str | None = None
     # Selective reprocessing (optional, used when action='reprocess')
     stages: list[str] = Field(default_factory=list)
     min_speakers: int | None = None
@@ -79,6 +91,7 @@ class BulkActionResult(BaseModel):
     success: bool
     message: str
     error: str | None = None
+    outcome: BulkTagOutcome | None = None
 
 
 @router.get("/{file_uuid}/status-detail", response_model=FileStatusDetail)
@@ -726,6 +739,33 @@ def _handle_redact_action(db: Session, file_uuid: str, file_id: int) -> BulkActi
     return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
 
 
+def _handle_tag_action(
+    db: Session,
+    file_uuid: str,
+    file_id: int,
+    tag: Tag | None,
+    *,
+    add: bool,
+    user_id: int,
+    is_admin: bool,
+) -> BulkActionResult:
+    """Attach or detach the batch's tag on one file, as a per-file outcome.
+
+    The mutation itself lives in ``app.services.tag_bulk`` — this only maps its
+    outcome onto the bulk envelope.
+    """
+    applied = apply_tag_to_file(
+        db, file_id=file_id, tag=tag, add=add, user_id=user_id, is_admin=is_admin
+    )
+    return BulkActionResult(
+        file_uuid=file_uuid,
+        success=applied.success,
+        message=applied.message,
+        error=applied.error,
+        outcome=applied.outcome,
+    )
+
+
 def _process_single_file_action(
     db: Session,
     file_uuid: str,
@@ -739,6 +779,7 @@ def _process_single_file_action(
     max_speakers: int | None = None,
     num_speakers: int | None = None,
     organization_id: OrgScope = UNSCOPED,
+    tag: Tag | None = None,
 ) -> BulkActionResult:
     """Process a single file action, returning the result."""
     db_file = get_media_file_by_uuid(
@@ -760,6 +801,12 @@ def _process_single_file_action(
         "redact": lambda: _handle_redact_action(db, file_uuid, file_id),
         "identify_speakers": lambda: _handle_identify_speakers_action(
             db, file_uuid, file_id, current_user.id
+        ),
+        "add_tag": lambda: _handle_tag_action(
+            db, file_uuid, file_id, tag, add=True, user_id=current_user.id, is_admin=is_admin
+        ),
+        "remove_tag": lambda: _handle_tag_action(
+            db, file_uuid, file_id, tag, add=False, user_id=current_user.id, is_admin=is_admin
         ),
     }
 
@@ -783,6 +830,17 @@ def bulk_file_action(
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Perform bulk actions on multiple files."""
+    is_tag_action = request.action in TAG_ACTIONS
+    tag = None
+    if is_tag_action:
+        try:
+            tag = resolve_bulk_tag(db, request.action, request.tag_name, user_id=current_user.id)
+        except InvalidTagNameError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Tag name is required",
+            ) from exc
+
     try:
         results = []
         is_admin = current_user.is_admin
@@ -802,6 +860,7 @@ def bulk_file_action(
                     max_speakers=request.max_speakers,
                     num_speakers=request.num_speakers,
                     organization_id=ctx.org_id,
+                    tag=tag,
                 )
                 results.append(result)
             except HTTPException as e:
@@ -811,6 +870,7 @@ def bulk_file_action(
                         success=False,
                         message=str(e.detail),
                         error="HTTP_ERROR",
+                        outcome=BulkTagOutcome.FAILED if is_tag_action else None,
                     )
                 )
             except Exception as e:
@@ -821,8 +881,23 @@ def bulk_file_action(
                         success=False,
                         message=f"Unexpected error: {str(e)}",
                         error="UNEXPECTED_ERROR",
+                        outcome=BulkTagOutcome.FAILED if is_tag_action else None,
                     )
                 )
+
+        if is_tag_action:
+            # One refresh for the whole batch, and best-effort: every change in
+            # `results` is already committed, so a failing reindex must not turn
+            # a completed batch into a 500 (the task is idempotent, so a re-run
+            # converges).
+            try:
+                refresh_tagged_files(
+                    db,
+                    [r.file_uuid for r in results if r.outcome in CHANGED_OUTCOMES],
+                    user_id=current_user.id,
+                )
+            except Exception as e:
+                logger.error(f"Could not refresh tags for bulk {request.action}: {e}")
 
         return results
 

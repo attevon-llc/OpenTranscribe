@@ -57,6 +57,15 @@
   // Event handlers
   function handleUploadClick() { galleryStore.triggerUpload(); }
   function handleCollectionsClick() { galleryStore.triggerCollections(); }
+  // Tags sit beside Collections because they are the same kind of thing: metadata
+  // over the library, not a place to navigate to. The gallery decides which mode
+  // to open from the current selection, exactly as Collections does.
+  // The single door to tagging, in both modes. The Organize menu used to carry
+  // separate "Add tag" and "Remove tag" entries, but the modal now does both —
+  // three doors to one dialog is three things to explain.
+  function handleTagsClick() { galleryStore.triggerTags(); }
+  // Same destination from inside the Organize menu, which has to close itself.
+  function handleTagsFromMenu() { galleryStore.triggerTags(); closeAllMenus(); }
   function handleSelectFilesClick() { galleryStore.setSelecting(true); }
   function handleSelectAllFiles() { galleryStore.selectAllFiles(); }
   function handleDeleteSelected() { galleryStore.triggerDeleteSelected(); }
@@ -233,6 +242,7 @@
         {/if}
       </div>
 
+
       <!-- Organize dropdown -->
       <div class="dropdown-container">
         <button
@@ -263,6 +273,21 @@
                 <line x1="9" y1="14" x2="15" y2="14"></line>
               </svg>
               {$t('gallery.bulk.addToCollection')}
+            </button>
+            <!-- Tags sits with collections: both attach metadata to a file,
+                 which is what Organize means. One entry, not add/remove — the
+                 modal does both, and for a single selected file it is the full
+                 chip editor. -->
+            <button
+              class="dropdown-item"
+              on:click={handleTagsFromMenu}
+              title={$t('gallery.bulk.tagsTooltip')}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                <line x1="7" y1="7" x2="7.01" y2="7"></line>
+              </svg>
+              {$t('nav.tags')}
             </button>
             <div class="dropdown-divider"></div>
             <button
@@ -338,6 +363,13 @@
         title={$t('gallery.bulk.collectionsTooltip')}
       >
         <span>{$t('nav.collections')}</span>
+      </button>
+      <button
+        class="action-btn tags-btn"
+        on:click={handleTagsClick}
+        title={$t('gallery.bulk.tagsTooltip')}
+      >
+        <span>{$t('nav.tags')}</span>
       </button>
       <button
         class="action-btn select-btn"
@@ -445,6 +477,7 @@
 
   /* Secondary actions — surface with border (not colored) */
   .collections-btn,
+  .tags-btn,
   .select-btn,
   .organize-btn {
     background-color: var(--surface-color);
@@ -454,6 +487,7 @@
   }
 
   .collections-btn:hover:not(:disabled),
+  .tags-btn:hover:not(:disabled),
   .select-btn:hover:not(:disabled),
   .organize-btn:hover:not(:disabled) {
     background-color: var(--button-hover, #f1f5f9);
@@ -461,6 +495,7 @@
   }
 
   :global(.dark) .collections-btn:hover:not(:disabled),
+  :global(.dark) .tags-btn:hover:not(:disabled),
   :global(.dark) .select-btn:hover:not(:disabled),
   :global(.dark) .organize-btn:hover:not(:disabled) {
     background-color: rgba(255, 255, 255, 0.08);

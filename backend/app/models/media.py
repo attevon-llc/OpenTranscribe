@@ -615,6 +615,18 @@ class FileTag(Base):
     media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="file_tags")
     tag: Mapped["Tag"] = relationship("Tag")
 
+    # Present in the DDL since ``v010_baseline`` but omitted here until now, so
+    # the ORM understated the schema and ``merge_tags`` met the violation at
+    # runtime instead of planning for it. One file carries a given tag once.
+    #
+    # It cannot express the *stronger* invariant — one file never carries two
+    # differently-owned rows of the same normalized name — because the name
+    # lives on ``tag``, not here. That one is held at the single choke point
+    # every attach path goes through (``tag_service.resolve_or_create_tag``
+    # consults ``lookup_tag_on_file`` first) and repaired for legacy rows by
+    # the collision/merge pass.
+    __table_args__ = (UniqueConstraint("media_file_id", "tag_id"),)
+
 
 class Task(Base):
     __tablename__ = "task"

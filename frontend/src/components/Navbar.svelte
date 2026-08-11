@@ -71,6 +71,7 @@
   // backend 404s the whole chat router when the capability is off. The link
   // stays visible when the LLM is merely unconfigured — /chat shows the setup CTA.
   $: chatEnabled = isCapabilityEnabled($capabilities, 'chat.rag');
+  $: showGalleryLink = !isGalleryActive && !isTasksActive; // Show gallery link when not on gallery or tasks
 
   // User dropdown component reference (state lives in the child)
   let userDropdown: UserDropdown;
@@ -400,6 +401,7 @@
         </svg>
         <span class="nav-label">{$t('nav.speakers')}</span>
       </a>
+
 
       <!-- Notifications button -->
       <button

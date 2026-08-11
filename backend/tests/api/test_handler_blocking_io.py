@@ -50,7 +50,14 @@ import app.api.endpoints.media_collections as media_collections
 import app.api.endpoints.speaker_attribute_migration as speaker_attribute_migration
 import app.api.endpoints.summarization as summarization
 import app.api.endpoints.system as system_endpoints
-import app.api.endpoints.tags as tags
+
+# `tags` is a package now — the endpoint file was split by concern, mirroring
+# endpoints/files/. All four modules are scanned so the split does not quietly
+# drop three quarters of this file's coverage.
+import app.api.endpoints.tags.crud as tags_crud
+import app.api.endpoints.tags.discovery as tags_discovery
+import app.api.endpoints.tags.operations as tags_operations
+import app.api.endpoints.tags.sharing as tags_sharing
 import app.api.endpoints.tasks as tasks_endpoints
 import app.api.endpoints.topics as topics
 import app.api.endpoints.user_files as user_files
@@ -82,7 +89,10 @@ HARDENED_MODULES = [
     subtitles,
     summarization,
     system_endpoints,
-    tags,
+    tags_crud,
+    tags_discovery,
+    tags_operations,
+    tags_sharing,
     user_files,
     user_settings,
 ]
@@ -203,7 +213,7 @@ HARDENED_HANDLERS = [
     (summarization, "search_summaries"),
     (summarization, "delete_summary"),
     (system_endpoints, "get_system_stats"),
-    (tags, "add_tag_to_file"),
+    (tags_crud, "add_tag_to_file"),
     (user_files, "request_user_recovery"),
     (user_settings, "get_auto_label_settings"),
 ]

@@ -12,6 +12,7 @@ genuinely gains an ``await``.
 
 import logging
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -48,6 +49,7 @@ from app.schemas.media import Collection as CollectionSchema
 from app.schemas.media import CollectionCreate
 from app.schemas.media import CollectionMemberAdd
 from app.schemas.media import CollectionMemberRemove
+from app.schemas.media import CollectionOnSelection
 from app.schemas.media import CollectionResponse
 from app.schemas.media import CollectionUpdate
 from app.schemas.media import CollectionWithCount
@@ -314,6 +316,56 @@ def list_shared_collections(
         )
 
     return results[skip : skip + limit]
+
+
+@router.get("/for-files", response_model=list[CollectionOnSelection])
+def list_collections_on_files(
+    file_uuids: list[UUID] = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """Which collections a set of selected files already belongs to.
+
+    The mirror of ``GET /tags/for-files``, so the gallery's two organizing
+    modals answer the same question the same way — `file_count` against
+    `selection_size` distinguishes a collection holding every selected file from
+    one holding a few.
+
+    Scoped to the caller's own collections: membership of someone else's
+    collection is not theirs to read off a selection.
+
+    Registered before ``/{collection_uuid}`` so the literal path is not
+    swallowed.
+    """
+    from app.models.media import CollectionMember
+    from app.models.media import MediaFile
+
+    file_ids = [
+        get_by_uuid(db, MediaFile, file_uuid, error_message="File not found").id
+        for file_uuid in file_uuids
+    ]
+    selection_size = len(set(file_ids))
+    rows = (
+        db.query(Collection, func.count(func.distinct(CollectionMember.media_file_id)))
+        .join(CollectionMember, CollectionMember.collection_id == Collection.id)
+        .filter(
+            CollectionMember.media_file_id.in_(file_ids),
+            Collection.user_id == current_user.id,
+        )
+        .group_by(Collection.id)
+        .order_by(func.count(func.distinct(CollectionMember.media_file_id)).desc(), Collection.name)
+        .all()
+    )
+    return [
+        CollectionOnSelection(
+            uuid=collection.uuid,
+            name=collection.name,
+            file_count=int(count),
+            selection_size=selection_size,
+        )
+        for collection, count in rows
+    ]
 
 
 @router.get("", response_model=list[CollectionWithCount])

@@ -87,7 +87,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **9.5x Faster Vector Search**: Significantly improved neural search performance
 - **25% Faster Queries**: Enhanced full-text search with lower latency
 - **Advanced Filtering**: Filter by speaker, date, tags, duration, and more with searchable dropdowns
-- **Smart Tagging**: Organize content with custom tags and categories
+- **Tag Management**: A full tag surface beside Collections — create, rename, merge and delete with an impact preview, search and sort a large library, and see every file a tag touches. Names resolve normalized-exact (`Q3 Review` = `q3-review`), so one word never becomes three near-duplicates
+- **Tag Sharing**: Give a tag to specific people or groups so they use your word instead of coining their own, or publish it to the whole deployment — which folds identically-named tags into it. Tags also travel with shared media automatically, computed from the file rather than copied
+- **Bulk Organizing**: Apply tags and collections across a gallery selection; one selected file gets the full chip editor, several get add-only with per-tag coverage counts
 - **Collections System**: Group related media files into organized collections for better project management
 - **Speaker Usage Counts**: See which speakers appear most frequently across your media library
 - **Hybrid Search Fixed**: Critical OpenSearch 3.4 compatibility fix — semantic/vector search now fully operational with dramatically improved result quality

@@ -26,6 +26,7 @@ from app.db.base import get_db
 from app.models.media import Tag
 from app.models.prompt import SummaryPrompt
 from app.models.user import User
+from app.services.tag_service import normalize_tag_name
 
 # No module-level basicConfig: this module is imported during app startup and
 # a default root handler here would double every log line. configure_logging()
@@ -171,9 +172,16 @@ def _ensure_default_tags(db: Session) -> None:
     """Create the system tag vocabulary if it doesn't exist.
 
     These are *system* tags: ``user_id IS NULL`` makes them visible to every
-    account, which is the one case where an ownerless tag is intentional. The
-    lookup must carry the same predicate — a user's own "Meeting" must not
-    satisfy the seeder and leave the shared row missing.
+    account, which is the one case where an ownerless tag is intentional — so
+    this is the one seeding path that deliberately does **not** go through
+    ``resolve_or_create_tag`` (which always attributes an owner). The lookup
+    must carry the same predicate — a user's own "Meeting" must not satisfy the
+    seeder and leave the shared row missing.
+
+    The rows are seeded **with** ``normalized_name``. Created without it they
+    were invisible to normalized-exact resolution, so a user typing "interview"
+    got a second tag alongside the seeded "Interview" — the four most common
+    tags in every install, each able to fork a duplicate.
     """
     default_tags = ["Important", "Meeting", "Interview", "Personal"]
 
@@ -181,13 +189,21 @@ def _ensure_default_tags(db: Session) -> None:
         tag = db.query(Tag).filter(Tag.name == tag_name, Tag.user_id.is_(None)).first()
         if not tag:
             try:
-                tag = Tag(name=tag_name, user_id=None)
+                tag = Tag(
+                    name=tag_name,
+                    user_id=None,
+                    normalized_name=normalize_tag_name(tag_name),
+                )
                 db.add(tag)
                 db.flush()
                 logger.info(f"Created default tag: {tag_name}")
             except IntegrityError:
                 db.rollback()
                 logger.debug(f"Default tag '{tag_name}' already exists (concurrent creation)")
+        elif not tag.normalized_name:
+            # Seeded before this column was maintained: repair in place, or the
+            # shared row stays invisible to normalized-exact resolution forever.
+            tag.normalized_name = normalize_tag_name(tag_name)
 
     db.commit()
 

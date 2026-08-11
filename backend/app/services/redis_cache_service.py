@@ -42,6 +42,9 @@ TTL_FILES = 120  # 2 minutes
 TTL_STATUS = 60  # 1 minute
 TTL_COLLECTIONS = 300
 
+#: Keys per ``SCAN`` round trip, and the largest ``DELETE`` argument batch.
+_SCAN_BATCH = 500
+
 
 class RedisCacheService:
     """Thin wrapper around Redis for API response caching.
@@ -106,14 +109,35 @@ class RedisCacheService:
             logger.debug(f"Cache SET error for {key}: {e}")
 
     def delete_pattern(self, pattern: str) -> int:
-        """Delete all keys matching a glob pattern. Returns count deleted."""
+        """Delete every key matching a glob pattern. Returns count deleted.
+
+        Two things this deliberately avoids:
+
+        * **``KEYS`` on a fully-specified key.** Most callers here pass no
+          wildcard at all (``cache:tags:{user_id}``, ``cache:status:{user_id}``)
+          — those go straight to ``DELETE``.
+        * **``KEYS`` at all.** It is O(keyspace) *and* blocks the whole
+          instance, which on this deployment also carries the Celery broker, so
+          a tag merge could stall task delivery. ``SCAN`` walks the keyspace in
+          cursor-sized bites instead.
+        """
         client = self.redis
         if client is None:
             return 0
         try:
-            keys = client.keys(pattern)
-            if keys:
-                return int(client.delete(*keys))
+            if not any(token in pattern for token in "*?["):
+                return int(client.delete(pattern))
+
+            deleted = 0
+            batch: list[str] = []
+            for key in client.scan_iter(match=pattern, count=_SCAN_BATCH):
+                batch.append(key)
+                if len(batch) >= _SCAN_BATCH:
+                    deleted += int(client.delete(*batch))
+                    batch = []
+            if batch:
+                deleted += int(client.delete(*batch))
+            return deleted
         except Exception as e:
             logger.debug(f"Cache DELETE error for {pattern}: {e}")
         return 0
@@ -132,6 +156,29 @@ class RedisCacheService:
         """Invalidate tag caches for a user."""
         self.delete_pattern(f"cache:tags:{user_id}")
         self._push_invalidation(user_id, "tags")
+
+    def invalidate_tags_global(self) -> int:
+        """Invalidate **every** user's cached tag list.
+
+        Reserved for a mutation touching a **system** tag (``user_id IS NULL``):
+        that one row appears in every account's list, so renaming, merging or
+        promoting it changes what every *other* user's cached list should say,
+        and busting only the actor's key leaves everyone else reading the old
+        name until ``TTL_TAGS`` expires.
+
+        An owned tag needs nothing this broad — ``on_tags_changed`` busts the
+        actor and the touched files' owners instead. Calling this on every tag
+        write would drop the whole keyspace's tag cache on each attach; the
+        ``system_scope`` flag is what keeps that to the case that earns it.
+
+        No WebSocket push accompanies this: ``_push_invalidation`` addresses one
+        user and there is no broadcast channel. Other sessions see the change on
+        their next read, which is now guaranteed to be a miss.
+
+        Returns:
+            Number of cache keys deleted.
+        """
+        return self.delete_pattern("cache:tags:*")
 
     def invalidate_tags_for_file(self, db: Any, file_id: int) -> None:
         """Invalidate the owning user's tag + file caches for a file.

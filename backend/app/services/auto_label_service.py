@@ -6,9 +6,7 @@ suggestions, batch grouping for multi-file uploads, and retroactive
 application to existing files.
 """
 
-import difflib
 import logging
-import re
 from datetime import UTC
 from datetime import datetime
 from typing import Any
@@ -28,6 +26,11 @@ from app.models.media import MediaFile
 from app.models.media import Tag
 from app.models.prompt import UserSetting
 from app.models.topic import TopicSuggestion
+from app.services.tag_service import names_are_similar
+from app.services.tag_service import normalize_tag_name
+from app.services.tag_service import on_tags_changed
+from app.services.tag_service import resolve_or_create_tag
+from app.services.tag_service import suggest_similar_tag
 
 logger = logging.getLogger(__name__)
 
@@ -51,27 +54,20 @@ class AutoLabelService:
     def normalize_name(name: str) -> str:
         """Normalize a name for deduplication comparison.
 
-        Lowercase, strip whitespace, replace hyphens/underscores with spaces,
-        collapse multiple spaces.
+        Delegating alias for ``tag_service.normalize_tag_name``, which owns the
+        single definition (lowercase, strip, hyphens/underscores to spaces,
+        collapse whitespace). Kept so existing callers — including collection
+        names, which are not tags — keep working.
         """
-        if not name:
-            return ""
-        normalized = name.lower().strip()
-        normalized = re.sub(r"[-_]+", " ", normalized)
-        normalized = re.sub(r"\s+", " ", normalized)
-        return normalized
+        return normalize_tag_name(name)
 
     @staticmethod
     def are_names_similar(a: str, b: str, threshold: float = FUZZY_MATCH_THRESHOLD) -> bool:
-        """Check if two names are similar using SequenceMatcher."""
-        norm_a = AutoLabelService.normalize_name(a)
-        norm_b = AutoLabelService.normalize_name(b)
-        if not norm_a or not norm_b:
-            return False
-        if norm_a == norm_b:
-            return True
-        ratio = difflib.SequenceMatcher(None, norm_a, norm_b).ratio()
-        return ratio >= threshold
+        """Check if two names are similar using SequenceMatcher.
+
+        Delegating alias for ``tag_service.names_are_similar``.
+        """
+        return names_are_similar(a, b, threshold)
 
     @staticmethod
     def _owned_or_system(user_id: int):
@@ -111,6 +107,11 @@ class AutoLabelService:
 
         1. Exact normalized_name match (uses index)
         2. Fallback: SequenceMatcher scan of cached tags
+
+        Auto-labeling is the **only** path allowed to act on step 2 without a
+        human confirming it — the names come from the LLM, not from a person, so
+        there is no one to show a suggestion to. Every user-supplied path
+        resolves with normalized-exact matching only.
         """
         normalized = self.normalize_name(suggested_name)
 
@@ -124,12 +125,15 @@ class AutoLabelService:
         if tag:
             return tag
 
-        # Slow path: fuzzy scan using cached tag list
-        all_tags = self._get_all_tags_cached(user_id)
-        for existing in all_tags:
-            if self.are_names_similar(suggested_name, existing.name):
-                return existing
-        return None
+        # Slow path: fuzzy scan over the user-scoped tag cache. The cache is
+        # keyed by user id, so one account's suggestion can never match — and
+        # then reuse — another account's row.
+        return suggest_similar_tag(
+            self.db,
+            suggested_name,
+            user_id=user_id,
+            candidates=self._get_all_tags_cached(user_id),
+        )
 
     def find_existing_similar_collection(
         self, user_id: int, suggested_name: str
@@ -169,6 +173,13 @@ class AutoLabelService:
         suggested_tags = suggestion.suggested_tags or []
         suggested_collections = suggestion.suggested_collections or []
 
+        # Files whose tag set actually changed. Accumulated across the whole
+        # call and flushed through ``on_tags_changed`` once, after the commit
+        # below — the hook drops every user's cached tag list and enqueues a
+        # search refresh, so calling it per applied tag re-did that work T times
+        # for what is one file of change.
+        retagged_file_ids: list[int] = []
+
         # Auto-apply tags
         if apply_tags:
             for tag_data in suggested_tags:
@@ -185,8 +196,11 @@ class AutoLabelService:
                 try:
                     # The tag belongs to the file owner — this runs unattended,
                     # so there is no "current user" to attribute it to.
-                    tag = self._get_or_create_tag_with_dedup(name, int(media_file.user_id))
-                    self._add_tag_to_file(media_file, tag, confidence)
+                    tag = self._get_or_create_tag_with_dedup(
+                        name, int(media_file.user_id), file_id=int(media_file.id)
+                    )
+                    if self._add_tag_to_file(media_file, tag, confidence):
+                        retagged_file_ids.append(int(media_file.id))
                     result["auto_applied_tags"].append(name)
                 except Exception as e:
                     logger.warning(f"Failed to auto-apply tag '{name}': {e}")
@@ -224,6 +238,11 @@ class AutoLabelService:
             self.db.rollback()
             raise
 
+        if retagged_file_ids:
+            # Auto-labeling is a back-door tag-mutation path that doesn't carry
+            # current_user, but the shared hook resolves the owner itself.
+            on_tags_changed(self.db, retagged_file_ids, user_id=int(media_file.user_id))
+
         logger.info(
             f"Auto-applied {len(result['auto_applied_tags'])} tags and "
             f"{len(result['auto_applied_collections'])} collections for file {media_file.id}"
@@ -232,38 +251,32 @@ class AutoLabelService:
         return result
 
     def _get_or_create_tag_with_dedup(
-        self, name: str, user_id: int, source: str = TAG_SOURCE_AUTO_AI
+        self,
+        name: str,
+        user_id: int,
+        *,
+        file_id: int | None = None,
+        source: str = TAG_SOURCE_AUTO_AI,
     ) -> Tag:
         """Get or create a tag owned by ``user_id``, fuzzy-matching to dedupe.
 
         ``user_id`` is the file owner on the background path, so an LLM-suggested
         tag lands in that user's vocabulary rather than becoming an ownerless
         (deployment-visible) row.
+
+        The fuzzy hit is applied automatically because this is the auto-labeling
+        path — the one path allowed to (see :meth:`find_existing_similar_tag`).
+        Creation itself delegates to the shared resolver so normalization, the
+        length clamp, and the SAVEPOINT-guarded insert stay identical across
+        every path.
         """
         existing = self.find_existing_similar_tag(name, user_id)
         if existing:
             return existing
 
-        normalized = self.normalize_name(name)
-        try:
-            nested = self.db.begin_nested()
-            tag = Tag(name=name, user_id=user_id, source=source, normalized_name=normalized)
-            self.db.add(tag)
-            self.db.flush()
-            self._invalidate_tag_cache(user_id)
-            return tag
-        except IntegrityError:
-            nested.rollback()
-            self._invalidate_tag_cache(user_id)
-            existing_tag: Tag | None = (
-                self.db.query(Tag)
-                .filter(Tag.name == name, self._owned_or_system(user_id))
-                .order_by(Tag.user_id)
-                .first()
-            )
-            if existing_tag:
-                return existing_tag
-            raise
+        tag = resolve_or_create_tag(self.db, name, user_id=user_id, source=source, file_id=file_id)
+        self._invalidate_tag_cache(user_id)
+        return tag
 
     def _get_or_create_collection_with_dedup(
         self, name: str, user_id: int, source: str = TAG_SOURCE_AUTO_AI
@@ -292,15 +305,22 @@ class AutoLabelService:
                 return existing_collection
             raise
 
-    def _add_tag_to_file(self, media_file: MediaFile, tag: Tag, confidence: float) -> None:
-        """Add a tag to a file if not already present."""
+    def _add_tag_to_file(self, media_file: MediaFile, tag: Tag, confidence: float) -> bool:
+        """Add a tag to a file if not already present.
+
+        Returns:
+            True when a new association was written. The caller accumulates the
+            file ids and calls ``on_tags_changed`` once for the whole batch;
+            doing it here meant a global cache bust and a reindex enqueue per
+            tag, all of them describing the same single file.
+        """
         existing = (
             self.db.query(FileTag)
             .filter(FileTag.media_file_id == media_file.id, FileTag.tag_id == tag.id)
             .first()
         )
         if existing:
-            return
+            return False
 
         try:
             nested = self.db.begin_nested()
@@ -312,18 +332,11 @@ class AutoLabelService:
             )
             self.db.add(file_tag)
             self.db.flush()
-            # Bust the owning user's read-through tag cache (auto-labeling is a
-            # back-door tag-mutation path that doesn't carry current_user).
-            try:
-                from app.services.redis_cache_service import redis_cache
-
-                redis_cache.invalidate_tags(int(media_file.user_id))
-                redis_cache.invalidate_user_files(int(media_file.user_id))
-            except Exception as e:
-                logger.debug(f"Tag cache invalidation failed (non-critical): {e}")
+            return True
         except IntegrityError:
             nested.rollback()
             logger.debug(f"Duplicate file_tag for file={media_file.id} tag={tag.id}, skipping")
+            return False
 
     def _add_file_to_collection(
         self, media_file: MediaFile, collection: Collection, confidence: float

@@ -305,3 +305,6 @@ test-results/
 
 # Fresh deployment generated compose overlays (opentr.sh --fresh)
 .fresh/
+
+# Release orchestrator ledger (scripts/release.sh) — per-release stage state
+.release/

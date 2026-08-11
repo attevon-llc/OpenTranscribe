@@ -31,7 +31,13 @@ TEST_ROOT="${TEST_ROOT:-/mnt/nvm/opentranscribe-test-runs/${TEST_PROJECT_NAME}-$
 TEST_LABEL="com.opentranscribe.release-test=${TEST_SCENARIO}"
 
 TO_BRANCH="${TO_BRANCH:-master}"
-LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-v0.4.0}"
+# Version under test, derived from the VERSION file rather than hardcoded. The
+# previous default (v0.4.0) went stale the moment v0.4.1 shipped, and the two
+# scenarios disagreed on whether the tag carried a `v` — this one said "v0.4.0",
+# the upgrade scenario said "0.4.0", and docker-build-push.sh always produces
+# "vX.Y.Z", so the upgrade scenario's default never matched a real local build.
+# lib/versions.sh owns that normalisation now. Sourced after guardrails.sh below.
+LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG:-}"
 
 # Set USE_HUB_IMAGES=true to skip the local build phase and pull the published
 # Docker Hub images instead. Phase 03 will set pull_policy: always and pin the
@@ -67,6 +73,10 @@ TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-password}"
 # multipart upload — this exercises the same code path a real user uses when
 # dragging a file into the UI. Files in this dir are NOT committed to git.
 TEST_MEDIA_DIR="${TEST_MEDIA_DIR:-/mnt/nvm/opentranscribe-test-runs/test-media}"
+# See the matching note in test-upgrade.sh: the old hardcoded 5M excluded every
+# realistic multi-speaker sample, so diarization was never exercised on
+# production-like input. Bounds run time; not a smallness requirement.
+TEST_MEDIA_MAX_SIZE="${TEST_MEDIA_MAX_SIZE:-100M}"
 
 # Cleanup mode
 DO_CLEANUP=0
@@ -116,6 +126,18 @@ source "$LIB_DIR/compose-patch.sh"
 source "$LIB_DIR/api-client.sh"
 # shellcheck source=lib/assertions.sh
 source "$LIB_DIR/assertions.sh"
+# shellcheck source=lib/versions.sh
+source "$LIB_DIR/versions.sh"
+
+# Resolve the version under test now that versions.sh is available.
+if [[ -z "$LOCAL_IMAGE_TAG" ]]; then
+    LOCAL_IMAGE_TAG="$(ver_to_version)"
+fi
+LOCAL_IMAGE_TAG="$(ver_normalize "$LOCAL_IMAGE_TAG")"
+# Pins EVERY service via ${OT_IMAGE_TAG:-latest}, not just the ones named in
+# cp_pin_image_tag's hand-maintained list (which misses docs and the GPU workers).
+export OT_TEST_IMAGE_TAG="$LOCAL_IMAGE_TAG"
+gr_log "version under test: $LOCAL_IMAGE_TAG (from ${TO_VERSION:+TO_VERSION}${TO_VERSION:-VERSION file})"
 
 # ─── Cleanup mode ───────────────────────────────────────────────────────────
 if (( DO_CLEANUP == 1 )); then
@@ -324,6 +346,32 @@ phase_03_pin_local_image() {
         fi
         gr_ok "pinned GPU_DEVICE_ID=$TEST_GPU_DEVICE_ID in .env"
     fi
+
+    # Supply the bootstrap admin credential.
+    #
+    # A fresh install is HARDENED (ENVIRONMENT defaults to production), and
+    # app/initial_data.py deliberately refuses to seed the well-known
+    # admin@example.com/password there — it generates a random 192-bit password
+    # instead and prints it once. This scenario previously assumed the dev
+    # credential ("The backend creates a default admin ... so registration is not
+    # needed"), which is true only in a relaxed environment, so phase 06 died at
+    # `curl: (22) ... 401` on every run.
+    #
+    # INITIAL_ADMIN_PASSWORD is the documented way to bootstrap a hardened
+    # deployment with a known credential, so setting it here exercises the real
+    # supported path rather than scraping the generated password out of the logs.
+    # It must be written BEFORE phase 04 starts the stack: the admin is seeded on
+    # first backend boot.
+    local env_file="$target/.env"
+    for kv in "INITIAL_ADMIN_EMAIL=$TEST_ADMIN_EMAIL" "INITIAL_ADMIN_PASSWORD=$TEST_ADMIN_PASSWORD"; do
+        local key="${kv%%=*}"
+        if grep -q "^${key}=" "$env_file"; then
+            sed -i "s|^${key}=.*|${kv}|" "$env_file"
+        else
+            echo "$kv" >> "$env_file"
+        fi
+    done
+    gr_ok "bootstrap admin credential set for the hardened install ($TEST_ADMIN_EMAIL)"
 }
 
 phase_04_start_stack() {
@@ -366,17 +414,35 @@ phase_06_api_smoke() {
     } >> "$TEST_REPORT_FILE"
     export TEST_REPORT_FILE
 
-    # The backend creates a default admin (admin@example.com / password) on first
-    # start, so registration is not needed. Just log in.
+    # Log in as the bootstrap admin. The credential works because phase 03 wrote
+    # INITIAL_ADMIN_EMAIL/INITIAL_ADMIN_PASSWORD into the install's .env — a
+    # hardened deployment (which this is) refuses the well-known dev credential
+    # and generates a random password instead. See phase_03.
     ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"
 
     local fe_code
     fe_code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_FRONTEND_PORT}/")
     as_assert_http "frontend GET /" 200 "$fe_code"
 
-    local api_code
+    # API docs are a SECURITY surface, not a liveness check.
+    #
+    # main.py:_resolve_docs_urls publishes none of /api/docs, /api/redoc or
+    # /api/openapi.json in a hardened deployment — Swagger is anonymously
+    # reachable wherever it is mounted and enumerates the whole admin/auth attack
+    # surface. A fresh install IS hardened, so 404 is the CORRECT answer and this
+    # previously asserted 200, failing every run on intended behaviour.
+    #
+    # Assert whichever the deployment is configured for, so the check keeps
+    # meaning either way: exposed when opted in, hidden by default.
+    local api_code docs_enabled
+    docs_enabled=$(grep -E '^ENABLE_API_DOCS=' "$TEST_ROOT/install/opentranscribe/.env" 2>/dev/null \
+        | cut -d= -f2 | tr -d ' "' | tr '[:upper:]' '[:lower:]' || true)
     api_code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_BACKEND_PORT}/api/docs")
-    as_assert_http "backend GET /api/docs" 200 "$api_code"
+    if [[ "$docs_enabled" == "true" || "$docs_enabled" == "1" || "$docs_enabled" == "yes" ]]; then
+        as_assert_http "backend GET /api/docs (ENABLE_API_DOCS opted in)" 200 "$api_code"
+    else
+        as_assert_http "backend /api/docs NOT exposed by default (hardened)" 404 "$api_code"
+    fi
 
     if [[ ! -d "$TEST_MEDIA_DIR" ]]; then
         as_record FAIL "TEST_MEDIA_DIR missing: $TEST_MEDIA_DIR"
@@ -388,7 +454,7 @@ phase_06_api_smoke() {
         done < <(find "$TEST_MEDIA_DIR" -maxdepth 1 -type f \
                     \( -iname "*.mp3" -o -iname "*.m4a" -o -iname "*.mp4" \
                        -o -iname "*.wav" -o -iname "*.flac" -o -iname "*.ogg" \) \
-                    -size -5M | head -2)
+                    -size "-$TEST_MEDIA_MAX_SIZE" | head -2)
         if (( ${#media_files[@]} == 0 )); then
             as_record FAIL "no media files found in $TEST_MEDIA_DIR (need at least one .mp3/.m4a/.wav/.mp4 under 5 MB)"
         else
@@ -404,15 +470,7 @@ phase_06_api_smoke() {
                 if ac_wait_for_file_status "$fid" 1800; then
                     as_record PASS "transcription completed for file $fid"
                     local seg_count
-                    seg_count=$(ac_get_segments "$fid" | python3 -c '
-import sys, json
-d = json.load(sys.stdin)
-if isinstance(d, list):
-    print(len(d))
-else:
-    segs = d.get("segments") or d.get("transcript_segments") or d.get("results") or []
-    print(len(segs))
-' 2>/dev/null || echo 0)
+                    seg_count=$(ac_segment_count "$fid")
                     as_assert_ge "segments[] non-empty for $fid" "$seg_count" 1
                 else
                     as_record FAIL "transcription for file $fid"
@@ -450,8 +508,12 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
     alembic_head=$(docker exec opentranscribe-postgres \
         psql -U postgres -d opentranscribe -tAc \
         "SELECT version_num FROM alembic_version" 2>/dev/null || echo "")
-    expected_head=$(grep -hE "^revision[[:space:]]*=" "$REPO_ROOT/backend/alembic/versions/"*.py \
-        | tail -1 | awk -F'"' '{print $2}')
+    # Derived from the down_revision graph, not `grep | tail -1`. That old form
+    # sorted by FILENAME and only worked by luck of 3-digit zero-padded ids; the
+    # chain is already non-contiguous (v130->v071, v073->v140, two v270* files,
+    # v375-v381 renumbered), and a 4-digit id or a second head would have made it
+    # silently assert the wrong revision.
+    expected_head=$(ver_alembic_head "$REPO_ROOT/backend")
     as_assert_eq "alembic head" "$expected_head" "$alembic_head"
 
     as_summary | tee -a "$TEST_REPORT_FILE"

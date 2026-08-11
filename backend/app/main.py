@@ -1008,29 +1008,44 @@ def readiness_check():
     except Exception as exc:  # noqa: BLE001
         checks["minio"] = f"error: {type(exc).__name__}"
 
-    # Schema freshness (critical) — only when a migrate job owns migrations. If this
-    # replica did not run Alembic itself, it must prove the DB is actually at head
-    # before taking traffic; otherwise a rollout that outpaces the migrate job serves
-    # requests against an old schema (issue #284 A1.4).
-    if not settings.RUN_MIGRATIONS_ON_STARTUP:
-        try:
-            from alembic.migration import MigrationContext
-            from alembic.script import ScriptDirectory
+    # Schema freshness. ALWAYS reported, conditionally critical.
+    #
+    # Reported unconditionally so the schema state of any deployment is
+    # observable over HTTP — the release harness reads it to assert an upgrade
+    # actually migrated, instead of shelling `docker exec opentranscribe-postgres
+    # psql`, which hardcodes a container name and breaks on --fresh stacks.
+    #
+    # Critical ONLY when a migrate job owns migrations (issue #284 A1.4): a
+    # replica that did not run Alembic itself must prove the DB is at head before
+    # taking traffic, or a rollout outpacing the migrate job serves requests
+    # against an old schema. When this replica DOES run migrations on startup,
+    # a stale schema cannot happen without startup having already failed, and
+    # 503-ing on it would change self-host readiness semantics.
+    schema_detail: dict[str, str] = {}
+    try:
+        from alembic.migration import MigrationContext
+        from alembic.script import ScriptDirectory
 
-            from app.db.base import engine
-            from app.db.migrations import get_alembic_config
+        from app.db.base import engine
+        from app.db.migrations import get_alembic_config
 
-            head = ScriptDirectory.from_config(get_alembic_config()).get_current_head()
-            with engine.connect() as conn:
-                current = MigrationContext.configure(conn).get_current_revision()
-            checks["schema"] = "ok" if current == head else f"stale: {current} != head {head}"
-        except Exception as exc:  # noqa: BLE001
-            checks["schema"] = f"error: {type(exc).__name__}"
+        head = ScriptDirectory.from_config(get_alembic_config()).get_current_head()
+        with engine.connect() as conn:
+            current = MigrationContext.configure(conn).get_current_revision()
+        checks["schema"] = "ok" if current == head else f"stale: {current} != head {head}"
+        schema_detail = {"current": current or "none", "head": head or "none"}
+    except Exception as exc:  # noqa: BLE001
+        checks["schema"] = f"error: {type(exc).__name__}"
 
+    if schema_detail:
+        checks["schema_revision"] = schema_detail["current"]
+        checks["schema_head"] = schema_detail["head"]
+
+    schema_is_critical = not settings.RUN_MIGRATIONS_ON_STARTUP
     critical_ok = (
         checks["postgres"] == "ok"
         and checks["redis"] == "ok"
-        and checks.get("schema", "ok") == "ok"
+        and (not schema_is_critical or checks.get("schema", "ok") == "ok")
     )
     if not critical_ok:
         return JSONResponse(

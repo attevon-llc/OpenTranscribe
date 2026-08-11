@@ -1,0 +1,64 @@
+# release-manifest.txt — the files a self-hosted deployment needs.
+#
+# ONE list, consumed by three things that used to keep their own:
+#   * setup-opentranscribe.sh  (fresh install: downloads each of these at the pinned ref)
+#   * opentranscribe.sh update-full  (existing install: re-downloads each of these)
+#   * .github/workflows/release-validate.yml  (asserts every path is fetchable at the tag)
+#
+# WHY THIS FILE EXISTS
+#
+# The installer and update-full each hardcoded their own list, and the lists had
+# drifted apart in both directions:
+#
+#   * update-full never re-downloaded docker-compose.yml. Service *definitions*
+#     live in the base file — the prod overlay only adds image/volumes. So when
+#     celery-redaction was introduced (its `command:` exists only in
+#     docker-compose.yml), an upgraded install merged the prod stanza into a base
+#     file that had no such service and started the container with the image's
+#     default CMD instead of the redaction worker. Silently.
+#
+#   * setup-opentranscribe.sh never downloaded docker-compose.blackwell.yml, but
+#     opentranscribe.sh's get_compose_files() selects it when it detects an SM_12x
+#     GPU. The selection is guarded by `[ -f ... ]`, so a fresh install on a
+#     Blackwell card silently fell back to the generic GPU overlay — i.e. ran
+#     :latest instead of the :blackwell image that exists precisely because the
+#     generic one does not work on that hardware.
+#
+# Both are the same bug class: a deployment file list maintained in more than one
+# place. Adding a file to a deployment is now a one-line change here.
+#
+# FORMAT
+#   <repo-relative-path>[<TAB>flag,flag]
+# Flags:
+#   optional  — a 404 is not fatal (file may not exist in older releases)
+#   exec      — chmod +x after download
+#   preserve  — never overwrite an existing copy (user-owned data)
+# Blank lines and #-comments are ignored.
+
+# --- Compose: base + every overlay a deployment can select ---------------------
+# docker-compose.yml is FIRST and is not optional: it carries the service
+# definitions every overlay merges on top of.
+docker-compose.yml
+docker-compose.prod.yml
+docker-compose.gpu.yml
+docker-compose.gpu-scale.yml
+docker-compose.blackwell.yml	optional
+docker-compose.nginx.yml
+
+# --- Reverse proxy -------------------------------------------------------------
+nginx/site.conf.template
+
+# --- Scripts the management script and installer call --------------------------
+scripts/common.sh	exec
+scripts/generate-ssl-cert.sh	exec
+scripts/fix-model-permissions.sh	exec
+scripts/download-models.sh	exec
+scripts/download-models.py
+
+# --- The management script itself ----------------------------------------------
+opentranscribe.sh	exec
+
+# --- Configuration template ----------------------------------------------------
+# Downloaded so `update-full` can diff it against the user's .env and report new
+# keys. The user's own .env is NEVER touched.
+.env.example

@@ -897,6 +897,17 @@ prompt_huggingface_token() {
             ot_log_unattended "HUGGINGFACE_TOKEN not set; continuing without it"
             HUGGINGFACE_TOKEN=""
         fi
+        # PERSIST IT. This early return used to skip the only line that writes the
+        # token to .env (in the interactive branch below), so an unattended install
+        # kept the token in a shell variable and wrote HUGGINGFACE_TOKEN= empty.
+        # The containers therefore never saw it, PyAnnote's gated models answered
+        # 401, and EVERY transcription failed on a stack that otherwise looked
+        # healthy. Diarization is not optional: the pipeline cannot complete
+        # without it.
+        if [[ -n "$HUGGINGFACE_TOKEN" && -f .env ]]; then
+            sed -i.bak "s|^HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|" .env && rm -f .env.bak
+            ot_log_unattended "HUGGINGFACE_TOKEN written to .env"
+        fi
         return 0
     fi
 
@@ -996,6 +1007,68 @@ _upsert_env() {
     fi
 }
 
+# Resolve which release this install pins to.
+#
+# WHY PIN AT ALL
+#
+# Before this, the installer downloaded compose files from master HEAD while the
+# compose files pulled `:latest` images. A user therefore got tip-of-master
+# configuration married to whenever-images-were-last-pushed — two moving parts
+# that were never tested together, no way to install a specific release, and no
+# way to roll back. Pinning makes an install reproducible.
+#
+# RESOLUTION ORDER
+#   1. --version / OPENTRANSCRIBE_VERSION  — explicit wins
+#   2. --branch / OPENTRANSCRIBE_BRANCH    — testing; unpinned, loudly announced
+#   3. the latest GitHub Release           — the default
+#
+# The GitHub *Release* is deliberately the source, not the newest git tag. The
+# release is published as the LAST step of the release process, after the images
+# are promoted; a raw tag appears 30-90 minutes earlier, so resolving to it would
+# hand new users a version whose images do not exist yet.
+#
+# Sets OPENTRANSCRIBE_BRANCH (the ref every download function already reads, so
+# one assignment pins all of them) and OT_IMAGE_TAG (interpolated by the compose
+# files as ${OT_IMAGE_TAG:-latest}).
+resolve_install_ref() {
+    if [ -n "${OPENTRANSCRIBE_VERSION:-}" ]; then
+        OT_IMAGE_TAG="${OPENTRANSCRIBE_VERSION}"
+        case "$OT_IMAGE_TAG" in v*) ;; *) OT_IMAGE_TAG="v${OT_IMAGE_TAG}" ;; esac
+        OPENTRANSCRIBE_BRANCH="$OT_IMAGE_TAG"
+        print_info "Installing pinned release: $OT_IMAGE_TAG"
+        return 0
+    fi
+
+    if [ -n "${OPENTRANSCRIBE_BRANCH:-}" ]; then
+        OT_IMAGE_TAG="latest"
+        print_warning "Installing from branch '${OPENTRANSCRIBE_BRANCH}' with :latest images."
+        print_warning "This is a TESTING install: it is not reproducible and cannot be rolled back."
+        return 0
+    fi
+
+    print_info "Resolving the latest published release..."
+    local resolved=""
+    resolved=$(curl -fsSL --connect-timeout 10 --max-time 20 \
+        "https://api.github.com/repos/attevon-llc/OpenTranscribe/releases/latest" 2>/dev/null \
+        | grep -m1 '"tag_name"' | sed -E 's/.*"(v?[0-9]+\.[0-9]+\.[0-9]+)".*/\1/' || true)
+
+    if [ -z "$resolved" ] || ! echo "$resolved" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
+        # Unauthenticated GitHub API is rate-limited to 60/hour per IP, so a
+        # failure here is expected on a shared address. NEVER silently fall back
+        # to master: that would reintroduce the unpinned install this replaced.
+        print_error "Could not determine the latest release (GitHub API unavailable or rate-limited)."
+        print_info "Retry later, or choose explicitly:"
+        print_info "  --version vX.Y.Z    install a specific release"
+        print_info "  --branch master     install from master (testing, unpinned)"
+        exit 1
+    fi
+
+    case "$resolved" in v*) ;; *) resolved="v${resolved}" ;; esac
+    OT_IMAGE_TAG="$resolved"
+    OPENTRANSCRIBE_BRANCH="$resolved"
+    print_success "Installing release $OT_IMAGE_TAG"
+}
+
 # Create .env from template and write all auto-generated credentials immediately.
 # Called only on a fresh install (no existing .env).
 _create_initial_env() {
@@ -1015,7 +1088,25 @@ _create_initial_env() {
     sed -i.bak "s|MODEL_CACHE_DIR=.*|MODEL_CACHE_DIR=${MODEL_CACHE_DIR:-./models}|g" .env
     rm -f .env.bak
 
-    print_success ".env created with secure credentials"
+    # Pin the image tag this install was built against. Compose reads
+    # ${OT_IMAGE_TAG:-latest}, so writing it here is what makes `docker compose
+    # pull` fetch this exact release instead of whatever :latest happens to be.
+    # `./opentranscribe.sh update --version vX.Y.Z` rewrites this line, which is
+    # also how a rollback works.
+    if grep -q '^# *OT_IMAGE_TAG=' .env; then
+        sed -i.bak "s|^# *OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}|" .env
+    elif grep -q '^OT_IMAGE_TAG=' .env; then
+        sed -i.bak "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}|" .env
+    else
+        echo "OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}" >> .env
+    fi
+    rm -f .env.bak
+
+    # A local VERSION file so `./opentranscribe.sh version` can answer even when
+    # the stack is down and the images carry no labels.
+    echo "${OT_IMAGE_TAG:-latest}" > VERSION
+
+    print_success ".env created with secure credentials (pinned to ${OT_IMAGE_TAG:-latest})"
 }
 
 # Write (or re-write) hardware-detected values to .env.
@@ -1808,7 +1899,9 @@ download_ai_models() {
         return 0
     fi
 
-    echo "OpenTranscribe requires AI models (~2.9GB) for transcription, speaker diarization, and semantic search."
+    echo "OpenTranscribe requires several GB of AI models for transcription, speaker"
+    echo "diarization, semantic search, chat reranking, and content redaction."
+    echo "The exact size depends on WHISPER_MODEL and how many neural search models you enable."
     echo ""
     echo "Configuration summary:"
     echo "  • Hardware: $DETECTED_DEVICE ($COMPUTE_TYPE precision)"
@@ -1886,7 +1979,7 @@ download_ai_models() {
     fi
 
     # Token is configured - proceed with download
-    echo -e "${YELLOW}Ready to download AI models (~2.9GB)${NC}"
+    echo -e "${YELLOW}Ready to download AI models (several GB — see the list above)${NC}"
     echo "This will take 10-30 minutes depending on your internet speed."
     echo ""
     read -p "Start model download now? (Y/n) " -n 1 -r </dev/tty
@@ -2098,14 +2191,40 @@ pull_docker_images() {
 }
 
 display_summary() {
-    # Load key values from .env if shell vars are empty (re-run case)
-    [[ -z "$WHISPER_MODEL" ]]     && WHISPER_MODEL=$(grep '^WHISPER_MODEL=' .env 2>/dev/null | cut -d= -f2-)
-    [[ -z "$HUGGINGFACE_TOKEN" ]] && HUGGINGFACE_TOKEN=$(grep '^HUGGINGFACE_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
-    [[ -z "$LLM_PROVIDER" ]]      && LLM_PROVIDER=$(grep '^LLM_PROVIDER=' .env 2>/dev/null | cut -d= -f2-)
-    [[ -z "$NGINX_SERVER_NAME" ]] && NGINX_SERVER_NAME=$(grep '^NGINX_SERVER_NAME=' .env 2>/dev/null | cut -d= -f2- | tr -d '"')
-    [[ -z "$DETECTED_DEVICE" ]]   && DETECTED_DEVICE=$(grep '^DETECTED_DEVICE=' .env 2>/dev/null | cut -d= -f2-)
-    [[ -z "$COMPUTE_TYPE" ]]      && COMPUTE_TYPE=$(grep '^COMPUTE_TYPE=' .env 2>/dev/null | cut -d= -f2-)
-    [[ -z "$VLLM_BASE_URL" ]]     && VLLM_BASE_URL=$(grep '^VLLM_BASE_URL=' .env 2>/dev/null | cut -d= -f2-)
+    # Load key values from .env if shell vars are empty (re-run case).
+    #
+    # ${VAR:-} on every read, NOT "$VAR". This script runs under `set -u`, and
+    # several of these are only ever assigned by an INTERACTIVE prompt —
+    # LLM_PROVIDER and VLLM_BASE_URL by the LLM configuration step, which
+    # unattended mode skips entirely. A bare "$LLM_PROVIDER" therefore aborted
+    # with "unbound variable" at the very last step of every unattended install,
+    # AFTER the images had been pulled and everything was otherwise ready.
+    #
+    # That is the exact path used by OPENTRANSCRIBE_UNATTENDED=1, by any CI or
+    # scripted install, and by the release-test harness — where it surfaced only
+    # as "one-liner failed", because the abort happened before this function
+    # printed anything at all.
+    # `|| true` on each read is load-bearing, not defensive noise. This script
+    # runs under `set -e` AND `set -o pipefail`: when the key is absent from .env
+    # the `grep | cut` pipeline exits 1, that becomes the assignment's status, and
+    # the script dies. An absent optional key is the NORMAL case, so the whole
+    # summary aborted on it.
+    _env_val() { grep "^$1=" .env 2>/dev/null | cut -d= -f2- || true; }
+
+    [[ -z "${WHISPER_MODEL:-}" ]]     && WHISPER_MODEL=$(_env_val WHISPER_MODEL)
+    [[ -z "${HUGGINGFACE_TOKEN:-}" ]] && HUGGINGFACE_TOKEN=$(_env_val HUGGINGFACE_TOKEN)
+    [[ -z "${LLM_PROVIDER:-}" ]]      && LLM_PROVIDER=$(_env_val LLM_PROVIDER)
+    [[ -z "${NGINX_SERVER_NAME:-}" ]] && NGINX_SERVER_NAME=$(_env_val NGINX_SERVER_NAME | tr -d '"')
+    [[ -z "${DETECTED_DEVICE:-}" ]]   && DETECTED_DEVICE=$(_env_val DETECTED_DEVICE)
+    [[ -z "${COMPUTE_TYPE:-}" ]]      && COMPUTE_TYPE=$(_env_val COMPUTE_TYPE)
+    [[ -z "${VLLM_BASE_URL:-}" ]]     && VLLM_BASE_URL=$(_env_val VLLM_BASE_URL)
+
+    # Guarantee every one is DEFINED from here on, so the echo blocks below
+    # cannot re-trigger the unbound-variable half of the same abort.
+    WHISPER_MODEL="${WHISPER_MODEL:-}"; HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-}"
+    LLM_PROVIDER="${LLM_PROVIDER:-}"; NGINX_SERVER_NAME="${NGINX_SERVER_NAME:-}"
+    DETECTED_DEVICE="${DETECTED_DEVICE:-}"; COMPUTE_TYPE="${COMPUTE_TYPE:-}"
+    VLLM_BASE_URL="${VLLM_BASE_URL:-}"
 
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
@@ -2328,10 +2447,23 @@ main() {
                 FORCE_CPU="true"
                 shift
                 ;;
+            --version)
+                # Pin to a specific release. Equivalent to OPENTRANSCRIBE_VERSION.
+                OPENTRANSCRIBE_VERSION="${2:-}"
+                [ -n "$OPENTRANSCRIBE_VERSION" ] || { echo "--version needs a value, e.g. --version v0.5.0"; exit 2; }
+                shift 2
+                ;;
+            --branch)
+                # Install from a git ref instead of a release. Testing only:
+                # unpinned, uses :latest images, not reproducible.
+                OPENTRANSCRIBE_BRANCH="${2:-}"
+                [ -n "$OPENTRANSCRIBE_BRANCH" ] || { echo "--branch needs a value, e.g. --branch master"; exit 2; }
+                shift 2
+                ;;
             -h|--help)
                 echo "OpenTranscribe installer"
                 echo ""
-                echo "Usage: setup-opentranscribe.sh [--cpu]"
+                echo "Usage: setup-opentranscribe.sh [--cpu] [--version vX.Y.Z] [--branch <ref>]"
                 echo ""
                 echo "Options:"
                 echo "  --cpu       Install in CPU-only mode. Skips NVIDIA GPU"
@@ -2342,12 +2474,21 @@ main() {
                 echo "              (e.g. WSL2 without a WSL-capable driver), or"
                 echo "              on any machine where you simply do not want"
                 echo "              GPU acceleration."
+                echo "  --version vX.Y.Z"
+                echo "              Install a specific published release. Compose files"
+                echo "              are downloaded at that tag and images are pinned to"
+                echo "              it, so the install is reproducible and can be rolled"
+                echo "              back. Default: the latest GitHub Release."
+                echo "  --branch <ref>"
+                echo "              Install from a git ref with :latest images. TESTING"
+                echo "              ONLY - the result is not reproducible."
                 echo "  -h, --help  Show this help message."
                 echo ""
                 echo "Environment variables (see script header for the full list):"
                 echo "  OPENTRANSCRIBE_FORCE_CPU  Non-empty = same as --cpu"
                 echo "  OPENTRANSCRIBE_UNATTENDED Non-empty = skip all prompts"
-                echo "  OPENTRANSCRIBE_BRANCH     Git branch for downloaded files"
+                echo "  OPENTRANSCRIBE_VERSION    Same as --version"
+                echo "  OPENTRANSCRIBE_BRANCH     Same as --branch"
                 exit 0
                 ;;
             *)
@@ -2356,6 +2497,10 @@ main() {
                 ;;
         esac
     done
+
+    # Decide WHAT to install before downloading anything.
+    resolve_install_ref
+    export OPENTRANSCRIBE_BRANCH OT_IMAGE_TAG
 
     if [[ "$FORCE_CPU" == "true" ]]; then
         echo -e "${BLUE}ℹ️  CPU-only install mode selected${NC}"

@@ -1,9 +1,0 @@
-# OpenTranscribe Alembic schema versions per release.
-# Format: <release_tag>\t<expected_alembic_head>
-# Append a row for every new release. Never edit historical rows.
-#
-# Note: v0.3.3 shipped with only the early Alembic migrations because most
-# schema bootstrapping still used database/init_db.sql at the time. Newer
-# releases use Alembic exclusively.
-v0.3.3	v020_add_system_settings
-v0.4.0	v355_add_diarization_settings

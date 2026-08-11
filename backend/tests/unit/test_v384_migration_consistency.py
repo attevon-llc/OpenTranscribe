@@ -81,19 +81,46 @@ def test_reasoning_content_column_exists_and_is_nullable(db_session):
     assert columns["reasoning_content"]["nullable"] is True
 
 
-def test_existing_rows_have_no_reasoning_content(db_session):
-    """Every row that predates v384 must read back as NULL, not empty string.
+def test_migration_did_not_backfill_empty_strings(db_session):
+    """v384 must leave pre-existing rows NULL, never `''`.
 
-    The application distinguishes "no reasoning" (None, hide the UI block) from
-    "reasoning was an empty string" (would never happen, but NULL is still the
-    correct default) — a backfilled `''` would make the collapsible section
-    render empty on every pre-v384 message.
+    The application distinguishes "no reasoning" (None → hide the collapsible
+    block) from "reasoning was an empty string" — a backfilled `''` would render
+    an empty section on every pre-v384 message.
+
+    This used to assert `count(reasoning_content IS NOT NULL) == 0`, i.e. that no
+    row ANYWHERE had reasoning content. That was strictly stronger than the
+    invariant above and only held on a database nobody had used: the app now ships
+    reasoning-model support (the `mock-reasoning` scenario model and the
+    collapsible display exist for it), so any legitimate use of the feature made
+    this fail. It did, on the dev database — 4 rows, all with real content and
+    zero empty strings, i.e. the invariant held and only the assertion was wrong
+    (issue #398).
+
+    Asserting the absence of `''` keeps the migration's actual contract pinned
+    while surviving real use of the feature it covers.
     """
     conn = db_session.connection()
-    non_null = conn.execute(
-        text("SELECT count(*) FROM chat_message WHERE reasoning_content IS NOT NULL")
+    empty_strings = conn.execute(
+        text("SELECT count(*) FROM chat_message WHERE reasoning_content = ''")
     ).scalar()
-    assert non_null == 0
+    assert empty_strings == 0, (
+        f"{empty_strings} chat_message row(s) have reasoning_content = '' — v384 "
+        "must leave pre-existing rows NULL so the UI can tell 'no reasoning' from "
+        "'empty reasoning'."
+    )
+
+
+def test_reasoning_content_has_no_server_default(db_session):
+    """A server default is the other way `''` could appear on a pre-v384 row.
+
+    The column check above proves nullability; this proves nothing is silently
+    filling the column in, which is what would turn a NULL into an empty string
+    for every row inserted after the migration.
+    """
+    conn = db_session.connection()
+    columns = {c["name"]: c for c in inspect(conn).get_columns("chat_message")}
+    assert columns["reasoning_content"].get("default") is None
 
 
 def test_downgrade_mirrors_the_upgrade():

@@ -5,6 +5,14 @@
 #   - Never pull images (use pre-loaded images)
 #   - Offline mode for HuggingFace
 #   - Offline-specific volume paths
+#
+# DELIBERATELY NOT PINNED with ${OT_IMAGE_TAG}, unlike docker-compose.prod.yml.
+# scripts/build-offline-package.sh does `docker save` on the `:latest` tags and
+# install-offline-package.sh `docker load`s them back under those same tags, so
+# :latest is the only tag that exists inside an air-gapped install. Interpolating
+# OT_IMAGE_TAG here would make compose look for a tag the package never loaded
+# the moment a user's .env pins a version. The package version is controlled by
+# which package you installed, not by a tag.
 
 services:
   postgres:

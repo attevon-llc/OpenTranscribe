@@ -32,6 +32,37 @@ USE_REMOTE_BUILDER="${USE_REMOTE_BUILDER:-false}"
 REMOTE_BUILDER_NAME="${REMOTE_BUILDER_NAME:-opentranscribe-multiarch}"
 DEFAULT_BUILDER_NAME="opentranscribe-builder"
 
+# BUILD_MODE=local  — build for the host arch only, --load into the local daemon,
+#                     push NOTHING. This is what the release flow uses to produce
+#                     images it can scan and run the release scenarios against
+#                     BEFORE anything reaches Docker Hub.
+# BUILD_MODE=push   — the historical behaviour: multi-arch, --push (default, so
+#                     existing callers are unaffected).
+#
+# Until this existed, EVERY path through this script ended in `buildx --push`:
+# there was no way to build a release candidate without publishing it, which
+# meant :latest — what every existing user pulls — moved before any release test
+# had run against it.
+#
+# --load cannot export a multi-arch manifest, so local mode is single-arch by
+# necessity; the other arch is validated after publish by the arm64 smoke step.
+BUILD_MODE="${BUILD_MODE:-push}"
+
+# Publish the moving :latest tag alongside :vX.Y.Z. The release flow sets this to
+# false and moves :latest afterwards with `buildx imagetools create`, which copies
+# the manifest by digest — so :latest and :vX.Y.Z are provably the same bytes
+# rather than two independent builds that happen to share a source tree.
+PUSH_LATEST="${PUSH_LATEST:-true}"
+
+# Print the buildx invocations and exit without building.
+DRY_RUN="${DRY_RUN:-false}"
+
+# Build identity baked into the images. The backend build context is ./backend,
+# so the repo-root VERSION file is NOT in the image — these args are the only
+# source a prod container has for its own version. See backend/app/core/version.py.
+GIT_SHA_FULL="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 # Function to print colored output
 print_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -153,6 +184,83 @@ run_security_scan() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# Build-mode helpers. One place decides platform / output / tag set, so the four
+# build functions cannot drift apart on it.
+# ---------------------------------------------------------------------------
+
+# Platforms for this run. Local mode is host-arch only: `--load` cannot export a
+# multi-arch manifest into the local image store.
+build_platforms() {
+    if [ "${BUILD_MODE}" = "local" ]; then
+        docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null || echo "linux/amd64"
+    else
+        echo "${PLATFORMS}"
+    fi
+}
+
+# --load (keep it here) vs --push (send it to Docker Hub).
+build_output_flag() {
+    if [ "${BUILD_MODE}" = "local" ]; then
+        echo "--load"
+    else
+        echo "--push"
+    fi
+}
+
+# Tag arguments for a repo: always :vX.Y.Z, plus :latest unless the caller is
+# going to move :latest by digest afterwards.
+build_tag_args() {
+    local repo="$1"
+    local args=("--tag" "${repo}:${VERSION_FULL}")
+    if [ "${PUSH_LATEST}" = "true" ]; then
+        args+=("--tag" "${repo}:latest")
+    fi
+    printf '%s\n' "${args[@]}"
+}
+
+# OCI provenance labels. Safe on every image — labels need no ARG declaration,
+# unlike build args, which warn when the Dockerfile does not declare them.
+# These are what makes `docker inspect` able to answer "what is this image?";
+# nothing set them before, which is why opentranscribe.sh's label-based version
+# fallback always came back empty.
+build_identity_labels() {
+    printf '%s\n' \
+        "--label" "org.opencontainers.image.version=${VERSION_FULL}" \
+        "--label" "org.opencontainers.image.revision=${GIT_SHA_FULL}" \
+        "--label" "org.opencontainers.image.created=${BUILD_TIME}"
+}
+
+# Build args for the BACKEND only. backend/Dockerfile.prod declares all three;
+# they are the sole source of build identity inside the image, because the build
+# context is ./backend and the repo-root VERSION file is therefore absent.
+#
+# Deliberately NOT applied to the frontend: frontend/Dockerfile.prod declares no
+# ARGs at all, so the --build-arg APP_VERSION this script used to pass it was a
+# silent no-op. The frontend takes its version from frontend/package.json at
+# build time via vite's __APP_VERSION__ define.
+build_backend_identity_args() {
+    printf '%s\n' \
+        "--build-arg" "APP_VERSION=${VERSION_FULL}" \
+        "--build-arg" "GIT_SHA=${COMMIT_SHA}" \
+        "--build-arg" "BUILD_TIME=${BUILD_TIME}"
+}
+
+# Announce what a build is about to do, and short-circuit under DRY_RUN.
+# Returns 1 when the caller should skip the actual build.
+build_announce() {
+    local what="$1"
+    print_info "${what}: mode=${BUILD_MODE} platforms=$(build_platforms) version=${VERSION_FULL}"
+    if [ "${BUILD_MODE}" = "local" ]; then
+        print_info "  local mode — loading into the local daemon, pushing NOTHING"
+    fi
+    if [ "${DRY_RUN}" = "true" ]; then
+        print_warning "  DRY_RUN=true — not building"
+        return 1
+    fi
+    return 0
+}
+
 # Function to build and push Blackwell backend image (ARM64 only)
 # Uses Dockerfile.blackwell with SM_121 compatibility patches for DGX Spark / GB10
 build_backend_blackwell() {
@@ -183,86 +291,85 @@ build_backend_blackwell() {
 
 # Function to build and push backend (no scan - scan runs separately)
 build_backend() {
-    print_info "Building backend image..."
-    print_info "Platforms: ${PLATFORMS}"
-    print_info "Version: ${VERSION_FULL}"
-    print_info "Tags: latest, ${VERSION_FULL}"
+    build_announce "Building backend image" || return 0
+
+    local tag_args identity_args
+    mapfile -t tag_args < <(build_tag_args "${REPO_BACKEND}")
+    mapfile -t identity_args < <(build_backend_identity_args; build_identity_labels)
 
     cd backend
 
-    # Build and push multi-arch image (only latest and full version tags)
     docker buildx build \
-        --platform "${PLATFORMS}" \
+        --platform "$(build_platforms)" \
         --file Dockerfile.prod \
-        --build-arg APP_VERSION="${VERSION_FULL}" \
-        --tag "${REPO_BACKEND}:latest" \
-        --tag "${REPO_BACKEND}:${VERSION_FULL}" \
+        "${identity_args[@]}" \
+        "${tag_args[@]}" \
         ${CACHE_FLAG} \
-        --push \
+        "$(build_output_flag)" \
         .
 
     cd ..
 
-    print_success "Backend image built and pushed successfully"
-    print_info "Tags pushed:"
-    print_info "  - ${REPO_BACKEND}:latest"
-    print_info "  - ${REPO_BACKEND}:${VERSION_FULL}"
+    print_success "Backend image built (${BUILD_MODE} mode)"
+    printf '%s\n' "${tag_args[@]}" | grep -v '^--tag$' | sed 's/^/  - /'
 }
 
 # Function to build and push frontend (no scan - scan runs separately)
 build_frontend() {
-    print_info "Building frontend image..."
-    print_info "Platforms: ${PLATFORMS}"
-    print_info "Version: ${VERSION_FULL}"
-    print_info "Tags: latest, ${VERSION_FULL}"
+    build_announce "Building frontend image" || return 0
+
+    local tag_args identity_args
+    mapfile -t tag_args < <(build_tag_args "${REPO_FRONTEND}")
+    mapfile -t identity_args < <(build_identity_labels)
 
     cd frontend
 
-    # Build and push multi-arch image (only latest and full version tags)
     docker buildx build \
-        --platform "${PLATFORMS}" \
+        --platform "$(build_platforms)" \
         --file Dockerfile.prod \
-        --build-arg APP_VERSION="${VERSION_FULL}" \
-        --tag "${REPO_FRONTEND}:latest" \
-        --tag "${REPO_FRONTEND}:${VERSION_FULL}" \
+        "${identity_args[@]}" \
+        "${tag_args[@]}" \
         ${CACHE_FLAG} \
-        --push \
+        "$(build_output_flag)" \
         .
 
     cd ..
 
-    print_success "Frontend image built and pushed successfully"
-    print_info "Tags pushed:"
-    print_info "  - ${REPO_FRONTEND}:latest"
-    print_info "  - ${REPO_FRONTEND}:${VERSION_FULL}"
+    print_success "Frontend image built (${BUILD_MODE} mode)"
+    printf '%s\n' "${tag_args[@]}" | grep -v '^--tag$' | sed 's/^/  - /'
 }
 
 # Function to build and push docs (nginx:alpine + Docusaurus static build)
 build_docs() {
-    print_info "Building docs image..."
-    print_info "Platforms: ${PLATFORMS}"
-    print_info "Version: ${VERSION_FULL}"
-    print_info "Tags: latest, ${VERSION_FULL}"
+    build_announce "Building docs image" || return 0
+
+    local tag_args identity_args
+    mapfile -t tag_args < <(build_tag_args "${REPO_DOCS}")
+    mapfile -t identity_args < <(build_identity_labels)
 
     cd docs-site
 
-    # Build with /docs/ base URL so internal links work when proxied at /docs/
+    # OT_VERSION drives the homepage version badge. docs-site/Dockerfile has
+    # declared this ARG all along and this script never passed it, so every
+    # published opentranscribe-docs image rendered an empty badge — the badge only
+    # ever worked for local `opentr.sh` builds, which do pass it.
+    #
+    # DOCS_BASE_URL keeps internal links correct when proxied at /docs/.
     docker buildx build \
-        --platform "${PLATFORMS}" \
+        --platform "$(build_platforms)" \
         --file Dockerfile \
         --build-arg DOCS_BASE_URL=/docs/ \
-        --tag "${REPO_DOCS}:latest" \
-        --tag "${REPO_DOCS}:${VERSION_FULL}" \
+        --build-arg OT_VERSION="${VERSION_FULL}" \
+        "${identity_args[@]}" \
+        "${tag_args[@]}" \
         ${CACHE_FLAG} \
-        --push \
+        "$(build_output_flag)" \
         .
 
     cd ..
 
-    print_success "Docs image built and pushed successfully"
-    print_info "Tags pushed:"
-    print_info "  - ${REPO_DOCS}:latest"
-    print_info "  - ${REPO_DOCS}:${VERSION_FULL}"
+    print_success "Docs image built (${BUILD_MODE} mode)"
+    printf '%s\n' "${tag_args[@]}" | grep -v '^--tag$' | sed 's/^/  - /'
 }
 
 # Function to run parallel security scans on both images
@@ -282,31 +389,64 @@ run_parallel_scans() {
     # Update security tool databases first
     update_security_tools
 
-    # Pull images in parallel
-    print_info "Pulling images for scanning..."
+    # SCAN_SOURCE=registry — discard the local image and pull :latest from Docker
+    #   Hub, then scan that. The historical behaviour. Only meaningful AFTER a
+    #   push, and only correct because the push happened first.
+    # SCAN_SOURCE=local    — scan the image that was just built, without touching
+    #   the registry. Required for a pre-push gate: registry mode would `docker
+    #   rmi` the candidate and pull the PREVIOUS release in its place, so the
+    #   scan would pass or fail on the wrong bytes entirely.
+    local scan_source="${SCAN_SOURCE:-registry}"
+    if [ "${BUILD_MODE}" = "local" ]; then
+        scan_source="local"
+    fi
+
     local pids=()
 
-    for component in "${components[@]}"; do
-        if [ "$component" = "backend" ]; then
-            (
-                docker rmi "${REPO_BACKEND}:latest" 2>/dev/null || true
-                docker pull --platform linux/amd64 "${REPO_BACKEND}:latest"
-            ) &
-            pids+=($!)
-        elif [ "$component" = "frontend" ]; then
-            (
-                docker rmi "${REPO_FRONTEND}:latest" 2>/dev/null || true
-                docker pull --platform linux/amd64 "${REPO_FRONTEND}:latest"
-            ) &
-            pids+=($!)
-        fi
-    done
+    if [ "${scan_source}" = "local" ]; then
+        print_info "Scanning locally built images (no registry pull)"
+        return_early_if_missing() {
+            local image="$1"
+            if ! docker image inspect "$image" >/dev/null 2>&1; then
+                print_error "Image not present locally: $image"
+                print_error "Build it first (BUILD_MODE=local) or use SCAN_SOURCE=registry"
+                return 1
+            fi
+        }
+        for component in "${components[@]}"; do
+            case "$component" in
+                backend)  return_early_if_missing "${REPO_BACKEND}:${VERSION_FULL}" || return 1 ;;
+                frontend) return_early_if_missing "${REPO_FRONTEND}:${VERSION_FULL}" || return 1 ;;
+            esac
+        done
+    else
+        # Pull images in parallel
+        print_info "Pulling images from the registry for scanning..."
 
-    # Wait for all pulls
-    for pid in "${pids[@]}"; do
-        wait $pid
-    done
-    print_success "Images pulled for scanning"
+        for component in "${components[@]}"; do
+            if [ "$component" = "backend" ]; then
+                (
+                    docker rmi "${REPO_BACKEND}:latest" 2>/dev/null || true
+                    docker pull --platform linux/amd64 "${REPO_BACKEND}:latest"
+                ) &
+                pids+=($!)
+            elif [ "$component" = "frontend" ]; then
+                (
+                    docker rmi "${REPO_FRONTEND}:latest" 2>/dev/null || true
+                    docker pull --platform linux/amd64 "${REPO_FRONTEND}:latest"
+                ) &
+                pids+=($!)
+            fi
+        done
+    fi
+
+    # Wait for all pulls (no-op in local mode — nothing was pulled)
+    if [ ${#pids[@]} -gt 0 ]; then
+        for pid in "${pids[@]}"; do
+            wait "$pid"
+        done
+        print_success "Images pulled for scanning"
+    fi
 
     # Run scans in parallel
     print_info "Starting parallel security scans..."
@@ -661,14 +801,20 @@ main() {
             print_info "Security scan only mode..."
             scan_only
 
-            # Push security reports and exit early (skip build success message)
-            print_info ""
-            print_info "📋 Pushing security reports..."
-            SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-            if [ -f "${SCRIPT_DIR}/push-security-reports.sh" ]; then
-                VERSION="${VERSION_FULL}" "${SCRIPT_DIR}/push-security-reports.sh" || {
-                    print_warning "⚠️  Security reports push had issues (see above for details)"
-                }
+            # Opt-in, same reasoning as the main path: this git-commits and
+            # pushes security-reports/ onto the current branch.
+            if [ "${PUSH_SECURITY_REPORTS:-false}" = "true" ]; then
+                print_info ""
+                print_info "📋 Pushing security reports..."
+                SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+                if [ -f "${SCRIPT_DIR}/push-security-reports.sh" ]; then
+                    VERSION="${VERSION_FULL}" "${SCRIPT_DIR}/push-security-reports.sh" || {
+                        print_warning "⚠️  Security reports push had issues (see above for details)"
+                    }
+                fi
+            else
+                print_info ""
+                print_info "📋 Security reports left uncommitted (PUSH_SECURITY_REPORTS=true to commit+push)"
             fi
             exit 0
             ;;
@@ -695,21 +841,45 @@ main() {
 
     print_success "All builds completed successfully!"
     print_info ""
-    print_info "Images pushed to Docker Hub with version ${VERSION_FULL}:"
+
+    # Report what actually happened. This summary used to say "Images pushed to
+    # Docker Hub" and list :latest unconditionally, which in local mode (or with
+    # PUSH_LATEST=false) described a push that never occurred.
+    local _dest _tags
+    if [ "${BUILD_MODE}" = "local" ]; then
+        _dest="loaded into the LOCAL Docker daemon (nothing pushed)"
+    else
+        _dest="pushed to Docker Hub"
+    fi
+    print_info "Images ${_dest} with version ${VERSION_FULL}:"
+
+    _tags() {
+        local repo="$1"
+        print_info "  - ${repo}:${VERSION_FULL}"
+        [ "${PUSH_LATEST}" = "true" ] && print_info "  - ${repo}:latest"
+        return 0
+    }
     if [ "${BUILD_TARGET}" = "backend" ] || [ "${BUILD_TARGET}" = "all" ] || [ "${BUILD_TARGET}" = "auto" ]; then
         print_info "Backend:"
-        print_info "  - ${REPO_BACKEND}:latest"
-        print_info "  - ${REPO_BACKEND}:${VERSION_FULL}"
+        _tags "${REPO_BACKEND}"
     fi
     if [ "${BUILD_TARGET}" = "frontend" ] || [ "${BUILD_TARGET}" = "all" ] || [ "${BUILD_TARGET}" = "auto" ]; then
         print_info "Frontend:"
-        print_info "  - ${REPO_FRONTEND}:latest"
-        print_info "  - ${REPO_FRONTEND}:${VERSION_FULL}"
+        _tags "${REPO_FRONTEND}"
     fi
-    print_info ""
-    print_info "To pull:"
-    print_info "  docker pull ${REPO_BACKEND}:latest      # Always latest"
-    print_info "  docker pull ${REPO_BACKEND}:${VERSION_FULL}   # Specific version"
+
+    if [ "${BUILD_MODE}" != "local" ]; then
+        print_info ""
+        print_info "To pull:"
+        print_info "  docker pull ${REPO_BACKEND}:${VERSION_FULL}   # Specific version"
+        [ "${PUSH_LATEST}" = "true" ] && \
+            print_info "  docker pull ${REPO_BACKEND}:latest      # Always latest"
+    fi
+    if [ "${PUSH_LATEST}" != "true" ] && [ "${BUILD_MODE}" != "local" ]; then
+        print_info ""
+        print_info "NOTE: :latest was NOT moved. Promote it by digest once validated:"
+        print_info "  docker buildx imagetools create -t ${REPO_BACKEND}:latest ${REPO_BACKEND}:${VERSION_FULL}"
+    fi
 
     # CRITICAL: Switch back to default builder to prevent interference with local dev builds
     print_info ""
@@ -717,8 +887,9 @@ main() {
     docker buildx use default
     print_success "✅ Default builder restored. Local development builds will work normally."
 
-    # Show build performance info if using emulation
-    if [ "${USE_REMOTE_BUILDER}" = "false" ] && [[ "${PLATFORMS}" == *"arm64"* ]]; then
+    # Show build performance info if using emulation. Local mode builds host-arch
+    # only, so QEMU is never involved there regardless of what PLATFORMS says.
+    if [ "${BUILD_MODE}" != "local" ] && [ "${USE_REMOTE_BUILDER}" = "false" ] && [[ "${PLATFORMS}" == *"arm64"* ]]; then
         print_info ""
         print_info "⚡ Performance Tip:"
         print_info "You used QEMU emulation for ARM64 builds (10-20x slower than native)"
@@ -727,7 +898,22 @@ main() {
         print_info "  2. Then: USE_REMOTE_BUILDER=true $0"
     fi
 
-    # Auto-commit and push security reports using dedicated script
+    # Commit and push security reports — OPT-IN.
+    #
+    # push-security-reports.sh performs a `git commit` + `git push` of
+    # security-reports/ onto WHATEVER BRANCH IS CHECKED OUT. Running that
+    # automatically from a build is surprising in normal use and actively unsafe
+    # during a release: it races the release commit, can land scan output on a
+    # release tag's branch, and mutates the working tree in the middle of a
+    # multi-stage pipeline.
+    #
+    # The release flow invokes it explicitly at the end, on master, after tagging.
+    if [ "${PUSH_SECURITY_REPORTS:-false}" != "true" ]; then
+        print_info ""
+        print_info "📋 Security reports left uncommitted (PUSH_SECURITY_REPORTS=true to commit+push)"
+        return 0
+    fi
+
     print_info ""
     print_info "📋 Pushing security reports..."
 

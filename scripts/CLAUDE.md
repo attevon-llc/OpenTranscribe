@@ -28,8 +28,12 @@ this file is for.
   the backend image (`DOWNLOAD_ALL_OPENSEARCH_MODELS`, `OPENSEARCH_MODELS`, `WHISPER_MODEL`).
   `fix-model-permissions.sh` chowns the cache to **1000:1000** (the container's non-root `appuser`).
 - **Fixtures** — `seed-fresh-deployment.sh`, `setup-watch-source-test-data.sh`, `test-watch-e2e.sh`.
-- **Release rehearsals** — `release-tests/`: `test-fresh-install.sh`, `test-upgrade-from-v033.sh`,
-  with `lib/guardrails.sh` as the safety firewall and `lib/{compose-patch,api-client,assertions}.sh`.
+- **Release rehearsals** — `release-tests/`: `test-fresh-install.sh`, `test-upgrade.sh`
+  (both auto-detect FROM/TO — see `lib/versions.sh`), with `lib/guardrails.sh` as the
+  safety firewall and `lib/{compose-patch,api-client,assertions,versions}.sh`.
+- **Release gates** — `check-schema-drift.py` (model-vs-schema, report-first),
+  `validate-deployments.sh` (~20 compose permutations in ~15 s),
+  `release/check-version-consistency.py` (the six version sources + Alembic single head).
 - **PKI** — `pki/`: `setup-test-pki.sh` (generates the gitignored `test-certs/`), `start-pki-prod.sh`,
   `test-pki-auth.sh`.
 - `common.sh` is sourced **only by `opentr.sh`** (docker checks, model-cache chown, OpenSearch model

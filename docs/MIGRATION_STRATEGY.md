@@ -39,13 +39,25 @@ git pull origin main
 ./opentr.sh start dev  # or: ./opentr.sh start prod
 ```
 
-The backend will detect your current schema version and apply all pending migrations up to `v355_add_diarization_settings`.
+The backend detects your current schema version and applies every pending
+migration up to the current head.
+
+> **The head moves.** This document was written for v0.4.0, when the head was
+> `v355_add_diarization_settings`; it is now well past that. Rather than
+> restating a value that goes stale, read it from the repo:
+>
+> ```bash
+> python3 scripts/release-tests/lib/alembic-head.py backend
+> ```
+>
+> or from a running stack — `/health/ready` reports `schema_revision` and
+> `schema_head` on every deployment.
 
 ---
 
 ## Schema Changes: v0.3.x → v0.4.0
 
-### New Migrations (v330 – v355)
+### Migrations added in v0.4.0 (v330 – v355)
 
 | Migration | Description |
 |-----------|-------------|
@@ -155,21 +167,35 @@ alembic upgrade head
 alembic downgrade -1
 
 # Stamp without running migration (use with caution)
-alembic stamp v355_add_diarization_settings
+alembic stamp <revision-id>
 ```
+
+> **Never copy a revision id out of documentation into `alembic stamp`.** Stamping
+> records "this schema is already at revision X" without touching the schema, so a
+> stale id tells the startup runner to skip every migration between the real state
+> and X — silently, and in the direction that loses the changes. Derive the id you
+> mean: `alembic history` for a specific step, or
+> `python3 scripts/release-tests/lib/alembic-head.py backend` for the head.
 
 ---
 
 ## Verification After Upgrade
 
-After upgrading to v0.4.0, verify the migration succeeded:
+The version-agnostic check, which works on every release:
+
+```bash
+curl -s localhost:5174/health/ready | jq '.checks.schema'
+# {"current": "<revision>", "head": "<revision>", "ok": true}
+```
+
+`ok` is `current == head`. That comparison is the whole verification — it needs no
+table here to stay accurate, which is why it replaced one.
+
+The v0.4.0-specific SQL below is kept as a worked example of checking a *particular*
+upgrade's columns:
 
 ```sql
--- Check Alembic version
-SELECT * FROM alembic_version;
--- Should show: v355_add_diarization_settings
-
--- Verify new columns exist
+-- Verify v0.4.0's new columns exist
 SELECT column_name FROM information_schema.columns
 WHERE table_name = 'media_file'
   AND column_name IN ('diarization_disabled', 'ai_summary_enabled', 'requested_whisper_model');

@@ -47,6 +47,13 @@ services:
       RATE_LIMIT_AUTH_PER_MINUTE: ${DEV_RATE_LIMIT_AUTH_PER_MINUTE:-120}
       ACCOUNT_LOCKOUT_THRESHOLD: ${DEV_ACCOUNT_LOCKOUT_THRESHOLD:-100}
       ACCOUNT_LOCKOUT_DURATION_MINUTES: ${DEV_ACCOUNT_LOCKOUT_DURATION_MINUTES:-1}
+      # Dev bind-mounts source over a possibly stale image, so the image's baked
+      # APP_VERSION can be wrong here — opentr.sh exports the value from the
+      # VERSION file and this passes it through. The BASE compose deliberately does
+      # NOT do this: there it injected an empty string on any deployment without a
+      # host value (i.e. every real one) and overrode the correctly baked version,
+      # making every production container report "unknown".
+      APP_VERSION: ${APP_VERSION:-}
 
   celery-worker:
     image: opentranscribe-backend:latest

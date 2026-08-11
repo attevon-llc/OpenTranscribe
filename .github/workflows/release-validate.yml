@@ -1,0 +1,205 @@
+name: Release Validation
+
+# Validates a release's METADATA. Deliberately builds no images.
+#
+# The 13.8 GB backend image cannot be built on GitHub's free runners — that is
+# why docker-publish.yml's backend ARM64 job is `if: false` and why publishing
+# happens from a workstation with a remote ARM64 builder. So CI's job here is
+# everything that is cheap and that a human reliably forgets: version agreement,
+# the Alembic single-head invariant, whether every deployment permutation still
+# produces valid compose config, and whether a pinned install could actually
+# download its files from this tag.
+#
+# THIS WORKFLOW MUST NOT CREATE THE GITHUB RELEASE.
+# Images are pushed from the workstation AFTER the tag exists. The installer
+# resolves "latest" from the GitHub Release, so publishing it here would point
+# every new user at a version whose images do not exist yet. `release.sh finish`
+# creates the release, and refuses until it sees this workflow green for the tag.
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'VERSION'
+      - 'pyproject.toml'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - 'backend/alembic/versions/**'
+      - 'release-manifest.txt'
+      - 'docker-compose*.yml'
+      - '.env.example'
+      - 'scripts/release/**'
+      - 'scripts/validate-deployments.sh'
+      - '.github/workflows/release-validate.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to validate (defaults to the current ref)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Metadata and deployment config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Full history: previous-version detection walks the tag list.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Version consistency
+        run: |
+          # post-tag on a tag push (the tag must exist and point at HEAD),
+          # ci on a PR (the tag does not exist yet and must not).
+          MODE=ci
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then MODE=post-tag; fi
+          echo "mode=$MODE"
+          python3 scripts/release/check-version-consistency.py --mode "$MODE"
+
+      - name: Alembic chain integrity
+        run: |
+          # Stdlib-only by design, so it needs no venv and no project deps —
+          # the same property that lets it run against an old release's worktree.
+          python3 scripts/release-tests/lib/alembic-head.py backend --json
+
+      - name: Deployment matrix (compose config only, no images pulled)
+        run: ./scripts/validate-deployments.sh
+
+      - name: Release manifest is fetchable at this ref
+        if: github.ref_type == 'tag'
+        run: |
+          # THE check that pinning introduces: setup-opentranscribe.sh downloads
+          # every manifest path from raw.githubusercontent at the pinned tag. A
+          # path that 404s breaks the install for every user of this release, and
+          # nothing else would notice until someone tried it.
+          set -euo pipefail
+          REF="${GITHUB_REF_NAME}"
+          BASE="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${REF}"
+          fail=0
+          while IFS= read -r line; do
+            case "$line" in ''|'#'*) continue ;; esac
+            path=$(printf '%s' "$line" | cut -f1 | tr -d '[:space:]')
+            flags=$(printf '%s' "$line" | cut -s -f2)
+            [ -n "$path" ] || continue
+            if curl -fsSI "${BASE}/${path}" >/dev/null 2>&1; then
+              echo "  ok       $path"
+            else
+              case ",$flags," in
+                *,optional,*) echo "  optional $path (absent)" ;;
+                *) echo "  MISSING  $path"; fail=1 ;;
+              esac
+            fi
+          done < release-manifest.txt
+          [ "$fail" -eq 0 ] || { echo "::error::a required release artifact is not fetchable at ${REF}"; exit 1; }
+
+      - name: Shellcheck the release-critical scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          # The release-tests harness is included deliberately. It is the most
+          # destructive code in the repository -- it calls `docker volume rm` and
+          # `rm -rf` against paths it computes at runtime -- and the pre-commit
+          # shellcheck hook only inspects files a given PR happens to touch. A
+          # quoting bug in guardrails.sh is not something to find by changing it.
+          shellcheck --severity=warning \
+            setup-opentranscribe.sh \
+            opentranscribe.sh \
+            scripts/release.sh \
+            scripts/release/*.sh \
+            scripts/validate-deployments.sh \
+            scripts/security-scan.sh \
+            scripts/release-tests/*.sh \
+            scripts/release-tests/lib/*.sh
+
+  schema:
+    name: Schema integrity
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: transcribe_test
+        # 5176 matches what backend/tests/conftest.py expects.
+        ports: ['5176:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install CPU-only deps
+        run: |
+          # requirements-ci.txt, never requirements-dev: CI is CPU-only.
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-ci.txt
+
+      - name: Migrate an empty database to head
+        working-directory: backend
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: '5176'
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: transcribe_test
+          DATA_DIR: /tmp/ci-data
+          MODELS_DIR: /tmp/ci-models
+          TEMP_DIR: /tmp/ci-temp
+          SKIP_S3: 'True'
+          SKIP_OPENSEARCH: 'True'
+        run: |
+          mkdir -p /tmp/ci-data /tmp/ci-models /tmp/ci-temp
+          python -m alembic upgrade head
+
+      - name: Structural tests
+        working-directory: backend
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: '5176'
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: transcribe_test
+          DATA_DIR: /tmp/ci-data
+          MODELS_DIR: /tmp/ci-models
+          TEMP_DIR: /tmp/ci-temp
+          SKIP_S3: 'True'
+          SKIP_OPENSEARCH: 'True'
+        run: |
+          python -m pytest -o addopts="" -q \
+            tests/unit/test_alembic_chain.py \
+            tests/unit/test_model_registration.py \
+            tests/unit/test_version_consistency.py \
+            tests/unit/test_release_manifest.py \
+            tests/unit/test_install_upgrade_scripts.py \
+            tests/unit/test_env_example_coverage.py
+
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - name: Build
+        working-directory: docs-site
+        # deploy-docs.yml does NOT fire on tag pushes, so this is the only thing
+        # that catches a duplicate blog slug or an undefined author/tag before a
+        # release goes out.
+        run: npm ci && npm run build

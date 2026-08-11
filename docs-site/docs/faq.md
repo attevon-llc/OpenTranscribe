@@ -89,7 +89,7 @@ The PyAnnote speaker diarization models are "gated" - they require accepting a u
 
 ### Can I run OpenTranscribe offline?
 
-Yes! After initial setup and model downloads (~2.9GB), OpenTranscribe works completely offline. Use the offline Docker Compose configuration:
+Yes! After initial setup and model downloads, OpenTranscribe works completely offline. Use the offline Docker Compose configuration:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.offline.yml up -d
@@ -252,7 +252,7 @@ Yes! OpenTranscribe uses Celery workers to process multiple files in parallel:
 
 **For OpenTranscribe:**
 - Docker images: ~5GB
-- AI models: ~2.9GB
+- AI models: several GB (depends on `WHISPER_MODEL`; see [HuggingFace setup](./installation/huggingface-setup.md))
 - Database: ~100MB (grows with transcriptions)
 
 **For media files:**

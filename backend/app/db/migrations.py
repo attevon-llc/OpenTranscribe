@@ -371,6 +371,16 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'chat_message' AND column_name = 'reasoning_content')"
     )
 
+    # v385 guard: three orphan tables dropped (issue #398). This revision REMOVES
+    # objects, so the fingerprint is an absence, not a presence — the probe is
+    # inverted relative to every additive revision above. All three must be gone;
+    # a database with any of them still present predates v385.
+    has_orphan_tables = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+        "WHERE table_name IN ('upload_session', 'speaker_audio_clip', "
+        "'user_certificate_preferences'))"
+    )
+
     # v379 guard (formerly v377): the auth-config data rename. This revision adds
     # NO DDL, so there is no column to probe — the fingerprint is the absence of
     # the retired key prefix in both config tables. A deployment that never
@@ -395,6 +405,38 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     # the NEW numbers; nothing about the schema DDL itself changed.
 
     # Return the highest version stamp that matches (newest first)
+    # v385: the three orphan tables are gone. Everything v384 requires must also
+    # hold — this revision only subtracts, so it shares v384's fingerprint plus
+    # the absence.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+        and has_user_approval_status
+        and has_approval_status_check
+        and has_scim_token
+        and has_proxy_group_source
+        and has_saml_subject
+        and has_saml_auth_type_check
+        and has_chat_reasoning_content
+        and not has_orphan_tables
+    ):
+        return "v385_drop_orphan_tables"
     # v384: the chat_message.reasoning_content column (collapsible reasoning display).
     if (
         has_cloud_seams

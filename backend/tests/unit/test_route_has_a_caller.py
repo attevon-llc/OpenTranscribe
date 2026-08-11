@@ -59,6 +59,11 @@ _EXTERNAL_INTEGRATION_PREFIXES = (
     "/api/auth/proxy",  # an authenticating reverse proxy asserting a header
     "/health",
     "/metrics",
+    # Build identity. Same category as /health: the callers are the release
+    # harness (which asserts the running version equals the version under test),
+    # `opentranscribe.sh version`, and anything checking what is deployed — none
+    # of which live in frontend/src.
+    "/api/version",
     "/api/docs",
     "/api/redoc",
     "/api/openapi",

@@ -678,12 +678,28 @@ class TagWithCount(Tag):
     ``usage_count`` is scoped to the files the caller can access, and the unused
     filter is its exact complement — both read the same count, so a tag can
     never report ``0`` here while being absent from ``/tags/unused``.
-    ``awaiting_review`` is shipped pre-computed so the SPA renders the badge
-    instead of re-deriving it from the origin string.
     """
 
     usage_count: int = 0
-    awaiting_review: bool = False
+
+
+class TagOnSelection(Tag):
+    """A tag carried by some or all of a set of selected files.
+
+    The bulk apply surface needs to show what the selection **already** has, not
+    just offer to add: `file_count` is how many of the selected files carry this
+    tag, so the UI can distinguish a tag on every file from one on a few. `GET
+    /api/files` deliberately carries no per-file tags (#326), so this is the only
+    way that surface can know.
+    """
+
+    file_count: int = 0
+    selection_size: int = 0
+
+    @property
+    def on_every_file(self) -> bool:
+        """Whether removing it would clear the tag from the whole selection."""
+        return self.selection_size > 0 and self.file_count == self.selection_size
 
 
 class TagClusterMember(Tag):
@@ -776,12 +792,6 @@ class TagMutationResult(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class TagReviewRequest(BaseModel):
-    """Accept or reject one or more auto-labeled tags."""
-
-    tag_uuids: list[UUID] = Field(..., min_length=1)
-
-
 class TagPromoteRequest(BaseModel):
     """Publish one or more owned tags into the shared vocabulary.
 
@@ -791,45 +801,6 @@ class TagPromoteRequest(BaseModel):
     """
 
     tag_uuids: list[UUID] = Field(..., min_length=1)
-
-
-class TagReviewEntry(BaseModel):
-    """Per-tag outcome of an accept / reject.
-
-    ``outcome`` is ``accepted``, ``rejected``, or ``not_applicable`` — the tag
-    list allows multi-select across filters, so a selection routinely mixes
-    auto-labeled tags with hand-created ones and the ineligible members are
-    reported rather than failing the call. The three values are the
-    ``REVIEW_*`` constants in ``services/tag_review.py``, spelled out here
-    rather than imported because a schema must not depend on a service.
-    """
-
-    uuid: UUID
-    name: str
-    outcome: Literal["accepted", "rejected", "not_applicable"]
-    removed_association_count: int = 0
-    retained_association_count: int = 0
-    tag_removed: bool = False
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class TagReviewResult(BaseModel):
-    """Outcome of an accept / reject, or of the preview that precedes it.
-
-    The two association counts are deliberately separate: rejecting removes only
-    what the auto-labeler applied, so a caller shown one number could not tell a
-    reject that clears a tag from a reject that leaves most of it in place.
-    """
-
-    tags: list[TagReviewEntry] = []
-    removed_association_count: int = 0
-    retained_association_count: int = 0
-    deleted_uuids: list[UUID] = []
-    applied: bool = False
-    impact: TagImpact
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class CommentBase(BaseModel):

@@ -1,7 +1,7 @@
 """Collision clustering and the narrowing filters over the tag list.
 
 A third sibling of :mod:`app.services.tag_operations` (rename / merge / delete)
-and :mod:`app.services.tag_review` (accept / reject), split off because both of
+split off because
 those are already at the size limit. This module is the **read** half of tag
 management: it decides which tags are duplicates of each other, which are
 awaiting review, and which nobody is using — everything ``GET /tags`` and
@@ -42,6 +42,7 @@ from __future__ import annotations
 import difflib
 import logging
 import uuid as uuid_pkg
+from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
 
@@ -60,7 +61,6 @@ from app.services.tag_service import OWNERSHIP_SHARED_WITH_ME
 from app.services.tag_service import OWNERSHIP_SYSTEM
 from app.services.tag_service import TAG_OWNERSHIPS
 from app.services.tag_service import accessible_file_ids_subquery
-from app.services.tag_service import is_awaiting_review
 from app.services.tag_service import normalize_tag_name
 from app.services.tag_service import owned_or_system
 from app.services.tag_service import tag_ownership
@@ -87,9 +87,6 @@ class TagListEntry:
         name: Stored name.
         source: Origin, ``None`` for rows predating auto-labeling.
         usage_count: Files **the caller can see** carrying this tag.
-        awaiting_review: True when the tag is still the auto-labeler's to accept
-            or reject. Shipped as a flag so the SPA never re-derives it from the
-            origin string.
         ownership: The caller's relationship to the tag — ``mine``, ``system``
             or ``shared_with_me``. Computed here because it needs the caller;
             ``user_id`` itself never reaches the wire.
@@ -99,7 +96,6 @@ class TagListEntry:
     name: str
     source: str | None
     usage_count: int
-    awaiting_review: bool
     ownership: str = OWNERSHIP_MINE
 
 
@@ -364,7 +360,6 @@ def list_tags_filtered(
     *,
     user_id: int,
     organization_id: OrgScope = UNSCOPED,
-    awaiting_review: bool = False,
     unused: bool = False,
     colliding: bool = False,
     scope: str = SCOPE_ALL,
@@ -378,8 +373,6 @@ def list_tags_filtered(
         db: Database session.
         user_id: The acting user; usage is scoped to files they can access.
         organization_id: Tenant scope for that gate.
-        awaiting_review: Keep only tags the auto-labeler created and nobody has
-            accepted or rejected yet.
         unused: Keep only tags with no accessible file — the exact complement of
             ``usage_count > 0``, from the same count.
         colliding: Keep only tags sharing a normalized name with another tag.
@@ -416,8 +409,6 @@ def list_tags_filtered(
 
     for tag in query.order_by(Tag.name).all():
         count = usage.get(tag.id, 0)
-        if awaiting_review and not is_awaiting_review(tag):
-            continue
         if unused and count:
             continue
         if colliding and tag.id not in collision_ids:
@@ -428,7 +419,6 @@ def list_tags_filtered(
                 name=tag.name,
                 source=tag.source,
                 usage_count=count,
-                awaiting_review=is_awaiting_review(tag),
                 ownership=tag_ownership(tag, user_id),
             )
         )
@@ -456,3 +446,42 @@ def list_unused_tag_rows(
     usage = accessible_usage_counts(db, user_id=user_id, organization_id=organization_id)
     rows = db.query(Tag).filter(owned_or_system(user_id)).order_by(Tag.name).all()
     return [tag for tag in rows if not usage.get(tag.id, 0)]
+
+
+def tags_on_files(
+    db: Session, file_ids: Sequence[int], *, user_id: int, organization_id: OrgScope = UNSCOPED
+) -> list[tuple[Tag, int]]:
+    """Return the tags carried by ``file_ids``, with how many carry each.
+
+    Powers the bulk apply surface, which has to show what a selection already
+    has before offering to change it — ``GET /api/files`` carries no per-file
+    tags (#326), so nothing else can answer this.
+
+    The file set is intersected with the caller's accessible files first: a
+    selection cannot be used to read tags off a file the caller could not open
+    directly.
+
+    Args:
+        db: Database session.
+        file_ids: Internal ids of the selected files.
+        user_id: The acting user.
+        organization_id: Tenant scope.
+
+    Returns:
+        ``(tag, file_count)`` pairs, most-carried first then by name, so a tag
+        on every selected file sorts above one on a single file.
+    """
+    wanted = sorted({int(f) for f in file_ids})
+    if not wanted:
+        return []
+
+    accessible = select(accessible_file_ids_subquery(db, user_id, organization_id))
+    rows = (
+        db.query(Tag, func.count(distinct(FileTag.media_file_id)).label("file_count"))
+        .join(FileTag, FileTag.tag_id == Tag.id)
+        .filter(FileTag.media_file_id.in_(wanted), FileTag.media_file_id.in_(accessible))
+        .group_by(Tag.id)
+        .order_by(func.count(distinct(FileTag.media_file_id)).desc(), Tag.name)
+        .all()
+    )
+    return [(tag, int(count)) for tag, count in rows]

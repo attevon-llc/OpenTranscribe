@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import uuid
 
-from app.core.constants import TAG_SOURCE_AI_ACCEPTED
 from app.core.constants import TAG_SOURCE_AUTO_AI
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.models.media import FileTag
@@ -263,37 +262,6 @@ def test_unused_filter_excludes_a_tag_the_caller_can_see_in_use(db_session, norm
     assert tag.uuid not in {entry.uuid for entry in unused}
 
 
-def test_awaiting_review_filter_covers_only_the_auto_labelers_tags(db_session, normal_user):
-    """Manual, accepted, and legacy NULL origins are not awaiting review."""
-    suffix = _suffix()
-    auto = _raw_tag(db_session, f"auto-{suffix}", source=TAG_SOURCE_AUTO_AI)
-    manual = _raw_tag(db_session, f"manual-{suffix}", source=TAG_SOURCE_MANUAL)
-    accepted = _raw_tag(db_session, f"accepted-{suffix}", source=TAG_SOURCE_AI_ACCEPTED)
-    legacy = _raw_tag(db_session, f"legacy-{suffix}", source=None)
-
-    awaiting = {
-        entry.uuid
-        for entry in list_tags_filtered(db_session, user_id=normal_user.id, awaiting_review=True)
-    }
-
-    assert auto.uuid in awaiting
-    assert manual.uuid not in awaiting
-    assert accepted.uuid not in awaiting
-    assert legacy.uuid not in awaiting
-
-
-def test_list_entries_carry_the_awaiting_review_flag(db_session, normal_user):
-    """The SPA renders the badge; it does not re-derive it from the origin string."""
-    suffix = _suffix()
-    auto = _raw_tag(db_session, f"flagged-{suffix}", source=TAG_SOURCE_AUTO_AI)
-    manual = _raw_tag(db_session, f"unflagged-{suffix}", source=TAG_SOURCE_MANUAL)
-
-    listed = {entry.uuid: entry for entry in list_tags_filtered(db_session, user_id=normal_user.id)}
-
-    assert listed[auto.uuid].awaiting_review is True
-    assert listed[manual.uuid].awaiting_review is False
-
-
 def test_colliding_filter_narrows_to_cluster_members(db_session, normal_user):
     """The colliding filter returns exactly the tags a cluster claims."""
     suffix = _suffix()
@@ -313,14 +281,20 @@ def test_colliding_filter_narrows_to_cluster_members(db_session, normal_user):
 def test_filters_combine(db_session, normal_user):
     """Filters narrow together rather than replacing one another."""
     suffix = _suffix()
-    auto_used = _raw_tag(db_session, f"combo-used-{suffix}", source=TAG_SOURCE_AUTO_AI)
-    auto_unused = _raw_tag(db_session, f"combo-free-{suffix}", source=TAG_SOURCE_AUTO_AI)
+    # Owned, because the scope arm of the combination is "mine" — a system tag
+    # would be excluded by that alone and prove nothing about combining.
+    auto_used = _raw_tag(
+        db_session, f"combo-used-{suffix}", source=TAG_SOURCE_AUTO_AI, user_id=normal_user.id
+    )
+    auto_unused = _raw_tag(
+        db_session, f"combo-free-{suffix}", source=TAG_SOURCE_AUTO_AI, user_id=normal_user.id
+    )
     _attach(db_session, _make_file(db_session, normal_user), auto_used)
 
     narrowed = {
         entry.uuid
         for entry in list_tags_filtered(
-            db_session, user_id=normal_user.id, awaiting_review=True, unused=True
+            db_session, user_id=normal_user.id, unused=True, scope="mine"
         )
     }
 

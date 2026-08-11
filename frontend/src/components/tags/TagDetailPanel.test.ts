@@ -6,7 +6,13 @@ vi.mock('$stores/locale', async () => {
   const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
   return {
     t: readable((key: string, opts?: Record<string, unknown>) => {
-      let out = en[key] ?? key;
+      // Mirror i18next's plural resolution: a `count` option selects the
+      // `_one` / `_other` variant. Without it, pluralized keys fall through to
+      // the raw key and every assertion on that copy fails for the wrong reason.
+      const count = opts?.count;
+      const plural =
+        typeof count === 'number' ? (count === 1 ? `${key}_one` : `${key}_other`) : undefined;
+      let out = (plural && en[plural]) ?? en[key] ?? key;
       for (const [name, value] of Object.entries(opts ?? {})) {
         out = out.split(`{{${name}}}`).join(String(value));
       }
@@ -15,8 +21,8 @@ vi.mock('$stores/locale', async () => {
   };
 });
 
+import type { TagImpact } from '$lib/types/tag';
 import TagDetailPanel from './TagDetailPanel.svelte';
-import type { TagImpact, TagReviewResult } from '$lib/types/tag';
 
 const UUID = 'aaaaaaaa-0000-0000-0000-000000000001';
 
@@ -34,23 +40,6 @@ const impact: TagImpact = {
   total_file_count: 500,
 };
 
-const rejectResult: TagReviewResult = {
-  tags: [
-    {
-      uuid: UUID,
-      name: 'interviews',
-      outcome: 'rejected',
-      removed_association_count: 7,
-      retained_association_count: 2,
-      tag_removed: false,
-    },
-  ],
-  removed_association_count: 7,
-  retained_association_count: 2,
-  deleted_uuids: [],
-  applied: false,
-  impact,
-};
 
 describe('TagDetailPanel', () => {
   it('shows the tag with its usage and origin', () => {
@@ -60,14 +49,6 @@ describe('TagDetailPanel', () => {
     expect(screen.getByText('Added by hand')).toBeInTheDocument();
   });
 
-  it('offers accept and reject only for tags awaiting review', async () => {
-    const { rerender } = render(TagDetailPanel, { props: { tag } });
-    expect(screen.queryByRole('button', { name: 'Accept' })).toBeNull();
-
-    await rerender({ tag: { ...tag, awaiting_review: true } });
-    expect(screen.getByRole('button', { name: 'Accept' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
-  });
 
   describe('inline rename', () => {
     it('submits the typed name and restores the prior value on cancel', async () => {
@@ -147,26 +128,6 @@ describe('TagDetailPanel', () => {
       const confirm = deleteButtons[deleteButtons.length - 1];
       await fireEvent.click(confirm);
       expect(confirmDelete).toHaveBeenCalledTimes(1);
-    });
-
-    it('reports removed and retained associations before rejecting', async () => {
-      const previewReject = vi.fn();
-      const { rerender } = render(TagDetailPanel, {
-        props: { tag: { ...tag, awaiting_review: true } },
-        events: { previewReject },
-      });
-
-      await fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
-      expect(previewReject).toHaveBeenCalledTimes(1);
-
-      await rerender({ tag: { ...tag, awaiting_review: true }, rejectPreview: rejectResult });
-      expect(screen.getByText('7 auto-applied links removed')).toBeInTheDocument();
-      expect(screen.getByText('2 hand-applied links kept')).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          'Hand-applied tags are kept, so a tag that has any survives the reject.'
-        )
-      ).toBeInTheDocument();
     });
 
     it('shows a pending label and disables the confirming control while a delete is in flight', async () => {

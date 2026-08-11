@@ -156,7 +156,7 @@
         // tag is on the file now, so `availableTags` filters it out of both the
         // suggestion chips and the dropdown, which are the only readers of
         // these two fields. A real count arrives with the next `listTags()`.
-        allTags = [...allTags, { ...finalTag, usage_count: 0, awaiting_review: false }];
+        allTags = [...allTags, { ...finalTag, usage_count: 0 }];
       }
 
       if (tags.some(t => t.uuid === finalTag.uuid)) {

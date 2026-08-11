@@ -3,7 +3,7 @@
  *
  * Mirrors the Pydantic schemas in `backend/app/schemas/media.py` (Tag,
  * TagWithCount, TagCollisionCluster, TagImpact*, TagMutationResult,
- * TagReview*) and the bulk tag envelope in
+ * and the bulk tag envelope in
  * `backend/app/api/endpoints/files/management.py`.
  */
 
@@ -30,12 +30,10 @@ export interface Tag {
  * A tag plus the counts the list UI renders.
  *
  * `usage_count` is scoped to the files the caller can access — the `unused`
- * filter is its exact complement. `awaiting_review` is pre-computed by the
- * backend so the badge is never re-derived from the source string here.
+ * filter is its exact complement.
  */
 export interface TagWithCount extends Tag {
   usage_count: number;
-  awaiting_review: boolean;
 }
 
 /**
@@ -69,7 +67,6 @@ export type TagScope = 'all' | TagOwnership;
 
 /** Server-side filters for the tag list; they combine (AND). */
 export interface TagListFilters {
-  awaiting_review?: boolean;
   unused?: boolean;
   colliding?: boolean;
   scope?: TagScope;
@@ -144,40 +141,6 @@ export interface TagMutationResult {
   impact: TagImpact;
 }
 
-/** Accept endorses an auto-labeled tag; reject drops the associations it created. */
-export type TagReviewAction = 'accept' | 'reject';
-
-/**
- * Per-tag outcome of an accept / reject. `not_applicable` covers a tag the
- * auto-labeler did not create — reported rather than failing the call.
- */
-export type TagReviewOutcome = 'accepted' | 'rejected' | 'not_applicable';
-
-export interface TagReviewEntry {
-  uuid: string;
-  name: string;
-  outcome: TagReviewOutcome;
-  removed_association_count: number;
-  retained_association_count: number;
-  tag_removed: boolean;
-}
-
-/**
- * Outcome of an accept / reject, or of the preview that precedes it
- * (`applied` is false for a preview).
- *
- * The two association counts stay separate: rejecting removes only what the
- * auto-labeler applied, so one number could not distinguish a reject that
- * clears a tag from one that leaves most of it in place.
- */
-export interface TagReviewResult {
-  tags: TagReviewEntry[];
-  removed_association_count: number;
-  retained_association_count: number;
-  deleted_uuids: string[];
-  applied: boolean;
-  impact: TagImpact;
-}
 
 /** Bulk tagging rides the files rail (`/files/management/bulk-action`). */
 export type BulkTagAction = 'add_tag' | 'remove_tag';

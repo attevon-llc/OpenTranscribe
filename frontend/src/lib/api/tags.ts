@@ -19,8 +19,6 @@ import type {
   TagListFilters,
   TagMutationResult,
   TagRenameRequest,
-  TagReviewAction,
-  TagReviewResult,
   TagWithCount,
 } from '$lib/types/tag';
 
@@ -43,7 +41,6 @@ function tagUuidParams(tagUuids: string[], extra?: Record<string, string>): URLS
  */
 export async function listTags(filters: TagListFilters = {}): Promise<TagWithCount[]> {
   const params: Record<string, boolean | string> = {};
-  if (filters.awaiting_review) params.awaiting_review = true;
   if (filters.unused) params.unused = true;
   if (filters.colliding) params.colliding = true;
   // Ownership is a separate axis from the three view filters, so "my unused
@@ -117,32 +114,6 @@ export async function mergeTags(
 /** Delete one or more tags, returning the impact the delete realized. */
 export async function deleteTags(tagUuids: string[]): Promise<TagMutationResult> {
   const response = await axiosInstance.delete('/tags', { params: tagUuidParams(tagUuids) });
-  return response.data;
-}
-
-/** Report what accepting or rejecting these tags would do, applying nothing. */
-export async function getTagReviewImpact(
-  tagUuids: string[],
-  action: TagReviewAction
-): Promise<TagReviewResult> {
-  const response = await axiosInstance.get('/tags/review-impact', {
-    params: tagUuidParams(tagUuids, { action }),
-  });
-  return response.data;
-}
-
-/** Endorse auto-labeled tags so they stop awaiting review. Associations are untouched. */
-export async function acceptTags(tagUuids: string[]): Promise<TagReviewResult> {
-  const response = await axiosInstance.post('/tags/accept', { tag_uuids: tagUuids });
-  return response.data;
-}
-
-/**
- * Remove the associations the auto-labeler created for these tags. The tag row
- * goes only when no association is left, so hand-applied work survives.
- */
-export async function rejectTags(tagUuids: string[]): Promise<TagReviewResult> {
-  const response = await axiosInstance.post('/tags/reject', { tag_uuids: tagUuids });
   return response.data;
 }
 

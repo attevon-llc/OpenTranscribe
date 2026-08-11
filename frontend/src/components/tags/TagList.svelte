@@ -4,13 +4,11 @@
   /**
    * One selectable tag as the manager renders it.
    *
-   * Deliberately looser than `TagWithCount`: collision-cluster members arrive
-   * without `awaiting_review` (the backend does not compute it for that view),
-   * so the flag is optional rather than faked as `false`.
+   * Deliberately looser than `TagWithCount`: collision-cluster members carry no
+   * usage-derived extras beyond the count.
    */
   export interface TagListEntry extends Tag {
     usage_count: number;
-    awaiting_review?: boolean;
   }
 
   /**
@@ -360,9 +358,6 @@
             <Badge variant="default" title={$t('tags.manager.sharedWithMeTooltip')}>
               {$t('tags.manager.sharedWithMeBadge')}
             </Badge>
-          {/if}
-          {#if row.kind === 'tag' && row.entry.awaiting_review}
-            <Badge variant="warning">{$t('tags.manager.awaitingReview')}</Badge>
           {/if}
         </div>
       {/each}

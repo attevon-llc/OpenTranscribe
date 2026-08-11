@@ -10,7 +10,7 @@
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
   import { tagOriginKey, type TagListEntry } from './TagList.svelte';
-  import type { TagImpact, TagReviewResult } from '$lib/types/tag';
+  import type { TagImpact } from '$lib/types/tag';
 
   /** The selected tags, in list order. */
   export let tags: TagListEntry[] = [];
@@ -20,7 +20,7 @@
    * selected tag does.
    */
   export let suggestedSurvivorUuid: string | null = null;
-  export let busy: 'merge' | 'delete' | 'accept' | 'reject' | 'promote' | null = null;
+  export let busy: 'merge' | 'delete' | 'promote' | null = null;
   /**
    * Whether the caller may publish tags into the shared vocabulary.
    *
@@ -32,7 +32,6 @@
   export let previewLoading = false;
   export let mergePreview: TagImpact | null = null;
   export let deletePreview: TagImpact | null = null;
-  export let rejectPreview: TagReviewResult | null = null;
 
   const dispatch = createEventDispatcher<{
     previewMerge: { survivorUuid: string };
@@ -41,11 +40,7 @@
     previewDelete: void;
     confirmDelete: void;
     cancelDelete: void;
-    accept: void;
     promote: void;
-    previewReject: void;
-    confirmReject: void;
-    cancelReject: void;
     clear: void;
   }>();
 
@@ -71,7 +66,6 @@
         : (byUsage[0]?.uuid ?? '');
   }
 
-  $: hasReviewable = tags.some((tag) => tag.awaiting_review);
   $: canMerge = tags.length > 1 && survivorUuid !== '';
 </script>
 
@@ -120,26 +114,6 @@
     >
       {$t('tags.manager.action.merge')}
     </button>
-    {#if hasReviewable}
-      <button
-        type="button"
-        class="btn btn-ghost"
-        on:click={() => dispatch('accept')}
-        disabled={busy !== null}
-      >
-        {busy === 'accept'
-          ? $t('tags.manager.action.accepting')
-          : $t('tags.manager.action.accept')}
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost"
-        on:click={() => dispatch('previewReject')}
-        disabled={busy !== null}
-      >
-        {$t('tags.manager.action.reject')}
-      </button>
-    {/if}
     {#if canPromote && promotableCount > 0}
       <button
         type="button"
@@ -245,43 +219,6 @@
     </section>
   {/if}
 
-  {#if rejectPreview}
-    <section class="panel panel-warning">
-      <h3 class="panel-title">{$t('tags.manager.impact.title')}</h3>
-      <ul class="impact-list">
-        <li>
-          {$t('tags.manager.impact.removed', { count: rejectPreview.removed_association_count })}
-        </li>
-        <li>
-          {$t('tags.manager.impact.retained', { count: rejectPreview.retained_association_count })}
-        </li>
-        <li class="impact-total">
-          {$t('tags.manager.impact.total', { count: rejectPreview.impact.total_file_count })}
-        </li>
-      </ul>
-      <p class="note">{$t('tags.manager.impact.retainedNote')}</p>
-      <div class="panel-actions">
-        <button
-          type="button"
-          class="btn btn-danger"
-          on:click={() => dispatch('confirmReject')}
-          disabled={busy !== null}
-        >
-          {busy === 'reject'
-            ? $t('tags.manager.action.rejecting')
-            : $t('tags.manager.action.reject')}
-        </button>
-        <button
-          type="button"
-          class="btn btn-ghost"
-          on:click={() => dispatch('cancelReject')}
-          disabled={busy !== null}
-        >
-          {$t('tags.manager.action.cancel')}
-        </button>
-      </div>
-    </section>
-  {/if}
 </div>
 
 <style>

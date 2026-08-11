@@ -19,17 +19,14 @@ vi.mock('$lib/axios', async () => {
 });
 
 import {
-  acceptTags,
   addTagToFile,
   bulkTagFiles,
   createTag,
   deleteTags,
   getTagImpact,
-  getTagReviewImpact,
   listTagCollisions,
   listTags,
   mergeTags,
-  rejectTags,
   removeTagFromFile,
   renameTag,
 } from './tags';
@@ -63,9 +60,9 @@ describe('tag list + file attachment', () => {
   });
 
   it('pushes the filters to the server as query params', async () => {
-    await listTags({ awaiting_review: true, colliding: true, unused: false });
+    await listTags({ colliding: true, unused: false });
     expect(mockInstance.get).toHaveBeenCalledWith('/tags', {
-      params: { awaiting_review: true, colliding: true },
+      params: { colliding: true },
     });
   });
 
@@ -119,11 +116,6 @@ describe('impact previews', () => {
     expect(impact.tags[0].total_file_count).toBe(500);
   });
 
-  it('sends the review action alongside the tag uuids', async () => {
-    await getTagReviewImpact([UUID_A], 'reject');
-    expect(mockInstance.get.mock.calls[0][0]).toBe('/tags/review-impact');
-    expect(paramsOf(mockInstance.get.mock.calls[0])).toBe(`tag_uuids=${UUID_A}&action=reject`);
-  });
 });
 
 describe('mutations', () => {
@@ -158,14 +150,6 @@ describe('mutations', () => {
     );
   });
 
-  it('accepts and rejects through the review rail', async () => {
-    await acceptTags([UUID_A]);
-    expect(mockInstance.post).toHaveBeenCalledWith('/tags/accept', { tag_uuids: [UUID_A] });
-    await rejectTags([UUID_A, UUID_B]);
-    expect(mockInstance.post).toHaveBeenCalledWith('/tags/reject', {
-      tag_uuids: [UUID_A, UUID_B],
-    });
-  });
 });
 
 describe('bulk tagging', () => {

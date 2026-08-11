@@ -1,6 +1,6 @@
 <script context="module" lang="ts">
   /** The four server-side views of the tag library. */
-  export type TagFilterId = 'all' | 'awaiting_review' | 'unused' | 'colliding';
+  export type TagFilterId = 'all' | 'unused' | 'colliding';
 </script>
 
 <script lang="ts">
@@ -20,7 +20,6 @@
 
   $: tabs = [
     { id: 'all', label: $t('tags.manager.filter.all') },
-    { id: 'awaiting_review', label: $t('tags.manager.filter.awaitingReview') },
     { id: 'unused', label: $t('tags.manager.filter.unused') },
     { id: 'colliding', label: $t('tags.manager.filter.collisions') },
   ].map((tab) => ({

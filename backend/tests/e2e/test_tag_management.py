@@ -196,6 +196,39 @@ class TestOwnershipScope:
         expect(rows.first).to_contain_text("Shared")
 
 
+class TestTagCreation:
+    """Add is the third of add/edit/delete, and it lives in the manager."""
+
+    def test_create_a_tag_from_the_manager(self, tags_page: Page, tag_api):
+        """Until this existed, a tag could only be born by tagging a file."""
+        name = _unique_tag_name()
+
+        tags_page.get_by_label("New tag").fill(name)
+        tags_page.get_by_role("button", name="Add", exact=True).click()
+        tags_page.wait_for_timeout(1500)
+
+        assert any(t["name"] == name for t in tag_api.get("/api/tags")), (
+            f"{name} was not created through the manager"
+        )
+        expect(_row(tags_page, name)).to_be_visible()
+
+    def test_creating_an_existing_name_resolves_instead_of_duplicating(
+        self, tags_page: Page, tag_api
+    ):
+        """Normalized-exact resolution, surfaced rather than silently deduped."""
+        name = _unique_tag_name()
+        tag_api.post("/api/tags", {"name": name})
+        _reload_tags(tags_page)
+
+        # Same name, different case — must land on the existing row.
+        tags_page.get_by_label("New tag").fill(name.upper())
+        tags_page.get_by_role("button", name="Add", exact=True).click()
+        tags_page.wait_for_timeout(1500)
+
+        matches = [t for t in tag_api.get("/api/tags") if t["name"].lower() == name.lower()]
+        assert len(matches) == 1, f"expected one row, got {len(matches)}"
+
+
 class TestTagMutations:
     """Rename / delete / promote applied through the UI, verified through the API."""
 
@@ -210,8 +243,11 @@ class TestTagMutations:
         _reload_tags(tags_page)
 
         self._select(tags_page, name)
-        field = tags_page.get_by_label("Rename")
-        field.fill(renamed)
+        # Rename is a two-step affair: the button swaps the heading for an
+        # inline editor, and the field only exists in that state. Filling it
+        # straight away found nothing — the panel was still showing the name.
+        tags_page.get_by_role("button", name="Rename", exact=True).click()
+        tags_page.get_by_label("Tag name").fill(renamed)
         tags_page.get_by_role("button", name="Rename", exact=True).click()
         tags_page.wait_for_timeout(1500)
 
@@ -288,21 +324,61 @@ class TestTagManagerThemes:
 
 
 class TestGalleryBulkTagEntry:
-    """The gallery's Organize menu is the other entry point into tagging."""
+    """The Tags button routes by selection — the core of the modal design."""
 
-    def test_organize_menu_offers_the_bulk_tag_actions(self, gallery_page: Page):
-        checkboxes = gallery_page.locator('.file-card input[type="checkbox"]')
-        if checkboxes.count() == 0:
+    def _enter_selection_mode(self, page: Page) -> bool:
+        """Select the first file. Returns False when the library is empty.
+
+        Checkboxes only exist in selection mode, which `.select-btn` enters.
+        Looking for them without clicking it found nothing and skipped the test
+        while 18 files sat in the library — a skip that read as coverage.
+        """
+        page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
+        if page.locator(".file-card").count() == 0:
+            return False
+        page.click(".select-btn")
+        # The input is `opacity: 0` and sized to fill its label, so Playwright
+        # never sees it as visible. The label is what a user clicks, and it
+        # carries the handler.
+        selector = page.locator(".file-selector").first
+        selector.wait_for(state="visible", timeout=10000)
+        selector.click()
+        page.wait_for_timeout(400)
+        return True
+
+    def test_tags_button_opens_the_manager_with_nothing_selected(self, gallery_page: Page):
+        gallery_page.click(".tags-btn")
+
+        expect(gallery_page.locator(".tags-manager")).to_be_visible()
+
+    def test_tags_button_opens_bulk_apply_with_a_selection(self, gallery_page: Page):
+        """A selection must reach the bulk flow, not the library manager."""
+        if not self._enter_selection_mode(gallery_page):
             pytest.skip("no media files in this deployment to select")
 
-        checkboxes.first.check()
-        gallery_page.wait_for_timeout(500)
+        gallery_page.click(".tags-btn")
 
-        organize = gallery_page.get_by_role("button", name="Organize")
-        if organize.count() == 0:
-            pytest.skip("Organize menu not present for this selection")
-        organize.first.click()
+        # The bulk modal, addressed by its own field; the manager must NOT open.
+        expect(gallery_page.get_by_label("Tag name")).to_be_visible()
+        expect(gallery_page.locator(".tags-manager")).to_have_count(0)
 
-        # Read-only: the menu is asserted, never applied. Applying here would
-        # mutate a dev media file, which this suite must not do.
-        expect(gallery_page.get_by_text("Add tag")).to_be_visible()
+    def test_bulk_apply_reaches_the_backend_and_is_reversible(self, gallery_page: Page, tag_api):
+        """Apply a test tag across a selection, verify via API, then undo it.
+
+        The only test here that writes to a dev media file. It is reversible by
+        construction: the tag is `e2e-tag-` prefixed and the teardown deletes
+        the tag row, which takes its associations with it — so even a mid-test
+        failure leaves the file's own tags untouched.
+        """
+        if not self._enter_selection_mode(gallery_page):
+            pytest.skip("no media files in this deployment to select")
+
+        name = _unique_tag_name()
+        gallery_page.click(".tags-btn")
+        gallery_page.get_by_label("Tag name").fill(name)
+        gallery_page.get_by_role("button", name="Add tag").click()
+        gallery_page.wait_for_timeout(2500)
+
+        applied = [t for t in tag_api.get("/api/tags") if t["name"] == name]
+        assert applied, f"{name} never reached the backend"
+        assert applied[0]["usage_count"] >= 1, "tag created but attached to nothing"

@@ -12,7 +12,13 @@ vi.mock('$stores/locale', async () => {
   const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
   return {
     t: readable((key: string, opts?: Record<string, unknown>) => {
-      let out = en[key] ?? key;
+      // Mirror i18next's plural resolution: a `count` option selects the
+      // `_one` / `_other` variant. Without it, pluralized keys fall through to
+      // the raw key and every assertion on that copy fails for the wrong reason.
+      const count = opts?.count;
+      const plural =
+        typeof count === 'number' ? (count === 1 ? `${key}_one` : `${key}_other`) : undefined;
+      let out = (plural && en[plural]) ?? en[key] ?? key;
       for (const [name, value] of Object.entries(opts ?? {})) {
         out = out.split(`{{${name}}}`).join(String(value));
       }
@@ -60,13 +66,9 @@ describe('TagList — flat mode', () => {
 
     expect(screen.getByText('Added by hand')).toBeInTheDocument();
     expect(screen.getByText('Added by AI')).toBeInTheDocument();
-    expect(screen.getByText('Unknown origin')).toBeInTheDocument();
+    expect(screen.getByText('Built-in')).toBeInTheDocument();
   });
 
-  it('flags the tags the backend marked as awaiting review', () => {
-    render(TagList, { props: { tags, label: 'Tags' } });
-    expect(screen.getAllByText('Awaiting review')).toHaveLength(1);
-  });
 
   it('marks the selected rows via aria-selected', () => {
     render(TagList, { props: { tags, selectedUuids: [UUID_B], label: 'Tags' } });

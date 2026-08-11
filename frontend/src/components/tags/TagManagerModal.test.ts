@@ -16,7 +16,13 @@ vi.mock('$stores/locale', async () => {
   const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
   return {
     t: readable((key: string, opts?: Record<string, unknown>) => {
-      let out = en[key] ?? key;
+      // Mirror i18next's plural resolution: a `count` option selects the
+      // `_one` / `_other` variant. Without it, pluralized keys fall through to
+      // the raw key and every assertion on that copy fails for the wrong reason.
+      const count = opts?.count;
+      const plural =
+        typeof count === 'number' ? (count === 1 ? `${key}_one` : `${key}_other`) : undefined;
+      let out = (plural && en[plural]) ?? en[key] ?? key;
       for (const [name, value] of Object.entries(opts ?? {})) {
         out = out.split(`{{${name}}}`).join(String(value));
       }
@@ -157,37 +163,9 @@ describe('tag manager modal', () => {
       await waitFor(() => expect(api.deleteTags).toHaveBeenCalledWith([UUID_A]));
     });
 
-    it('previews removed vs retained associations before rejecting', async () => {
-      render(TagManagerModal);
-      await waitFor(() => expect(tagRows()).toHaveLength(2));
-      await fireEvent.click(tagRows()[1]);
-
-      await fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
-      await waitFor(() =>
-        expect(screen.getByText('7 auto-applied links removed')).toBeInTheDocument()
-      );
-      expect(api.getTagReviewImpact).toHaveBeenCalledWith([UUID_B], 'reject');
-      expect(screen.getByText('2 hand-applied links kept')).toBeInTheDocument();
-      expect(api.rejectTags).not.toHaveBeenCalled();
-    });
   });
 
   describe('filters', () => {
-    it('narrows the list to the awaiting-review set', async () => {
-      render(TagManagerModal);
-      await waitFor(() => expect(tagRows()).toHaveLength(2));
-
-      api.listTags.mockResolvedValueOnce([allTags[1]]);
-      await fireEvent.click(screen.getByRole('tab', { name: /Awaiting review/ }));
-
-      await waitFor(() => expect(tagRows()).toHaveLength(1));
-      expect(api.listTags).toHaveBeenLastCalledWith({
-        awaiting_review: true,
-        unused: undefined,
-        scope: 'all',
-      });
-      expect(screen.getByText('roadmap')).toBeInTheDocument();
-    });
 
     it('narrows the list to the unused set', async () => {
       render(TagManagerModal);
@@ -232,7 +210,6 @@ describe('tag manager modal', () => {
   describe('empty states', () => {
     const cases: Array<[string, RegExp, string]> = [
       ['All', /^All$/, 'No tags yet'],
-      ['Awaiting review', /Awaiting review/, 'Nothing waiting on you'],
       ['Unused', /Unused/, 'No unused tags'],
       ['Collisions', /Collisions/, 'No duplicate tags'],
     ];
@@ -249,9 +226,9 @@ describe('tag manager modal', () => {
         await waitFor(() => expect(screen.getByText(title)).toBeInTheDocument());
       }
 
-      // …and none of the four reuses another's copy.
+      // …and none of the three reuses another's copy.
       const titles = cases.map(([, , title]) => title);
-      expect(new Set(titles).size).toBe(4);
+      expect(new Set(titles).size).toBe(cases.length);
     });
   });
 

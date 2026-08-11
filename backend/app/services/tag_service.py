@@ -29,9 +29,9 @@ Rename, merge, delete, and the impact preview that fronts them live in
 every tag mutation, here or there, calls.
 
 It is also the single home for the small predicates the whole tag plane agrees
-on — :func:`is_awaiting_review`, :func:`stored_normalized_name`, and
-:func:`accessible_file_ids_subquery` — so ``tag_operations``, ``tag_review``,
-and ``tag_collisions`` cannot drift into three answers for one question.
+on — :func:`stored_normalized_name` and
+:func:`accessible_file_ids_subquery` — so ``tag_operations`` and
+``tag_collisions`` cannot drift into two answers for one question.
 """
 
 import difflib
@@ -45,7 +45,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.constants import FUZZY_MATCH_THRESHOLD
-from app.core.constants import TAG_SOURCE_AUTO_AI
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import OpenTranscribeError
 from app.core.tenancy import UNSCOPED
@@ -119,24 +118,6 @@ def stored_normalized_name(tag: Tag) -> str:
         The stored normalization, or :func:`normalize_tag_name` of the name.
     """
     return tag.normalized_name or normalize_tag_name(tag.name)
-
-
-def is_awaiting_review(tag: Tag) -> bool:
-    """Report whether a tag is still the auto-labeler's to endorse or reject.
-
-    ``Tag.source`` records which path created the row **first**, not who
-    endorsed it, so only ``auto_ai`` is awaiting review: ``manual`` and legacy
-    NULL (nullable, never backfilled by migration v230) are human origins, and
-    ``ai_accepted`` has already left the review set — endorsing it again is a
-    no-op the caller should be told about rather than a silent success.
-
-    Args:
-        tag: The tag row.
-
-    Returns:
-        True when the tag can be accepted or rejected.
-    """
-    return tag.source == TAG_SOURCE_AUTO_AI
 
 
 def accessible_file_ids_subquery(db: Session, user_id: int, organization_id: OrgScope = UNSCOPED):

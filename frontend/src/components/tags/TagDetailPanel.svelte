@@ -11,12 +11,12 @@
   import Badge from '$components/ui/Badge.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import { tagOriginKey, type TagListEntry } from './TagList.svelte';
-  import type { TagImpact, TagReviewResult } from '$lib/types/tag';
+  import type { TagImpact } from '$lib/types/tag';
   import { canMutateTag } from '$lib/types/tag';
 
   export let tag: TagListEntry;
   /** Which mutation is in flight, if any. Disables the confirming control. */
-  export let busy: 'rename' | 'delete' | 'accept' | 'reject' | 'promote' | null = null;
+  export let busy: 'rename' | 'delete' | 'promote' | null = null;
   /**
    * Whether the caller may publish this tag into the shared vocabulary.
    *
@@ -38,8 +38,6 @@
   export let previewLoading = false;
   /** Impact of deleting this tag, once previewed. */
   export let deletePreview: TagImpact | null = null;
-  /** Impact of rejecting this tag, once previewed. */
-  export let rejectPreview: TagReviewResult | null = null;
   /** Set when the submitted rename resolved to a different existing tag. */
   export let renameMergeImpact: TagImpact | null = null;
 
@@ -50,11 +48,7 @@
     previewDelete: void;
     confirmDelete: void;
     cancelDelete: void;
-    accept: void;
     promote: void;
-    previewReject: void;
-    confirmReject: void;
-    cancelReject: void;
   }>();
 
   let editing = false;
@@ -189,12 +183,6 @@
     </div>
   </dl>
 
-  {#if tag.awaiting_review}
-    <div class="review-flag">
-      <Badge variant="warning">{$t('tags.manager.awaitingReview')}</Badge>
-      <span class="panel-note">{$t('tags.manager.detail.awaitingReviewHint')}</span>
-    </div>
-  {/if}
 
   {#if tag.ownership === 'system'}
     <div class="review-flag">
@@ -220,26 +208,6 @@
         {busy === 'promote'
           ? $t('tags.manager.action.promoting')
           : $t('tags.manager.action.promote')}
-      </button>
-    {/if}
-    {#if tag.awaiting_review && canMutate}
-      <button
-        type="button"
-        class="btn btn-primary"
-        on:click={() => dispatch('accept')}
-        disabled={busy !== null}
-      >
-        {busy === 'accept'
-          ? $t('tags.manager.action.accepting')
-          : $t('tags.manager.action.accept')}
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost"
-        on:click={() => dispatch('previewReject')}
-        disabled={busy !== null}
-      >
-        {$t('tags.manager.action.reject')}
       </button>
     {/if}
     {#if canMutate}
@@ -298,47 +266,6 @@
     </section>
   {/if}
 
-  {#if rejectPreview}
-    <section class="panel panel-warning">
-      <h3 class="panel-title">{$t('tags.manager.impact.title')}</h3>
-      <ul class="impact-list">
-        <li>
-          {$t('tags.manager.impact.removed', {
-            count: rejectPreview.removed_association_count,
-          })}
-        </li>
-        <li>
-          {$t('tags.manager.impact.retained', {
-            count: rejectPreview.retained_association_count,
-          })}
-        </li>
-        <li class="impact-total">
-          {$t('tags.manager.impact.total', { count: rejectPreview.impact.total_file_count })}
-        </li>
-      </ul>
-      <p class="panel-note">{$t('tags.manager.impact.retainedNote')}</p>
-      <div class="panel-actions">
-        <button
-          type="button"
-          class="btn btn-danger"
-          on:click={() => dispatch('confirmReject')}
-          disabled={busy !== null}
-        >
-          {busy === 'reject'
-            ? $t('tags.manager.action.rejecting')
-            : $t('tags.manager.action.reject')}
-        </button>
-        <button
-          type="button"
-          class="btn btn-ghost"
-          on:click={() => dispatch('cancelReject')}
-          disabled={busy !== null}
-        >
-          {$t('tags.manager.action.cancel')}
-        </button>
-      </div>
-    </section>
-  {/if}
 </div>
 
 <style>

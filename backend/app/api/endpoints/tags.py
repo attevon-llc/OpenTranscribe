@@ -32,8 +32,6 @@ from app.schemas.media import TagMergeRequest
 from app.schemas.media import TagMutationResult
 from app.schemas.media import TagPromoteRequest
 from app.schemas.media import TagRenameRequest
-from app.schemas.media import TagReviewRequest
-from app.schemas.media import TagReviewResult
 from app.schemas.media import TagWithCount
 from app.services.tag_collisions import find_tag_collisions
 from app.services.tag_collisions import list_tags_filtered
@@ -44,9 +42,6 @@ from app.services.tag_operations import merge_tags
 from app.services.tag_operations import preview_tag_impact
 from app.services.tag_operations import promote_tags_to_shared
 from app.services.tag_operations import rename_tag
-from app.services.tag_review import accept_tags
-from app.services.tag_review import preview_tag_review
-from app.services.tag_review import reject_tags
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import accessible_file_ids_subquery
 from app.services.tag_service import on_tags_changed
@@ -158,9 +153,6 @@ def create_tag(
 
 @router.get("", response_model=list[TagWithCount])
 def list_tags(
-    awaiting_review: bool = Query(
-        False, description="Only tags the auto-labeler created and nobody has reviewed"
-    ),
     unused: bool = Query(False, description="Only tags no accessible file carries"),
     colliding: bool = Query(
         False, description="Only tags sharing a normalized name with another tag"
@@ -197,7 +189,7 @@ def list_tags(
     from app.services.redis_cache_service import TTL_TAGS
     from app.services.redis_cache_service import redis_cache
 
-    filtered = awaiting_review or unused or colliding or scope != "all"
+    filtered = unused or colliding or scope != "all"
     cache_key = f"cache:tags:{current_user.id}"
     use_cache = app_settings.READ_CACHE_ENABLED and ctx.org_id is None and not filtered
 
@@ -210,7 +202,6 @@ def list_tags(
         db,
         user_id=current_user.id,
         organization_id=ctx.org_id,
-        awaiting_review=awaiting_review,
         unused=unused,
         colliding=colliding,
         scope=scope,
@@ -326,79 +317,6 @@ def get_tag_impact(
         organization_id=ctx.org_id,
     )
     return TagImpact.model_validate(report)
-
-
-@router.get("/review-impact", response_model=TagReviewResult)
-def preview_tag_review_endpoint(
-    tag_uuids: list[UUID] = Query(..., min_length=1),
-    action: Literal["accept", "reject"] = Query(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """Report what accepting or rejecting these tags would do, applying nothing.
-
-    A reject reports its association split — how many the auto-labeler created
-    and would lose, and how many hand-applied ones would stay — because either
-    number alone hides what the other decides.
-    """
-    return _apply(
-        preview_tag_review,
-        db,
-        _writable_tag_ids(db, tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin),
-        action=action,
-        user_id=current_user.id,
-        organization_id=ctx.org_id,
-        result_model=TagReviewResult,
-    )
-
-
-@router.post("/accept", response_model=TagReviewResult)
-def accept_tags_endpoint(
-    payload: TagReviewRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """Endorse auto-labeled tags so they stop awaiting review.
-
-    Associations are untouched. Tags that were not the auto-labeler's come back
-    as ``not_applicable`` rather than failing the call.
-    """
-    return _apply(
-        accept_tags,
-        db,
-        _writable_tag_ids(
-            db, payload.tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin
-        ),
-        user_id=current_user.id,
-        organization_id=ctx.org_id,
-        result_model=TagReviewResult,
-    )
-
-
-@router.post("/reject", response_model=TagReviewResult)
-def reject_tags_endpoint(
-    payload: TagReviewRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """Remove the associations the auto-labeler created for these tags.
-
-    The tag row itself goes only when no association is left, so a tag people
-    have applied by hand survives the reject with that work intact.
-    """
-    return _apply(
-        reject_tags,
-        db,
-        _writable_tag_ids(
-            db, payload.tag_uuids, user_id=current_user.id, is_admin=current_user.is_admin
-        ),
-        user_id=current_user.id,
-        organization_id=ctx.org_id,
-        result_model=TagReviewResult,
-    )
 
 
 @router.post("/promote", response_model=TagMutationResult)

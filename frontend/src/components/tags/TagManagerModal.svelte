@@ -11,7 +11,7 @@
    * It owns every fetch, the selection, and the mutation lifecycle; the
    * children are presentational and dispatch intent up. Nothing here recomputes
    * what the backend already ships (usage counts, collision clustering, ranked
-   * near matches, the suggested survivor, `awaiting_review`) — those are
+   * near matches, the suggested survivor) — those are
    * rendered as received.
    */
   import { createEventDispatcher, onMount } from 'svelte';
@@ -20,18 +20,16 @@
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import {
-    acceptTags,
     deleteTags,
     getTagImpact,
-    getTagReviewImpact,
+    createTag,
     listTagCollisions,
     listTags,
     promoteTags,
     mergeTags,
-    rejectTags,
     renameTag,
   } from '$lib/api/tags';
-  import type { TagCollisionCluster, TagImpact, TagReviewResult } from '$lib/types/tag';
+  import type { TagCollisionCluster, TagImpact } from '$lib/types/tag';
   import TagBulkSummary from '$components/tags/TagBulkSummary.svelte';
   import TagDetailPanel from '$components/tags/TagDetailPanel.svelte';
   import TagFilterBar from '$components/tags/TagFilterBar.svelte';
@@ -45,7 +43,45 @@
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
-  type Busy = 'rename' | 'merge' | 'delete' | 'accept' | 'reject' | 'promote' | null;
+  // Creating a tag here is the missing third of add/edit/delete. Until now a
+  // tag could only be born by tagging a file, which meant the tool called "tag
+  // management" could not make one — you had to leave, tag something, come back.
+  let newTagName = '';
+  let creating = false;
+
+  async function submitCreate() {
+    const name = newTagName.trim();
+    if (!name || creating) return;
+    creating = true;
+    try {
+      const tag = await createTag(name);
+      // Resolution is normalized-exact, so a typed name may land on a tag that
+      // already exists. Say which one rather than reporting a create that was
+      // really a no-op.
+      const resolved = tag.name !== name;
+      toastStore.success(
+        resolved
+          ? $t('tags.manager.create.resolved', { name: tag.name })
+          : $t('tags.manager.create.created', { name: tag.name })
+      );
+      newTagName = '';
+      await loadTags();
+      selectedUuids = [tag.uuid];
+    } catch (error: unknown) {
+      toastStore.error(getErrorMessage(error, $t('tags.manager.create.failed')));
+    } finally {
+      creating = false;
+    }
+  }
+
+  function onCreateKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitCreate();
+    }
+  }
+
+  type Busy = 'rename' | 'merge' | 'delete' | 'promote' | null;
 
   let filter: TagFilterId = 'all';
   // Ownership scope, a separate axis from the view above so "my unused tags"
@@ -69,7 +105,6 @@
 
   let mergePreview: TagImpact | null = null;
   let deletePreview: TagImpact | null = null;
-  let rejectPreview: TagReviewResult | null = null;
   let renameMergeImpact: TagImpact | null = null;
 
   /**
@@ -121,7 +156,6 @@
   function clearPreviews() {
     mergePreview = null;
     deletePreview = null;
-    rejectPreview = null;
     renameMergeImpact = null;
   }
 
@@ -134,7 +168,6 @@
         tags = [];
       } else {
         tags = await listTags({
-          awaiting_review: filter === 'awaiting_review' || undefined,
           unused: filter === 'unused' || undefined,
           scope,
         });
@@ -227,12 +260,6 @@
     });
   }
 
-  function previewReject() {
-    clearPreviews();
-    runPreview(async () => {
-      rejectPreview = await getTagReviewImpact(selectedUuids, 'reject');
-    });
-  }
 
   function previewMerge(event: CustomEvent<{ survivorUuid: string }>) {
     const sources = selectedUuids.filter((uuid) => uuid !== event.detail.survivorUuid);
@@ -279,15 +306,7 @@
     mutate('delete', uuids, () => deleteTags(uuids).then(() => undefined), 'tags.manager.toast.deleted');
   }
 
-  function confirmReject() {
-    const uuids = [...selectedUuids];
-    mutate('reject', uuids, () => rejectTags(uuids).then(() => undefined), 'tags.manager.toast.rejected');
-  }
 
-  function acceptSelection() {
-    const uuids = [...selectedUuids];
-    mutate('accept', uuids, () => acceptTags(uuids).then(() => undefined), 'tags.manager.toast.accepted');
-  }
 
   function confirmMerge(event: CustomEvent<{ survivorUuid: string }>) {
     const survivorUuid = event.detail.survivorUuid;
@@ -340,6 +359,27 @@
   onClose={() => dispatch('close')}
 >
   <div class="tags-manager">
+  <form class="create-row" on:submit|preventDefault={submitCreate}>
+    <label class="create-label" for="new-tag-name">{$t('tags.manager.create.label')}</label>
+    <input
+      id="new-tag-name"
+      type="text"
+      class="form-input create-input"
+      bind:value={newTagName}
+      maxlength="50"
+      placeholder={$t('tags.manager.create.placeholder')}
+      disabled={creating}
+      on:keydown={onCreateKeydown}
+    />
+    <button
+      type="submit"
+      class="btn btn-primary"
+      disabled={creating || newTagName.trim() === ''}
+    >
+      {creating ? $t('tags.manager.create.creating') : $t('tags.manager.create.submit')}
+    </button>
+  </form>
+
   <TagFilterBar
     {filter}
     {scope}
@@ -360,30 +400,27 @@
           </button>
         </div>
       {:else if isEmpty}
-        {#if filter === 'awaiting_review'}
+        {#if filter === 'colliding'}
           <EmptyState
-            icon="✅"
-            title={$t('tags.manager.empty.reviewTitle')}
-            description={$t('tags.manager.empty.reviewDescription')}
-          />
-        {:else if filter === 'colliding'}
-          <EmptyState
-            icon="✨"
             title={$t('tags.manager.empty.collisionsTitle')}
             description={$t('tags.manager.empty.collisionsDescription')}
-          />
+          >
+            <svg slot="icon" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M6 21V9a9 9 0 0 0 9 9"></path></svg>
+          </EmptyState>
         {:else if filter === 'unused'}
           <EmptyState
-            icon="📄"
             title={$t('tags.manager.empty.unusedTitle')}
             description={$t('tags.manager.empty.unusedDescription')}
-          />
+          >
+            <svg slot="icon" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+          </EmptyState>
         {:else}
           <EmptyState
-            icon="🏷️"
             title={$t('tags.manager.empty.allTitle')}
             description={$t('tags.manager.empty.allDescription')}
-          />
+          >
+            <svg slot="icon" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+          </EmptyState>
         {/if}
       {:else}
         <TagList
@@ -412,7 +449,6 @@
           {previewLoading}
           {mergePreview}
           {deletePreview}
-          {rejectPreview}
           {canPromote}
           on:previewMerge={previewMerge}
           on:promote={promoteSelection}
@@ -421,10 +457,6 @@
           on:previewDelete={previewDelete}
           on:confirmDelete={confirmDelete}
           on:cancelDelete={clearPreviews}
-          on:accept={acceptSelection}
-          on:previewReject={previewReject}
-          on:confirmReject={confirmReject}
-          on:cancelReject={clearPreviews}
           on:clear={clearSelection}
         />
       {:else if selectedEntries.length === 1}
@@ -433,7 +465,6 @@
           busy={busy === 'merge' ? null : busy}
           {previewLoading}
           {deletePreview}
-          {rejectPreview}
           {renameMergeImpact}
           {canPromote}
           {isAdmin}
@@ -444,13 +475,15 @@
           on:previewDelete={previewDelete}
           on:confirmDelete={confirmDelete}
           on:cancelDelete={clearPreviews}
-          on:accept={acceptSelection}
-          on:previewReject={previewReject}
-          on:confirmReject={confirmReject}
-          on:cancelReject={clearPreviews}
         />
       {:else}
-        <p class="select-prompt">{$t('tags.manager.selectPrompt')}</p>
+        <div class="select-prompt">
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+            <line x1="7" y1="7" x2="7.01" y2="7"></line>
+          </svg>
+          <p>{$t('tags.manager.selectPrompt')}</p>
+        </div>
       {/if}
     </div>
   </div>
@@ -464,6 +497,36 @@
 </BaseModal>
 
 <style>
+  .create-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .create-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .create-input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  @media (max-width: 640px) {
+    .create-row {
+      flex-wrap: wrap;
+    }
+
+    .create-input {
+      flex-basis: 100%;
+      order: 1;
+    }
+  }
+
   .tags-manager {
     /* The modal owns the outer padding; this only bounds the working area so
        the two panes keep their proportions on a wide screen. */
@@ -560,7 +623,37 @@
   }
 
   @media (max-width: 768px) {
-    .tags-manager {
+    .create-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .create-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .create-input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  @media (max-width: 640px) {
+    .create-row {
+      flex-wrap: wrap;
+    }
+
+    .create-input {
+      flex-basis: 100%;
+      order: 1;
+    }
+  }
+
+  .tags-manager {
       padding: 16px 12px;
     }
 

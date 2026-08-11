@@ -65,6 +65,20 @@ export function canMutateTag(tag: Tag, isAdmin: boolean): boolean {
  */
 export type TagScope = 'all' | TagOwnership;
 
+/** Who a tag is shared with — one user or one group. */
+export interface TagShareTarget {
+  uuid: string;
+  target_type: 'user' | 'group';
+  display_name: string;
+  shared_by?: string | null;
+}
+
+/** Grant a tag to a user or a group. Exactly one target. */
+export interface TagShareCreate {
+  target_user_uuid?: string;
+  target_group_uuid?: string;
+}
+
 /** A file carrying a tag, as the manager's "what it touches" list renders it. */
 export interface TaggedFile {
   uuid: string;

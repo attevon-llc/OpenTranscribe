@@ -404,7 +404,42 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     # Every revision id, detection arm, test file and doc reference below reflects
     # the NEW numbers; nothing about the schema DDL itself changed.
 
+    # v386: the tag_share table (sharing a tag with specific users/groups).
+    has_tag_share = "tag_share" in tables
+
     # Return the highest version stamp that matches (newest first)
+    # v386: tag_share exists. Everything v385 requires must also hold — this
+    # revision only adds, so it is v385's fingerprint plus the new table.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+        and has_user_approval_status
+        and has_approval_status_check
+        and has_scim_token
+        and has_proxy_group_source
+        and has_saml_subject
+        and has_saml_auth_type_check
+        and has_chat_reasoning_content
+        and not has_orphan_tables
+        and has_tag_share
+    ):
+        return "v386_add_tag_share"
     # v385: the three orphan tables are gone. Everything v384 requires must also
     # hold — this revision only subtracts, so it shares v384's fingerprint plus
     # the absence.
@@ -435,6 +470,9 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_saml_auth_type_check
         and has_chat_reasoning_content
         and not has_orphan_tables
+        # Without this, v385's arm matches a v386 database too and shadows it —
+        # the ladder returns the FIRST match, and v386 only adds a table.
+        and not has_tag_share
     ):
         return "v385_drop_orphan_tables"
     # v384: the chat_message.reasoning_content column (collapsible reasoning display).

@@ -683,6 +683,22 @@ class TagWithCount(Tag):
     usage_count: int = 0
 
 
+class TagShareTarget(BaseModel):
+    """Who a tag is shared with — one user or one group, never both."""
+
+    uuid: UUID
+    target_type: Literal["user", "group"]
+    display_name: str
+    shared_by: str | None = None
+
+
+class TagShareCreate(BaseModel):
+    """Grant a tag to a user or a group. Exactly one target."""
+
+    target_user_uuid: UUID | None = None
+    target_group_uuid: UUID | None = None
+
+
 class TaggedFile(BaseModel):
     """A file carrying a tag, as the manager's "what it touches" list renders it.
 

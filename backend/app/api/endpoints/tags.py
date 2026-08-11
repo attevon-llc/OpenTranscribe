@@ -34,6 +34,8 @@ from app.schemas.media import TagMergeRequest
 from app.schemas.media import TagMutationResult
 from app.schemas.media import TagPromoteRequest
 from app.schemas.media import TagRenameRequest
+from app.schemas.media import TagShareCreate
+from app.schemas.media import TagShareTarget
 from app.schemas.media import TagWithCount
 from app.services.formatting_service import FormattingService
 from app.services.tag_collisions import files_for_tag
@@ -50,6 +52,10 @@ from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import accessible_file_ids_subquery
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tag
+from app.services.tag_sharing import TagShareError
+from app.services.tag_sharing import list_shares
+from app.services.tag_sharing import revoke_share
+from app.services.tag_sharing import share_tag
 from app.utils.uuid_helpers import get_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -119,6 +125,22 @@ def _writable_tag_ids(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
         ids.append(tag.id)
     return ids
+
+
+def _share_target(share) -> TagShareTarget:
+    """Project a grant onto the wire, naming the target rather than its id."""
+    if share.target_user_id is not None:
+        target = share.target_user
+        name = getattr(target, "full_name", None) or getattr(target, "email", "") or "user"
+        kind = "user"
+    else:
+        target = share.target_group
+        name = getattr(target, "name", "") or "group"
+        kind = "group"
+    shared_by = getattr(share.shared_by_user, "full_name", None) or getattr(
+        share.shared_by_user, "email", None
+    )
+    return TagShareTarget(uuid=share.uuid, target_type=kind, display_name=name, shared_by=shared_by)
 
 
 def _apply(operation, *args, result_model=TagMutationResult, **kwargs):
@@ -299,6 +321,94 @@ def cleanup_unused_tags(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error cleaning up unused tags: {str(e)}",
         ) from e
+
+
+@router.get("/{tag_uuid}/shares", response_model=list[TagShareTarget])
+def list_tag_shares(
+    tag_uuid: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Who this tag is shared with. Owner (or admin, for a system tag) only.
+
+    Reuses the writable gate: who you have given a tag to is the owner's
+    business, not every recipient's.
+    """
+    tag_id = _writable_tag_ids(
+        db, [tag_uuid], user_id=current_user.id, is_admin=current_user.is_admin
+    )[0]
+    return [_share_target(share) for share in list_shares(db, tag_id)]
+
+
+@router.post("/{tag_uuid}/shares", response_model=TagShareTarget)
+def create_tag_share(
+    tag_uuid: UUID,
+    payload: TagShareCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Share a tag with one user or one group.
+
+    The middle tier between "mine alone" and "published to the whole
+    deployment": the recipient can see the tag, filter by it and apply it, so
+    they use your word instead of coining a duplicate. Renaming, merging and
+    deleting stay with you.
+    """
+    tag_id = _writable_tag_ids(
+        db, [tag_uuid], user_id=current_user.id, is_admin=current_user.is_admin
+    )[0]
+    tag = db.query(Tag).filter(Tag.id == tag_id).one()
+
+    target_user_id = None
+    target_group_id = None
+    if payload.target_user_uuid is not None:
+        target_user_id = get_by_uuid(
+            db, User, payload.target_user_uuid, error_message="User not found"
+        ).id
+    if payload.target_group_uuid is not None:
+        from app.models.group import UserGroup
+
+        target_group_id = get_by_uuid(
+            db, UserGroup, payload.target_group_uuid, error_message="Group not found"
+        ).id
+
+    try:
+        share = share_tag(
+            db,
+            tag,
+            shared_by_id=current_user.id,
+            target_user_id=target_user_id,
+            target_group_id=target_group_id,
+        )
+    except TagShareError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    on_tags_changed(db, user_id=current_user.id)
+    return _share_target(share)
+
+
+@router.delete("/{tag_uuid}/shares/{share_uuid}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_tag_share(
+    tag_uuid: UUID,
+    share_uuid: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Revoke one grant.
+
+    The tag and every association survive: a recipient who applied it to their
+    own files keeps those files tagged, and still sees the word on their own
+    media through the file arm of ``visible_to``. Only reaching it by name in
+    the picker goes away.
+    """
+    tag_id = _writable_tag_ids(
+        db, [tag_uuid], user_id=current_user.id, is_admin=current_user.is_admin
+    )[0]
+    if not revoke_share(db, tag_id, share_uuid):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
+    on_tags_changed(db, user_id=current_user.id)
 
 
 @router.get("/{tag_uuid}/files", response_model=TagFileList)

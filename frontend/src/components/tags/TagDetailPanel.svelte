@@ -60,6 +60,7 @@
     confirmDelete: void;
     cancelDelete: void;
     promote: void;
+    share: void;
   }>();
 
   let editing = false;
@@ -141,7 +142,12 @@
     {:else}
       <h2 class="detail-name">{tag.name}</h2>
       {#if canMutate}
-        <button type="button" class="btn btn-ghost" on:click={startEdit}>
+        <button
+          type="button"
+          class="btn btn-ghost"
+          on:click={startEdit}
+          title={$t('tags.manager.detail.renameTooltip')}
+        >
           {$t('tags.manager.detail.rename')}
         </button>
       {/if}
@@ -235,6 +241,17 @@
   </section>
 
   <div class="detail-actions">
+    {#if tag.ownership === 'mine'}
+      <button
+        type="button"
+        class="btn btn-ghost"
+        on:click={() => dispatch('share')}
+        disabled={busy !== null}
+        title={$t('tags.manager.share.buttonTooltip')}
+      >
+        {$t('tags.manager.share.button')}
+      </button>
+    {/if}
     {#if canPromote && tag.ownership === 'mine'}
       <button
         type="button"
@@ -254,6 +271,7 @@
         class="btn btn-danger-outline"
         on:click={() => dispatch('previewDelete')}
         disabled={busy !== null}
+        title={$t('tags.manager.detail.deleteTooltip')}
       >
         {$t('tags.manager.action.delete')}
       </button>

@@ -229,21 +229,49 @@ def owned_or_system(user_id: int) -> ColumnElement[bool]:
     return or_(Tag.user_id == user_id, Tag.user_id.is_(None))
 
 
+def shared_with(user_id: int):
+    """Subquery of tag ids explicitly shared with ``user_id``, direct or via a group.
+
+    The same two arms ``PermissionService`` applies to collections: a grant
+    naming the user, or naming a group they belong to. Kept here so the read
+    predicate and the "who is this shared with" listing cannot drift apart.
+    """
+    from sqlalchemy import select
+
+    from app.models.group import UserGroupMember
+    from app.models.sharing import TagShare
+
+    member_groups = select(UserGroupMember.group_id).where(UserGroupMember.user_id == user_id)
+    return select(TagShare.tag_id).where(
+        or_(
+            TagShare.target_user_id == user_id,
+            TagShare.target_group_id.in_(member_groups),
+        )
+    )
+
+
 def visible_to(
     db: Session, user_id: int, organization_id: OrgScope = UNSCOPED
 ) -> ColumnElement[bool]:
     """Predicate for the tags ``user_id`` is allowed to **read**.
 
-    Wider than :func:`owned_or_system` by one arm: a tag attached to a file the
-    caller can access. Tagging a shared file has to put that word in the
-    recipient's picker, or they cannot filter by what they are looking at.
+    Wider than :func:`owned_or_system` by two arms:
+
+    * a tag **explicitly shared** with the caller, directly or through a group
+      (``v386_add_tag_share``). The point of sharing a tag is that the recipient
+      uses that same word instead of coining a duplicate.
+    * a tag attached to a file the caller can access. Tagging a shared file has
+      to put that word in the recipient's picker, or they cannot filter by what
+      they are looking at.
 
     Reading and rewriting are different rights — mutation stays on the narrow
     scope (``endpoints/tags.py:_writable_tag_ids``), since renaming a tag you can
-    merely see rewrites its owner's vocabulary everywhere they use it.
+    merely see rewrites its owner's vocabulary everywhere they use it. A share
+    grants vocabulary, not administration.
 
     ``get_accessible_file_ids_subquery`` already covers files shared directly and
-    via groups and applies the org tenant gate, so sharing needs no second rule.
+    via groups and applies the org tenant gate, so the file arm needs no second
+    rule.
     """
     from sqlalchemy import select
 
@@ -252,7 +280,11 @@ def visible_to(
             select(accessible_file_ids_subquery(db, user_id, organization_id))
         )
     )
-    return or_(owned_or_system(user_id), Tag.id.in_(attached_to_accessible))
+    return or_(
+        owned_or_system(user_id),
+        Tag.id.in_(shared_with(user_id)),
+        Tag.id.in_(attached_to_accessible),
+    )
 
 
 def lookup_existing_tag(db: Session, normalized: str, name: str, user_id: int) -> Tag | None:

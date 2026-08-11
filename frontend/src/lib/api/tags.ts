@@ -16,6 +16,8 @@ import type {
   Tag,
   TagCollisionCluster,
   TagFileList,
+  TagShareCreate,
+  TagShareTarget,
   TagImpact,
   TagListFilters,
   TagMutationResult,
@@ -77,6 +79,32 @@ export async function removeTagFromFile(fileUuid: string, tagName: string): Prom
 export async function listFilesForTag(tagUuid: string, limit = 50): Promise<TagFileList> {
   const response = await axiosInstance.get(`/tags/${tagUuid}/files`, { params: { limit } });
   return response.data;
+}
+
+/** Who this tag is shared with. Owner (or admin, for a system tag) only. */
+export async function listTagShares(tagUuid: string): Promise<TagShareTarget[]> {
+  const response = await axiosInstance.get(`/tags/${tagUuid}/shares`);
+  return response.data;
+}
+
+/**
+ * Share a tag with one user or one group.
+ *
+ * The middle tier between private and `promoteTags` (which publishes to the
+ * whole deployment): the recipient gets the *word* — see, filter, apply — while
+ * rename / merge / delete stay with the owner.
+ */
+export async function shareTag(
+  tagUuid: string,
+  payload: TagShareCreate
+): Promise<TagShareTarget> {
+  const response = await axiosInstance.post(`/tags/${tagUuid}/shares`, payload);
+  return response.data;
+}
+
+/** Revoke one grant. The tag and every association survive. */
+export async function revokeTagShare(tagUuid: string, shareUuid: string): Promise<void> {
+  await axiosInstance.delete(`/tags/${tagUuid}/shares/${shareUuid}`);
 }
 
 /** Duplicate tags grouped into clusters, each with a preselected survivor. */

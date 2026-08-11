@@ -38,6 +38,7 @@
   import type { TagScope } from '$lib/types/tag';
   import { user } from '$stores/auth';
   import TagList from '$components/tags/TagList.svelte';
+  import TagShareModal from '$components/tags/TagShareModal.svelte';
   import type { TagListEntry, TagSelectDetail } from '$components/tags/TagList.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import ListRowSkeleton from '$components/ui/ListRowSkeleton.svelte';
@@ -98,6 +99,9 @@
 
   // One selected tag has a file list; a multi-selection does not.
   $: loadFilesFor(selectedUuids.length === 1 ? selectedUuids[0] : null);
+
+  /** The tag whose share dialog is open, if any. */
+  let sharingTag: TagListEntry | null = null;
 
   let newTagName = '';
   let creating = false;
@@ -544,6 +548,7 @@
           {canPromote}
           on:previewMerge={previewMerge}
           on:promote={promoteSelection}
+          on:share={() => (sharingTag = selectedEntries[0] ?? null)}
           on:confirmMerge={confirmMerge}
           on:cancelMerge={clearPreviews}
           on:previewDelete={previewDelete}
@@ -565,6 +570,7 @@
           filesLoading={tagFilesLoading}
           on:rename={(event) => submitRename(event.detail.name)}
           on:promote={promoteSelection}
+          on:share={() => (sharingTag = selectedEntries[0] ?? null)}
           on:confirmRenameMerge={(event) => submitRename(event.detail.name, true)}
           on:cancelRenameMerge={() => (renameMergeImpact = null)}
           on:previewDelete={previewDelete}
@@ -584,6 +590,15 @@
   </div>
   </div>
 </BaseModal>
+
+{#if sharingTag}
+  <TagShareModal
+    tagUuid={sharingTag.uuid}
+    tagName={sharingTag.name}
+    on:close={() => (sharingTag = null)}
+    on:changed={loadTags}
+  />
+{/if}
 
 <style>
   .create-row {

@@ -45,8 +45,11 @@ pytestmark = pytest.mark.skipif(
 )
 
 # URLs
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# The app's own frontend/backend URLs come from the `base_url` / `backend_url` fixtures in
+# tests/e2e/conftest.py rather than module-level constants: a constant is evaluated at import
+# time, so it can never see `--base-url` / `--backend-url` and a run aimed at an isolated stack
+# silently drove the LIVE stack instead (issue #431). The IdP container URLs below stay
+# constants — they are container endpoints, not the stack under test.
 LLDAP_URL = os.environ.get("LLDAP_URL", "http://localhost:17170")
 LLDAP_LDAP_PORT = int(os.environ.get("LLDAP_LDAP_PORT", "3890"))
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8180")
@@ -185,6 +188,19 @@ def _keycloak_api_get(path: str, token: str) -> dict | list:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(scope="session")
+def backend_url(pytestconfig: pytest.Config) -> str:
+    """Session-scoped widening of the conftest `backend_url` fixture (issue #431).
+
+    Resolution order is identical (`--backend-url` > `$E2E_BACKEND_URL` > the dev default);
+    only the scope differs, because the session-scoped `ensure_keycloak_running` fixture below
+    cannot request a function-scoped fixture.
+    """
+    from conftest import BACKEND_URL as DEV_DEFAULT
+
+    return str(pytestconfig.getoption("backend_url", default=None) or DEV_DEFAULT)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def ensure_lldap_running():
     """Ensure LLDAP container is running and has test users."""
@@ -276,7 +292,7 @@ def ensure_lldap_running():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def ensure_keycloak_running():
+def ensure_keycloak_running(base_url: str, backend_url: str):
     """Ensure Keycloak container is running and has test realm/users."""
     project_root = Path(__file__).resolve().parents[3]
 
@@ -320,10 +336,10 @@ def ensure_keycloak_running():
             "publicClient": False,
             "secret": KC_CLIENT_SECRET,
             "redirectUris": [
-                f"{FRONTEND_URL}/*",
-                f"{BACKEND_URL}/*",
+                f"{base_url}/*",
+                f"{backend_url}/*",
             ],
-            "webOrigins": [FRONTEND_URL, BACKEND_URL],
+            "webOrigins": [base_url, backend_url],
             "directAccessGrantsEnabled": True,
             "standardFlowEnabled": True,
             "protocol": "openid-connect",
@@ -437,10 +453,10 @@ def _open_settings_auth_tab(page, tab_name: str = "LDAP/AD"):
 
 
 @pytest.fixture
-def admin_page(browser_context):
+def admin_page(browser_context, base_url: str):
     """Log in as the local super_admin and return the page."""
     page = browser_context.new_page()
-    page.goto(f"{FRONTEND_URL}/login")
+    page.goto(f"{base_url}/login")
     page.wait_for_load_state("networkidle")
 
     page.fill("#email", APP_ADMIN_EMAIL)
@@ -550,10 +566,10 @@ class TestLDAPConfiguration:
 class TestLDAPLogin:
     """Test LDAP user login through the frontend."""
 
-    def test_ldap_admin_login(self, browser_context):
+    def test_ldap_admin_login(self, browser_context, base_url: str):
         """LDAP admin user should be able to log in via the login form."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         page.fill("#email", LDAP_ADMIN_USER)
@@ -564,10 +580,10 @@ class TestLDAPLogin:
         assert "/login" not in page.url, f"LDAP admin login failed, still at {page.url}"
         page.close()
 
-    def test_ldap_regular_user_login(self, browser_context):
+    def test_ldap_regular_user_login(self, browser_context, base_url: str):
         """LDAP regular user should be able to log in."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         page.fill("#email", LDAP_REGULAR_USER)
@@ -578,10 +594,10 @@ class TestLDAPLogin:
         assert "/login" not in page.url, f"LDAP user login failed, still at {page.url}"
         page.close()
 
-    def test_ldap_wrong_password_rejected(self, browser_context):
+    def test_ldap_wrong_password_rejected(self, browser_context, base_url: str):
         """Wrong password should be rejected for LDAP users."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         page.fill("#email", LDAP_ADMIN_USER)
@@ -594,10 +610,10 @@ class TestLDAPLogin:
         assert still_on_login, "Wrong LDAP password should not grant access"
         page.close()
 
-    def test_ldap_login_with_email(self, browser_context):
+    def test_ldap_login_with_email(self, browser_context, base_url: str):
         """LDAP user should also be able to log in using their email."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         page.fill("#email", LDAP_ADMIN_EMAIL)
@@ -618,7 +634,7 @@ class TestLDAPLogin:
 class TestOIDCConfiguration:
     """Configure Keycloak via the admin UI."""
 
-    def test_configure_oidc_settings(self, admin_page):
+    def test_configure_oidc_settings(self, admin_page, backend_url: str):
         """Open settings, go to Authentication > OIDC/Keycloak, fill in config, and save."""
         page = admin_page
         _open_settings_auth_tab(page, "OIDC")
@@ -641,7 +657,7 @@ class TestOIDCConfiguration:
         page.fill("#oidc_client_secret", KC_CLIENT_SECRET)
 
         # Callback URL - must point to the backend callback endpoint
-        page.fill("#oidc_callback_url", f"{BACKEND_URL}/api/auth/oidc/callback")
+        page.fill("#oidc_callback_url", f"{backend_url}/api/auth/oidc/callback")
 
         # Role mapping
         page.fill("#oidc_admin_role", "admin")
@@ -669,10 +685,10 @@ class TestOIDCConfiguration:
 class TestOIDCLogin:
     """Test Keycloak OIDC login flow through the frontend."""
 
-    def test_oidc_redirect_flow(self, browser_context):
+    def test_oidc_redirect_flow(self, browser_context, base_url: str):
         """Clicking the SSO button should redirect to the provider's login page."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         # Use the specific CSS class for the Keycloak button
@@ -697,10 +713,10 @@ class TestOIDCLogin:
         )
         page.close()
 
-    def test_oidc_admin_login_full_flow(self, browser_context):
+    def test_oidc_admin_login_full_flow(self, browser_context, base_url: str):
         """Complete the full Keycloak OIDC login flow with the admin user."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         kc_button = page.locator("button.oidc-button")
@@ -723,7 +739,7 @@ class TestOIDCLogin:
 
         # Wait for redirect back to the app after Keycloak auth
         try:
-            page.wait_for_url(f"{FRONTEND_URL}/**", timeout=15000)
+            page.wait_for_url(f"{base_url}/**", timeout=15000)
         except Exception:
             pass
 
@@ -731,10 +747,10 @@ class TestOIDCLogin:
         assert "/login" not in page.url, f"Keycloak login did not complete, still at {page.url}"
         page.close()
 
-    def test_keycloak_regular_user_login(self, browser_context):
+    def test_keycloak_regular_user_login(self, browser_context, base_url: str):
         """Regular Keycloak user can log in via OIDC flow."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         kc_button = page.locator("button.oidc-button")
@@ -754,7 +770,7 @@ class TestOIDCLogin:
         page.click("#kc-login")
 
         try:
-            page.wait_for_url(f"{FRONTEND_URL}/**", timeout=15000)
+            page.wait_for_url(f"{base_url}/**", timeout=15000)
         except Exception:
             pass
 
@@ -762,10 +778,10 @@ class TestOIDCLogin:
         assert "/login" not in page.url, f"Keycloak regular user login failed, still at {page.url}"
         page.close()
 
-    def test_keycloak_wrong_credentials_rejected(self, browser_context):
+    def test_keycloak_wrong_credentials_rejected(self, browser_context, base_url: str):
         """Wrong Keycloak credentials should show error on Keycloak login page."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         kc_button = page.locator("button.oidc-button")
@@ -801,10 +817,10 @@ class TestOIDCLogin:
 class TestHybridAuthentication:
     """Test that multiple auth methods work simultaneously."""
 
-    def test_local_login_still_works(self, browser_context):
+    def test_local_login_still_works(self, browser_context, base_url: str):
         """Local admin login should still work alongside LDAP and Keycloak."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         page.fill("#email", APP_ADMIN_EMAIL)
@@ -815,10 +831,10 @@ class TestHybridAuthentication:
         assert "/login" not in page.url, "Local admin login should still work in hybrid mode"
         page.close()
 
-    def test_auth_methods_endpoint_shows_all(self, browser_context):
+    def test_auth_methods_endpoint_shows_all(self, browser_context, backend_url: str):
         """The /auth/methods endpoint should report LDAP and Keycloak as enabled."""
         page = browser_context.new_page()
-        resp = page.request.get(f"{BACKEND_URL}/api/auth/methods")
+        resp = page.request.get(f"{backend_url}/api/auth/methods")
         data = resp.json()
 
         assert data.get("ldap_enabled") is True, "LDAP should be reported as enabled"
@@ -826,10 +842,10 @@ class TestHybridAuthentication:
         assert "local" in data.get("methods", []), "Local auth should still be available"
         page.close()
 
-    def test_login_page_shows_keycloak_button(self, browser_context):
+    def test_login_page_shows_keycloak_button(self, browser_context, base_url: str):
         """Login page should display the Keycloak/SSO login button when Keycloak is enabled."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         kc_button = page.locator("button.oidc-button")

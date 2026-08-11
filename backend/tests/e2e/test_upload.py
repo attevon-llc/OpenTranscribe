@@ -25,8 +25,6 @@ from playwright.sync_api import expect
 
 pytestmark = pytest.mark.upload
 
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
-
 
 @pytest.fixture
 def upload_modal(gallery_page: Page) -> Page:

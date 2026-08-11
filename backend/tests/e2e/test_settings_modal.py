@@ -30,7 +30,10 @@ from playwright.sync_api import expect
 
 pytestmark = pytest.mark.settings
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
+# This module used to define its own ``FRONTEND_URL`` constant here. A module constant is
+# evaluated at import time, so it could not see ``--base-url`` and this file always drove
+# whatever was on the default port — even when the run was aimed at an isolated stack
+# (issue #431). Everything below takes conftest's ``base_url`` fixture instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
 
@@ -68,12 +71,12 @@ def _unexpected_console_errors(errors: list[str]) -> list[str]:
 # the wider e2e suite has already spent the rate-limit budget, the login can
 # briefly bounce; retry through that window rather than flapping.
 # ---------------------------------------------------------------------------
-def _form_login_with_retry(page, attempts: int = 4) -> None:
+def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
     """Submit the login form, retrying through transient auth rate-limiting."""
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            page.goto(FRONTEND_URL)
+            page.goto(base_url)
             # Already authenticated (cookie still valid) — no form to fill.
             if page.locator(".user-button").count():
                 page.wait_for_selector(".user-button", timeout=10000)
@@ -91,13 +94,13 @@ def _form_login_with_retry(page, attempts: int = 4) -> None:
 
 
 @pytest.fixture(scope="module")
-def auth_storage_state(browser):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
     """Login once and persist browser storage state for reuse across tests."""
     context = browser.new_context(
         viewport={"width": 1920, "height": 1080}, ignore_https_errors=True
     )
     page = context.new_page()
-    _form_login_with_retry(page)
+    _form_login_with_retry(page, base_url)
 
     fd, state_file = tempfile.mkstemp(suffix=".json")
     os.close(fd)
@@ -112,7 +115,7 @@ def auth_storage_state(browser):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def app_page(browser, auth_storage_state: str):  # type: ignore[no-untyped-def]
+def app_page(browser, auth_storage_state: str, base_url: str):  # type: ignore[no-untyped-def]
     """A pre-authenticated page on the app home, with console-error capture."""
     context = browser.new_context(
         storage_state=auth_storage_state,
@@ -123,7 +126,7 @@ def app_page(browser, auth_storage_state: str):  # type: ignore[no-untyped-def]
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page._console_errors = errors  # type: ignore[attr-defined]
-    page.goto(FRONTEND_URL)
+    page.goto(base_url)
     page.wait_for_selector(".user-button", timeout=30000)
     yield page
     page.close()

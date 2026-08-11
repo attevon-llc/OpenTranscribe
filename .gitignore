@@ -210,7 +210,11 @@ test_videos/
 /test_uploads/
 uploads/
 downloads/
-media/
+# Anchored, like /uploads/ and /test_uploads/ above. Unanchored, `media/` matched a directory
+# named `media` at ANY depth, which silently swallowed backend/tests/fixtures/media/ — small
+# committed audio/transcript fixtures the suite needs. It was protecting nothing: no
+# root-level media/ exists, and the only other match is inside venv/ (already ignored).
+/media/
 
 # Security and SSL certificates
 *.pem

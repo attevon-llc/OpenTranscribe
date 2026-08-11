@@ -35,7 +35,6 @@ LLM config created here is deleted in the same test, and no transcript is touche
 
 from __future__ import annotations
 
-import os
 import socket
 import uuid as uuid_pkg
 from collections.abc import Iterator
@@ -45,6 +44,7 @@ import requests
 
 # Absolute import — the e2e dir is not a package, so a relative import breaks
 # collection when invoked as `pytest backend/tests/e2e/` from the repo root.
+from conftest import BACKEND_URL as DEFAULT_BACKEND_URL
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
@@ -52,8 +52,11 @@ from playwright.sync_api import expect
 
 pytestmark = pytest.mark.chat
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
+# A module constant is evaluated at import time, so it could not see ``--base-url`` /
+# ``--backend-url`` and this file always drove whatever was on the default ports — even
+# when the run was aimed at an isolated stack (issue #431). Everything below takes
+# conftest's ``base_url`` / ``backend_url`` fixtures instead.
 
 STREAM_TIMEOUT_MS = 90_000
 
@@ -75,11 +78,24 @@ def _mock_llm_running() -> bool:
 
 
 @pytest.fixture(scope="module")
-def api_session() -> requests.Session:
+def backend_url(request: pytest.FixtureRequest) -> str:
+    """Module-scoped view of conftest's ``backend_url`` fixture (issue #431).
+
+    ``api_session`` below is module-scoped on purpose — one login per module keeps the
+    suite inside the backend's auth rate limit — and a module-scoped fixture cannot
+    request the function-scoped fixture conftest defines. This applies exactly conftest's
+    precedence (``--backend-url`` first, then its ``E2E_BACKEND_URL``/dev default), so the
+    flag is honoured here too. Delete once the conftest fixture is session-scoped.
+    """
+    return str(request.config.getoption("backend_url", default=None) or DEFAULT_BACKEND_URL)
+
+
+@pytest.fixture(scope="module")
+def api_session(backend_url: str) -> requests.Session:
     """An authenticated API session for arranging and cleaning up test state."""
     session = requests.Session()
     response = session.post(
-        f"{BACKEND_URL}/api/auth/token",
+        f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
         timeout=30,
     )
@@ -94,10 +110,10 @@ def api_session() -> requests.Session:
     return session
 
 
-def _completed_transcripts_exist(api_session: requests.Session) -> bool:
+def _completed_transcripts_exist(api_session: requests.Session, backend_url: str) -> bool:
     try:
         response = api_session.get(
-            f"{BACKEND_URL}/api/files",
+            f"{backend_url}/api/files",
             params={"status": "completed", "page_size": "1"},
             timeout=20,
         )
@@ -111,7 +127,7 @@ def _completed_transcripts_exist(api_session: requests.Session) -> bool:
 
 
 @pytest.fixture
-def llm_config_factory(api_session: requests.Session) -> Iterator:
+def llm_config_factory(api_session: requests.Session, backend_url: str) -> Iterator:
     """Create mock-LLM configs with a chosen context window; delete them after.
 
     A per-test provider rather than the shared one, because the whole point is
@@ -127,7 +143,7 @@ def llm_config_factory(api_session: requests.Session) -> Iterator:
         # interruption into a permanent failure for everyone afterwards.
         unique_name = f"{name} {uuid_pkg.uuid4().hex[:8]}"
         response = api_session.post(
-            f"{BACKEND_URL}/api/llm-settings",
+            f"{backend_url}/api/llm-settings",
             json={
                 "name": unique_name,
                 "provider": "custom",
@@ -149,19 +165,19 @@ def llm_config_factory(api_session: requests.Session) -> Iterator:
 
     for uuid in created:
         try:
-            api_session.delete(f"{BACKEND_URL}/api/llm-settings/config/{uuid}", timeout=30)
+            api_session.delete(f"{backend_url}/api/llm-settings/config/{uuid}", timeout=30)
         except requests.RequestException:
             pass
 
 
 @pytest.fixture
-def conversation_factory(api_session: requests.Session) -> Iterator:
+def conversation_factory(api_session: requests.Session, backend_url: str) -> Iterator:
     """Create conversations pinned to a given model; delete them after, pass or fail."""
     created: list[str] = []
 
     def _make(llm_config_uuid: str) -> str:
         response = api_session.post(
-            f"{BACKEND_URL}/api/chat/conversations",
+            f"{backend_url}/api/chat/conversations",
             json={
                 "llm_config_uuid": llm_config_uuid,
                 # Empty scope = "all accessible transcripts", so retrieval has
@@ -185,19 +201,19 @@ def conversation_factory(api_session: requests.Session) -> Iterator:
 
     for uuid in created:
         try:
-            api_session.delete(f"{BACKEND_URL}/api/chat/conversations/{uuid}", timeout=15)
+            api_session.delete(f"{backend_url}/api/chat/conversations/{uuid}", timeout=15)
         except requests.RequestException:
             pass
 
 
-def _requirements_or_skip(api_session: requests.Session) -> None:
+def _requirements_or_skip(api_session: requests.Session, backend_url: str) -> None:
     if not _mock_llm_running():
         pytest.skip("Requires the mock LLM: ./opentr.sh start dev --with-mock-llm")
-    if not _completed_transcripts_exist(api_session):
+    if not _completed_transcripts_exist(api_session, backend_url):
         pytest.skip("Requires at least one completed transcript for retrieval to find")
 
 
-def _ask(page: Page, conversation_uuid: str, question: str) -> None:
+def _ask(page: Page, base_url: str, conversation_uuid: str, question: str) -> None:
     """Open a conversation, send one question, and wait for the turn to COMPLETE.
 
     Completion is read from the assistant bubble's ``data-status``, which the
@@ -209,7 +225,7 @@ def _ask(page: Page, conversation_uuid: str, question: str) -> None:
     It made this suite flaky in exactly the runs where the retrieval cache was
     warm and the whole turn finished in under a second.
     """
-    page.goto(f"{FRONTEND_URL}/chat/{conversation_uuid}")
+    page.goto(f"{base_url}/chat/{conversation_uuid}")
     composer = page.locator('[data-testid="chat-composer-input"]')
     expect(composer).to_be_visible(timeout=30_000)
 
@@ -284,6 +300,8 @@ def test_answer_with_no_room_for_excerpts_is_flagged_as_ungrounded(
     api_session: requests.Session,
     llm_config_factory,
     conversation_factory,
+    base_url: str,
+    backend_url: str,
 ):
     """A model whose window fits no excerpt must say the answer is not grounded.
 
@@ -292,12 +310,14 @@ def test_answer_with_no_room_for_excerpts_is_flagged_as_ungrounded(
     Before the fix this rendered as a normal answer with a full set of clickable
     citations attached.
     """
-    _requirements_or_skip(api_session)
+    _requirements_or_skip(api_session, backend_url)
 
     config_uuid = llm_config_factory(STARVED_CONTEXT_WINDOW, "Mock LLM starved window (e2e)")
     conversation_uuid = conversation_factory(config_uuid)
 
-    _ask(gallery_page, conversation_uuid, "What topics are discussed in these recordings?")
+    _ask(
+        gallery_page, base_url, conversation_uuid, "What topics are discussed in these recordings?"
+    )
 
     notice = gallery_page.locator('[data-testid="chat-context-dropped"]')
     expect(notice).to_be_visible(timeout=15_000)
@@ -318,6 +338,8 @@ def test_ungrounded_notice_survives_a_page_reload(
     api_session: requests.Session,
     llm_config_factory,
     conversation_factory,
+    base_url: str,
+    backend_url: str,
 ):
     """The warning is persisted state, not a property of the live stream.
 
@@ -326,12 +348,12 @@ def test_ungrounded_notice_survives_a_page_reload(
     message row. If the two ever diverge, the notice vanishes on refresh and the
     answer silently becomes trustworthy-looking again.
     """
-    _requirements_or_skip(api_session)
+    _requirements_or_skip(api_session, backend_url)
 
     config_uuid = llm_config_factory(STARVED_CONTEXT_WINDOW, "Mock LLM starved reload (e2e)")
     conversation_uuid = conversation_factory(config_uuid)
 
-    _ask(gallery_page, conversation_uuid, "Summarise the key decisions.")
+    _ask(gallery_page, base_url, conversation_uuid, "Summarise the key decisions.")
     expect(gallery_page.locator('[data-testid="chat-context-dropped"]')).to_be_visible(
         timeout=15_000
     )
@@ -355,18 +377,22 @@ def test_roomy_context_window_cites_sources_and_does_not_warn(
     api_session: requests.Session,
     llm_config_factory,
     conversation_factory,
+    base_url: str,
+    backend_url: str,
 ):
     """The control for the two tests above.
 
     Without this they would still pass if the notice were rendered
     unconditionally, and the warning has to stay rare enough to mean something.
     """
-    _requirements_or_skip(api_session)
+    _requirements_or_skip(api_session, backend_url)
 
     config_uuid = llm_config_factory(ROOMY_CONTEXT_WINDOW, "Mock LLM roomy window (e2e)")
     conversation_uuid = conversation_factory(config_uuid)
 
-    _ask(gallery_page, conversation_uuid, "What topics are discussed in these recordings?")
+    _ask(
+        gallery_page, base_url, conversation_uuid, "What topics are discussed in these recordings?"
+    )
 
     expect(gallery_page.locator('[data-testid="chat-context-dropped"]')).to_have_count(0)
     expect(gallery_page.locator('[data-testid="chat-sources-toggle"]')).to_be_visible(
@@ -382,6 +408,8 @@ def test_offered_sources_match_the_excerpts_the_model_was_given(
     api_session: requests.Session,
     llm_config_factory,
     conversation_factory,
+    base_url: str,
+    backend_url: str,
 ):
     """The #384 invariant, asserted through the UI: cited == used.
 
@@ -390,12 +418,17 @@ def test_offered_sources_match_the_excerpts_the_model_was_given(
     count that actually reached the prompt, which the Details panel reports from
     the server's `msg_metadata`.
     """
-    _requirements_or_skip(api_session)
+    _requirements_or_skip(api_session, backend_url)
 
     config_uuid = llm_config_factory(ROOMY_CONTEXT_WINDOW, "Mock LLM cited-equals-used (e2e)")
     conversation_uuid = conversation_factory(config_uuid)
 
-    _ask(gallery_page, conversation_uuid, "Summarise the key points across these recordings.")
+    _ask(
+        gallery_page,
+        base_url,
+        conversation_uuid,
+        "Summarise the key points across these recordings.",
+    )
 
     # Counted DURING the stream: these are the OFFERED citations, straight from the
     # `sources` frame. After a reload the cards show only the citations the answer

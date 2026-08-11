@@ -33,13 +33,20 @@ from typing import Any
 
 import pytest
 import requests
+
+# Absolute import — the e2e dir is not a package, so a relative import breaks
+# collection when invoked as `pytest backend/tests/e2e/` from the repo root.
+from conftest import BACKEND_URL as DEFAULT_BACKEND_URL
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
 pytestmark = pytest.mark.transcription
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
+# A module constant is evaluated at import time, so it could not see ``--base-url`` /
+# ``--backend-url`` and this file always drove whatever was on the default ports — even
+# when the run was aimed at an isolated stack (issue #431). Everything below takes
+# conftest's ``base_url`` / ``backend_url`` fixtures instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
 
@@ -68,10 +75,23 @@ def _unexpected_console_errors(errors: list[str]) -> list[str]:
 
 
 @pytest.fixture(scope="module")
-def api_token() -> str:
+def backend_url(request: pytest.FixtureRequest) -> str:
+    """Module-scoped view of conftest's ``backend_url`` fixture (issue #431).
+
+    The API fixtures below are module-scoped on purpose — one login per module keeps the
+    suite inside the backend's auth rate limit — and a module-scoped fixture cannot
+    request the function-scoped fixture conftest defines. This applies exactly conftest's
+    precedence (``--backend-url`` first, then its ``E2E_BACKEND_URL``/dev default), so the
+    flag is honoured here too. Delete once the conftest fixture is session-scoped.
+    """
+    return str(request.config.getoption("backend_url", default=None) or DEFAULT_BACKEND_URL)
+
+
+@pytest.fixture(scope="module")
+def api_token(backend_url: str) -> str:
     """Authenticate once per module via the backend API."""
     resp = requests.post(
-        f"{BACKEND_URL}/api/auth/token",
+        f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
@@ -82,7 +102,7 @@ def api_token() -> str:
 
 
 @pytest.fixture(scope="module")
-def transcribed_file(api_token: str) -> dict[str, Any]:
+def transcribed_file(api_token: str, backend_url: str) -> dict[str, Any]:
     """Discover a completed file that actually has transcript segments.
 
     Prefers a file with diarization (>1 distinct speaker) so the
@@ -90,7 +110,7 @@ def transcribed_file(api_token: str) -> dict[str, Any]:
     transcribed file. Skips (rather than fails) if the dev dataset has none.
     """
     listing = requests.get(
-        f"{BACKEND_URL}/api/files",
+        f"{backend_url}/api/files",
         headers={"Authorization": f"Bearer {api_token}"},
         params={"page": "1", "page_size": "100", "sort_by": "upload_time", "sort_order": "desc"},
         timeout=30,
@@ -104,7 +124,7 @@ def transcribed_file(api_token: str) -> dict[str, Any]:
     fallback: dict[str, Any] | None = None
     for f in completed:
         detail = requests.get(
-            f"{BACKEND_URL}/api/files/{f['uuid']}",
+            f"{backend_url}/api/files/{f['uuid']}",
             headers={"Authorization": f"Bearer {api_token}"},
             timeout=30,
         ).json()
@@ -137,12 +157,12 @@ def transcribed_file(api_token: str) -> dict[str, Any]:
 # the wider e2e suite has already spent the rate-limit budget, the login can
 # briefly bounce; retry through that window rather than flapping.
 # ---------------------------------------------------------------------------
-def _form_login_with_retry(page, attempts: int = 4) -> None:
+def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
     """Submit the login form, retrying through transient auth rate-limiting."""
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            page.goto(FRONTEND_URL)
+            page.goto(base_url)
             # Already authenticated (cookie still valid) — no form to fill.
             if page.locator(".user-button").count():
                 page.wait_for_selector(".user-button", timeout=10000)
@@ -160,13 +180,13 @@ def _form_login_with_retry(page, attempts: int = 4) -> None:
 
 
 @pytest.fixture(scope="module")
-def auth_storage_state(browser):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
     """Login once and persist browser storage state for reuse across tests."""
     context = browser.new_context(
         viewport={"width": 1920, "height": 1080}, ignore_https_errors=True
     )
     page = context.new_page()
-    _form_login_with_retry(page)
+    _form_login_with_retry(page, base_url)
 
     fd, state_file = tempfile.mkstemp(suffix=".json")
     os.close(fd)
@@ -181,7 +201,7 @@ def auth_storage_state(browser):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, Any]):  # type: ignore[no-untyped-def]
+def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, Any], base_url: str):  # type: ignore[no-untyped-def]
     """A pre-authenticated page on a real file-detail view with a transcript.
 
     Exposes captured console errors on ``page._console_errors``.
@@ -197,7 +217,7 @@ def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, An
     page._console_errors = errors  # type: ignore[attr-defined]
 
     uuid = transcribed_file["uuid"]
-    page.goto(f"{FRONTEND_URL}/files/{uuid}")
+    page.goto(f"{base_url}/files/{uuid}")
     page.wait_for_load_state("networkidle")
     # Transcript is the load-bearing surface — wait for at least one segment.
     page.wait_for_selector(".transcript-segment", timeout=25000)
@@ -363,14 +383,14 @@ class TestSpeakerRenameRepaint:
 
 
 @pytest.fixture(scope="module")
-def paginated_file(api_token: str) -> dict[str, Any]:
+def paginated_file(api_token: str, backend_url: str) -> dict[str, Any]:
     """Discover a file with more segments than one page (>500).
 
     Skips when the dev dataset has none — the pagination invariants below cannot be
     exercised without a genuinely paginated transcript.
     """
     listing = requests.get(
-        f"{BACKEND_URL}/api/files",
+        f"{backend_url}/api/files",
         headers={"Authorization": f"Bearer {api_token}"},
         params={"page": "1", "page_size": "100"},
         timeout=30,
@@ -379,7 +399,7 @@ def paginated_file(api_token: str) -> dict[str, Any]:
     target: dict[str, Any] | None = None
     for f in (x for x in items if x.get("status") == "completed"):
         page_one = requests.get(
-            f"{BACKEND_URL}/api/files/{f['uuid']}/segments",
+            f"{backend_url}/api/files/{f['uuid']}/segments",
             headers={"Authorization": f"Bearer {api_token}"},
             params={"segment_limit": "1"},
             timeout=30,
@@ -409,7 +429,7 @@ class TestTranscriptPagination:
     """
 
     def test_scrolling_loads_and_renders_every_segment(
-        self, browser, auth_storage_state: str, paginated_file: dict[str, Any]
+        self, browser, auth_storage_state: str, paginated_file: dict[str, Any], base_url: str
     ) -> None:  # type: ignore[no-untyped-def]
         context = browser.new_context(
             storage_state=auth_storage_state,
@@ -420,7 +440,7 @@ class TestTranscriptPagination:
         errors: list[str] = []
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
         try:
-            page.goto(f"{FRONTEND_URL}/files/{paginated_file['uuid']}")
+            page.goto(f"{base_url}/files/{paginated_file['uuid']}")
             page.wait_for_load_state("networkidle")
             page.wait_for_selector(".transcript-segment", timeout=25000)
 

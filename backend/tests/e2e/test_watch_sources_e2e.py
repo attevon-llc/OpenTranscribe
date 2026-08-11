@@ -20,17 +20,37 @@ import tempfile
 
 import pytest
 import requests
+
+# Absolute import — the e2e dir is not a package, so a relative import breaks
+# collection when invoked as `pytest backend/tests/e2e/` from the repo root.
+from conftest import BACKEND_URL as DEFAULT_BACKEND_URL
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
+# A module constant is evaluated at import time, so it could not see ``--base-url`` /
+# ``--backend-url`` and this file always drove whatever was on the default ports — even
+# when the run was aimed at an isolated stack (issue #431). Everything below takes
+# conftest's ``base_url`` / ``backend_url`` fixtures instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
 
 
 @pytest.fixture(scope="module")
-def local_watch_capability() -> bool:
+def backend_url(request: pytest.FixtureRequest) -> str:
+    """Module-scoped view of conftest's ``backend_url`` fixture (issue #431).
+
+    ``local_watch_capability`` below is module-scoped — the capability probe logs in, so
+    it runs once per module — and a module-scoped fixture cannot request the
+    function-scoped fixture conftest defines. This applies exactly conftest's precedence
+    (``--backend-url`` first, then its ``E2E_BACKEND_URL``/dev default), so the flag is
+    honoured here too. Delete once the conftest fixture is session-scoped.
+    """
+    return str(request.config.getoption("backend_url", default=None) or DEFAULT_BACKEND_URL)
+
+
+@pytest.fixture(scope="module")
+def local_watch_capability(backend_url: str) -> bool:
     """Whether the stack exposes the local-folder watch capability.
 
     The stepper defaults to a *local* source when the watch overlay is up
@@ -40,13 +60,13 @@ def local_watch_capability() -> bool:
     """
     try:
         resp = requests.post(
-            f"{BACKEND_URL}/api/auth/token",
+            f"{backend_url}/api/auth/token",
             data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
             timeout=15,
         )
         token = resp.json().get("access_token")
         caps = requests.get(
-            f"{BACKEND_URL}/api/watch-sources/capabilities",
+            f"{backend_url}/api/watch-sources/capabilities",
             headers={"Authorization": f"Bearer {token}"},
             timeout=15,
         ).json()
@@ -79,11 +99,11 @@ def _unexpected_console_errors(errors: list[str]) -> list[str]:
     return [e for e in errors if not any(sub in e for sub in BENIGN_CONSOLE_SUBSTRINGS)]
 
 
-def _form_login_with_retry(page, attempts: int = 4) -> None:
+def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            page.goto(FRONTEND_URL)
+            page.goto(base_url)
             if page.locator(".user-button").count():
                 page.wait_for_selector(".user-button", timeout=10000)
                 return
@@ -100,12 +120,12 @@ def _form_login_with_retry(page, attempts: int = 4) -> None:
 
 
 @pytest.fixture(scope="module")
-def auth_storage_state(browser):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
     context = browser.new_context(
         viewport={"width": 1920, "height": 1080}, ignore_https_errors=True
     )
     page = context.new_page()
-    _form_login_with_retry(page)
+    _form_login_with_retry(page, base_url)
     fd, state_file = tempfile.mkstemp(suffix=".json")
     os.close(fd)
     context.storage_state(path=state_file)
@@ -117,7 +137,7 @@ def auth_storage_state(browser):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def app_page(browser, auth_storage_state: str):  # type: ignore[no-untyped-def]
+def app_page(browser, auth_storage_state: str, base_url: str):  # type: ignore[no-untyped-def]
     context = browser.new_context(
         storage_state=auth_storage_state,
         viewport={"width": 1920, "height": 1080},
@@ -127,7 +147,7 @@ def app_page(browser, auth_storage_state: str):  # type: ignore[no-untyped-def]
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page._console_errors = errors  # type: ignore[attr-defined]
-    page.goto(FRONTEND_URL)
+    page.goto(base_url)
     page.wait_for_selector(".user-button", timeout=30000)
     yield page
     page.close()

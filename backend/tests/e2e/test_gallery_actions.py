@@ -35,8 +35,24 @@ from playwright.sync_api import expect
 
 # Test data
 TEST_FILE_TITLE = "PyTorch at Tesla"
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+
+# URLs come from the `base_url` / `backend_url` fixtures in tests/e2e/conftest.py rather than
+# module-level constants: a constant is evaluated at import time, so it can never see
+# `--base-url` / `--backend-url` and a run aimed at an isolated stack silently drove the LIVE
+# stack instead (issue #431).
+
+
+@pytest.fixture(scope="session")
+def backend_url(pytestconfig: pytest.Config) -> str:
+    """Session-scoped widening of the conftest `backend_url` fixture (issue #431).
+
+    Resolution order is identical (`--backend-url` > `$E2E_BACKEND_URL` > the dev default);
+    only the scope differs, because the module-scoped `api_token` fixture below cannot request
+    a function-scoped fixture.
+    """
+    from conftest import BACKEND_URL as DEV_DEFAULT
+
+    return str(pytestconfig.getoption("backend_url", default=None) or DEV_DEFAULT)
 
 
 def _assert_zip_of(download: Any, extension: str) -> None:
@@ -63,14 +79,14 @@ def _assert_zip_of(download: Any, extension: str) -> None:
 # Session-scoped auth: login ONCE, reuse cookies for all tests
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")
-def auth_storage_state(browser):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
     """Login once and save browser storage state for reuse across all tests."""
     context = browser.new_context(
         viewport={"width": 1920, "height": 1080},
         ignore_https_errors=True,
     )
     page = context.new_page()
-    page.goto(FRONTEND_URL)
+    page.goto(base_url)
     page.wait_for_selector("#email", timeout=15000)
     page.fill("#email", TEST_ADMIN_EMAIL)
     page.fill("#password", TEST_ADMIN_PASSWORD)
@@ -94,7 +110,7 @@ def auth_storage_state(browser):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def gallery_page(browser, auth_storage_state: str):  # type: ignore[no-untyped-def]
+def gallery_page(browser, auth_storage_state: str, base_url: str):  # type: ignore[no-untyped-def]
     """Create a new page with pre-authenticated cookies and navigate to gallery."""
     context = browser.new_context(
         storage_state=auth_storage_state,
@@ -102,7 +118,7 @@ def gallery_page(browser, auth_storage_state: str):  # type: ignore[no-untyped-d
         ignore_https_errors=True,
     )
     page = context.new_page()
-    page.goto(FRONTEND_URL)
+    page.goto(base_url)
     # Already authenticated via stored cookies, just wait for gallery
     page.wait_for_selector(".gallery-action-buttons", timeout=30000)
     page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
@@ -112,10 +128,10 @@ def gallery_page(browser, auth_storage_state: str):  # type: ignore[no-untyped-d
 
 
 @pytest.fixture(scope="module")
-def api_token() -> str:
+def api_token(backend_url: str) -> str:
     """Get an API token once for the entire module."""
     resp = requests.post(
-        f"{BACKEND_URL}/api/auth/token",
+        f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
@@ -129,10 +145,10 @@ def _api_params(**kwargs: Any) -> dict[str, str]:
     return {k: str(v) for k, v in kwargs.items()}
 
 
-def _get_completed_file_uuid(token: str) -> str:
+def _get_completed_file_uuid(backend_url: str, token: str) -> str:
     """Get the UUID of a completed file via API."""
     resp = requests.get(
-        f"{BACKEND_URL}/api/files",
+        f"{backend_url}/api/files",
         headers={"Authorization": f"Bearer {token}"},
         params=_api_params(page=1, page_size=20, sort_by="upload_time", sort_order="desc"),
         timeout=30,
@@ -483,11 +499,11 @@ class TestBulkActions:
             f"Delete button should show non-zero count after selecting files, got: {text}"
         )
 
-    def test_export_srt_via_api(self, api_token: str) -> None:
+    def test_export_srt_via_api(self, api_token: str, backend_url: str) -> None:
         """SRT export should return valid subtitle content via the backend API."""
-        file_uuid = _get_completed_file_uuid(api_token)
+        file_uuid = _get_completed_file_uuid(backend_url, api_token)
         resp = requests.get(
-            f"{BACKEND_URL}/api/files/{file_uuid}/subtitles",
+            f"{backend_url}/api/files/{file_uuid}/subtitles",
             headers={"Authorization": f"Bearer {api_token}"},
             params={"subtitle_format": "srt"},
             timeout=30,
@@ -496,11 +512,11 @@ class TestBulkActions:
         assert "-->" in resp.text, "SRT content should contain --> timestamps"
         assert len(resp.text) > 50, "SRT content should not be empty"
 
-    def test_export_webvtt_via_api(self, api_token: str) -> None:
+    def test_export_webvtt_via_api(self, api_token: str, backend_url: str) -> None:
         """WebVTT export should return valid subtitle content."""
-        file_uuid = _get_completed_file_uuid(api_token)
+        file_uuid = _get_completed_file_uuid(backend_url, api_token)
         resp = requests.get(
-            f"{BACKEND_URL}/api/files/{file_uuid}/subtitles",
+            f"{backend_url}/api/files/{file_uuid}/subtitles",
             headers={"Authorization": f"Bearer {api_token}"},
             params={"subtitle_format": "webvtt"},
             timeout=30,
@@ -511,11 +527,11 @@ class TestBulkActions:
         assert "WEBVTT" in resp.text, "WebVTT content should start with WEBVTT header"
         assert "-->" in resp.text, "WebVTT content should contain --> timestamps"
 
-    def test_export_txt_via_api(self, api_token: str) -> None:
+    def test_export_txt_via_api(self, api_token: str, backend_url: str) -> None:
         """TXT export should return plain text transcript content."""
-        file_uuid = _get_completed_file_uuid(api_token)
+        file_uuid = _get_completed_file_uuid(backend_url, api_token)
         resp = requests.get(
-            f"{BACKEND_URL}/api/files/{file_uuid}/subtitles",
+            f"{backend_url}/api/files/{file_uuid}/subtitles",
             headers={"Authorization": f"Bearer {api_token}"},
             params={"subtitle_format": "txt"},
             timeout=30,
@@ -605,11 +621,11 @@ class TestBulkActions:
 class TestBulkActionAPI:
     """Test the backend bulk-action endpoint directly for new actions."""
 
-    def test_bulk_summarize_action(self, api_token: str) -> None:
+    def test_bulk_summarize_action(self, api_token: str, backend_url: str) -> None:
         """POST /files/management/bulk-action with action=summarize for a completed file."""
-        file_uuid = _get_completed_file_uuid(api_token)
+        file_uuid = _get_completed_file_uuid(backend_url, api_token)
         resp = requests.post(
-            f"{BACKEND_URL}/api/files/management/bulk-action",
+            f"{backend_url}/api/files/management/bulk-action",
             headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
             json={"file_uuids": [file_uuid], "action": "summarize"},
             timeout=30,
@@ -625,11 +641,11 @@ class TestBulkActionAPI:
                 f"Unexpected summarize error: {results[0]}"
             )
 
-    def test_bulk_action_invalid_action(self, api_token: str) -> None:
+    def test_bulk_action_invalid_action(self, api_token: str, backend_url: str) -> None:
         """Bulk action with unknown action should return an error per file."""
-        file_uuid = _get_completed_file_uuid(api_token)
+        file_uuid = _get_completed_file_uuid(backend_url, api_token)
         resp = requests.post(
-            f"{BACKEND_URL}/api/files/management/bulk-action",
+            f"{backend_url}/api/files/management/bulk-action",
             headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
             json={"file_uuids": [file_uuid], "action": "nonexistent_action"},
             timeout=30,
@@ -639,12 +655,12 @@ class TestBulkActionAPI:
         assert len(results) == 1
         assert results[0]["success"] is False
 
-    def test_subtitle_export_formats(self, api_token: str) -> None:
+    def test_subtitle_export_formats(self, api_token: str, backend_url: str) -> None:
         """All three subtitle formats should return valid content."""
-        file_uuid = _get_completed_file_uuid(api_token)
+        file_uuid = _get_completed_file_uuid(backend_url, api_token)
         for fmt, marker in [("srt", "-->"), ("webvtt", "WEBVTT"), ("txt", "")]:
             resp = requests.get(
-                f"{BACKEND_URL}/api/files/{file_uuid}/subtitles",
+                f"{backend_url}/api/files/{file_uuid}/subtitles",
                 headers={"Authorization": f"Bearer {api_token}"},
                 params={"subtitle_format": fmt},
                 timeout=30,
@@ -658,10 +674,10 @@ class TestBulkActionAPI:
 # ---------------------------------------------------------------------------
 # Helpers for end-to-end processing tests
 # ---------------------------------------------------------------------------
-def _get_shortest_completed_file(token: str) -> dict[str, Any]:
+def _get_shortest_completed_file(backend_url: str, token: str) -> dict[str, Any]:
     """Find the shortest completed file for fast reprocessing tests."""
     resp = requests.get(
-        f"{BACKEND_URL}/api/files",
+        f"{backend_url}/api/files",
         headers={"Authorization": f"Bearer {token}"},
         params=_api_params(page=1, page_size=100, sort_by="duration", sort_order="asc"),
         timeout=30,
@@ -675,10 +691,10 @@ def _get_shortest_completed_file(token: str) -> dict[str, Any]:
     return {}  # unreachable, satisfies mypy
 
 
-def _get_error_file(token: str) -> dict[str, Any] | None:
+def _get_error_file(backend_url: str, token: str) -> dict[str, Any] | None:
     """Find a file in error status."""
     resp = requests.get(
-        f"{BACKEND_URL}/api/files",
+        f"{backend_url}/api/files",
         headers={"Authorization": f"Bearer {token}"},
         params=_api_params(page=1, page_size=20, sort_by="upload_time", sort_order="desc"),
         timeout=30,
@@ -690,10 +706,10 @@ def _get_error_file(token: str) -> dict[str, Any] | None:
     return None
 
 
-def _get_file_status(token: str, file_uuid: str) -> str:
+def _get_file_status(backend_url: str, token: str, file_uuid: str) -> str:
     """Get the current status of a file."""
     resp = requests.get(
-        f"{BACKEND_URL}/api/files/{file_uuid}",
+        f"{backend_url}/api/files/{file_uuid}",
         headers={"Authorization": f"Bearer {token}"},
         timeout=30,
     )
@@ -702,18 +718,18 @@ def _get_file_status(token: str, file_uuid: str) -> str:
 
 
 def _wait_for_status(
-    token: str, file_uuid: str, target_status: str, timeout_secs: int = 180
+    backend_url: str, token: str, file_uuid: str, target_status: str, timeout_secs: int = 180
 ) -> str:
     """Poll until file reaches target status or timeout."""
     start = time.time()
     while time.time() - start < timeout_secs:
-        status = _get_file_status(token, file_uuid)
+        status = _get_file_status(backend_url, token, file_uuid)
         if status == target_status:
             return status
         if status == "error" and target_status != "error":
             return status  # Don't keep waiting if it errored
         time.sleep(3)
-    return _get_file_status(token, file_uuid)
+    return _get_file_status(backend_url, token, file_uuid)
 
 
 # ---------------------------------------------------------------------------
@@ -726,16 +742,16 @@ class TestEndToEndProcessing:
     Reprocess test waits for the file to finish processing again.
     """
 
-    def test_reprocess_api_changes_status(self, api_token: str) -> None:
+    def test_reprocess_api_changes_status(self, api_token: str, backend_url: str) -> None:
         """Reprocess via API should change file status from completed to processing."""
-        file = _get_shortest_completed_file(api_token)
+        file = _get_shortest_completed_file(backend_url, api_token)
         file_uuid = file["uuid"]
         original_status = file["status"]
         assert original_status == "completed"
 
         # Trigger reprocess
         resp = requests.post(
-            f"{BACKEND_URL}/api/files/management/bulk-action",
+            f"{backend_url}/api/files/management/bulk-action",
             headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
             json={"file_uuids": [file_uuid], "action": "reprocess"},
             timeout=30,
@@ -746,22 +762,22 @@ class TestEndToEndProcessing:
 
         # Status should change from completed
         time.sleep(2)
-        new_status = _get_file_status(api_token, file_uuid)
+        new_status = _get_file_status(backend_url, api_token, file_uuid)
         assert new_status in ("pending", "processing", "queued"), (
             f"After reprocess, expected pending/processing/queued, got: {new_status}"
         )
 
-    def test_reprocess_completes_successfully(self, api_token: str) -> None:
+    def test_reprocess_completes_successfully(self, api_token: str, backend_url: str) -> None:
         """After reprocess, the short file should complete processing again."""
-        file = _get_shortest_completed_file(api_token)
+        file = _get_shortest_completed_file(backend_url, api_token)
         file_uuid = file["uuid"]
 
         # Check current status - if still processing from previous test, just wait
-        current = _get_file_status(api_token, file_uuid)
+        current = _get_file_status(backend_url, api_token, file_uuid)
         if current == "completed":
             # Trigger reprocess
             resp = requests.post(
-                f"{BACKEND_URL}/api/files/management/bulk-action",
+                f"{backend_url}/api/files/management/bulk-action",
                 headers={
                     "Authorization": f"Bearer {api_token}",
                     "Content-Type": "application/json",
@@ -773,25 +789,29 @@ class TestEndToEndProcessing:
             assert resp.json()[0]["success"] is True
 
         # Wait for completion (5 min max for a short file with GPU processing)
-        final_status = _wait_for_status(api_token, file_uuid, "completed", timeout_secs=300)
+        final_status = _wait_for_status(
+            backend_url, api_token, file_uuid, "completed", timeout_secs=300
+        )
         assert final_status == "completed", (
             f"Short file did not complete reprocessing: status={final_status}"
         )
 
-    def test_reprocess_preserves_transcript(self, api_token: str) -> None:
+    def test_reprocess_preserves_transcript(self, api_token: str, backend_url: str) -> None:
         """After reprocessing, the file should still have a valid transcript."""
-        file = _get_shortest_completed_file(api_token)
+        file = _get_shortest_completed_file(backend_url, api_token)
         file_uuid = file["uuid"]
 
         # Ensure file is completed
-        current = _get_file_status(api_token, file_uuid)
+        current = _get_file_status(backend_url, api_token, file_uuid)
         if current != "completed":
-            final = _wait_for_status(api_token, file_uuid, "completed", timeout_secs=300)
+            final = _wait_for_status(
+                backend_url, api_token, file_uuid, "completed", timeout_secs=300
+            )
             assert final == "completed", f"File not completed: {final}"
 
         # Verify transcript exists via subtitle export
         resp = requests.get(
-            f"{BACKEND_URL}/api/files/{file_uuid}/subtitles",
+            f"{backend_url}/api/files/{file_uuid}/subtitles",
             headers={"Authorization": f"Bearer {api_token}"},
             params={"subtitle_format": "srt"},
             timeout=30,
@@ -800,19 +820,21 @@ class TestEndToEndProcessing:
         assert "-->" in resp.text, "Transcript should have timestamps after reprocess"
         assert len(resp.text) > 50, "Transcript should not be empty after reprocess"
 
-    def test_summarize_api_returns_result(self, api_token: str) -> None:
+    def test_summarize_api_returns_result(self, api_token: str, backend_url: str) -> None:
         """Summarize via API should either succeed or report LLM not configured."""
-        file = _get_shortest_completed_file(api_token)
+        file = _get_shortest_completed_file(backend_url, api_token)
         file_uuid = file["uuid"]
 
         # Ensure file is completed first
-        current = _get_file_status(api_token, file_uuid)
+        current = _get_file_status(backend_url, api_token, file_uuid)
         if current != "completed":
-            final = _wait_for_status(api_token, file_uuid, "completed", timeout_secs=300)
+            final = _wait_for_status(
+                backend_url, api_token, file_uuid, "completed", timeout_secs=300
+            )
             assert final == "completed", f"File not completed for summarize: {final}"
 
         resp = requests.post(
-            f"{BACKEND_URL}/api/files/management/bulk-action",
+            f"{backend_url}/api/files/management/bulk-action",
             headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
             json={"file_uuids": [file_uuid], "action": "summarize"},
             timeout=30,
@@ -828,15 +850,15 @@ class TestEndToEndProcessing:
                 f"Unexpected error: {results[0]}"
             )
 
-    def test_retry_failed_api(self, api_token: str) -> None:
+    def test_retry_failed_api(self, api_token: str, backend_url: str) -> None:
         """Retry action on an error file should succeed (if error files exist)."""
-        error_file = _get_error_file(api_token)
+        error_file = _get_error_file(backend_url, api_token)
         if error_file is None:
             pytest.skip("No error files to test retry")
             return  # unreachable, satisfies mypy
 
         resp = requests.post(
-            f"{BACKEND_URL}/api/files/management/bulk-action",
+            f"{backend_url}/api/files/management/bulk-action",
             headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
             json={"file_uuids": [error_file["uuid"]], "action": "retry"},
             timeout=30,
@@ -847,19 +869,21 @@ class TestEndToEndProcessing:
         # Retry should succeed for error files (queues a new task)
         assert results[0]["success"] is True, f"Retry failed: {results[0]}"
 
-    def test_speaker_id_api(self, api_token: str) -> None:
+    def test_speaker_id_api(self, api_token: str, backend_url: str) -> None:
         """Speaker identification via API should start a task or report LLM not available."""
-        file = _get_shortest_completed_file(api_token)
+        file = _get_shortest_completed_file(backend_url, api_token)
         file_uuid = file["uuid"]
 
         # Ensure file is completed
-        current = _get_file_status(api_token, file_uuid)
+        current = _get_file_status(backend_url, api_token, file_uuid)
         if current != "completed":
-            final = _wait_for_status(api_token, file_uuid, "completed", timeout_secs=300)
+            final = _wait_for_status(
+                backend_url, api_token, file_uuid, "completed", timeout_secs=300
+            )
             assert final == "completed", f"File not completed for speaker ID: {final}"
 
         resp = requests.post(
-            f"{BACKEND_URL}/api/files/{file_uuid}/identify-speakers",
+            f"{backend_url}/api/files/{file_uuid}/identify-speakers",
             headers={"Authorization": f"Bearer {api_token}"},
             timeout=30,
         )

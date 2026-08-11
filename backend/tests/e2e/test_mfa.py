@@ -20,7 +20,6 @@ Automated run (via master script):
     ./scripts/run-auth-e2e.sh --skip-ldap --skip-pki
 """
 
-import os
 import uuid
 from typing import cast
 
@@ -30,8 +29,10 @@ import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# URLs come from the `base_url` / `backend_url` fixtures in tests/e2e/conftest.py rather than
+# module-level constants: a constant is evaluated at import time, so it can never see
+# `--base-url` / `--backend-url` and a run aimed at an isolated stack silently drove the LIVE
+# stack instead (issue #431).
 
 # Admin credentials (for viewing settings, enabling MFA globally)
 ADMIN_EMAIL = "admin@example.com"
@@ -49,8 +50,21 @@ PROFILE_NAV_LABEL = "Profile & Security"
 # ===== Session fixtures =====
 
 
+@pytest.fixture(scope="session")
+def backend_url(pytestconfig: pytest.Config) -> str:
+    """Session-scoped widening of the conftest `backend_url` fixture (issue #431).
+
+    Resolution order is identical (`--backend-url` > `$E2E_BACKEND_URL` > the dev default);
+    only the scope differs, because the session-scoped `mfa_test_user` fixture below cannot
+    request a function-scoped fixture.
+    """
+    from conftest import BACKEND_URL as DEV_DEFAULT
+
+    return str(pytestconfig.getoption("backend_url", default=None) or DEV_DEFAULT)
+
+
 @pytest.fixture(scope="session", autouse=True)
-def mfa_test_user():
+def mfa_test_user(backend_url: str):
     """Create a dedicated user for MFA tests via the admin API.
 
     Uses a unique email per session to avoid conflicts. The user is created
@@ -59,7 +73,7 @@ def mfa_test_user():
     """
     # Get admin token
     resp = requests.post(
-        f"{BACKEND_URL}/api/auth/token",
+        f"{backend_url}/api/auth/token",
         data={"username": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
     )
     if resp.status_code != 200:
@@ -72,7 +86,7 @@ def mfa_test_user():
 
     # Register the MFA test user
     reg_resp = requests.post(
-        f"{BACKEND_URL}/api/auth/register",
+        f"{backend_url}/api/auth/register",
         json={
             "email": MFA_TEST_EMAIL,
             "password": MFA_TEST_PASSWORD,
@@ -89,10 +103,10 @@ def mfa_test_user():
 # ===== API helpers =====
 
 
-def _api_login(email: str, password: str) -> str:
+def _api_login(backend_url: str, email: str, password: str) -> str:
     """Log in via API and return access token."""
     resp = requests.post(
-        f"{BACKEND_URL}/api/auth/token",
+        f"{backend_url}/api/auth/token",
         data={"username": email, "password": password},
     )
     data = cast(dict, resp.json())
@@ -101,15 +115,15 @@ def _api_login(email: str, password: str) -> str:
     return cast(str, data["access_token"])
 
 
-def _api_get_mfa_status(token: str) -> dict:
+def _api_get_mfa_status(backend_url: str, token: str) -> dict:
     """Get MFA status via API."""
     headers = {"Authorization": f"Bearer {token}"}
-    return cast(dict, requests.get(f"{BACKEND_URL}/api/auth/mfa/status", headers=headers).json())
+    return cast(dict, requests.get(f"{backend_url}/api/auth/mfa/status", headers=headers).json())
 
 
-def _login_browser(page: Page, email: str, password: str):
+def _login_browser(page: Page, base_url: str, email: str, password: str):
     """Log in via the browser."""
-    page.goto(f"{FRONTEND_URL}/login")
+    page.goto(f"{base_url}/login")
     page.wait_for_selector("#email", timeout=10000)
     page.fill("#email", email)
     page.fill("#password", password)
@@ -156,9 +170,9 @@ def _open_security_settings(page: Page):
 class TestMFASetupFlow:
     """Test MFA enrollment flow through the browser UI."""
 
-    def test_mfa_section_visible_in_settings(self, page: Page, mfa_test_user):
+    def test_mfa_section_visible_in_settings(self, page: Page, mfa_test_user, base_url: str):
         """MFA section is visible in Security settings."""
-        _login_browser(page, mfa_test_user["email"], mfa_test_user["password"])
+        _login_browser(page, base_url, mfa_test_user["email"], mfa_test_user["password"])
         _wait_for_gallery(page)
         _open_security_settings(page)
 
@@ -172,17 +186,19 @@ class TestMFASetupFlow:
             "MFA section should be visible in security settings"
         )
 
-    def test_mfa_setup_shows_qr_code(self, page: Page, mfa_test_user):
+    def test_mfa_setup_shows_qr_code(
+        self, page: Page, mfa_test_user, base_url: str, backend_url: str
+    ):
         """Starting MFA setup shows QR code for authenticator app."""
-        token = _api_login(mfa_test_user["email"], mfa_test_user["password"])
-        status = _api_get_mfa_status(token)
+        token = _api_login(backend_url, mfa_test_user["email"], mfa_test_user["password"])
+        status = _api_get_mfa_status(backend_url, token)
 
         if not status.get("can_setup_mfa"):
             pytest.skip("User cannot set up MFA")
         if status.get("mfa_configured"):
             pytest.skip("MFA already configured for this user")
 
-        _login_browser(page, mfa_test_user["email"], mfa_test_user["password"])
+        _login_browser(page, base_url, mfa_test_user["email"], mfa_test_user["password"])
         _wait_for_gallery(page)
         _open_security_settings(page)
 
@@ -199,17 +215,19 @@ class TestMFASetupFlow:
         qr_image = page.locator(".qr-code img, img[alt*='QR']")
         expect(qr_image).to_be_visible(timeout=10000)
 
-    def test_mfa_setup_complete_flow(self, page: Page, mfa_test_user):
+    def test_mfa_setup_complete_flow(
+        self, page: Page, mfa_test_user, base_url: str, backend_url: str
+    ):
         """Full MFA setup: enable -> QR -> verify TOTP -> see backup codes."""
-        token = _api_login(mfa_test_user["email"], mfa_test_user["password"])
-        status = _api_get_mfa_status(token)
+        token = _api_login(backend_url, mfa_test_user["email"], mfa_test_user["password"])
+        status = _api_get_mfa_status(backend_url, token)
 
         if not status.get("can_setup_mfa"):
             pytest.skip("User cannot set up MFA")
         if status.get("mfa_configured"):
             pytest.skip("MFA already configured")
 
-        _login_browser(page, mfa_test_user["email"], mfa_test_user["password"])
+        _login_browser(page, base_url, mfa_test_user["email"], mfa_test_user["password"])
         _wait_for_gallery(page)
         _open_security_settings(page)
 
@@ -241,7 +259,7 @@ class TestMFASetupFlow:
             # Fall back to API-based setup (re-use the existing setup session)
             headers = {"Authorization": f"Bearer {token}"}
             setup_resp = requests.post(
-                f"{BACKEND_URL}/api/auth/mfa/setup",
+                f"{backend_url}/api/auth/mfa/setup",
                 headers=headers,
             )
             if setup_resp.status_code != 200:
@@ -269,7 +287,7 @@ class TestMFASetupFlow:
             # If browser flow didn't show backup codes, verify via API fallback
             headers = {"Authorization": f"Bearer {token}"}
             verify_resp = requests.post(
-                f"{BACKEND_URL}/api/auth/mfa/verify-setup",
+                f"{backend_url}/api/auth/mfa/verify-setup",
                 headers=headers,
                 json={"code": totp.now()},
             )
@@ -293,10 +311,10 @@ class TestMFALoginFlow:
     authentication chain: password -> MFA token -> TOTP verify -> access token.
     """
 
-    def test_mfa_login_api_flow(self, mfa_test_user):
+    def test_mfa_login_api_flow(self, mfa_test_user, backend_url: str):
         """API-level: login -> MFA token -> verify wrong code -> 401."""
         login_resp = requests.post(
-            f"{BACKEND_URL}/api/auth/token",
+            f"{backend_url}/api/auth/token",
             data={"username": mfa_test_user["email"], "password": mfa_test_user["password"]},
         )
         data = login_resp.json()
@@ -308,23 +326,25 @@ class TestMFALoginFlow:
 
         # Verify that a wrong code is rejected
         verify_resp = requests.post(
-            f"{BACKEND_URL}/api/auth/mfa/verify",
+            f"{backend_url}/api/auth/mfa/verify",
             json={"mfa_token": mfa_token, "code": "000000"},
         )
         assert verify_resp.status_code == 401, "Wrong MFA code should return 401"
 
-    def test_mfa_login_shows_code_prompt(self, page: Page, mfa_test_user):
+    def test_mfa_login_shows_code_prompt(
+        self, page: Page, mfa_test_user, base_url: str, backend_url: str
+    ):
         """When MFA is configured, login shows code entry prompt."""
         # Check if MFA is required for the test user (raw API, no pytest.skip side effects)
         login_resp = requests.post(
-            f"{BACKEND_URL}/api/auth/token",
+            f"{backend_url}/api/auth/token",
             data={"username": mfa_test_user["email"], "password": mfa_test_user["password"]},
         )
         if not login_resp.json().get("mfa_required"):
             pytest.skip("MFA not configured for test user — run setup test first")
 
         # Try login via browser — should show MFA prompt
-        _login_browser(page, mfa_test_user["email"], mfa_test_user["password"])
+        _login_browser(page, base_url, mfa_test_user["email"], mfa_test_user["password"])
         page.wait_for_timeout(3000)
 
         mfa_input = page.locator("input[autocomplete='one-time-code'], input[maxlength='6']")
@@ -340,16 +360,18 @@ class TestMFALoginFlow:
 
         assert has_mfa_prompt, "MFA code prompt should appear after password login"
 
-    def test_mfa_wrong_code_stays_on_prompt(self, page: Page, mfa_test_user):
+    def test_mfa_wrong_code_stays_on_prompt(
+        self, page: Page, mfa_test_user, base_url: str, backend_url: str
+    ):
         """Wrong MFA code keeps user on the MFA prompt."""
         login_resp = requests.post(
-            f"{BACKEND_URL}/api/auth/token",
+            f"{backend_url}/api/auth/token",
             data={"username": mfa_test_user["email"], "password": mfa_test_user["password"]},
         )
         if not login_resp.json().get("mfa_required"):
             pytest.skip("MFA not configured")
 
-        _login_browser(page, mfa_test_user["email"], mfa_test_user["password"])
+        _login_browser(page, base_url, mfa_test_user["email"], mfa_test_user["password"])
         page.wait_for_timeout(3000)
 
         mfa_input = page.locator("input[autocomplete='one-time-code'], input[maxlength='6']")
@@ -376,9 +398,9 @@ class TestMFAStatusDisplay:
     These tests use the admin account since they only view settings (no MFA setup).
     """
 
-    def test_security_settings_shows_mfa_status(self, page: Page):
+    def test_security_settings_shows_mfa_status(self, page: Page, base_url: str):
         """Security settings page shows MFA enabled/disabled status."""
-        _login_browser(page, ADMIN_EMAIL, ADMIN_PASSWORD)
+        _login_browser(page, base_url, ADMIN_EMAIL, ADMIN_PASSWORD)
         _wait_for_gallery(page)
         _open_security_settings(page)
 
@@ -400,9 +422,9 @@ class TestMFAStatusDisplay:
             f"Security settings should show MFA status. Content: {settings_text[:200]}"
         )
 
-    def test_mfa_api_status_accessible(self, page: Page):
+    def test_mfa_api_status_accessible(self, page: Page, base_url: str):
         """MFA status API is accessible after login."""
-        _login_browser(page, ADMIN_EMAIL, ADMIN_PASSWORD)
+        _login_browser(page, base_url, ADMIN_EMAIL, ADMIN_PASSWORD)
         _wait_for_gallery(page)
 
         # Auth is an httpOnly cookie (no JS-readable token since the 0.4.0

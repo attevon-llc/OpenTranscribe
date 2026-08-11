@@ -15,18 +15,39 @@ import zipfile
 
 import pytest
 import requests
+
+# Absolute import — the e2e dir is not a package, so a relative import breaks
+# collection when invoked as `pytest backend/tests/e2e/` from the repo root.
+from conftest import BACKEND_URL as DEFAULT_BACKEND_URL
 from playwright.sync_api import Page
 
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# This module used to define its own ``BACKEND_URL`` constant here. A module constant is
+# evaluated at import time, so it could not see ``--backend-url`` and this file always
+# talked to whatever was on the default port — even when the run was aimed at an isolated
+# stack (issue #431). Everything below takes conftest's ``backend_url`` fixture instead
+# (the browser side already used ``base_url``).
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 
 @pytest.fixture(scope="module")
-def completed_uuid():
+def backend_url(request: pytest.FixtureRequest) -> str:
+    """Module-scoped view of conftest's ``backend_url`` fixture (issue #431).
+
+    ``completed_uuid`` below is module-scoped so the suite logs into the API once, and a
+    module-scoped fixture cannot request the function-scoped fixture conftest defines.
+    This applies exactly conftest's precedence (``--backend-url`` first, then its
+    ``E2E_BACKEND_URL``/dev default), so the flag is honoured here too. Delete once the
+    conftest fixture is session-scoped.
+    """
+    return str(request.config.getoption("backend_url", default=None) or DEFAULT_BACKEND_URL)
+
+
+@pytest.fixture(scope="module")
+def completed_uuid(backend_url: str):
     """UUID of a completed file in the dev dataset (one API login per module)."""
     tok = requests.post(
-        f"{BACKEND_URL}/api/auth/token",
+        f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
@@ -34,7 +55,7 @@ def completed_uuid():
     if tok.status_code != 200:
         pytest.skip(f"Cannot authenticate against dev stack (HTTP {tok.status_code})")
     files = requests.get(
-        f"{BACKEND_URL}/api/files?limit=100",
+        f"{backend_url}/api/files?limit=100",
         headers={"Authorization": f"Bearer {tok.json()['access_token']}"},
         timeout=30,
     ).json()

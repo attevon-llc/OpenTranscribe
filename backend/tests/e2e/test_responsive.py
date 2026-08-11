@@ -12,14 +12,15 @@ Run:
     DISPLAY=:11 pytest backend/tests/e2e/test_responsive.py -v --headed
 """
 
-import os
-
 import pytest
 from playwright.sync_api import expect
 
 pytestmark = pytest.mark.responsive
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
+# This module used to define its own ``FRONTEND_URL`` constant here. A module constant is
+# evaluated at import time, so it could not see ``--base-url`` and this file always drove
+# whatever was on the default port — even when the run was aimed at an isolated stack
+# (issue #431). Every test below takes conftest's ``base_url`` fixture instead.
 
 VIEWPORTS = {
     "mobile": {"width": 375, "height": 667},
@@ -60,8 +61,8 @@ def anon_page(request, browser):
 class TestLoginResponsive:
     """The login form is usable at every viewport."""
 
-    def test_login_form_renders(self, anon_page):
-        anon_page.goto(FRONTEND_URL)
+    def test_login_form_renders(self, anon_page, base_url: str):
+        anon_page.goto(base_url)
         anon_page.wait_for_selector("#email", timeout=15000)
         expect(anon_page.locator("#email")).to_be_visible()
         expect(anon_page.locator("#password")).to_be_visible()
@@ -76,13 +77,13 @@ class TestLoginResponsive:
 class TestGalleryResponsive:
     """The gallery and navbar adapt to each viewport."""
 
-    def test_gallery_renders(self, sized_page):
-        sized_page.goto(FRONTEND_URL)
+    def test_gallery_renders(self, sized_page, base_url: str):
+        sized_page.goto(base_url)
         sized_page.wait_for_selector(".gallery-action-buttons", timeout=30000)
         expect(sized_page.locator(".gallery-action-buttons")).to_be_visible()
 
-    def test_navbar_adapts(self, sized_page):
-        sized_page.goto(FRONTEND_URL)
+    def test_navbar_adapts(self, sized_page, base_url: str):
+        sized_page.goto(base_url)
         sized_page.wait_for_selector(".gallery-action-buttons", timeout=30000)
         toggle = sized_page.locator(".mobile-toggle")
         name = sized_page._viewport_name  # type: ignore[attr-defined]
@@ -93,8 +94,8 @@ class TestGalleryResponsive:
             # Desktop shows the full nav; the hamburger stays hidden
             expect(toggle).to_be_hidden()
 
-    def test_no_horizontal_overflow(self, sized_page):
-        sized_page.goto(FRONTEND_URL)
+    def test_no_horizontal_overflow(self, sized_page, base_url: str):
+        sized_page.goto(base_url)
         sized_page.wait_for_selector(".gallery-action-buttons", timeout=30000)
         sized_page.wait_for_timeout(1000)
         overflow = sized_page.evaluate(
@@ -108,7 +109,7 @@ class TestGalleryResponsive:
 class TestSearchResponsive:
     """The search page renders its input at every viewport."""
 
-    def test_search_input_renders(self, sized_page):
-        sized_page.goto(f"{FRONTEND_URL}/search")
+    def test_search_input_renders(self, sized_page, base_url: str):
+        sized_page.goto(f"{base_url}/search")
         sized_page.wait_for_selector(".search-page", timeout=15000)
         expect(sized_page.locator(".search-input")).to_be_visible()

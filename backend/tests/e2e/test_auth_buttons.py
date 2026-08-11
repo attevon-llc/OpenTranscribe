@@ -36,9 +36,13 @@ import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
-# URLs
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
+# A module constant is evaluated at import time, so it could not see ``--base-url`` and
+# this file always drove whatever was on the default ports — even when the run was aimed
+# at an isolated stack (issue #431). Every test below takes conftest's ``base_url``
+# fixture instead. No ``backend_url`` counterpart is needed: the API calls here are made
+# by the browser as same-origin ``fetch``, so they follow ``base_url`` automatically (the
+# old ``BACKEND_URL`` constant was never read).
 
 # Test credentials
 ADMIN_EMAIL = "admin@example.com"
@@ -81,18 +85,18 @@ def _logout(page: Page):
 class TestLoginPageAuthButtons:
     """Test that the login page shows correct auth buttons based on backend config."""
 
-    def test_login_page_loads(self, page: Page):
+    def test_login_page_loads(self, page: Page, base_url: str):
         """Login page loads with email and password fields."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         assert page.locator("#email").is_visible()
         assert page.locator("#password").is_visible()
         assert page.locator("button[type=submit]").is_visible()
 
-    def test_auth_methods_api_returns(self, page: Page):
+    def test_auth_methods_api_returns(self, page: Page, base_url: str):
         """Backend /api/auth/methods returns valid response."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         # Call the API directly from the browser context
@@ -111,9 +115,9 @@ class TestLoginPageAuthButtons:
         assert isinstance(result["pki_enabled"], bool)
         assert isinstance(result["ldap_enabled"], bool)
 
-    def test_oidc_button_visible_when_enabled(self, page: Page):
+    def test_oidc_button_visible_when_enabled(self, page: Page, base_url: str):
         """The SSO button appears when oidc_enabled is true."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         # Check if Keycloak is enabled via API
@@ -136,9 +140,9 @@ class TestLoginPageAuthButtons:
         else:
             expect(oidc_button).to_have_count(0)
 
-    def test_pki_button_visible_when_enabled(self, page: Page):
+    def test_pki_button_visible_when_enabled(self, page: Page, base_url: str):
         """PKI/Certificate button appears when pki_enabled is true."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         methods = page.evaluate(
@@ -159,9 +163,9 @@ class TestLoginPageAuthButtons:
         else:
             expect(pki_button).to_have_count(0)
 
-    def test_external_auth_divider_visible(self, page: Page):
+    def test_external_auth_divider_visible(self, page: Page, base_url: str):
         """'Or continue with' divider appears when external auth is enabled."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         methods = page.evaluate(
@@ -187,9 +191,9 @@ class TestLoginPageAuthButtons:
 class TestLocalLogin:
     """Test local email/password login flow through the browser."""
 
-    def test_local_login_success(self, page: Page):
+    def test_local_login_success(self, page: Page, base_url: str):
         """Admin login with email/password works and redirects to gallery."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         _login_local(page, ADMIN_EMAIL, ADMIN_PASSWORD)
@@ -198,9 +202,9 @@ class TestLocalLogin:
         # Should NOT be on login page
         assert "/login" not in page.url
 
-    def test_local_login_shows_gallery(self, page: Page):
+    def test_local_login_shows_gallery(self, page: Page, base_url: str):
         """After login, gallery page displays correctly with content."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         _login_local(page, ADMIN_EMAIL, ADMIN_PASSWORD)
@@ -213,9 +217,9 @@ class TestLocalLogin:
         body_text = page.text_content("body")
         assert body_text is not None
 
-    def test_local_login_invalid_password(self, page: Page):
+    def test_local_login_invalid_password(self, page: Page, base_url: str):
         """Invalid password shows error message."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         _login_local(page, ADMIN_EMAIL, "wrong_password")
@@ -225,9 +229,9 @@ class TestLocalLogin:
         page.wait_for_load_state("networkidle")
         assert "/login" in page.url or page.locator("#email").is_visible()
 
-    def test_local_login_empty_fields(self, page: Page):
+    def test_local_login_empty_fields(self, page: Page, base_url: str):
         """Submitting with empty fields shows validation."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         # Click submit without filling fields
@@ -238,9 +242,9 @@ class TestLocalLogin:
         page.wait_for_load_state("networkidle")
         expect(page.locator("#email")).to_be_visible()
 
-    def test_logout_returns_to_login(self, page: Page):
+    def test_logout_returns_to_login(self, page: Page, base_url: str):
         """Logging out returns to the login page."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         _login_local(page, ADMIN_EMAIL, ADMIN_PASSWORD)
@@ -279,11 +283,11 @@ class TestLDAPLogin:
         )
         return cast(bool, methods.get("ldap_enabled", False))
 
-    def test_ldap_login_success(self, page: Page):
+    def test_ldap_login_success(self, page: Page, base_url: str):
         """LDAP user can log in with username/password."""
         if not self._ldap_e2e:
             pytest.skip("LDAP login tests require RUN_AUTH_E2E=true and LLDAP container")
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         if not self._is_ldap_enabled(page):
@@ -295,11 +299,11 @@ class TestLDAPLogin:
 
         assert "/login" not in page.url
 
-    def test_ldap_login_shows_gallery(self, page: Page):
+    def test_ldap_login_shows_gallery(self, page: Page, base_url: str):
         """After LDAP login, gallery loads with thumbnails."""
         if not self._ldap_e2e:
             pytest.skip("LDAP login tests require RUN_AUTH_E2E=true and LLDAP container")
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         if not self._is_ldap_enabled(page):
@@ -323,9 +327,9 @@ class TestLDAPLogin:
         body_text = page.text_content("body")
         assert body_text is not None
 
-    def test_ldap_invalid_password(self, page: Page):
+    def test_ldap_invalid_password(self, page: Page, base_url: str):
         """Wrong LDAP password shows error."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         if not self._is_ldap_enabled(page):
@@ -362,9 +366,9 @@ class TestOIDCLogin:
         )
         return cast(bool, methods.get("oidc_enabled", False))
 
-    def test_oidc_button_click_redirects(self, page: Page):
+    def test_oidc_button_click_redirects(self, page: Page, base_url: str):
         """Clicking Keycloak button initiates OIDC redirect."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         if not self._is_oidc_enabled(page):
@@ -379,9 +383,9 @@ class TestOIDCLogin:
         page.wait_for_url("**/realms/**", timeout=15000)
         assert "realms" in page.url
 
-    def test_oidc_redirect_shows_login_form(self, page: Page):
+    def test_oidc_redirect_shows_login_form(self, page: Page, base_url: str):
         """Keycloak redirect page shows a login form."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         if not self._is_oidc_enabled(page):
@@ -424,9 +428,9 @@ class TestPKIButton:
         )
         return cast(bool, methods.get("pki_enabled", False))
 
-    def test_pki_button_visible(self, page: Page):
+    def test_pki_button_visible(self, page: Page, base_url: str):
         """PKI button is visible when enabled."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         if not self._is_pki_enabled(page):
@@ -437,9 +441,9 @@ class TestPKIButton:
         text = pki_button.text_content()
         assert "Certificate" in text
 
-    def test_pki_button_click_attempts_auth(self, page: Page):
+    def test_pki_button_click_attempts_auth(self, page: Page, base_url: str):
         """Clicking PKI button sends auth request to backend."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         if not self._is_pki_enabled(page):
@@ -456,9 +460,9 @@ class TestPKIButton:
         response = response_info.value
         assert response.status in (200, 401), f"Expected 200 or 401, got {response.status}"
 
-    def test_pki_api_responds(self, page: Page):
+    def test_pki_api_responds(self, page: Page, base_url: str):
         """PKI API endpoint is reachable from the browser."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         if not self._is_pki_enabled(page):
@@ -492,14 +496,14 @@ class TestPKIButton:
 class TestPostLoginGallery:
     """Test that the gallery and thumbnails load properly after login."""
 
-    def test_gallery_no_console_errors(self, page: Page):
+    def test_gallery_no_console_errors(self, page: Page, base_url: str):
         """After login, no JavaScript console errors on gallery page."""
         console_errors = []
         page.on(
             "console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None
         )
 
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         _login_local(page, ADMIN_EMAIL, ADMIN_PASSWORD)
@@ -514,7 +518,7 @@ class TestPostLoginGallery:
         # No real JS errors should have occurred
         assert len(real_errors) == 0, f"Console errors found: {real_errors}"
 
-    def test_thumbnails_load_200(self, page: Page):
+    def test_thumbnails_load_200(self, page: Page, base_url: str):
         """Thumbnail images return 200 status codes (no broken images)."""
         failed_requests = []
 
@@ -529,7 +533,7 @@ class TestPostLoginGallery:
 
         page.on("response", on_response)
 
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         _login_local(page, ADMIN_EMAIL, ADMIN_PASSWORD)
@@ -541,9 +545,9 @@ class TestPostLoginGallery:
         # No image requests should have 4xx/5xx errors
         assert len(failed_requests) == 0, f"Failed image requests: {failed_requests}"
 
-    def test_navigation_works_after_login(self, page: Page):
+    def test_navigation_works_after_login(self, page: Page, base_url: str):
         """Can navigate to file detail page after login."""
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         _login_local(page, ADMIN_EMAIL, ADMIN_PASSWORD)

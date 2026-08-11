@@ -16,30 +16,46 @@ import time
 import pytest
 import requests
 
-# Inlined (not imported from .conftest) so this module collects regardless of the
-# e2e package-import quirk; the api_helper fixture is still auto-discovered from conftest.
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
-# In dev, presigned URLs are rewritten to a relative /s3/... path proxied by the
-# frontend (Vite) to MinIO. Fetch those against the frontend origin.
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
+# URLs come from the `base_url` / `backend_url` fixtures in tests/e2e/conftest.py rather than
+# module-level constants: a constant is evaluated at import time, so it can never see
+# `--base-url` / `--backend-url` and a run aimed at an isolated stack silently drove the LIVE
+# stack instead (issue #431).
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 
-def _resolve(url: str) -> str:
-    """Resolve a presigned URL to something fetchable from the test host."""
+@pytest.fixture(scope="session")
+def backend_url(pytestconfig: pytest.Config) -> str:
+    """Session-scoped widening of the conftest `backend_url` fixture (issue #431).
+
+    Resolution order is identical (`--backend-url` > `$E2E_BACKEND_URL` > the dev default);
+    only the scope differs, because the module-scoped `session` / `completed_file` fixtures
+    below cannot request a function-scoped fixture. The conftest import is inside the body so
+    this module still collects regardless of the e2e package-import quirk.
+    """
+    from conftest import BACKEND_URL as DEV_DEFAULT
+
+    return str(pytestconfig.getoption("backend_url", default=None) or DEV_DEFAULT)
+
+
+def _resolve(url: str, base_url: str, backend_url: str) -> str:
+    """Resolve a presigned URL to something fetchable from the test host.
+
+    In dev, presigned URLs are rewritten to a relative /s3/... path proxied by the
+    frontend (Vite) to MinIO, so those are fetched against the frontend origin.
+    """
     if url.startswith("http"):
         return url
     if url.startswith("/s3"):
-        return f"{FRONTEND_URL}{url}"
-    return f"{BACKEND_URL}{url}"
+        return f"{base_url}{url}"
+    return f"{backend_url}{url}"
 
 
 @pytest.fixture(scope="module")
-def session():
+def session(backend_url: str):
     """Log in once per module (avoids auth rate-limiting from per-test logins)."""
     resp = requests.post(
-        f"{BACKEND_URL}/api/auth/token",
+        f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
@@ -50,9 +66,9 @@ def session():
 
 
 @pytest.fixture(scope="module")
-def completed_file(session):
+def completed_file(session, backend_url: str):
     resp = requests.get(
-        f"{BACKEND_URL}/api/files?limit=100",
+        f"{backend_url}/api/files?limit=100",
         headers={"Authorization": f"Bearer {session}"},
         timeout=30,
     )
@@ -64,11 +80,13 @@ def completed_file(session):
 
 
 class TestPresignedPlayback:
-    def test_stream_url_is_presigned_and_supports_range(self, completed_file):
+    def test_stream_url_is_presigned_and_supports_range(
+        self, completed_file, base_url: str, backend_url: str
+    ):
         f, token = completed_file
         headers = {"Authorization": f"Bearer {token}"}
         resp = requests.get(
-            f"{BACKEND_URL}/api/files/{f['uuid']}/stream-url?media_type=video",
+            f"{backend_url}/api/files/{f['uuid']}/stream-url?media_type=video",
             headers=headers,
             timeout=30,
         )
@@ -79,7 +97,7 @@ class TestPresignedPlayback:
 
         # Range request straight to the presigned URL must yield 206 (enables seek).
         ranged = requests.get(
-            _resolve(url),
+            _resolve(url, base_url, backend_url),
             headers={"Range": "bytes=0-1023"},
             timeout=30,
         )
@@ -92,10 +110,10 @@ class TestRemovedLegacyEndpoints:
     @pytest.mark.parametrize(
         "suffix", ["video", "simple-video", "content", "download", "download-with-token"]
     )
-    def test_legacy_routes_return_404(self, completed_file, suffix):
+    def test_legacy_routes_return_404(self, completed_file, suffix, backend_url: str):
         f, token = completed_file
         resp = requests.get(
-            f"{BACKEND_URL}/api/files/{f['uuid']}/{suffix}",
+            f"{backend_url}/api/files/{f['uuid']}/{suffix}",
             headers={"Authorization": f"Bearer {token}"},
             timeout=30,
         )
@@ -103,12 +121,14 @@ class TestRemovedLegacyEndpoints:
 
 
 class TestDownloadDropdown:
-    def test_prepare_download_audio_mp3_yields_presigned_url(self, completed_file):
+    def test_prepare_download_audio_mp3_yields_presigned_url(
+        self, completed_file, base_url: str, backend_url: str
+    ):
         """Audio mp3 download resolves to a presigned URL (immediately or via SSE)."""
         f, token = completed_file
         headers = {"Authorization": f"Bearer {token}"}
         resp = requests.post(
-            f"{BACKEND_URL}/api/files/{f['uuid']}/prepare-download?mode=audio_mp3",
+            f"{backend_url}/api/files/{f['uuid']}/prepare-download?mode=audio_mp3",
             headers=headers,
             timeout=30,
         )
@@ -121,19 +141,23 @@ class TestDownloadDropdown:
         else:
             # Consume the SSE stream until ready (worker finishes ffmpeg extract).
             url = _await_sse_ready(
-                f"{BACKEND_URL}/api/files/{f['uuid']}/download-stream?mode=audio_mp3", token
+                f"{backend_url}/api/files/{f['uuid']}/download-stream?mode=audio_mp3", token
             )
         assert url
-        head = requests.get(_resolve(url), headers={"Range": "bytes=0-1"}, timeout=60)
+        head = requests.get(
+            _resolve(url, base_url, backend_url), headers={"Range": "bytes=0-1"}, timeout=60
+        )
         assert head.status_code in (200, 206)
 
 
 class TestBulkExport:
-    def test_bulk_export_delivers_presigned_zip(self, completed_file):
+    def test_bulk_export_delivers_presigned_zip(
+        self, completed_file, base_url: str, backend_url: str
+    ):
         f, token = completed_file
         headers = {"Authorization": f"Bearer {token}"}
         prep = requests.post(
-            f"{BACKEND_URL}/api/files/bulk-export/prepare",
+            f"{backend_url}/api/files/bulk-export/prepare",
             json={"file_uuids": [f["uuid"]], "subtitle_format": "srt", "include_speakers": True},
             headers=headers,
             timeout=30,
@@ -141,9 +165,9 @@ class TestBulkExport:
         assert prep.status_code == 200
         job_id = prep.json()["job_id"]
 
-        url = _await_sse_ready(f"{BACKEND_URL}/api/files/bulk-export-stream?job={job_id}", token)
+        url = _await_sse_ready(f"{backend_url}/api/files/bulk-export-stream?job={job_id}", token)
         assert url
-        zip_resp = requests.get(_resolve(url), timeout=60)
+        zip_resp = requests.get(_resolve(url, base_url, backend_url), timeout=60)
         assert zip_resp.status_code == 200
         assert zip_resp.headers.get("content-type", "").startswith("application/")
         assert zip_resp.content[:2] == b"PK"  # ZIP magic bytes

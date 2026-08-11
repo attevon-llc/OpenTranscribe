@@ -88,13 +88,21 @@ def base_url(request: pytest.FixtureRequest) -> str:
     return FRONTEND_URL
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def backend_url(request: pytest.FixtureRequest) -> str:
     """Backend base URL: ``--backend-url`` > ``E2E_BACKEND_URL`` > the dev default.
 
     Kept in step with ``base_url`` above: pointing the browser at one stack while the API
     helpers talk to another is worse than pointing both at the wrong one, because the
     mismatch is invisible until an assertion disagrees with what the UI shows.
+
+    SESSION-scoped deliberately, matching ``base_url``. It was function-scoped, which made it
+    unusable from the many module- and session-scoped fixtures that log in or create a test
+    user ONCE (login rate limits; one MFA address per session) — a wider-scoped fixture
+    requesting a narrower one is a hard ``ScopeMismatch`` at setup. Three independent passes
+    over the e2e suite each hit this and each worked around it with a locally widened copy of
+    these six lines. Nothing here needs per-test scope: it resolves a string from a CLI flag
+    and the environment (issue #431).
     """
     from_flag = request.config.getoption("backend_url", default=None)
     if from_flag:
@@ -133,7 +141,7 @@ def authenticated_page(page: Page, base_url: str):
 
 
 @pytest.fixture(scope="session")
-def shared_auth_state(browser):
+def shared_auth_state(browser, base_url: str):
     """Login ONCE per session and persist browser storage state.
 
     Repeated per-test logins trip the backend's login rate limiting in larger
@@ -146,7 +154,7 @@ def shared_auth_state(browser):
         ignore_https_errors=True,
     )
     page = context.new_page()
-    page.goto(FRONTEND_URL)
+    page.goto(base_url)
     page.wait_for_selector("#email", timeout=15000)
     page.fill("#email", TEST_ADMIN_EMAIL)
     page.fill("#password", TEST_ADMIN_PASSWORD)
@@ -166,7 +174,7 @@ def shared_auth_state(browser):
 
 
 @pytest.fixture
-def gallery_page(browser, shared_auth_state):
+def gallery_page(browser, shared_auth_state, base_url: str):
     """A fresh pre-authenticated page on the gallery (no per-test login)."""
     context = browser.new_context(
         storage_state=shared_auth_state,
@@ -174,7 +182,7 @@ def gallery_page(browser, shared_auth_state):
         ignore_https_errors=True,
     )
     page = context.new_page()
-    page.goto(FRONTEND_URL)
+    page.goto(base_url)
     page.wait_for_selector(".gallery-action-buttons", timeout=30000)
     yield page
     page.close()

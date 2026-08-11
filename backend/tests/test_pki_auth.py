@@ -17,7 +17,6 @@ Unit tests for internal PKI functions require RUN_PKI_TESTS=true.
 Integration tests using the TestClient run without the marker.
 """
 
-import os
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -29,10 +28,13 @@ import pytest
 # Skip marker for unit tests that test internal PKI functions
 # Integration tests (TestPKIEndpointIntegration, TestAuthMethodsEndpoint, etc.)
 # do NOT use this marker and run unconditionally.
-_skip_pki_unit = pytest.mark.skipif(
-    os.environ.get("RUN_PKI_TESTS", "false").lower() != "true",
-    reason="PKI unit tests require RUN_PKI_TESTS=true",
-)
+# Runs by DEFAULT. This alias used to be `pytest.mark.skipif(RUN_PKI_TESTS != "true")`,
+# which kept 105 PKI tests out of every local run and out of CI. They all pass, and did so on
+# the first run once the gate was lifted — `scripts/pki/test-certs/{ca,clients,nginx}` is
+# present, so the fixtures the gate implied were missing have been there all along.
+# Kept as a no-op mark so the ~80 call sites stay valid and the intent stays greppable
+# (issue #431).
+_skip_pki_unit = pytest.mark.pki
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend

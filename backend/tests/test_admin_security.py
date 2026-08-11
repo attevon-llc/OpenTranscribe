@@ -14,7 +14,6 @@ NOTE: These tests are for advanced admin security features planned in the FedRAM
 compliance plan. They are currently skipped until the features are fully implemented.
 """
 
-import os
 import uuid
 from datetime import UTC
 from datetime import datetime
@@ -23,12 +22,16 @@ from unittest.mock import patch
 
 import pytest
 
-# Skip all tests - advanced admin security features in development
-pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_ADVANCED_ADMIN_TESTS", "false").lower() != "true",
-    reason="Advanced admin security features in development (set RUN_ADVANCED_ADMIN_TESTS=true to run)",
-)
-
+# Runs by DEFAULT. This module was gated behind RUN_ADVANCED_ADMIN_TESTS with the reason
+# "Advanced admin security features in development" — but every test in it passes, and did so on the first run once the gate
+# was lifted. The gate was stale: it kept 35 security tests out of every local run and
+# out of CI, visible only as `s` in the progress dots, while reading as a deliberate
+# decision someone had made. That is how `test_super_admin_can_export_audit_logs` came to
+# assert `status_code in [200, 400]` — 400 being exactly 'could not export' — without
+# anyone noticing (issue #431).
+#
+# The pre-merge gate still runs these; the difference is they now also run by default,
+# so a regression surfaces on the commit that causes it rather than at merge time.
 from app.core.security import get_password_hash
 from app.models.refresh_token import RefreshToken
 from app.models.user import User

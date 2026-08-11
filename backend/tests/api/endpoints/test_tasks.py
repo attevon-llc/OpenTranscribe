@@ -1,16 +1,19 @@
 """Task endpoint tests.
 
-These tests require MinIO/S3 storage (uploads create the tasks under test).
-They activate automatically when the dev stack is reachable (see conftest.py
-service auto-detection) and skip otherwise.
+Only ``test_get_task_for_uploaded_file`` needs MinIO/S3 — it uploads a real file
+so the round trip covers the storage path. The other tests exercise the endpoint
+contract with no storage at all, so gating the whole module on ``SKIP_S3``
+(as it did until #431) skipped four tests that had no such dependency.
+
+Deeper behavioural coverage of the response fields lives in ``test_tasks_read.py``.
 """
 
 import os
 
 import pytest
 
-# Skip all tests in this module if S3 is not available
-pytestmark = pytest.mark.skipif(
+#: Applied per test, not module-wide: only the upload path needs object storage.
+requires_s3 = pytest.mark.skipif(
     os.environ.get("SKIP_S3", "True").lower() == "true",
     reason="S3/MinIO storage is disabled in test environment",
 )
@@ -44,35 +47,31 @@ def test_get_task_invalid_format(client, user_token_headers):
     assert response.status_code == 400
 
 
-def test_get_task(client, user_token_headers, upload_test_file):
-    """Test getting a specific task"""
-    # First upload a file to create an associated task
-    file_data = upload_test_file(user_token_headers, filename="task_test.wav")
-    file_uuid = file_data.get("uuid") or file_data.get("id")
+@requires_s3
+def test_get_task_for_uploaded_file(client, user_token_headers, upload_test_file):
+    """An uploaded file is listed as a task and readable by that task's id.
 
-    # Get tasks to find the one associated with this file
+    This used to guard every assertion behind ``if task:`` with an
+    ``else: pytest.skip()``, looking for a task row that only Celery dispatch
+    creates — and the autouse fixture patches ``apply_async`` out, so the row
+    never existed and the only test of ``GET /tasks/{task_id}`` skipped on every
+    run (#431). A freshly uploaded file has no task row yet, which is exactly
+    what the legacy ``task_<media_file_id>`` id form is for, so the assertions
+    here are unconditional.
+    """
+    file_data = upload_test_file(user_token_headers, filename="task_test.wav")
+    file_uuid = file_data["uuid"]
+
     tasks_response = client.get("/api/tasks", headers=user_token_headers)
+    assert tasks_response.status_code == 200
     tasks = tasks_response.json()["items"]
 
-    # Find task associated with the file we just uploaded
-    task = next(
-        (
-            t
-            for t in tasks
-            if t.get("media_file_uuid") == file_uuid or t.get("media_file_id") == file_uuid
-        ),
-        None,
-    )
+    matching = [t for t in tasks if t["media_file_id"] == file_uuid]
+    assert matching, f"uploaded file {file_uuid} is not listed as a task"
+    task_id = matching[0]["id"]
 
-    if task:
-        task_id = task.get("uuid") or task.get("id")
-        # Now test getting the specific task
-        response = client.get(f"/api/tasks/{task_id}", headers=user_token_headers)
-        assert response.status_code == 200
-        task_data = response.json()
-
-        task_data_id = task_data.get("uuid") or task_data.get("id")
-        assert task_data_id == task_id
-    else:
-        # Tasks are only auto-created when Celery dispatch runs (SKIP_CELERY=True here)
-        pytest.skip("No task was created for the uploaded file")
+    response = client.get(f"/api/tasks/{task_id}", headers=user_token_headers)
+    assert response.status_code == 200
+    task_data = response.json()
+    assert task_data["id"] == task_id
+    assert task_data["media_file_id"] == file_uuid

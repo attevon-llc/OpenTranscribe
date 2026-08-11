@@ -131,8 +131,9 @@ admin gets 403 here and 200 on `/admin/stats`) · `GET /admin/auth-config/status
 per-method enabled flags) · `GET /speaker-clusters/stats` (`get_current_active_user`, self-scoped
 counts + coverage) · `GET /files/{uuid}/subtitles/validate` (timing-issue report).
 
-For real transcription progress use `GET /tasks/progress/active`, **not** `GET /tasks/{task_id}`
-— see Gotchas.
+For live per-stage transcription progress use `GET /tasks/progress/active` (Redis); `GET
+/tasks/{task_id}` reports the persisted task row's progress, which is coarser but survives a
+restart — see Gotchas.
 
 ### Automation-facing
 
@@ -247,13 +248,21 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   repo-wide sweeps, and grepping a tag path literal matches both copies — always confirm you are
   in `endpoints/tags/`.
 - `GET /api/auth/session` must **never 401** (200 for anonymous); it is the SPA's session probe.
-- **`GET /tasks/{task_id}` does not read a task.** It parses `task_N` back to a `MediaFile.id`,
-  loads the file, and synthesizes a `Task` from its status: `progress` is hardcoded
-  `0.0 / 0.5 / 1.0`, `error_message` is the literal `"Transcription failed"`, and the `Task` table
-  is never queried. The id is not a Celery id either. Anything polling it for progress sees a
-  constant `0.5` for the whole run — real progress is `GET /tasks/progress/active` (Redis
-  `ProgressTracker`). `list_tasks` compounds this: its `except Exception` returns an empty
-  successful page, so a broken query looks like "no tasks".
+- **`GET /tasks` and `GET /tasks/{task_id}` read the `task` table (fixed in #431) — and accept
+  TWO id forms.** #76 had repointed both at `MediaFile` while every writer stayed on `task`, so
+  `progress` was hardcoded `0.0 / 0.5 / 1.0`, `error_message` was the literal
+  `"Transcription failed"`, and `task_type` was always `"transcription"` (making
+  `?task_type=summarization` unmatchable). Anything polling saw a constant `0.5`, which
+  `TasksGrid.svelte` rendered as a permanently half-full bar. Both now join the file's real task
+  row — `active_task_id` first, else the newest — so ids are **real Celery ids** and feed
+  `POST /tasks/system/recover-task/{task_id}` directly. A file with no task row yet keeps the
+  legacy `task_<media_file_id>` id and reports `progress` `0.0`/`1.0` with the file's own
+  `last_error_message`; **never reintroduce a synthesized mid-point.** `get_task` accepts either
+  form. `GET /tasks/progress/active` (Redis `ProgressTracker`) remains the live per-stage feed.
+  Related: `list_tasks` no longer swallows exceptions into an empty successful page — a failed
+  query is a 500, because an empty 200 is indistinguishable from "this user has no tasks". Note
+  `list_tasks` has a `status` **query param that shadows `fastapi.status`**, so raise with a
+  literal code inside that handler.
 - **`endpoints/files/management.py` guards with `get_current_user`, not
   `get_current_active_user`** — every handler in the module, including `DELETE /{uuid}/force` and
   `POST /management/bulk-action`. That skips the account-lifecycle gate

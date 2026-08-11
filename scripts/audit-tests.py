@@ -11,6 +11,10 @@ Detectors
     conditional-only
         Every assertion in the test sits inside an ``if`` with no ``else``, so the test
         passes silently whenever the condition is False.
+    conditional-skip
+        Every assertion sits inside an ``if`` whose ``else`` only calls ``pytest.skip``.
+        Not vacuous like conditional-only — it *reports* a skip — but a guard that can
+        never be true makes it a permanent skip that reads as a passing suite.
     no-assertion
         No ``assert``, no ``pytest.raises``/``pytest.fail``, no ``expect()``, no
         ``assert_*`` helper.
@@ -60,6 +64,7 @@ _ALLOWLIST_NAME = 'audit-allowlist.txt'
 CATEGORIES = (
     'permissive-status',
     'conditional-only',
+    'conditional-skip',
     'no-assertion',
     'failure-masking',
     'mock-heavy',
@@ -163,6 +168,40 @@ def _conditional_only(fn: ast.AST) -> bool:
     return not unguarded
 
 
+def _conditional_skip(fn: ast.AST) -> str | None:
+    """Return the guard when every assertion sits in an ``if`` whose ``else`` only skips.
+
+    Sibling of ``_conditional_only`` for the shape that detector deliberately
+    excludes: an ``else`` branch exists, so the test is not *vacuous* — it is
+    *skipped*. That reads as honest reporting but hides a permanent skip when the
+    guard can never be true. ``test_tasks.py::test_get_task`` guarded on a task
+    row that only Celery dispatch creates, which the autouse fixture patches out,
+    so the only test of ``GET /tasks/{task_id}`` skipped every run for 11 months
+    while the endpoint returned a hardcoded progress value (issue #431).
+    """
+    asserts = _asserts(fn)
+    if not asserts:
+        return None
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.If) or not node.orelse:
+            continue
+        body_ids = {id(d) for stmt in node.body for d in ast.walk(stmt)}
+        if not all(id(a) in body_ids for a in asserts):
+            continue
+        # The else branch must do nothing but skip.
+        skips = [
+            inner
+            for stmt in node.orelse
+            for inner in ast.walk(stmt)
+            if isinstance(inner, ast.Call)
+            and isinstance(inner.func, ast.Attribute)
+            and inner.func.attr == 'skip'
+        ]
+        if skips and not any(id(a) in {id(d) for s in node.orelse for d in ast.walk(s)} for a in asserts):
+            return ast.unparse(node.test)
+    return None
+
+
 def _masks_failure(fn: ast.AST) -> str | None:
     """Return the caught exception when a handler skips instead of failing."""
     for node in ast.walk(fn):
@@ -246,6 +285,18 @@ def scan_file(path: Path, root: Path) -> list[Finding]:
                     node.lineno,
                     node.name,
                     f'{len(_asserts(node))} assert(s), all inside if-without-else',
+                )
+            )
+
+        guard = _conditional_skip(node)
+        if guard is not None:
+            found.append(
+                Finding(
+                    'conditional-skip',
+                    rel,
+                    node.lineno,
+                    node.name,
+                    f'all asserts under `if {guard}` whose else only skips',
                 )
             )
 

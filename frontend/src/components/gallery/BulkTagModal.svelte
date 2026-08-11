@@ -23,6 +23,7 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import BaseModal from '$components/ui/BaseModal.svelte';
+  import MetadataChips from '$components/ui/MetadataChips.svelte';
   import SearchableSelect from '$components/ui/SearchableSelect.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import { bulkTagFiles, createTag, listTags, listTagsOnFiles } from '$lib/api/tags';
@@ -255,35 +256,23 @@
             ? $t('gallery.bulk.tagModal.currentSingle')
             : $t('gallery.bulk.tagModal.currentMulti')}
         </span>
-        <div class="chip-row">
-          {#each currentTags as tag (tag.uuid)}
-            <span class="tag-chip" class:partial={!isSingleFile && tag.file_count < tag.selection_size}>
-              <span class="chip-name">{tag.name}</span>
-              {#if !isSingleFile}
-                <span class="chip-count">
-                  {$t('gallery.bulk.tagModal.onCount', {
-                    count: tag.file_count,
-                    total: tag.selection_size,
-                  })}
-                </span>
-              {:else}
-                <button
-                  type="button"
-                  class="chip-remove"
-                  on:click={() => removeChip(tag)}
-                  disabled={busy}
-                  title={$t('gallery.bulk.tagModal.removeChip', { name: tag.name })}
-                  aria-label={$t('gallery.bulk.tagModal.removeChip', { name: tag.name })}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                  </svg>
-                </button>
-              {/if}
-            </span>
-          {/each}
-        </div>
+        <MetadataChips
+          chips={currentTags.map((tag) => ({
+            uuid: tag.uuid,
+            name: tag.name,
+            count: tag.file_count,
+            total: tag.selection_size,
+          }))}
+          removable={isSingleFile}
+          disabled={busy}
+          removeLabel={(name) => $t('gallery.bulk.tagModal.removeChip', { name })}
+          coverageLabel={(count, total) =>
+            $t('gallery.bulk.tagModal.onCount', { count, total })}
+          on:remove={(event) => {
+            const match = currentTags.find((tag) => tag.uuid === event.detail.uuid);
+            if (match) removeChip(match);
+          }}
+        />
       </div>
     {/if}
 
@@ -396,48 +385,11 @@
     color: var(--text-secondary);
   }
 
-  .chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
 
-  .tag-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    background: var(--surface-color);
-    font-size: 12px;
-  }
 
-  /* A tag on only some of the selection reads differently from one on all of
-     it — otherwise "add" looks like a no-op when it is not. */
-  .tag-chip.partial {
-    border-style: dashed;
-    color: var(--text-secondary);
-  }
 
-  .chip-count {
-    font-size: 10px;
-    color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
-  }
 
-  .chip-remove {
-    display: flex;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
 
-  .chip-remove:hover:not(:disabled) {
-    color: var(--error-color, #dc2626);
-  }
 
   .current-loading {
     padding: 2px 0;

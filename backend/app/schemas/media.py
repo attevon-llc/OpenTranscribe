@@ -727,6 +727,21 @@ class TagFileList(BaseModel):
     total: int = 0
 
 
+class CollectionOnSelection(BaseModel):
+    """A collection holding some or all of a selection of files.
+
+    The mirror of :class:`TagOnSelection`, so the gallery's two organizing
+    modals report membership in the same shape.
+    """
+
+    uuid: UUID
+    name: str
+    file_count: int = 0
+    selection_size: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TagOnSelection(Tag):
     """A tag carried by some or all of a set of selected files.
 

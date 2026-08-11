@@ -1,16 +1,12 @@
 import logging
 from typing import Any
-from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter
-from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
-from fastapi import Request
 from fastapi import status
-from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,26 +20,12 @@ from app.db.base import get_db
 from app.models.media import FileTag
 from app.models.media import Tag
 from app.models.user import User
-from app.schemas.media import Tag as TagSchema
-from app.schemas.media import TagBase
-from app.schemas.media import TagCollisionCluster as TagCollisionClusterSchema
-from app.schemas.media import TagFileList
-from app.schemas.media import TaggedFile
 from app.schemas.media import TagImpact
 from app.schemas.media import TagMergeRequest
 from app.schemas.media import TagMutationResult
-from app.schemas.media import TagOnSelection
 from app.schemas.media import TagPromoteRequest
 from app.schemas.media import TagRenameRequest
-from app.schemas.media import TagShareCreate
 from app.schemas.media import TagShareTarget
-from app.schemas.media import TagWithCount
-from app.services.formatting_service import FormattingService
-from app.services.tag_collisions import files_for_tag
-from app.services.tag_collisions import find_tag_collisions
-from app.services.tag_collisions import list_tags_filtered
-from app.services.tag_collisions import list_unused_tag_rows
-from app.services.tag_collisions import tags_on_files
 from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import delete_tags
 from app.services.tag_operations import merge_tags
@@ -52,13 +34,7 @@ from app.services.tag_operations import promote_tags_to_shared
 from app.services.tag_operations import rename_tag
 from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import accessible_file_ids_subquery
-from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tag
-from app.services.tag_service import tag_ownership
-from app.services.tag_sharing import TagShareError
-from app.services.tag_sharing import list_shares
-from app.services.tag_sharing import revoke_share
-from app.services.tag_sharing import share_tag
 from app.utils.uuid_helpers import get_by_uuid
 
 logger = logging.getLogger(__name__)

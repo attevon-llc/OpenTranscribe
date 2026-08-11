@@ -3,7 +3,7 @@
 ## Purpose
 
 The tag library surface: list, filter, rename, merge, delete, review auto-labeled
-tags, and promote one into the shared vocabulary. Bulk *apply* across a gallery
+tags, and promote one into the shared vocabulary. Bulk _apply_ across a gallery
 selection is not here — that is `gallery/BulkTagModal.svelte`.
 
 ## Key files
@@ -49,7 +49,7 @@ selection is not here — that is `gallery/BulkTagModal.svelte`.
   mutation, so the UI must not render Rename/Delete/Accept for it. The badge
   explains the absence instead.
 - **`is_shared` means the opposite elsewhere in this app** (`CollectionWithCount`
-  uses it for "shared *with* me"). That collision is why tags carry `ownership`
+  uses it for "shared _with_ me"). That collision is why tags carry `ownership`
   rather than a boolean — don't reintroduce one.
 - **The scope picker's values ARE the ownership values.** `GET /tags?scope=` takes
   the same four strings, so a scoped request returns rows reporting that

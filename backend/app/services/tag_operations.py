@@ -44,6 +44,7 @@ from sqlalchemy import distinct
 from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.constants import TAG_SOURCE_AI_ACCEPTED
 from app.core.constants import TAG_SOURCE_AUTO_AI
@@ -250,7 +251,7 @@ def preview_tag_impact(
 
     tags = {tag.id: tag for tag in db.query(Tag).filter(Tag.id.in_(ordered)).all()}
     accessible_sq = select(accessible_file_ids_subquery(db, user_id, organization_id))
-    scope = [FileTag.tag_id.in_(ordered)]
+    scope: list[ColumnElement[bool]] = [FileTag.tag_id.in_(ordered)]
     if association_source is not None:
         scope.append(FileTag.source == association_source)
 

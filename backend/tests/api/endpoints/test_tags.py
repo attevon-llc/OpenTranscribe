@@ -390,7 +390,8 @@ def test_create_tag_rejects_blank_name(client, user_token_headers, db_session):
 def _create_tag(client, headers, name: str) -> dict:
     response = client.post("/api/tags", headers=headers, json={"name": name})
     assert response.status_code == status.HTTP_200_OK, response.text
-    return response.json()
+    payload: dict = response.json()
+    return payload
 
 
 def test_rename_tag_endpoint_applies_a_plain_rename(client, user_token_headers, db_session):

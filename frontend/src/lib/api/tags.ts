@@ -108,10 +108,7 @@ export async function listTagShares(tagUuid: string): Promise<TagShareTarget[]> 
  * whole deployment): the recipient gets the *word* — see, filter, apply — while
  * rename / merge / delete stay with the owner.
  */
-export async function shareTag(
-  tagUuid: string,
-  payload: TagShareCreate
-): Promise<TagShareTarget> {
+export async function shareTag(tagUuid: string, payload: TagShareCreate): Promise<TagShareTarget> {
   const response = await axiosInstance.post(`/tags/${tagUuid}/shares`, payload);
   return response.data;
 }

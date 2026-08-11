@@ -193,7 +193,15 @@ Host venv for pre-commit / mypy / ruff / bandit / pytest outside Docker lives at
 
 ### Pre-commit / lint hooks
 
-Hook inventory is in `.pre-commit-config.yaml`. The frontend hook only fires when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Run all: `backend/venv/bin/pre-commit run --all-files`.
+**Every commit must pass pre-commit — no exceptions, and never `--no-verify`.** The hooks are installed locally and are the *same* checks CI runs in its "Run Pre-commit Hooks" job, so anything you skip locally fails the PR instead. Running `ruff` (or any single hook) by hand is **not** a substitute: mypy and prettier catch a different class of problem and have both blocked a PR that was otherwise green locally.
+
+Run the full suite before committing — not just the staged subset:
+
+```bash
+backend/venv/bin/pre-commit run --all-files    # the gate CI mirrors
+```
+
+Hook inventory is in `.pre-commit-config.yaml`. The frontend hook only fires when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
 
 Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]`. Inside Claude Code: `/fix-frontend`.
 

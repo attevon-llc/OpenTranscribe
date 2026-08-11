@@ -77,11 +77,12 @@ def _attach(db_session, media_file, tag, *, source=TAG_SOURCE_MANUAL, confidence
 
 
 def _links_for(db_session, media_file, tag) -> list[FileTag]:
-    return (
+    links: list[FileTag] = (
         db_session.query(FileTag)
         .filter(FileTag.media_file_id == media_file.id, FileTag.tag_id == tag.id)
         .all()
     )
+    return links
 
 
 def _make_watch_source(db_session, owner, tag_names: list[str]) -> WatchSource:

@@ -19,6 +19,7 @@ ones a naive implementation gets wrong:
 from __future__ import annotations
 
 import uuid
+from types import EllipsisType
 
 from app.core.constants import TAG_SOURCE_AUTO_AI
 from app.core.constants import TAG_SOURCE_MANUAL
@@ -42,7 +43,7 @@ def _raw_tag(
     db_session,
     name: str,
     *,
-    normalized: str | None = ...,
+    normalized: str | None | EllipsisType = ...,
     source=TAG_SOURCE_MANUAL,
     user_id: int | None = None,
 ):
@@ -55,7 +56,7 @@ def _raw_tag(
     ``owned_or_system`` scope; pass an owner when the test is about one
     account's vocabulary specifically.
     """
-    stored = normalize_tag_name(name) if normalized is ... else normalized
+    stored = normalize_tag_name(name) if isinstance(normalized, EllipsisType) else normalized
     tag = Tag(name=name, user_id=user_id, source=source, normalized_name=stored)
     db_session.add(tag)
     db_session.flush()

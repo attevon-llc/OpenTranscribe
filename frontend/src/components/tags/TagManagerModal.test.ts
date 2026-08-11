@@ -53,7 +53,15 @@ const auth = vi.hoisted(() => ({ role: 'admin' as string }));
 
 vi.mock('$stores/auth', async () => {
   const { readable } = await import('svelte/store');
-  return { user: readable({ uuid: 'u1', email: 'a@example.com', get role() { return auth.role; } }) };
+  return {
+    user: readable({
+      uuid: 'u1',
+      email: 'a@example.com',
+      get role() {
+        return auth.role;
+      },
+    }),
+  };
 });
 
 import TagManagerModal from './TagManagerModal.svelte';
@@ -162,11 +170,9 @@ describe('tag manager modal', () => {
       await fireEvent.click(deleteButtons[deleteButtons.length - 1]);
       await waitFor(() => expect(api.deleteTags).toHaveBeenCalledWith([UUID_A]));
     });
-
   });
 
   describe('filters', () => {
-
     it('narrows the list to the unused set', async () => {
       render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
@@ -191,8 +197,20 @@ describe('tag manager modal', () => {
         {
           normalized_name: 'roadmap',
           members: [
-            { uuid: UUID_A, name: 'Roadmap', source: 'manual', usage_count: 9, suggested_survivor: true },
-            { uuid: UUID_B, name: 'roadmap', source: 'auto_ai', usage_count: 2, suggested_survivor: false },
+            {
+              uuid: UUID_A,
+              name: 'Roadmap',
+              source: 'manual',
+              usage_count: 9,
+              suggested_survivor: true,
+            },
+            {
+              uuid: UUID_B,
+              name: 'roadmap',
+              source: 'auto_ai',
+              usage_count: 2,
+              suggested_survivor: false,
+            },
           ],
           suggested_survivor_uuid: UUID_A,
           suggestions: [],
@@ -263,7 +281,9 @@ describe('tag manager modal', () => {
     });
 
     it('promotes an owned tag to the shared vocabulary', async () => {
-      api.promoteTags.mockResolvedValue({ impact: { tags: [], accessible_file_count: 0, total_file_count: 0 } });
+      api.promoteTags.mockResolvedValue({
+        impact: { tags: [], accessible_file_count: 0, total_file_count: 0 },
+      });
       render(TagManagerModal);
       await waitFor(() => expect(tagRows()).toHaveLength(2));
 

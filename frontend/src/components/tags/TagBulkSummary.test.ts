@@ -96,5 +96,4 @@ describe('TagBulkSummary', () => {
     expect(screen.getByRole('button', { name: 'Clear selection' })).toBeDisabled();
     for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled();
   });
-
 });

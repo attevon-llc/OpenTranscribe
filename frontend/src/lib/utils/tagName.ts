@@ -37,11 +37,7 @@ export const TAG_FUZZY_MATCH_THRESHOLD = 0.85;
  */
 export function normalizeTagName(name: string): string {
   if (!name) return '';
-  return name
-    .toLowerCase()
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return name.toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /**

@@ -72,7 +72,7 @@ def _make_file(db_session, owner) -> MediaFile:
 
 
 def _count_tags(db_session, normalized: str) -> int:
-    return db_session.query(Tag).filter(Tag.normalized_name == normalized).count()
+    return int(db_session.query(Tag).filter(Tag.normalized_name == normalized).count())
 
 
 def _commit_tag_on_other_connection(name: str, user_id: int) -> None:

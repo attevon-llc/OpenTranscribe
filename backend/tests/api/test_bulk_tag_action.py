@@ -85,11 +85,12 @@ def _attach(db_session, media_file, tag) -> FileTag:
 
 
 def _links(db_session, media_file, tag) -> list[FileTag]:
-    return (
+    links: list[FileTag] = (
         db_session.query(FileTag)
         .filter(FileTag.media_file_id == media_file.id, FileTag.tag_id == tag.id)
         .all()
     )
+    return links
 
 
 def _share_file(db_session, media_file, owner, viewer, *, permission: str) -> Collection:

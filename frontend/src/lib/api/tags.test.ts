@@ -85,12 +85,10 @@ describe('tag list + file attachment', () => {
 });
 
 describe('collision + unused discovery', () => {
-
   it('reads collision clusters from the server', async () => {
     await listTagCollisions();
     expect(mockInstance.get).toHaveBeenCalledWith('/tags/collisions');
   });
-
 });
 
 describe('impact previews', () => {
@@ -115,7 +113,6 @@ describe('impact previews', () => {
     expect(impact.total_file_count).toBe(500);
     expect(impact.tags[0].total_file_count).toBe(500);
   });
-
 });
 
 describe('mutations', () => {
@@ -149,7 +146,6 @@ describe('mutations', () => {
       `tag_uuids=${UUID_A}&tag_uuids=${UUID_B}`
     );
   });
-
 });
 
 describe('bulk tagging', () => {

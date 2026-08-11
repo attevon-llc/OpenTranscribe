@@ -170,14 +170,14 @@ describe('BulkTagModal', () => {
       },
     });
 
-    expect(
-      screen.getByText('Only tags the selected files carry are offered.')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Only tags the selected files carry are offered.')).toBeInTheDocument();
 
     await type('r');
     // `interview` matches the query and exists, but nothing in the selection
     // carries it — offering it would be a guaranteed no-op.
-    await waitFor(() => expect(screen.getByRole('option', { name: 'roadmap' })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: 'roadmap' })).toBeInTheDocument()
+    );
     expect(screen.getByRole('option', { name: 'q3 review' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'interview' })).toBeNull();
   });

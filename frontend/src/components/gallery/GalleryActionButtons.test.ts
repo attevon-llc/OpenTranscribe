@@ -75,7 +75,9 @@ function select(uuids: string[]) {
 }
 
 async function openOrganizeMenu() {
-  await fireEvent.click(screen.getByTitle('Add to collection or export transcripts for selected files'));
+  await fireEvent.click(
+    screen.getByTitle('Add to collection or export transcripts for selected files')
+  );
 }
 
 beforeEach(() => {

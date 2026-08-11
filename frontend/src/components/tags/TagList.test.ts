@@ -69,7 +69,6 @@ describe('TagList — flat mode', () => {
     expect(screen.getByText('Built-in')).toBeInTheDocument();
   });
 
-
   it('marks the selected rows via aria-selected', () => {
     render(TagList, { props: { tags, selectedUuids: [UUID_B], label: 'Tags' } });
     const options = screen.getAllByRole('option');

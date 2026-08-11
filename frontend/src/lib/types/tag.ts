@@ -182,7 +182,6 @@ export interface TagMutationResult {
   impact: TagImpact;
 }
 
-
 /** Bulk tagging rides the files rail (`/files/management/bulk-action`). */
 export type BulkTagAction = 'add_tag' | 'remove_tag';
 

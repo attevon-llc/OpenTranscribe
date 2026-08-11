@@ -40,7 +40,6 @@ const impact: TagImpact = {
   total_file_count: 500,
 };
 
-
 describe('TagDetailPanel', () => {
   it('shows the tag with its usage and origin', () => {
     render(TagDetailPanel, { props: { tag } });
@@ -48,7 +47,6 @@ describe('TagDetailPanel', () => {
     expect(screen.getByText('Used on 12 files')).toBeInTheDocument();
     expect(screen.getByText('Added by hand')).toBeInTheDocument();
   });
-
 
   describe('inline rename', () => {
     it('submits the typed name and restores the prior value on cancel', async () => {

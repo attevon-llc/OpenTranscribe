@@ -38,8 +38,17 @@ from app.schemas.user import AdminPasswordResetRequest
 class TestPasswordResetSecurity:
     """Test that password reset uses request body for security."""
 
-    def test_password_reset_accepts_body_params(self, client, db_session, admin_token_headers):
-        """Test that password reset endpoint accepts password in request body."""
+    def test_password_reset_accepts_body_params(
+        self, client, db_session, super_admin_token_headers
+    ):
+        """The endpoint accepts the new password in the request body, not the query string.
+
+        Uses ``super_admin_token_headers`` deliberately. This asserted
+        ``status_code in [200, 403]`` with a plain-admin token, which could only ever be 403 —
+        ``test_regular_admin_cannot_reset_password`` below pins that — so it never once
+        exercised the body-parsing path it exists to cover, and it duplicated that test
+        instead (issue #431). Only a super_admin gets far enough for the body to matter.
+        """
         # Create a target user to reset
         target_user = User(
             email="target_reset@example.com",
@@ -56,13 +65,12 @@ class TestPasswordResetSecurity:
         # Make request with password in body (secure method)
         response = client.post(
             f"/api/admin/users/{target_user.uuid}/reset-password",
-            headers=admin_token_headers,
+            headers=super_admin_token_headers,
             json={"new_password": "NewSecurePassword123!", "force_change": True},
         )
 
-        # Should work with body params (may need super_admin role)
-        # The important thing is it accepts JSON body, not query params
-        assert response.status_code in [200, 403]  # 403 if not super_admin
+        assert response.status_code == 200, response.text
+        assert response.json()["success"] is True
 
     def test_password_reset_rejects_query_params(
         self, client, db_session, super_admin_token_headers

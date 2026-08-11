@@ -314,7 +314,7 @@ class TestAuditLogQueryExportAU6:
             headers=user_token_headers,
         )
         # Regular user should be forbidden
-        assert response.status_code in [401, 403]
+        assert response.status_code == 403, response.text
 
     def test_audit_log_query_parameters(self, client, super_admin_token_headers):
         """Test that audit log endpoint supports filtering parameters."""

@@ -19,7 +19,9 @@ def test_admin_stats(client, admin_token_headers):
 def test_admin_stats_unauthorized(client, user_token_headers):
     """Test that regular users cannot access admin stats"""
     response = client.get("/api/admin/stats", headers=user_token_headers)
-    assert response.status_code in (401, 403)  # Either unauthorized or forbidden
+    assert response.status_code == 403, (
+        response.text
+    )  # authenticated but not an admin: get_current_admin_user/get_current_active_superuser raise 403
 
 
 def test_admin_users_list(client, admin_token_headers, admin_user, normal_user):

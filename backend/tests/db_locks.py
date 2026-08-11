@@ -26,11 +26,19 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 #: ``pg_advisory_lock(N)`` calls — ``app/db/migrations.py``'s startup guard uses ``42``.
 DDL_ISOLATION_LOCK_KEY = (990389, 1)
 
-#: How long to wait for the lock before failing. The lock only covers connections that opt
-#: in, and ~20 app paths open their own ``SessionLocal()`` during a request, so a genuine
+#: How long to wait for the lock before failing. The lock only covers connections that opt in,
+#: and ~20 app paths open their own ``SessionLocal()`` during a request, so a genuine
 #: cross-connection cycle remains possible. Without a timeout it presents as a suite that
 #: never finishes.
-DDL_LOCK_TIMEOUT = "10s"
+#:
+#: Sized against the *drain*, not the DDL. An EXCLUSIVE acquisition waits for every in-flight
+#: SHARED holder to finish, and each ordinary test holds the shared lock for its whole
+#: lifetime — so the wait is bounded by the slowest test running concurrently, not by the DDL
+#: statement. Measured: 10 s failed 7 of the 14 ``ddl_exclusive`` tests with
+#: ``LockNotAvailable`` on a suite whose p99 test is ~20 s and whose slowest setup was 20.9 s.
+#: 120 s clears that with headroom while staying well inside the 300 s pytest timeout, so a
+#: real deadlock still surfaces as a clear Postgres error rather than a hung run.
+DDL_LOCK_TIMEOUT = "120s"
 
 
 def acquire_ddl_lock_exclusive(connection: Connection) -> None:

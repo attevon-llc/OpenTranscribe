@@ -151,7 +151,7 @@ def test_admin_settings_are_not_reachable_by_a_normal_user(client, auth_headers,
     if method == "put":
         kwargs["json"] = {"candidate_pool": 1}
     response = getattr(client, method)("/api/admin/chat-settings", **kwargs)
-    assert response.status_code in (401, 403)
+    assert response.status_code == 403, response.text
 
 
 def test_admin_changes_are_read_by_the_service_layer(client, admin_auth_headers, db_session):

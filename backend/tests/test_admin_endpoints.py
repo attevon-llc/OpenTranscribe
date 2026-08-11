@@ -19,7 +19,7 @@ class TestAdminAccountManagement:
             json={"new_password": "NewPassword123!"},
         )
         # Regular user should be forbidden
-        assert response.status_code in [401, 403]
+        assert response.status_code == 403, response.text
 
     def test_super_admin_can_update_user_role(self, client, super_admin_token_headers, normal_user):
         """Test that a super admin can update user roles (query param API)."""
@@ -59,7 +59,7 @@ class TestAdminUserSearch:
             headers=user_token_headers,
             params={"query": "test"},
         )
-        assert response.status_code in [401, 403]
+        assert response.status_code == 403, response.text
 
 
 class TestAdminAuditLog:

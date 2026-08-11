@@ -340,16 +340,25 @@ class TestAdminSpeakerAccess:
     def test_regular_user_cannot_list_other_users_speakers(
         self, client, user_token_headers, test_media_file, test_speakers
     ):
+        """A non-owner asking for another user's file must be refused, not served empty.
+
+        This accepted ``(403, 500)`` or a 200 with an empty list, which made it unable to
+        fail: a server error passed, and so did a silent empty response (issue #431). The
+        contract is unambiguous — ``GET /api/speakers?file_uuid=`` resolves the file through
+        ``get_file_by_uuid_with_permission``, which raises 403 when the caller has no
+        permission and 404 only when the file does not exist. The file here exists and is
+        owned by someone else, so 403 is the only correct answer.
+
+        The old comment excused the 500 as "OpenSearch may be unavailable", but the authz
+        check runs in ``_resolve_file_uuid_to_id`` before any OpenSearch call
+        (``app/api/endpoints/speakers.py:643``) — so a 500 on this path is a real bug and
+        must fail the test.
+        """
         response = client.get(
             f"/api/speakers?file_uuid={test_media_file.uuid}",
             headers=user_token_headers,
         )
-        # Should get 403 or empty list (no access)
-        # 403 (permission denied) or empty list (no speakers for this user)
-        # 500 may occur if OpenSearch is unavailable in test env
-        assert response.status_code in (403, 500) or (
-            response.status_code == 200 and len(response.json()) == 0
-        )
+        assert response.status_code == 403, response.text
 
 
 class TestAdminCommentAccess:

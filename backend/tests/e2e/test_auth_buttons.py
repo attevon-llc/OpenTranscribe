@@ -315,8 +315,8 @@ class TestLDAPLogin:
         # Wait for content
         page.wait_for_load_state("networkidle", timeout=10000)
 
-        # Wait for page content to settle
-        page.wait_for_timeout(3000)
+        # The networkidle above already settled the page, so the old fixed 3 s wait was
+        # redundant (issue #431).
         # Page should load without errors (may have zero images if no files uploaded)
         console_errors = []
         page.on(
@@ -509,8 +509,9 @@ class TestPostLoginGallery:
         _login_local(page, ADMIN_EMAIL, ADMIN_PASSWORD)
         _wait_for_gallery(page)
 
-        # Wait for full page load
-        page.wait_for_timeout(5000)
+        # Settle deterministically instead of guessing 5 s: console errors are asserted by
+        # their ABSENCE, so no locator can wait for them (issue #431).
+        page.wait_for_load_state("networkidle")
 
         # Filter out common benign errors
         real_errors = [e for e in console_errors if "favicon" not in e.lower()]
@@ -539,8 +540,9 @@ class TestPostLoginGallery:
         _login_local(page, ADMIN_EMAIL, ADMIN_PASSWORD)
         _wait_for_gallery(page)
 
-        # Wait for images to load
-        page.wait_for_timeout(5000)
+        # "Images finished loading" is exactly what networkidle means — a deterministic
+        # replacement for the old guessed 5 s (issue #431).
+        page.wait_for_load_state("networkidle")
 
         # No image requests should have 4xx/5xx errors
         assert len(failed_requests) == 0, f"Failed image requests: {failed_requests}"

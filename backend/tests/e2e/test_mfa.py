@@ -50,19 +50,6 @@ PROFILE_NAV_LABEL = "Profile & Security"
 # ===== Session fixtures =====
 
 
-@pytest.fixture(scope="session")
-def backend_url(pytestconfig: pytest.Config) -> str:
-    """Session-scoped widening of the conftest `backend_url` fixture (issue #431).
-
-    Resolution order is identical (`--backend-url` > `$E2E_BACKEND_URL` > the dev default);
-    only the scope differs, because the session-scoped `mfa_test_user` fixture below cannot
-    request a function-scoped fixture.
-    """
-    from conftest import BACKEND_URL as DEV_DEFAULT
-
-    return str(pytestconfig.getoption("backend_url", default=None) or DEV_DEFAULT)
-
-
 @pytest.fixture(scope="session", autouse=True)
 def mfa_test_user(backend_url: str):
     """Create a dedicated user for MFA tests via the admin API.
@@ -246,6 +233,10 @@ class TestMFASetupFlow:
         manual_btn = page.locator("button:has-text('manual'), button:has-text('Manual')")
         if manual_btn.count() > 0:
             manual_btn.first.click()
+            # Kept (issue #431): the reveal is a local Svelte toggle with no network
+            # activity, and the `.secret-code` check below is a `count()` snapshot whose
+            # ZERO case is a legitimate outcome (it falls back to the setup API) — so
+            # there is nothing an auto-waiting locator assertion could wait for.
             page.wait_for_timeout(500)
 
         secret_elem = page.locator(".secret-code")
@@ -345,7 +336,9 @@ class TestMFALoginFlow:
 
         # Try login via browser — should show MFA prompt
         _login_browser(page, base_url, mfa_test_user["email"], mfa_test_user["password"])
-        page.wait_for_timeout(3000)
+        # The assertion is that we did NOT navigate to the gallery, which no locator can
+        # auto-wait for; settle on the login POST instead of a fixed wait (issue #431).
+        page.wait_for_load_state("networkidle")
 
         mfa_input = page.locator("input[autocomplete='one-time-code'], input[maxlength='6']")
         mfa_text = page.locator(
@@ -372,7 +365,9 @@ class TestMFALoginFlow:
             pytest.skip("MFA not configured")
 
         _login_browser(page, base_url, mfa_test_user["email"], mfa_test_user["password"])
-        page.wait_for_timeout(3000)
+        # Settle on the login POST rather than a fixed wait; the check below is the
+        # ABSENCE of a navigation away from the MFA prompt (issue #431).
+        page.wait_for_load_state("networkidle")
 
         mfa_input = page.locator("input[autocomplete='one-time-code'], input[maxlength='6']")
         if mfa_input.count() == 0:
@@ -383,7 +378,8 @@ class TestMFALoginFlow:
         submit_btn = page.locator("button[type='submit'], button:has-text('Verify')")
         if submit_btn.count() > 0:
             submit_btn.first.click()
-            page.wait_for_timeout(3000)
+            # Same shape: the assertion below is "we stayed put" (issue #431).
+            page.wait_for_load_state("networkidle")
 
         # Should still be on login/MFA page
         assert "/login" in page.url or mfa_input.count() > 0

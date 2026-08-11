@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
-from app.api.endpoints.auth import get_current_user
+from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import delete_media_file
 from app.api.endpoints.files.crud import get_media_file_by_uuid
 from app.core.tenancy import UNSCOPED
@@ -98,7 +98,7 @@ class BulkActionResult(BaseModel):
 def get_file_status_detail(
     file_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Get detailed status information for a file."""
@@ -190,7 +190,7 @@ def get_file_status_detail(
 def cancel_file_processing(
     file_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Cancel active processing for a file."""
@@ -237,7 +237,7 @@ def retry_file_processing(
     file_uuid: str,
     reset_retry_count: bool = Query(False, description="Reset retry count to 0"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Retry processing for a failed file."""
@@ -317,7 +317,7 @@ def retry_file_processing(
 def recover_file(
     file_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Attempt to recover a stuck file."""
@@ -359,7 +359,7 @@ def recover_file(
 def force_delete_file(
     file_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Force delete a file (admin only)."""
@@ -387,7 +387,7 @@ def force_delete_file(
 def get_stuck_files(
     threshold_hours: float = Query(2.0, description="Hours threshold for stuck detection"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get list of files that appear to be stuck in processing."""
     try:
@@ -831,7 +831,7 @@ def _process_single_file_action(
 def bulk_file_action(
     request: BulkActionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Perform bulk actions on multiple files."""
@@ -923,7 +923,7 @@ def bulk_file_action(
 def cleanup_orphaned_files(
     dry_run: bool = Query(False, description="Preview changes without applying them"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Clean up orphaned files (admin only)."""
     if not current_user.is_admin:

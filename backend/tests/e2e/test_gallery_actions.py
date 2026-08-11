@@ -42,19 +42,6 @@ TEST_FILE_TITLE = "PyTorch at Tesla"
 # stack instead (issue #431).
 
 
-@pytest.fixture(scope="session")
-def backend_url(pytestconfig: pytest.Config) -> str:
-    """Session-scoped widening of the conftest `backend_url` fixture (issue #431).
-
-    Resolution order is identical (`--backend-url` > `$E2E_BACKEND_URL` > the dev default);
-    only the scope differs, because the module-scoped `api_token` fixture below cannot request
-    a function-scoped fixture.
-    """
-    from conftest import BACKEND_URL as DEV_DEFAULT
-
-    return str(pytestconfig.getoption("backend_url", default=None) or DEV_DEFAULT)
-
-
 def _assert_zip_of(download: Any, extension: str) -> None:
     """Assert a gallery export download is a ZIP whose entries match `extension`.
 
@@ -264,6 +251,8 @@ class TestSelectionModeButtons:
 
         # Click to select all
         btn.click()
+        # Kept (issue #431): the label flip is a local Svelte re-render with no network
+        # activity, and `text_content()` below is a one-shot read that cannot auto-wait.
         self.page.wait_for_timeout(500)
         text_after_select = btn.text_content() or ""
         assert "deselect" in text_after_select.lower() or "all" in text_after_select.lower()
@@ -278,6 +267,7 @@ class TestSelectionModeButtons:
 
         # Click again to deselect
         btn.click()
+        # Kept for the same reason as above: one-shot `text_content()` read (issue #431).
         self.page.wait_for_timeout(500)
         text_after_deselect = btn.text_content() or ""
         assert "select" in text_after_deselect.lower()
@@ -292,7 +282,7 @@ class TestSelectionModeButtons:
     def test_process_dropdown_opens(self) -> None:
         """Clicking Process should open dropdown with action items."""
         self.page.click(".process-btn")
-        self.page.wait_for_timeout(300)
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         menu = self.page.locator(".dropdown-menu")
         expect(menu).to_be_visible(timeout=3000)
 
@@ -315,6 +305,8 @@ class TestSelectionModeButtons:
     def test_process_dropdown_items_have_tooltips(self) -> None:
         """Each Process dropdown item should have a tooltip."""
         self.page.click(".process-btn")
+        # Kept (issue #431): the loop below drives `items.count()`, a snapshot that
+        # returns 0 rather than waiting for the menu to render.
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         items = menu.locator(".dropdown-item")
@@ -325,6 +317,8 @@ class TestSelectionModeButtons:
     def test_process_items_disabled_when_no_selection(self) -> None:
         """All process dropdown items should be disabled when no files selected."""
         self.page.click(".process-btn")
+        # Kept (issue #431): `items.count()` / `is_disabled()` below are snapshots that
+        # cannot auto-wait for the menu to render.
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         items = menu.locator(".dropdown-item")
@@ -341,7 +335,7 @@ class TestSelectionModeButtons:
     def test_organize_dropdown_opens(self) -> None:
         """Clicking Organize should open dropdown with items."""
         self.page.click(".organize-btn")
-        self.page.wait_for_timeout(300)
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         menu = self.page.locator(".dropdown-menu")
         expect(menu).to_be_visible(timeout=3000)
 
@@ -351,6 +345,8 @@ class TestSelectionModeButtons:
     def test_organize_dropdown_items_have_tooltips(self) -> None:
         """Each Organize dropdown item should have a tooltip."""
         self.page.click(".organize-btn")
+        # Kept (issue #431): the loop below drives `items.count()`, a snapshot that
+        # returns 0 rather than waiting for the menu to render.
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         items = menu.locator(".dropdown-item")
@@ -384,28 +380,28 @@ class TestSelectionModeButtons:
     def test_cancel_exits_selection_mode(self) -> None:
         """Clicking Cancel should return to normal mode."""
         self.page.click(".cancel-btn")
-        self.page.wait_for_timeout(500)
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         expect(self.page.locator(".upload-btn")).to_be_visible(timeout=5000)
         expect(self.page.locator(".select-btn")).to_be_visible(timeout=5000)
 
     def test_dropdown_closes_on_outside_click(self) -> None:
         """Dropdowns should close when clicking outside."""
         self.page.click(".process-btn")
-        self.page.wait_for_timeout(300)
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         expect(self.page.locator(".dropdown-menu")).to_be_visible()
 
         self.page.locator(".gallery-header").click(position={"x": 5, "y": 5})
-        self.page.wait_for_timeout(300)
+        # Same here — to_have_count(0) polls until the menu is gone (issue #431).
         expect(self.page.locator(".dropdown-menu")).to_have_count(0, timeout=3000)
 
     def test_opening_one_dropdown_closes_other(self) -> None:
         """Opening Process dropdown should close Organize, and vice versa."""
         self.page.click(".process-btn")
-        self.page.wait_for_timeout(300)
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         expect(self.page.locator(".dropdown-menu")).to_have_count(1)
 
         self.page.click(".organize-btn")
-        self.page.wait_for_timeout(300)
+        # Same here (issue #431).
         expect(self.page.locator(".dropdown-menu")).to_have_count(1)
 
         menu = self.page.locator(".dropdown-menu")
@@ -442,12 +438,16 @@ class TestBulkActions:
     def _select_all_files(self) -> None:
         """Select all files in the gallery."""
         self.page.click(".select-all-btn")
+        # Kept (issue #431): callers read the resulting selection through
+        # `is_disabled()` / `text_content()` snapshots, which cannot auto-wait for the
+        # selection store to propagate to the toolbar.
         self.page.wait_for_timeout(500)
 
     def test_process_reprocess_enabled_with_selection(self) -> None:
         """Reprocess should be enabled when completed files are selected."""
         self._select_all_files()
         self.page.click(".process-btn")
+        # Kept (issue #431): `is_disabled()` below is a snapshot — no auto-wait.
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         reprocess_item = menu.locator(".dropdown-item").first
@@ -459,6 +459,7 @@ class TestBulkActions:
         """Summarize should be enabled when completed files are selected."""
         self._select_all_files()
         self.page.click(".process-btn")
+        # Kept (issue #431): `is_disabled()` below is a snapshot — no auto-wait.
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         summarize_item = menu.locator(".dropdown-item").nth(1)
@@ -470,6 +471,7 @@ class TestBulkActions:
         """Cancel Processing should be disabled for completed files."""
         self._select_all_files()
         self.page.click(".process-btn")
+        # Kept (issue #431): `is_disabled()` below is a snapshot — no auto-wait.
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         # Select by text, not index — positional locators break when items are added
@@ -482,6 +484,7 @@ class TestBulkActions:
         """Speaker ID should be enabled when completed files are selected."""
         self._select_all_files()
         self.page.click(".process-btn")
+        # Kept (issue #431): `is_disabled()` below is a snapshot — no auto-wait.
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         speaker_item = menu.locator(".dropdown-item").nth(3)
@@ -543,8 +546,8 @@ class TestBulkActions:
         """Clicking Export SRT in the Organize dropdown should trigger a download."""
         self._select_all_files()
         self.page.click(".organize-btn")
-        self.page.wait_for_timeout(300)
 
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         menu = self.page.locator(".dropdown-menu")
         srt_btn = menu.locator(".dropdown-item").nth(1)
         expect(srt_btn).to_contain_text("SRT")
@@ -560,8 +563,8 @@ class TestBulkActions:
         """Clicking Export WebVTT should trigger a download."""
         self._select_all_files()
         self.page.click(".organize-btn")
-        self.page.wait_for_timeout(300)
 
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         menu = self.page.locator(".dropdown-menu")
         webvtt_btn = menu.locator(".dropdown-item").nth(2)
         expect(webvtt_btn).to_contain_text("WebVTT")
@@ -576,8 +579,8 @@ class TestBulkActions:
         """Clicking Export Text should trigger a download."""
         self._select_all_files()
         self.page.click(".organize-btn")
-        self.page.wait_for_timeout(300)
 
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         menu = self.page.locator(".dropdown-menu")
         txt_btn = menu.locator(".dropdown-item").nth(3)
         expect(txt_btn).to_contain_text("Text")
@@ -591,11 +594,14 @@ class TestBulkActions:
         """Clicking Reprocess should show a confirmation dialog."""
         self._select_all_files()
         self.page.click(".process-btn")
+        # Kept (issue #431): the next statement is a positional `.first.click()`, so the
+        # menu items must be rendered in their final order before it fires — an index
+        # resolved mid-render would click the wrong action.
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         menu.locator(".dropdown-item").first.click()
-        self.page.wait_for_timeout(500)
 
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         modal = self.page.locator("[role=dialog]")
         expect(modal).to_be_visible(timeout=5000)
 
@@ -603,14 +609,14 @@ class TestBulkActions:
         """Add to Collection in Organize dropdown should trigger the collection dialog."""
         self._select_all_files()
         self.page.click(".organize-btn")
-        self.page.wait_for_timeout(300)
 
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         menu = self.page.locator(".dropdown-menu")
         add_btn = menu.locator(".dropdown-item").first
         expect(add_btn).to_contain_text("Collection")
         add_btn.click()
-        self.page.wait_for_timeout(500)
 
+        # Same for the dialog assertion below (issue #431).
         dialog = self.page.locator("[role=dialog], .modal-backdrop")
         expect(dialog.first).to_be_visible(timeout=5000)
 
@@ -930,9 +936,9 @@ class TestFileSelectionUI:
 
         # Ctrl+click to select (enters selection mode)
         first_card.click(modifiers=["Control"])
-        self.page.wait_for_timeout(500)
 
-        # Should enter selection mode and show the selection toolbar
+        # Should enter selection mode and show the selection toolbar; expect() polls, so a
+        # fixed wait here would be pure waste (issue #431).
         expect(self.page.locator(".select-all-btn")).to_be_visible(timeout=5000)
 
         # File should be marked as selected
@@ -946,10 +952,14 @@ class TestFileSelectionUI:
 
         # Ctrl+click first card to start selection
         cards.first.click(modifiers=["Control"])
+        # Kept (issue #431): the shift+click below must land AFTER the anchor selection has
+        # registered, or the range is computed from the wrong start card — an ordering
+        # constraint no locator assertion expresses.
         self.page.wait_for_timeout(300)
 
         # Shift+click third card to select range
         cards.nth(2).click(modifiers=["Shift"])
+        # Kept (issue #431): `selected.count()` below is a snapshot — no auto-wait.
         self.page.wait_for_timeout(300)
 
         # Should have at least 3 files selected
@@ -961,7 +971,7 @@ class TestFileSelectionUI:
     def test_collections_button_opens_panel(self) -> None:
         """Collections button should open the collections panel/sidebar."""
         self.page.click(".collections-btn")
-        self.page.wait_for_timeout(500)
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         # Collections panel should appear (varies by implementation)
         panel = self.page.locator(
             ".collections-panel, .collections-sidebar, [role=dialog], .modal-backdrop"

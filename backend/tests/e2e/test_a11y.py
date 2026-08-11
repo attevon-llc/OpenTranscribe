@@ -110,6 +110,8 @@ def _form_login_with_retry(page: Page, base_url: str, attempts: int = 4) -> None
             return
         except Exception as exc:  # noqa: BLE001 - retry on any login-flow failure
             last_error = exc
+            # Kept deliberately: this wait IS the rate-limit backoff, not a settle for
+            # something a locator could poll for (issue #431).
             page.wait_for_timeout(5000 * (attempt + 1))
     raise AssertionError(f"Could not log in via form after {attempts} attempts: {last_error}")
 
@@ -225,6 +227,10 @@ class TestAccessibility:
         expect(settings_item.first).to_be_visible(timeout=5000)
         settings_item.first.click()
         expect(page.locator(".settings-modal")).to_be_visible(timeout=10000)
+        # Kept deliberately: the modal's open transition must finish before axe reads
+        # computed styles — scanning mid-animation reports contrast/visibility findings
+        # that do not exist once it settles. _run_axe is an evaluate(), not a locator, so
+        # there is nothing to auto-wait on (issue #431).
         page.wait_for_timeout(500)
         results = _run_axe(page)
         _assert_no_new_violations("Settings modal", results, _load_baseline(), discovered_rule_ids)
@@ -241,6 +247,8 @@ class TestAccessibility:
         page.wait_for_load_state("networkidle")
         # Wait for the speakers route to render its main container.
         page.wait_for_selector("main, .speakers-page, .page-container", timeout=15000)
+        # Kept deliberately: same reason as the modal scan above — let the route's entry
+        # transition finish before axe reads computed styles (issue #431).
         page.wait_for_timeout(500)
         results = _run_axe(page)
         _assert_no_new_violations("/speakers", results, _load_baseline(), discovered_rule_ids)

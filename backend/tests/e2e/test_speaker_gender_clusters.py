@@ -34,26 +34,11 @@ from playwright.sync_api import expect
 
 # Credentials imported from conftest to avoid secret detection false positives
 try:
-    from conftest import BACKEND_URL as DEFAULT_BACKEND_URL  # type: ignore[import-not-found]
     from conftest import TEST_ADMIN_EMAIL  # type: ignore[import-not-found]
     from conftest import TEST_ADMIN_PASSWORD  # type: ignore[import-not-found]
 except ImportError:
-    DEFAULT_BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
     TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
     TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "admin")  # noqa: S105
-
-
-@pytest.fixture(scope="session")
-def backend_url(request: pytest.FixtureRequest) -> str:
-    """Session-scoped view of conftest's ``backend_url`` fixture (issue #431).
-
-    ``api_session`` below is session-scoped on purpose — one login per run keeps the
-    suite inside the backend's auth rate limit — and a session-scoped fixture cannot
-    request the function-scoped fixture conftest defines. This applies exactly conftest's
-    precedence (``--backend-url`` first, then its ``E2E_BACKEND_URL``/dev default), so the
-    flag is honoured here too. Delete once the conftest fixture is session-scoped.
-    """
-    return str(request.config.getoption("backend_url", default=None) or DEFAULT_BACKEND_URL)
 
 
 @pytest.fixture(scope="session")
@@ -166,6 +151,10 @@ class TestGenderIconsOnMemberRows:
             pytest.skip("No clusters found")
 
         cluster_cards.first.locator(".card-header").click()
+        # Kept (issue #431): the accordion expand is client-side, and the only thing
+        # checked afterwards is that resolving the outlier locator raises nothing —
+        # outliers are data-dependent, so their ABSENCE is an acceptable outcome and
+        # there is no state an auto-waiting assertion could poll for.
         authenticated_page.wait_for_timeout(2000)
         # Just verify no errors - outliers are data-dependent
         authenticated_page.locator(".member-row.gender-outlier")

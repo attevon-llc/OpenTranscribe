@@ -179,7 +179,8 @@ class TestRegistrationFlow:
             page.goto(f"{base_url}/login")
             page.wait_for_selector("a[href*=register]")
             page.click("a[href*=register]")
-            page.wait_for_timeout(1000)
+            # The `page.fill("#username", ...)` below auto-waits for the register form to
+            # mount, so the old fixed 1 s wait bought nothing (issue #431).
 
             # Fill registration form
             page.fill("#username", username)
@@ -204,7 +205,8 @@ class TestRegistrationFlow:
         page.goto(f"{base_url}/login")
         page.wait_for_selector("a[href*=register]")
         page.click("a[href*=register]")
-        page.wait_for_timeout(1000)
+        # The `page.fill("#username", ...)` below auto-waits for the register form to
+        # mount, so the old fixed 1 s wait bought nothing (issue #431).
 
         # Fill form with mismatched passwords
         page.fill("#username", "testuser")
@@ -224,7 +226,8 @@ class TestRegistrationFlow:
         page.goto(f"{base_url}/login")
         page.wait_for_selector("a[href*=register]")
         page.click("a[href*=register]")
-        page.wait_for_timeout(1000)
+        # The `page.fill("#username", ...)` below auto-waits for the register form to
+        # mount, so the old fixed 1 s wait bought nothing (issue #431).
 
         # Fill form with weak password
         page.fill("#username", "testuser")
@@ -244,7 +247,8 @@ class TestRegistrationFlow:
         page.goto(f"{base_url}/login")
         page.wait_for_selector("a[href*=register]")
         page.click("a[href*=register]")
-        page.wait_for_timeout(1000)
+        # The `page.fill("#username", ...)` below auto-waits for the register form to
+        # mount, so the old fixed 1 s wait bought nothing (issue #431).
 
         # Try to register with existing admin email
         page.fill("#username", "newadmin")
@@ -253,7 +257,9 @@ class TestRegistrationFlow:
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
+        # A rejection is the ABSENCE of a redirect, which no locator can auto-wait for:
+        # settle deterministically instead of guessing 2 s (issue #431).
+        page.wait_for_load_state("networkidle")
 
         # Should show error about existing user
         error_shown = (

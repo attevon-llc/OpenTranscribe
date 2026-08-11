@@ -31,7 +31,6 @@ import requests
 
 # Absolute import — the e2e dir is not a package, so a relative import breaks
 # collection when invoked as `pytest backend/tests/e2e/` from the repo root.
-from conftest import BACKEND_URL as DEFAULT_BACKEND_URL
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
@@ -52,19 +51,6 @@ STREAM_TIMEOUT_MS = 90_000
 # ---------------------------------------------------------------------------
 # API helpers (used to arrange state and to clean up deterministically)
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="module")
-def backend_url(request: pytest.FixtureRequest) -> str:
-    """Module-scoped view of conftest's ``backend_url`` fixture (issue #431).
-
-    ``api_session`` below is module-scoped on purpose — one login per module keeps the
-    suite inside the backend's auth rate limit — and a module-scoped fixture cannot
-    request the function-scoped fixture conftest defines. This applies exactly conftest's
-    precedence (``--backend-url`` first, then its ``E2E_BACKEND_URL``/dev default), so the
-    flag is honoured here too. Delete once the conftest fixture is session-scoped.
-    """
-    return str(request.config.getoption("backend_url", default=None) or DEFAULT_BACKEND_URL)
 
 
 @pytest.fixture(scope="module")

@@ -24,20 +24,6 @@ TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 
-@pytest.fixture(scope="session")
-def backend_url(pytestconfig: pytest.Config) -> str:
-    """Session-scoped widening of the conftest `backend_url` fixture (issue #431).
-
-    Resolution order is identical (`--backend-url` > `$E2E_BACKEND_URL` > the dev default);
-    only the scope differs, because the module-scoped `session` / `completed_file` fixtures
-    below cannot request a function-scoped fixture. The conftest import is inside the body so
-    this module still collects regardless of the e2e package-import quirk.
-    """
-    from conftest import BACKEND_URL as DEV_DEFAULT
-
-    return str(pytestconfig.getoption("backend_url", default=None) or DEV_DEFAULT)
-
-
 def _resolve(url: str, base_url: str, backend_url: str) -> str:
     """Resolve a presigned URL to something fetchable from the test host.
 

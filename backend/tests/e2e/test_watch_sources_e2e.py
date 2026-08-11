@@ -20,10 +20,6 @@ import tempfile
 
 import pytest
 import requests
-
-# Absolute import — the e2e dir is not a package, so a relative import breaks
-# collection when invoked as `pytest backend/tests/e2e/` from the repo root.
-from conftest import BACKEND_URL as DEFAULT_BACKEND_URL
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
@@ -34,19 +30,6 @@ from playwright.sync_api import expect
 # conftest's ``base_url`` / ``backend_url`` fixtures instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
-
-
-@pytest.fixture(scope="module")
-def backend_url(request: pytest.FixtureRequest) -> str:
-    """Module-scoped view of conftest's ``backend_url`` fixture (issue #431).
-
-    ``local_watch_capability`` below is module-scoped — the capability probe logs in, so
-    it runs once per module — and a module-scoped fixture cannot request the
-    function-scoped fixture conftest defines. This applies exactly conftest's precedence
-    (``--backend-url`` first, then its ``E2E_BACKEND_URL``/dev default), so the flag is
-    honoured here too. Delete once the conftest fixture is session-scoped.
-    """
-    return str(request.config.getoption("backend_url", default=None) or DEFAULT_BACKEND_URL)
 
 
 @pytest.fixture(scope="module")
@@ -115,6 +98,8 @@ def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
             return
         except Exception as exc:  # noqa: BLE001
             last_error = exc
+            # Kept deliberately: this wait IS the rate-limit backoff, not a settle for
+            # something a locator could poll for (issue #431).
             page.wait_for_timeout(5000 * (attempt + 1))
     raise AssertionError(f"Could not log in via form after {attempts} attempts: {last_error}")
 
@@ -188,6 +173,10 @@ class TestWatchSourcesPanel:
             nxt = dialog.get_by_role("button", name="Next", exact=True)
             expect(nxt).to_be_enabled(timeout=5000)
             nxt.click()
+            # Kept deliberately: every step renders its OWN enabled "Next", so the
+            # expect() at the top of the next iteration cannot tell "this step advanced"
+            # from "the step hasn't re-rendered yet" — dropping the settle risks clicking
+            # one step twice and never reaching Save (issue #431).
             app_page.wait_for_timeout(200)
 
         # On the last step the primary action is Save.
@@ -212,6 +201,10 @@ class TestWatchSourcesPanel:
             nxt = dialog.get_by_role("button", name="Next", exact=True)
             expect(nxt).to_be_enabled(timeout=5000)
             nxt.click()
+            # Kept deliberately: every step renders its OWN enabled "Next", so the
+            # expect() at the top of the next iteration cannot tell "this step advanced"
+            # from "the step hasn't re-rendered yet" — dropping the settle risks clicking
+            # one step twice and never reaching Save (issue #431).
             app_page.wait_for_timeout(200)
         dialog.get_by_role("button", name="Save", exact=True).click()
 

@@ -33,10 +33,6 @@ from typing import Any
 
 import pytest
 import requests
-
-# Absolute import — the e2e dir is not a package, so a relative import breaks
-# collection when invoked as `pytest backend/tests/e2e/` from the repo root.
-from conftest import BACKEND_URL as DEFAULT_BACKEND_URL
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
@@ -72,19 +68,6 @@ BENIGN_CONSOLE_SUBSTRINGS = (
 def _unexpected_console_errors(errors: list[str]) -> list[str]:
     """Drop known-benign console noise; return anything that looks like a real bug."""
     return [e for e in errors if not any(sub in e for sub in BENIGN_CONSOLE_SUBSTRINGS)]
-
-
-@pytest.fixture(scope="module")
-def backend_url(request: pytest.FixtureRequest) -> str:
-    """Module-scoped view of conftest's ``backend_url`` fixture (issue #431).
-
-    The API fixtures below are module-scoped on purpose — one login per module keeps the
-    suite inside the backend's auth rate limit — and a module-scoped fixture cannot
-    request the function-scoped fixture conftest defines. This applies exactly conftest's
-    precedence (``--backend-url`` first, then its ``E2E_BACKEND_URL``/dev default), so the
-    flag is honoured here too. Delete once the conftest fixture is session-scoped.
-    """
-    return str(request.config.getoption("backend_url", default=None) or DEFAULT_BACKEND_URL)
 
 
 @pytest.fixture(scope="module")
@@ -175,6 +158,8 @@ def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
             return
         except Exception as exc:  # noqa: BLE001 - retry on any login-flow failure
             last_error = exc
+            # Kept deliberately: this wait IS the rate-limit backoff, not a settle for
+            # something a locator could poll for (issue #431).
             page.wait_for_timeout(5000 * (attempt + 1))
     raise AssertionError(f"Could not log in via form after {attempts} attempts: {last_error}")
 
@@ -231,7 +216,10 @@ class TestTranscriptRenders:
 
     def test_file_detail_loads_without_unexpected_console_errors(self, detail_page: Page) -> None:
         """Page settles and emits no *new* (non-benign) console errors."""
-        detail_page.wait_for_timeout(1500)
+        # Deterministic settle rather than a guessed 1.5 s: both assertions below are about
+        # the ABSENCE of something (a navigation away, a console error), which no locator
+        # can auto-wait for (issue #431).
+        detail_page.wait_for_load_state("networkidle")
         assert "/files/" in detail_page.url
         unexpected = _unexpected_console_errors(detail_page._console_errors)  # type: ignore[attr-defined]
         assert not unexpected, f"Unexpected console errors on file detail: {unexpected}"
@@ -458,6 +446,9 @@ class TestTranscriptPagination:
                 if count == previous:
                     break
                 previous = count
+                # Kept deliberately: this is the poll interval of the loop itself. The exit
+                # condition is "the row count STOPPED growing", i.e. the absence of new
+                # rows, which no locator can auto-wait for (issue #431).
                 page.wait_for_timeout(900)
 
             ids = page.eval_on_selector_all(
@@ -557,6 +548,9 @@ class TestTranscriptSearch:
         """Searching the transcript produces no new (non-benign) console errors."""
         search_input = _open_transcript_search(detail_page)
         search_input.fill(_pick_search_word(detail_page))
-        detail_page.wait_for_timeout(3500)  # allow the backend completeness probe to resolve
+        # Kept deliberately: allow the debounced backend completeness probe to fire AND
+        # resolve. networkidle can return before a debounced request has even started, and
+        # the assertion is the absence of console errors from it (issue #431).
+        detail_page.wait_for_timeout(3500)
         unexpected = _unexpected_console_errors(detail_page._console_errors)  # type: ignore[attr-defined]
         assert not unexpected, f"Unexpected console errors during transcript search: {unexpected}"

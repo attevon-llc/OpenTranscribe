@@ -97,6 +97,9 @@ class TestGalleryResponsive:
     def test_no_horizontal_overflow(self, sized_page, base_url: str):
         sized_page.goto(base_url)
         sized_page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+        # Kept deliberately: the assertion is the ABSENCE of horizontal overflow, measured
+        # by an evaluate() that does not poll. Measuring before thumbnails/lazy content
+        # have laid out would pass for the wrong reason (issue #431).
         sized_page.wait_for_timeout(1000)
         overflow = sized_page.evaluate(
             "document.documentElement.scrollWidth - document.documentElement.clientWidth"

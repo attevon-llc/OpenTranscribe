@@ -41,10 +41,6 @@ from typing import Any
 import numpy as np
 import pytest
 import requests
-
-# Absolute import — the e2e dir is not a package, so a relative import breaks
-# collection when invoked as `pytest backend/tests/e2e/` from the repo root.
-from conftest import BACKEND_URL as DEFAULT_BACKEND_URL
 from PIL import Image
 from playwright.sync_api import Page
 from playwright.sync_api import expect
@@ -145,19 +141,6 @@ def _compare_or_write(name: str, png_bytes: bytes) -> None:
 # Discover a transcribed file for the file-detail surface.
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")
-def backend_url(request: pytest.FixtureRequest) -> str:
-    """Module-scoped view of conftest's ``backend_url`` fixture (issue #431).
-
-    The discovery fixtures below are module-scoped on purpose — one login and one library
-    scan per module — and a module-scoped fixture cannot request the function-scoped
-    fixture conftest defines. This applies exactly conftest's precedence
-    (``--backend-url`` first, then its ``E2E_BACKEND_URL``/dev default), so the flag is
-    honoured here too. Delete once the conftest fixture is session-scoped.
-    """
-    return str(request.config.getoption("backend_url", default=None) or DEFAULT_BACKEND_URL)
-
-
-@pytest.fixture(scope="module")
 def api_token(backend_url: str) -> str:
     """Authenticate once per module via the backend API."""
     resp = requests.post(
@@ -238,6 +221,8 @@ def _stabilize(page: Page) -> None:
         "document.querySelectorAll('video,audio').forEach(m=>{try{m.pause();"
         "m.currentTime=0;}catch(e){}})"
     )
+    # Kept deliberately: a paint/layout settle before a screenshot. The comparison is a
+    # pixel diff, not a locator, so there is nothing to auto-wait on (issue #431).
     page.wait_for_timeout(600)
 
 

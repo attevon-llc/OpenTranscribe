@@ -81,6 +81,9 @@ class TestSearchExecution:
         return semantic-only results flagged with the no-keyword notice.
         """
         _run_search(search_page, NONSENSE_QUERY)
+        # Kept deliberately: the outcome is read with `.count()`, which does NOT auto-wait,
+        # and either count being 0 fails the assertion below. `_run_search` already waits
+        # for networkidle, so this is the render settle on top of it (issue #431).
         search_page.wait_for_timeout(2000)
         # The welcome state must be replaced by an outcome state
         expect(search_page.locator(".state-container.welcome")).to_have_count(0)
@@ -107,6 +110,9 @@ class TestSearchExecution:
     def test_known_query_returns_result_cards(self, search_page: Page):
         """Searching the dev corpus returns result cards (skips if no corpus)."""
         _run_search(search_page, KNOWN_QUERY)
+        # Kept deliberately: the next statement is a `.count()`-based SKIP gate, which does
+        # not auto-wait. Removing the settle would turn "results not rendered yet" into a
+        # silent skip — passing for the wrong reason (issue #431).
         search_page.wait_for_timeout(2000)
         results = search_page.locator(".results-list")
         if results.count() == 0:
@@ -121,6 +127,9 @@ class TestSearchControls:
     def test_mode_toggle_buttons_present(self, search_page: Page):
         """Keyword/semantic mode toggle appears with search results info."""
         _run_search(search_page, KNOWN_QUERY)
+        # Kept deliberately: the next statement is a `.count()`-based SKIP gate, which does
+        # not auto-wait. Removing the settle would turn "results not rendered yet" into a
+        # silent skip — passing for the wrong reason (issue #431).
         search_page.wait_for_timeout(2000)
         if search_page.locator(".results-list").count() == 0:
             pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")
@@ -130,6 +139,9 @@ class TestSearchControls:
     def test_results_info_shows_summary(self, search_page: Page):
         """The result summary line is shown for a successful search."""
         _run_search(search_page, KNOWN_QUERY)
+        # Kept deliberately: the next statement is a `.count()`-based SKIP gate, which does
+        # not auto-wait. Removing the settle would turn "results not rendered yet" into a
+        # silent skip — passing for the wrong reason (issue #431).
         search_page.wait_for_timeout(2000)
         if search_page.locator(".results-list").count() == 0:
             pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")

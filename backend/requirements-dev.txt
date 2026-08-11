@@ -16,6 +16,11 @@ pytest>=9.1.1
 pytest-asyncio>=1.4.0  # For testing async code
 pytest-cov>=7.1.0  # Code coverage reports
 pytest-xdist>=3.8.0  # Parallel execution — pyproject addopts uses "-n auto"
+# REQUIRED, not optional: pyproject addopts passes --timeout, so a missing plugin is a
+# collection error, not a silently skipped feature. The suite serialises DDL tests behind a
+# Postgres advisory lock; without a timeout a genuine lock cycle hangs the run forever
+# instead of failing (issue #431).
+pytest-timeout>=2.3.0
 
 # E2E (Playwright) test infrastructure
 pytest-playwright>=0.8.0  # Playwright pytest plugin (browser fixtures)

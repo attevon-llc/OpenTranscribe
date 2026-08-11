@@ -104,16 +104,31 @@ skips = ["B101", "B404", "B601", "B607", "B608"]  # Skip assert_used, subprocess
 skips = ["*_test.py", "test_*.py"]
 
 [tool.pytest.ini_options]
+# `backend/pyproject.toml` is CANONICAL — every runner cd's to backend/ first, so this table
+# only wins when someone runs `pytest` from the repo root by hand. It must therefore behave
+# identically, not approximately. It used to read `-v --tb=short --strict-markers` with a
+# three-marker list, so a root-run silently went SERIAL (no `-n auto`), SELECTED the
+# integration and gpu suites (no `-m` filter), and then died on `--strict-markers` because
+# `gpu`/`models`/`pki`/`e2e`/`ddl_exclusive` were unregistered here (issue #431).
+# Deleting this table is NOT the fix: with no ini at all pytest falls back to collecting from
+# the cwd, which pulls in `frontend/node_modules`.
+# `backend/tests/unit/test_pytest_config_consistency.py` fails if the two drift apart.
 testpaths = ["backend/tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short --strict-markers"
+addopts = "-n auto --dist loadgroup --tb=short -q --strict-markers --durations=25 --timeout=300 -m 'not integration and not gpu'"
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests",
+    "slow: marks tests as slow",
+    "unit: pure unit test, no external service",
+    "pki: PKI certificate tests",
+    "e2e: end-to-end browser tests",
+    "integration: integration tests requiring running dev environment",
+    "gpu: tests requiring a physical GPU — deselected from the fast suite, run by the gate",
+    "models: tests requiring ML model weights (Presidio/GLiNER/toxicity) — skipped in fast CI",
+    "ddl_exclusive: performs schema DDL (DROP/ALTER TABLE) needing full DB-wide exclusivity, not just self-consistency — see tests/conftest.py's advisory-lock isolation (issue #389)",
 ]
+norecursedirs = ["backend/tests/e2e"]
 
 [tool.coverage.run]
 source = ["app"]

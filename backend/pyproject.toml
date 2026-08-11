@@ -95,7 +95,15 @@ testpaths = ["tests"]
 # `integration` marker, so they ran in the fast suite AND in CPU-only CI, passing only on
 # their own runtime skip guards, while the gate's `-m integration` phase never selected
 # them. Register every marker you use — see scripts/run-integration-tests.sh for the phases.
-addopts = "-n auto --dist loadgroup --tb=short -q --strict-markers -m 'not integration and not gpu'"
+# --durations surfaces the slow tail every run. Without it, a 40 s test that is really 40 s
+# of lock queue is invisible; that is how one worker came to own 81% of the wall clock.
+# --timeout converts a hang into a failure. DDL tests serialise behind a Postgres advisory
+# lock that only covers connections opting into it, so a genuine cross-connection cycle is
+# possible and would otherwise stall the run indefinitely. 300 s is ~5x the slowest observed
+# test (54.6 s), so it cannot fire on a merely slow test — tighten it once the suite is fast.
+# Both require pytest-timeout, which is therefore MANDATORY in requirements-dev/-ci: a
+# missing plugin makes --timeout a collection error, not a no-op (issue #431).
+addopts = "-n auto --dist loadgroup --tb=short -q --strict-markers --durations=25 --timeout=300 -m 'not integration and not gpu'"
 markers = [
     "slow: marks tests as slow",
     "unit: pure unit test, no external service",

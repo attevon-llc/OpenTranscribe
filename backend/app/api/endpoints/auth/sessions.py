@@ -19,6 +19,7 @@ from joserfc.jwt import JWTClaimsRegistry
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_user
 from app.api.endpoints.auth.dependencies import oauth2_scheme
 from app.auth.audit import AuditEventType
@@ -303,6 +304,14 @@ async def logout_all_sessions(
     - Terminates the OIDC SSO session (if applicable)
     - Useful for security events (password change, compromised account)
 
+    Deliberately on ``get_current_user``, not ``get_current_active_user``: this
+    only ever *reduces* the caller's own access, and the unconditional lifecycle
+    gates (expiry, rejection, pending approval) have no exempt-path escape, so
+    gating it would leave a rejected or expired account's refresh tokens rotating
+    with no way for the user to kill them. ``dependencies.py`` already lists this
+    path in both ``PASSWORD_CHANGE_EXEMPT_PATHS`` and ``BANNER_EXEMPT_PATHS`` for
+    the same reason. Waived in ``tests/unit/test_lifecycle_gate_coverage.py``.
+
     Args:
         request: FastAPI request object
         current_user: Current authenticated user
@@ -352,7 +361,7 @@ async def logout_all_sessions(
 
 @router.get("/sessions")
 def get_active_sessions(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -360,6 +369,10 @@ def get_active_sessions(
 
     Returns a list of active refresh tokens (sessions) with metadata
     like creation time, user agent, and IP address.
+
+    Gated, unlike its ``POST /logout/all`` neighbour: reading the session list is
+    an ordinary authenticated view, not the remedy for any lifecycle state, and a
+    blocked account can still revoke everything without first enumerating it.
 
     Args:
         current_user: Current authenticated user

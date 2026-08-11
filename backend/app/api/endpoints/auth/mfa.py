@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
-from app.api.endpoints.auth.dependencies import get_current_user
+from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.mfa_enrollment import EnrollmentContext
 from app.api.endpoints.auth.mfa_enrollment import _complete_mfa_verification
 from app.api.endpoints.auth.mfa_enrollment import get_user_for_enrollment
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/mfa/status", response_model=MFAStatusResponse)
 def get_mfa_status(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -58,6 +58,10 @@ def get_mfa_status(
 
     Returns whether MFA is enabled/configured for the user and
     whether the system requires MFA.
+
+    Needs a full session, not a mid-login one: forced enrolment goes through
+    ``/mfa/setup`` + ``/mfa/verify-setup`` under ``get_user_for_enrollment``,
+    and the only caller of this route is the in-app security settings panel.
     """
     # Check if user has MFA configured
     user_mfa = db.query(UserMFA).filter(UserMFA.user_id == current_user.id).first()
@@ -391,13 +395,16 @@ def disable_mfa(
     request: Request,
     response: Response,
     request_body: MFADisableRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Disable MFA for the current user.
 
     Requires a valid TOTP code or backup code to confirm the action.
+
+    Unlike the enrolment pair this is not a mid-login state — it weakens an
+    already-usable account, so it runs behind the account-lifecycle gate.
     """
     if not _is_mfa_enabled(db):
         raise HTTPException(

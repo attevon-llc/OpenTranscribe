@@ -17,7 +17,7 @@ from app.api.endpoints.admin import get_disk_usage
 from app.api.endpoints.admin import get_gpu_usage
 from app.api.endpoints.admin import get_memory_usage
 from app.api.endpoints.admin import get_system_uptime
-from app.api.endpoints.auth import get_current_user
+from app.api.endpoints.auth import get_current_active_user
 from app.core.version import APP_VERSION
 from app.db.base import get_db
 from app.models.user import User
@@ -92,7 +92,9 @@ def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 @router.get("/stats", response_model=dict[str, Any])
-def get_system_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_system_stats(
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
+):
     """
     Get system statistics accessible to all authenticated users.
 
@@ -218,7 +220,7 @@ def get_system_stats(db: Session = Depends(get_db), current_user: User = Depends
 
 
 @router.get("/config/protected-media-auth", response_model=list[dict[str, Any]])
-def get_protected_media_auth(current_user: User = Depends(get_current_user)):
+def get_protected_media_auth(current_user: User = Depends(get_current_active_user)):
     """Return public auth configuration for protected media providers.
 
     Used by the frontend to decide when to prompt for username/password

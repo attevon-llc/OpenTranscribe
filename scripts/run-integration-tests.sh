@@ -111,8 +111,19 @@ run_phase "Gated security suites (FIPS_MODE=true)" \
     env "${GATES[@]}" FIPS_MODE=true "$VENV_PY" -m pytest "${GATED_FILES[@]}" -o addopts="" -n auto --dist loadgroup -q --tb=short
 
 # 3. Integration-marked tests (need the live stack)
+#
+# Collected from the paths that hold them, not all of tests/: there are 20 such tests and
+# sweeping the 5,200-test tree to find them cost ~23 s of pure collection. Deliberately still
+# SERIAL — `-o addopts=""` drops the inherited `-n auto`, which is correct here because these
+# talk to the live stack and share its state (uploads, reprocessing, mirror state); running
+# them concurrently would make them interfere rather than faster.
+#
+# The narrowing is guarded: tests/unit/test_gate_phase_coverage.py fails if an
+# `integration`-marked test appears outside these paths, so one added elsewhere cannot go
+# silently unrun the way `gpu` did before #297 (issue #431).
 run_phase "Integration-marked tests" \
-    "$VENV_PY" -m pytest tests/ -o addopts="" -m integration -q --tb=short
+    "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py \
+    -o addopts="" -m integration -q --tb=short
 
 # 4. GPU-marked tests. Deselected from the fast suite and from CI (both CPU-only), so
 # this gate is the ONLY place they run — they were silently ungated before #297.

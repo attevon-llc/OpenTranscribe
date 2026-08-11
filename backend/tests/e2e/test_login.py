@@ -14,6 +14,8 @@ Run with:
     pytest backend/tests/e2e/test_login.py -v --headed
 """
 
+import re
+
 import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
@@ -30,10 +32,11 @@ class TestLoginFormValidation:
         # Try to submit with only password
         page.fill("#password", "password")
         page.click("button[type=submit]")
-        page.wait_for_timeout(1000)
-
-        # Should stay on login page
-        assert page.locator("#email").is_visible()
+        # Client-side validation should block submission outright, so the field is still
+        # there. Settling the page is deterministic; the old `wait_for_timeout(1000)` was a
+        # guess that cost a second every run (issue #431).
+        page.wait_for_load_state("networkidle")
+        expect(page.locator("#email")).to_be_visible()
 
     def test_password_field_required(self, page: Page, base_url: str):
         """Test password field is required."""
@@ -54,10 +57,11 @@ class TestLoginFormValidation:
         page.wait_for_selector("#email", timeout=10000)
 
         page.click("button[type=submit]")
-        page.wait_for_timeout(1000)
-
-        # Should stay on login page
-        assert page.locator("#email").is_visible()
+        # Client-side validation should block submission outright, so the field is still
+        # there. Settling the page is deterministic; the old `wait_for_timeout(1000)` was a
+        # guess that cost a second every run (issue #431).
+        page.wait_for_load_state("networkidle")
+        expect(page.locator("#email")).to_be_visible()
         assert page.locator("#password").is_visible()
 
 
@@ -73,10 +77,10 @@ class TestLoginSuccess:
         page.fill("#password", "password")
         page.click("button[type=submit]")
 
-        page.wait_for_timeout(5000)
-
-        # Should redirect away from login
-        assert "/login" not in page.url, "Should redirect after successful login"
+        # Was `wait_for_timeout(5000)` then a bare assert: it paid the full 5 s on every run
+        # and was simultaneously too short if the redirect were slower. `not_to_have_url`
+        # polls and returns the moment the URL changes (issue #431).
+        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
 
     def test_login_with_username(self, page: Page, base_url: str):
         """Test login with username instead of email."""
@@ -88,9 +92,8 @@ class TestLoginSuccess:
         page.fill("#password", "password")
         page.click("button[type=submit]")
 
-        page.wait_for_timeout(5000)
-
-        # May succeed or fail depending on username support
+        # Settle the page instead of guessing a duration (issue #431).
+        page.wait_for_load_state("networkidle")
         assert page.is_visible("body")
 
     def test_login_redirects_to_gallery(self, page: Page, base_url: str):
@@ -140,9 +143,10 @@ class TestLoginFailure:
         page.fill("#password", "wrongpassword")
         page.click("button[type=submit]")
 
-        page.wait_for_timeout(3000)
-
-        # Should stay on login or show error
+        # A rejection is the ABSENCE of a redirect, which no locator can auto-wait for. So
+        # rather than guess 3 s, settle the page and then assert. Was
+        # `wait_for_timeout(3000)` + the same assert (issue #431).
+        page.wait_for_load_state("networkidle")
         still_on_login = "/login" in page.url or page.locator("#email").is_visible()
         assert still_on_login, "Should not login with wrong password"
 
@@ -155,7 +159,7 @@ class TestLoginFailure:
         page.fill("#password", "anypassword")
         page.click("button[type=submit]")
 
-        page.wait_for_timeout(3000)
+        page.wait_for_load_state("networkidle")
 
         still_on_login = "/login" in page.url or page.locator("#email").is_visible()
         assert still_on_login, "Should not login with non-existent user"
@@ -170,9 +174,8 @@ class TestLoginFailure:
         page.fill("#password", "password")
         page.click("button[type=submit]")
 
-        page.wait_for_timeout(5000)
-
-        # Should work if email is case-insensitive
+        # Settle the page instead of guessing a duration (issue #431).
+        page.wait_for_load_state("networkidle")
         assert page.is_visible("body")
 
     def test_whitespace_in_credentials(self, page: Page, base_url: str):
@@ -185,9 +188,8 @@ class TestLoginFailure:
         page.fill("#password", "password")
         page.click("button[type=submit]")
 
-        page.wait_for_timeout(3000)
-
-        # May or may not trim whitespace
+        # Settle the page instead of guessing a duration (issue #431).
+        page.wait_for_load_state("networkidle")
         assert page.is_visible("body")
 
     def test_error_message_displayed(self, page: Page, base_url: str):
@@ -263,7 +265,7 @@ class TestLoginSecurity:
             page.wait_for_timeout(1000)
 
         # Should show rate limit message or block further attempts
-        page.wait_for_timeout(2000)
+        page.wait_for_load_state("networkidle")
 
         rate_limited = (
             page.locator("text=too many").first.is_visible()
@@ -287,7 +289,8 @@ class TestLoginSession:
         page.fill("#password", "password")
         page.click("button[type=submit]")
 
-        page.wait_for_timeout(5000)
+        # Wait for the login redirect to actually land instead of guessing 5 s, then reload.
+        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
 
         # Refresh page
         page.reload()
@@ -422,9 +425,8 @@ class TestLoginAccessibility:
         page.keyboard.type("password")
         page.keyboard.press("Enter")  # Submit
 
-        page.wait_for_timeout(5000)
-
-        # Should have submitted
+        # Settle the page instead of guessing a duration (issue #431).
+        page.wait_for_load_state("networkidle")
         assert page.is_visible("body")
 
     def test_autofocus_on_email(self, page: Page, base_url: str):
@@ -448,7 +450,7 @@ class TestLoginConsoleErrors:
 
         page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(2000)
+        page.wait_for_load_state("networkidle")
 
         critical_errors = [e for e in errors if "favicon" not in e.lower()]
         assert len(critical_errors) == 0, f"Console errors: {critical_errors}"
@@ -465,7 +467,7 @@ class TestLoginConsoleErrors:
         page.fill("#password", "password")
         page.click("button[type=submit]")
 
-        page.wait_for_timeout(5000)
+        page.wait_for_load_state("networkidle")
 
         critical_errors = [e for e in errors if "favicon" not in e.lower()]
         assert len(critical_errors) == 0, f"Console errors: {critical_errors}"

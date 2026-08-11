@@ -28,6 +28,7 @@ vi.mock('$stores/locale', async () => {
  */
 const gallery = vi.hoisted(() => ({
   triggerAddTags: vi.fn(),
+  triggerTags: vi.fn(),
   triggerRemoveTags: vi.fn(),
   triggerAddToCollection: vi.fn(),
   triggerExport: vi.fn(),
@@ -83,27 +84,28 @@ beforeEach(() => {
 });
 
 describe('GalleryActionButtons — bulk tag entries', () => {
-  it('disables both tag entries while nothing is selected', async () => {
+  it('offers one Tags entry in Organize, not separate add and remove', async () => {
     render(GalleryActionButtons, { props: { files: [] } });
     await openOrganizeMenu();
 
-    expect(screen.getByRole('button', { name: 'Add Tag' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Remove Tag' })).toBeDisabled();
+    // The modal does both add and remove (and, for a single file, the full chip
+    // editor), so three doors to one dialog were three things to explain.
+    expect(screen.getByRole('button', { name: 'Tags' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add Tag' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Remove Tag' })).toBeNull();
   });
 
-  it('fires the store triggers once files are selected', async () => {
-    select(['file-1', 'file-2']);
+  it('opens tagging with no selection, exactly like Add to collection', async () => {
+    // Both attach metadata to files, so they behave the same: neither is gated
+    // on a selection. With none, the manager opens instead of bulk apply.
     render(GalleryActionButtons, { props: { files: [] } });
-
     await openOrganizeMenu();
-    await fireEvent.click(screen.getByRole('button', { name: 'Add Tag' }));
-    expect(gallery.triggerAddTags).toHaveBeenCalledTimes(1);
 
-    // Choosing an entry closes the menu, exactly like the neighbouring entries.
-    expect(screen.queryByRole('button', { name: 'Add Tag' })).toBeNull();
-
-    await openOrganizeMenu();
-    await fireEvent.click(screen.getByRole('button', { name: 'Remove Tag' }));
-    expect(gallery.triggerRemoveTags).toHaveBeenCalledTimes(1);
+    const tags = screen.getByRole('button', { name: 'Tags' });
+    expect(tags).not.toBeDisabled();
+    await fireEvent.click(tags);
+    expect(gallery.triggerTags).toHaveBeenCalledTimes(1);
+    // Choosing an entry closes the menu, like the neighbouring entries.
+    expect(screen.queryByRole('button', { name: 'Tags' })).toBeNull();
   });
 });

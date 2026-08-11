@@ -2193,7 +2193,6 @@
   "tags.manager.scope.mine": "Mine",
   "tags.manager.scope.system": "Shared vocabulary",
   "tags.manager.scope.shared_with_me": "From shared media",
-  "tags.manager.close": "Close",
   "tags.manager.sharedWithMeBadge": "Shared with me",
   "tags.manager.sharedWithMeTooltip": "On media someone shared with you — read-only",
   "tags.manager.detail.sharedWithMeHint": "This tag belongs to the person who shared this media with you. You can filter by it, but only they can rename or delete it.",

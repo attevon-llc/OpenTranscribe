@@ -23,6 +23,13 @@
   export let title = '';
   export let maxWidth = '600px';
   export let zIndex = 1300;
+  /**
+   * Let an inner dropdown escape the body's scroll clip.
+   *
+   * Only for modals whose content fits without scrolling; otherwise the body
+   * stops scrolling and long content is unreachable.
+   */
+  export let allowOverflow = false;
   export let onClose: () => void = () => {};
 
   // Stable id for wiring the dialog's accessible name to its <h2> title (when no
@@ -78,7 +85,7 @@
           </svg>
         </button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" class:allow-overflow={allowOverflow}>
         <slot />
       </div>
       {#if $$slots.footer}
@@ -167,6 +174,16 @@
     overflow-y: auto;
     flex: 1;
     overscroll-behavior: contain;
+  }
+
+  /* An absolutely-positioned dropdown inside a scrolling body is clipped by
+     that scroll container no matter how high its z-index, so it renders as a
+     sliver under the footer. `allowOverflow` drops the clip for modals whose
+     content is short enough not to need scrolling but which do contain a
+     combobox — SearchableSelect in the bulk tag modal is the case this exists
+     for. */
+  .modal-body.allow-overflow {
+    overflow: visible;
   }
 
   .modal-footer {

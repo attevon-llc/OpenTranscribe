@@ -234,6 +234,7 @@
 
 <BaseModal
   {isOpen}
+  allowOverflow
   maxWidth="480px"
   title={isAdd
     ? $t('gallery.bulk.tagModal.addTitle', { count: fileUuids.length })

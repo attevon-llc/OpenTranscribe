@@ -2192,7 +2192,6 @@
   "tags.manager.scope.mine": "我的",
   "tags.manager.scope.system": "共享词汇表",
   "tags.manager.scope.shared_with_me": "来自共享媒体",
-  "tags.manager.close": "关闭",
   "tags.manager.sharedWithMeBadge": "与我共享",
   "tags.manager.sharedWithMeTooltip": "位于他人与你共享的媒体上——只读",
   "tags.manager.detail.sharedWithMeHint": "此标签属于与你共享该媒体的人。你可以按它筛选，但只有对方可以重命名或删除它。",

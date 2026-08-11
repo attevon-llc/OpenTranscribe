@@ -2223,7 +2223,6 @@
   "tags.manager.scope.mine": "Mías",
   "tags.manager.scope.system": "Vocabulario compartido",
   "tags.manager.scope.shared_with_me": "De medios compartidos",
-  "tags.manager.close": "Cerrar",
   "tags.manager.sharedWithMeBadge": "Compartida conmigo",
   "tags.manager.sharedWithMeTooltip": "En medios que alguien compartió contigo: solo lectura",
   "tags.manager.detail.sharedWithMeHint": "Esta etiqueta pertenece a quien compartió estos medios contigo. Puedes filtrar por ella, pero solo esa persona puede renombrarla o eliminarla.",

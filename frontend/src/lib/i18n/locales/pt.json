@@ -2192,7 +2192,6 @@
   "tags.manager.scope.mine": "Minhas",
   "tags.manager.scope.system": "Vocabulário partilhado",
   "tags.manager.scope.shared_with_me": "De média partilhados",
-  "tags.manager.close": "Fechar",
   "tags.manager.sharedWithMeBadge": "Partilhada comigo",
   "tags.manager.sharedWithMeTooltip": "Em média que alguém partilhou consigo — só de leitura",
   "tags.manager.detail.sharedWithMeHint": "Esta etiqueta pertence a quem partilhou estes média consigo. Pode filtrar por ela, mas só essa pessoa a pode renomear ou eliminar.",

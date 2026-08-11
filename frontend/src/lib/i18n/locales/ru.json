@@ -2182,7 +2182,6 @@
   "tags.manager.scope.mine": "Мои",
   "tags.manager.scope.system": "Общий словарь",
   "tags.manager.scope.shared_with_me": "Из общих медиафайлов",
-  "tags.manager.close": "Закрыть",
   "tags.manager.sharedWithMeBadge": "Доступен мне",
   "tags.manager.sharedWithMeTooltip": "На медиафайлах, которыми с вами поделились — только чтение",
   "tags.manager.detail.sharedWithMeHint": "Этот тег принадлежит тому, кто поделился с вами этими медиафайлами. Вы можете фильтровать по нему, но переименовать или удалить его может только владелец.",

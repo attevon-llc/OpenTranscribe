@@ -60,14 +60,17 @@
   // Tags sit beside Collections because they are the same kind of thing: metadata
   // over the library, not a place to navigate to. The gallery decides which mode
   // to open from the current selection, exactly as Collections does.
+  // The single door to tagging, in both modes. The Organize menu used to carry
+  // separate "Add tag" and "Remove tag" entries, but the modal now does both —
+  // three doors to one dialog is three things to explain.
   function handleTagsClick() { galleryStore.triggerTags(); }
+  // Same destination from inside the Organize menu, which has to close itself.
+  function handleTagsFromMenu() { galleryStore.triggerTags(); closeAllMenus(); }
   function handleSelectFilesClick() { galleryStore.setSelecting(true); }
   function handleSelectAllFiles() { galleryStore.selectAllFiles(); }
   function handleDeleteSelected() { galleryStore.triggerDeleteSelected(); }
   function handleCancelSelection() { galleryStore.clearSelection(); }
   function handleAddToCollection() { galleryStore.triggerAddToCollection(); closeAllMenus(); }
-  function handleAddTags() { galleryStore.triggerAddTags(); closeAllMenus(); }
-  function handleRemoveTags() { galleryStore.triggerRemoveTags(); closeAllMenus(); }
   function handleReprocess() { galleryStore.triggerReprocess(); closeAllMenus(); }
   function handleSummarize() { galleryStore.triggerSummarize(); closeAllMenus(); }
   function handleRedact() { galleryStore.triggerRedact(); closeAllMenus(); }
@@ -239,20 +242,6 @@
         {/if}
       </div>
 
-      <!-- Tags: the same button as in normal mode, so it does not vanish at the
-           moment it becomes most useful. With a selection it opens bulk apply;
-           with none it opens the manager. -->
-      <button
-        class="action-btn tags-btn"
-        on:click={handleTagsClick}
-        title={$t('gallery.bulk.tagsTooltip')}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
-          <line x1="7" y1="7" x2="7.01" y2="7"></line>
-        </svg>
-        <span>{$t('nav.tags')}</span>
-      </button>
 
       <!-- Organize dropdown -->
       <div class="dropdown-container">
@@ -285,30 +274,20 @@
               </svg>
               {$t('gallery.bulk.addToCollection')}
             </button>
+            <!-- Tags sits with collections: both attach metadata to a file,
+                 which is what Organize means. One entry, not add/remove — the
+                 modal does both, and for a single selected file it is the full
+                 chip editor. -->
             <button
               class="dropdown-item"
-              on:click={handleAddTags}
-              disabled={$selectedCount === 0}
-              title={$t('gallery.bulk.addTagTooltip')}
+              on:click={handleTagsFromMenu}
+              title={$t('gallery.bulk.tagsTooltip')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
                 <line x1="7" y1="7" x2="7.01" y2="7"></line>
               </svg>
-              {$t('gallery.bulk.addTag')}
-            </button>
-            <button
-              class="dropdown-item"
-              on:click={handleRemoveTags}
-              disabled={$selectedCount === 0}
-              title={$t('gallery.bulk.removeTagTooltip')}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
-                <line x1="7" y1="7" x2="7.01" y2="7"></line>
-                <line x1="9" y1="15" x2="15" y2="9"></line>
-              </svg>
-              {$t('gallery.bulk.removeTag')}
+              {$t('nav.tags')}
             </button>
             <div class="dropdown-divider"></div>
             <button

@@ -2192,7 +2192,6 @@
   "tags.manager.scope.mine": "自分のもの",
   "tags.manager.scope.system": "共有語彙",
   "tags.manager.scope.shared_with_me": "共有されたメディアから",
-  "tags.manager.close": "閉じる",
   "tags.manager.sharedWithMeBadge": "自分と共有",
   "tags.manager.sharedWithMeTooltip": "他のユーザーが共有したメディア上のタグ — 読み取り専用",
   "tags.manager.detail.sharedWithMeHint": "このタグは、このメディアを共有した相手のものです。絞り込みには使えますが、名前の変更や削除はその相手のみが行えます。",

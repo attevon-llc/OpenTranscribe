@@ -32,6 +32,15 @@ Tags could be created but never corrected — no rename, no merge, no way to del
 - **Ownership is explicit.** Every tag reports `mine`, `system` (the shared vocabulary every account sees) or `shared_with_me` (someone else's, visible because they shared the media it sits on). The UI offers Rename/Delete only where the backend will accept them, and `GET /tags?scope=` takes the same three values so a scoped request returns rows reporting that ownership. Admins can promote a tag into the shared vocabulary, which folds identically-named tags into it so a deployment converges on one `Interview`.
 - **Tags travel with shared media.** Sharing a collection makes its files' tags visible to the recipients — in the picker, the gallery filter and search — computed from the file rather than copied, so unsharing removes them again with no cleanup. A second person tagging a shared file reuses the existing tag rather than adding the same word twice.
 
+#### Tag sharing and the ownership model (`v386_add_tag_share`)
+
+A tag was either yours alone or published to the whole deployment, so giving one word to a colleague meant publishing it to everybody — or letting each person coin their own copy, which is the duplication this feature exists to stop.
+
+- **Share a tag with specific users and groups.** `tag_share` mirrors `collection_share` (one user or one group, CHECK-constrained, partial unique indexes). Deliberately **no permission column**: a share grants *vocabulary* — see it, filter by it, apply it — while rename/merge/delete stay with the owner.
+- **Every tag reports its `ownership`**: `mine`, `system` (the shared vocabulary), or `shared_with_me`. `GET /tags?scope=` accepts those same three values, so a scoped request returns rows reporting that ownership. The UI offers destructive actions only where the backend will accept them.
+- **Tags travel with shared media**, computed from the file rather than copied — so unsharing removes them again with no cleanup step, and a second person tagging a shared file reuses the existing tag rather than adding the same word twice.
+- **Tag management is a modal** beside Collections, with search, sort, a create field, the files each tag touches, and bulk chips shared with the collections modal. AI tag review was removed: it asked users to judge a tag with no media on screen, which is the file detail page's job.
+
 ### Fixed
 
 #### Search by tag never worked (PR #381)

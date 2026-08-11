@@ -64,11 +64,18 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 
 - `require_capability(key)` (`core/capabilities.py`) returns **404, not 403** — a gated router
   must look like an unknown route. Platform superusers bypass it.
-- **`endpoints/tags.py` has THREE scopes, and mixing them up is the bug** (`v374_add_tag_user_id`).
+- **`endpoints/tags/` is a package** (`crud` · `discovery` · `sharing` · `operations` + `_common`),
+  split like `endpoints/files/`. Every module registers onto the ONE router in `_common` —
+  sub-routers were tried and rejected because FastAPI refuses an empty path when including a
+  router with no prefix, and `POST ""`/`GET ""` are real routes. **Import order in
+  `__init__` is load-bearing**: `/for-files`, `/impact` and `/promote` are literal paths that
+  must register before the `/{tag_uuid}` routes. Do NOT re-export third-party names through
+  `_common` — ruff prunes them as unused there and the backend stops booting.
+- **The tag plane has THREE scopes, and mixing them up is the bug** (`v374_add_tag_user_id`).
   All three live in `services/tag_service.py` so nothing re-derives them:
   | Scope | Rule | Used by |
   |---|---|---|
-  | `visible_to()` | system **or** owned **or** attached to an accessible file | `GET /tags` (the list) |
+  | `visible_to()` | system **or** owned **or** explicitly shared (`v386`) **or** attached to an accessible file | `GET /tags` (the list) |
   | `owned_or_system()` | system **or** owned | resolution, `/unused`, `/collisions` |
   | `_writable_tag_ids()` | owned always; system for an **admin**; else **404** | every mutation |
   Reading and rewriting are different rights: `visible_to` admits a tag on a file shared with
@@ -87,6 +94,11 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   consults `lookup_tag_on_file` first, so the second person to tag a shared file reuses the row
   instead of forking a same-named one. Without it the detail page renders the tag twice and the
   gallery's ALL-filter has to count `DISTINCT Tag.name` to compensate.
+- **A tag share grants vocabulary, not administration** (`v386_add_tag_share`). `tag_share`
+  mirrors `collection_share` — one user or one group, CHECK-constrained, partial unique indexes —
+  but deliberately has **no permission column**: the recipient can see, filter by and apply the
+  tag while rename/merge/delete stay with the owner, so a `viewer`/`editor` distinction would be
+  a field pretending to be a choice.
 - **Bulk tag paths must stay batched.** `prepare_upload.add_tags_to_file` goes through
   `resolve_or_create_tags` (constant SELECTs, issue #284 A2.8), not the per-name resolver;
   `test_upload_prep_batching` fails if the per-name loop returns.

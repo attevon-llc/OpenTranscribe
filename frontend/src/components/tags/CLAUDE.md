@@ -9,7 +9,11 @@ selection is not here — that is `gallery/BulkTagModal.svelte`.
 ## Key files
 
 - `TagManagerModal.svelte` — the coordinator, and the only component here that
-  fetches. Owns the selection, the mutation lifecycle and every API call; the
+  fetches. It is a **body**, not a modal: `routes/+page.svelte` wraps it in the same
+  hand-rolled chrome the collections dialog uses, so the two siblings cannot drift on
+  backdrop, radius, header or close affordance.
+- `TagShareModal.svelte` — grants to users/groups (`v386`), reusing
+  `sharing/ShareTargetSearch` so finding a target works as it does for a collection. Owns the selection, the mutation lifecycle and every API call; the
   rest are presentational and dispatch intent up. Opened from the gallery's
   **Tags** button when nothing is selected (a selection opens the bulk flow
   instead), mirroring `CollectionsPanel`'s `viewMode`.
@@ -29,6 +33,14 @@ selection is not here — that is `gallery/BulkTagModal.svelte`.
   fetches down into a child.
 
 ## Gotchas
+
+- **Review is gone, deliberately.** Accept/reject asked users to judge an AI tag with no
+  media on screen; that belongs on the file detail page. The endpoints went with it —
+  do not reintroduce a review UI here without a way to see the recording.
+- Chips come from `ui/MetadataChips`, shared with `CollectionsPanel`, which composes
+  `ui/Chip`. One selected file gets removable chips; several get read-only chips with an
+  `on N of M` count and a cap, because removing across a mixed selection is ambiguous
+  and 100 selected files would otherwise render the whole library.
 
 - **Three ownership values, not a boolean** (`$lib/types/tag`): `mine`,
   `system` (the shared vocabulary), `shared_with_me` (someone else's, visible

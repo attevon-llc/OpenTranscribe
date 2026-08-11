@@ -65,6 +65,19 @@ export function canMutateTag(tag: Tag, isAdmin: boolean): boolean {
  */
 export type TagScope = 'all' | TagOwnership;
 
+/**
+ * A tag carried by some or all of a selection of files.
+ *
+ * `file_count` vs `selection_size` is what distinguishes a tag on every
+ * selected file from one on a few — and why a multi-file selection offers
+ * add-only: removing a tag that sits on three of five files is ambiguous in a
+ * way adding never is.
+ */
+export interface TagOnSelection extends Tag {
+  file_count: number;
+  selection_size: number;
+}
+
 /** Who a tag is shared with — one user or one group. */
 export interface TagShareTarget {
   uuid: string;

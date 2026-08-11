@@ -16,6 +16,7 @@ import type {
   Tag,
   TagCollisionCluster,
   TagFileList,
+  TagOnSelection,
   TagShareCreate,
   TagShareTarget,
   TagImpact,
@@ -78,6 +79,19 @@ export async function removeTagFromFile(fileUuid: string, tagName: string): Prom
  */
 export async function listFilesForTag(tagUuid: string, limit = 50): Promise<TagFileList> {
   const response = await axiosInstance.get(`/tags/${tagUuid}/files`, { params: { limit } });
+  return response.data;
+}
+
+/**
+ * The tags a selection of files already carries.
+ *
+ * `GET /files` carries no per-file tags (#326), so this is the only way the
+ * bulk surface can show what the selection has before changing it.
+ */
+export async function listTagsOnFiles(fileUuids: string[]): Promise<TagOnSelection[]> {
+  const params = new URLSearchParams();
+  for (const uuid of fileUuids) params.append('file_uuids', uuid);
+  const response = await axiosInstance.get('/tags/for-files', { params });
   return response.data;
 }
 

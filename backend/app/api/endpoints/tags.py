@@ -32,6 +32,7 @@ from app.schemas.media import TaggedFile
 from app.schemas.media import TagImpact
 from app.schemas.media import TagMergeRequest
 from app.schemas.media import TagMutationResult
+from app.schemas.media import TagOnSelection
 from app.schemas.media import TagPromoteRequest
 from app.schemas.media import TagRenameRequest
 from app.schemas.media import TagShareCreate
@@ -42,6 +43,7 @@ from app.services.tag_collisions import files_for_tag
 from app.services.tag_collisions import find_tag_collisions
 from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows
+from app.services.tag_collisions import tags_on_files
 from app.services.tag_operations import TagNotFoundError
 from app.services.tag_operations import delete_tags
 from app.services.tag_operations import merge_tags
@@ -52,6 +54,7 @@ from app.services.tag_service import InvalidTagNameError
 from app.services.tag_service import accessible_file_ids_subquery
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tag
+from app.services.tag_service import tag_ownership
 from app.services.tag_sharing import TagShareError
 from app.services.tag_sharing import list_shares
 from app.services.tag_sharing import revoke_share
@@ -321,6 +324,47 @@ def cleanup_unused_tags(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error cleaning up unused tags: {str(e)}",
         ) from e
+
+
+@router.get("/for-files", response_model=list[TagOnSelection])
+def list_tags_on_files(
+    file_uuids: list[UUID] = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """The tags a set of selected files already carries.
+
+    The bulk apply surface has to show what a selection *has* before offering to
+    change it, and ``GET /api/files`` deliberately carries no per-file tags
+    (#326) — so nothing else can answer this.
+
+    ``file_count`` is how many of the selected files carry the tag, which is
+    what lets one selected file offer a full chip editor while several offer
+    add-only: removing a tag that sits on three of five files is ambiguous in a
+    way adding never is.
+
+    Registered before ``/{tag_uuid}`` so the literal path is not swallowed.
+    """
+    from app.models.media import MediaFile
+
+    file_ids = [
+        get_by_uuid(db, MediaFile, file_uuid, error_message="File not found").id
+        for file_uuid in file_uuids
+    ]
+    selection_size = len(set(file_ids))
+    rows = tags_on_files(db, file_ids, user_id=current_user.id, organization_id=ctx.org_id)
+    return [
+        TagOnSelection(
+            uuid=tag.uuid,
+            name=tag.name,
+            source=tag.source,
+            ownership=tag_ownership(tag, current_user.id),
+            file_count=count,
+            selection_size=selection_size,
+        )
+        for tag, count in rows
+    ]
 
 
 @router.get("/{tag_uuid}/shares", response_model=list[TagShareTarget])

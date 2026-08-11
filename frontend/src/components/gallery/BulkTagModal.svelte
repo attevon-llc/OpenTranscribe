@@ -25,7 +25,8 @@
   import BaseModal from '$components/ui/BaseModal.svelte';
   import SearchableSelect from '$components/ui/SearchableSelect.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
-  import { bulkTagFiles, createTag, listTags } from '$lib/api/tags';
+  import { bulkTagFiles, createTag, listTags, listTagsOnFiles } from '$lib/api/tags';
+  import type { TagOnSelection } from '$lib/types/tag';
   import { getErrorMessage } from '$lib/utils/apiError';
   // The modal has to answer "which existing tag will this name resolve to?"
   // *before* it can name the tag it is about to remove — the remove path
@@ -44,6 +45,58 @@
    * is usually empty — see `scopedToSelection` for what happens then.
    */
   export let presentTagNames: string[] = [];
+
+  /**
+   * The tags the selection already carries, shown as chips.
+   *
+   * A single selected file gets the full editor — chips you can remove, plus
+   * the input to add — matching the file detail page. Several files get
+   * **add only**: removing a tag that sits on three of five is ambiguous in a
+   * way adding never is, so the chips render read-only with an "on N of M"
+   * count instead.
+   */
+  let currentTags: TagOnSelection[] = [];
+  let currentLoading = false;
+
+  $: isSingleFile = fileUuids.length === 1;
+
+  async function loadCurrentTags() {
+    if (fileUuids.length === 0) {
+      currentTags = [];
+      return;
+    }
+    currentLoading = true;
+    try {
+      currentTags = await listTagsOnFiles(fileUuids);
+    } catch {
+      // Non-fatal: the add path still works without the chips.
+      currentTags = [];
+    } finally {
+      currentLoading = false;
+    }
+  }
+
+  $: if (isOpen) loadCurrentTags();
+
+  async function removeChip(tag: TagOnSelection) {
+    if (!isSingleFile || busy) return;
+    busy = true;
+    try {
+      const results = await bulkTagFiles(fileUuids, 'remove_tag', tag.name);
+      await loadCurrentTags();
+      // Same envelope the submit path reports, so the gallery's listener does
+      // not need a second shape to understand.
+      dispatch('applied', {
+        action: 'remove_tag',
+        name: tag.name,
+        changed: results.filter((r) => r.outcome === 'removed').length,
+        unchanged: results.filter((r) => r.outcome === 'not_present').length,
+        failed: results.filter((r) => r.outcome === 'failed').length,
+      });
+    } finally {
+      busy = false;
+    }
+  }
 
   const dispatch = createEventDispatcher<{
     applied: {
@@ -188,6 +241,51 @@
   onClose={close}
 >
   <form class="bulk-tag-form" on:submit|preventDefault={submit}>
+    <!-- What the selection already has. Chips are removable for a single file
+         (the file detail page's editor, same shape) and read-only with an
+         "on N of M" count for several, because removing across a mixed
+         selection is ambiguous. -->
+    {#if currentLoading}
+      <div class="current-loading"><Spinner size="small" /></div>
+    {:else if currentTags.length > 0}
+      <div class="current-tags">
+        <span class="current-label">
+          {isSingleFile
+            ? $t('gallery.bulk.tagModal.currentSingle')
+            : $t('gallery.bulk.tagModal.currentMulti')}
+        </span>
+        <div class="chip-row">
+          {#each currentTags as tag (tag.uuid)}
+            <span class="tag-chip" class:partial={!isSingleFile && tag.file_count < tag.selection_size}>
+              <span class="chip-name">{tag.name}</span>
+              {#if !isSingleFile}
+                <span class="chip-count">
+                  {$t('gallery.bulk.tagModal.onCount', {
+                    count: tag.file_count,
+                    total: tag.selection_size,
+                  })}
+                </span>
+              {:else}
+                <button
+                  type="button"
+                  class="chip-remove"
+                  on:click={() => removeChip(tag)}
+                  disabled={busy}
+                  title={$t('gallery.bulk.tagModal.removeChip', { name: tag.name })}
+                  aria-label={$t('gallery.bulk.tagModal.removeChip', { name: tag.name })}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              {/if}
+            </span>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
     <!--
       The label wraps the combobox so it names the input inside `SearchableSelect`
       (which owns no id of its own) without reaching into that component.
@@ -282,6 +380,68 @@
 </BaseModal>
 
 <style>
+  .current-tags {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
+  .current-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--surface-color);
+    font-size: 12px;
+  }
+
+  /* A tag on only some of the selection reads differently from one on all of
+     it — otherwise "add" looks like a no-op when it is not. */
+  .tag-chip.partial {
+    border-style: dashed;
+    color: var(--text-secondary);
+  }
+
+  .chip-count {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chip-remove {
+    display: flex;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .chip-remove:hover:not(:disabled) {
+    color: var(--error-color, #dc2626);
+  }
+
+  .current-loading {
+    padding: 2px 0;
+  }
+
   .bulk-tag-form {
     display: flex;
     flex-direction: column;

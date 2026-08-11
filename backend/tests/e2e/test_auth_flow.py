@@ -75,8 +75,8 @@ class TestLoginFlow:
         login_page.click("button[type=submit]")
 
         # Should show error message
-        login_page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        login_page.wait_for_load_state("networkidle")
         # Check for error indication (could be alert, toast, or inline error)
         error_visible = (
             login_page.locator("[role=alert]").is_visible()
@@ -94,8 +94,8 @@ class TestLoginFlow:
         login_page.fill("#password", "anypassword")
         login_page.click("button[type=submit]")
 
-        login_page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        login_page.wait_for_load_state("networkidle")
         # Should stay on login page
         assert "/login" in login_page.url or login_page.locator("#email").is_visible()
 
@@ -105,8 +105,9 @@ class TestLoginFlow:
         login_page.click("button[type=submit]")
 
         # Should show validation or stay on page
-        login_page.wait_for_timeout(1000)
-        assert login_page.locator("#email").is_visible(), "Should stay on login page"
+        # Deterministic settle rather than a guessed duration (issue #431).
+        login_page.wait_for_load_state("networkidle")
+        expect(login_page.locator("#email")).to_be_visible()
 
     def test_password_visibility_toggle(self, login_page: Page):
         """Test password visibility toggle if available."""
@@ -133,8 +134,7 @@ class TestLogoutFlow:
         user_menu = authenticated_page.locator(".user-button").first
         expect(user_menu).to_be_visible(timeout=5000)
         user_menu.click()
-        authenticated_page.wait_for_timeout(500)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         # Click logout in dropdown
         logout_btn = authenticated_page.locator(
             "button:has-text('Logout'), button:has-text('Sign Out'), "
@@ -159,8 +159,7 @@ class TestRegistrationFlow:
     def test_registration_page_loads(self, login_page: Page):
         """Test registration page loads correctly."""
         login_page.click("a[href*=register]")
-        login_page.wait_for_timeout(1000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         # Check for all registration form fields
         expect(login_page.locator("#username")).to_be_visible()
         expect(login_page.locator("#email")).to_be_visible()
@@ -289,8 +288,8 @@ class TestAuthenticationPersistence:
         # Try to access gallery directly without logging in
         page.goto(f"{base_url}/gallery")
         page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         # Should be redirected to login
         assert "/login" in page.url or page.locator("#email").is_visible(), (
             "Should redirect to login when not authenticated"
@@ -328,8 +327,8 @@ class TestConsoleErrors:
     def test_login_page_no_console_errors(self, login_page: Page, console_errors: list):
         """Login page should load without console errors."""
         login_page.wait_for_load_state("networkidle")
-        login_page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        login_page.wait_for_load_state("networkidle")
         # Filter out non-critical errors
         critical_errors = [
             e for e in console_errors if "favicon" not in e.lower() and "404" not in e
@@ -342,8 +341,8 @@ class TestConsoleErrors:
     ):
         """Authenticated pages should load without console errors."""
         authenticated_page.wait_for_load_state("networkidle")
-        authenticated_page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        authenticated_page.wait_for_load_state("networkidle")
         critical_errors = [
             e for e in console_errors if "favicon" not in e.lower() and "404" not in e
         ]

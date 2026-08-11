@@ -221,7 +221,8 @@ class TestLocalLogin:
         _login_local(page, ADMIN_EMAIL, "wrong_password")
 
         # Should stay on login page with an error
-        page.wait_for_timeout(3000)
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         assert "/login" in page.url or page.locator("#email").is_visible()
 
     def test_local_login_empty_fields(self, page: Page):
@@ -233,8 +234,9 @@ class TestLocalLogin:
         page.click("button[type=submit]")
 
         # Should remain on login page
-        page.wait_for_timeout(2000)
-        assert page.locator("#email").is_visible()
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
+        expect(page.locator("#email")).to_be_visible()
 
     def test_logout_returns_to_login(self, page: Page):
         """Logging out returns to the login page."""
@@ -331,7 +333,8 @@ class TestLDAPLogin:
 
         _login_local(page, LDAP_USERNAME, "wrong_ldap_password")
 
-        page.wait_for_timeout(3000)
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         assert "/login" in page.url or page.locator("#email").is_visible()
 
 
@@ -388,7 +391,7 @@ class TestOIDCLogin:
         page.wait_for_url("**/realms/**", timeout=15000)
 
         # Keycloak login page should have username/password fields
-        page.wait_for_timeout(2000)
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         username_field = page.locator("#username, input[name=username]")
         password_field = page.locator("#password, input[name=password]")
 
@@ -550,6 +553,7 @@ class TestPostLoginGallery:
         file_cards = page.locator(".file-card, .gallery-item, a[href*='/files/']")
         if file_cards.count() > 0:
             file_cards.first.click()
-            page.wait_for_timeout(3000)
+            # Deterministic settle rather than a guessed duration (issue #431).
+            page.wait_for_load_state("networkidle")
             # Should navigate to a file detail page
             assert "/files/" in page.url, f"Expected /files/ in URL, got {page.url}"

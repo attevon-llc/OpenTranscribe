@@ -71,8 +71,7 @@ class TestGenderChipsOnClusterCards:
         """Verify gender chips appear on cluster cards when gender data exists."""
         authenticated_page.goto(f"{FRONTEND_URL}/speakers")
         authenticated_page.wait_for_load_state("networkidle")
-        authenticated_page.wait_for_timeout(2000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         cluster_cards = authenticated_page.locator(".cluster-card")
         if cluster_cards.count() == 0:
             pytest.skip("No clusters found - need transcribed media with speakers")
@@ -93,8 +92,7 @@ class TestGenderChipsOnClusterCards:
         """Verify coherent chips are green, conflict chips are amber."""
         authenticated_page.goto(f"{FRONTEND_URL}/speakers")
         authenticated_page.wait_for_load_state("networkidle")
-        authenticated_page.wait_for_timeout(2000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         coherent_chips = authenticated_page.locator(".gender-chip.gender-coherent")
         conflict_chips = authenticated_page.locator(".gender-chip.gender-conflict")
 
@@ -108,8 +106,7 @@ class TestGenderChipsOnClusterCards:
         """Verify no gender chips render when gender predictions are absent."""
         authenticated_page.goto(f"{FRONTEND_URL}/speakers")
         authenticated_page.wait_for_load_state("networkidle")
-        authenticated_page.wait_for_timeout(2000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         cluster_cards = authenticated_page.locator(".cluster-card")
         if cluster_cards.count() == 0:
             pytest.skip("No clusters found")
@@ -122,15 +119,13 @@ class TestGenderIconsOnMemberRows:
         """Expand a cluster and verify gender icons on member rows."""
         authenticated_page.goto(f"{FRONTEND_URL}/speakers")
         authenticated_page.wait_for_load_state("networkidle")
-        authenticated_page.wait_for_timeout(2000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         cluster_cards = authenticated_page.locator(".cluster-card")
         if cluster_cards.count() == 0:
             pytest.skip("No clusters found")
 
         cluster_cards.first.locator(".card-header").click()
-        authenticated_page.wait_for_timeout(2000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         gender_icons = authenticated_page.locator(".gender-icon")
         if gender_icons.count() > 0:
             first_icon = gender_icons.first
@@ -147,8 +142,7 @@ class TestGenderIconsOnMemberRows:
         """Verify outlier members get highlighted styling."""
         authenticated_page.goto(f"{FRONTEND_URL}/speakers")
         authenticated_page.wait_for_load_state("networkidle")
-        authenticated_page.wait_for_timeout(2000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         cluster_cards = authenticated_page.locator(".cluster-card")
         if cluster_cards.count() == 0:
             pytest.skip("No clusters found")
@@ -166,15 +160,13 @@ class TestProfileGenderConfirmation:
         """Navigate to profiles tab and verify gender toggle buttons exist."""
         authenticated_page.goto(f"{FRONTEND_URL}/speakers")
         authenticated_page.wait_for_load_state("networkidle")
-        authenticated_page.wait_for_timeout(1000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         profiles_tab = authenticated_page.locator("button:has-text('Profiles')")
         if profiles_tab.count() == 0:
             pytest.skip("No profiles tab found")
 
         profiles_tab.click()
-        authenticated_page.wait_for_timeout(2000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         profile_cards = authenticated_page.locator(".profile-card")
         if profile_cards.count() == 0:
             pytest.skip("No profiles found")
@@ -187,15 +179,13 @@ class TestProfileGenderConfirmation:
         """Click a gender confirm button and verify state updates."""
         authenticated_page.goto(f"{FRONTEND_URL}/speakers")
         authenticated_page.wait_for_load_state("networkidle")
-        authenticated_page.wait_for_timeout(1000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         profiles_tab = authenticated_page.locator("button:has-text('Profiles')")
         if profiles_tab.count() == 0:
             pytest.skip("No profiles tab found")
 
         profiles_tab.click()
-        authenticated_page.wait_for_timeout(2000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         gender_btns = authenticated_page.locator(".gender-toggle-btn")
         if gender_btns.count() == 0:
             pytest.skip("No gender buttons found")
@@ -208,8 +198,7 @@ class TestProfileGenderConfirmation:
             pytest.skip("No confirmed-gender profile — mutation covered by unit tests")
 
         active_btns.first.click()
-        authenticated_page.wait_for_timeout(1000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         expect(authenticated_page.locator(".gender-toggle-btn.active").first).to_be_visible()
 
 

@@ -34,6 +34,21 @@ from typing import cast
 import pytest
 from playwright.sync_api import Page
 
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add ``--backend-url`` to pair with pytest-base-url's ``--base-url``.
+
+    Without it, ``--base-url`` could move the browser to an isolated stack while the API
+    helpers kept talking to the default one.
+    """
+    parser.addoption(
+        "--backend-url",
+        action="store",
+        default=None,
+        help="Backend API base URL (default: $E2E_BACKEND_URL, else http://localhost:5174)",
+    )
+
+
 # Default URLs for dev environment
 FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
 BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
@@ -54,14 +69,36 @@ def browser_context_args(browser_context_args):
 
 
 @pytest.fixture(scope="session")
-def base_url():
-    """Base URL for frontend."""
+def base_url(request: pytest.FixtureRequest) -> str:
+    """Frontend base URL: ``--base-url`` > ``E2E_FRONTEND_URL`` > the dev default.
+
+    This unconditionally returned ``FRONTEND_URL``, which SHADOWED pytest-base-url's
+    ``base_url`` fixture and made the ``--base-url`` flag do nothing — the same flag this
+    module's own docstring documents, and the one ``e2e/pytest.ini`` sets a value for. A run
+    aimed at an isolated ``--fresh --port-offset`` stack therefore drove the LIVE stack
+    instead, silently, which is exactly the mixed-stack state ``--fresh`` exists to prevent
+    (issue #431).
+
+    Honouring the flag first makes the documented invocation work; ``E2E_FRONTEND_URL``
+    remains for callers that set it (``scripts/e2e/run-e2e.sh``).
+    """
+    from_flag = request.config.getoption("base_url", default=None)
+    if from_flag:
+        return str(from_flag)
     return FRONTEND_URL
 
 
 @pytest.fixture
-def backend_url():
-    """Base URL for backend API."""
+def backend_url(request: pytest.FixtureRequest) -> str:
+    """Backend base URL: ``--backend-url`` > ``E2E_BACKEND_URL`` > the dev default.
+
+    Kept in step with ``base_url`` above: pointing the browser at one stack while the API
+    helpers talk to another is worse than pointing both at the wrong one, because the
+    mismatch is invisible until an assertion disagrees with what the UI shows.
+    """
+    from_flag = request.config.getoption("backend_url", default=None)
+    if from_flag:
+        return str(from_flag)
     return BACKEND_URL
 
 

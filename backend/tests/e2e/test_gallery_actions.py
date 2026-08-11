@@ -202,7 +202,7 @@ class TestNormalModeButtons:
     def test_select_enters_selection_mode(self, gallery_page: Page) -> None:
         """Clicking Select should switch to selection mode buttons."""
         gallery_page.click(".select-btn")
-        gallery_page.wait_for_timeout(500)
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         expect(gallery_page.locator(".select-all-btn")).to_be_visible(timeout=5000)
         expect(gallery_page.locator(".process-btn")).to_be_visible(timeout=5000)
         expect(gallery_page.locator(".organize-btn")).to_be_visible(timeout=5000)

@@ -25,6 +25,7 @@ Nothing depends on remembering.
 
 ```bash
 ./scripts/release.sh status              # where am I?
+./scripts/release.sh reset 0.5.0         # clear the ledger before a real run
 ./scripts/release.sh explain publish     # what does this stage do, and is it reversible?
 ./scripts/release.sh preflight           # seconds — fails fast on the usual suspects
 ./scripts/release.sh run 0.5.0           # the whole sequence
@@ -44,6 +45,29 @@ Useful flags on `run`:
 State lives in `.release/<version>/steps/` (gitignored) and records status,
 operator, git SHA, and any override — so a release that dies at hour three
 resumes rather than restarting.
+
+**Start a real run from a clean ledger.** After rehearsals the table accumulates
+history — stages that failed for reasons since fixed, stages recorded before they
+were implemented, stages still `pending` whose work was done by hand. `reset`
+clears `.release/<version>/` and nothing else: no artifact, image, or tag is
+touched. It prints what it will clear and asks first.
+
+### Overriding a gate
+
+A gate can be overridden, never silently:
+
+```bash
+./scripts/release.sh scan 0.5.0 --force-scan "why this is acceptable"
+```
+
+The reason is **mandatory** — there is deliberately no bare `--force`, because an
+override with no recorded justification is the thing the mechanism exists to
+prevent. The stage is recorded as `overridden` with the operator and the reason,
+not as a pass, and it surfaces in the readiness report. The Fortune-100 posture
+is not "no exceptions"; it is "no *undocumented* exceptions".
+
+`--force-<stage>` works for any stage, and an unknown stage name is rejected
+rather than silently ignored.
 
 ## Stages
 

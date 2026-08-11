@@ -1,6 +1,6 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2026-08-10T20:30:06.28989539-04:00",
+  "CreatedAt": "2026-08-10T21:38:33.302528295-04:00",
   "ArtifactName": "davidamacey/opentranscribe-backend:v0.5.0",
   "ArtifactType": "container_image",
   "Metadata": {
@@ -41161,6 +41161,19 @@
           "Name": "av",
           "Identifier": {
             "PURL": "pkg:pypi/av@18.0.0?file_name=av-18.0.0-cp311-abi3-manylinux_2_28_x86_64.whl",
+            "UID": "6df350b2dfc6241",
+            "BOMRef": "pkg:pypi/av@18.0.0?file_name=av-18.0.0-cp311-abi3-manylinux_2_28_x86_64.whl"
+          },
+          "Version": "18.0.0",
+          "Layer": {
+            "DiffID": "sha256:536d14224ae2342a7f6438525e93635e0a63aa092ff50d7402dd7e150491e75d"
+          }
+        },
+        {
+          "ID": "av@18.0.0",
+          "Name": "av",
+          "Identifier": {
+            "PURL": "pkg:pypi/av@18.0.0?file_name=av-18.0.0-cp311-abi3-manylinux_2_28_x86_64.whl",
             "UID": "850aefc3ca77966f",
             "BOMRef": "pkg:pypi/av@18.0.0?file_name=av-18.0.0-cp311-abi3-manylinux_2_28_x86_64.whl"
           },
@@ -41173,19 +41186,6 @@
             "libdrm@2.4.115-2.el8",
             "libxcb@1.13.1-1.el8"
           ],
-          "Layer": {
-            "DiffID": "sha256:536d14224ae2342a7f6438525e93635e0a63aa092ff50d7402dd7e150491e75d"
-          }
-        },
-        {
-          "ID": "av@18.0.0",
-          "Name": "av",
-          "Identifier": {
-            "PURL": "pkg:pypi/av@18.0.0?file_name=av-18.0.0-cp311-abi3-manylinux_2_28_x86_64.whl",
-            "UID": "6df350b2dfc6241",
-            "BOMRef": "pkg:pypi/av@18.0.0?file_name=av-18.0.0-cp311-abi3-manylinux_2_28_x86_64.whl"
-          },
-          "Version": "18.0.0",
           "Layer": {
             "DiffID": "sha256:536d14224ae2342a7f6438525e93635e0a63aa092ff50d7402dd7e150491e75d"
           }
@@ -44219,14 +44219,10 @@
           "Name": "scipy",
           "Identifier": {
             "PURL": "pkg:pypi/scipy@1.18.0?file_name=scipy-1.18.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "8a953a0b78d300e7",
+            "UID": "3164b0182e3445b9",
             "BOMRef": "pkg:pypi/scipy@1.18.0?file_name=scipy-1.18.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "1.18.0",
-          "DependsOn": [
-            "libquadmath@8.5.0-28.el8_10.alma.1",
-            "libgfortran@8.5.0-28.el8_10.alma.1"
-          ],
           "Layer": {
             "DiffID": "sha256:536d14224ae2342a7f6438525e93635e0a63aa092ff50d7402dd7e150491e75d"
           }
@@ -44236,10 +44232,14 @@
           "Name": "scipy",
           "Identifier": {
             "PURL": "pkg:pypi/scipy@1.18.0?file_name=scipy-1.18.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-            "UID": "3164b0182e3445b9",
+            "UID": "8a953a0b78d300e7",
             "BOMRef": "pkg:pypi/scipy@1.18.0?file_name=scipy-1.18.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
           },
           "Version": "1.18.0",
+          "DependsOn": [
+            "libquadmath@8.5.0-28.el8_10.alma.1",
+            "libgfortran@8.5.0-28.el8_10.alma.1"
+          ],
           "Layer": {
             "DiffID": "sha256:536d14224ae2342a7f6438525e93635e0a63aa092ff50d7402dd7e150491e75d"
           }

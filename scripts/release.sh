@@ -27,9 +27,11 @@
 #
 # Usage:
 #   ./scripts/release.sh status
+#   ./scripts/release.sh reset 0.5.0            # clear the ledger, keep artifacts
 #   ./scripts/release.sh explain publish
 #   ./scripts/release.sh preflight 0.5.0
 #   ./scripts/release.sh run 0.5.0 --skip scan,rehearse
+#   ./scripts/release.sh scan 0.5.0 --force-scan "reason recorded in the ledger"
 #   ./scripts/release.sh run 0.5.0 --from build --dry-run
 
 set -euo pipefail
@@ -93,6 +95,42 @@ ledger_status() {
 }
 
 # ───────────────────────────────────────────────────────────── commands
+
+# Clear a version's ledger so the next run starts from a known state.
+#
+# Needed because a ledger accumulates rehearsal history: stages that failed for
+# reasons since fixed, stages recorded "skipped — not implemented" before they
+# existed, and stages still "pending" whose work was done by hand. A status
+# table that reports any of those as current is worse than no table, and this
+# repository has spent enough effort on records that quietly went stale.
+#
+# Only ever touches .release/<version>/ — never an artifact, image, or tag.
+cmd_reset() {
+    local version="${1:-}"
+    [[ -n "$version" ]] || version="$(ver_to_version)"
+    version="$(ver_normalize "$version")"
+    local dir; dir="$(ledger_dir "$version")"
+
+    if [[ ! -d "$dir" ]]; then
+        ok "no ledger for $version — nothing to reset"
+        return 0
+    fi
+
+    log "this clears the release ledger for $version:"
+    local s
+    for s in "${STAGES[@]}"; do
+        printf '    %-10s %s\n' "$s" "$(ledger_status "$version" "$s")" >&2
+    done
+    warn "artifacts, images and tags are NOT touched — only the record"
+
+    if [[ "${ASSUME_YES:-false}" != "true" ]]; then
+        read -r -p "Clear the ledger for $version? [y/N] " reply
+        [[ "$reply" == "y" || "$reply" == "Y" ]] || { err "aborted"; return $EXIT_ABORT; }
+    fi
+
+    rm -rf "${dir:?}/steps"
+    ok "ledger cleared for $version"
+}
 
 cmd_status() {
     local version="${1:-}"
@@ -293,6 +331,7 @@ export DRY_RUN JSON_OUT ASSUME_YES
 case "$COMMAND" in
     ""|help|-h|--help) usage; exit 0 ;;
     status)  cmd_status "${POSITIONAL[0]:-}" ;;
+    reset)   cmd_reset "${POSITIONAL[0]:-}" ;;
     explain) cmd_explain "${POSITIONAL[0]:-}" ;;
     run)
         [[ ${#POSITIONAL[@]} -ge 1 ]] || { err "run needs a version, e.g. run 0.5.0"; exit $EXIT_MISUSE; }

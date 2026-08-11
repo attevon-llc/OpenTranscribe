@@ -683,6 +683,34 @@ class TagWithCount(Tag):
     usage_count: int = 0
 
 
+class TaggedFile(BaseModel):
+    """A file carrying a tag, as the manager's "what it touches" list renders it.
+
+    Deliberately thin: the manager needs a name to show and a uuid to link
+    through on, not the full detail payload. `display_title` is pre-resolved
+    here rather than in the SPA, matching the fat-backend rule the rest of the
+    API follows.
+    """
+
+    uuid: UUID
+    display_title: str
+    status: str | None = None
+    formatted_duration: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TagFileList(BaseModel):
+    """The files a tag touches, and how many there are in total.
+
+    `total` is the real count while `files` is capped, so the UI can say
+    "and N more" instead of silently truncating.
+    """
+
+    files: list[TaggedFile] = []
+    total: int = 0
+
+
 class TagOnSelection(Tag):
     """A tag carried by some or all of a set of selected files.
 

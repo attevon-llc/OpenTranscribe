@@ -65,6 +65,20 @@ export function canMutateTag(tag: Tag, isAdmin: boolean): boolean {
  */
 export type TagScope = 'all' | TagOwnership;
 
+/** A file carrying a tag, as the manager's "what it touches" list renders it. */
+export interface TaggedFile {
+  uuid: string;
+  display_title: string;
+  status?: string | null;
+  formatted_duration?: string | null;
+}
+
+/** The files a tag touches. `total` is the real count; `files` is capped. */
+export interface TagFileList {
+  files: TaggedFile[];
+  total: number;
+}
+
 /** Server-side filters for the tag list; they combine (AND). */
 export interface TagListFilters {
   unused?: boolean;

@@ -23,13 +23,14 @@
     deleteTags,
     getTagImpact,
     createTag,
+    listFilesForTag,
     listTagCollisions,
     listTags,
     promoteTags,
     mergeTags,
     renameTag,
   } from '$lib/api/tags';
-  import type { TagCollisionCluster, TagImpact } from '$lib/types/tag';
+  import type { TagCollisionCluster, TagImpact, TaggedFile } from '$lib/types/tag';
   import TagBulkSummary from '$components/tags/TagBulkSummary.svelte';
   import TagDetailPanel from '$components/tags/TagDetailPanel.svelte';
   import TagFilterBar from '$components/tags/TagFilterBar.svelte';
@@ -59,6 +60,44 @@
       ? [...matched].sort((a, b) => a.name.localeCompare(b.name))
       : matched; // the backend already orders by usage desc, then name
   })();
+
+  /**
+   * The files the single selected tag is on. Fetched per selection rather than
+   * shipped with the list: 99 tags would mean 99 file lists nobody looks at.
+   * `fileRequestId` guards against a slow response for a previously selected
+   * tag landing after a faster one and overwriting it.
+   */
+  let tagFiles: TaggedFile[] = [];
+  let tagFileTotal = 0;
+  let tagFilesLoading = false;
+  let fileRequestId = 0;
+
+  async function loadFilesFor(uuid: string | null) {
+    const requestId = ++fileRequestId;
+    if (!uuid) {
+      tagFiles = [];
+      tagFileTotal = 0;
+      tagFilesLoading = false;
+      return;
+    }
+    tagFilesLoading = true;
+    try {
+      const result = await listFilesForTag(uuid);
+      if (requestId !== fileRequestId) return;
+      tagFiles = result.files;
+      tagFileTotal = result.total;
+    } catch {
+      if (requestId !== fileRequestId) return;
+      // Non-fatal: the rest of the pane still works without the list.
+      tagFiles = [];
+      tagFileTotal = 0;
+    } finally {
+      if (requestId === fileRequestId) tagFilesLoading = false;
+    }
+  }
+
+  // One selected tag has a file list; a multi-selection does not.
+  $: loadFilesFor(selectedUuids.length === 1 ? selectedUuids[0] : null);
 
   let newTagName = '';
   let creating = false;
@@ -521,6 +560,9 @@
           {renameMergeImpact}
           {canPromote}
           {isAdmin}
+          files={tagFiles}
+          fileTotal={tagFileTotal}
+          filesLoading={tagFilesLoading}
           on:rename={(event) => submitRename(event.detail.name)}
           on:promote={promoteSelection}
           on:confirmRenameMerge={(event) => submitRename(event.detail.name, true)}

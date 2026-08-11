@@ -13,6 +13,7 @@
   import { tagOriginKey, type TagListEntry } from './TagList.svelte';
   import type { TagImpact } from '$lib/types/tag';
   import { canMutateTag } from '$lib/types/tag';
+  import type { TaggedFile } from '$lib/types/tag';
 
   export let tag: TagListEntry;
   /** Which mutation is in flight, if any. Disables the confirming control. */
@@ -34,6 +35,15 @@
    * that can only fail — the badge and hint explain the absence instead.
    */
   $: canMutate = canMutateTag(tag, isAdmin);
+
+  /**
+   * The files this tag is on. The pane's whole promise — the empty state says
+   * "see what it touches" — and previously it showed a count and nothing else.
+   */
+  export let files: TaggedFile[] = [];
+  export let fileTotal = 0;
+  export let filesLoading = false;
+  $: hiddenFileCount = Math.max(0, fileTotal - files.length);
   /** An impact preview is being fetched. */
   export let previewLoading = false;
   /** Impact of deleting this tag, once previewed. */
@@ -196,6 +206,33 @@
     </div>
   {/if}
 
+  <section class="touches">
+    <h3 class="touches-title">{$t('tags.manager.detail.filesTitle')}</h3>
+    {#if filesLoading}
+      <div class="touches-loading"><Spinner size="small" /></div>
+    {:else if files.length === 0}
+      <p class="panel-note">{$t('tags.manager.detail.noFiles')}</p>
+    {:else}
+      <ul class="touches-list">
+        {#each files as file (file.uuid)}
+          <li>
+            <a class="touches-link" href={`/files/${file.uuid}`} title={file.display_title}>
+              <span class="touches-name">{file.display_title}</span>
+              {#if file.formatted_duration}
+                <span class="touches-meta">{file.formatted_duration}</span>
+              {/if}
+            </a>
+          </li>
+        {/each}
+      </ul>
+      {#if hiddenFileCount > 0}
+        <p class="panel-note">
+          {$t('tags.manager.detail.moreFiles', { count: hiddenFileCount })}
+        </p>
+      {/if}
+    {/if}
+  </section>
+
   <div class="detail-actions">
     {#if canPromote && tag.ownership === 'mine'}
       <button
@@ -321,6 +358,64 @@
 
   .edit-actions,
   .panel-actions,
+  .touches {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .touches-title {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .touches-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .touches-link {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    color: var(--text-color);
+    text-decoration: none;
+    font-size: 13px;
+  }
+
+  .touches-link:hover {
+    background: var(--hover-color, rgba(127, 127, 127, 0.12));
+  }
+
+  .touches-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .touches-meta {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .touches-loading {
+    padding: 4px 0;
+  }
+
   .detail-actions {
     display: flex;
     flex-wrap: wrap;

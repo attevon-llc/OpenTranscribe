@@ -55,6 +55,7 @@ from app.core.constants import FUZZY_MATCH_THRESHOLD
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import FileTag
+from app.models.media import MediaFile
 from app.models.media import Tag
 from app.services.tag_service import OWNERSHIP_MINE
 from app.services.tag_service import OWNERSHIP_SHARED_WITH_ME
@@ -485,3 +486,47 @@ def tags_on_files(
         .all()
     )
     return [(tag, int(count)) for tag, count in rows]
+
+
+def files_for_tag(
+    db: Session,
+    tag_id: int,
+    *,
+    user_id: int,
+    organization_id: OrgScope = UNSCOPED,
+    limit: int = 50,
+) -> tuple[list[MediaFile], int]:
+    """Return the accessible files carrying ``tag_id``, newest first.
+
+    The manager's empty state promises "select a tag to see what it touches"
+    and, until this existed, showed a count and nothing else — which also made
+    the AI-review flow unjudgeable, since you cannot tell whether a tag fits a
+    recording you cannot see.
+
+    Scoped to the caller's accessible files, so a tag visible via one shared
+    file never lists its owner's other media.
+
+    Args:
+        db: Database session.
+        tag_id: The tag whose files to list.
+        user_id: The acting user.
+        organization_id: Tenant scope.
+        limit: Most rows to return; the caller gets the true total separately so
+            it can say "and N more" rather than silently truncating.
+
+    Returns:
+        ``(files, total)`` — at most ``limit`` files, and how many there are.
+    """
+    accessible = select(accessible_file_ids_subquery(db, user_id, organization_id))
+    base = (
+        db.query(MediaFile)
+        .join(FileTag, FileTag.media_file_id == MediaFile.id)
+        .filter(FileTag.tag_id == tag_id, MediaFile.id.in_(accessible))
+    )
+    total = base.count()
+    files = (
+        base.order_by(MediaFile.upload_time.desc().nullslast(), MediaFile.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return files, int(total)

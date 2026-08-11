@@ -15,6 +15,7 @@ import type {
   BulkTagActionResult,
   Tag,
   TagCollisionCluster,
+  TagFileList,
   TagImpact,
   TagListFilters,
   TagMutationResult,
@@ -65,6 +66,17 @@ export async function addTagToFile(fileUuid: string, name: string): Promise<Tag>
 /** Detach a tag from a file. The tag row itself survives. */
 export async function removeTagFromFile(fileUuid: string, tagName: string): Promise<void> {
   await axiosInstance.delete(`/tags/files/${fileUuid}/tags/${encodeURIComponent(tagName)}`);
+}
+
+/**
+ * The files a tag is on — what the manager means by "what it touches".
+ *
+ * Scoped to files the caller can access, so a tag reaching them through one
+ * shared file never lists its owner's other media.
+ */
+export async function listFilesForTag(tagUuid: string, limit = 50): Promise<TagFileList> {
+  const response = await axiosInstance.get(`/tags/${tagUuid}/files`, { params: { limit } });
+  return response.data;
 }
 
 /** Duplicate tags grouped into clusters, each with a preselected survivor. */

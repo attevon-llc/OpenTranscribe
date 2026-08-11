@@ -27,12 +27,16 @@ from app.models.user import User
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TagBase
 from app.schemas.media import TagCollisionCluster as TagCollisionClusterSchema
+from app.schemas.media import TagFileList
+from app.schemas.media import TaggedFile
 from app.schemas.media import TagImpact
 from app.schemas.media import TagMergeRequest
 from app.schemas.media import TagMutationResult
 from app.schemas.media import TagPromoteRequest
 from app.schemas.media import TagRenameRequest
 from app.schemas.media import TagWithCount
+from app.services.formatting_service import FormattingService
+from app.services.tag_collisions import files_for_tag
 from app.services.tag_collisions import find_tag_collisions
 from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows
@@ -295,6 +299,48 @@ def cleanup_unused_tags(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error cleaning up unused tags: {str(e)}",
         ) from e
+
+
+@router.get("/{tag_uuid}/files", response_model=TagFileList)
+def list_files_for_tag(
+    tag_uuid: UUID,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+):
+    """List the accessible files carrying this tag — what the tag *touches*.
+
+    Gated on ``_visible_to`` rather than the writable scope: seeing which of
+    your own files a tag sits on is a read, and a tag reaches you precisely
+    because it is on a file you can access.
+
+    Registered before ``PATCH /{tag_uuid}`` for the usual FastAPI ordering
+    reason, and after the fixed-path routes so ``/impact`` and friends are not
+    swallowed by ``/{tag_uuid}``.
+    """
+    tag = get_by_uuid(db, Tag, tag_uuid, error_message="Tag not found")
+    visible = db.query(Tag).filter(Tag.id == tag.id, _visible_to(db, current_user.id, ctx.org_id))
+    if visible.first() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
+
+    files, total = files_for_tag(
+        db, tag.id, user_id=current_user.id, organization_id=ctx.org_id, limit=limit
+    )
+    return TagFileList(
+        total=total,
+        files=[
+            TaggedFile(
+                uuid=media_file.uuid,
+                display_title=media_file.title or media_file.filename or str(media_file.uuid),
+                status=media_file.status.value
+                if hasattr(media_file.status, "value")
+                else media_file.status,
+                formatted_duration=FormattingService.format_duration(media_file.duration),
+            )
+            for media_file in files
+        ],
+    )
 
 
 @router.get("/impact", response_model=TagImpact)

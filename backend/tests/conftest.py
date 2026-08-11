@@ -74,18 +74,39 @@ os.environ["RATE_LIMIT_ENABLED"] = "false"  # Disable rate limiting for tests
 # Auto-detect MinIO and OpenSearch from the dev stack so the gated S3/search tests
 # run when the services are up and skip when they aren't (e.g. bare CI runners).
 # An explicit SKIP_S3 / SKIP_OPENSEARCH in the shell always wins over detection.
-os.environ.setdefault("SKIP_S3", "False" if _service_reachable("localhost", 5178) else "True")
+#
+# Probe the endpoint the tests will ACTUALLY use, resolved from the environment first.
+# The probe used to be hard-coded to the dev stack's 5178/5180 while the client honoured
+# MINIO_PORT/OPENSEARCH_PORT, so detection and use could disagree. Against an isolated
+# `--fresh --port-offset` stack that had two failure modes, both silent:
+#   * forget to export MINIO_PORT and it probed 5178 and *used* 5178 — live storage paired
+#     with the throwaway Postgres, which is exactly the mixed-stack state --fresh exists to
+#     prevent;
+#   * export it and the enable/disable decision still came from the *live* stack, so with
+#     the fresh MinIO down the S3 suites ran against an unreachable port and failed
+#     confusingly instead of skipping.
+# Deriving both from one value removes the disagreement and lets `--port-offset` work.
+# POSTGRES_PORT below has always behaved this way; this brings MinIO/OpenSearch in line.
+_MINIO_PROBE_HOST = os.environ.get("MINIO_HOST", "localhost")
+_MINIO_PROBE_PORT = int(os.environ.get("MINIO_PORT", "5178"))
+_OPENSEARCH_PROBE_HOST = os.environ.get("OPENSEARCH_HOST", "localhost")
+_OPENSEARCH_PROBE_PORT = int(os.environ.get("OPENSEARCH_PORT", "5180"))
+
 os.environ.setdefault(
-    "SKIP_OPENSEARCH", "False" if _service_reachable("localhost", 5180) else "True"
+    "SKIP_S3", "False" if _service_reachable(_MINIO_PROBE_HOST, _MINIO_PROBE_PORT) else "True"
+)
+os.environ.setdefault(
+    "SKIP_OPENSEARCH",
+    "False" if _service_reachable(_OPENSEARCH_PROBE_HOST, _OPENSEARCH_PROBE_PORT) else "True",
 )
 if os.environ["SKIP_S3"] == "False":
     # The dev stack maps the MinIO S3 API to localhost:5178 (console is 5179).
-    os.environ.setdefault("MINIO_HOST", "localhost")
-    os.environ.setdefault("MINIO_PORT", "5178")
+    os.environ["MINIO_HOST"] = _MINIO_PROBE_HOST
+    os.environ["MINIO_PORT"] = str(_MINIO_PROBE_PORT)
 if os.environ["SKIP_OPENSEARCH"] == "False":
     # The dev stack exposes OpenSearch on localhost:5180 (not the in-cluster 9200).
-    os.environ.setdefault("OPENSEARCH_HOST", "localhost")
-    os.environ.setdefault("OPENSEARCH_PORT", "5180")
+    os.environ["OPENSEARCH_HOST"] = _OPENSEARCH_PROBE_HOST
+    os.environ["OPENSEARCH_PORT"] = str(_OPENSEARCH_PROBE_PORT)
 # NOTE on Celery dispatch in tests: endpoints that .delay() a task (e.g.
 # PUT /speakers/{uuid}) used to publish into whatever Redis answered on the
 # host's default localhost:6379 — an unrelated container on this machine —

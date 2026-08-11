@@ -612,6 +612,11 @@ async def get_admin_stats(
         }
 
         return stats
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error getting admin stats: %s", e, exc_info=True)
         raise HTTPException(
@@ -638,6 +643,11 @@ def get_admin_users(
             db.query(User).order_by(func.lower(User.full_name)).offset(offset).limit(limit).all()
         )
         return users
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error getting admin users: %s", e, exc_info=True)
         raise HTTPException(
@@ -1807,6 +1817,11 @@ def export_audit_logs(
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error exporting audit logs: %s", e, exc_info=True)
         raise HTTPException(
@@ -1961,6 +1976,11 @@ def get_gpu_profiles(
                 raw = data if isinstance(data, str) else data.decode()
                 profiles.append(json.loads(raw))
         return profiles
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception("Failed to read GPU profiles from Redis")
         raise HTTPException(status_code=500, detail="Failed to read GPU profiles.") from e

@@ -204,6 +204,11 @@ def get_system_stats(db: Session = Depends(get_db), current_user: User = Depends
         }
 
         return stats
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error getting system stats: %s", e, exc_info=True)
         raise HTTPException(
@@ -221,6 +226,11 @@ def get_protected_media_auth(current_user: User = Depends(get_current_user)):
     """
     try:
         return get_protected_media_auth_config()
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error getting protected media auth config: {e}")
         raise HTTPException(

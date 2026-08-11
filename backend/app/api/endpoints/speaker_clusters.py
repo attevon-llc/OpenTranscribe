@@ -74,6 +74,11 @@ def list_clusters(
             has_label=has_label,
             search=search,
         )
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception("Error listing clusters: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error") from e
@@ -114,6 +119,11 @@ def trigger_recluster(
             "task_id": task.id,
             "message": "Re-clustering started in background",
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception("Error triggering recluster: %s", e)
         raise HTTPException(status_code=500, detail="Failed to start re-clustering") from e

@@ -100,6 +100,11 @@ def cancel_upload(
         db.commit()
         logger.info(f"Cancelled upload for file ID {file_id}")
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         db.rollback()
         logger.exception(f"Error cancelling upload {file_id}: {e}")

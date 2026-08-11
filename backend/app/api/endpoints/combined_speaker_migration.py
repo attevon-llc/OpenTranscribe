@@ -10,6 +10,7 @@ import logging
 
 from fastapi import APIRouter
 from fastapi import Depends
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
@@ -40,6 +41,11 @@ def get_combined_migration_status(
 
         return {"progress": progress}
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error getting combined migration status: %s", e, exc_info=True)
         raise ErrorHandler.internal_error("Internal error") from e
@@ -71,6 +77,11 @@ def start_combined_migration(
             "message": "Combined speaker migration dispatched.",
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error starting combined migration: %s", e, exc_info=True)
         raise ErrorHandler.internal_error("Internal error") from e
@@ -145,6 +156,11 @@ def stop_combined_migration(
         else:
             return {"status": "error", "message": "Failed to stop migration"}
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error stopping combined migration: %s", e, exc_info=True)
         raise ErrorHandler.internal_error("Internal error") from e
@@ -170,6 +186,11 @@ def clear_combined_progress(
         else:
             return {"status": "error", "message": "Failed to clear progress."}
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error clearing combined progress: %s", e, exc_info=True)
         raise ErrorHandler.internal_error("Internal error") from e

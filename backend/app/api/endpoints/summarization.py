@@ -154,6 +154,11 @@ async def trigger_summarization(
             "model": model,
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error(
             "Failed to start summarization task for file %s: %s", file_id, e, exc_info=True
@@ -293,6 +298,11 @@ def search_summaries(
             filters=search_params,
         )
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Summary search failed for user %s: %s", current_user.id, e, exc_info=True)
         raise HTTPException(
@@ -374,6 +384,11 @@ async def identify_speakers(
             speaker_count=len(media_file.speakers),
         )
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error(
             "Failed to start speaker identification for file %s: %s", file_id, e, exc_info=True

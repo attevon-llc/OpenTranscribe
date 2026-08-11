@@ -428,6 +428,11 @@ def get_stuck_files(
             "threshold_hours": threshold_hours,
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error getting stuck files: {e}")
         raise HTTPException(
@@ -901,6 +906,11 @@ def bulk_file_action(
 
         return results
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error in bulk file action: {e}")
         raise HTTPException(
@@ -956,6 +966,11 @@ def cleanup_orphaned_files(
 
         return cleanup_results
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error in cleanup orphaned files: {e}")
         raise HTTPException(

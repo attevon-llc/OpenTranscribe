@@ -330,6 +330,11 @@ def task_system_health(
             },
             "timestamp": datetime.now(UTC),
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error in task_system_health: %s", e, exc_info=True)
         raise HTTPException(
@@ -388,6 +393,11 @@ def recover_all_stuck_tasks(
             "total": len(stuck_tasks),
             "message": f"Successfully recovered {recovered_count} of {len(stuck_tasks)} tasks",
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error in recover_all_stuck_tasks: %s", e, exc_info=True)
         raise HTTPException(
@@ -425,6 +435,11 @@ def trigger_startup_recovery(
             "success": True,
             "message": "Startup recovery task scheduled successfully",
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error triggering startup recovery: %s", e, exc_info=True)
         raise HTTPException(
@@ -458,6 +473,11 @@ def trigger_all_user_file_recovery(
         background_tasks.add_task(run_all_user_recovery)
 
         return {"success": True, "message": "File recovery scheduled for all users"}
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error triggering all user file recovery: %s", e, exc_info=True)
         raise HTTPException(
@@ -632,6 +652,11 @@ def fix_all_inconsistent_files(
             "total": len(inconsistent_files),
             "message": f"Successfully fixed {fixed_count} of {len(inconsistent_files)} files",
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error in fix_all_inconsistent_files: %s", e, exc_info=True)
         raise HTTPException(

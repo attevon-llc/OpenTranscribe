@@ -214,6 +214,11 @@ def update_config_category(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Failed to update %s config: %s", category, e, exc_info=True)
         db.rollback()
@@ -353,6 +358,11 @@ def migrate_from_env(
             "message": f"Successfully migrated {count} settings from environment to database",
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Migration failed: %s", e, exc_info=True)
         db.rollback()

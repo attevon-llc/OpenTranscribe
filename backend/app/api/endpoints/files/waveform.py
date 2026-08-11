@@ -318,6 +318,11 @@ def get_audio_waveform_peaks(
     # Extract waveform data
     try:
         waveform_data = _extract_waveform_from_file(str(db_file.storage_path), target_samples)
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error(f"Error generating waveform peaks for file {file_id}: {e}", exc_info=True)
         raise HTTPException(
@@ -449,6 +454,11 @@ def generate_waveforms_for_files(
             "force_regenerate": force_regenerate,
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error triggering waveform generation: {e}")
         raise HTTPException(
@@ -512,6 +522,11 @@ def get_waveform_status(
             ),
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error getting waveform status: {e}")
         raise HTTPException(

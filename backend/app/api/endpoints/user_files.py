@@ -183,6 +183,11 @@ def get_user_file_status(
             "timestamp": now,
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error getting user file status: %s", e, exc_info=True)
         raise HTTPException(
@@ -434,6 +439,11 @@ def request_user_recovery(
             "user_id": str(current_user.uuid),
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error requesting user recovery: %s", e, exc_info=True)
         raise HTTPException(

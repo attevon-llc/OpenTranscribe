@@ -600,6 +600,11 @@ def get_media_file_stream_url(
             "content_type": content_type,
             "is_public": getattr(db_file, "is_public", False),
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error generating presigned URL for file {file_uuid}: {e}")
         raise HTTPException(

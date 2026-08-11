@@ -286,6 +286,11 @@ def _handle_playlist_processing(
             url=normalized_url,
         )
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Failed to dispatch YouTube playlist processing task: {e}")
         raise HTTPException(
@@ -551,6 +556,11 @@ def _dispatch_video_task(
         from app.core.metrics import files_uploaded_total
 
         files_uploaded_total.labels(source="url").inc()
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Failed to dispatch media processing task: {e}")
         db.delete(media_file)

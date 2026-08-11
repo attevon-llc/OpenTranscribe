@@ -691,6 +691,15 @@ def list_speakers(
 
         return _create_no_cache_response(result)
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. Without this, the broad handler
+        # below swallowed the 403 that `_resolve_file_uuid_to_id` raises for a caller with
+        # no permission on the requested file and reported it as a 500 — so an
+        # authorization denial reached the client as "Internal server error while loading
+        # speakers", indistinguishable from a real fault, and was logged at error level.
+        # The test that should have caught this asserted `status_code in (403, 500)`, which
+        # accepted both (issue #431).
+        raise
     except Exception as e:
         logger.error(f"Error in list_speakers: {e}", exc_info=True)
         raise HTTPException(
@@ -717,6 +726,11 @@ def cleanup_orphaned_embeddings(
             "deleted_count": deleted_count,
             "message": f"Cleaned up {deleted_count} orphaned speaker embeddings",
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error during cleanup: {e}")
         raise ErrorHandler.internal_error() from e
@@ -874,6 +888,11 @@ def debug_cross_media_data(
 
         return debug_info
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error in debug endpoint: {e}")
         raise ErrorHandler.internal_error() from e
@@ -985,6 +1004,11 @@ def debug_cross_media_by_name(
 
         return results
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error in cross-media-by-name debug endpoint: {e}")
         raise ErrorHandler.internal_error() from e

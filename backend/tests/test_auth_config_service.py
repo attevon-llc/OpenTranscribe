@@ -452,9 +452,16 @@ class TestAuthConfigAudit:
                 audit_call = obj
                 break
 
-        # The audit entry should have redacted value
-        if audit_call:
-            assert audit_call.new_value == "***REDACTED***"
+        # `if audit_call:` made this pass when NO audit row was created at all — so if audit
+        # logging broke entirely, a test whose whole purpose is "secrets are masked in the
+        # audit log" still went green. The existence of the row is half the guarantee
+        # (issue #431).
+        assert audit_call is not None, (
+            "set_config must add an AuthConfigAudit row; without one there is no audit trail "
+            f"to mask. Added objects: {[type(c[0][0]).__name__ for c in add_calls]}"
+        )
+        assert audit_call.new_value == "***REDACTED***"
+        assert "secret" not in str(audit_call.new_value)
 
     def test_get_audit_log(self, mock_db):
         """Test getting audit log entries."""

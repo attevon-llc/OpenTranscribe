@@ -51,6 +51,20 @@ class LLMProvider(StrEnum):
     CLAUDE = "claude"  # Deprecated: use ANTHROPIC instead
 
 
+#: Providers that cannot authenticate without an API key, so a blank one is refused locally
+#: rather than sent as `Authorization: Bearer ` for the remote to reject. VLLM, OLLAMA, BEDROCK
+#: and CUSTOM are excluded deliberately: the first two are self-hosted, BEDROCK uses the IAM
+#: credential chain, and CUSTOM may front an unauthenticated gateway.
+PROVIDERS_REQUIRING_API_KEY: frozenset[LLMProvider] = frozenset(
+    {
+        LLMProvider.OPENAI,
+        LLMProvider.ANTHROPIC,
+        LLMProvider.CLAUDE,
+        LLMProvider.OPENROUTER,
+    }
+)
+
+
 # Providers reached through a vendor SDK rather than an HTTP endpoint we POST to.
 # They skip the endpoint-map validation and the shared requests.Session machinery.
 SDK_PROVIDERS = frozenset({LLMProvider.BEDROCK})
@@ -1205,6 +1219,20 @@ class LLMService:
         # outbound path for a user-supplied base_url — separate from the health check
         # below, which uses a one-off requests.get while this uses self.session with a
         # retry adapter. Guarding only one of them left the other reachable.
+        # Reject a missing credential locally, before any outbound request. Nothing validated
+        # the API key here, so a blank one produced `Authorization: Bearer ` and the provider
+        # answered 401 — which meant the admin "test connection" button reported a generic
+        # remote failure for a locally-obvious mistake, and the unit suite could only assert
+        # it by really calling api.openai.com (issue #431).
+        if (
+            self.config.provider in PROVIDERS_REQUIRING_API_KEY
+            and not (self.config.api_key or "").strip()
+        ):
+            return False, (
+                f"An API key is required for {self.config.provider}. "
+                "Add one in Settings before testing the connection."
+            )
+
         if self.config.base_url:
             from app.core.config import settings as _settings
             from app.utils.url_validation import is_safe_url

@@ -16,6 +16,9 @@ Tests are written as synchronous functions accordingly.
 import contextlib
 import logging
 import time
+from unittest.mock import patch
+
+import pytest
 
 from app.services.llm_service import LLMConfig
 from app.services.llm_service import LLMProvider
@@ -80,37 +83,35 @@ class TestExternalOllamaConnections:
         finally:
             service.close()
 
-    def test_ollama_invalid_model(self):
-        """Test Ollama with non-existent model"""
+    def test_private_endpoint_is_refused_before_any_request(self):
+        """A private base_url is refused by the SSRF guard, with the actionable message.
+
+        This was ``test_ollama_invalid_model``, and it never tested an invalid model. The URL
+        is ``http://localhost:11434``, which ``is_safe_url`` rejects as a private endpoint
+        unless ``LLM_ALLOW_PRIVATE_ENDPOINTS=true`` (issue #284 A0.1) — so the call never
+        reached Ollama. It then asserted only ``if not success:`` against a six-keyword
+        ``any(...)`` list containing "failed" and "connection", which the SSRF message happens
+        to satisfy ("Connection failed: ..."). It passed by coincidence, for the wrong reason,
+        and would have passed just as well had the guard been removed and a real connection
+        error occurred instead (issue #431).
+
+        Whether a non-existent *model* is reported usefully is the remote's judgement and
+        belongs against the mock LLM server, not a real Ollama that may not be running.
+        """
         config = LLMConfig(
             provider=LLMProvider.OLLAMA,
             model="nonexistent-model:latest",
             base_url="http://localhost:11434",
         )
-
         service = LLMService(config)
-
         try:
             success, message = service.validate_connection()
-
-            if not success:
-                # Should indicate model not found or similar error
-                assert any(
-                    keyword in message.lower()
-                    for keyword in [
-                        "not found",
-                        "unavailable",
-                        "model",
-                        "error",
-                        "failed",
-                        "connection",
-                    ]
-                )
-        except Exception as e:
-            # Also acceptable - connection error is expected
-            logger.debug(f"Expected connection error during test: {e}")
         finally:
             service.close()
+
+        assert success is False
+        assert "publicly reachable" in message
+        assert "LLM_ALLOW_PRIVATE_ENDPOINTS" in message
 
 
 class TestExternalVLLMConnections:
@@ -356,38 +357,41 @@ class TestAPIKeyValidation:
             finally:
                 service.close()
 
-    def test_malformed_api_keys(self):
-        """Test various malformed API key formats"""
-        malformed_keys = [
-            "",
-            " ",
-            "sk-",
-            "sk-too-short",
-            "wrong-prefix-1234567890abcdef",
-            "sk-" + "x" * 200,  # Too long
-        ]
+    @pytest.mark.parametrize("blank_key", ["", " ", "\t", "   \n "])
+    def test_blank_api_key_is_rejected_without_a_network_call(self, blank_key):
+        """A provider that needs a key refuses locally, before any outbound request.
 
-        for key in malformed_keys:
-            config = LLMConfig(
-                provider=LLMProvider.OPENAI,
-                model="gpt-3.5-turbo",
-                base_url="https://api.openai.com/v1",
-                api_key=key,
-            )
+        This replaces a test that looped over "malformed" keys, really called
+        **api.openai.com** for each, swallowed every exception into `logger.debug`, and
+        asserted only `if not success: assert len(message) > 0`. So it could not fail, and it
+        put a live third-party network dependency in the ungated unit suite (issue #431).
 
-            service = LLMService(config)
-
-            try:
+        A blank key is the case that IS decidable locally, and `validate_connection` now
+        decides it — no socket is opened, so this is deterministic and offline. Whether a
+        well-formed-but-wrong key is accepted is the remote's judgement, not ours, and is
+        covered against the mock LLM server rather than by calling a vendor.
+        """
+        config = LLMConfig(
+            provider=LLMProvider.OPENAI,
+            model="gpt-3.5-turbo",
+            base_url="https://api.openai.com/v1",
+            api_key=blank_key,
+        )
+        service = LLMService(config)
+        try:
+            with patch.object(
+                service.session,
+                "get",
+                side_effect=AssertionError(
+                    "validate_connection must not make a request when the API key is blank"
+                ),
+            ):
                 success, message = service.validate_connection()
+        finally:
+            service.close()
 
-                # Most malformed keys should be rejected
-                if not success:
-                    assert len(message) > 0
-            except Exception as e:
-                # Expected for malformed keys
-                logger.debug(f"Expected exception for malformed key: {e}")
-            finally:
-                service.close()
+        assert success is False
+        assert "API key is required" in message
 
 
 class TestConnectionTestAPI:

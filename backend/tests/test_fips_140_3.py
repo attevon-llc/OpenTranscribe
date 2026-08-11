@@ -82,11 +82,17 @@ class TestFIPS140_3PasswordHashing:
         """Test that legacy passwords are flagged for upgrade."""
         from app.core.security import pwd_context
 
-        # A bcrypt hash should need rehashing in FIPS 140-3 mode
+        # Legacy bcrypt is listed in `deprecated` on BOTH context branches
+        # (app/core/security.py), so it is flagged for upgrade regardless of FIPS mode —
+        # that is the auto-upgrade-on-verify policy, not an accident. Asserted
+        # unconditionally: the old form only asserted under FIPS 140-3, so in every other
+        # mode this test verified nothing (issue #431).
         bcrypt_hash = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.S.V/C.aX3RqzjO"
 
-        if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3":
-            assert pwd_context.needs_update(bcrypt_hash)
+        assert pwd_context.needs_update(bcrypt_hash), (
+            "plain bcrypt must be flagged for upgrade; check `deprecated=` in "
+            "_create_password_context"
+        )
 
     def test_pbkdf2_iterations_v3_config(self):
         """Verify PBKDF2_ITERATIONS_V3 is set to 600,000."""
@@ -115,11 +121,15 @@ class TestFIPS140_3PasswordHashing:
         """Test needs_rehash_for_fips_v3 function."""
         from app.core.security import needs_rehash_for_fips_v3
 
-        # Bcrypt hash should need rehash for FIPS 140-3
+        # `needs_rehash_for_fips_v3` asks a question about the HASH, not about the current
+        # mode — "would this satisfy FIPS 140-3?" — so bcrypt answers True either way. The
+        # old form only asserted under FIPS_MODE, leaving the non-FIPS run vacuous even
+        # though the contract is mode-independent (issue #431).
         bcrypt_hash = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.S.V/C.aX3RqzjO"
 
-        if settings.FIPS_MODE:
-            assert needs_rehash_for_fips_v3(bcrypt_hash)
+        assert needs_rehash_for_fips_v3(bcrypt_hash), (
+            "bcrypt is not PBKDF2-SHA256, so it can never satisfy FIPS 140-3"
+        )
 
         # A real PBKDF2 hash with insufficient iterations should also need rehash
         from passlib.hash import pbkdf2_sha256

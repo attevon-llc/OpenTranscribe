@@ -342,13 +342,22 @@ class TestAdditionalControls:
 class TestSecurityHeaders:
     """Tests for security headers and CORS configuration"""
 
-    def test_cors_not_wildcard_in_production(self):
-        """CORS should not allow wildcard in production."""
+    def test_shipped_cors_origins_are_explicit(self):
+        """The shipped default CORS list is explicit, never a wildcard.
+
+        Renamed and unguarded. It was ``test_cors_not_wildcard_in_production`` reading
+        ``if hasattr(settings, "CORS_ORIGINS"): assert "*" not in ...`` — which tested the
+        *testing* config rather than production, and passed vacuously if the attribute were
+        ever renamed. The production control (refuse to boot on a wildcard) is a different
+        assertion and now has real coverage in
+        ``test_production_secrets_guard.py::test_wildcard_cors_rejected_in_production``;
+        this keeps the narrower, still-useful check on the default (issue #431).
+        """
         from app.core.config import settings
 
-        # In production, CORS should not be "*"
-        if hasattr(settings, "CORS_ORIGINS"):
-            assert "*" not in settings.CORS_ORIGINS
+        assert "*" not in settings.CORS_ORIGINS, (
+            f"default CORS_ORIGINS must be explicit, got {settings.CORS_ORIGINS}"
+        )
 
 
 # Integration tests (require running app)

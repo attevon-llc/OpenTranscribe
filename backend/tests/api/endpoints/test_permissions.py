@@ -316,9 +316,11 @@ class TestAdminFileAccess:
             f"/api/files/{sample_media_file.uuid}",
             headers=admin_token_headers,
         )
-        if response.status_code == 200:
-            data = response.json()
-            assert data.get("my_permission") == "owner"
+        # Asserted only inside `if response.status_code == 200`, so a 403 or a 500 passed
+        # silently and the permission label — the entire point of the test — went unchecked
+        # (issue #431). an admin's bypass must resolve to owner-level access.
+        assert response.status_code == 200, response.text
+        assert response.json().get("my_permission") == "owner"
 
     def test_regular_user_blocked_from_other_users_file(
         self, client, user_token_headers, sample_media_file
@@ -428,9 +430,11 @@ class TestSharedEditorAccess:
             f"/api/files/{sample_media_file.uuid}",
             headers=user_token_headers,
         )
-        if response.status_code == 200:
-            data = response.json()
-            assert data.get("my_permission") == "editor"
+        # Asserted only inside `if response.status_code == 200`, so a 403 or a 500 passed
+        # silently and the permission label — the entire point of the test — went unchecked
+        # (issue #431). an editor share must be reported as editor.
+        assert response.status_code == 200, response.text
+        assert response.json().get("my_permission") == "editor"
 
     def test_shared_editor_can_list_speakers(
         self, client, user_token_headers, sample_media_file, sample_speakers, editor_share
@@ -478,6 +482,8 @@ class TestSharedViewerAccess:
             f"/api/files/{sample_media_file.uuid}",
             headers=user_token_headers,
         )
-        if response.status_code == 200:
-            data = response.json()
-            assert data.get("my_permission") == "viewer"
+        # Asserted only inside `if response.status_code == 200`, so a 403 or a 500 passed
+        # silently and the permission label — the entire point of the test — went unchecked
+        # (issue #431). a viewer share must be reported as viewer.
+        assert response.status_code == 200, response.text
+        assert response.json().get("my_permission") == "viewer"

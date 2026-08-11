@@ -45,7 +45,13 @@ LABEL org.opencontainers.image.title="OpenTranscribe Frontend" \
 # image tag updates every time a CVE lands. This runs before the COPY +
 # chown step below so the final USER nginx directive at the bottom of the
 # file is the only identity switch.
-RUN apk upgrade --no-cache
+#
+# curl is removed for the same reason it is removed from docs-site/Dockerfile:
+# it accounts for 8 CRITICAL and most of the HIGH findings, Alpine ships no fixed
+# version, and nothing here uses it — nginx depends only on libc/libcrypto/
+# libpcre2/libssl/libz, and the HEALTHCHECK below uses busybox wget. An
+# unfixable CVE in an unused package is removable rather than acceptable.
+RUN apk upgrade --no-cache && apk del curl
 
 # Copy the built files from the build stage
 COPY --from=build /app/dist /usr/share/nginx/html

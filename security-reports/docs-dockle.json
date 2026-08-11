@@ -2,27 +2,10 @@
   "image": "davidamacey/opentranscribe-docs:v0.5.0",
   "summary": {
     "fatal": 0,
-    "warn": 1,
-    "info": 1,
+    "warn": 0,
+    "info": 0,
     "skip": 0,
-    "pass": 14
+    "pass": 16
   },
-  "details": [
-    {
-      "code": "CIS-DI-0001",
-      "title": "Create a user for the container",
-      "level": "WARN",
-      "alerts": [
-        "Last user should not be root"
-      ]
-    },
-    {
-      "code": "CIS-DI-0006",
-      "title": "Add HEALTHCHECK instruction to the container image",
-      "level": "INFO",
-      "alerts": [
-        "not found HEALTHCHECK statement"
-      ]
-    }
-  ]
+  "details": []
 }

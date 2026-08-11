@@ -90,7 +90,9 @@ class TestConcurrentSessionEnforcementAC10:
 
             # Should reject with 429 Too Many Requests
             # Note: actual behavior depends on implementation
-            assert response.status_code in [200, 429]
+            assert response.status_code == 429, (
+                response.text
+            )  # AC-10: the reject policy must actually reject
 
     def test_session_limit_terminate_oldest_policy(self, client, db_session, admin_user):
         """Test that terminate_oldest policy revokes oldest session when limit reached."""
@@ -338,24 +340,58 @@ class TestAuditLogQueryExportAU6:
         assert "logs" in data or "error" in data
 
     def test_audit_log_export_csv_format(self, client, super_admin_token_headers):
-        """Test that audit log export supports CSV format."""
+        """Audit log export returns CSV — when the OpenSearch audit sink is enabled.
+
+        Was ``in [200, 400]``, which passed either way and so never verified the format at
+        all. ``export_audit_logs`` returns 400 outright when ``AUDIT_LOG_TO_OPENSEARCH`` is
+        false (``admin.py:1754``), and the root conftest forces it false on purpose —
+        savepoint rollback cannot undo OpenSearch writes, so leaving it on would pollute the
+        live audit index. So the precondition is real and belongs in a visible skip, not in a
+        widened assertion: with the sink off this states plainly that it did not run, and with
+        it on it now checks the actual content type (issue #431).
+        """
+        from app.core.config import settings
+
         response = client.get(
             "/api/admin/audit-logs/export",
             params={"export_format": "csv"},
             headers=super_admin_token_headers,
         )
-        # Should return CSV or error if OpenSearch not enabled
-        assert response.status_code in [200, 400]
+        if not settings.AUDIT_LOG_TO_OPENSEARCH:
+            assert response.status_code == 400, response.text
+            pytest.skip(
+                "audit export requires AUDIT_LOG_TO_OPENSEARCH=true; conftest forces it off "
+                "because savepoint rollback cannot undo OpenSearch writes"
+            )
+        assert response.status_code == 200, response.text
+        assert response.headers["content-type"].startswith("text/csv")
 
     def test_audit_log_export_json_format(self, client, super_admin_token_headers):
-        """Test that audit log export supports JSON format."""
+        """Audit log export returns JSON — when the OpenSearch audit sink is enabled.
+
+        Was ``in [200, 400]``, which passed either way and so never verified the format at
+        all. ``export_audit_logs`` returns 400 outright when ``AUDIT_LOG_TO_OPENSEARCH`` is
+        false (``admin.py:1754``), and the root conftest forces it false on purpose —
+        savepoint rollback cannot undo OpenSearch writes, so leaving it on would pollute the
+        live audit index. So the precondition is real and belongs in a visible skip, not in a
+        widened assertion: with the sink off this states plainly that it did not run, and with
+        it on it now checks the actual content type (issue #431).
+        """
+        from app.core.config import settings
+
         response = client.get(
             "/api/admin/audit-logs/export",
             params={"export_format": "json"},
             headers=super_admin_token_headers,
         )
-        # Should return JSON or error if OpenSearch not enabled
-        assert response.status_code in [200, 400]
+        if not settings.AUDIT_LOG_TO_OPENSEARCH:
+            assert response.status_code == 400, response.text
+            pytest.skip(
+                "audit export requires AUDIT_LOG_TO_OPENSEARCH=true; conftest forces it off "
+                "because savepoint rollback cannot undo OpenSearch writes"
+            )
+        assert response.status_code == 200, response.text
+        assert response.headers["content-type"].startswith("application/json")
 
     def test_audit_log_export_invalid_format_rejected(self, client, super_admin_token_headers):
         """Test that invalid export formats are rejected."""

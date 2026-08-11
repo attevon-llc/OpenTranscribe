@@ -351,4 +351,4 @@ class TestMFADisable:
             json={"code": "000000"},
         )
 
-        assert disable_response.status_code in (400, 401)
+        assert disable_response.status_code == 401, disable_response.text

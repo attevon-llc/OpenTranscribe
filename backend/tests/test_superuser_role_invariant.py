@@ -148,7 +148,7 @@ def test_regular_admin_cannot_escalate_via_is_superuser_flag(client, admin_token
         headers=admin_token_headers,
     )
     # Allowed to create a plain user, but the derived flag must be False.
-    assert resp.status_code in (200, 201)
+    assert resp.status_code == 200, resp.text
     assert resp.json()["is_superuser"] is False
     assert resp.json()["role"] == ROLE_USER
 
@@ -159,7 +159,7 @@ def test_super_admin_can_create_admin_with_derived_flag(client, super_admin_toke
         json=_create_payload(role=ROLE_ADMIN),
         headers=super_admin_token_headers,
     )
-    assert resp.status_code in (200, 201)
+    assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["role"] == ROLE_ADMIN
     assert body["is_superuser"] is False  # admin is not a superuser

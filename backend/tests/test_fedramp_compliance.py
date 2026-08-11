@@ -385,7 +385,9 @@ class TestIntegrationEndpoints:
                 "password": "weak",
             },
         )
-        assert response.status_code in [400, 422]
+        assert response.status_code == 422, (
+            response.text
+        )  # schema validation rejects it, not the handler
 
     def test_strong_password_accepted(self, client):
         """Registration with strong password should succeed."""
@@ -401,7 +403,7 @@ class TestIntegrationEndpoints:
             },
         )
         # Could be 200/201 for success, or 409 if email exists
-        assert response.status_code in [200, 201, 409]
+        assert response.status_code == 200, response.text
 
 
 if __name__ == "__main__":

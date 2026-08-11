@@ -78,22 +78,33 @@ class TestLoginWorkflow:
         assert response.status_code == 401
 
     def test_login_case_insensitive_email(self, client, normal_user):
-        """Login should work with different case email."""
+        """Login works with a different-case email, on BOTH authenticator paths.
+
+        This asserted ``status_code in (200, 401)``, so it passed whether or not
+        case-insensitive login worked — and it did not, on the path this test actually
+        reaches. Login tries ``direct_authenticate_user`` (raw SQL, lowercases the address)
+        and falls back to ``authenticate_user`` (ORM). Under the savepoint harness the raw
+        connection cannot see the uncommitted fixture user, so tests always land on the
+        fallback, which did an exact case-sensitive match. ``authenticate_user`` now
+        normalises identically, so both paths agree (issue #431).
+        """
         response = client.post(
             "/api/auth/token",
             data={"username": normal_user.email.upper(), "password": "password123"},
         )
-        # May return 200 or 401 depending on implementation
-        # Most systems are case-insensitive for email
-        assert response.status_code in (200, 401)
+        assert response.status_code == 200, response.text
 
     def test_login_empty_password(self, client, normal_user):
-        """Login with empty password returns 401 or 422."""
+        """An empty password is rejected by request validation, before authentication.
+
+        Was ``in (401, 422)``. OAuth2PasswordRequestForm treats an empty ``password`` as a
+        validation failure, so the request never reaches the authenticator — measured 422.
+        """
         response = client.post(
             "/api/auth/token",
             data={"username": normal_user.email, "password": ""},
         )
-        assert response.status_code in (401, 422)
+        assert response.status_code == 422, response.text
 
 
 class TestLogoutWorkflow:
@@ -467,7 +478,7 @@ class TestPasswordPolicy:
     """Test password policy enforcement."""
 
     def test_weak_password_rejected_on_register(self, client):
-        """Registration with weak password is rejected."""
+        """A weak password is rejected by schema validation (422), not by the handler."""
         response = client.post(
             "/api/auth/register",
             json={
@@ -477,7 +488,7 @@ class TestPasswordPolicy:
             },
         )
         # Should return 422 (validation error) or 400 (bad request)
-        assert response.status_code in (400, 422)
+        assert response.status_code == 422, response.text
 
 
 # ============== Auth Method Tests with Mocking ==============
@@ -596,13 +607,21 @@ class TestInactiveUser:
         return user
 
     def test_inactive_user_cannot_login(self, client, inactive_user):
-        """Inactive user cannot login."""
+        """An inactive account gets the same uniform 401 as any other failure.
+
+        Was ``in (400, 401)``. ``authenticators.py`` raises 400 "Inactive user account", but
+        ``login.py:100-111`` deliberately converts it to 401: surfacing the 400 to an
+        anonymous caller was a username-enumeration oracle, and because it was raised before
+        the lockout recorder ran it let an attacker probe a disabled account without tripping
+        lockout. 401 is the intended contract, so pin it — accepting either would let that
+        oracle come back silently (issue #431).
+        """
         response = client.post(
             "/api/auth/token",
             data={"username": inactive_user.email, "password": "password123"},
         )
         # API returns 400 (Bad Request) for inactive users, not 401
-        assert response.status_code in (400, 401)
+        assert response.status_code == 401, response.text
 
 
 # ============== Token Expiration Tests ==============

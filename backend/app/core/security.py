@@ -294,7 +294,17 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
 
     Note: LDAP users cannot authenticate via this function - they must use
     LDAP authentication. This function is for local users only.
+
+    Email is normalised the same way ``app.auth.direct_auth`` normalises it
+    (``.lower().strip()``). Login tries the raw-SQL path first and falls back here, and the
+    two disagreed: ``direct_auth`` lowercased the supplied address while this function did an
+    exact, case-sensitive match. So whether ``Foo@Example.com`` could log in depended on
+    which path answered — case-insensitive in production, case-sensitive whenever the
+    fallback ran. That divergence is the same class of bug the LDAP comment below was written
+    to close, and the test meant to catch it asserted ``status_code in (200, 401)``, which
+    accepted either outcome (issue #431).
     """
+    email = email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
     if not user:
         return None

@@ -386,7 +386,7 @@ class TestASRSharingAPIKeySecurity:
         resp = client.get(
             f"/api/asr-settings/config/{cfg.uuid}/api-key", headers=other_user_auth_headers
         )
-        assert resp.status_code in (403, 404)
+        assert resp.status_code == 404, resp.text  # a non-owner must not learn the config exists
 
     def test_owner_can_get_asr_api_key(self, client, db_session, normal_user, user_token_headers):
         """Owner can retrieve their own ASR API key."""
@@ -411,7 +411,7 @@ class TestASRSharingAccessControl:
             json={"name": "Hacked"},
             headers=other_user_auth_headers,
         )
-        assert resp.status_code in (403, 404)
+        assert resp.status_code == 404, resp.text  # a non-owner must not learn the config exists
 
     def test_non_owner_cannot_delete_shared_asr(
         self, client, db_session, normal_user, other_user, other_user_auth_headers
@@ -421,7 +421,7 @@ class TestASRSharingAccessControl:
         resp = client.delete(
             f"/api/asr-settings/config/{cfg.uuid}", headers=other_user_auth_headers
         )
-        assert resp.status_code in (403, 404)
+        assert resp.status_code == 404, resp.text  # a non-owner must not learn the config exists
 
     def test_non_owner_can_activate_shared_asr(
         self, client, db_session, normal_user, other_user, other_user_auth_headers
@@ -613,7 +613,7 @@ class TestPromptTags:
             },
             headers=user_token_headers,
         )
-        assert resp.status_code in (200, 201)
+        assert resp.status_code == 200, resp.text
         data = resp.json()
         assert "meeting" in data["tags"]
         assert "action-items" in data["tags"]
@@ -720,7 +720,7 @@ class TestSharedConfigDeletionCleanup:
 
         # Owner deletes
         resp = client.delete(f"/api/llm-settings/config/{cfg.uuid}", headers=user_token_headers)
-        assert resp.status_code in (200, 204)
+        assert resp.status_code == 200, resp.text
 
         # Verify other_user's active reference is cleaned up
         db_session.expire_all()

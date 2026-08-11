@@ -75,10 +75,9 @@ class TestStreamUrlEndpoint:
             f"/api/files/{test_media_file.uuid}/stream-url",
             headers=other_user_auth_headers,
         )
-        assert response.status_code in (
-            status.HTTP_403_FORBIDDEN,
-            status.HTTP_404_NOT_FOUND,
-        )
+        # 403, not 404: the file exists and is simply not this caller's, which is what
+        # get_file_by_uuid_with_permission distinguishes (404 means "no such file").
+        assert response.status_code == status.HTTP_403_FORBIDDEN, response.text
 
     def test_stream_url_admin_access_any_file(self, client, admin_auth_headers, test_media_file):
         """Admin users should be able to access any file."""

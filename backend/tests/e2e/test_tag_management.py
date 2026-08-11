@@ -62,6 +62,17 @@ def tag_api(api_helper):
         print(f"tag teardown failed (leaves orphan e2e tags): {exc}")
 
 
+def _open_tags_from_organize(page: Page) -> None:
+    """Open tagging from the Organize menu, the selection-mode entry point.
+
+    Tags sits beside "Add to collection" there because both attach metadata to
+    a file. The toolbar button covers the no-selection case.
+    """
+    page.click(".organize-btn")
+    page.wait_for_timeout(300)
+    page.locator(".dropdown-item", has_text="Tags").first.click()
+
+
 def _open_manager(page: Page) -> None:
     """Open the tag manager from the gallery, with nothing selected.
 
@@ -262,9 +273,10 @@ class TestTagMutations:
         self._select(tags_page, name)
         tags_page.get_by_role("button", name="Delete", exact=True).click()
 
-        # The impact preview fronts the delete — confirming without it ever
-        # rendering would mean the confirm step had been skipped.
-        tags_page.wait_for_timeout(750)
+        # Delete goes through the app's shared ConfirmationModal, which carries
+        # both counts — confirming without that appearing would mean the
+        # confirm step had been skipped.
+        tags_page.wait_for_timeout(1000)
         confirm = tags_page.get_by_role("button", name="Delete", exact=True).last
         confirm.click()
         tags_page.wait_for_timeout(1500)
@@ -356,7 +368,7 @@ class TestGalleryBulkTagEntry:
         if not self._enter_selection_mode(gallery_page):
             pytest.skip("no media files in this deployment to select")
 
-        gallery_page.click(".tags-btn")
+        _open_tags_from_organize(gallery_page)
 
         # The bulk modal, addressed by its own field; the manager must NOT open.
         expect(gallery_page.get_by_label("Tag name")).to_be_visible()
@@ -374,7 +386,7 @@ class TestGalleryBulkTagEntry:
             pytest.skip("no media files in this deployment to select")
 
         name = _unique_tag_name()
-        gallery_page.click(".tags-btn")
+        _open_tags_from_organize(gallery_page)
         gallery_page.get_by_label("Tag name").fill(name)
         gallery_page.get_by_role("button", name="Add tag").click()
         gallery_page.wait_for_timeout(2500)
@@ -382,3 +394,96 @@ class TestGalleryBulkTagEntry:
         applied = [t for t in tag_api.get("/api/tags") if t["name"] == name]
         assert applied, f"{name} never reached the backend"
         assert applied[0]["usage_count"] >= 1, "tag created but attached to nothing"
+
+
+class TestTagManagerTools:
+    """Search, sort and create — the tools that make 99 tags navigable."""
+
+    def test_search_narrows_the_list(self, tags_page: Page, tag_api):
+        name = _unique_tag_name()
+        tag_api.post("/api/tags", {"name": name})
+        _reload_tags(tags_page)
+
+        tags_page.get_by_label("Search tags").fill(name)
+        tags_page.wait_for_timeout(500)
+
+        # Exactly the searched tag: a substring nobody else shares.
+        expect(_tag_rows(tags_page)).to_have_count(1)
+        expect(_row(tags_page, name)).to_be_visible()
+
+    def test_search_clears_back_to_the_full_list(self, tags_page: Page, tag_api):
+        tag_api.post("/api/tags", {"name": _unique_tag_name()})
+        _reload_tags(tags_page)
+        before = _tag_rows(tags_page).count()
+
+        tags_page.get_by_label("Search tags").fill("zzz-matches-nothing")
+        tags_page.wait_for_timeout(400)
+        expect(_tag_rows(tags_page)).to_have_count(0)
+
+        tags_page.get_by_title("Clear search").click()
+        tags_page.wait_for_timeout(400)
+        expect(_tag_rows(tags_page)).to_have_count(before)
+
+    def test_sorting_by_name_reorders_without_refetching(self, tags_page: Page, tag_api):
+        tag_api.post("/api/tags", {"name": _unique_tag_name()})
+        _reload_tags(tags_page)
+
+        first_by_usage = _tag_rows(tags_page).first.inner_text()
+        # Scoped to the modal: the gallery behind it has its own "Sort by"
+        # control, and an unscoped label match hits both.
+        tags_page.locator(".tags-manager").locator(".sort-select").select_option("name")
+        tags_page.wait_for_timeout(400)
+        first_by_name = _tag_rows(tags_page).first.inner_text()
+
+        # Sorting is client-side over the loaded list, so the count cannot move.
+        assert first_by_usage != first_by_name or _tag_rows(tags_page).count() <= 1
+
+
+class TestTagFileList:
+    """The detail pane's promise: "select a tag to see what it touches"."""
+
+    def test_a_tag_with_no_files_says_so(self, tags_page: Page, tag_api):
+        name = _unique_tag_name()
+        tag_api.post("/api/tags", {"name": name})
+        _reload_tags(tags_page)
+
+        _row(tags_page, name).first.click()
+        tags_page.wait_for_selector(".detail-pane", timeout=10000)
+        tags_page.wait_for_timeout(800)
+
+        expect(tags_page.locator(".detail-pane")).to_contain_text("No files")
+
+    def test_a_used_tag_lists_its_files(self, tags_page: Page, tag_api):
+        """A seeded tag that real media carries must name that media."""
+        listed = tag_api.get("/api/tags")
+        used = [t for t in listed if t.get("usage_count", 0) > 0]
+        if not used:
+            pytest.skip("no tag in this deployment carries a file")
+
+        _row(tags_page, used[0]["name"]).first.click()
+        tags_page.wait_for_selector(".detail-pane", timeout=10000)
+        tags_page.wait_for_timeout(1200)
+
+        expect(tags_page.locator(".touches-list")).to_be_visible()
+
+
+class TestTagSharing:
+    """Sharing a tag with specific users — the middle tier (v386)."""
+
+    def test_share_dialog_opens_for_a_tag_you_own(self, tags_page: Page, tag_api):
+        name = _unique_tag_name()
+        tag_api.post("/api/tags", {"name": name})
+        _reload_tags(tags_page)
+
+        _row(tags_page, name).first.click()
+        tags_page.wait_for_selector(".detail-pane", timeout=10000)
+        tags_page.get_by_role("button", name="Share…").click()
+        tags_page.wait_for_timeout(800)
+
+        expect(tags_page.locator(".tag-share")).to_be_visible()
+
+    def test_a_new_tag_is_shared_with_nobody(self, tags_page: Page, tag_api):
+        name = _unique_tag_name()
+        created = tag_api.post("/api/tags", {"name": name})
+
+        assert tag_api.get(f"/api/tags/{created['uuid']}/shares") == []

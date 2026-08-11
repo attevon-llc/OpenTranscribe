@@ -97,8 +97,19 @@ def _reload_tags(page: Page) -> None:
     _open_manager(page)
 
 
+def _tag_rows(page: Page):
+    """Every tag row, scoped to the listbox.
+
+    The ownership `<select>`'s `<option>` elements carry `role=option` too, so a
+    bare `get_by_role("option")` mixes the filter control into the results. The
+    unit suite hit exactly this; scope to the listbox rather than filtering by
+    text, which only accidentally avoids it.
+    """
+    return page.locator(".tags-manager").get_by_role("listbox").get_by_role("option")
+
+
 def _row(page: Page, name: str):
-    return page.get_by_role("option").filter(has_text=name)
+    return _tag_rows(page).filter(has_text=name)
 
 
 class TestTagManagerRoute:
@@ -179,7 +190,7 @@ class TestOwnershipScope:
         tags_page.get_by_label("Tag ownership").select_option("system")
         tags_page.wait_for_timeout(750)
 
-        rows = tags_page.get_by_role("option")
+        rows = _tag_rows(tags_page)
         if rows.count() == 0:
             pytest.skip("no system tags in this deployment")
         expect(rows.first).to_contain_text("Shared")

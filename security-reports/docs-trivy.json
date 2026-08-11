@@ -1,15 +1,15 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2026-08-10T20:14:47.560318621-04:00",
-  "ArtifactName": "davidamacey/opentranscribe-docs:latest",
+  "CreatedAt": "2026-08-10T20:18:46.124652448-04:00",
+  "ArtifactName": "davidamacey/opentranscribe-docs:v0.5.0",
   "ArtifactType": "container_image",
   "Metadata": {
-    "Size": 101686784,
+    "Size": 104996864,
     "OS": {
       "Family": "alpine",
       "Name": "3.21.3"
     },
-    "ImageID": "sha256:86011ebbcafd7eff8006d3f50dddcac7d7ce0d14bba2ed3e4dd3731e77146440",
+    "ImageID": "sha256:a0051653c5186e9ceb774433cb22342437b5b2a8b91f9ae5d3940420e190ab2f",
     "DiffIDs": [
       "sha256:08000c18d16dadf9553d747a58cf44023423a9ab010aab96cf263d2216b8b350",
       "sha256:d71eae0084c1aa823dd8fb2ecf8604d5c0f4911226c042bb1f8297e819f4b192",
@@ -19,18 +19,15 @@
       "sha256:811a4dbbf4a5309e4390cf655c12db92e1a4304fb9d9731f83e7b02e95a617c6",
       "sha256:947e805a4ac71f68e6703550c0b36c2aa2e554c4fa670ca2da6a25c6d7dccb66",
       "sha256:0d853d50b128aa460b47e7121849463a14b18d4fd976caf5014744aae24d28aa",
-      "sha256:445e907532ff98e38bf01fb6dee74e778af53acee4ddc2036b6550e3fb3a2640",
-      "sha256:162a857112ab21ecec776d02e59f5bf7cbf6a41eb0ff1adb9451cef64e581c6b"
+      "sha256:7b5b13f2e7441125732eb0cb86ce94692b583cb5805ad8d4214d7c805805e3f4",
+      "sha256:03dd816b155a7b23708707bd4dd38ee3fbec83f02bd24048888932c9a52a1add"
     ],
     "RepoTags": [
-      "davidamacey/opentranscribe-docs:latest"
-    ],
-    "RepoDigests": [
-      "davidamacey/opentranscribe-docs@sha256:fd5b3403750b227a520378433fa97d5b77259b2085986b91a944c5c2a999ce78"
+      "davidamacey/opentranscribe-docs:v0.5.0"
     ],
     "ImageConfig": {
       "architecture": "amd64",
-      "created": "2026-04-24T01:16:48.083584335Z",
+      "created": "2026-08-10T11:51:59.467813474Z",
       "history": [
         {
           "created": "2025-02-14T03:28:36Z",
@@ -139,17 +136,17 @@
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-15T02:02:21Z",
+          "created": "2026-08-10T11:51:58Z",
           "created_by": "COPY /app/build /usr/share/nginx/html # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-24T01:16:48Z",
+          "created": "2026-08-10T11:51:59Z",
           "created_by": "COPY nginx.conf /etc/nginx/conf.d/default.conf # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-04-24T01:16:48Z",
+          "created": "2026-08-10T11:51:59Z",
           "created_by": "EXPOSE [8080/tcp]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
@@ -167,8 +164,8 @@
           "sha256:811a4dbbf4a5309e4390cf655c12db92e1a4304fb9d9731f83e7b02e95a617c6",
           "sha256:947e805a4ac71f68e6703550c0b36c2aa2e554c4fa670ca2da6a25c6d7dccb66",
           "sha256:0d853d50b128aa460b47e7121849463a14b18d4fd976caf5014744aae24d28aa",
-          "sha256:445e907532ff98e38bf01fb6dee74e778af53acee4ddc2036b6550e3fb3a2640",
-          "sha256:162a857112ab21ecec776d02e59f5bf7cbf6a41eb0ff1adb9451cef64e581c6b"
+          "sha256:7b5b13f2e7441125732eb0cb86ce94692b583cb5805ad8d4214d7c805805e3f4",
+          "sha256:03dd816b155a7b23708707bd4dd38ee3fbec83f02bd24048888932c9a52a1add"
         ]
       },
       "config": {
@@ -189,7 +186,10 @@
           "NJS_RELEASE=1"
         ],
         "Labels": {
-          "maintainer": "NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e"
+          "maintainer": "NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e",
+          "org.opencontainers.image.created": "2026-08-10T11:35:28Z",
+          "org.opencontainers.image.revision": "6993cdc3e8354f13c46af8b8658d518648200187",
+          "org.opencontainers.image.version": "v0.5.0"
         },
         "WorkingDir": "/",
         "ExposedPorts": {
@@ -233,18 +233,18 @@
         "DiffID": "sha256:0d853d50b128aa460b47e7121849463a14b18d4fd976caf5014744aae24d28aa"
       },
       {
-        "Size": 52048384,
-        "DiffID": "sha256:445e907532ff98e38bf01fb6dee74e778af53acee4ddc2036b6550e3fb3a2640"
+        "Size": 55358464,
+        "DiffID": "sha256:7b5b13f2e7441125732eb0cb86ce94692b583cb5805ad8d4214d7c805805e3f4"
       },
       {
         "Size": 5120,
-        "DiffID": "sha256:162a857112ab21ecec776d02e59f5bf7cbf6a41eb0ff1adb9451cef64e581c6b"
+        "DiffID": "sha256:03dd816b155a7b23708707bd4dd38ee3fbec83f02bd24048888932c9a52a1add"
       }
     ]
   },
   "Results": [
     {
-      "Target": "davidamacey/opentranscribe-docs:latest (alpine 3.21.3)",
+      "Target": "davidamacey/opentranscribe-docs:v0.5.0 (alpine 3.21.3)",
       "Class": "os-pkgs",
       "Type": "alpine",
       "Packages": [

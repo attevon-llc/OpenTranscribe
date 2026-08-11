@@ -1,5 +1,5 @@
 {
-  "image": "davidamacey/opentranscribe-docs:latest",
+  "image": "davidamacey/opentranscribe-docs:v0.5.0",
   "summary": {
     "fatal": 0,
     "warn": 1,

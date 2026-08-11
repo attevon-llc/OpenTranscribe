@@ -214,8 +214,8 @@ class TestRegistrationFlow:
         page.fill("#confirmPassword", "DifferentPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         # Should show error or stay on registration page
         still_on_register = "register" in page.url or page.locator("#confirmPassword").is_visible()
         assert still_on_register, "Should not proceed with mismatched passwords"
@@ -234,8 +234,8 @@ class TestRegistrationFlow:
         page.fill("#confirmPassword", "weak")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         # Should show error or validation message
         still_on_register = "register" in page.url or page.locator("#password").is_visible()
         assert still_on_register, "Should validate password strength"

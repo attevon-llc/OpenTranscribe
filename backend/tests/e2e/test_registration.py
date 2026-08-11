@@ -14,6 +14,7 @@ Run with:
     pytest backend/tests/e2e/test_registration.py -v --headed
 """
 
+import re
 import uuid
 
 from conftest import TEST_ADMIN_EMAIL
@@ -46,10 +47,9 @@ class TestRegistrationFormValidation:
 
         # Try to submit empty form
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(1000)
-
-        # Should stay on registration page
-        assert page.locator("#username").is_visible(), "Should not submit with empty fields"
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
+        expect(page.locator("#username")).to_be_visible()
 
     def test_username_required(self, page: Page, base_url: str):
         """Test username field is required."""
@@ -62,10 +62,9 @@ class TestRegistrationFormValidation:
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(1000)
-
-        # Should show validation error or stay on page
-        assert page.locator("#username").is_visible()
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
+        expect(page.locator("#username")).to_be_visible()
 
     def test_email_required(self, page: Page, base_url: str):
         """Test email field is required."""
@@ -77,9 +76,9 @@ class TestRegistrationFormValidation:
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(1000)
-
-        assert page.locator("#email").is_visible()
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
+        expect(page.locator("#email")).to_be_visible()
 
     def test_password_required(self, page: Page, base_url: str):
         """Test password field is required."""
@@ -90,9 +89,9 @@ class TestRegistrationFormValidation:
         page.fill("#email", "test@example.com")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(1000)
-
-        assert page.locator("#password").is_visible()
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
+        expect(page.locator("#password")).to_be_visible()
 
     def test_confirm_password_required(self, page: Page, base_url: str):
         """Test confirm password field is required."""
@@ -104,31 +103,47 @@ class TestRegistrationFormValidation:
         page.fill("#password", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(1000)
-
-        assert page.locator("#confirmPassword").is_visible()
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
+        expect(page.locator("#confirmPassword")).to_be_visible()
 
 
 class TestUsernameValidation:
     """Test username field constraints."""
 
-    def test_username_min_length(self, page: Page, base_url: str):
-        """Test username minimum length validation."""
+    def test_a_short_display_name_is_accepted(self, page: Page, base_url: str, api_helper):
+        """The field labelled "username" is the display NAME, and short names are valid.
+
+        This was ``test_username_min_length``, asserting a minimum-length rule that does not
+        exist and never did. Registration has no username concept: the frontend sends this
+        field as ``full_name`` (``frontend/src/stores/auth.ts`` — ``register(email, username,
+        password)`` posts ``{email, full_name}``), and ``UserCreate`` declares no length
+        constraint on it. Nor should it: "Li" and "Bo" are real names.
+
+        It passed only because ``wait_for_timeout(2000)`` expired before the
+        post-registration redirect completed, so ``#username`` was still on screen and "we
+        stayed on /register" looked true. Waiting deterministically showed registration had
+        in fact succeeded — the fixed wait hid a false premise for as long as the app stayed
+        slow (issue #431). Verified directly against the API: a 2-character value returns 200.
+        """
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
-        # Try very short username
-        page.fill("#username", "ab")
-        page.fill("#email", "test@example.com")
+        email = f"shortname-{uuid.uuid4().hex[:8]}@example.com"
+        page.fill("#username", "Li")
+        page.fill("#email", email)
         page.fill("#password", "ValidPassword123!")
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
 
-        # Should show error or stay on page
-        still_on_register = "register" in page.url or page.locator("#username").is_visible()
-        assert still_on_register, "Should validate username length"
+        try:
+            # A two-character display name is accepted, so registration leaves /register.
+            expect(page).not_to_have_url(re.compile(r"/register"), timeout=15000)
+        finally:
+            # This test really does create an account, so it deletes it — E2E must never
+            # persist changes. The old version never got this far, so it never had to.
+            _delete_user_by_email(api_helper, email)
 
     def test_username_special_characters(self, page: Page, base_url: str):
         """Test username doesn't allow special characters."""
@@ -142,8 +157,8 @@ class TestUsernameValidation:
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         # Should handle special characters (either reject or sanitize)
         # Just verify form processed without crash
         assert page.is_visible("body")
@@ -160,8 +175,8 @@ class TestUsernameValidation:
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         # Should stay on register or show error
         assert page.is_visible("body")
 
@@ -180,8 +195,8 @@ class TestEmailValidation:
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         # Should show validation error
         still_on_register = "register" in page.url or page.locator("#email").is_visible()
         assert still_on_register, "Should validate email format"
@@ -197,8 +212,8 @@ class TestEmailValidation:
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         still_on_register = "register" in page.url or page.locator("#email").is_visible()
         assert still_on_register
 
@@ -213,8 +228,8 @@ class TestEmailValidation:
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         still_on_register = "register" in page.url or page.locator("#email").is_visible()
         assert still_on_register
 
@@ -233,8 +248,8 @@ class TestPasswordValidation:
         page.fill("#confirmPassword", "Short1!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         still_on_register = "register" in page.url or page.locator("#password").is_visible()
         assert still_on_register, "Should enforce minimum password length"
 
@@ -249,8 +264,8 @@ class TestPasswordValidation:
         page.fill("#confirmPassword", "lowercase123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         # This may or may not be required depending on policy
         assert page.is_visible("body")
 
@@ -265,8 +280,8 @@ class TestPasswordValidation:
         page.fill("#confirmPassword", "UPPERCASE123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         assert page.is_visible("body")
 
     def test_password_no_numbers(self, page: Page, base_url: str):
@@ -280,8 +295,8 @@ class TestPasswordValidation:
         page.fill("#confirmPassword", "NoNumbersHere!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         assert page.is_visible("body")
 
     def test_password_no_special_chars(self, page: Page, base_url: str):
@@ -295,8 +310,8 @@ class TestPasswordValidation:
         page.fill("#confirmPassword", "NoSpecialChars123")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         assert page.is_visible("body")
 
     def test_password_mismatch(self, page: Page, base_url: str):
@@ -310,8 +325,8 @@ class TestPasswordValidation:
         page.fill("#confirmPassword", "DifferentPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         still_on_register = "register" in page.url or page.locator("#confirmPassword").is_visible()
         assert still_on_register, "Should reject mismatched passwords"
 
@@ -348,17 +363,18 @@ class TestDuplicatePrevention:
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(3000)
 
-        # Should show error
-        error_visible = (
-            page.locator("[role=alert]").is_visible()
-            or page.locator("text=exist").is_visible()
-            or page.locator("text=already").is_visible()
-            or page.locator("text=taken").is_visible()
-            or "register" in page.url
-        )
-        assert error_visible, "Should prevent duplicate email registration"
+        # Assert the actual rejection message, not a substring that collides with page
+        # furniture. The old check was an `or` chain ending in `"register" in page.url`, and
+        # included `page.locator("text=already").is_visible()` — which matches the register
+        # page's own "Already have an account? Login" link whether or not anything failed. So
+        # `error_visible` was always True and the test could not fail; the trailing url check
+        # made it doubly unfalsifiable. `wait_for_timeout(2000)` hid this by expiring before
+        # the toast rendered, leaving only the footer link to match (issue #431).
+        expect(page.get_by_text("Email already registered")).to_be_visible(timeout=15000)
+
+        # And it must NOT have created a session — a rejected registration stays put.
+        expect(page).to_have_url(re.compile(r"/register"))
 
     # NOTE: there is deliberately no "duplicate username" test — the register
     # form's "username" maps to User.full_name, which is NOT unique (only

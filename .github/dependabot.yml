@@ -83,8 +83,16 @@ updates:
       # speechmatics-batch 0.x minors are potentially breaking and the 0.5.0
       # release ships live-key-verified provider integrations — re-verify with
       # live keys before adopting (#234).
+      # NOTE: pip ignore conditions take a REQUIREMENT string, not an npm-style
+      # wildcard. This said `0.5.x`, which Dependabot rejects with
+      #   '#/updates/1/ignore/6/versions' includes invalid version requirements
+      #   for a pip ignore condition
+      # and an invalid file is rejected WHOLESALE — so every grouped weekly
+      # version-update PR this config describes had silently stopped running.
+      # Dependabot only re-validates when the file changes, which is why nothing
+      # ever reported it.
       - dependency-name: "speechmatics-batch"
-        versions: ["0.5.x"]
+        versions: [">=0.5.0,<0.6.0"]
 
   # CI workflow actions — one grouped PR
   - package-ecosystem: "github-actions"

@@ -1,4 +1,5 @@
 import contextlib
+import os
 import uuid
 from datetime import UTC
 from datetime import datetime
@@ -41,6 +42,51 @@ def _get_pbkdf2_iterations() -> int:
     return settings.PBKDF2_ITERATIONS
 
 
+#: Production bcrypt work factor. Never lowered in a real deployment.
+BCRYPT_DEFAULT_ROUNDS = 12
+
+#: Work factor used only when the suite is running unhardened. bcrypt's minimum is 4.
+BCRYPT_TEST_ROUNDS = 4
+
+
+def _bcrypt_rounds() -> int:
+    """Return the bcrypt work factor, lowered only for an unhardened test process.
+
+    bcrypt at rounds=12 costs ~367 ms to hash and ~335 ms to verify on a modern core, and
+    the suite pays both on nearly every authenticated test: a user fixture hashes a
+    password, then the token fixture drives a real ``POST /api/auth/token`` that verifies
+    it. Across the 859 tests that take a token fixture that is ~600 s of pure CPU — hidden
+    locally by 20x xdist parallelism, but the dominant cost on CI's 2-core runner
+    (issue #431). At rounds=4 the same pair costs ~3 ms.
+
+    This is a work factor, not an algorithm: lowering it changes how expensive a hash is to
+    compute, not which code path runs. bcrypt_sha256 is still the scheme under test, hashes
+    still round-trip, and the rounds are embedded in each hash so verification is unaffected.
+    The properties worth asserting about the *configured* cost are asserted directly by
+    ``tests/test_fips_140_3.py``, which this cannot reach — see below.
+
+    Two independent gates, matching the existing contract for ``TESTING`` documented at
+    ``app/main.py:153-163`` and applied the same way at
+    ``app/api/endpoints/auth/dependencies.py:666``:
+
+    * ``TESTING`` must be truthy, and
+    * ``settings.is_hardened`` must be False.
+
+    So the override is inert in a real deployment even if ``TESTING`` leaks into the
+    environment — ``ENVIRONMENT`` defaults to ``production`` and only the closed
+    ``RELAXED_ENVIRONMENTS`` set unhardens it, so an unset or misspelled value fails closed.
+
+    FIPS mode is deliberately untouched: ``_get_pbkdf2_iterations()`` stays at its real
+    value because ``tests/test_fips_140_3.py`` reads the iteration count back out of the
+    hash and asserts it equals ``settings.PBKDF2_ITERATIONS_V3`` (600,000). The FIPS gate
+    phase therefore stays slow by design.
+    """
+    if not settings.is_hardened and os.environ.get("TESTING", "").lower() == "true":
+        with contextlib.suppress(ValueError):
+            return max(4, int(os.environ.get("TEST_BCRYPT_ROUNDS", BCRYPT_TEST_ROUNDS)))
+    return BCRYPT_DEFAULT_ROUNDS
+
+
 def _create_password_context() -> CryptContext:
     """
     Create password hashing context based on FIPS mode configuration.
@@ -56,24 +102,28 @@ def _create_password_context() -> CryptContext:
 
     if settings.FIPS_MODE:
         # FIPS mode: Use only PBKDF2-SHA256 (NIST SP 800-132 compliant)
-        # Auto-upgrade from bcrypt/bcrypt_sha256 on successful verify
+        # Auto-upgrade from bcrypt/bcrypt_sha256 on successful verify.
+        # Rounds stay at the production value here: in FIPS mode bcrypt is verify-only
+        # (deprecated), so lowering it would buy nothing, and PBKDF2 iterations are asserted
+        # by the FIPS suite.
         return CryptContext(
             schemes=["pbkdf2_sha256", "bcrypt_sha256", "bcrypt"],
             default="pbkdf2_sha256",
             deprecated=["bcrypt_sha256", "bcrypt"],
             pbkdf2_sha256__rounds=iterations,
-            bcrypt_sha256__default_rounds=12,
-            bcrypt__default_rounds=12,
+            bcrypt_sha256__default_rounds=BCRYPT_DEFAULT_ROUNDS,
+            bcrypt__default_rounds=BCRYPT_DEFAULT_ROUNDS,
         )
     else:
         # Standard mode: bcrypt_sha256 for new hashes, support legacy bcrypt and PBKDF2
         # Auto-upgrade from plain bcrypt on successful verify
+        rounds = _bcrypt_rounds()
         return CryptContext(
             schemes=["bcrypt_sha256", "bcrypt", "pbkdf2_sha256"],
             default="bcrypt_sha256",
             deprecated=["bcrypt"],
-            bcrypt_sha256__default_rounds=12,
-            bcrypt__default_rounds=12,
+            bcrypt_sha256__default_rounds=rounds,
+            bcrypt__default_rounds=rounds,
             pbkdf2_sha256__rounds=iterations,
         )
 

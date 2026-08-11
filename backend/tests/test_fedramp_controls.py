@@ -712,15 +712,15 @@ class TestAtomicLockoutMechanism:
         from app.auth.lockout import get_lockout_info
         from app.core.config import settings
 
-        test_user = f"lockout_test_{datetime.now().timestamp()}@example.com"
+        sample_user = f"lockout_test_{datetime.now().timestamp()}@example.com"
 
         try:
             # Make failed attempts up to threshold
             for i in range(settings.ACCOUNT_LOCKOUT_THRESHOLD):
-                is_locked, unlock_time = check_and_record_attempt(test_user, success=False)
+                is_locked, unlock_time = check_and_record_attempt(sample_user, success=False)
 
             # Account should now be locked
-            info = get_lockout_info(test_user)
+            info = get_lockout_info(sample_user)
             assert info["is_locked"] is True
             assert info["lockout_count"] >= 1
 
@@ -728,28 +728,28 @@ class TestAtomicLockoutMechanism:
             # Cleanup - unlock account
             from app.auth.lockout import unlock_account
 
-            unlock_account(test_user)
+            unlock_account(sample_user)
 
     def test_successful_login_clears_failed_attempts(self):
         """Test that successful login clears failed attempt counter."""
         from app.auth.lockout import check_and_record_attempt
         from app.auth.lockout import get_lockout_info
 
-        test_user = f"clear_test_{datetime.now().timestamp()}@example.com"
+        sample_user = f"clear_test_{datetime.now().timestamp()}@example.com"
 
         # Record some failed attempts (but not enough to lock)
-        check_and_record_attempt(test_user, success=False)
-        check_and_record_attempt(test_user, success=False)
+        check_and_record_attempt(sample_user, success=False)
+        check_and_record_attempt(sample_user, success=False)
 
         # Verify failed attempts recorded
-        info = get_lockout_info(test_user)
+        info = get_lockout_info(sample_user)
         assert info["failed_attempts"] == 2
 
         # Successful login
-        check_and_record_attempt(test_user, success=True)
+        check_and_record_attempt(sample_user, success=True)
 
         # Failed attempts should be cleared
-        info = get_lockout_info(test_user)
+        info = get_lockout_info(sample_user)
         assert info["failed_attempts"] == 0
 
 

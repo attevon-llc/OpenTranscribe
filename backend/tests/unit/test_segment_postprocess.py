@@ -181,20 +181,22 @@ class TestPipelineIntegration:
 
 
 def _import_finalize():
-    """Import finalize_segments or skip — the lead may not have committed it yet."""
-    try:
-        from app.utils.segment_postprocess import finalize_segments
-    except ImportError as exc:  # pragma: no cover - only when not yet committed
-        pytest.skip(f"finalize_segments not available yet: {exc}")
+    """Import ``finalize_segments``.
+
+    This used to be a try/except that turned an ImportError into ``pytest.skip`` "not
+    available yet". Boundary smoothing shipped (issue #193, default ON), so the guard only
+    ever masked a rename: 15 tests in this module would have silently reported as skipped
+    while the feature went untested. A plain import fails loudly instead (issue #431).
+    """
+    from app.utils.segment_postprocess import finalize_segments
+
     return finalize_segments
 
 
 def _import_smoothing_config():
-    """Import BoundarySmoothingConfig or skip — written by the lead."""
-    try:
-        from app.transcription.boundary_resolver import BoundarySmoothingConfig
-    except ImportError as exc:  # pragma: no cover - only when not yet committed
-        pytest.skip(f"BoundarySmoothingConfig not available yet: {exc}")
+    """Import ``BoundarySmoothingConfig`` — see ``_import_finalize`` on why not guarded."""
+    from app.transcription.boundary_resolver import BoundarySmoothingConfig
+
     return BoundarySmoothingConfig
 
 

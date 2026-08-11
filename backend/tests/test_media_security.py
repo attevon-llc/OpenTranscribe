@@ -23,10 +23,10 @@ class TestStreamUrlEndpoint:
         response = client.get("/api/files/some-uuid/stream-url")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_stream_url_returns_presigned_url(self, client, auth_headers, test_media_file):
+    def test_stream_url_returns_presigned_url(self, client, auth_headers, sample_media_file):
         """Authenticated requests should return a presigned URL."""
         response = client.get(
-            f"/api/files/{test_media_file.uuid}/stream-url",
+            f"/api/files/{sample_media_file.uuid}/stream-url",
             headers=auth_headers,
         )
         assert response.status_code == status.HTTP_200_OK
@@ -37,10 +37,10 @@ class TestStreamUrlEndpoint:
         assert "content_type" in data
         assert data["expires_in"] > 0
 
-    def test_stream_url_video_type(self, client, auth_headers, test_media_file):
+    def test_stream_url_video_type(self, client, auth_headers, sample_media_file):
         """Video media type should return video URL."""
         response = client.get(
-            f"/api/files/{test_media_file.uuid}/stream-url?media_type=video",
+            f"/api/files/{sample_media_file.uuid}/stream-url?media_type=video",
             headers=auth_headers,
         )
         assert response.status_code == status.HTTP_200_OK
@@ -48,10 +48,12 @@ class TestStreamUrlEndpoint:
         data = response.json()
         assert data["content_type"].startswith(("video/", "audio/", "application/"))
 
-    def test_stream_url_thumbnail_type(self, client, auth_headers, test_media_file_with_thumbnail):
+    def test_stream_url_thumbnail_type(
+        self, client, auth_headers, sample_media_file_with_thumbnail
+    ):
         """Thumbnail media type should return thumbnail URL."""
         response = client.get(
-            f"/api/files/{test_media_file_with_thumbnail.uuid}/stream-url?media_type=thumbnail",
+            f"/api/files/{sample_media_file_with_thumbnail.uuid}/stream-url?media_type=thumbnail",
             headers=auth_headers,
         )
         assert response.status_code == status.HTTP_200_OK
@@ -59,30 +61,30 @@ class TestStreamUrlEndpoint:
         data = response.json()
         assert data["content_type"] in ("image/jpeg", "image/webp")
 
-    def test_stream_url_invalid_media_type(self, client, auth_headers, test_media_file):
+    def test_stream_url_invalid_media_type(self, client, auth_headers, sample_media_file):
         """Invalid media type should return 400."""
         response = client.get(
-            f"/api/files/{test_media_file.uuid}/stream-url?media_type=invalid",
+            f"/api/files/{sample_media_file.uuid}/stream-url?media_type=invalid",
             headers=auth_headers,
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_stream_url_access_denied_wrong_user(
-        self, client, other_user_auth_headers, test_media_file
+        self, client, other_user_auth_headers, sample_media_file
     ):
         """Users should not access other users' files."""
         response = client.get(
-            f"/api/files/{test_media_file.uuid}/stream-url",
+            f"/api/files/{sample_media_file.uuid}/stream-url",
             headers=other_user_auth_headers,
         )
         # 403, not 404: the file exists and is simply not this caller's, which is what
         # get_file_by_uuid_with_permission distinguishes (404 means "no such file").
         assert response.status_code == status.HTTP_403_FORBIDDEN, response.text
 
-    def test_stream_url_admin_access_any_file(self, client, admin_auth_headers, test_media_file):
+    def test_stream_url_admin_access_any_file(self, client, admin_auth_headers, sample_media_file):
         """Admin users should be able to access any file."""
         response = client.get(
-            f"/api/files/{test_media_file.uuid}/stream-url",
+            f"/api/files/{sample_media_file.uuid}/stream-url",
             headers=admin_auth_headers,
         )
         assert response.status_code == status.HTTP_200_OK
@@ -99,10 +101,12 @@ class TestRemovedLegacyEndpoints:
         "suffix",
         ["video", "simple-video", "content", "download", "download-with-token"],
     )
-    def test_legacy_byte_proxy_routes_are_gone(self, client, auth_headers, test_media_file, suffix):
+    def test_legacy_byte_proxy_routes_are_gone(
+        self, client, auth_headers, sample_media_file, suffix
+    ):
         """Removed routes should 404 (route no longer registered), even when authed."""
         response = client.get(
-            f"/api/files/{test_media_file.uuid}/{suffix}",
+            f"/api/files/{sample_media_file.uuid}/{suffix}",
             headers=auth_headers,
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -112,18 +116,18 @@ class TestDirectThumbnailEndpoint:
     """Tests for GET /files/{file_uuid}/thumbnail"""
 
     def test_thumbnail_requires_auth_for_private_files(
-        self, client, test_media_file_with_thumbnail
+        self, client, sample_media_file_with_thumbnail
     ):
         """Private files should require authentication for thumbnails."""
-        response = client.get(f"/api/files/{test_media_file_with_thumbnail.uuid}/thumbnail")
+        response = client.get(f"/api/files/{sample_media_file_with_thumbnail.uuid}/thumbnail")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_thumbnail_with_auth_succeeds(
-        self, client, auth_headers, test_media_file_with_thumbnail
+        self, client, auth_headers, sample_media_file_with_thumbnail
     ):
         """Authenticated users can access thumbnails of their files."""
         response = client.get(
-            f"/api/files/{test_media_file_with_thumbnail.uuid}/thumbnail",
+            f"/api/files/{sample_media_file_with_thumbnail.uuid}/thumbnail",
             headers=auth_headers,
         )
         assert response.status_code == status.HTTP_200_OK
@@ -133,11 +137,11 @@ class TestCacheControlHeaders:
     """Tests for Cache-Control security headers on the retained thumbnail fallback."""
 
     def test_private_thumbnail_has_no_store_header(
-        self, client, auth_headers, test_media_file_with_thumbnail
+        self, client, auth_headers, sample_media_file_with_thumbnail
     ):
         """Private files' thumbnails should have Cache-Control: private, no-store."""
         response = client.get(
-            f"/api/files/{test_media_file_with_thumbnail.uuid}/thumbnail",
+            f"/api/files/{sample_media_file_with_thumbnail.uuid}/thumbnail",
             headers=auth_headers,
         )
 
@@ -148,7 +152,7 @@ class TestCacheControlHeaders:
 
 # Fixtures - these would typically be in conftest.py
 @pytest.fixture
-def test_media_file(db_session, test_user):
+def sample_media_file(db_session, sample_user):
     """Create a test media file for the test user."""
     from app.models.media import MediaFile
 
@@ -158,7 +162,7 @@ def test_media_file(db_session, test_user):
         storage_path="media/test/test_video.mp4",
         content_type="video/mp4",
         file_size=1024000,
-        user_id=test_user.id,
+        user_id=sample_user.id,
         status="completed",
         is_public=False,
     )
@@ -169,7 +173,7 @@ def test_media_file(db_session, test_user):
 
 
 @pytest.fixture
-def test_media_file_with_thumbnail(db_session, test_user):
+def sample_media_file_with_thumbnail(db_session, sample_user):
     """Create a test media file with a real thumbnail object in storage.
 
     When MinIO is reachable (SKIP_S3=False) the thumbnail bytes are uploaded so
@@ -205,7 +209,7 @@ def test_media_file_with_thumbnail(db_session, test_user):
         thumbnail_path=thumbnail_path,
         content_type="video/mp4",
         file_size=1024000,
-        user_id=test_user.id,
+        user_id=sample_user.id,
         status="completed",
         is_public=False,
     )

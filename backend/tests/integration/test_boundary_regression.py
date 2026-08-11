@@ -61,20 +61,21 @@ SMOOTHING_ON_KWARGS: dict[str, Any] = {
 
 
 def _smoothing_configs() -> tuple[Any, Any]:
-    """Return (off_cfg, on_cfg). Skips if the smoother module isn't committed yet."""
-    try:
-        from app.transcription.boundary_resolver import BoundarySmoothingConfig
-    except ImportError as exc:  # smoother written by the lead — not landed yet
-        pytest.skip(f"BoundarySmoothingConfig not available yet: {exc}")
+    """Return (off_cfg, on_cfg).
+
+    The import used to be wrapped in a try/except that skipped on ImportError because the
+    smoother "wasn't landed yet". It landed (issue #193, default ON), so the guard could only
+    mask a rename — turning a real regression into a silent skip. Plain import (issue #431).
+    """
+    from app.transcription.boundary_resolver import BoundarySmoothingConfig
+
     return BoundarySmoothingConfig(enabled=False), BoundarySmoothingConfig(**SMOOTHING_ON_KWARGS)
 
 
 def _finalize_segments() -> Any:
-    """Import finalize_segments or skip if the pure function isn't committed yet."""
-    try:
-        from app.utils.segment_postprocess import finalize_segments
-    except ImportError as exc:
-        pytest.skip(f"finalize_segments not available yet: {exc}")
+    """Import ``finalize_segments`` — see ``_smoothing_configs`` on why not guarded."""
+    from app.utils.segment_postprocess import finalize_segments
+
     return finalize_segments
 
 

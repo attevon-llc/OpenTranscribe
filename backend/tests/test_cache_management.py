@@ -117,7 +117,7 @@ class TestClearCacheOnDelete:
     """Deleting a file must clear its derived cache (no orphaned duplicates)."""
 
     def test_clear_cache_for_media_file_targets_all_variants(
-        self, db_session, test_user, monkeypatch
+        self, db_session, sample_user, monkeypatch
     ):
         file = MediaFile(
             uuid=str(uuid.uuid4()),
@@ -125,7 +125,7 @@ class TestClearCacheOnDelete:
             storage_path="media/test/talk.mp4",
             content_type="video/mp4",
             file_size=1024,
-            user_id=test_user.id,
+            user_id=sample_user.id,
             status="completed",
             is_public=False,
         )
@@ -154,14 +154,14 @@ class TestClearCacheOnDelete:
 class TestCanonicalDestroy:
     """All delete paths funnel through one purge_media_file implementation."""
 
-    def _make_completed_file(self, db_session, test_user, name="purge.mp4"):
+    def _make_completed_file(self, db_session, sample_user, name="purge.mp4"):
         f = MediaFile(
             uuid=str(uuid.uuid4()),
             filename=name,
             storage_path=f"media/test/{name}",
             content_type="video/mp4",
             file_size=1024,
-            user_id=test_user.id,
+            user_id=sample_user.id,
             status="completed",
             is_public=False,
         )
@@ -170,31 +170,31 @@ class TestCanonicalDestroy:
         db_session.refresh(f)
         return f
 
-    def test_purge_deletes_db_row(self, db_session, test_user):
+    def test_purge_deletes_db_row(self, db_session, sample_user):
         from app.services import file_cleanup_service
 
-        f = self._make_completed_file(db_session, test_user)
+        f = self._make_completed_file(db_session, sample_user)
         fid = int(f.id)
         result = file_cleanup_service.purge_media_file(db_session, f)
         assert result["deleted"] is True
         assert db_session.query(MediaFile).filter(MediaFile.id == fid).first() is None
 
-    def test_auto_delete_alias_destroys_via_canonical_path(self, db_session, test_user):
+    def test_auto_delete_alias_destroys_via_canonical_path(self, db_session, sample_user):
         """The retention/orphan alias produces the same destroy as purge_media_file."""
         from app.services import file_cleanup_service
 
-        f = self._make_completed_file(db_session, test_user, name="retention.mp4")
+        f = self._make_completed_file(db_session, sample_user, name="retention.mp4")
         fid = int(f.id)
         result = file_cleanup_service.auto_delete_media_file(db_session, f)
         assert result["deleted"] is True
         assert db_session.query(MediaFile).filter(MediaFile.id == fid).first() is None
 
-    def test_interactive_delete_routes_through_purge(self, db_session, test_user, monkeypatch):
+    def test_interactive_delete_routes_through_purge(self, db_session, sample_user, monkeypatch):
         """crud.delete_media_file (single/bulk/force) destroys via the canonical path."""
         from app.api.endpoints.files import crud
         from app.services import file_cleanup_service
 
-        f = self._make_completed_file(db_session, test_user, name="interactive.mp4")
+        f = self._make_completed_file(db_session, sample_user, name="interactive.mp4")
         fid = int(f.id)
 
         called = {}
@@ -208,7 +208,7 @@ class TestCanonicalDestroy:
         # crud imports purge_media_file lazily inside the function; patch the source too.
         monkeypatch.setattr(file_cleanup_service, "purge_media_file", spy)
 
-        crud.delete_media_file(db_session, str(f.uuid), test_user, force=True)
+        crud.delete_media_file(db_session, str(f.uuid), sample_user, force=True)
         assert called.get("hit") is True
         assert db_session.query(MediaFile).filter(MediaFile.id == fid).first() is None
 

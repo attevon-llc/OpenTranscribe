@@ -53,12 +53,12 @@ def test_upload_wav_happy(client, user_token_headers, upload_test_file):
 
 
 @pytest.mark.skipif(not S3_LIVE, reason="legacy upload writes to MinIO (SKIP_S3=False)")
-def test_upload_sets_file_id_header(client, user_token_headers, test_wav_bytes, db_session):
+def test_upload_sets_file_id_header(client, user_token_headers, sample_wav_bytes, db_session):
     """The response carries an X-File-ID header equal to the new file UUID."""
     response = client.post(
         "/api/files",
         headers=user_token_headers,
-        files=_multipart(test_wav_bytes, "hdr.wav", "audio/wav"),
+        files=_multipart(sample_wav_bytes, "hdr.wav", "audio/wav"),
     )
     assert response.status_code == status.HTTP_200_OK, response.text
     file_uuid = response.json()["uuid"]
@@ -72,8 +72,8 @@ def test_upload_sets_file_id_header(client, user_token_headers, test_wav_bytes, 
 # ---------------------------------------------------------------------------
 
 
-def test_upload_unauthorized(client, test_wav_bytes):
-    response = client.post("/api/files", files=_multipart(test_wav_bytes, "x.wav", "audio/wav"))
+def test_upload_unauthorized(client, sample_wav_bytes):
+    response = client.post("/api/files", files=_multipart(sample_wav_bytes, "x.wav", "audio/wav"))
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 

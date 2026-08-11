@@ -16,27 +16,27 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-def test_file_with_comment(user_token_headers, upload_test_file):
+def sample_file_with_comment(user_token_headers, upload_test_file):
     """Create a test file that we can add comments to"""
     data = upload_test_file(user_token_headers, filename="comment_test.wav")
     # Return uuid if available, otherwise id
     return data.get("uuid") or data.get("id")
 
 
-def test_list_comments(client, user_token_headers, test_file_with_comment):
+def test_list_comments(client, user_token_headers, sample_file_with_comment):
     """Test listing comments for a file"""
     response = client.get(
-        f"/api/comments?media_file_id={test_file_with_comment}",
+        f"/api/comments?media_file_id={sample_file_with_comment}",
         headers=user_token_headers,
     )
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
 
-def test_create_comment(client, user_token_headers, test_file_with_comment, db_session):
+def test_create_comment(client, user_token_headers, sample_file_with_comment, db_session):
     """Test creating a comment for a file"""
     comment_data = {
-        "media_file_id": test_file_with_comment,
+        "media_file_id": sample_file_with_comment,
         "text": "This is a test comment",
         "timestamp": 30.5,  # Comment at 30.5 seconds in the audio
     }
@@ -49,11 +49,11 @@ def test_create_comment(client, user_token_headers, test_file_with_comment, db_s
     assert comment["timestamp"] == 30.5
 
 
-def test_get_comment(client, user_token_headers, test_file_with_comment, db_session):
+def test_get_comment(client, user_token_headers, sample_file_with_comment, db_session):
     """Test getting a specific comment"""
     # First create a comment
     comment_data = {
-        "media_file_id": test_file_with_comment,
+        "media_file_id": sample_file_with_comment,
         "text": "Comment for get test",
         "timestamp": 45.0,
     }
@@ -71,11 +71,11 @@ def test_get_comment(client, user_token_headers, test_file_with_comment, db_sess
     assert comment["timestamp"] == 45.0
 
 
-def test_update_comment(client, user_token_headers, test_file_with_comment, db_session):
+def test_update_comment(client, user_token_headers, sample_file_with_comment, db_session):
     """Test updating a comment"""
     # First create a comment
     comment_data = {
-        "media_file_id": test_file_with_comment,
+        "media_file_id": sample_file_with_comment,
         "text": "Comment for update test",
         "timestamp": 60.0,
     }
@@ -96,11 +96,11 @@ def test_update_comment(client, user_token_headers, test_file_with_comment, db_s
     assert comment["timestamp"] == 65.5
 
 
-def test_delete_comment(client, user_token_headers, test_file_with_comment, db_session):
+def test_delete_comment(client, user_token_headers, sample_file_with_comment, db_session):
     """Test deleting a comment"""
     # First create a comment
     comment_data = {
-        "media_file_id": test_file_with_comment,
+        "media_file_id": sample_file_with_comment,
         "text": "Comment for delete test",
         "timestamp": 75.0,
     }

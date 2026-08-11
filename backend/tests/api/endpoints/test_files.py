@@ -41,9 +41,9 @@ def test_upload_file(user_token_headers, upload_test_file):
     assert file_data["filename"] == "test_audio.wav"
 
 
-def test_upload_file_unauthorized(client, test_wav_bytes):
+def test_upload_file_unauthorized(client, sample_wav_bytes):
     """Test that unauthorized users cannot upload files"""
-    files = {"file": ("test_audio.wav", io.BytesIO(test_wav_bytes), "audio/wav")}
+    files = {"file": ("test_audio.wav", io.BytesIO(sample_wav_bytes), "audio/wav")}
     response = client.post("/api/files", files=files)
     assert response.status_code == 401  # Unauthorized
 

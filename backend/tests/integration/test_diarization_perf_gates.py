@@ -182,10 +182,13 @@ def test_coexistence_under_simulated_cap(
 
     # Apply the simulated cap on a fresh process-frac; must run BEFORE any
     # CUDA allocation in this test to take effect.
+    # Narrowed from a bare `except Exception`, which would have reported any failure in this
+    # block — including a genuine CUDA/driver fault — as a skip (issue #431). Only an absent or
+    # unusable device should skip; anything else is a real problem and must fail.
     try:
         total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-    except Exception:
-        pytest.skip("cannot read device properties")
+    except (RuntimeError, AssertionError, AttributeError) as exc:
+        pytest.skip(f"cannot read CUDA device properties: {exc}")
     frac = cap_gb / total_gb
     if frac > 1.0:
         pytest.skip(f"device smaller than cap={cap_gb}GB")

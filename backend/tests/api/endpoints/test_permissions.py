@@ -70,7 +70,7 @@ def owner_user(db_session):
 
 
 @pytest.fixture
-def test_media_file(db_session, owner_user):
+def sample_media_file(db_session, owner_user):
     """A media file owned by owner_user, created directly in DB."""
     mf = MediaFile(
         uuid=uuid_pkg.uuid4(),
@@ -88,7 +88,7 @@ def test_media_file(db_session, owner_user):
 
 
 @pytest.fixture
-def test_speakers(db_session, test_media_file, owner_user):
+def sample_speakers(db_session, sample_media_file, owner_user):
     """Speakers on the test media file (owned by owner_user)."""
     speakers = []
     for i in range(3):
@@ -97,7 +97,7 @@ def test_speakers(db_session, test_media_file, owner_user):
             name=f"SPEAKER_{i:02d}",
             display_name=f"Speaker {i}",
             user_id=owner_user.id,
-            media_file_id=test_media_file.id,
+            media_file_id=sample_media_file.id,
         )
         db_session.add(s)
         speakers.append(s)
@@ -108,7 +108,7 @@ def test_speakers(db_session, test_media_file, owner_user):
 
 
 @pytest.fixture
-def shared_collection(db_session, owner_user, test_media_file):
+def shared_collection(db_session, owner_user, sample_media_file):
     """A collection owned by owner_user containing the test media file."""
     coll = Collection(
         uuid=uuid_pkg.uuid4(),
@@ -121,7 +121,7 @@ def shared_collection(db_session, owner_user, test_media_file):
 
     member = CollectionMember(
         collection_id=coll.id,
-        media_file_id=test_media_file.id,
+        media_file_id=sample_media_file.id,
     )
     db_session.add(member)
     db_session.commit()
@@ -134,41 +134,41 @@ def shared_collection(db_session, owner_user, test_media_file):
 class TestGetFileByUuidWithPermission:
     """Test the admin bypass in get_file_by_uuid_with_permission."""
 
-    def test_owner_can_access_own_file(self, db_session, test_media_file, owner_user):
+    def test_owner_can_access_own_file(self, db_session, sample_media_file, owner_user):
         from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
         result = get_file_by_uuid_with_permission(
-            db_session, str(test_media_file.uuid), owner_user.id
+            db_session, str(sample_media_file.uuid), owner_user.id
         )
-        assert result.id == test_media_file.id
+        assert result.id == sample_media_file.id
 
-    def test_admin_can_access_other_users_file(self, db_session, test_media_file, admin_user):
+    def test_admin_can_access_other_users_file(self, db_session, sample_media_file, admin_user):
         from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
         result = get_file_by_uuid_with_permission(
             db_session,
-            str(test_media_file.uuid),
+            str(sample_media_file.uuid),
             admin_user.id,
             is_admin=True,
         )
-        assert result.id == test_media_file.id
+        assert result.id == sample_media_file.id
 
     def test_non_admin_blocked_from_other_users_file(
-        self, db_session, test_media_file, normal_user
+        self, db_session, sample_media_file, normal_user
     ):
         from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
         with pytest.raises(HTTPException) as exc:
             get_file_by_uuid_with_permission(
                 db_session,
-                str(test_media_file.uuid),
+                str(sample_media_file.uuid),
                 normal_user.id,
                 is_admin=False,
             )
         assert exc.value.status_code == 403
 
     def test_shared_viewer_can_access_file(
-        self, db_session, test_media_file, normal_user, shared_collection
+        self, db_session, sample_media_file, normal_user, shared_collection
     ):
         """A user who has been shared a collection can access files in it."""
         from app.utils.uuid_helpers import get_file_by_uuid_with_permission
@@ -187,11 +187,11 @@ class TestGetFileByUuidWithPermission:
 
         result = get_file_by_uuid_with_permission(
             db_session,
-            str(test_media_file.uuid),
+            str(sample_media_file.uuid),
             normal_user.id,
             is_admin=False,
         )
-        assert result.id == test_media_file.id
+        assert result.id == sample_media_file.id
 
 
 class TestGetCollectionByUuidWithPermission:
@@ -232,23 +232,27 @@ class TestPermissionServiceAdminBypass:
     """Test that endpoints using PermissionService respect admin status."""
 
     def test_permission_service_returns_owner_for_file_owner(
-        self, db_session, test_media_file, owner_user
+        self, db_session, sample_media_file, owner_user
     ):
         from app.services.permission_service import PermissionService
 
-        perm = PermissionService.get_file_permission(db_session, test_media_file.id, owner_user.id)
+        perm = PermissionService.get_file_permission(
+            db_session, sample_media_file.id, owner_user.id
+        )
         assert perm == "owner"
 
     def test_permission_service_returns_none_for_unshared_user(
-        self, db_session, test_media_file, normal_user
+        self, db_session, sample_media_file, normal_user
     ):
         from app.services.permission_service import PermissionService
 
-        perm = PermissionService.get_file_permission(db_session, test_media_file.id, normal_user.id)
+        perm = PermissionService.get_file_permission(
+            db_session, sample_media_file.id, normal_user.id
+        )
         assert perm is None
 
     def test_permission_service_returns_viewer_for_shared_viewer(
-        self, db_session, test_media_file, normal_user, shared_collection
+        self, db_session, sample_media_file, normal_user, shared_collection
     ):
         from app.services.permission_service import PermissionService
 
@@ -263,11 +267,13 @@ class TestPermissionServiceAdminBypass:
         db_session.add(share)
         db_session.commit()
 
-        perm = PermissionService.get_file_permission(db_session, test_media_file.id, normal_user.id)
+        perm = PermissionService.get_file_permission(
+            db_session, sample_media_file.id, normal_user.id
+        )
         assert perm == "viewer"
 
     def test_permission_service_returns_editor_for_shared_editor(
-        self, db_session, test_media_file, normal_user, shared_collection
+        self, db_session, sample_media_file, normal_user, shared_collection
     ):
         from app.services.permission_service import PermissionService
 
@@ -282,7 +288,9 @@ class TestPermissionServiceAdminBypass:
         db_session.add(share)
         db_session.commit()
 
-        perm = PermissionService.get_file_permission(db_session, test_media_file.id, normal_user.id)
+        perm = PermissionService.get_file_permission(
+            db_session, sample_media_file.id, normal_user.id
+        )
         assert perm == "editor"
 
 
@@ -295,17 +303,17 @@ class TestPermissionServiceAdminBypass:
 class TestAdminFileAccess:
     """Test admin can access file details owned by other users."""
 
-    def test_admin_can_get_file_detail(self, client, admin_token_headers, test_media_file):
+    def test_admin_can_get_file_detail(self, client, admin_token_headers, sample_media_file):
         response = client.get(
-            f"/api/files/{test_media_file.uuid}",
+            f"/api/files/{sample_media_file.uuid}",
             headers=admin_token_headers,
         )
         # Should not be 403 — admin should have access
         assert response.status_code != 403, f"Admin got 403 on other user's file: {response.json()}"
 
-    def test_admin_gets_my_permission_owner(self, client, admin_token_headers, test_media_file):
+    def test_admin_gets_my_permission_owner(self, client, admin_token_headers, sample_media_file):
         response = client.get(
-            f"/api/files/{test_media_file.uuid}",
+            f"/api/files/{sample_media_file.uuid}",
             headers=admin_token_headers,
         )
         if response.status_code == 200:
@@ -313,10 +321,10 @@ class TestAdminFileAccess:
             assert data.get("my_permission") == "owner"
 
     def test_regular_user_blocked_from_other_users_file(
-        self, client, user_token_headers, test_media_file
+        self, client, user_token_headers, sample_media_file
     ):
         response = client.get(
-            f"/api/files/{test_media_file.uuid}",
+            f"/api/files/{sample_media_file.uuid}",
             headers=user_token_headers,
         )
         assert response.status_code == 403
@@ -326,10 +334,10 @@ class TestAdminSpeakerAccess:
     """Test admin can see speakers on other users' files."""
 
     def test_admin_can_list_speakers_for_other_users_file(
-        self, client, admin_token_headers, test_media_file, test_speakers
+        self, client, admin_token_headers, sample_media_file, sample_speakers
     ):
         response = client.get(
-            f"/api/speakers?file_uuid={test_media_file.uuid}",
+            f"/api/speakers?file_uuid={sample_media_file.uuid}",
             headers=admin_token_headers,
         )
         assert response.status_code != 403, f"Admin got 403 listing speakers: {response.json()}"
@@ -338,7 +346,7 @@ class TestAdminSpeakerAccess:
             assert len(speakers) == 3, f"Expected 3 speakers, got {len(speakers)}"
 
     def test_regular_user_cannot_list_other_users_speakers(
-        self, client, user_token_headers, test_media_file, test_speakers
+        self, client, user_token_headers, sample_media_file, sample_speakers
     ):
         """A non-owner asking for another user's file must be refused, not served empty.
 
@@ -355,7 +363,7 @@ class TestAdminSpeakerAccess:
         must fail the test.
         """
         response = client.get(
-            f"/api/speakers?file_uuid={test_media_file.uuid}",
+            f"/api/speakers?file_uuid={sample_media_file.uuid}",
             headers=user_token_headers,
         )
         assert response.status_code == 403, response.text
@@ -365,10 +373,10 @@ class TestAdminCommentAccess:
     """Test admin can access comments on other users' files."""
 
     def test_admin_can_list_comments_for_other_users_file(
-        self, client, admin_token_headers, test_media_file
+        self, client, admin_token_headers, sample_media_file
     ):
         response = client.get(
-            f"/api/comments/files/{test_media_file.uuid}/comments",
+            f"/api/comments/files/{sample_media_file.uuid}/comments",
             headers=admin_token_headers,
         )
         assert response.status_code != 403, f"Admin got 403 listing comments: {response.json()}"
@@ -377,9 +385,9 @@ class TestAdminCommentAccess:
 class TestAdminSummaryAccess:
     """Test admin can access summary endpoints on other users' files."""
 
-    def test_admin_can_get_summary_status(self, client, admin_token_headers, test_media_file):
+    def test_admin_can_get_summary_status(self, client, admin_token_headers, sample_media_file):
         response = client.get(
-            f"/api/files/{test_media_file.uuid}/summary-status",
+            f"/api/files/{sample_media_file.uuid}/summary-status",
             headers=admin_token_headers,
         )
         # Should not be 403
@@ -405,19 +413,19 @@ class TestSharedEditorAccess:
         return share
 
     def test_shared_editor_can_get_file_detail(
-        self, client, user_token_headers, test_media_file, editor_share
+        self, client, user_token_headers, sample_media_file, editor_share
     ):
         response = client.get(
-            f"/api/files/{test_media_file.uuid}",
+            f"/api/files/{sample_media_file.uuid}",
             headers=user_token_headers,
         )
         assert response.status_code != 403, f"Shared editor got 403: {response.json()}"
 
     def test_shared_editor_gets_editor_permission(
-        self, client, user_token_headers, test_media_file, editor_share
+        self, client, user_token_headers, sample_media_file, editor_share
     ):
         response = client.get(
-            f"/api/files/{test_media_file.uuid}",
+            f"/api/files/{sample_media_file.uuid}",
             headers=user_token_headers,
         )
         if response.status_code == 200:
@@ -425,10 +433,10 @@ class TestSharedEditorAccess:
             assert data.get("my_permission") == "editor"
 
     def test_shared_editor_can_list_speakers(
-        self, client, user_token_headers, test_media_file, test_speakers, editor_share
+        self, client, user_token_headers, sample_media_file, sample_speakers, editor_share
     ):
         response = client.get(
-            f"/api/speakers?file_uuid={test_media_file.uuid}",
+            f"/api/speakers?file_uuid={sample_media_file.uuid}",
             headers=user_token_headers,
         )
         assert response.status_code != 403
@@ -455,19 +463,19 @@ class TestSharedViewerAccess:
         return share
 
     def test_shared_viewer_can_get_file_detail(
-        self, client, user_token_headers, test_media_file, viewer_share
+        self, client, user_token_headers, sample_media_file, viewer_share
     ):
         response = client.get(
-            f"/api/files/{test_media_file.uuid}",
+            f"/api/files/{sample_media_file.uuid}",
             headers=user_token_headers,
         )
         assert response.status_code != 403
 
     def test_shared_viewer_gets_viewer_permission(
-        self, client, user_token_headers, test_media_file, viewer_share
+        self, client, user_token_headers, sample_media_file, viewer_share
     ):
         response = client.get(
-            f"/api/files/{test_media_file.uuid}",
+            f"/api/files/{sample_media_file.uuid}",
             headers=user_token_headers,
         )
         if response.status_code == 200:

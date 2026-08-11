@@ -425,7 +425,7 @@ def super_admin_token_headers(client, super_admin_user):
 
 
 @pytest.fixture(scope="session")
-def test_wav_bytes() -> bytes:
+def sample_wav_bytes() -> bytes:
     """A minimal valid PCM WAV file that passes magic-byte upload validation.
 
     0.1 s of 16 kHz mono silence (~3.2 KB). Generated with the stdlib so tests
@@ -444,7 +444,7 @@ def test_wav_bytes() -> bytes:
 
 
 @pytest.fixture
-def upload_test_file(client, test_wav_bytes):
+def upload_test_file(client, sample_wav_bytes):
     """Factory that uploads a real WAV via the API and cleans up MinIO afterwards.
 
     The DB row rolls back with the savepoint, but the MinIO object does not —
@@ -455,7 +455,7 @@ def upload_test_file(client, test_wav_bytes):
     uploaded: list[tuple[str, dict]] = []
 
     def _upload(headers: dict, filename: str = "test_audio.wav") -> dict:
-        files = {"file": (filename, io.BytesIO(test_wav_bytes), "audio/wav")}
+        files = {"file": (filename, io.BytesIO(sample_wav_bytes), "audio/wav")}
         response = client.post("/api/files", headers=headers, files=files)
         assert response.status_code == 200, f"File upload failed: {response.json()}"
         data: dict = response.json()
@@ -475,7 +475,7 @@ def upload_test_file(client, test_wav_bytes):
 
 
 @pytest.fixture(scope="function")
-def test_user(normal_user):
+def sample_user(normal_user):
     """Alias for normal_user fixture."""
     return normal_user
 

@@ -970,6 +970,35 @@ npm run test                     # Run tests
 npm run lint                     # Lint code
 ```
 
+### **Cutting a release**
+
+Releases run through one script — don't hand-run `git tag`, `docker push`, or
+`gh release`:
+
+```bash
+./scripts/release.sh status            # where am I?
+./scripts/release.sh reset 0.5.0       # clear rehearsal history before a real run
+./scripts/release.sh preflight 0.5.0   # seconds — fails fast on the usual suspects
+./scripts/release.sh run 0.5.0         # the whole sequence
+./scripts/release.sh run 0.5.0 --dry-run   # print every command, execute nothing
+```
+
+Twelve stages, each independently runnable, skippable (`--skip`) and resumable
+(`--from`):
+
+```
+preflight → bump → verify → test → build → scan → rehearse
+          → tag → publish → smoke → promote → finish
+```
+
+The last four are the only ones that reach Docker Hub or GitHub, and each needs
+an explicit `--yes`. Before they run, two rehearsal scenarios prove the release
+end to end on real data: a **fresh install** via the documented one-liner, and an
+**in-place upgrade from the previous published release** — including a file
+uploaded *after* the upgrade, to prove the upgraded stack still does its job.
+
+📖 **Full guide: [Developer Guide → Releasing](https://attevon-llc.github.io/OpenTranscribe/docs/developer-guide/releasing)**
+
 ### **Testing**
 
 Testing is **local-first**: GitHub Actions runs the unit/API suite as a

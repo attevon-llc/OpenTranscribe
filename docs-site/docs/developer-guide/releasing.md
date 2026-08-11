@@ -52,6 +52,40 @@ were implemented, stages still `pending` whose work was done by hand. `reset`
 clears `.release/<version>/` and nothing else: no artifact, image, or tag is
 touched. It prints what it will clear and asks first.
 
+### Driving it from a script or an agent
+
+Exit codes are stable, so nothing has to parse prose to know what happened:
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `0` | Stage passed | Continue |
+| `1` | A **gate failed** | Fix the finding and re-run, or `--force-<stage> "reason"` |
+| `2` | **Misuse** — bad arguments | Fix the invocation; retrying verbatim won't help |
+| `3` | **Precondition unmet** — live stack up, builder unreachable, dirty tree | Resolve the precondition; this is *not* a gate failure |
+| `4` | **Operator aborted** | Nothing ran; re-run when ready |
+
+The `1` / `3` split is the one that matters: a `3` means the release was never
+evaluated, so treating it as "the release is bad" is wrong.
+
+Add `--json` to any stage for a machine-readable result. Logs go to **stderr**
+and JSON to **stdout**, so they never interleave:
+
+```bash
+./scripts/release.sh verify 0.5.0 --json | jq -e '.status'
+```
+
+```json
+{"stage":"scan","version":"v0.5.0","status":"fail",
+ "criteria":[{"id":"no-critical-cves","status":"fail","actual":22,"expected":0}],
+ "next":["--force-scan \"reason\"","fix the findings and re-run"]}
+```
+
+`next[]` enumerates the **legal moves** from that state — it exists so an agent
+recovers with a supported action instead of inventing one.
+
+`./scripts/release.sh status --json` returns the whole ledger, which is the
+resume point for an agent that lost its context.
+
 ### Overriding a gate
 
 A gate can be overridden, never silently:
@@ -265,3 +299,16 @@ hour QEMU emulation into roughly 20 minutes of native build.
 - [Deployment configuration](../operations/deployment-configuration.md) — the
   permutations the matrix validates
 - [Testing](./testing.md) — the suites the `test` stage runs
+
+### In the repository
+
+| File | What it covers |
+|---|---|
+| `scripts/release.sh` | The orchestrator — arg parsing, ledger, dispatch |
+| `scripts/release/NN-<stage>.sh` | One file per stage; each runnable on its own |
+| `scripts/release/release-criteria.yaml` | Gate definitions, read by the script **and** CI |
+| `scripts/release-tests/` | The two rehearsal scenarios + `lib/guardrails.sh` |
+| `scripts/release-tests/selftest-cleanup.sh` | 15 cases over the harness's own destructive paths — **run after any `guardrails.sh` change** |
+| `.claude/skills/release/SKILL.md` | The agent-facing interface |
+| `docs/RELEASE_PROCESS.md` | Historical pointer — superseded by this page |
+| `CLAUDE.md` → "Cutting a release" | The short version agents read first |

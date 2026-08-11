@@ -107,20 +107,40 @@ DEPLOYMENTS=(
 # ------------------------------------------------------------------ env file
 #
 # Prefer the real .env so we validate what this machine actually runs. Fall back
-# to .env.example (CI has no .env). NEVER write into the repo.
+# to .env.example (CI has no .env).
+#
+# `--env-file` alone is NOT enough, which is why every permutation failed in CI
+# while passing locally. It sets the file used for ${VAR} interpolation, but the
+# compose files ALSO declare a per-service `env_file: .env` (10+ times in
+# docker-compose.yml), and that path is resolved relative to the project
+# directory regardless of --env-file. With no ./.env, compose rejects every
+# service before validating anything:
+#
+#   env file /home/runner/work/OpenTranscribe/.env not found
+#
+# So a repo-local .env has to exist for the duration of the run. It is created
+# ONLY when absent — there is nothing to clobber in that case — and removed
+# again on exit. A developer's real .env is never touched or read past this
+# point.
 ENV_FILE=""
 TMP_ENV=""
+CREATED_REPO_ENV=false
 if [[ -f .env ]]; then
     ENV_FILE=".env"
 else
     TMP_ENV="$(mktemp /tmp/ot-validate-env-XXXXXX)"
     cp .env.example "$TMP_ENV"
     ENV_FILE="$TMP_ENV"
+    cp .env.example .env
+    CREATED_REPO_ENV=true
     echo -e "${YELLOW}No .env — validating against .env.example${NC}" >&2
+    echo -e "${YELLOW}  (a temporary ./.env was created for compose's per-service env_file; removed on exit)${NC}" >&2
 fi
 
 cleanup() {
     [[ -n "$TMP_ENV" ]] && rm -f "$TMP_ENV"
+    # Only ever removes a .env this script created itself.
+    [[ "$CREATED_REPO_ENV" == "true" ]] && rm -f .env
     # --dry-run creates only the generated fresh overlay, never containers.
     rm -f ".fresh/${FRESH_NAME}.yml" ".fresh/${FRESH_NAME}.offset" ".fresh/${FRESH_NAME}.aux"
     return 0

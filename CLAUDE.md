@@ -137,6 +137,54 @@ Run with `./opentr.sh start dev --gpu-scale` — **the flag is what enables scal
 
 Skill: `.claude/skills/docker-build-push/SKILL.md` (multi-arch requires `USE_REMOTE_BUILDER=true`).
 
+### Cutting a release — `./scripts/release.sh`, never by hand
+
+**Do not hand-run git tag / docker push / gh release.** Everything mechanical is a
+stage in `scripts/release/NN-<stage>.sh`; `scripts/release.sh` owns arg parsing,
+the ledger, and dispatch.
+
+```bash
+./scripts/release.sh status                 # where am I? (ledger table)
+./scripts/release.sh explain publish        # preconditions, side effects, reversibility
+./scripts/release.sh reset 0.5.0            # clear rehearsal history before a REAL run
+./scripts/release.sh preflight 0.5.0        # seconds — fails fast
+./scripts/release.sh run 0.5.0              # the whole sequence
+./scripts/release.sh run 0.5.0 --dry-run    # print every command, execute nothing
+./scripts/release.sh scan 0.5.0 --force-scan "reason"   # override, recorded
+```
+
+Stage order (each independently runnable, skippable with `--skip`, resumable with
+`--from`):
+
+```
+preflight → bump → verify → test → build → scan → rehearse
+          → tag → publish → smoke → promote → finish
+```
+
+- **`tag` / `publish` / `promote` / `finish` reach outside this repo.** Each needs
+  `--yes` **and** its `ask` rule in `.claude/settings.json`. They are the only
+  stages that touch Docker Hub or GitHub.
+- **Exit codes are stable** — `0` pass, `1` gate failed, `2` misuse, `3`
+  precondition unmet (live stack up, builder unreachable), `4` operator abort.
+  `--json` on any stage emits a `criteria[]` and a `next[]` of legal moves.
+- **Gates are overridable, never silently.** `--force-<stage> "reason"` requires a
+  reason (there is no bare `--force`) and records `overridden` + operator in the
+  ledger — not a pass.
+- **Ledger** lives in `.release/<version>/steps/` (gitignored). Rehearsal history
+  reads as current until you `reset`, so reset before a real run.
+- `rehearse` runs both scenarios and **requires the live stack stopped**; it
+  refuses (exit 3) and prints the command rather than stopping it for you.
+
+Full guide: `docs-site/docs/developer-guide/releasing.md` (Developer Guide →
+Releasing). Agent interface: `.claude/skills/release/SKILL.md`. Gate definitions:
+`scripts/release/release-criteria.yaml`.
+
+**Version facts are DERIVED, never recorded.** The Alembic head comes from the
+`down_revision` graph (`scripts/release-tests/lib/alembic-head.py`), and FROM/TO
+from the `VERSION` file + Docker Hub. Never add a checked-in table of versions —
+the last one (`expected-schemas.tsv`) went stale because it was hand-maintained
+and read by nothing.
+
 ### Backend / venv
 
 Alembic runs automatically on dev backend startup — `alembic upgrade head` is production-only.
@@ -213,6 +261,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Watch sources (local / S3 / SMB auto-import) | `backend/app/services/watch_sources/CLAUDE.md` |
 | Test suite: markers, gates, E2E fixtures | `backend/tests/CLAUDE.md` |
 | Repo scripts + destructive-op warnings | `scripts/CLAUDE.md` |
+| Release pipeline (12 stages, ledger, gates) | `docs-site/docs/developer-guide/releasing.md` |
 | Frontend SPA (+ 24 folder-level files) | `frontend/CLAUDE.md` |
 
 > **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. Full table: `backend/app/services/search/CLAUDE.md`.

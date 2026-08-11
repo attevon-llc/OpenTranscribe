@@ -25,6 +25,7 @@
    * remove control looks like.
    */
   import { createEventDispatcher } from 'svelte';
+  import Chip from './Chip.svelte';
 
   export let chips: MetadataChip[] = [];
   /**
@@ -41,6 +42,21 @@
   export let coverageLabel: (count: number, total: number) => string = (count, total) =>
     `on ${count} of ${total}`;
   export let disabled = false;
+  /**
+   * Most chips to render before summarising the rest.
+   *
+   * A selection of 100 files can carry every tag in the library; rendering all
+   * of them turns the dialog into a wall nobody reads. Full-coverage chips
+   * (on every selected file) sort first, because those are the ones that
+   * describe the selection as a whole.
+   */
+  export let maxVisible = 12;
+  /** Renders the "+N more" summary. */
+  export let overflowLabel: (count: number) => string = (count) => `+${count} more`;
+
+  $: sorted = [...chips].sort((a, b) => (b.count ?? 0) - (a.count ?? 0));
+  $: visible = sorted.slice(0, maxVisible);
+  $: hidden = Math.max(0, sorted.length - visible.length);
 
   const dispatch = createEventDispatcher<{ remove: MetadataChip }>();
 
@@ -54,28 +70,22 @@
 </script>
 
 <div class="chip-row">
-  {#each chips as chip (chip.uuid)}
-    <span class="metadata-chip" class:partial={isPartial(chip)}>
-      <span class="chip-name">{chip.name}</span>
-      {#if !removable && typeof chip.count === 'number' && typeof chip.total === 'number'}
-        <span class="chip-count">{coverageLabel(chip.count, chip.total)}</span>
-      {:else if removable}
-        <button
-          type="button"
-          class="chip-remove"
-          on:click={() => dispatch('remove', chip)}
-          {disabled}
-          title={removeLabel(chip.name)}
-          aria-label={removeLabel(chip.name)}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      {/if}
+  {#each visible as chip (chip.uuid)}
+    <span class="chip-slot" class:partial={isPartial(chip)}>
+      <Chip
+        removable={removable && !disabled}
+        removeLabel={removeLabel(chip.name)}
+        on:remove={() => dispatch('remove', chip)}
+      >
+        {chip.name}{#if !removable && typeof chip.count === 'number' && typeof chip.total === 'number'}<span
+            class="chip-count">{coverageLabel(chip.count, chip.total)}</span
+          >{/if}
+      </Chip>
     </span>
   {/each}
+  {#if hidden > 0}
+    <span class="chip-overflow">{overflowLabel(hidden)}</span>
+  {/if}
 </div>
 
 <style>
@@ -85,22 +95,19 @@
     gap: 6px;
   }
 
-  .metadata-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    background: var(--surface-color);
-    color: var(--text-color);
-    font-size: 12px;
-  }
+
 
   /* Partial coverage reads differently from total: otherwise adding looks like
-     a no-op when it is not. */
-  .metadata-chip.partial {
+     a no-op when it is not. Applied to the wrapper so the shared Chip
+     primitive stays untouched. */
+  .chip-slot.partial :global(.chip) {
     border-style: dashed;
+    opacity: 0.75;
+  }
+
+  .chip-overflow {
+    align-self: center;
+    font-size: 12px;
     color: var(--text-secondary);
   }
 
@@ -110,21 +117,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .chip-remove {
-    display: flex;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
 
-  .chip-remove:hover:not(:disabled) {
-    color: var(--error-color, #dc2626);
-  }
 
-  .chip-remove:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
 </style>

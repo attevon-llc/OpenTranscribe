@@ -2183,6 +2183,7 @@
   "tags.manager.sort.usage": "最常用",
   "tags.manager.sort.name": "名称 (A–Z)",
   "tags.manager.create.label": "新建标签",
+  "tags.manager.create.tooltip": "创建标签。与现有标签匹配的名称会解析到该标签。",
   "tags.manager.create.placeholder": "为标签命名…",
   "tags.manager.create.submit": "添加",
   "tags.manager.create.creating": "正在添加…",

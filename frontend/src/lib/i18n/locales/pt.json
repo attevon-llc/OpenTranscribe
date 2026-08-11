@@ -2183,6 +2183,7 @@
   "tags.manager.sort.usage": "Mais usadas",
   "tags.manager.sort.name": "Nome (A–Z)",
   "tags.manager.create.label": "Nova etiqueta",
+  "tags.manager.create.tooltip": "Criar uma etiqueta. Um nome que corresponda a uma existente será associado a ela.",
   "tags.manager.create.placeholder": "Dê um nome à etiqueta…",
   "tags.manager.create.submit": "Adicionar",
   "tags.manager.create.creating": "A adicionar…",

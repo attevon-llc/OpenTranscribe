@@ -2183,6 +2183,7 @@
   "tags.manager.sort.usage": "使用頻度順",
   "tags.manager.sort.name": "名前 (A–Z)",
   "tags.manager.create.label": "新しいタグ",
+  "tags.manager.create.tooltip": "タグを作成します。既存のタグと一致する名前はそのタグに解決されます。",
   "tags.manager.create.placeholder": "タグ名を入力…",
   "tags.manager.create.submit": "追加",
   "tags.manager.create.creating": "追加中…",

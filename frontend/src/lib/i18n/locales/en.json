@@ -2184,6 +2184,7 @@
   "tags.manager.sort.usage": "Most used",
   "tags.manager.sort.name": "Name (A–Z)",
   "tags.manager.create.label": "New tag",
+  "tags.manager.create.tooltip": "Create a tag. A name matching an existing tag will resolve to it.",
   "tags.manager.create.placeholder": "Name a tag…",
   "tags.manager.create.submit": "Add",
   "tags.manager.create.creating": "Adding…",

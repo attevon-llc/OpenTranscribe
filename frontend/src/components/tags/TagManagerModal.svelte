@@ -410,21 +410,33 @@
 
 <div class="tags-manager">
   <form class="create-row" on:submit|preventDefault={submitCreate}>
-    <label class="create-label" for="new-tag-name">{$t('tags.manager.create.label')}</label>
-    <input
-      id="new-tag-name"
-      type="text"
-      class="form-input create-input"
-      bind:value={newTagName}
-      maxlength="50"
-      placeholder={$t('tags.manager.create.placeholder')}
-      disabled={creating}
-      on:keydown={onCreateKeydown}
-    />
+    <!-- Same shape as the search field below it: icon inside a full-width
+         input, label for assistive tech only. The visible "New tag" text used
+         to sit flush against the modal edge, cramped against the input and
+         unlike anything else in the dialog. -->
+    <label class="sr-only" for="new-tag-name">{$t('tags.manager.create.label')}</label>
+    <div class="create-wrapper">
+      <svg class="create-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+      <input
+        id="new-tag-name"
+        type="text"
+        class="create-input"
+        bind:value={newTagName}
+        maxlength="50"
+        placeholder={$t('tags.manager.create.placeholder')}
+        disabled={creating}
+        title={$t('tags.manager.create.tooltip')}
+        on:keydown={onCreateKeydown}
+      />
+    </div>
     <button
       type="submit"
       class="btn btn-primary"
       disabled={creating || newTagName.trim() === ''}
+      title={$t('tags.manager.create.tooltip')}
     >
       {creating ? $t('tags.manager.create.creating') : $t('tags.manager.create.submit')}
     </button>
@@ -597,20 +609,72 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.25rem;
   }
 
-  .create-label {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
+  /* Not a global class in this app — TagList defines its own. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
     white-space: nowrap;
+    border: 0;
   }
 
-  .create-input {
+  .create-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
     flex: 1;
     min-width: 0;
   }
+
+  .create-icon {
+    position: absolute;
+    left: 12px;
+    color: var(--text-secondary);
+    pointer-events: none;
+  }
+
+  /* Matches .search-input exactly — the two sit one above the other and were
+     visibly different controls. */
+  .create-input,
+  .search-input {
+    width: 100%;
+    padding: 0.5rem 2rem 0.5rem 2.25rem;
+    /* The app's input tokens, not --surface-color: the modal body is already
+       surface-coloured, so a surface-coloured input read as a grey smear
+       rather than a field. Matches form-elements.css and CollectionsPanel. */
+    background-color: var(--input-background);
+    border: 1px solid var(--input-border);
+    border-radius: 6px;
+    color: var(--text-color);
+    font-size: 0.875rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+  }
+
+  .create-input:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+
+  /* The controls beside the inputs came in at three different heights and three
+     different radii — input 37.4/6px, the Add button 36/8px, the selects
+     32.2/4px — which is what made the two rows look misaligned. Pin them all to
+     the input's metrics. */
+  .sort-select {
+    height: 37.4px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+  }
+
+
+
 
   @media (max-width: 640px) {
     .create-row {
@@ -640,19 +704,9 @@
 
   .search-icon {
     position: absolute;
-    left: 10px;
+    left: 12px;
     color: var(--text-secondary);
     pointer-events: none;
-  }
-
-  .search-input {
-    width: 100%;
-    padding: 0.45rem 2rem 0.45rem 2rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color);
-    color: var(--text-color);
-    font-size: 0.875rem;
   }
 
   .search-input:focus-visible {
@@ -826,20 +880,59 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.25rem;
   }
 
-  .create-label {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
-  }
-
-  .create-input {
+  .create-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
     flex: 1;
     min-width: 0;
   }
+
+  .create-icon {
+    position: absolute;
+    left: 12px;
+    color: var(--text-secondary);
+    pointer-events: none;
+  }
+
+  /* Matches .search-input exactly — the two sit one above the other and were
+     visibly different controls. */
+  .create-input,
+  .search-input {
+    width: 100%;
+    padding: 0.5rem 2rem 0.5rem 2.25rem;
+    /* The app's input tokens, not --surface-color: the modal body is already
+       surface-coloured, so a surface-coloured input read as a grey smear
+       rather than a field. Matches form-elements.css and CollectionsPanel. */
+    background-color: var(--input-background);
+    border: 1px solid var(--input-border);
+    border-radius: 6px;
+    color: var(--text-color);
+    font-size: 0.875rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+  }
+
+  .create-input:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+
+  /* The controls beside the inputs came in at three different heights and three
+     different radii — input 37.4/6px, the Add button 36/8px, the selects
+     32.2/4px — which is what made the two rows look misaligned. Pin them all to
+     the input's metrics. */
+  .sort-select {
+    height: 37.4px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+  }
+
+
+
 
   @media (max-width: 640px) {
     .create-row {
@@ -869,19 +962,9 @@
 
   .search-icon {
     position: absolute;
-    left: 10px;
+    left: 12px;
     color: var(--text-secondary);
     pointer-events: none;
-  }
-
-  .search-input {
-    width: 100%;
-    padding: 0.45rem 2rem 0.45rem 2rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color);
-    color: var(--text-color);
-    font-size: 0.875rem;
   }
 
   .search-input:focus-visible {

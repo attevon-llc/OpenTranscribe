@@ -93,11 +93,15 @@
   }
 
   .scope-select {
-    /* Sized to its content rather than the form default, which is full-width. */
+    /* Sized to its content rather than the form default, which is full-width.
+       Height and radius match the search/create inputs above it — the row read
+       as three mismatched controls otherwise. */
     width: auto;
     min-width: 7rem;
+    height: 37.4px;
     padding: 0.35rem 0.5rem;
-    font-size: 0.8125rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
   }
 
   /* Below the tab strip's own breakpoint the row stacks, or the select squeezes

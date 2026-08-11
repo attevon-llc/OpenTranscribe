@@ -204,9 +204,23 @@ run_stage() {
             ledger_record "$version" "$stage" "failed" "precondition"
             err "$stage: a precondition is unmet (see above) — this is not a gate failure" ;;
         *)
-            ledger_record "$version" "$stage" "failed" "exit=$rc"
-            err "$stage failed (exit $rc)"
-            rc=$EXIT_GATE ;;
+            # An overridden gate still FAILED. The distinction the ledger records
+            # is that a named operator accepted the failure and said why -- the
+            # Fortune-100 posture is not "no exceptions", it is "no UNDOCUMENTED
+            # exceptions". A reason is mandatory, so an override cannot be a
+            # reflex; there is no bare --force.
+            if [[ -n "${FORCE_REASON[$stage]:-}" ]]; then
+                ledger_record "$version" "$stage" "overridden" \
+                    "exit=$rc; operator=${USER:-unknown}; reason=${FORCE_REASON[$stage]}"
+                warn "$stage FAILED (exit $rc) and was overridden by ${USER:-unknown}"
+                warn "  reason: ${FORCE_REASON[$stage]}"
+                warn "  this is recorded in the ledger and the release readiness report"
+                rc=0
+            else
+                ledger_record "$version" "$stage" "failed" "exit=$rc"
+                err "$stage failed (exit $rc)"
+                rc=$EXIT_GATE
+            fi ;;
     esac
     return $rc
 }
@@ -244,6 +258,8 @@ COMMAND="${1:-}"; shift || true
 SKIP_STAGES=""; ONLY_STAGES=""; FROM_STAGE=""
 DRY_RUN=false; JSON_OUT=false; ASSUME_YES=false
 POSITIONAL=()
+# stage -> the reason its failure was accepted. Consulted by run_stage.
+declare -A FORCE_REASON=()
 
 while (( $# > 0 )); do
     case "$1" in
@@ -253,6 +269,20 @@ while (( $# > 0 )); do
         --dry-run) DRY_RUN=true; shift ;;
         --json)    JSON_OUT=true; shift ;;
         --yes)     ASSUME_YES=true; shift ;;
+        # --force-<stage> "reason". The reason is REQUIRED: an override with no
+        # recorded justification is the thing this whole mechanism exists to
+        # prevent, so there is deliberately no bare --force.
+        --force-*)
+            _fstage="${1#--force-}"
+            if [[ -z "$(stage_script "$_fstage")" ]]; then
+                err "--force-${_fstage}: '${_fstage}' is not a stage"
+                exit $EXIT_MISUSE
+            fi
+            if [[ $# -lt 2 || -z "${2:-}" || "${2:0:1}" == "-" ]]; then
+                err "--force-${_fstage} requires a reason: --force-${_fstage} \"why this is acceptable\""
+                exit $EXIT_MISUSE
+            fi
+            FORCE_REASON["$_fstage"]="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         -*)        err "unknown option: $1"; exit $EXIT_MISUSE ;;
         *)         POSITIONAL+=("$1"); shift ;;

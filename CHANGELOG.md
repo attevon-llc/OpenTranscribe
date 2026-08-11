@@ -523,6 +523,30 @@ Also fixed: the E2E API session never sent a CSRF token, so every mutation retur
 
 ### Security
 
+#### The container security gate never worked (issues #413, #414)
+
+Two independent defects meant **no OpenTranscribe release had ever actually been scanned**, and neither produced any sign of trouble — the runs looked normal and reported success.
+
+**It could not fail (#413).** `scripts/security-scan.sh` runs under `set -e`, and each scanner was invoked as `( scan_trivy ...; echo $? > .../trivy.status ) &`. A scanner returns non-zero when it *finds* something, which under `set -e` terminated the subshell on that very line — so the status file was written only when the scan came back clean. The collector then treated a missing status file as a pass. The result was a gate that passed **because** the scan failed, across all five tools (hadolint, dockle, sbom, trivy, grype). Each scanner now records its status through a `|| rc=$?` list, which `set -e` does not apply to, and a **missing** status is now a failure — "we have no idea what that scanner found" must never read as "clean".
+
+**It scanned the wrong image (#414).** The `scan` stage exported `VERSION=`, but `security-scan.sh` reads `IMAGE_TAG` and defaults it to `latest`. The names never matched, so every scan silently fell back to `:latest` — locally, the *previous* release. The v0.5.0 gate was measuring the v0.4.1 image built four months earlier and reporting its CVEs as v0.5.0's. The stage now passes `IMAGE_TAG`, asserts all three images exist locally at that tag before scanning, and afterwards reads `ArtifactName` back out of each report and fails unless it ends in the version under test — the only check that would have caught the original bug.
+
+**Gate overrides are now real and recorded.** `--force-<stage> "reason"` was documented but unimplemented. It exists now, the reason is **mandatory** (there is deliberately no bare `--force`), and an overridden gate is recorded in the ledger as `overridden` with the operator and reason rather than as a pass.
+
+#### Known CVEs in v0.5.0 — accepted, with reasons
+
+With the gate repaired, the real numbers for these images are visible for the first time:
+
+| Image | CRITICAL | HIGH |
+|---|---|---|
+| backend | 20 | 171 |
+| frontend | **0** | **0** |
+| docs | 2 | 33 |
+
+**Every one of the 20 backend criticals is unfixed upstream** — there is no patched version to move to. 16 are the perl stack (`libperl5.40`, `perl`, `perl-base`, `perl-modules-5.40`), present solely because `libimage-exiftool-perl` provides the media-metadata parsing the pipeline depends on; the remaining four (`libmbedcrypto16` ×2, `libglib2.0-0t64`, `libxml2`) are likewise unfixed in Debian trixie. `Dockerfile.prod` already runs `apt-get upgrade -y` on every build, and the image is fully patched against its repositories (installed == candidate for every package checked).
+
+The risk is therefore **accepted and recorded** for this release rather than silently carried: the release ledger holds the operator and the full justification. Tracked in **#415** for re-check when Debian publishes fixes — a rebuild is all that will be needed.
+
 #### Authentication audit (issues #353, #354, #355)
 
 A production user reported that LDAP was enabled yet users could still self-register. Auditing

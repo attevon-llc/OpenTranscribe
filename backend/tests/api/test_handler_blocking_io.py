@@ -50,6 +50,7 @@ import app.api.endpoints.media_collections as media_collections
 import app.api.endpoints.speaker_attribute_migration as speaker_attribute_migration
 import app.api.endpoints.summarization as summarization
 import app.api.endpoints.system as system_endpoints
+
 # `tags` is a package now — the endpoint file was split by concern, mirroring
 # endpoints/files/. All four modules are scanned so the split does not quietly
 # drop three quarters of this file's coverage.

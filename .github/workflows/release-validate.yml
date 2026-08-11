@@ -106,13 +106,20 @@ jobs:
       - name: Shellcheck the release-critical scripts
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          # The release-tests harness is included deliberately. It is the most
+          # destructive code in the repository -- it calls `docker volume rm` and
+          # `rm -rf` against paths it computes at runtime -- and the pre-commit
+          # shellcheck hook only inspects files a given PR happens to touch. A
+          # quoting bug in guardrails.sh is not something to find by changing it.
           shellcheck --severity=warning \
             setup-opentranscribe.sh \
             opentranscribe.sh \
             scripts/release.sh \
             scripts/release/*.sh \
             scripts/validate-deployments.sh \
-            scripts/release-tests/lib/versions.sh
+            scripts/security-scan.sh \
+            scripts/release-tests/*.sh \
+            scripts/release-tests/lib/*.sh
 
   schema:
     name: Schema integrity

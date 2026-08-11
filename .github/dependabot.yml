@@ -4,6 +4,13 @@ version: 2
 # backend (pip) PR per week, plus a grouped GitHub Actions PR. Known-bad versions
 # are ignored. To pause entirely, comment out the `updates:` entries below; to run
 # on demand, use the "Check for updates" button on the repo's Dependabot tab.
+#
+# EVERY group below declares `applies-to` TWICE — once for version-updates and
+# once for security-updates. This is not redundancy. A `groups:` block defaults to
+# `applies-to: version-updates` ONLY, so security advisories bypass grouping
+# entirely and open one PR per advisory. Enabling Dependabot security updates
+# immediately produced five separate /docs-site PRs (#417-#419, #421-#422) for
+# exactly this reason. If you add an ecosystem, give it both.
 updates:
   # Frontend — one grouped PR
   - package-ecosystem: "npm"
@@ -13,6 +20,11 @@ updates:
     open-pull-requests-limit: 5
     groups:
       frontend:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      frontend-security:
+        applies-to: security-updates
         patterns:
           - "*"
     ignore:
@@ -42,6 +54,11 @@ updates:
     open-pull-requests-limit: 5
     groups:
       backend:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      backend-security:
+        applies-to: security-updates
         patterns:
           - "*"
     ignore:
@@ -66,8 +83,16 @@ updates:
       # speechmatics-batch 0.x minors are potentially breaking and the 0.5.0
       # release ships live-key-verified provider integrations — re-verify with
       # live keys before adopting (#234).
+      # NOTE: pip ignore conditions take a REQUIREMENT string, not an npm-style
+      # wildcard. This said `0.5.x`, which Dependabot rejects with
+      #   '#/updates/1/ignore/6/versions' includes invalid version requirements
+      #   for a pip ignore condition
+      # and an invalid file is rejected WHOLESALE — so every grouped weekly
+      # version-update PR this config describes had silently stopped running.
+      # Dependabot only re-validates when the file changes, which is why nothing
+      # ever reported it.
       - dependency-name: "speechmatics-batch"
-        versions: ["0.5.x"]
+        versions: [">=0.5.0,<0.6.0"]
 
   # CI workflow actions — one grouped PR
   - package-ecosystem: "github-actions"
@@ -76,6 +101,11 @@ updates:
       interval: "weekly"
     groups:
       github-actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      github-actions-security:
+        applies-to: security-updates
         patterns:
           - "*"
 
@@ -86,6 +116,11 @@ updates:
       interval: "monthly"
     groups:
       backend-docker:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      backend-docker-security:
+        applies-to: security-updates
         patterns:
           - "*"
     ignore:
@@ -101,5 +136,31 @@ updates:
       interval: "monthly"
     groups:
       frontend-docker:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      frontend-docker-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  # Docs site (Docusaurus) — one grouped PR.
+  #
+  # This ecosystem was MISSING entirely, which is why enabling security updates
+  # produced five separate /docs-site PRs at once (#417-#419, #421-#422). It has
+  # its own package.json and lockfile and is built into a published image, so it
+  # needs the same treatment as the app.
+  - package-ecosystem: "npm"
+    directory: "/docs-site"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      docs:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      docs-security:
+        applies-to: security-updates
         patterns:
           - "*"

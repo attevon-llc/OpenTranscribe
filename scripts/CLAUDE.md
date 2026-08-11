@@ -31,6 +31,21 @@ this file is for.
 - **Release rehearsals** — `release-tests/`: `test-fresh-install.sh`, `test-upgrade.sh`
   (both auto-detect FROM/TO — see `lib/versions.sh`), with `lib/guardrails.sh` as the
   safety firewall and `lib/{compose-patch,api-client,assertions,versions}.sh`.
+- **Cutting a release** — `release.sh` is the ONLY entry point; never hand-run
+  `git tag` / `docker push` / `gh release`. 12 stages in `release/NN-<stage>.sh`,
+  each independently runnable (`--skip`, `--only`, `--from`, `--dry-run`), with a
+  ledger in `.release/<version>/steps/`. `tag`/`publish`/`promote`/`finish` reach
+  outside the repo and need `--yes` plus their `ask` rule. Exit codes: 0 pass,
+  1 gate, 2 misuse, 3 precondition, 4 abort. `--force-<stage> "reason"` overrides
+  a gate with a MANDATORY reason, recorded as `overridden` (not a pass).
+  `reset <version>` clears rehearsal history — do it before a real run, or the
+  status table reports stale state as current.
+  Full guide: `docs-site/docs/developer-guide/releasing.md`.
+- **Harness self-test** — `release-tests/selftest-cleanup.sh` (15 cases). Run it
+  after ANY change to `lib/guardrails.sh`: it exercises the code that deletes
+  volumes, and caught the live-data marker check deleting a volume it should have
+  refused (the marker was read from the host, where the root-owned mountpoint made
+  every volume look unmarked).
 - **Release gates** — `check-schema-drift.py` (model-vs-schema, report-first),
   `validate-deployments.sh` (~20 compose permutations in ~15 s),
   `release/check-version-consistency.py` (the six version sources + Alembic single head).

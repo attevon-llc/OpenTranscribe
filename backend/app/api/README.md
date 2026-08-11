@@ -165,7 +165,7 @@ POST   /files/{id}/recover          # Attempt to recover stuck file
 DELETE /files/{id}/force            # Force delete file (admin only)
 GET    /files/management/stuck      # Get list of stuck files
 POST   /files/management/bulk-action # Perform bulk operations (delete, retry, cancel, recover)
-POST   /files/management/cleanup-orphaned # Clean up orphaned files (admin only)
+POST   /files/management/cleanup-orphaned # Recover stuck files in bulk (admin only; NOT orphan cleanup — that is POST /admin/data-integrity)
 ```
 
 **Enhanced File Safety Features:**

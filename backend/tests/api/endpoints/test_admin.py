@@ -1,6 +1,11 @@
 """Admin endpoint tests."""
 
 import uuid
+from unittest.mock import patch
+
+from fastapi import status
+
+from app.core.version import APP_VERSION
 
 
 def test_admin_stats(client, admin_token_headers):
@@ -14,6 +19,52 @@ def test_admin_stats(client, admin_token_headers):
     assert "total" in stats["users"]
     assert "files" in stats
     assert "system" in stats
+
+
+def test_admin_stats_reports_the_real_build_version(client, admin_token_headers):
+    """``system.version`` is the build identity, not a hardcoded literal.
+
+    It was ``"1.0.0"``, which no release ever moved, while ``/health`` and
+    ``/api/system/stats`` reported the real ``APP_VERSION`` — so the admin panel
+    disagreed with the About dialog about which build was running.
+    """
+    response = client.get("/api/admin/stats", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    version = response.json()["system"]["version"]
+    assert version == APP_VERSION
+    assert version != "1.0.0"
+
+
+def test_admin_stats_gpu_is_a_list(client, admin_token_headers):
+    """``system.gpu`` is a list of per-device dicts — one entry per active GPU."""
+    response = client.get("/api/admin/stats", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    gpu = response.json()["system"]["gpu"]
+    assert isinstance(gpu, list)
+    assert gpu, "at least one entry is always reported, even when no GPU is present"
+    assert all(isinstance(entry, dict) for entry in gpu)
+    assert all("available" in entry for entry in gpu)
+
+
+def test_admin_stats_gpu_stays_a_list_when_collection_fails(client, admin_token_headers):
+    """The stats-collection fallback keeps ``gpu``'s type.
+
+    It used to substitute a bare dict, so the key was a list on the happy path and
+    a dict when psutil raised — a client indexing ``gpu[0]`` broke only in the
+    failure path, which is exactly where it would not be noticed.
+    """
+
+    def _boom():
+        raise RuntimeError("psutil unavailable")
+
+    with patch("app.api.endpoints.admin.get_cpu_usage", _boom):
+        response = client.get("/api/admin/stats", headers=admin_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    system = response.json()["system"]
+    assert system["cpu"]["total_percent"] == "Unknown"
+    assert isinstance(system["gpu"], list)
+    assert system["gpu"][0]["available"] is False
 
 
 def test_admin_stats_unauthorized(client, user_token_headers):

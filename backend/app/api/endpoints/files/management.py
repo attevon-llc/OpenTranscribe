@@ -919,17 +919,42 @@ def bulk_file_action(
         ) from e
 
 
-@router.post("/management/cleanup-orphaned")
-def cleanup_orphaned_files(
+@router.post("/management/cleanup-orphaned", summary="Recover stuck files in bulk (admin only)")
+def recover_stuck_files_bulk(
     dry_run: bool = Query(False, description="Preview changes without applying them"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Clean up orphaned files (admin only)."""
+    """Recover every file stuck mid-processing, deployment-wide (admin only).
+
+    **The path is a misnomer and the behaviour is the contract.** This runs
+    ``check_for_stuck_files`` (6 h threshold) and then ``recover_stuck_file`` over
+    the result — it is the bulk sibling of ``POST /tasks/system/fix-file/{uuid}``
+    and it has never touched an orphan. Real orphan cleanup (rows whose storage
+    object is gone, and the reverse) is ``POST /admin/data-integrity``. The path
+    stays as it is because operator runbooks and cron jobs already call it;
+    renaming it would break them to fix a spelling.
+
+    The response used to carry a ``marked_orphaned`` counter that was initialized
+    and never incremented, so it reported ``0`` on every call in every deployment
+    — an operator reading it concluded there was nothing to clean up. It is gone
+    rather than wired up: nothing in this handler marks anything orphaned.
+
+    Args:
+        dry_run: Count the stuck files and change nothing.
+
+    Returns:
+        ``stuck_files_found``, how many were ``recovered``, per-file ``errors``,
+        and the ``dry_run`` flag that was applied. A dry run always reports
+        ``recovered: 0``.
+
+    Raises:
+        HTTPException: 403 for a non-admin caller, 500 if the sweep itself fails.
+    """
     if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators can cleanup orphaned files",
+            detail="Only administrators can recover stuck files",
         )
 
     try:
@@ -939,7 +964,6 @@ def cleanup_orphaned_files(
         cleanup_results: dict[str, int | list[str] | bool] = {
             "stuck_files_found": len(stuck_file_ids),
             "recovered": 0,
-            "marked_orphaned": 0,
             "errors": [],
             "dry_run": dry_run,
         }
@@ -959,7 +983,7 @@ def cleanup_orphaned_files(
                 except Exception as e:
                     # Per-file failure is recorded and the sweep continues; the
                     # caller reads cleanup_results["errors"].
-                    logger.exception(f"Orphan cleanup failed for file {file_id}")
+                    logger.exception(f"Stuck-file recovery failed for file {file_id}")
                     errors_list = cleanup_results["errors"]
                     if isinstance(errors_list, list):
                         errors_list.append(f"Error processing file {file_id}: {str(e)}")
@@ -972,8 +996,8 @@ def cleanup_orphaned_files(
         # raised inside this block as an internal server error (issue #431).
         raise
     except Exception as e:
-        logger.exception(f"Error in cleanup orphaned files: {e}")
+        logger.exception(f"Error in bulk stuck-file recovery: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error cleaning up orphaned files",
+            detail="Error recovering stuck files",
         ) from e

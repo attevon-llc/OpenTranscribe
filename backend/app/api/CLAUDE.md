@@ -97,7 +97,7 @@ noted. Admin (`get_current_admin_user`) unless stated.
 | `DELETE /speaker-attributes/migration/progress` | super_admin; clears stale Redis progress, refuses while running |
 | `GET /embeddings/migration/mode` | super_admin; pure config read (declares an unused `db` dependency) |
 | `POST /tasks/system/fix-file/{uuid}` | Per-file version of the stuck-file fix; admin sees any file |
-| `GET /tags/unused` · `DELETE /tags/cleanup` | **Scopes differ** — `/unused` is caller-visible, `/cleanup` is deployment-wide. See Gotchas |
+| `GET /tags/unused` · `DELETE /tags/cleanup` | `/cleanup` is caller-scoped by default; `scope=all_users` needs `confirm=true`. See Gotchas |
 | `POST /files/waveforms/generate` · `GET /files/waveforms/status` | Bulk waveform backfill + coverage. Admin via an **inline** `is_admin` check, not a dependency |
 | `POST /files/{uuid}/waveform/generate` · `POST /files/{uuid}/analytics/refresh` | Per-file recompute |
 | `DELETE /files/{uuid}/force` · `POST /files/{uuid}/{retry,recover,cancel}` | Recovery verbs on `files/management.py`; see the `get_current_user` gotcha |
@@ -237,11 +237,20 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 - **Bulk tag paths must stay batched.** `prepare_upload.add_tags_to_file` goes through
   `resolve_or_create_tags` (constant SELECTs, issue #284 A2.8), not the per-name resolver;
   `test_upload_prep_batching` fails if the per-name loop returns.
-- **`DELETE /tags/cleanup` is deployment-wide; `GET /tags/unused` is caller-scoped.** The two
-  adjacent routes answer different questions. `/unused` respects `ctx.org_id`; `/cleanup` deletes
-  every owned tag (`user_id IS NOT NULL`) unreferenced by any `FileTag` across all users and orgs,
-  and gates on an **inline** `is_admin` check rather than a dependency. An admin who reads
-  `/unused` and then calls `/cleanup` deletes rows they were never shown. Irreversible.
+- **`DELETE /tags/cleanup` defaults to the CALLER's tags; the deployment-wide sweep must be asked
+  for twice.** It used to delete every owned tag (`user_id IS NOT NULL`) unreferenced by any
+  `FileTag` across all users and orgs, while its inspection sibling `GET /tags/unused` is
+  caller-scoped — so an admin who read the list and then called `/cleanup` irreversibly deleted
+  rows they were never shown, with no impact preview and no parameter that could have warned them
+  (#431). Now: `scope=mine` (**the default**) sweeps only the caller's rows; `scope=all_users`
+  needs `confirm=true` as well or it is a **400**, the same double opt-in as
+  `POST /org-admin/gdpr/erase-organization`. The response gained `scope`; `deleted_count` and
+  `message` are unchanged. The sweep lives in `services/tag_operations.cleanup_unreferenced_tags`
+  and measures "unreferenced" **globally**, not against accessible files — an owned tag can sit on
+  a file the owner can no longer see, and deleting it would strip the tag off someone else's file,
+  so `/unused` may list a tag `/cleanup` declines to delete. System tags are exempt in both
+  scopes. Still gated by an **inline** `is_admin` check rather than a dependency, so a
+  dependency-based authz audit does not see it.
 - **`endpoints/tags_pkg/` is dead code — do not edit it.** A leftover pre-split copy of the tag
   endpoints (no `__init__.py`, its own local `APIRouter`, zero importers; `router.py` mounts
   `endpoints.tags`). None of its routes are served. It still receives accidental maintenance from
@@ -263,20 +272,50 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   query is a 500, because an empty 200 is indistinguishable from "this user has no tasks". Note
   `list_tasks` has a `status` **query param that shadows `fastapi.status`**, so raise with a
   literal code inside that handler.
-- **`endpoints/files/management.py` guards with `get_current_user`, not
-  `get_current_active_user`** — every handler in the module, including `DELETE /{uuid}/force` and
-  `POST /management/bulk-action`. That skips the account-lifecycle gate
-  (`must_change_password`, `account_expires_at`) which `dependencies.py` documents as the reason
-  `get_current_admin_user` chains through the active-user dependency. Two of them also enforce
-  admin via an inline `is_admin` check, so a dependency-based authz audit will not see it.
+- **Depend on `get_current_active_user`, never `get_current_user`, on an ordinary route** —
+  and `tests/unit/test_lifecycle_gate_coverage.py` now enforces it by walking every route's real
+  dependency tree. `get_current_user` answers "is this credential valid?"; the *lifecycle* gate
+  (deactivated, unapproved, rejected, expired, `must_change_password`, unacknowledged banner)
+  lives only in `get_current_active_user`, so depending on the credential layer silently opts a
+  route out of all of it. 30 routes were doing exactly that (#431). The big one was **`deps_context.get_current_context`** —
+  the credential entry point for ~100 routes (all of chat, org-admin, tags, collections,
+  comments, search, upload prepare/cancel) — which meant an expired or force-password-change org
+  admin could reach `POST /org-admin/gdpr/erase-organization`. `get_current_admin_user` and
+  `get_current_active_superuser` were always correct; they chain through the gate.
+  **Remedy-for-its-own-gate routes need no waiver**: the exemption lives *inside* the gate as a
+  route-template check (`PASSWORD_CHANGE_EXEMPT_PATHS` / `BANNER_EXEMPT_PATHS`), which survives a
+  dependency refactor, so `PUT /users/me` and `POST /auth/banner/acknowledge` depend on the gate
+  and are let through by it. Only three waivers are legitimate, all listed with reasons in that
+  test: `GET /auth/me` (the SPA reads `must_change_password` off it to render the forced-change
+  screen — gating it would 403 the probe), `POST /auth/logout/all` (self-revocation must work
+  from any state, else a rejected account's refresh token keeps rotating with no kill switch),
+  and `GET /auth/flower-authz` (calls the gate in-body and normalizes every denial to 401,
+  because nginx `auth_request` forwards a 403 verbatim and treats only 401 as unauthenticated).
+  Note `files/management.py` also enforces admin via an **inline** `is_admin` check on two
+  handlers, so a dependency-based authz audit still will not see those.
 - **`POST /files/management/cleanup-orphaned` does not clean up orphaned anything.** It runs
   `check_for_stuck_files` + `recover_stuck_file` — it is the bulk sibling of
-  `POST /tasks/system/fix-file/{uuid}`. Its response carries `"marked_orphaned"`, which is
-  initialized and never incremented. Real orphan cleanup is `POST /admin/data-integrity`.
+  `POST /tasks/system/fix-file/{uuid}`. Real orphan cleanup is `POST /admin/data-integrity`.
+  The **path stays** (runbooks and cron jobs call it); the docstring, the OpenAPI summary and the
+  403 detail now say "recover stuck files", and the dead `"marked_orphaned"` counter — initialized,
+  never incremented, so it reported `0` in every deployment ever — is **gone** from the response,
+  which is now exactly `stuck_files_found` · `recovered` · `errors` · `dry_run` (#431). It had no
+  consumer in `frontend/src` or the tests. Don't re-add an orphan counter to this handler; nothing
+  in it marks a file orphaned.
 - **`/api/user-settings/ai-summary` is unreachable from the SPA.** `LLMSettings.svelte` calls
-  `/settings/ai-summary`, and no router is mounted at `/settings` — the GET 404 is swallowed by a
-  `console.warn` and the PUT surfaces a toast error. The backend route is correct; the frontend
-  path is wrong.
+  `/settings/ai-summary` (lines 129 and 139), and no router is mounted at `/settings` — the GET 404
+  is swallowed by a `console.warn` and the PUT surfaces a toast error. The backend route is
+  correct; the **frontend** path is wrong and the fix is `/settings/` → `/user-settings/` in those
+  two lines. The admin twin in the same file (`/admin/system/ai-summary`) is right, which is why
+  only the per-user toggle is dead.
+- **`GET /admin/stats`: `system.version` is `core.version.APP_VERSION` and `system.gpu` is always
+  a LIST.** The version was a hardcoded `"1.0.0"` that no release moved, so the admin panel
+  disagreed with `/health` and the About dialog about the running build; and the
+  stats-collection `except` branch substituted a bare **dict** for `gpu` while every
+  `get_gpu_usage()` return is a list, so the key's type depended on whether psutil raised (#431).
+  Note the sibling `GET /system/stats` spells the same list `gpus` and is what the SPA reads —
+  `/admin/stats`' `gpu` has no frontend consumer, so don't "align" the names without checking the
+  runbooks.
 - **Both SSE streams go check → subscribe → re-check.** `download_stream` (`files/__init__.py`)
   and `bulk_export_stream` (`files/subtitles.py`) read their readiness signal, subscribe to the
   pub/sub channel, then read it **again**. A single check-then-subscribe loses a worker

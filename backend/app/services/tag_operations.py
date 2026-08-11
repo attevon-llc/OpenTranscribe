@@ -597,6 +597,55 @@ def delete_tags(
     return TagMutationOutcome(impact=impact, deleted_uuids=deleted_uuids)
 
 
+def cleanup_unreferenced_tags(db: Session, *, acting_user_id: int, all_users: bool = False) -> int:
+    """Delete owned tags that no ``file_tag`` row anywhere references.
+
+    "Unreferenced" is deliberately measured **globally**, not against the acting
+    user's accessible files: an owned tag can sit on a file the owner can no
+    longer see (tagging a shared file adds the word to *your* vocabulary, and the
+    share can be revoked afterwards), and deleting that row would strip the tag
+    off someone else's file. So this is the intersection of "looks unused" and
+    "provably attached to nothing" — which makes it safe to run without an impact
+    preview, unlike :func:`delete_tags`.
+
+    System tags (``user_id IS NULL``) are always exempt. They are the shared
+    vocabulary every account's picker shows and being unattached is their normal
+    state, so sweeping them would empty the picker for everyone.
+
+    Args:
+        db: Database session. Committed when anything is deleted.
+        acting_user_id: The caller — the owner whose tags are swept, and the
+            cache-invalidation scope.
+        all_users: Sweep every user's tags rather than only the caller's. The
+            deployment-wide form: irreversible, and it removes rows the caller
+            was never able to see.
+
+    Returns:
+        How many tag rows were deleted.
+    """
+    used_tag_ids = select(FileTag.tag_id).where(FileTag.tag_id.is_not(None))
+    query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids), Tag.user_id.is_not(None))
+    if not all_users:
+        query = query.filter(Tag.user_id == acting_user_id)
+
+    # Report the DELETE's own rowcount rather than a preceding count(): the two
+    # are evaluated at different instants, so a tag attached between them is
+    # (correctly) left alone by the DELETE while a separate count would still
+    # have included it — over-reporting an irreversible operation.
+    deleted = query.delete(synchronize_session=False)
+    if not deleted:
+        return 0
+
+    db.commit()
+
+    # No file loses a tag here (that is the definition of unreferenced), but the
+    # deleted rows were in someone's cached `GET /tags` list — a deployment-wide
+    # sweep touches every account's, so nothing narrower than system_scope is
+    # correct for it.
+    on_tags_changed(db, user_id=acting_user_id, system_scope=all_users)
+    return deleted
+
+
 def promote_tags_to_shared(
     db: Session,
     tag_ids: Sequence[int],

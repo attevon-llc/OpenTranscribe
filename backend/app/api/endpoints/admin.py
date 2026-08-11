@@ -41,6 +41,7 @@ from app.auth.roles import role_implies_superuser
 from app.core.config import settings
 from app.core.constants import CeleryQueues
 from app.core.security import get_password_hash
+from app.core.version import APP_VERSION
 from app.db.base import get_db
 from app.models.media import Analytics
 from app.models.media import Collection
@@ -497,8 +498,24 @@ def _validate_user_deletion(user: User, current_user: User) -> None:
 async def get_admin_stats(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
 ):
-    """
-    Get admin statistics about the application and system
+    """Report application and host statistics for the admin dashboard.
+
+    Two fields have a fixed contract worth stating, because both were wrong:
+
+    - ``system.version`` is ``app.core.version.APP_VERSION`` — the build identity
+      every other surface reports (``/health``, ``/api/system/stats``, the About
+      dialog's staleness check). It was a hardcoded ``"1.0.0"`` that never moved
+      through any release.
+    - ``system.gpu`` is **always a list** of per-device dicts, one per active GPU
+      (``--gpu-scale`` runs more than one). The stats-collection fallback below
+      used to substitute a bare dict, so the key's type depended on whether
+      psutil raised.
+
+    Returns:
+        Nested user/file/transcript/speaker/model/system/task statistics.
+
+    Raises:
+        HTTPException: 500 if the aggregation fails.
     """
     logger.info(f"Admin stats requested by user {current_user.email}")
 
@@ -527,14 +544,20 @@ async def get_admin_stats(
                     "logical_cores": 0,
                     "physical_cores": 0,
                 },
-                "gpu": {
-                    "available": False,
-                    "name": "Error",
-                    "memory_total": "Unknown",
-                    "memory_used": "Unknown",
-                    "memory_free": "Unknown",
-                    "memory_percent": "Unknown",
-                },
+                # A LIST, like every `get_gpu_usage()` return: one entry per GPU
+                # (`--gpu-scale` runs several). A bare dict here made the key's
+                # type depend on whether psutil happened to raise, so a client
+                # indexing `gpu[0]` broke only in the failure path.
+                "gpu": [
+                    {
+                        "available": False,
+                        "name": "Error",
+                        "memory_total": "Unknown",
+                        "memory_used": "Unknown",
+                        "memory_free": "Unknown",
+                        "memory_percent": "Unknown",
+                    }
+                ],
                 "memory": {
                     "total": "Unknown",
                     "available": "Unknown",
@@ -599,7 +622,7 @@ async def get_admin_stats(
             },
             "models": models_info,
             "system": {
-                "version": "1.0.0",
+                "version": APP_VERSION,
                 "uptime": system_stats["uptime"],
                 "memory": system_stats["memory"],
                 "cpu": system_stats["cpu"],

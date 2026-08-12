@@ -21,14 +21,22 @@ if [ -f ".env" ]; then
   set +a
 fi
 
-# Default the optional .env-sourced variables this script reads so `set -u`
-# doesn't abort when they're absent from .env. These are all genuinely optional
-# (storage paths, nginx server name, GPU split device ids, ports).
+# Default the optional .env-sourced variables this script reads — directly or
+# through scripts/common.sh — so `set -u` doesn't abort when they're absent from
+# .env. These are all genuinely optional (storage paths, nginx server name, GPU
+# device id, ports).
+#
+# Keep this list in sync with what the two files actually expand:
+# backend/tests/unit/test_shell_env_var_guards.py fails the build on any
+# unguarded expansion that is missing here. GPU_DEVICE_ID was the one that got
+# away — common.sh tested it bare, so `./opentr.sh start dev` died with
+# "GPU_DEVICE_ID: unbound variable" on any checkout without a .env.
 : "${NGINX_SERVER_NAME:=}"
 : "${MINIO_NAS_PATH:=}"
 : "${POSTGRES_DATA_PATH:=}"
 : "${OPENSEARCH_DATA_PATH:=}"
 : "${COMPOSE_PROFILES:=}"
+: "${GPU_DEVICE_ID:=}"
 
 # Export APP_VERSION so docker compose can pass it through to containers
 # (used instead of ./VERSION file bind-mount to avoid OCI stub creation in dev mode)

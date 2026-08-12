@@ -152,6 +152,34 @@ def _invalidate_chat_retrieval_cache() -> None:
         logger.debug("Could not bump chat corpus version", exc_info=True)
 
 
+def chunk_plane_query(file_uuid: str, *, from_chunk_index: int | None = None) -> dict[str, Any]:
+    """Build the query that selects the CHUNK-plane documents of one file.
+
+    **Every delete against the chunks index is built here, and nowhere else.**
+    #383 Phase 3 adds non-chunk documents (per-file digests, discriminated by a
+    ``doc_type`` field) to this same index. A delete that only matches on
+    ``file_uuid`` would take the digests with it. Keeping the predicate in one
+    function means that change is a single line added to ``filters`` below::
+
+        filters.append({"term": {"doc_type": "chunk"}})
+
+    Do not write a ``delete_by_query`` against ``OPENSEARCH_CHUNKS_INDEX``
+    anywhere else — a scattered copy is exactly what this function prevents.
+
+    Args:
+        file_uuid: UUID of the media file whose chunks are being selected.
+        from_chunk_index: When set, restrict to chunks at or above this index —
+            the stale tail left behind by a longer previous chunking.
+
+    Returns:
+        An OpenSearch query body fragment (the value of ``"query"``).
+    """
+    filters: list[dict[str, Any]] = [{"term": {"file_uuid": file_uuid}}]
+    if from_chunk_index is not None:
+        filters.append({"range": {"chunk_index": {"gte": from_chunk_index}}})
+    return {"bool": {"filter": filters}}
+
+
 def _build_hybrid_search_pipeline() -> dict[str, Any]:
     """Build the RRF search pipeline configuration with configurable rank_constant.
 
@@ -724,6 +752,15 @@ class TranscriptIndexingService:
                 threshold=settings.SEARCH_LARGE_TRANSCRIPT_CHUNKS,
             ):
                 indexed = self._bulk_index_chunks(chunks, use_neural_pipeline=use_neural)
+
+            # Doc ids are deterministic (``{file_uuid}_{chunk_index}``), so the bulk
+            # load above OVERWRITES chunks 0..len(chunks)-1 but cannot touch a longer
+            # previous chunking's tail. Without this, a re-index after a segment merge,
+            # a speaker-turn change or a SEARCH_CHUNK_TARGET_WORDS bump leaves stale
+            # documents — old text, old speakers, old timestamps — that keep surfacing
+            # in search and in RAG chat retrieval (issue #400).
+            stale_removed = self._prune_stale_chunks(file_uuid, keep_count=len(chunks))
+
             index_ms = round((time.time() - t_index_start) * 1000)
             total_ms = chunk_ms + index_ms
             mode_str = "neural" if use_neural else "text-only"
@@ -741,6 +778,7 @@ class TranscriptIndexingService:
                 "total_ms": total_ms,
                 "mode": mode_str,
                 "neural": use_neural,
+                "stale_removed": stale_removed,
             }
         except Exception as e:
             logger.error(f"Bulk indexing failed for file {file_uuid}: {e}")
@@ -765,7 +803,7 @@ class TranscriptIndexingService:
 
             response = opensearch_client.delete_by_query(
                 index=index_name,
-                body={"query": {"term": {"file_uuid": file_uuid}}},
+                body={"query": chunk_plane_query(file_uuid)},
                 refresh=True,
             )
             deleted: int = response.get("deleted", 0)
@@ -775,6 +813,62 @@ class TranscriptIndexingService:
             return deleted
         except Exception as e:
             logger.error(f"Error deleting chunks for file {file_uuid}: {e}")
+            return 0
+
+    def _prune_stale_chunks(self, file_uuid: str, *, keep_count: int) -> int:
+        """Delete chunks left behind by a longer previous chunking of this file.
+
+        Called after every bulk load. Chunks ``0..keep_count-1`` were just
+        overwritten in place (the doc id is derived from ``chunk_index``); anything
+        at or above ``keep_count`` belongs to a chunking that no longer exists.
+
+        **The count runs first so the first index after transcription pays nothing.**
+        A ``count`` is a cheap search against the existing searcher; the
+        ``delete_by_query`` it guards forces a whole-index ``refresh``, which is the
+        part worth avoiding on the hot path where there is provably nothing to delete.
+
+        The count reads the searcher, so it can miss documents written within the
+        index's ``refresh_interval`` (1 s). That only matters if the same file were
+        re-indexed twice inside one second, which no pipeline path does — a re-index
+        follows a transcript edit, a reprocess, or a recovery sweep.
+
+        A failure here is logged, not raised: the new chunks are already indexed and
+        correct, and the caller must not report a successful index as a failure.
+
+        Args:
+            file_uuid: UUID of the media file just indexed.
+            keep_count: Number of chunks the new chunking produced.
+
+        Returns:
+            Number of stale chunks deleted.
+        """
+        if not opensearch_client:
+            return 0
+
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        query = chunk_plane_query(file_uuid, from_chunk_index=keep_count)
+        try:
+            count_response = opensearch_client.count(index=index_name, body={"query": query})
+            if not count_response.get("count", 0):
+                return 0
+
+            response = opensearch_client.delete_by_query(
+                index=index_name,
+                body={"query": query},
+                refresh=True,
+                conflicts="proceed",
+            )
+            deleted = int(response.get("deleted", 0))
+            logger.info(
+                f"Pruned {deleted} stale chunk(s) for file {file_uuid} "
+                f"(re-chunk shrank to {keep_count} chunks)"
+            )
+            return deleted
+        except Exception as e:
+            logger.error(
+                f"Could not prune stale chunks for file {file_uuid} "
+                f"(chunks >= {keep_count} may still be searchable): {e}"
+            )
             return 0
 
     def reindex_transcript(
@@ -803,7 +897,11 @@ class TranscriptIndexingService:
         Returns:
             Number of chunks indexed.
         """
-        # Delete existing chunks first
+        # Delete existing chunks first. Not redundant with the tail prune
+        # ``index_transcript_chunks`` now does (issue #400): a full rebuild wants a
+        # clean slate, and this is the only path that also clears the chunks of a
+        # transcript that now yields NO chunks at all — in which case
+        # ``index_transcript_chunks`` returns early without pruning.
         self.delete_transcript_chunks(file_uuid)
 
         # Re-index

@@ -84,3 +84,10 @@ custom only, label style).
 - `SEARCH_RRF_RANK_CONSTANT` defaults to **30** (`core/config.py:328`); the docstring in
   `_build_hybrid_search_pipeline` still says 40. A mismatch against a live pipeline triggers
   automatic pipeline recreation on startup.
+- **Every delete against the chunks index goes through `chunk_plane_query`** (issue #400).
+  Re-indexing overwrites `{file_uuid}_{chunk_index}` in place, so a shorter re-chunk used to
+  orphan the tail — stale text, stale speakers, stale timestamps, still returned by search and
+  by RAG chat. `index_transcript_chunks` now prunes `chunk_index >= len(chunks)` after the bulk
+  load, gated by a `count` so the first index after transcription pays no `delete_by_query`.
+  When #383 Phase 3 adds digest documents to this index, the `doc_type` predicate goes in
+  `chunk_plane_query` and nowhere else.

@@ -240,7 +240,7 @@ tests gated off behind stale env vars, and a progress endpoint returning a hardc
 no test referenced.
 
 ```bash
-python3 scripts/audit-tests.py backend/tests        # 7 AST detectors, exits 1 on new offenders
+python3 scripts/audit-tests.py backend/tests        # 14 AST detectors, exits 1 on new offenders
 cd frontend && npm run test:audit                   # the vitest sibling, 10 detectors
 npm run test:audit:selftest                         #   ...and ITS 21-case self-test
 python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]

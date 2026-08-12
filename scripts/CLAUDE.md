@@ -12,16 +12,58 @@ this file is for.
 
 - **Pre-merge gate** — `run-integration-tests.sh` (`--coverage --e2e-smoke --search-quality --cleanup`).
   Runs the ungated suite, then all `RUN_*`-gated security suites twice (FIPS off, then `FIPS_MODE=true`),
-  then `-m integration`.
+  then `-m integration`, then `-m gpu`, then **model-vs-schema drift**
+  (`RUN_SCHEMA_DRIFT_TESTS=true tests/unit/test_schema_drift.py`). That last phase is new: the
+  variable used to be set in exactly ONE place — the release pipeline's `schema-drift`
+  criterion, at severity `warn` — so the check never ran pre-merge at all, and its warn
+  justification ("4 known pre-existing offenders") was stale. It is deliberately NOT in the
+  `GATES` array: that array's variables are exported for the `GATED_FILES` pytest run, which
+  does not include the drift file, so adding it there would have looked like coverage and
+  changed nothing.
 - **E2E** — `e2e/run-e2e.sh`: two phases, non-visual in parallel (`E2E_WORKERS`, default 3) then
   `-m visual` serially. `e2e/run-e2e-smoke.sh` is a 4-file subset of it.
+  **pytest exit 5 = "no tests collected" is not a failure for a marker-filtered phase.**
+  `resolve_phase()` forgives 5, and *only* 5, and *only* for a caller-selected file subset:
+  none of the smoke script's four files holds a `visual` test, so phase 2 collected nothing,
+  exited 5, and `run-e2e-smoke.sh` **always exited non-zero** — unnoticed because the gate's
+  `--e2e-smoke` calls pytest directly instead of going through here. Exit 1/2/3/4 still
+  propagate, so a real phase-2 failure fails the run; and on the WHOLE tree 0 collected still
+  FAILS, because there it means the `visual` marker itself selects nothing (a renamed marker
+  would otherwise delete the entire screenshot suite from the gate in silence).
 - **Test-suite quality tooling** (issue #431) — four scripts whose job is to stop a test that
   cannot fail from looking like a passing one:
-  - `audit-tests.py <dir>` — 7 AST detectors (permissive-status, conditional-only,
-    conditional-skip, no-assertion, failure-masking, mock-heavy, fixture-named-test). Exits 1 on
-    any finding not in `backend/tests/audit-allowlist.txt`, whose keys are
+  - `audit-tests.py <dir>` — **14** AST detectors. The original seven (permissive-status,
+    conditional-only, conditional-skip, no-assertion, failure-masking, mock-heavy,
+    fixture-named-test) missed 17 of 18 known evasion shapes, so seven more landed:
+    `negated-status` (`assert r.status_code != 403` — **a 500 passes**), `status-guarded-assert`
+    (the real assertion lives in `if status == 200:`, invisible to conditional-only because a
+    weak unguarded assert sits beside it), `loop-only` (every assertion inside a `for` over a
+    runtime iterable — an empty result is a green run; **27** of these, incl. seven in
+    `test_search_quality.py`, down from a raw 38 once single-assignment resolution stopped
+    counting table-driven tests), `unfalsifiable`, `weak-only`, `mock-only`, and
+    `error-swallowed` (`except ...: pass`, failure-masking's untested twin).
+    **`--selftest` is not optional.** 20 must-fire fixtures + 16 must-stay-clean, run in-memory;
+    `backend/tests/unit/test_audit_tests_selftest.py` runs the same cases under pytest so a dead
+    detector fails the ordinary suite too, and the tree scan refuses to be trusted (prints
+    `SELF-TEST BROKEN`) when a fixture stops firing.
+    **`tests/e2e` is now in the DEFAULT scan** (`--no-e2e` opts out). Excluding it hid 21
+    findings in the only suite that drives a real browser.
+    **The mock-heavy count was wrong by 2×**: `_patch_refs` matched both `Name('patch')` and
+    `Attribute(attr='object')`, so every `patch.object(...)` scored 2 and `_MAX_PATCH_REFS = 6`
+    really meant "3 calls", while `monkeypatch.setattr` scored 0 and was invisible. Counting
+    calls dropped 41 findings to **3** — 38 were artefacts of the double-count, not tests.
+    Exits 1 on any finding not in `backend/tests/audit-allowlist.txt`, whose keys are
     `<file>::<test>::<category>` with a mandatory reason. **The category is part of the key on
     purpose** — an entry keyed by test alone exempted one test from all six detectors at once.
+    Two allowlist rules that make it safe to run as a gate over a pre-existing backlog:
+    a reason starting `BACKLOG` marks **deferred work**, counted and printed loudly on every
+    run (`163 finding(s) are DEFERRED WORK, not accepted patterns`) so a green gate is never
+    mistaken for a clean tree; and a **stale** entry — one whose finding no longer exists —
+    **fails the run**, so the file can only shrink and an exemption cannot outlive its subject.
+    Wired into `.pre-commit-config.yaml` (`audit-tests-selftest` then `audit-tests`,
+    `language: system` + `python3` because the auditor is stdlib-only and the CI runner
+    installs only `pre-commit`) and into the `backend-tests` CI job. It was in neither before —
+    `rg audit-tests` found only prose, which is what a gate nothing invokes amounts to.
   - `analyze-test-timing.py <junit.xml> [--baseline b.xml]` — wall clock vs Σ durations,
     effective parallelism, per-`xdist_group` totals, and the **duration-cluster detector**:
     unrelated tests from ≥3 files inside a sub-second band are a released lock queue, not a
@@ -35,7 +77,13 @@ this file is for.
   - `frontend/scripts/audit-frontend-tests.mjs` (`npm run test:audit`) — the vitest sibling,
     10 detectors, TypeScript compiler API. Run `test:audit:selftest` after ANY detector change:
     its 21 cases caught two detectors matching **nothing**, which reports 0 findings and reads
-    exactly like a clean suite.
+    exactly like a clean suite. Two of its detectors do NOT port to Python as-is:
+    `toBeFalsy`-style weakness does not, because `assert not offenders, "<list>"` is this
+    repo's standard AST-guard shape and fails on any violation — counting the negated form as
+    weak reported 40 of those as findings; and a bare `assert predicate(x)` is real evidence
+    where `expect(x).toBeTruthy()` is not. `loop-only` also needs single-assignment resolution
+    (`endpoints = [...]` then `for e in endpoints:` is as static as the literal) or 22
+    table-driven tests are false positives.
 - **Fake LLM** — `mock-llm-server.py`: OpenAI-compatible server so chat/AI features work
   without a GPU or API key. Run it via `./opentr.sh start dev --with-mock-llm` (compose
   service `mock-llm`, in-network `http://mock-llm:5199/v1`) rather than by hand — a bare

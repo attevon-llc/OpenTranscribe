@@ -38,6 +38,10 @@ ARGS=("$@")
 # Default to the whole e2e directory when no path argument was given.
 # NOTE: never use "${ARGS[@]:-}" — on an empty array it expands to ONE EMPTY
 # STRING argument, which pytest treats as "collect the repo root".
+#
+# WHOLE_TREE records whether we are scanning every e2e file or a caller-selected
+# subset. It decides how "0 tests collected" is read below — see resolve_phase.
+WHOLE_TREE=true
 if [[ ${#ARGS[@]} -eq 0 ]]; then
     ARGS=("backend/tests/e2e/")
 else
@@ -45,7 +49,11 @@ else
     for a in "${ARGS[@]}"; do
         case "$a" in backend/tests/e2e*|tests/e2e*) HAS_PATH=true ;; esac
     done
-    $HAS_PATH || ARGS=("backend/tests/e2e/" "${ARGS[@]}")
+    if $HAS_PATH; then
+        WHOLE_TREE=false
+    else
+        ARGS=("backend/tests/e2e/" "${ARGS[@]}")
+    fi
 fi
 
 # Parallelize across files by default (loadfile keeps each file's tests
@@ -81,12 +89,42 @@ with sync_playwright() as p:
     b.close()
 PYEOF
 
+# pytest exit 5 means "no tests collected", which is NOT a test failure. Both phases below
+# are marker-filtered, so a caller-selected subset can legitimately contain nothing for one
+# of them: run-e2e-smoke.sh passes four files that hold no `visual` test, phase 2 collected
+# 0, exited 5, and the smoke script therefore ALWAYS exited non-zero. Nobody noticed because
+# the pre-merge gate's --e2e-smoke calls pytest directly rather than going through here.
+#
+# The narrow reading matters. Only 5 is forgiven, and only for a subset:
+#   * 1/2/3/4 (failures, interrupt, internal error, usage error) always propagate, so a real
+#     phase-2 failure still fails the run;
+#   * on the WHOLE tree, 0 collected means the MARKER selects nothing — a renamed or dropped
+#     `visual` marker would silently delete the entire screenshot suite from the gate, which
+#     is exactly the class of bug --strict-markers exists to prevent. That stays a failure.
+resolve_phase() {
+    local code=$1 phase=$2
+    if [[ $code -ne 5 ]]; then
+        echo "$code"
+        return
+    fi
+    if $WHOLE_TREE; then
+        echo -e "${RED}${phase}: 0 tests collected from the whole e2e tree.${NC}" >&2
+        echo -e "${RED}  The marker selects nothing — treat this as a broken selector.${NC}" >&2
+        echo "$code"
+    else
+        echo -e "${YELLOW}${phase}: no matching tests in the selected files — phase skipped.${NC}" >&2
+        echo 0
+    fi
+}
+
 echo -e "${GREEN}Running E2E (parallel, ${WORKERS} workers, visual excluded):${NC} pytest ${ARGS[*]}"
 status=0
 "$VENV_PY" -m pytest "${ARGS[@]}" -m "not visual" -n "$WORKERS" --dist loadfile || status=$?
+status=$(resolve_phase "$status" "Phase 1 (-m 'not visual')")
 
 echo -e "${GREEN}Running E2E (visual regression, serial):${NC}"
 visual_status=0
 "$VENV_PY" -m pytest "${ARGS[@]}" -m visual || visual_status=$?
+visual_status=$(resolve_phase "$visual_status" "Phase 2 (-m visual)")
 
 [[ $status -eq 0 && $visual_status -eq 0 ]]

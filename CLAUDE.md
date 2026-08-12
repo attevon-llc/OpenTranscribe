@@ -201,6 +201,19 @@ Run the full suite before committing — not just the staged subset:
 backend/venv/bin/pre-commit run --all-files    # the gate CI mirrors
 ```
 
+> ⚠️ **`--all-files` is UNSAFE in a checkout someone else is working in.** pre-commit
+> **stashes every unstaged change in the repo** for the duration of the run — including another
+> agent's or your own in-flight work in unrelated files — and restores it afterwards. If a hook
+> crashes inside that window, the only copy is `~/.cache/pre-commit/patch<timestamp>-<pid>`.
+> This has already happened here: two writers in one checkout, and one lost its uncommitted work
+> mid-run and got it back by luck. The same mechanism also produces **spurious**
+> `files were modified by this hook` failures whose output contains no findings at all (bandit
+> printing "No issues identified", frontend-check printing "All frontend checks passed") — the
+> stash/restore moved the files, not the hook. When anything else is writing to the tree, use
+> `pre-commit run --files <paths>`, or just commit (the hook runs on the staged set) and wait for
+> a quiet tree before the full sweep. `--all-files` is always correct in CI, where nothing else
+> is writing.
+
 Hook inventory is in `.pre-commit-config.yaml`. The frontend hook only fires when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
 
 Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]`. Inside Claude Code: `/fix-frontend`.

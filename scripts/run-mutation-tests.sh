@@ -108,6 +108,26 @@ GATES=(RUN_PKI_TESTS=true RUN_MFA_TESTS=true RUN_LLM_TESTS=true
        RUN_FEDRAMP_TESTS=true RUN_FIPS_TESTS=true
        RUN_AUTH_CONFIG_TESTS=true RUN_ADVANCED_ADMIN_TESTS=true)
 
+# Service credentials must be EXPORTED, not left to conftest's .env read.
+#
+# mutmut runs pytest from inside backend/mutants/, so conftest's
+# `_project_root = _backend_dir.parent` resolves to backend/ and looks for
+# backend/.env — which does not exist (the real one is at the repo root). The DB
+# credentials then fall back to defaults and every DB-backed test ERRORS at setup,
+# which aborts mutmut's baseline before a single mutant runs. `spans` never hit this
+# because its tests are pure functions.
+#
+# conftest uses `os.environ.setdefault`, and documents that explicitly exported
+# values win over .env precisely so CI and throwaway-DB runs can override — this is
+# that escape hatch. Read straight into the environment; never echoed.
+if [[ -f "$REPO_ROOT/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1090  # a filtered subset of .env, by design
+    source <(grep -E '^(POSTGRES_(USER|PASSWORD|DB)|MINIO_ROOT_(USER|PASSWORD)|MEDIA_BUCKET_NAME)=' \
+             "$REPO_ROOT/.env" || true)
+    set +a
+fi
+
 # ---------------------------------------------------------------------------
 # Args
 # ---------------------------------------------------------------------------

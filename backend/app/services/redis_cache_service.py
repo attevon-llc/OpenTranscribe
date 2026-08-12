@@ -17,6 +17,7 @@ Cache key conventions:
 
 import json
 import logging
+import time
 from typing import Any
 
 from app.core.config import settings
@@ -45,6 +46,22 @@ TTL_COLLECTIONS = 300
 #: Keys per ``SCAN`` round trip, and the largest ``DELETE`` argument batch.
 _SCAN_BATCH = 500
 
+#: How long to stop dialling Redis after a failed connection attempt.
+#:
+#: Without this the "unavailable" verdict was never remembered: ``redis`` below
+#: re-entered its ``try`` on EVERY cache call, and redis-py's default retry policy
+#: sleeps with exponential backoff on each attempt. One tag merge (3 creates + a
+#: merge, each busting several keys) spent **71 of its 87 seconds in
+#: ``time.sleep`` inside ``redis/retry.py``** — 200 sleeps — which is how a
+#: 3-tag test came to take 75 s (issue #431). In production the same shape means a
+#: Redis outage adds several backoff sleeps to every request that touches the
+#: cache, turning a degraded-cache incident into an apparent total outage.
+#:
+#: 30 s is short enough that a recovered Redis is picked up promptly and long
+#: enough that a sustained outage costs one attempt per 30 s per process rather
+#: than one per call.
+_UNAVAILABLE_COOLDOWN_SECONDS = 30.0
+
 
 class RedisCacheService:
     """Thin wrapper around Redis for API response caching.
@@ -55,28 +72,50 @@ class RedisCacheService:
 
     def __init__(self) -> None:
         self._redis: Any = None
+        #: Monotonic deadline before which no further connection is attempted.
+        self._unavailable_until: float | None = None
 
     @property
     def redis(self) -> Any:
-        """Lazy Redis connection (sync client)."""
-        if self._redis is None:
-            try:
-                import redis as sync_redis
+        """Lazy Redis connection (sync client), or ``None`` while unavailable.
 
-                self._redis = sync_redis.Redis(
-                    host=settings.REDIS_HOST,
-                    port=int(settings.REDIS_PORT),
-                    password=settings.REDIS_PASSWORD or None,
-                    db=1,  # Separate DB from Celery broker (db 0)
-                    decode_responses=True,
-                    socket_timeout=2,
-                    socket_connect_timeout=2,
-                )
-                self._redis.ping()
-                logger.info("Redis cache service connected (db=1)")
-            except Exception as e:
-                logger.warning(f"Redis cache unavailable, caching disabled: {e}")
-                self._redis = None
+        A failed attempt opens a ``_UNAVAILABLE_COOLDOWN_SECONDS`` circuit rather
+        than being retried on the next call — see that constant for why.
+        """
+        if self._redis is not None:
+            return self._redis
+
+        if self._unavailable_until is not None and time.monotonic() < self._unavailable_until:
+            return None
+
+        try:
+            import redis as sync_redis
+            from redis.backoff import NoBackoff
+            from redis.retry import Retry
+
+            self._redis = sync_redis.Redis(
+                host=settings.REDIS_HOST,
+                port=int(settings.REDIS_PORT),
+                password=settings.REDIS_PASSWORD or None,
+                db=1,  # Separate DB from Celery broker (db 0)
+                decode_responses=True,
+                socket_timeout=2,
+                socket_connect_timeout=2,
+                # One attempt, no backoff. The cooldown above is this service's
+                # retry policy; redis-py's default adds sleeps on top of it.
+                retry=Retry(NoBackoff(), 0),
+            )
+            self._redis.ping()
+            self._unavailable_until = None
+            logger.info("Redis cache service connected (db=1)")
+        except Exception as e:
+            self._redis = None
+            self._unavailable_until = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
+            logger.warning(
+                "Redis cache unavailable, caching disabled for %.0fs: %s",
+                _UNAVAILABLE_COOLDOWN_SECONDS,
+                e,
+            )
         return self._redis
 
     # ------------------------------------------------------------------

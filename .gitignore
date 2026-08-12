@@ -178,6 +178,12 @@ Thumbs.db
 .docker/
 backend/VERSION  # Ghost file created by Docker bind mount (real VERSION is at repo root)
 
+# Frozen test-timing baseline for scripts/analyze-test-timing.py --baseline.
+# Deliberately NOT committed: it is a measurement of one machine at one moment, and a
+# checked-in copy would rot exactly the way expected-schemas.tsv did. Regenerate with
+#   ./scripts/run-backend-tests.sh && cp /tmp/ot-backend-tests/last.xml baseline.xml
+baseline.xml
+
 # Test files
 test-output/
 /screenshots/

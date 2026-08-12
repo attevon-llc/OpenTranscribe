@@ -37,7 +37,10 @@ class Aspect:
     Attributes:
         name: Aspect id, recorded in ``facts.jsonl`` for provenance.
         anchor_kind: Which allocator namespace supplies the answer string.
-        query_phrase: Anchor-free wording used to ask for this aspect.
+        query_phrase: Anchor-free NOUN PHRASE naming this aspect. It has to be a noun
+            phrase because the query frames read "what was {query_phrase} for
+            {topic}?" and list several of them in one multi-file question; an
+            interrogative here produced "what was who ended up owning it for X?".
         interactive: Render templates for the conversational register.
         formal: Render templates for the parliamentary register.
     """
@@ -53,7 +56,7 @@ ASPECTS: tuple[Aspect, ...] = (
     Aspect(
         "throughput",
         "rps",
-        "peak throughput we measured",
+        "the peak throughput we measured",
         (
             "We finally got a clean run on {topic} — it topped out at {anchor}.",
             "The load test for {topic} came back at {anchor}, which is better than I expected.",
@@ -67,7 +70,7 @@ ASPECTS: tuple[Aspect, ...] = (
     Aspect(
         "latency_budget",
         "ms",
-        "latency budget we agreed",
+        "the latency budget we agreed",
         (
             "We agreed the budget for {topic} is {anchor} and we hold ourselves to that.",
             "For {topic} the ceiling is {anchor}. Anything past that is a regression.",
@@ -78,7 +81,7 @@ ASPECTS: tuple[Aspect, ...] = (
     Aspect(
         "owner",
         "person",
-        "who ended up owning it",
+        "the person who ended up owning it",
         (
             "{anchor} is picking up {topic} from here — they've got the most context.",
             "Ownership of {topic} moves to {anchor} as of this week.",
@@ -92,7 +95,7 @@ ASPECTS: tuple[Aspect, ...] = (
     Aspect(
         "vendor",
         "vendor",
-        "which supplier we selected",
+        "the supplier we selected",
         (
             "We went with {anchor} for {topic} in the end. Their integration story was cleaner.",
             "{anchor} won the {topic} evaluation, mostly on operational fit.",
@@ -106,7 +109,7 @@ ASPECTS: tuple[Aspect, ...] = (
     Aspect(
         "deadline",
         "milestone",
-        "which milestone we committed to",
+        "the milestone we committed to",
         (
             "We committed {topic} to {anchor}. That's firm now.",
             "{topic} lands in {anchor}, assuming nothing else jumps the queue.",
@@ -117,7 +120,7 @@ ASPECTS: tuple[Aspect, ...] = (
     Aspect(
         "cost",
         "amount",
-        "what it was going to cost",
+        "the cost it was going to carry",
         (
             "The number for {topic} came in at {anchor} for the year.",
             "{topic} is {anchor} annualised, which is under what we budgeted.",
@@ -142,7 +145,7 @@ ASPECTS: tuple[Aspect, ...] = (
     Aspect(
         "version",
         "version",
-        "which release it was scheduled into",
+        "the release it was scheduled into",
         (
             "{topic} is going out in {anchor}, not the one before it.",
             "We slipped {topic} to {anchor} to get a full soak cycle.",
@@ -153,7 +156,7 @@ ASPECTS: tuple[Aspect, ...] = (
     Aspect(
         "capacity",
         "regions",
-        "how much of the estate it covers",
+        "the share of the estate it covers",
         (
             "Right now {topic} covers {anchor}, and the rest are queued behind it.",
             "{topic} is live in {anchor} — the remainder need the migration first.",
@@ -164,7 +167,7 @@ ASPECTS: tuple[Aspect, ...] = (
     Aspect(
         "rollback",
         "duration",
-        "how long the rollback window is",
+        "the length of the rollback window",
         (
             "The rollback window on {topic} is {anchor}, which is tighter than I'd like.",
             "We can back {topic} out within {anchor} if it misbehaves.",

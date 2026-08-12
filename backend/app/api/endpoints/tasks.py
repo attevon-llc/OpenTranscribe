@@ -302,6 +302,10 @@ def list_tasks(
             has_more=page < total_pages,
         )
 
+    except HTTPException:
+        # A deliberate status raised below (or by a helper) must reach the client as
+        # itself, not be relabelled 500 by the broad handler.
+        raise
     except Exception as e:
         # Never answer 200 with an empty page here: a failed query is
         # indistinguishable from "this user has no tasks", so the SPA renders an

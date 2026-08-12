@@ -88,7 +88,16 @@ declare -A MODULE_TESTS=(
     [spans]="tests/redaction/test_apply_redactions.py tests/redaction/test_span_merge_boundaries.py tests/redaction/test_word_offset_alignment.py tests/redaction/test_non_ascii_masking.py"
     [password_policy]="tests/unit/test_auth_config_behaviour.py tests/test_fedramp_compliance.py tests/unit/test_account_lifecycle.py tests/unit/test_auth_policy_source_of_truth.py tests/unit/test_password_policy_controls.py"
     [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py tests/unit/test_bcrypt_test_rounds.py tests/unit/test_local_auth_policy.py tests/unit/test_jwt_algorithm_downgrade.py"
-    [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py tests/unit/test_access_token_revocation_epoch.py tests/unit/test_credential_gate_fail_closed.py"
+    # ⚠️ THIS LIST IS THE MEASUREMENT. An omitted file is not a smaller run — it is a
+    # batch of FALSE survivors that look exactly like real findings. The first run of
+    # this target reported 41 survivors in `_enforce_proxy_identity_consistency` and
+    # was read as "proxy header spoofing has no coverage"; in fact
+    # tests/api/test_proxy_auth_endpoint.py had covered both the untrusted-peer and
+    # identity-mismatch cases all along, and simply was not selected. Same failure
+    # mode as the RUN_* gate trap in backend/tests/CLAUDE.md.
+    # test_mutation_target_tests_are_complete.py derives this list and fails if a test
+    # file referencing the module is missing from it.
+    [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py tests/unit/test_access_token_revocation_epoch.py tests/unit/test_credential_gate_fail_closed.py tests/api/test_proxy_auth_endpoint.py tests/test_cloud_seams.py tests/unit/test_proxy_identity_consistency.py tests/unit/test_lifecycle_denial_audit_records.py tests/unit/test_optional_current_user.py tests/unit/test_external_token_auth.py"
     [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py"
     # ⚠️ EXPECT ~EVERY OIDCStateStore MUTANT TO SURVIVE, and do not read that as a
     # harness fault. app/auth/session.py's session-timeout code moved to
@@ -291,6 +300,10 @@ $DRY_RUN || check_preconditions || exit 1
 echo
 
 FAILED=()
+#: Percent of the target module the SELECTED tests must execute before survivors mean
+#: anything. Not a coverage target for the codebase — a sanity check on MODULE_TESTS.
+MIN_TARGET_COVERAGE=${MIN_TARGET_COVERAGE:-60}
+LOW_COVERAGE=()
 for key in "${MODULES[@]}"; do
     path="${MODULE_PATH[$key]}"
     tests="${MODULE_TESTS[$key]}"
@@ -316,6 +329,43 @@ for key in "${MODULES[@]}"; do
     # glob over the mutant ids: app/services/redaction/spans.py -> app.services.redaction.spans*
     mutant_glob="${path%.py}"
     mutant_glob="${mutant_glob//\//.}*"
+
+    # PRE-FLIGHT: do the selected tests actually EXECUTE this module?
+    #
+    # This exists because a run of `dependencies` reported 41 survivors in
+    # `_enforce_proxy_identity_consistency` and they were read as "proxy header spoofing
+    # has no coverage". It had coverage — in tests/api/test_proxy_auth_endpoint.py, which
+    # simply was not in MODULE_TESTS. A test that is never selected kills no mutant, so an
+    # incomplete list does not produce a smaller run; it produces FALSE survivors that are
+    # indistinguishable from real findings, and the natural reading of them is a
+    # vulnerability report about code that is in fact tested.
+    #
+    # Coverage of the target module is the cheap, direct check: below the floor, the
+    # survivors measure test SELECTION, not test strength, and the report says so instead
+    # of leaving the reader to infer it.
+    if ! $DRY_RUN; then
+        # Dotted form, because --cov takes an importable name; and --cov-report=term is
+        # required -- an empty --cov-report prints no total to parse, which silently made
+        # this check a no-op the first time it was written.
+        cov_mod="${path%.py}"
+        cov_mod="${cov_mod//\//.}"
+        cov_pct=$(cd "$BACKEND" && env "${GATES[@]}" "$VENV_BIN/python" -m pytest $tests \
+            -o addopts= -p no:cacheprovider -q --no-header \
+            --cov="$cov_mod" --cov-report=term 2>/dev/null \
+            | awk '/^TOTAL/ {gsub(/%/, "", $NF); print $NF}' | tail -1 | cut -d. -f1)
+        if [[ -n "${cov_pct:-}" ]]; then
+            if (( cov_pct < MIN_TARGET_COVERAGE )); then
+                echo -e "${RED}    ⚠ selected tests cover only ${cov_pct}% of $path${NC}"
+                echo -e "${RED}      Survivors below ${MIN_TARGET_COVERAGE}% measure SELECTION, not weakness —${NC}"
+                echo -e "${RED}      add the missing test files to MODULE_TESTS[$key] before believing them.${NC}"
+                LOW_COVERAGE+=("$key:${cov_pct}%")
+            else
+                echo -e "    coverage of target by selected tests: ${GREEN}${cov_pct}%${NC}"
+            fi
+        else
+            echo -e "${YELLOW}    could not measure target coverage — treat survivors with suspicion${NC}"
+        fi
+    fi
 
     if $DRY_RUN; then
         echo -e "${YELLOW}    would run:${NC}"
@@ -353,6 +403,13 @@ echo -e "            real infinite loop the tests were papering over"
 echo -e "  ${YELLOW}suspicious${NC} much slower than baseline — usually a mutated retry/sleep bound"
 echo
 echo -e "Logs: $OUT_DIR/"
+if [[ ${#LOW_COVERAGE[@]} -gt 0 ]]; then
+    # Printed AFTER the survivor list on purpose: it is the caveat that decides how to read
+    # everything above it. Without it, a reader takes a survivor count at face value.
+    echo -e "${RED}⚠ SURVIVORS FROM THESE TARGETS ARE NOT TRUSTWORTHY: ${LOW_COVERAGE[*]}${NC}"
+    echo -e "${RED}  The selected tests barely execute the module, so a survivor mostly means${NC}"
+    echo -e "${RED}  'no selected test runs this line' — fix MODULE_TESTS before triaging.${NC}"
+fi
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     echo -e "${YELLOW}Modules with survivors or errors: ${FAILED[*]}${NC}"
     exit 1

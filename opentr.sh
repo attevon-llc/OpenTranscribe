@@ -122,6 +122,11 @@ show_help() {
   echo "  help                - Show this help menu"
   echo ""
   echo "Benchmark Commands (isolated from NAS data):"
+  echo "  bench all [--smoke|--quick|--full] [--phases a,b]"
+  echo "                                           - Full end-to-end run (all phases, all metrics)"
+  echo "  bench phase <name> [--smoke|--quick|--full]"
+  echo "                                           - Run a single phase end-to-end"
+  echo "  bench collate                            - Aggregate metrics into master + whitepaper tables"
   echo "  bench start [master|branch|current|<name>]- Wipe bench volumes, switch branch, start bench stack (default: current)"
   echo "  bench stop                               - Stop bench stack (keep volumes)"
   echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
@@ -2184,17 +2189,26 @@ purge_system() {
   echo "✅ Complete purge finished. Everything removed."
 }
 
+# Container-name prefix for the bench stack. docker-compose.bench.yml overrides
+# container_name to otbench-* on EVERY service precisely so a bench stack can
+# coexist with the dev stack, so any `docker ps`/`docker inspect`/`docker exec`
+# in the bench flow MUST address otbench-*, never opentranscribe-* (issue #399).
+# Matching on the dev names made the engine gate validate the one stack the
+# benchmark must not touch: it aborted when only the bench stack was up, and
+# passed when the dev stack was up even if the bench worker was missing.
+BENCH_CONTAINER_PREFIX="otbench"
+
 # Poll the bench backend container until it reports healthy (deterministic
-# replacement for blind `sleep`s in the bench flow). The bench stack runs under
-# the default project name with hard-coded container_name opentranscribe-backend.
+# replacement for blind `sleep`s in the bench flow).
 # Usage: wait_for_bench_backend_health [timeout_seconds]
 wait_for_bench_backend_health() {
   local timeout="${1:-180}"
   local interval=3
   local elapsed=0
   local status
+  local container="${BENCH_CONTAINER_PREFIX}-backend"
   while [ "$elapsed" -lt "$timeout" ]; do
-    status="$(docker inspect -f '{{.State.Health.Status}}' opentranscribe-backend 2>/dev/null || echo "")"
+    status="$(docker inspect -f '{{.State.Health.Status}}' "$container" 2>/dev/null || echo "")"
     if [ "$status" = "healthy" ]; then
       echo "✅ Bench backend is healthy! (${elapsed}s)"
       return 0
@@ -2204,7 +2218,7 @@ wait_for_bench_backend_health() {
     echo "⏳ Waiting for bench backend... (${elapsed}/${timeout}s, status: ${status:-starting})"
   done
   echo "⚠️ Bench backend health check timed out after ${timeout}s, continuing anyway..."
-  docker logs --tail 20 opentranscribe-backend 2>/dev/null || true
+  docker logs --tail 20 "$container" 2>/dev/null || true
   return 1
 }
 
@@ -2633,7 +2647,7 @@ case "$1" in
         echo ""
         echo "⏳ Waiting for bench backend to become healthy..."
         wait_for_bench_backend_health
-        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep "$BENCH_CONTAINER_PREFIX"
         echo ""
         echo "✅ Bench stack ready on $TARGET_BRANCH."
         if [[ "$TARGET_BRANCH" == "master" ]]; then
@@ -2702,7 +2716,7 @@ case "$1" in
 
       status)
         echo "=== Bench Containers ==="
-        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe || echo "(none running)"
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep "$BENCH_CONTAINER_PREFIX" || echo "(none running)"
         echo ""
         echo "=== GPU State ==="
         nvidia-smi --query-gpu=index,name,memory.used,utilization.gpu --format=csv,noheader
@@ -2741,7 +2755,7 @@ case "$1" in
         SINGLE_CSV="engine_single_${TIMESTAMP}.csv"
         QUEUE_CSV="engine_queue_${TIMESTAMP}.csv"
         RESULTS_DIR="docs/engine-benchmark-results"
-        WORKER="opentranscribe-celery-worker"
+        WORKER="${BENCH_CONTAINER_PREFIX}-celery-worker"
 
         echo "🔬 Engine benchmark — branch: $(git branch --show-current)"
         echo "   Using bench stack (fresh volumes, never touches NAS/prod data)"
@@ -2788,7 +2802,7 @@ case "$1" in
         echo ""
         echo "⏳ Waiting for bench stack to be ready (DB migrations, model pre-load)..."
         wait_for_bench_backend_health 240
-        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep "$BENCH_CONTAINER_PREFIX"
 
         # Verify the worker is up
         if ! docker ps --format '{{.Names}}' | grep -q "^${WORKER}$"; then

@@ -9,7 +9,7 @@ authoring the revision file itself.
 
 ## Key files
 
-- `versions/` — 72 revisions, `v010_baseline` … head `v386_add_tag_share`.
+- `versions/` — 73 revisions, `v010_baseline` … head `v387_actor_fks_and_tag_share_check`.
 - `env.py` — builds the URL from `POSTGRES_*` env (`load_dotenv()`), `target_metadata =
   Base.metadata`. No `compare_type`, no naming convention.
 - `script.py.mako` — **stock alembic template**: it emits neither the `v###` id nor idempotent
@@ -23,7 +23,7 @@ authoring the revision file itself.
   `down_revision` string literals yourself. `alembic revision --autogenerate` produces a hash id
   and non-idempotent `op.add_column` — never ship its output as-is. (The runner widens
   `alembic_version.version_num` to `VARCHAR(128)` on every start to fit these names.)
-- **All SQL must be idempotent.** 69 of 72 revisions are raw `op.execute` (the 5 files using
+- **All SQL must be idempotent.** 70 of 73 revisions are raw `op.execute` (the 5 files using
   `op.create_table`/`add_column`/`create_index` are all ≤ `v040`); 60 use `IF NOT EXISTS`,
   49 wrap DDL in
   `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns …) THEN … END IF; END $$;`.

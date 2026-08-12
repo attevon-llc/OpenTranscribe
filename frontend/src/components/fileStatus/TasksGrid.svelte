@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '../../stores/locale';
   import SearchPagination from '../search/SearchPagination.svelte';
+  import { taskProgressPercent } from '$lib/utils/formatting';
 
   export let tasks: any[] = [];
   export let filteredTasks: any[] = [];
@@ -90,10 +91,14 @@
                   {/if}
                 </span>
                 {#if task.status === 'in_progress'}
+                  <!-- `taskProgressPercent` guards missing/null/out-of-range values.
+                       This rendered `task.progress * 100` raw, so a task without a
+                       progress field produced `style="width: NaN%"`. -->
+                  {@const progressPercent = taskProgressPercent(task.progress)}
                   <div class="progress-bar-container">
-                    <div class="progress-bar" style="width: {task.progress * 100}%"></div>
+                    <div class="progress-bar" style="width: {progressPercent}%"></div>
                   </div>
-                  <span class="task-progress-text">{Math.round(task.progress * 100)}%</span>
+                  <span class="task-progress-text">{progressPercent}%</span>
                 {/if}
               </div>
             </td>

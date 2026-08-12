@@ -315,16 +315,39 @@ def _delete_user_speakers(db: Session, user_id: int) -> None:
     Collects speaker UUIDs before bulk SQL delete so OpenSearch can be cleaned
     even though the bulk operation bypasses ORM instance-level callbacks.
 
+    **The segment detach is not optional.** ``transcript_segment.speaker_id`` is a
+    plain FK with ``ON DELETE NO ACTION``, and this runs *before*
+    ``_delete_user_media_files`` removes the segments — so deleting a speaker any
+    segment still points at raises ``ForeignKeyViolation`` on
+    ``transcript_segment_speaker_id_fkey``. Every diarized segment carries a
+    ``speaker_id``, which made this the first thing to fail for any account with a
+    transcribed file: the endpoint's blanket ``except Exception`` reported it as
+    ``500 "User deletion failed"`` and named nothing. It went unnoticed because
+    both deletion tests deleted a fixture account that owned no files at all.
+
+    The column is nullable, so detaching is a legitimate transient state; the rows
+    are deleted moments later by ``_delete_user_media_files``.
+
     Args:
         db: Database session
         user_id: ID of the user whose speakers to delete
     """
-    speaker_rows = db.query(Speaker.uuid).filter(Speaker.user_id == user_id).all()
+    speaker_rows = db.query(Speaker.id, Speaker.uuid).filter(Speaker.user_id == user_id).all()
     if not speaker_rows:
         return
 
-    speaker_uuids = [str(row[0]) for row in speaker_rows]
+    speaker_ids = [row[0] for row in speaker_rows]
+    speaker_uuids = [str(row[1]) for row in speaker_rows]
     logger.info(f"Deleting {len(speaker_uuids)} speakers for user {user_id}")
+
+    detached = (
+        db.query(TranscriptSegment)
+        .filter(TranscriptSegment.speaker_id.in_(speaker_ids))
+        .update({TranscriptSegment.speaker_id: None}, synchronize_session=False)
+    )
+    if detached:
+        logger.info(f"Detached {detached} transcript segments from these speakers")
+
     db.query(Speaker).filter(Speaker.user_id == user_id).delete(synchronize_session=False)
     logger.info("Speakers deleted from DB")
 
@@ -345,6 +368,23 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     Cleans up: SpeakerProfile, SpeakerCollection (+ members), Collection (+ members),
     Comment, Task, SummaryPrompt, and Tag records. Must be called BEFORE deleting
     MediaFile rows since some of these tables have FK references to media_file.
+
+    **This list is hand-maintained and its twin is
+    ``services/gdpr_erasure_service._delete_owner_scoped_rows``.** Nothing in the
+    application compares the two, and neither is derived from the schema, so a new
+    table with a plain ``user_id`` FK breaks account deletion with no code change
+    here. ``tests/unit/test_user_deletion_fk_coverage.py`` derives every NO-ACTION
+    foreign key into ``user`` / ``media_file`` from the live schema and fails when
+    one is not accounted for by *both* paths — add the branch here, or record the
+    FK there with a reason.
+
+    Rows recording an action this user took on **somebody else's** row are
+    deliberately absent: ``auth_config.created_by``/``updated_by``,
+    ``auth_config_audit.changed_by``, ``media_file.quarantined_by`` and
+    ``summary_prompt.shared_by`` are not owner-scoped, so no query keyed on
+    ``user_id`` can find them. They are ``ON DELETE SET NULL`` at the database
+    level instead (``v387``), which is enforced for every deletion path including
+    ones that do not exist yet.
     """
     # Speaker collections and their members
     sc_ids = [
@@ -412,10 +452,12 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
         logger.info(f"Deleted {prompts_deleted} summary prompts for user {user_id}")
 
     # Tags owned by the user (v374). tag.user_id is a plain FK, so the rows must
-    # go before the user row or the delete fails. Detach them first: a tag of
-    # theirs may hang off ANOTHER user's file (they tagged a file shared with
-    # them), and file_tag.tag_id has no ON DELETE clause. System tags
-    # (user_id IS NULL) are shared vocabulary and are never touched.
+    # go before the user row or the delete fails. The file_tag pass is belt and
+    # braces rather than load-bearing: file_tag.tag_id IS ON DELETE CASCADE
+    # (verified against the live schema Aug 2026), so the database would sweep
+    # those rows anyway — including the ones hanging off ANOTHER user's file,
+    # which is the case worth naming. System tags (user_id IS NULL) are shared
+    # vocabulary and are never touched.
     tag_ids = [t.id for t in db.query(Tag.id).filter(Tag.user_id == user_id).all()]
     if tag_ids:
         db.query(FileTag).filter(FileTag.tag_id.in_(tag_ids)).delete(synchronize_session=False)
@@ -425,6 +467,33 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
 
 def _delete_user_media_files(db: Session, user_id: int) -> None:
     """Delete all media files and related records for a user.
+
+    **Why the children are deleted by hand here.** ``MediaFile`` declares
+    ``cascade="all, delete-orphan"`` on eight relationships, but four of the
+    underlying foreign keys — ``transcript_segment``, ``comment``, ``task`` and
+    ``analytics`` on ``media_file_id`` — are ``ON DELETE NO ACTION`` in the
+    database. The ORM cascade only fires for an *instance* delete
+    (``db.delete(file)``, which is what ``file_cleanup_service.purge_media_file``
+    and therefore the GDPR path use). This function ends in a **bulk**
+    ``query(MediaFile).delete()``, which emits one ``DELETE`` statement and never
+    loads the instances, so the ORM cascade is bypassed entirely and the database
+    is the only thing left enforcing anything — and for those four it enforces
+    *refusal*. Every hand-delete below is therefore load-bearing: remove one and
+    this function raises ``ForeignKeyViolation``, which the endpoint's blanket
+    ``except Exception`` reports as ``500 "User deletion failed"``.
+
+    ``file_tag``, ``collection_member``, ``speaker`` and ``topic_suggestion`` are the
+    other four children; those FKs *are* ``ON DELETE CASCADE``, so the database
+    sweeps them whichever delete shape is used. ``file_tag`` is still deleted
+    explicitly because ``_delete_user_owned_records`` has already detached the rows
+    pointing at this user's tags and the cost of the second pass is nil.
+
+    ``comment`` and ``task`` are **not** covered by the owner-scoped sweep in
+    ``_delete_user_owned_records``: a non-owner can comment on a file shared with
+    them (``endpoints/comments.create_comment_for_file_nested`` requires viewer+,
+    "commenting is collaborative"), so another account's comment on this user's
+    file would block the bulk delete. Scope both by ``media_file_id``, not by
+    ``user_id``.
 
     Args:
         db: Database session
@@ -464,6 +533,28 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
         )
         if analytics_deleted:
             logger.info(f"Deleted {analytics_deleted} analytics records")
+
+        # Comments on these files, whoever wrote them. `comment.media_file_id` is
+        # NO ACTION and commenting is collaborative, so a viewer's comment on a
+        # shared file is another account's row that still has to go with the file.
+        comments_deleted = (
+            db.query(Comment)
+            .filter(Comment.media_file_id.in_(media_ids))
+            .delete(synchronize_session=False)
+        )
+        if comments_deleted:
+            logger.info(f"Deleted {comments_deleted} comments on these media files")
+
+        # Tasks against these files, whoever owns them. `task.media_file_id` is
+        # NO ACTION too; scoping only by `task.user_id` (as the owner-scoped sweep
+        # does) leaves any task another account queued against this file behind.
+        tasks_deleted = (
+            db.query(TaskModel)
+            .filter(TaskModel.media_file_id.in_(media_ids))
+            .delete(synchronize_session=False)
+        )
+        if tasks_deleted:
+            logger.info(f"Deleted {tasks_deleted} tasks against these media files")
 
         # Now delete the media files
         db.query(MediaFile).filter(MediaFile.user_id == user_id).delete(synchronize_session=False)

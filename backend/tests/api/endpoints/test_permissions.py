@@ -308,8 +308,10 @@ class TestAdminFileAccess:
             f"/api/files/{sample_media_file.uuid}",
             headers=admin_token_headers,
         )
-        # Should not be 403 — admin should have access
-        assert response.status_code != 403, f"Admin got 403 on other user's file: {response.json()}"
+        # `!= 403` reads as an authorization assertion and is not one: a 401, a 404 and a
+        # 500 all satisfied it, so the endpoint could be completely broken and this test
+        # still passed. An admin's bypass must SERVE the file (issue #431).
+        assert response.status_code == 200, response.text
 
     def test_admin_gets_my_permission_owner(self, client, admin_token_headers, sample_media_file):
         response = client.get(
@@ -342,10 +344,15 @@ class TestAdminSpeakerAccess:
             f"/api/speakers?file_uuid={sample_media_file.uuid}",
             headers=admin_token_headers,
         )
-        assert response.status_code != 403, f"Admin got 403 listing speakers: {response.json()}"
-        if response.status_code == 200:
-            speakers = response.json()
-            assert len(speakers) == 3, f"Expected 3 speakers, got {len(speakers)}"
+        # Was `!= 403` plus `if response.status_code == 200:` around the speaker count — the
+        # exact shape already fixed in this class's siblings, left behind here. Both halves
+        # were vacuous: a 500 satisfied the first, and any non-200 skipped the second, which
+        # is the only assertion that checks anything (issue #431). Nothing on the success
+        # path requires OpenSearch — every read in `consolidate_suggestions_batch` is guarded
+        # on a live `opensearch_client` and returns empty otherwise — so 200 is unconditional.
+        assert response.status_code == 200, response.text
+        speakers = response.json()
+        assert len(speakers) == 3, f"Expected 3 speakers, got {len(speakers)}"
 
     def test_regular_user_cannot_list_other_users_speakers(
         self, client, user_token_headers, sample_media_file, sample_speakers
@@ -381,7 +388,10 @@ class TestAdminCommentAccess:
             f"/api/comments/files/{sample_media_file.uuid}/comments",
             headers=admin_token_headers,
         )
-        assert response.status_code != 403, f"Admin got 403 listing comments: {response.json()}"
+        # `!= 403` also accepted 500 (issue #431). The route is `response_model=
+        # list[CommentSchema]` and reads only the DB, so an admin gets 200 and a list.
+        assert response.status_code == 200, response.text
+        assert isinstance(response.json(), list)
 
 
 class TestAdminSummaryAccess:
@@ -392,8 +402,8 @@ class TestAdminSummaryAccess:
             f"/api/files/{sample_media_file.uuid}/summary-status",
             headers=admin_token_headers,
         )
-        # Should not be 403
-        assert response.status_code != 403, f"Admin got 403 on summary status: {response.json()}"
+        # `!= 403` also accepted 500 (issue #431) — an admin must actually be served.
+        assert response.status_code == 200, response.text
 
 
 class TestSharedEditorAccess:
@@ -421,7 +431,8 @@ class TestSharedEditorAccess:
             f"/api/files/{sample_media_file.uuid}",
             headers=user_token_headers,
         )
-        assert response.status_code != 403, f"Shared editor got 403: {response.json()}"
+        # `!= 403` also accepted 500 (issue #431) — an editor share must serve the file.
+        assert response.status_code == 200, response.text
 
     def test_shared_editor_gets_editor_permission(
         self, client, user_token_headers, sample_media_file, editor_share
@@ -443,9 +454,10 @@ class TestSharedEditorAccess:
             f"/api/speakers?file_uuid={sample_media_file.uuid}",
             headers=user_token_headers,
         )
-        assert response.status_code != 403
-        if response.status_code == 200:
-            assert len(response.json()) == 3
+        # Same left-behind `!= 403` + `if 200:` pair as
+        # TestAdminSpeakerAccess.test_admin_can_list_speakers_for_other_users_file.
+        assert response.status_code == 200, response.text
+        assert len(response.json()) == 3
 
 
 class TestSharedViewerAccess:
@@ -473,7 +485,8 @@ class TestSharedViewerAccess:
             f"/api/files/{sample_media_file.uuid}",
             headers=user_token_headers,
         )
-        assert response.status_code != 403
+        # `!= 403` also accepted 500 (issue #431) — a viewer share must serve the file.
+        assert response.status_code == 200, response.text
 
     def test_shared_viewer_gets_viewer_permission(
         self, client, user_token_headers, sample_media_file, viewer_share

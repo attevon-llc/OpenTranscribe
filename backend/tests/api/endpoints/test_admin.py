@@ -6,6 +6,7 @@ from unittest.mock import patch
 from fastapi import status
 
 from app.core.version import APP_VERSION
+from tests.user_owned_rows import seed_owned_rows
 
 
 def test_admin_stats(client, admin_token_headers):
@@ -120,18 +121,162 @@ def test_admin_users_create(client, admin_token_headers, db_session):
 
 
 def test_admin_users_delete(client, admin_token_headers, normal_user, db_session):
-    """Test admin user deletion endpoint"""
-    # Use UUID for the delete endpoint
-    user_uuid = str(normal_user.uuid)
-    response = client.delete(f"/api/admin/users/{user_uuid}", headers=admin_token_headers)
-    assert response.status_code == 200, f"Delete user failed: {response.json()}"
+    """Deleting a user with real owned data removes ALL of it.
 
-    result = response.json()
-    assert "message" in result or "success" in result
-
-    # Verify user was deleted from the database
+    This test used to delete the bare ``normal_user`` fixture, which owns nothing.
+    ``_delete_user_owned_records`` and ``_delete_user_media_files`` are hand-maintained
+    lists of the FKs with no DB-level CASCADE, and every branch in them reads
+    ``if <ids>:`` — so with no owned rows every branch was skipped, ``db.delete(user)``
+    succeeded trivially, and the test would still have passed with both helpers'
+    bodies replaced by ``pass``.
+    """
     from app.models.user import User
 
-    db_session.expire_all()  # Clear cached objects
-    db_user = db_session.query(User).filter(User.id == normal_user.id).first()
-    assert db_user is None
+    owned = seed_owned_rows(db_session, normal_user)
+    owned.assert_all_present(db_session)
+
+    response = client.delete(f"/api/admin/users/{normal_user.uuid}", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_200_OK, response.text
+    assert response.json() == {"message": "User deleted successfully"}
+
+    db_session.expire_all()
+    assert db_session.query(User).filter(User.id == owned.user_id).first() is None
+    assert owned.remaining(db_session) == {}
+
+
+def test_admin_users_delete_leaves_the_bystanders_data_alone(
+    client, admin_token_headers, normal_user, db_session
+):
+    """The other half of the cascade: only the target's data goes.
+
+    ``_delete_user_media_files`` now deletes comments and tasks by ``media_file_id``
+    rather than by author, which is what lets a collaborator's comment go with the
+    file. That widening is only correct if it stops at the file boundary — a sweep
+    keyed on the wrong column would take the bystander's own file with it.
+    """
+    from app.models.media import MediaFile
+    from app.models.user import User
+
+    owned = seed_owned_rows(db_session, normal_user)
+
+    response = client.delete(f"/api/admin/users/{normal_user.uuid}", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_200_OK, response.text
+
+    db_session.expire_all()
+    assert db_session.query(User).filter(User.id == owned.other_user_id).first() is not None
+    assert (
+        db_session.query(MediaFile).filter(MediaFile.id == owned.other_media_file_id).first()
+        is not None
+    )
+
+
+def test_admin_can_delete_an_admin_who_changed_auth_config(
+    client, super_admin_token_headers, admin_user, db_session
+):
+    """``auth_config_audit.changed_by`` must not pin an account in place.
+
+    It was ``NOT NULL`` with ``ON DELETE NO ACTION``, so deleting any admin who had
+    ever changed authentication configuration raised a ``ForeignKeyViolation`` that the
+    endpoint's blanket ``except Exception`` turned into ``500 "User deletion failed"``.
+    Nothing in the message said which constraint, and the account was the one most
+    likely to be deleted: the admin who set up OIDC and then left. v387 makes the FK
+    ``SET NULL``; the audit row survives, de-attributed, which is exactly what the read
+    path in ``auth_config.get_audit_log`` was already written to render.
+    """
+    from app.models.auth_config import AuthConfigAudit
+    from app.models.user import User
+
+    audit = AuthConfigAudit(
+        uuid=uuid.uuid4(),
+        config_key="oidc_enabled",
+        old_value="false",
+        new_value="true",
+        changed_by=admin_user.id,
+        change_type="update",
+    )
+    db_session.add(audit)
+    db_session.commit()
+    audit_id = audit.id
+
+    response = client.delete(
+        f"/api/admin/users/{admin_user.uuid}", headers=super_admin_token_headers
+    )
+    assert response.status_code == status.HTTP_200_OK, response.text
+
+    db_session.expire_all()
+    assert db_session.query(User).filter(User.id == admin_user.id).first() is None
+    surviving = db_session.query(AuthConfigAudit).filter(AuthConfigAudit.id == audit_id).first()
+    assert surviving is not None, "the audit trail must outlive the admin it names"
+    assert surviving.changed_by is None
+    assert surviving.config_key == "oidc_enabled"
+
+
+def test_admin_can_delete_an_admin_who_quarantined_someone_elses_file(
+    client, super_admin_token_headers, admin_user, normal_user, db_session
+):
+    """``media_file.quarantined_by`` must not pin the reviewing admin in place.
+
+    A takedown deliberately never deletes rows, so the ``media_file`` row it points at
+    belongs to a *different* account and survives the admin's deletion. Under
+    ``NO ACTION`` that made the takedown reviewer undeletable — and the failure
+    surfaced as the same undifferentiated 500.
+    """
+    from app.models.media import MediaFile
+    from app.models.user import User
+    from tests.user_owned_rows import make_media_file
+
+    victim_file = make_media_file(db_session, int(normal_user.id))
+    victim_file.is_quarantined = True
+    victim_file.quarantine_reason = "DMCA notice 1234"
+    victim_file.quarantined_by = admin_user.id
+    db_session.commit()
+    file_id = victim_file.id
+
+    response = client.delete(
+        f"/api/admin/users/{admin_user.uuid}", headers=super_admin_token_headers
+    )
+    assert response.status_code == status.HTTP_200_OK, response.text
+
+    db_session.expire_all()
+    assert db_session.query(User).filter(User.id == admin_user.id).first() is None
+    still_quarantined = db_session.query(MediaFile).filter(MediaFile.id == file_id).first()
+    assert still_quarantined is not None, "a takedown never deletes the file"
+    assert still_quarantined.is_quarantined is True
+    assert still_quarantined.quarantined_by is None
+
+
+def test_admin_can_delete_an_admin_who_shared_someone_elses_prompt(
+    client, super_admin_token_headers, admin_user, normal_user, db_session
+):
+    """``summary_prompt.shared_by`` must not pin the sharing admin in place.
+
+    ``prompts.share_prompt`` accepts the owner **or** an admin, and records the actor
+    in ``shared_by`` — a column on a row the owner-scoped sweep (``user_id ==``) never
+    matches, because the prompt belongs to somebody else.
+    """
+    from app.models.prompt import SummaryPrompt
+    from app.models.user import User
+
+    prompt = SummaryPrompt(
+        uuid=uuid.uuid4(),
+        name=f"shared-{uuid.uuid4().hex[:8]}",
+        prompt_text="summarise",
+        user_id=normal_user.id,
+        is_shared=True,
+        shared_by=admin_user.id,
+    )
+    db_session.add(prompt)
+    db_session.commit()
+    prompt_id = prompt.id
+
+    response = client.delete(
+        f"/api/admin/users/{admin_user.uuid}", headers=super_admin_token_headers
+    )
+    assert response.status_code == status.HTTP_200_OK, response.text
+
+    db_session.expire_all()
+    assert db_session.query(User).filter(User.id == admin_user.id).first() is None
+    surviving = db_session.query(SummaryPrompt).filter(SummaryPrompt.id == prompt_id).first()
+    assert surviving is not None, "the owner's prompt is not the sharer's to destroy"
+    assert surviving.shared_by is None
+    assert surviving.is_shared is True

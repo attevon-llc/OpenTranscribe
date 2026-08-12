@@ -66,6 +66,13 @@ def test_credit_card(detector, segments):
 def test_offsets_slice_back(detector, segments):
     text = segments[2]["text"]
     spans = detector.detect_pii(text, None, _cfg())
+    # Zero detected spans executed the loop zero times and the test passed — the offset
+    # invariant went unchecked on every run where detection silently returned nothing, and
+    # `redaction/spans.py` is a mutation-testing target precisely because an off-by-one here
+    # leaks the character it should hide (issue #431). This segment carries a phone number
+    # and an SSN (asserted by test_phone_and_ssn), so an empty result is a real failure.
+    assert spans, "detector returned no spans — the offset invariant below would be vacuous"
     for s in spans:
         # Each span must slice to non-empty text within bounds.
         assert 0 <= s.char_start < s.char_end <= len(text)
+        assert text[s.char_start : s.char_end], "span sliced to empty text"

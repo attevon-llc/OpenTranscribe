@@ -165,6 +165,39 @@ repos:
         pass_filenames: false
         files: ^(VERSION|pyproject\.toml|frontend/package\.json|frontend/package-lock\.json|backend/alembic/versions/.*\.py|backend/Dockerfile\.prod|docs-site/blog/.*\.md)$
 
+  # Test-suite quality gate (issue #431) — finds tests that pass whether the code
+  # works or not. The vitest counterpart (`npm run test:audit`) has run in CI since
+  # #431; the pytest one, `scripts/audit-tests.py`, was in NEITHER pre-commit NOR CI
+  # and appeared only in prose. A gate nothing invokes is documentation.
+  #
+  # SELF-TEST FIRST, and never reorder these two. The detectors are code, and a
+  # detector that silently stops matching reports zero findings — indistinguishable
+  # from a clean suite, which is the exact failure this script exists to catch. The
+  # frontend sibling's self-test caught two dead detectors that way.
+  #
+  # language: system + python3 because the auditor is deliberately stdlib-only (ast,
+  # json, argparse) and must also run on the bare CI runner, which installs only
+  # `pre-commit` — no backend venv, no project deps. Same rationale as
+  # version-consistency below.
+  #
+  # `files:` keeps the ~9 s tree scan off commits that cannot change its outcome; the
+  # allowlist is included because deleting a line there must re-verify the finding is
+  # really gone (the auditor fails on a stale entry).
+  - repo: local
+    hooks:
+      - id: audit-tests-selftest
+        name: audit-tests self-test (every detector must still fire)
+        entry: python3 scripts/audit-tests.py --selftest
+        language: system
+        pass_filenames: false
+        files: ^(backend/tests/.*\.py|scripts/audit-tests\.py)$
+      - id: audit-tests
+        name: audit backend test quality (tests that cannot fail)
+        entry: python3 scripts/audit-tests.py backend/tests
+        language: system
+        pass_filenames: false
+        files: ^(backend/tests/.*\.py|backend/tests/audit-allowlist\.txt|scripts/audit-tests\.py)$
+
   # Shell script linting
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.9.0.6

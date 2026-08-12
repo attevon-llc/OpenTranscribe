@@ -1,130 +1,409 @@
 """Comment endpoint tests.
 
-These tests require MinIO/S3 storage which is disabled in the test environment.
-They are marked as skipped by default. Run with actual storage services for full testing.
+**What was missing.** The file held five happy paths plus two 401s: no 403, no
+404, no 422, and no cross-user request at all — on a router that authorizes the
+*same resource* three different ways:
+
+===========  ==========================================================
+``GET``      ``_check_file_access(..., organization_id=ctx.org_id)`` — the
+             tenant gate is applied
+``PUT``      ``require_resource_owner(...)`` — author-or-admin, **no
+             RequestContext, so no tenant gate**
+``DELETE``   three inline branches (admin / author / file owner) — no
+             ``PermissionService``, **no RequestContext**
+===========  ==========================================================
+
+The consequence is asserted at the bottom of this file: for a comment on a file
+outside the caller's active tenant scope, the **read 403s and the mutation
+succeeds**. Those two tests are ``xfail(strict=True)`` — they describe the
+intended behaviour, so whoever adds the missing ``ctx`` to ``update_comment`` /
+``delete_comment`` will be told to drop the marker rather than having to
+rediscover the asymmetry.
+
+The rest of the suite is now DB-backed rather than upload-backed: the S3 gate
+used to skip the **whole module**, so on a machine without MinIO nothing here ran
+at all. Only the tests that genuinely upload a file keep that skip.
 """
 
+from __future__ import annotations
+
 import os
+import uuid as uuid_pkg
 
 import pytest
 
-# Skip all tests in this module if S3 is not available
-pytestmark = pytest.mark.skipif(
+from app.models.media import Comment
+from app.models.media import MediaFile
+from app.models.organization import Organization
+from app.models.organization import OrganizationMembership
+
+requires_s3 = pytest.mark.skipif(
     os.environ.get("SKIP_S3", "True").lower() == "true",
-    reason="S3/MinIO storage is disabled in test environment",
+    reason="S3/MinIO storage is disabled in this environment",
 )
+
+COMMENTS_PATH = "/api/comments"
+
+
+def _make_file(
+    db_session, user, *, org_id: int | None = None, quarantined: bool = False
+) -> MediaFile:
+    file_uuid = uuid_pkg.uuid4()
+    row = MediaFile(
+        uuid=file_uuid,
+        filename=f"{file_uuid}.wav",
+        storage_path=f"media/test/{file_uuid}.wav",
+        content_type="audio/wav",
+        file_size=1024,
+        user_id=user.id,
+        organization_id=org_id,
+        status="completed",
+        is_quarantined=quarantined,
+    )
+    db_session.add(row)
+    db_session.commit()
+    db_session.refresh(row)
+    return row
+
+
+def _make_comment(db_session, media_file, author, text: str = "a remark") -> Comment:
+    row = Comment(
+        uuid=uuid_pkg.uuid4(),
+        media_file_id=media_file.id,
+        user_id=author.id,
+        text=text,
+        timestamp=12.5,
+    )
+    db_session.add(row)
+    db_session.commit()
+    db_session.refresh(row)  # created_at is a server default
+    return row
 
 
 @pytest.fixture
-def sample_file_with_comment(user_token_headers, upload_test_file):
-    """Create a test file that we can add comments to"""
-    data = upload_test_file(user_token_headers, filename="comment_test.wav")
-    # Return uuid if available, otherwise id
-    return data.get("uuid") or data.get("id")
+def owned_file(db_session, normal_user) -> MediaFile:
+    return _make_file(db_session, normal_user)
 
 
-def test_list_comments(client, user_token_headers, sample_file_with_comment):
-    """Test listing comments for a file"""
-    response = client.get(
-        f"/api/comments?media_file_id={sample_file_with_comment}",
-        headers=user_token_headers,
+@pytest.fixture
+def own_comment(db_session, owned_file, normal_user) -> Comment:
+    return _make_comment(db_session, owned_file, normal_user)
+
+
+# --------------------------------------------------------------------------- #
+# Cross-user authorization                                                     #
+# --------------------------------------------------------------------------- #
+class TestCrossUserAccessIsRefused:
+    """``other_user`` holds no ownership and no share on the file, so every verb
+    must refuse. None of these had a test, on a router where the read path and
+    the two write paths compute permission independently."""
+
+    def test_a_stranger_cannot_read_a_comment(self, client, own_comment, other_user_auth_headers):
+        response = client.get(
+            f"{COMMENTS_PATH}/{own_comment.uuid}", headers=other_user_auth_headers
+        )
+        assert response.status_code == 403, response.text
+
+    def test_a_stranger_cannot_edit_a_comment(
+        self, client, own_comment, other_user_auth_headers, db_session
+    ):
+        response = client.put(
+            f"{COMMENTS_PATH}/{own_comment.uuid}",
+            headers=other_user_auth_headers,
+            json={"text": "hijacked"},
+        )
+        assert response.status_code == 403, response.text
+        db_session.refresh(own_comment)
+        assert own_comment.text == "a remark"
+
+    def test_a_stranger_cannot_delete_a_comment(
+        self, client, own_comment, other_user_auth_headers, db_session
+    ):
+        comment_id = own_comment.id
+        response = client.delete(
+            f"{COMMENTS_PATH}/{own_comment.uuid}", headers=other_user_auth_headers
+        )
+        assert response.status_code == 403, response.text
+        assert db_session.query(Comment).filter(Comment.id == comment_id).first() is not None
+
+    def test_a_stranger_cannot_list_comments_on_the_file(
+        self, client, owned_file, own_comment, other_user_auth_headers
+    ):
+        response = client.get(
+            COMMENTS_PATH,
+            params={"media_file_id": str(owned_file.uuid)},
+            headers=other_user_auth_headers,
+        )
+        assert response.status_code == 403, response.text
+
+    def test_a_stranger_cannot_list_via_the_nested_route(
+        self, client, owned_file, other_user_auth_headers
+    ):
+        """The nested pair lives under the comments prefix
+        (``/api/comments/files/{uuid}/comments``), not under ``/api/files`` — it is
+        a second, independently-written access check on the same resource."""
+        response = client.get(
+            f"{COMMENTS_PATH}/files/{owned_file.uuid}/comments", headers=other_user_auth_headers
+        )
+        assert response.status_code == 403, response.text
+
+    def test_a_stranger_cannot_comment_on_the_file(
+        self, client, owned_file, other_user_auth_headers
+    ):
+        response = client.post(
+            COMMENTS_PATH,
+            headers=other_user_auth_headers,
+            json={"media_file_id": str(owned_file.uuid), "text": "uninvited", "timestamp": 1.0},
+        )
+        assert response.status_code == 403, response.text
+
+    def test_a_stranger_cannot_comment_via_the_nested_route(
+        self, client, owned_file, other_user_auth_headers
+    ):
+        response = client.post(
+            f"{COMMENTS_PATH}/files/{owned_file.uuid}/comments",
+            headers=other_user_auth_headers,
+            json={"text": "uninvited", "timestamp": 1.0},
+        )
+        assert response.status_code == 403, response.text
+
+
+class TestPermittedMutations:
+    """The control side: the same code paths must still let the right people
+    through, or the 403s above would also pass with everything broken."""
+
+    def test_the_author_can_edit_their_own_comment(self, client, own_comment, user_token_headers):
+        response = client.put(
+            f"{COMMENTS_PATH}/{own_comment.uuid}",
+            headers=user_token_headers,
+            json={"text": "revised", "timestamp": 20.0},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["text"] == "revised"
+
+    def test_the_author_can_delete_their_own_comment(self, client, own_comment, user_token_headers):
+        response = client.delete(f"{COMMENTS_PATH}/{own_comment.uuid}", headers=user_token_headers)
+        assert response.status_code == 204, response.text
+
+    def test_the_file_owner_can_delete_someone_elses_comment(
+        self, client, owned_file, other_user, user_token_headers, db_session
+    ):
+        """The third inline branch in ``delete_comment`` — moderation of your own
+        file's thread. It had no test, so the branch could be deleted silently."""
+        guest_comment = _make_comment(db_session, owned_file, other_user, text="from a guest")
+        response = client.delete(
+            f"{COMMENTS_PATH}/{guest_comment.uuid}", headers=user_token_headers
+        )
+        assert response.status_code == 204, response.text
+
+    def test_a_platform_admin_can_delete_any_comment(
+        self, client, own_comment, admin_token_headers
+    ):
+        response = client.delete(f"{COMMENTS_PATH}/{own_comment.uuid}", headers=admin_token_headers)
+        assert response.status_code == 204, response.text
+
+    def test_a_platform_admin_can_read_any_comment(self, client, own_comment, admin_token_headers):
+        """``get_comment`` skips the permission check entirely for an admin."""
+        response = client.get(f"{COMMENTS_PATH}/{own_comment.uuid}", headers=admin_token_headers)
+        assert response.status_code == 200, response.text
+
+
+# --------------------------------------------------------------------------- #
+# Not-found and validation                                                     #
+# --------------------------------------------------------------------------- #
+class TestNotFoundAndValidation:
+    def test_an_unknown_comment_uuid_is_404_on_read(self, client, user_token_headers):
+        response = client.get(f"{COMMENTS_PATH}/{uuid_pkg.uuid4()}", headers=user_token_headers)
+        assert response.status_code == 404, response.text
+
+    def test_an_unknown_comment_uuid_is_404_on_edit(self, client, user_token_headers):
+        response = client.put(
+            f"{COMMENTS_PATH}/{uuid_pkg.uuid4()}",
+            headers=user_token_headers,
+            json={"text": "nothing to edit"},
+        )
+        assert response.status_code == 404, response.text
+
+    def test_an_unknown_comment_uuid_is_404_on_delete(self, client, user_token_headers):
+        response = client.delete(f"{COMMENTS_PATH}/{uuid_pkg.uuid4()}", headers=user_token_headers)
+        assert response.status_code == 404, response.text
+
+    def test_a_malformed_comment_uuid_is_400(self, client, user_token_headers):
+        response = client.get(f"{COMMENTS_PATH}/not-a-uuid", headers=user_token_headers)
+        assert response.status_code == 400, response.text
+
+    def test_listing_without_a_file_reference_is_422(self, client, user_token_headers):
+        """The handler raises this itself — both query names are optional so
+        FastAPI cannot."""
+        response = client.get(COMMENTS_PATH, headers=user_token_headers)
+        assert response.status_code == 422, response.text
+
+    def test_commenting_without_text_is_422(self, client, owned_file, user_token_headers):
+        response = client.post(
+            COMMENTS_PATH,
+            headers=user_token_headers,
+            json={"media_file_id": str(owned_file.uuid), "timestamp": 1.0},
+        )
+        assert response.status_code == 422, response.text
+
+    def test_commenting_on_an_unknown_file_is_404(self, client, user_token_headers):
+        response = client.post(
+            COMMENTS_PATH,
+            headers=user_token_headers,
+            json={"media_file_id": str(uuid_pkg.uuid4()), "text": "into the void"},
+        )
+        assert response.status_code == 404, response.text
+
+    def test_a_quarantined_file_hides_its_comments_from_the_owner(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        """Takedown parity: 404, not 403, so a taken-down file is
+        indistinguishable from a missing one — even for its owner."""
+        hidden = _make_file(db_session, normal_user, quarantined=True)
+        response = client.get(
+            COMMENTS_PATH,
+            params={"media_file_id": str(hidden.uuid)},
+            headers=user_token_headers,
+        )
+        assert response.status_code == 404, response.text
+
+    def test_the_legacy_query_name_still_resolves_the_file(
+        self, client, owned_file, user_token_headers
+    ):
+        """``media_file_uuid`` is the older spelling the handler still accepts;
+        nothing asserted that the second branch works."""
+        response = client.get(
+            COMMENTS_PATH,
+            params={"media_file_uuid": str(owned_file.uuid)},
+            headers=user_token_headers,
+        )
+        assert response.status_code == 200, response.text
+
+    def test_listing_is_401_unauthenticated(self, client):
+        response = client.get(COMMENTS_PATH)
+        assert response.status_code == 401, response.text
+
+    def test_creating_is_401_unauthenticated(self, client):
+        response = client.post(
+            COMMENTS_PATH,
+            json={"media_file_id": str(uuid_pkg.uuid4()), "text": "should fail"},
+        )
+        assert response.status_code == 401, response.text
+
+
+# --------------------------------------------------------------------------- #
+# The three-way authorization asymmetry                                        #
+# --------------------------------------------------------------------------- #
+class TestTenantGateAsymmetry:
+    """One comment, one caller, one out-of-scope file — three different answers.
+
+    ``normal_user`` authored the comment, so ``require_resource_owner`` (PUT) and
+    the author branch (DELETE) both admit them. The file, however, belongs to a
+    different organization than the caller's active scope, which the read path
+    rejects. Read and write therefore disagree about whether the caller may touch
+    the resource at all, and the write side wins.
+    """
+
+    @pytest.fixture
+    def out_of_scope_comment(self, db_session, normal_user, org_context) -> Comment:
+        home = Organization(
+            external_org_id=f"org_home_{uuid_pkg.uuid4().hex[:10]}", name="Home", is_active=True
+        )
+        elsewhere = Organization(
+            external_org_id=f"org_else_{uuid_pkg.uuid4().hex[:10]}",
+            name="Elsewhere",
+            is_active=True,
+        )
+        db_session.add_all([home, elsewhere])
+        db_session.commit()
+        db_session.add(
+            OrganizationMembership(
+                organization_id=home.id, user_id=normal_user.id, role="org:member"
+            )
+        )
+        db_session.commit()
+
+        file_elsewhere = _make_file(db_session, normal_user, org_id=elsewhere.id)
+        comment = _make_comment(db_session, file_elsewhere, normal_user, text="written earlier")
+        org_context(org_id=home.id, org_role="org:member", only_for=normal_user.id)
+        return comment
+
+    def test_reading_it_is_403(self, client, out_of_scope_comment, user_token_headers):
+        """The read path threads ``ctx.org_id``, so the tenant gate fires."""
+        response = client.get(
+            f"{COMMENTS_PATH}/{out_of_scope_comment.uuid}", headers=user_token_headers
+        )
+        assert response.status_code == 403, response.text
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "update_comment takes no RequestContext, so no tenant gate runs: the "
+            "caller edits a comment on a file the read path refuses to show them. "
+            "Fix is to thread ctx into require_resource_owner's call site in "
+            "comments.py; drop this marker in the same commit."
+        ),
     )
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
+    def test_editing_it_should_also_be_403(self, client, out_of_scope_comment, user_token_headers):
+        response = client.put(
+            f"{COMMENTS_PATH}/{out_of_scope_comment.uuid}",
+            headers=user_token_headers,
+            json={"text": "edited out of scope"},
+        )
+        assert response.status_code == 403, response.text
 
-
-def test_create_comment(client, user_token_headers, sample_file_with_comment, db_session):
-    """Test creating a comment for a file"""
-    comment_data = {
-        "media_file_id": sample_file_with_comment,
-        "text": "This is a test comment",
-        "timestamp": 30.5,  # Comment at 30.5 seconds in the audio
-    }
-    response = client.post("/api/comments", headers=user_token_headers, json=comment_data)
-    assert response.status_code == 200, f"Create comment failed: {response.json()}"
-    comment = response.json()
-    comment_id = comment.get("uuid") or comment.get("id")
-    assert comment_id is not None
-    assert comment["text"] == "This is a test comment"
-    assert comment["timestamp"] == 30.5
-
-
-def test_get_comment(client, user_token_headers, sample_file_with_comment, db_session):
-    """Test getting a specific comment"""
-    # First create a comment
-    comment_data = {
-        "media_file_id": sample_file_with_comment,
-        "text": "Comment for get test",
-        "timestamp": 45.0,
-    }
-    create_response = client.post("/api/comments", headers=user_token_headers, json=comment_data)
-    assert create_response.status_code == 200, f"Create comment failed: {create_response.json()}"
-    comment_id = create_response.json().get("uuid") or create_response.json().get("id")
-
-    # Now get the comment
-    response = client.get(f"/api/comments/{comment_id}", headers=user_token_headers)
-    assert response.status_code == 200
-    comment = response.json()
-    response_id = comment.get("uuid") or comment.get("id")
-    assert response_id == comment_id
-    assert comment["text"] == "Comment for get test"
-    assert comment["timestamp"] == 45.0
-
-
-def test_update_comment(client, user_token_headers, sample_file_with_comment, db_session):
-    """Test updating a comment"""
-    # First create a comment
-    comment_data = {
-        "media_file_id": sample_file_with_comment,
-        "text": "Comment for update test",
-        "timestamp": 60.0,
-    }
-    create_response = client.post("/api/comments", headers=user_token_headers, json=comment_data)
-    assert create_response.status_code == 200, f"Create comment failed: {create_response.json()}"
-    comment_id = create_response.json().get("uuid") or create_response.json().get("id")
-
-    # Now update the comment
-    update_data = {"text": "Updated comment text", "timestamp": 65.5}
-    response = client.put(
-        f"/api/comments/{comment_id}", headers=user_token_headers, json=update_data
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "delete_comment authorizes with three inline branches and no "
+            "RequestContext, so the tenant gate never runs; drop this marker when "
+            "comments.py threads ctx."
+        ),
     )
-    assert response.status_code == 200, f"Update comment failed: {response.json()}"
-    comment = response.json()
-    response_id = comment.get("uuid") or comment.get("id")
-    assert response_id == comment_id
-    assert comment["text"] == "Updated comment text"
-    assert comment["timestamp"] == 65.5
+    def test_deleting_it_should_also_be_403(self, client, out_of_scope_comment, user_token_headers):
+        response = client.delete(
+            f"{COMMENTS_PATH}/{out_of_scope_comment.uuid}", headers=user_token_headers
+        )
+        assert response.status_code == 403, response.text
 
 
-def test_delete_comment(client, user_token_headers, sample_file_with_comment, db_session):
-    """Test deleting a comment"""
-    # First create a comment
-    comment_data = {
-        "media_file_id": sample_file_with_comment,
-        "text": "Comment for delete test",
-        "timestamp": 75.0,
-    }
-    create_response = client.post("/api/comments", headers=user_token_headers, json=comment_data)
-    assert create_response.status_code == 200, f"Create comment failed: {create_response.json()}"
-    comment_id = create_response.json().get("uuid") or create_response.json().get("id")
+# --------------------------------------------------------------------------- #
+# Upload-backed happy paths (need MinIO)                                       #
+# --------------------------------------------------------------------------- #
+@requires_s3
+class TestUploadBackedRoundTrip:
+    @pytest.fixture
+    def uploaded_file_uuid(self, user_token_headers, upload_test_file) -> str:
+        data = upload_test_file(user_token_headers, filename="comment_test.wav")
+        return str(data.get("uuid") or data.get("id"))
 
-    # Now delete the comment
-    response = client.delete(f"/api/comments/{comment_id}", headers=user_token_headers)
-    assert response.status_code == 204  # No content
+    def test_create_then_list_then_edit_then_delete(
+        self, client, user_token_headers, uploaded_file_uuid
+    ):
+        """The original happy path, kept as one round trip against a real upload."""
+        created = client.post(
+            COMMENTS_PATH,
+            headers=user_token_headers,
+            json={"media_file_id": uploaded_file_uuid, "text": "first", "timestamp": 30.5},
+        )
+        assert created.status_code == 200, created.text
+        comment_uuid = created.json()["uuid"]
 
+        listed = client.get(
+            COMMENTS_PATH,
+            params={"media_file_id": uploaded_file_uuid},
+            headers=user_token_headers,
+        )
+        assert listed.status_code == 200, listed.text
+        assert comment_uuid in {row["uuid"] for row in listed.json()}
 
-def test_list_comments_unauthorized(client):
-    """Test that unauthorized users cannot list comments"""
-    response = client.get("/api/comments")
-    assert response.status_code == 401  # Unauthorized
+        edited = client.put(
+            f"{COMMENTS_PATH}/{comment_uuid}",
+            headers=user_token_headers,
+            json={"text": "second", "timestamp": 31.0},
+        )
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["text"] == "second"
 
-
-def test_create_comment_unauthorized(client):
-    """Test that unauthorized users cannot create comments"""
-    comment_data = {
-        "media_file_id": "some-uuid",
-        "text": "This should fail",
-        "timestamp": 0.0,
-    }
-    response = client.post("/api/comments", json=comment_data)
-    assert response.status_code == 401  # Unauthorized
+        removed = client.delete(f"{COMMENTS_PATH}/{comment_uuid}", headers=user_token_headers)
+        assert removed.status_code == 204, removed.text

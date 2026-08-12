@@ -122,7 +122,11 @@ class TagShare(Base):
     shared_by_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    target_type: Mapped[str] = mapped_column(String(20), nullable=False)  # "user" or "group"
+    #: Constrained by ``_tag_share_target_type_check`` (v387), not by the comment that
+    #: used to stand here. ``collection_share`` has carried that CHECK since it was
+    #: created; v386 mirrored everything else about this table and left this one guard
+    #: off, so the permitted values lived only in a Python comment.
+    target_type: Mapped[str] = mapped_column(String(20), nullable=False)
     target_user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=True, index=True
     )
@@ -148,6 +152,10 @@ class TagShare(Base):
             "(target_user_id IS NOT NULL AND target_group_id IS NULL) OR "
             "(target_user_id IS NULL AND target_group_id IS NOT NULL)",
             name="_tag_share_target_check",
+        ),
+        CheckConstraint(
+            "target_type IN ('user', 'group')",
+            name="_tag_share_target_type_check",
         ),
         Index(
             "_tag_share_user_uc",

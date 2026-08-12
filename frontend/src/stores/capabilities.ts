@@ -50,6 +50,23 @@ export function isCapabilityEnabled(state: CapabilitiesState, key: string): bool
   return state.capabilities[key] !== false;
 }
 
+/**
+ * Drop the fetched capability map back to community defaults (`loaded: false`).
+ *
+ * Registered in `$lib/session/clearUserState`. Without it, the cloud edition
+ * leaked one user's TIER-SCOPED capability map into the next session on the same
+ * tab: `loadCapabilities()` has exactly one call site (`routes/+layout.svelte`
+ * `onMount`), and an SPA login does not re-run `onMount`, so User B saw User A's
+ * enabled surfaces until a hard reload.
+ *
+ * Resetting to `loaded: false` (not `loaded: true`) is deliberate: consumers that
+ * wait for `loaded` must wait for the NEXT user's fetch, not read the fail-open
+ * empty map as an authoritative answer.
+ */
+export function resetCapabilities(): void {
+  capabilities.set({ ...COMMUNITY_DEFAULTS, capabilities: {}, audience: {} });
+}
+
 /** Fetch once at app bootstrap; safe to call again (e.g. after login). */
 export async function loadCapabilities(): Promise<void> {
   try {

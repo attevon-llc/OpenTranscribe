@@ -39,12 +39,56 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
   `test_fedramp_compliance`+`_controls`, `RUN_FIPS_TESTS`→`test_fips_140_3`,
   `RUN_AUTH_CONFIG_TESTS`→`test_auth_config_service`, `RUN_ADVANCED_ADMIN_TESTS`→
   `test_admin_security`, `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (corpus-dependent,
-  deliberately never in CI), `RUN_AUTH_E2E`→`e2e/test_ldap_oidc` + LDAP half of
+  deliberately never in CI), `RUN_SCHEMA_DRIFT_TESTS`→`unit/test_schema_drift` (needs the live
+  migrated DB; now its own phase in `run-integration-tests.sh` — it was previously set only by
+  the release pipeline's `warn`-severity `schema-drift` criterion, so it never ran pre-merge),
+  `RUN_AUTH_E2E`→`e2e/test_ldap_oidc` + LDAP half of
   `e2e/test_auth_buttons`, `RUN_PKI_E2E`→`e2e/test_pki`.
 - **MinIO/OpenSearch tests auto-enable by TCP probe.** Root conftest `_service_reachable`
   (0.3 s) `setdefault`s `SKIP_S3` from `localhost:5178` and `SKIP_OPENSEARCH` from
   `localhost:5180`, then points the clients at those host ports; an explicit shell value wins.
   Stack down → those suites **skip silently**, so a green local run proves less than it looks.
+
+## Test-quality gate — `scripts/audit-tests.py` + `audit-allowlist.txt`
+
+**Runs on every commit** (`.pre-commit-config.yaml`: `audit-tests-selftest` then `audit-tests`)
+and in the `backend-tests` CI job. Before this it was in neither — `rg audit-tests` found only
+prose. 14 AST detectors; full inventory and the calibration traps live in `scripts/CLAUDE.md`.
+What matters when you are writing a test here:
+
+- **`tests/e2e` is scanned too.** It used to be excluded, which hid 21 findings in the only
+  suite that drives a real browser.
+- **The shapes it rejects**, and the fix each one wants:
+  - `assert r.status_code != 403` → assert the exact status. `!=` passes on a **500**, so
+    seven "admin can access" tests in `api/endpoints/test_permissions.py` passed against a
+    completely broken endpoint.
+  - the real assertion inside `if r.status_code == 200:` → assert `== 200` unconditionally
+    first, then assert the payload. Two of these survived in `test_permissions.py` after their
+    siblings were fixed, because a weak unguarded assert beside them hid them from
+    `conditional-only`.
+  - every assertion inside `for x in <runtime iterable>` → add a non-emptiness assertion
+    *outside* the loop. `redaction/test_presidio.py::test_offsets_slice_back` is the fix shape:
+    zero detected spans ran the loop zero times and passed, on the invariant that
+    `redaction/spans.py` is a mutation target *for*.
+  - `assert some_local` where the local is an `or` chain → assert the value you mean.
+  - only `mock.assert_called_once_with(...)` → assert real state as well. See
+    `unit/test_dispatch.py`: it patched `update_media_file_status`/`update_task_status`/
+    `send_error_notification` — **the effects `on_pipeline_error` exists to produce** — so a
+    handler that left a file `processing` forever kept 13 of 15 tests green. It now creates real
+    `MediaFile`/`Task` rows and asserts on them, patching only `session_scope` (the handler
+    opens its own session, invisible under the savepoint harness) plus the MinIO/Redis/WebSocket
+    seams, once, in one fixture.
+  - `except ...: pass` in a test body → let it raise. The assertions inside the `try` silently
+    stop running and nothing reports it.
+- **Allowlist entries are `<file>::<test>::<category>  # reason`, all three segments required.**
+  A reason starting `BACKLOG` marks deferred work and is counted and printed separately on
+  every run, so a green gate is never read as a clean tree. A **stale** entry — one whose
+  finding is gone — **fails the run**: fix a test, delete its line. Never widen an assertion to
+  clear a finding.
+- **Run `python3 scripts/audit-tests.py --selftest` after touching a detector**, and give any
+  new one a must-fire *and* a must-stay-clean fixture. `unit/test_audit_tests_selftest.py` runs
+  all 36 cases under pytest for the same reason: a detector that matches nothing reports zero
+  findings, which is indistinguishable from a clean suite.
 
 ## Safety rules (non-negotiable) — enforced by `unit/test_e2e_data_hygiene.py`
 

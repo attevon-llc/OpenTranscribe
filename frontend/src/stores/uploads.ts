@@ -232,20 +232,11 @@ export const uploadStats = derived(uploadsStore, ($store) => {
   };
 });
 
-// Estimated time remaining for all active uploads
-export const estimatedTimeRemaining = derived(activeUploads, ($uploads) => {
-  const timesRemaining = $uploads
-    .map((upload) => upload.estimatedTime)
-    .filter((time) => time && time !== '');
-
-  if (timesRemaining.length === 0) return '';
-
-  // Return the longest estimated time (most conservative estimate)
-  return timesRemaining.reduce((longest, current) => {
-    if (!longest) return current;
-    if (!current) return longest;
-
-    // Simple comparison - in a real app you'd parse and compare properly
-    return current.length > longest.length ? current : longest;
-  }, '');
-});
+// DELETED: `estimatedTimeRemaining`. It compared durations by STRING LENGTH
+// ("in a real app you'd parse and compare properly", in source), so "5h" lost to
+// "1m 1s" and it returned the SHORTEST time while calling it "the most
+// conservative estimate". It had zero consumers repo-wide, which is why knip
+// never flagged it and no test ever exercised it. The design flaw is upstream:
+// `UploadItem.estimatedTime` is pre-FORMATTED text, so nothing downstream can
+// aggregate it. An aggregate ETA needs a numeric `estimatedMs` on the item —
+// add that if the UI ever asks for one, rather than parsing display strings back.

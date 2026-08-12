@@ -54,11 +54,13 @@ from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.models.chat import ChatConversation
 from app.models.media import Collection
+from app.models.media import Comment
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import SpeakerCollection
 from app.models.media import SpeakerProfile
 from app.models.media import Tag
+from app.models.media import Task
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.user import User
@@ -197,6 +199,22 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     the user-row delete. Their ``file_tag`` rows are detached first — one may
     hang off another user's file — while system tags (``user_id IS NULL``) are
     shared vocabulary and are left alone.
+
+    ``Comment`` and ``Task`` are here for the same reason as ``Tag`` and not for
+    the reason you would guess. ``purge_media_file`` deletes each of the subject's
+    files as an ORM *instance*, so ``MediaFile``'s ``delete-orphan`` cascade takes
+    the comments and tasks **on those files** with it. What it cannot reach is a
+    row the subject created on somebody *else's* file: commenting is collaborative
+    (a viewer on a shared file may comment), and both ``comment.user_id`` and
+    ``task.user_id`` are NOT NULL with ``ON DELETE NO ACTION``. One such comment
+    made the whole erasure fail at ``db.delete(user)`` — recorded as an error in
+    the summary, i.e. an Art. 17 request that silently did not complete.
+
+    **This list is hand-maintained and its twin is
+    ``api/endpoints/admin._delete_user_owned_records``.** The two are independent
+    and nothing in the application compares them;
+    ``tests/unit/test_user_deletion_fk_coverage.py`` derives the FKs from the live
+    schema and requires both paths to account for each one.
     """
     profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == user_id).all()
     for profile in profiles:
@@ -225,6 +243,17 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
         db.query(Tag).filter(Tag.user_id == user_id).delete(synchronize_session=False)
         summary["tags_deleted"] = len(tag_ids)
 
+    # Whatever the subject wrote on OTHER people's files. The rows on their own
+    # files are already gone via purge_media_file's ORM cascade; these are the
+    # ones no per-file pass can see, and both FKs are NOT NULL / NO ACTION, so
+    # leaving them turns `db.delete(user)` into a foreign-key violation.
+    summary["comments_deleted"] = (
+        db.query(Comment).filter(Comment.user_id == user_id).delete(synchronize_session=False)
+    )
+    summary["tasks_deleted"] = (
+        db.query(Task).filter(Task.user_id == user_id).delete(synchronize_session=False)
+    )
+
     db.commit()
 
 
@@ -237,6 +266,8 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "speaker_collections_deleted": 0,
         "collections_deleted": 0,
         "tags_deleted": 0,
+        "comments_deleted": 0,
+        "tasks_deleted": 0,
         "chat_conversations_deleted": 0,
         "voiceprints_deleted": 0,
         "users_deleted": 0,

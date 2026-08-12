@@ -85,6 +85,16 @@ export async function clearUserState(): Promise<void> {
     import('$stores/speakerColors').then(({ clearSpeakerColorMappings }) =>
       clearSpeakerColorMappings()
     ),
+    // Capabilities are TIER-SCOPED in the cloud edition and `loadCapabilities()`
+    // has a single call site (routes/+layout.svelte onMount), which an SPA login
+    // never re-runs. Without this reset User B inherited User A's enabled-surface
+    // map until a hard reload. Each login path re-fetches after setReady(true).
+    import('$stores/capabilities').then(({ resetCapabilities }) => resetCapabilities()),
+    // `hosts_with_stored_credentials` in this cache is PER-USER, and `loaded` is a
+    // once-only latch, so the next session never re-fetched it.
+    import('$lib/services/configService').then(({ resetProtectedMediaAuthConfig }) =>
+      resetProtectedMediaAuthConfig()
+    ),
   ]);
 
   // ── localStorage keys that hold user data ──

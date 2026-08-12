@@ -37,7 +37,20 @@ export interface UploadItem {
   fileId?: string; // UUID
   retryCount: number;
   startTime?: number;
+  /**
+   * Formatted time-to-completion ONLY (e.g. `2m 30s`), produced by
+   * `formatTimeRemaining`. `UploadProgress.svelte` renders it as
+   * `{estimatedTime} remaining`, so anything that is not a duration reads as
+   * nonsense there — this field carried localized STATUS strings for four
+   * phases, which is how the UI came to say "Calculating file hash... remaining".
+   * Put phase text in `statusText`.
+   */
   estimatedTime?: string;
+  /**
+   * Localized description of the current phase ("Calculating file hash…",
+   * "Resuming…"). Rendered on its own, never suffixed with "remaining".
+   */
+  statusText?: string;
   isDuplicate?: boolean;
   /**
    * The content fingerprint could not be computed, so this upload was NOT
@@ -296,6 +309,7 @@ class UploadService {
         startTime: Date.now(),
         progress: 0,
         estimatedTime: undefined,
+        statusText: undefined,
       });
       this.emit('started', uploadId);
 
@@ -326,6 +340,7 @@ class UploadService {
         fileId: result.uuid,
         isDuplicate: result.isDuplicate,
         estimatedTime: undefined,
+        statusText: undefined,
       });
 
       this.emit('completed', uploadId, result);
@@ -418,7 +433,11 @@ class UploadService {
       if (elapsed > 0) {
         const rate = progressEvent.loaded / elapsed;
         const remaining = (progressEvent.total - progressEvent.loaded) / rate;
-        this.updateUpload(uploadId, { estimatedTime: this.formatTimeRemaining(remaining) });
+        // A real ETA supersedes the phase text; keep the phase text while
+        // `formatTimeRemaining` still returns '' (too early to estimate) so the
+        // row never goes blank.
+        const eta = this.formatTimeRemaining(remaining);
+        this.updateUpload(uploadId, eta ? { estimatedTime: eta, statusText: undefined } : {});
       }
     };
   }
@@ -457,7 +476,8 @@ class UploadService {
     const elapsed = Date.now() - startedAt;
     if (elapsed > 0 && loaded > 0) {
       const remaining = ((total - loaded) * elapsed) / loaded;
-      this.updateUpload(uploadId, { estimatedTime: this.formatTimeRemaining(remaining) });
+      const eta = this.formatTimeRemaining(remaining);
+      if (eta) this.updateUpload(uploadId, { estimatedTime: eta, statusText: undefined });
     }
   }
 
@@ -480,7 +500,7 @@ class UploadService {
       status: 'uploading',
       fileId: session.fileId,
       multipart: session,
-      estimatedTime: get(t)(resume ? 'upload.resuming' : 'upload.statusUploading'),
+      statusText: get(t)(resume ? 'upload.resuming' : 'upload.statusUploading'),
     });
 
     const clientPutStartMs = Date.now();
@@ -610,7 +630,7 @@ class UploadService {
       this.updateUpload(uploadId, {
         status: 'preparing',
         progress: 0,
-        estimatedTime: get(t)('upload.calculatingHash'),
+        statusText: get(t)('upload.calculatingHash'),
       });
       fingerprint = await this.fingerprintOrWarn(uploadId, file, upload.name);
     }
@@ -647,7 +667,7 @@ class UploadService {
       status: 'uploading',
       fileId,
       progress: 0,
-      estimatedTime: get(t)('upload.statusUploading'),
+      statusText: get(t)('upload.statusUploading'),
     });
 
     // --- Presigned multipart flow ----------------------------------------
@@ -792,7 +812,7 @@ class UploadService {
       status: 'uploading',
       fileId,
       progress: 0,
-      estimatedTime: get(t)('upload.statusUploadingExtracted'),
+      statusText: get(t)('upload.statusUploadingExtracted'),
     });
 
     const progressHandler = this.makeProgressHandler(uploadId, upload);

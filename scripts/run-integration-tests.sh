@@ -7,6 +7,7 @@
 #   3. integration-marked tests (-m integration)
 #   4. gpu-marked tests (-m gpu) — deselected everywhere else, so this is their
 #      only run; each module keeps its own runtime skip guard for CPU-only hosts
+#   5. model-vs-schema drift (RUN_SCHEMA_DRIFT_TESTS) — needs the migrated DB
 #
 # GitHub Actions only runs the subset that fits a bare runner — THIS script
 # is the pre-merge source of truth. Requires: ./opentr.sh start dev
@@ -80,6 +81,9 @@ if $COVERAGE; then
     COV_ARGS=(--cov=app --cov-report=term-missing)
 fi
 
+# NOTE: RUN_SCHEMA_DRIFT_TESTS is deliberately NOT in this array — it gates a file that is
+# not in GATED_FILES, so setting it here would look like coverage while changing nothing.
+# It gets its own phase below.
 GATES=(RUN_PKI_TESTS=true RUN_MFA_TESTS=true RUN_LLM_TESTS=true
        RUN_FEDRAMP_TESTS=true RUN_FIPS_TESTS=true
        RUN_AUTH_CONFIG_TESTS=true RUN_ADVANCED_ADMIN_TESTS=true)
@@ -136,20 +140,32 @@ else
     echo -e "${YELLOW}Skipping GPU-marked tests (--skip-gpu).${NC}"
 fi
 
-# 5. Optional: corpus-dependent search relevance harness
+# 5. Model-vs-schema drift. Needs the live migrated DB, so it is env-gated like the security
+# suites — and until now that gate was set in exactly ONE place (the release pipeline's
+# `schema-drift` criterion, at severity `warn`), meaning the check never ran pre-merge at all.
+# A model or column that exists on one side only raises at runtime; catching it after the
+# release candidate is built is too late.
+#
+# Its two tests spawn ./scripts/check-schema-drift.py, which resolves the DB from the repo
+# root, so this phase runs from anywhere the rest of the gate does.
+run_phase "Model-vs-schema drift" \
+    env RUN_SCHEMA_DRIFT_TESTS=true "$VENV_PY" -m pytest tests/unit/test_schema_drift.py \
+    -o addopts="" -q --tb=short
+
+# 6. Optional: corpus-dependent search relevance harness
 if $SEARCH_QUALITY; then
     run_phase "Search quality harness (corpus-dependent)" \
         env RUN_SEARCH_QUALITY_TESTS=true "$VENV_PY" -m pytest tests/test_search_quality.py -o addopts="" -q --tb=short
 fi
 
-# 6. Optional: browser smoke tests against the live stack
+# 7. Optional: browser smoke tests against the live stack
 if $E2E_SMOKE; then
     run_phase "E2E smoke (browser)" \
         "$VENV_PY" -m pytest tests/e2e/test_settings_modal.py tests/e2e/test_a11y.py \
             tests/e2e/test_file_detail_transcript.py tests/e2e/test_media_download.py -q --tb=short
 fi
 
-# 7. Optional: orphaned test-user report (dry run — pass --execute manually to apply)
+# 8. Optional: orphaned test-user report (dry run — pass --execute manually to apply)
 if $CLEANUP; then
     echo -e "${BLUE}--- Orphaned test users (dry run) ---${NC}"
     "$VENV_PY" "$PROJECT_ROOT/scripts/cleanup-test-users.py" || true

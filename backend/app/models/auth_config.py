@@ -87,7 +87,12 @@ class AuthConfigAudit(Base):
     new_value: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )  # Masked for sensitive fields
-    changed_by: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
+    # Nullable since v387: the FK became ON DELETE SET NULL so deleting an admin who
+    # had ever changed auth config stops being a 500. `get_audit_log` already had an
+    # `if audit.changed_by is not None` branch commented "may have been deleted since"
+    # — unreachable while the column was NOT NULL, and now the real behaviour. The
+    # attribution degrades to NULL rather than the audit row being destroyed.
+    changed_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("user.id"), nullable=True)
     change_type: Mapped[str] = mapped_column(String(20), nullable=False)  # create, update, delete
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -96,4 +101,4 @@ class AuthConfigAudit(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", foreign_keys=[changed_by])
+    user: Mapped["User | None"] = relationship("User", foreign_keys=[changed_by])

@@ -120,3 +120,29 @@ export function formatSrtTimestamp(totalSeconds: number): string {
 export function formatVttTimestamp(totalSeconds: number): string {
   return formatSrtTimestamp(totalSeconds).replace(',', '.');
 }
+
+/**
+ * Task progress (a backend `float` in 0..1) as an integer percentage 0-100.
+ *
+ * Guards three real failure modes in `TasksGrid.svelte` / `FileDetailModal.svelte`,
+ * which each rendered `task.progress * 100` inline from an `any`-typed prop:
+ *
+ *  - **Missing/`null`/`NaN` → 0**, not `NaN`. `TasksGrid` had no guard at all, so a
+ *    task row without `progress` rendered `style="width: NaN%"` (an invalid
+ *    declaration the browser drops, leaving a zero-width bar and `NaN%` text).
+ *    `FileDetailModal` guarded `!== undefined`, which `null` PASSES, so a nullable
+ *    `progress` would have printed `Math.round(null * 100)` = "0%" — a plausible
+ *    value, which is worse than a visibly broken one.
+ *  - **Out-of-range → clamped.** The backend reported a hardcoded `0.5` for eleven
+ *    months before it started reporting truthfully; if it ever switches to a 0-100
+ *    scale, an unclamped `* 100` renders a 5000%-wide bar and no test fails.
+ *    Clamping bounds the damage to "pinned at 100%", which is visible and safe.
+ *
+ * Deliberately does NOT try to auto-detect the scale: silently reinterpreting
+ * `1` as either "1%" or "100%" would hide a contract change instead of surfacing it.
+ */
+export function taskProgressPercent(progress: unknown): number {
+  const value = typeof progress === 'number' ? progress : Number.NaN;
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, Math.round(value * 100)));
+}

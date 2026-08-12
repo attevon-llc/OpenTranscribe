@@ -93,10 +93,17 @@ already-downloaded data (TXT/SRT/VTT/CSV export).
 - `src/components/ui` — shared primitives (see its CLAUDE.md). `src/lib/utils` — pure helpers
   (time formatting lives ONLY in `formatting.ts`). `src/lib/api` — typed API clients.
   `src/stores` — Svelte stores. `src/routes` — pages.
-- `src/components/chat` — RAG chat surface (see its CLAUDE.md). Assistant output is the only
-  model-authored HTML in the app; it renders through `renderChatMarkdown`'s dedicated
-  DOMPurify profile, which blocks relative URLs so model text can never mint an
-  app-internal link. Never route it through `sanitizeHighlightHtml` instead.
+- `src/components/chat` — RAG chat surface (see its CLAUDE.md). Assistant output renders
+  through `renderChatMarkdown`'s dedicated DOMPurify profile, which blocks relative URLs so
+  model text can never mint an app-internal link. Never route it through
+  `sanitizeHighlightHtml` instead.
+  **It is not the only model-authored HTML, though** — `SummaryDisplay.svelte` and
+  `TopicsList.svelte` render LLM summaries, key decisions, follow-ups and topics through
+  `sanitizeHighlightHtml`, the weaker profile. That is tolerable only because that profile
+  allows no `a`/`href`/`src`/`style` at all, so model text cannot mint a link there either;
+  `sanitizeHtml.test.ts` pins exactly that. Adding `a` or `href` to
+  `HIGHLIGHT_ALLOWED_TAGS`/`_ATTR` would hand the LLM an app-internal link surface — route
+  summaries through `renderChatMarkdown` first if you ever need links there.
 - `src/lib/cloud` — **managed-edition seam stub** (see its README). The commercial repo replaces
   this directory at image-build time. Core code imports only `$lib/cloud` (+ its `components/`),
   gates every call site with `isCloudEdition` from `$lib/edition`, and must never name the

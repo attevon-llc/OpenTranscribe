@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '../../stores/locale';
+  import { taskProgressPercent } from '$lib/utils/formatting';
 
   export let detailedStatus: any;
   export let selectedFile: any;
@@ -194,10 +195,13 @@
                         <span class="metadata-value">{task.formatted_processing_time || $t('common.unknown')}</span>
                       </div>
                     {/if}
-                    {#if task.progress !== undefined && task.status === 'in_progress'}
+                    <!-- `progress !== undefined` let `null` through: `null !== undefined`
+                         is true and `Math.round(null * 100)` renders a confident "0%".
+                         Require an actual finite number. -->
+                    {#if typeof task.progress === 'number' && Number.isFinite(task.progress) && task.status === 'in_progress'}
                       <div class="metadata-item">
                         <span class="metadata-label">{$t('fileStatus.progress')}</span>
-                        <span class="metadata-value">{Math.round(task.progress * 100)}%</span>
+                        <span class="metadata-value">{taskProgressPercent(task.progress)}%</span>
                       </div>
                     {/if}
                     {#if task.whisper_model}

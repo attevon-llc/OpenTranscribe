@@ -155,7 +155,14 @@ fail_under = 37
 # serial and, against this repo's single shared Postgres, deadlock-prone
 # (the advisory-lock/system_settings collisions of issues #389 and #431).
 [tool.mutmut]
-paths_to_mutate = [
+# source_paths must be the WHOLE package, not just the targets. mutmut copies it
+# into backend/mutants/ and runs pytest THERE; listing only the six files left
+# mutants/app/ holding 6 modules out of hundreds, and tests/conftest.py died with
+# ModuleNotFoundError: No module named 'app.core.config'. Narrow the MUTATION set
+# with only_mutate — that is also what scripts/run-mutation-tests.sh reads to build
+# its per-module list.
+source_paths = ["app"]
+only_mutate = [
     "app/services/redaction/spans.py",
     "app/auth/password_policy.py",
     "app/core/security.py",
@@ -163,5 +170,18 @@ paths_to_mutate = [
     "app/auth/lockout.py",
     "app/auth/session.py",
 ]
-tests_dir = "tests/"
-runner = "python -m pytest -x -q --timeout=120"
+# Test SELECTION is per-module and comes from scripts/run-mutation-tests.sh via
+# PYTEST_ADDOPTS, not from here: mutating spans.py should only run the redaction
+# tests, and one static list cannot express that.
+#
+# Do NOT reintroduce `tests_dir` or `runner`. In mutmut 3.x `tests_dir` is
+# deprecated and must be a LIST (a string crashes config loading with
+# "can only concatenate list (not str) to list"), and `runner` is not a
+# recognized key at all — it is read by nothing, so flags put there are silently
+# dropped. Runner flags belong in pytest_add_cli_args.
+# mutmut supplies its own --tb=native -x -q -p no:randomly, so runner flags here
+# would only duplicate them. Its own timeout is timeout_constant (seconds), NOT a
+# pytest --timeout flag: mutmut runs pytest IN-PROCESS, and pytest-timeout's
+# thread method plus the inherited addopts is what made the first run die with
+# BadTestExecutionCommandsException.
+timeout_constant = 120

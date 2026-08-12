@@ -10,7 +10,7 @@
 # SURVIVES is a line the suite executes without asserting anything about — and for an
 # auth predicate that means the control could be deleted with the suite still green.
 #
-# Scoped to a small, high-value set (`[tool.mutmut] paths_to_mutate` in
+# Scoped to a small, high-value set (`[tool.mutmut] only_mutate` in
 # backend/pyproject.toml — this script reads it, so there is one source of truth). A
 # whole-codebase run is hours and is not the point.
 #
@@ -162,7 +162,7 @@ check_preconditions() {
     # A mutation run must be SERIAL. pyproject's addopts carry `-n auto`; every mutant
     # would otherwise fork one xdist worker per core against a single shared Postgres,
     # which is both slower and the known deadlock shape (issues #389, #431).
-    echo -e "${BLUE}  serialisation: PYTEST_ADDOPTS will append '-n0' to override addopts' '-n auto'${NC}"
+    echo -e "${BLUE}  serialisation: PYTEST_ADDOPTS clears addopts entirely ('-o addopts=') -- mutmut runs pytest in-process${NC}"
 
     $ok
 }
@@ -185,7 +185,7 @@ if [[ "$MODE" == list ]]; then
 import sys, tomllib
 with open(sys.argv[1], "rb") as fh:
     cfg = tomllib.load(fh)["tool"]["mutmut"]
-for path in cfg["paths_to_mutate"]:
+for path in cfg["only_mutate"]:
     print(f"  {path}")
 print(f"\n  runner: {cfg['runner']}")
 PY
@@ -248,19 +248,30 @@ for key in "${MODULES[@]}"; do
     # The test paths ride in PYTEST_ADDOPTS because pytest prepends its contents to the
     # command line, and [tool.mutmut] runner deliberately names no paths — that is what
     # makes per-module narrowing possible without a mutmut-version-specific flag.
-    addopts="-n0 -p no:cacheprovider $tests"
+    # `-o addopts=` CLEARS pyproject's addopts rather than fighting them. mutmut runs
+    # pytest in-process, so the inherited `-n auto --dist loadgroup` cannot be satisfied
+    # (appending `-n0` was not enough -- xdist still initialises) and the inherited
+    # `-m 'not integration and not gpu'` would deselect by marker inside every mutant.
+    # This is the same override scripts/run-integration-tests.sh uses for its phases.
+    addopts="-o addopts= -p no:cacheprovider $tests"
+
+    # mutmut 3.x has NO --paths-to-mutate flag (it exits 2 on the unknown option) and
+    # takes MUTANT_NAMES positionally instead, so per-module scoping is a dotted-path
+    # glob over the mutant ids: app/services/redaction/spans.py -> app.services.redaction.spans*
+    mutant_glob="${path%.py}"
+    mutant_glob="${mutant_glob//\//.}*"
 
     if $DRY_RUN; then
         echo -e "${YELLOW}    would run:${NC}"
         echo "      cd $BACKEND"
         echo "      env ${GATES[*]} PYTEST_ADDOPTS=\"$addopts\" \\"
-        echo "        venv/bin/mutmut run --paths-to-mutate $path"
+        echo "        venv/bin/mutmut run '$mutant_glob'"
         echo
         continue
     fi
 
     if env "${GATES[@]}" PYTEST_ADDOPTS="$addopts" \
-        "$VENV_BIN/mutmut" run --paths-to-mutate "$path" 2>&1 | tee "$log"; then
+        "$VENV_BIN/mutmut" run "$mutant_glob" 2>&1 | tee "$log"; then
         echo -e "${GREEN}✓ $key complete${NC}"
     else
         # A non-zero exit from mutmut means "mutants survived", which is a FINDING, not a

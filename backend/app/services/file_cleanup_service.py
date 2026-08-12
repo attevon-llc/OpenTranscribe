@@ -197,6 +197,16 @@ class FileCleanupService:
         """
         Force cleanup of orphaned files (admin operation).
 
+        Destroys each eligible file through :func:`purge_media_file`, the canonical
+        destroy shared with the interactive, bulk and retention paths. It used to
+        go through the API-layer ``delete_media_file``, which took a *file_uuid*
+        and was handed ``str(file.id)`` — an integer — so ``UUID("123")`` raised
+        for every file and the whole pass reported ``successfully_deleted: 0``
+        while ``run_deep_cleanup`` logged it as a success. Nothing was ever
+        deleted. That call also required a ``current_user`` for its permission
+        lookup, which was faked with a transient ``User(role="admin")`` added to
+        the caller's live session.
+
         Args:
             db: Database session
             dry_run: If True, only preview what would be cleaned up
@@ -225,16 +235,19 @@ class FileCleanupService:
         results["eligible_for_deletion"] = len(eligible_files)
 
         if not dry_run:
-            from app.api.endpoints.files.crud import delete_media_file
-            from app.models.user import User
-
-            # Create a system user for cleanup operations
-            system_user = User(role="admin", email="system@cleanup")
+            from app.utils.task_utils import cancel_active_task
 
             for file in eligible_files:
                 try:
-                    # Force delete the file
-                    delete_media_file(db, str(file.id), system_user, force=True)
+                    # These files are orphaned/errored, but an abandoned task row can
+                    # still be attached; the interactive force-delete cancels it too.
+                    if file.active_task_id:
+                        with contextlib.suppress(Exception):
+                            cancel_active_task(db, int(file.id))
+
+                    result = purge_media_file(db, file)
+                    if not result["deleted"]:
+                        raise RuntimeError(result.get("error") or "purge_media_file failed")
                     results["successfully_deleted"] += 1
                     results["files_processed"].append(
                         {"id": int(file.id), "filename": file.filename, "status": "deleted"}

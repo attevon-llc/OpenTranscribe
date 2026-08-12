@@ -377,8 +377,10 @@ class TaskRecoveryService:
                     )
                     stats["tasks_failed"] += 1
 
-                # Increment retry count and reset file status to pending for retry
-                media_file.retry_count += 1  # type: ignore[assignment,operator]
+                # Increment retry count and reset file status to pending for retry.
+                # NULL-normalized: `retry_count`'s 0 is a Python-side default, not a
+                # constraint, so `+= 1` on a NULL row raises TypeError.
+                media_file.retry_count = int(media_file.retry_count or 0) + 1
                 update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                 stats["files_recovered"] += 1
 
@@ -467,8 +469,15 @@ class TaskRecoveryService:
                     .count()
                 )
 
-                assert media_file.upload_time is not None  # server_default=now()
-                file_age = datetime.now(UTC) - media_file.upload_time
+                # `upload_time` is nullable: its server_default only applies to an INSERT
+                # that omits the column, so a backfill or an explicit UPDATE can leave NULL.
+                # An unmeasurable age is treated as "not yet old enough", which keeps the
+                # PENDING-too-long branch below from firing on a row it knows nothing about.
+                file_age = (
+                    datetime.now(UTC) - media_file.upload_time
+                    if media_file.upload_time is not None
+                    else timedelta(0)
+                )
 
                 if active_tasks == 0 and media_file.status == FileStatus.PROCESSING:
                     # Check if transcription actually completed
@@ -487,7 +496,7 @@ class TaskRecoveryService:
                             f"File {media_file.id} stuck in PROCESSING with incomplete transcription - "
                             f"resetting to PENDING"
                         )
-                        media_file.retry_count += 1  # type: ignore[assignment,operator]
+                        media_file.retry_count = int(media_file.retry_count or 0) + 1
                         update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                         stats["files_recovered"] += 1
 
@@ -498,7 +507,7 @@ class TaskRecoveryService:
                     hours=self.config.PENDING_FILE_RETRY_THRESHOLD
                 ):
                     # File has been pending too long, retry it
-                    media_file.retry_count += 1  # type: ignore[assignment,operator]
+                    media_file.retry_count = int(media_file.retry_count or 0) + 1
                     if self.schedule_file_retry(int(media_file.id)):
                         stats["tasks_retried"] += 1
 
@@ -658,9 +667,10 @@ class TaskRecoveryService:
                     f"attempt {int(media_file.retry_count or 0) + 1}"
                 )
 
-                # Increment retry count and reset status
-                media_file.retry_count += 1  # type: ignore[assignment,operator]
-                media_file.recovery_attempts += 1  # type: ignore[assignment,operator]
+                # Increment retry count and reset status. Both counters are NULL-normalized
+                # for the same reason the log line above reads `retry_count or 0`.
+                media_file.retry_count = int(media_file.retry_count or 0) + 1
+                media_file.recovery_attempts = int(media_file.recovery_attempts or 0) + 1
                 media_file.last_recovery_attempt = datetime.now(UTC)  # type: ignore[assignment]
 
                 # Clear old task records and reset to PENDING
@@ -858,7 +868,9 @@ class TaskRecoveryService:
                     f"Retriable error for file {media_file.id} "
                     f"({error_category.value}), resetting to PENDING"
                 )
-                media_file.retry_count += 1  # type: ignore[assignment,operator]
+                # NULL-normalized, matching the `retry_count or 0` read in the
+                # `should_retry` call that gates this branch.
+                media_file.retry_count = int(media_file.retry_count or 0) + 1
                 update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                 if not self.schedule_file_retry(int(media_file.id)):
                     logger.warning(
@@ -992,10 +1004,17 @@ class TaskRecoveryService:
 
         for task in stuck_tasks:
             try:
-                assert task.created_at is not None  # server_default=now()
+                # `task.created_at` is nullable — the server_default only fires for an
+                # INSERT that omits the column — and this is only a log line, so an
+                # unknown creation time must not abort the sweep that marks the task failed.
+                stuck_for = (
+                    str(datetime.now(UTC) - task.created_at)
+                    if task.created_at is not None
+                    else "an unknown duration (created_at is NULL)"
+                )
                 logger.warning(
                     f"Marking stuck LLM task {task.id} ({task.task_type}) as failed - "
-                    f"stuck in progress for {datetime.now(UTC) - task.created_at}"
+                    f"stuck in progress for {stuck_for}"
                 )
 
                 task.status = "failed"  # type: ignore[assignment]

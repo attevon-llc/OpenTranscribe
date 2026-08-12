@@ -85,11 +85,11 @@ declare -A MODULE_PATH=(
 )
 
 declare -A MODULE_TESTS=(
-    [spans]="tests/redaction/test_apply_redactions.py tests/redaction/test_span_merge_boundaries.py tests/redaction/test_word_offset_alignment.py"
-    [password_policy]="tests/unit/test_auth_config_behaviour.py tests/test_fedramp_compliance.py tests/unit/test_account_lifecycle.py tests/unit/test_auth_policy_source_of_truth.py"
-    [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py tests/unit/test_bcrypt_test_rounds.py tests/unit/test_local_auth_policy.py"
-    [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py"
-    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py"
+    [spans]="tests/redaction/test_apply_redactions.py tests/redaction/test_span_merge_boundaries.py tests/redaction/test_word_offset_alignment.py tests/redaction/test_non_ascii_masking.py"
+    [password_policy]="tests/unit/test_auth_config_behaviour.py tests/test_fedramp_compliance.py tests/unit/test_account_lifecycle.py tests/unit/test_auth_policy_source_of_truth.py tests/unit/test_password_policy_controls.py"
+    [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py tests/unit/test_bcrypt_test_rounds.py tests/unit/test_local_auth_policy.py tests/unit/test_jwt_algorithm_downgrade.py"
+    [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py tests/unit/test_access_token_revocation_epoch.py tests/unit/test_credential_gate_fail_closed.py"
+    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py"
     # ⚠️ EXPECT ~EVERY OIDCStateStore MUTANT TO SURVIVE, and do not read that as a
     # harness fault. app/auth/session.py's session-timeout code moved to
     # token_service.py, so test_session_lifetime.py (which imports token_service)
@@ -98,7 +98,7 @@ declare -A MODULE_TESTS=(
     # assertion -- and `get_state`/`delete_state` appear nowhere, so the single-use
     # state deletion that prevents OIDC state/PKCE replay has no test at all.
     # Tracked as #33; until it is written, this target measures absence, not weakness.
-    [session]="tests/unit/test_session_lifetime.py tests/unit/test_auth_state_degradation.py"
+    [session]="tests/unit/test_session_lifetime.py tests/unit/test_auth_state_degradation.py tests/unit/test_oidc_state_single_use.py"
 )
 
 # Same set scripts/run-backend-tests.sh --gated enables. Mandatory here: three of the

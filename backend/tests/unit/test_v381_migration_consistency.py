@@ -220,8 +220,16 @@ def test_the_application_constant_matches_the_check():
     assert set(VALID_APPROVAL_STATUSES) == allowed
 
 
+@pytest.mark.ddl_exclusive
 def test_rerunning_the_upgrade_is_a_no_op(db_session):
-    """The startup runner stamps by fingerprint, so a revision re-runs routinely."""
+    """The startup runner stamps by fingerprint, so a revision re-runs routinely.
+
+    ``UPGRADE_SQL`` and ``CONSTRAINT_SQL`` are ``ALTER TABLE "user" ADD COLUMN`` /
+    ``ADD CONSTRAINT`` / ``CREATE INDEX``, run twice each — ACCESS EXCLUSIVE on the one
+    table nearly every other test inserts into. This ran unmarked because the marker
+    scanner could not see DDL that arrives through an attribute lookup on a revision
+    module (``module.UPGRADE_SQL``); it can now.
+    """
     module = _revision_module()
     conn = db_session.connection()
 

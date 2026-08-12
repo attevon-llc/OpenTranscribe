@@ -750,11 +750,13 @@ def delete_admin_user(
         # Validate deletion is allowed
         _validate_user_deletion(user, current_user)
 
-        # The last-super_admin guard lives here rather than in
-        # _validate_user_deletion because that helper takes no Session. Its sibling
-        # DELETE /users/{uuid} has always had it; this route did not (issue #431), so
-        # the deployment refused to DEMOTE the last super_admin while allowing it to
-        # be deleted outright.
+        # Defence in depth, and UNREACHABLE as the guards above stand today — kept
+        # deliberately, not as a live fix (issue #431). The composition already makes
+        # it impossible to delete the last super_admin: deleting one requires BEING
+        # one (the 403 above), and you cannot target yourself (the 400 above), so the
+        # caller always remains. This fires only if a future change relaxes either of
+        # those, which is exactly when nobody would be looking. It lives here rather
+        # than in _validate_user_deletion because that helper takes no Session.
         from app.api.endpoints.users import _assert_not_last_super_admin
 
         _assert_not_last_super_admin(db, user, ROLE_USER)
@@ -1883,18 +1885,21 @@ def admin_erase_user(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Same two guards the sibling delete routes carry. This route had NEITHER
-    # (issue #431): it is the most destructive account operation in the app, and it
-    # was the only one that would let a super_admin erase themselves, or erase the
-    # last super_admin. `PUT /admin/users/{uuid}/role` already refuses to DEMOTE the
-    # last one, so without this the deployment blocked the reversible operation and
-    # permitted the irreversible one — recovery means hand-editing the database.
+    # THE self-erasure guard is the real fix here (issue #431). This is the most
+    # destructive account operation in the app — it cascades object storage,
+    # OpenSearch voiceprints and the relational rows before dropping the account —
+    # and it was the only such route that let a super_admin erase THEMSELVES,
+    # mid-request. Its sibling delete routes have always refused that.
     if int(target.id) == int(current_user.id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot erase your own account",
         )
 
+    # Also defence in depth, and also unreachable as written: this route is
+    # super_admin-gated, and the self guard above means the target is someone else,
+    # so the caller always remains. Kept for the same reason as its twin on
+    # DELETE /admin/users/{uuid} — it is the backstop if either premise changes.
     from app.api.endpoints.users import _assert_not_last_super_admin
 
     _assert_not_last_super_admin(db, target, ROLE_USER)
@@ -1925,7 +1930,10 @@ def start_data_integrity_check(
     if status.get("running"):
         return {"status": "already_running"}
 
-    result = opensearch_orphan_cleanup_task.delay()
+    # Pass the requester so progress reaches THEM. The task used to publish to a
+    # hardcoded user_id=1, so an admin who was not account 1 triggered a sweep and
+    # then waited forever while whoever held id 1 got the toasts (issue #431).
+    result = opensearch_orphan_cleanup_task.delay(user_id=int(current_user.id))
     return {"status": "started", "task_id": str(result.id)}
 
 

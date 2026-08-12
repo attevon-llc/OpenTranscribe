@@ -57,11 +57,70 @@ class TestBuildWordOffsets:
         assert offsets[1][0] == offsets[1][1], "an empty token must be zero-width"
 
     def test_a_missing_word_key_is_treated_as_empty(self):
-        """``w.get("word", "")`` — a word dict without the key must not raise."""
-        offsets = build_word_offsets("a b", [{"word": "a"}, {"start": 1.0}, {"word": "b"}])
+        """``w.get("word", "")`` — the default must be an EMPTY token, not a placeholder.
 
-        assert len(offsets) == 3
-        assert offsets[1][0] == offsets[1][1]
+        The fixture text deliberately contains the two literals a wrong default takes:
+        ``"None"`` (what ``str(w.get("word"))`` produces when the default is dropped)
+        and a filler run. A non-empty default is a *searchable* token — ``text.find``
+        locates it, the word gets a real offset pointing at unrelated text, and the blur
+        style then masks characters no detector ever flagged. With the text free of both
+        (the original fixture was ``"a b"``) any wrong default merely fails to match and
+        the bug is invisible.
+        """
+        offsets = build_word_offsets("None XXXX here", [{"start": 1.0}, {"word": "here"}])
+
+        assert offsets[0] == (0, 0)
+
+    def test_the_cursor_starts_at_zero_when_the_first_token_is_empty(self):
+        """Kills the `cursor = 0` -> `cursor = None` mutant.
+
+        Only the FIRST word can observe the initialiser — after one real token the
+        cursor is an int either way, which is why the empty-token test above (whose
+        blank is second) missed it. A ``(None, None)`` offset is worse than a wrong one:
+        ``map_char_span_to_words`` compares it with ``>`` and raises TypeError.
+        """
+        offsets = build_word_offsets("hi there", [{"word": "  "}, {"word": "hi"}])
+
+        assert offsets[0] == (0, 0)
+
+    def test_the_restart_fallback_finds_the_first_occurrence_not_the_last(self):
+        """Kills the ``text.find`` -> ``text.rfind`` mutant in the fallback.
+
+        The fallback runs when the token sits behind the cursor. It takes two
+        occurrences before the cursor for the two functions to disagree, and the
+        existing fallback test has one — so it could not tell them apart. ``rfind``
+        aligns the word to the LAST occurrence, blurring a different "Bob" than the
+        detector flagged.
+        """
+        offsets = build_word_offsets("Bob and Bob and Sue", [{"word": "Sue"}, {"word": "Bob"}])
+
+        assert offsets[1] == (0, 3)
+
+    def test_an_unalignable_token_does_not_truncate_the_offset_list(self):
+        """Kills the `continue` -> `break` mutant on the unalignable branch.
+
+        Callers index ``offsets`` by word position, so a short list silently re-points
+        every later word at the wrong one, or raises IndexError. The existing
+        absent-token test puts the bad token LAST, where a break is invisible.
+        """
+        offsets = build_word_offsets(
+            "only this", [{"word": "only"}, {"word": "ABSENT"}, {"word": "this"}]
+        )
+
+        assert offsets == [(0, 4), (4, 4), (5, 9)]
+
+    def test_a_stutter_advances_past_every_occurrence(self):
+        """Kills the `cursor = idx + len(token)` -> `idx - len(token)` mutant.
+
+        Two occurrences cannot catch it: a backward cursor makes the forward search
+        miss, and the restart-from-zero fallback then repairs the answer by accident —
+        which is why ``test_a_repeated_word_advances...`` above survived this mutant.
+        Three occurrences (a stutter, which real transcripts are full of) cannot be
+        repaired: the second and third token both collapse onto the third.
+        """
+        offsets = build_word_offsets("no no no", [{"word": "no"}, {"word": "no"}, {"word": "no"}])
+
+        assert offsets == [(0, 2), (3, 5), (6, 8)]
 
     def test_a_token_absent_from_the_text_yields_a_zero_width_offset(self):
         """Both `idx < 0` branches: the cursor search AND the from-the-start retry."""
@@ -115,6 +174,16 @@ class TestMapCharSpanToWords:
         detector never flagged.
         """
         assert map_char_span_to_words(offsets, 0, 4) == (0, 0)
+
+    def test_a_span_starting_at_a_word_end_boundary_excludes_that_word(self, offsets):
+        """Kills the `we > char_start` -> `we >= char_start` mutant — the mirror of the
+        test above, on the other side of the intersection test.
+
+        A span over the space and the next word ([3, 7) = " met") must not pull in
+        "Bob", whose EXCLUSIVE end is exactly 3. With `>=` the span is credited to a
+        word the detector never flagged, so blur masks one word too many.
+        """
+        assert map_char_span_to_words(offsets, 3, 7) == (1, 1)
 
     def test_a_span_inside_a_word_still_maps_to_it(self, offsets):
         """A sub-token match (e.g. a digit run inside a longer token)."""

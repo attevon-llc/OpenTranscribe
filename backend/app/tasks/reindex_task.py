@@ -262,6 +262,19 @@ def _check_and_recreate_stale_index() -> None:
     When _INDEX_VERSION bumps (new analyzers, fields, etc.), the existing
     index mapping is incompatible. A full reindex is the right time to
     recreate the index with the latest mapping.
+
+    Recreating means **deleting** the chunks index, and the reindex that follows
+    only repopulates the calling user's files — so every other user's chunks are
+    gone until they each run their own reindex. Three refusals bound that:
+
+    - **No ``_meta`` block at all** → the index's provenance is unknown, so its
+      version cannot be compared and it is left alone. A missing ``_meta`` used
+      to read as version 0, i.e. unconditionally destroy.
+    - **Unreadable embedding dimension** → abort. Defaulting to 384 gave a 768d
+      deployment a wrong-dimension index in which *every* subsequent write fails.
+    - **Index body built before the delete**, and a create failure is followed by
+      an immediate rebuild attempt from the mapping just read, because the
+      alternative state is no index at all.
     """
     try:
         from app.services.opensearch_service import opensearch_client
@@ -277,8 +290,18 @@ def _check_and_recreate_stale_index() -> None:
 
         # Read stored version from index _meta
         mapping = opensearch_client.indices.get_mapping(index=index_name)
-        meta = mapping.get(index_name, {}).get("mappings", {}).get("_meta", {})
-        stored_version = meta.get("version", 0)
+        index_mappings = mapping.get(index_name, {}).get("mappings", {})
+        meta = index_mappings.get("_meta", {})
+        stored_version = meta.get("version")
+
+        if stored_version is None:
+            logger.warning(
+                f"Index '{index_name}' carries no _meta version. Refusing to recreate it: "
+                "an index of unknown provenance may hold every user's chunks, and only "
+                "the calling user's files get reindexed afterwards. Fix the mapping's "
+                "_meta by hand if this index really is stale."
+            )
+            return
 
         if stored_version >= _INDEX_VERSION:
             logger.debug(
@@ -291,14 +314,20 @@ def _check_and_recreate_stale_index() -> None:
             f"latest is {_INDEX_VERSION}. Recreating index with updated mapping."
         )
 
-        # Get current dimension before deleting
-        current_dim = (
-            mapping.get(index_name, {})
-            .get("mappings", {})
-            .get("properties", {})
-            .get("embedding", {})
-            .get("dimension", 384)
-        )
+        # Get current dimension before deleting. No default: a guessed dimension
+        # produces an index that rejects every write it is asked to accept.
+        current_dim = index_mappings.get("properties", {}).get("embedding", {}).get("dimension")
+        if not isinstance(current_dim, int) or current_dim <= 0:
+            logger.error(
+                f"Refusing to recreate '{index_name}': its embedding dimension could not "
+                f"be read from the mapping (got {current_dim!r}). Recreating with a "
+                "guessed dimension makes every subsequent write fail."
+            )
+            return
+
+        # Build the new body BEFORE anything is destroyed, so a body-construction
+        # failure cannot strand the deployment with no index.
+        index_body = _get_index_body_with_dimension(current_dim)
 
         # Remove alias if it exists
         alias_name = "transcript_search"
@@ -308,10 +337,25 @@ def _check_and_recreate_stale_index() -> None:
         except Exception as e:
             logger.debug(f"Could not remove alias '{alias_name}': {e}")
 
-        # Delete and recreate
         opensearch_client.indices.delete(index=index_name)
-        index_body = _get_index_body_with_dimension(current_dim)
-        opensearch_client.indices.create(index=index_name, body=index_body)
+
+        # The create gets its own handler: sharing one `except` with the delete
+        # meant a create failure left the deployment with NO index and a single
+        # warning line. Fall back to re-creating the index we just read, so the
+        # write path keeps working even if the new mapping is rejected.
+        try:
+            opensearch_client.indices.create(index=index_name, body=index_body)
+        except Exception as create_err:
+            logger.error(
+                f"Creating '{index_name}' with version {_INDEX_VERSION} failed after the "
+                f"old index was deleted: {create_err}. Restoring the previous mapping."
+            )
+            opensearch_client.indices.create(index=index_name, body={"mappings": index_mappings})
+            logger.warning(
+                f"Restored '{index_name}' with its previous mapping (version "
+                f"{stored_version}); the schema upgrade did NOT happen."
+            )
+            return
 
         # Recreate alias
         opensearch_client.indices.put_alias(index=index_name, name=alias_name)

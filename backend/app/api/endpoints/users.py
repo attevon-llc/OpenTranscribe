@@ -11,6 +11,8 @@ from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
@@ -317,20 +319,48 @@ def update_current_user(
 def search_users(
     q: str = Query(..., min_length=2, max_length=100, description="Search query (min 2 chars)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Search users by name or email for sharing autocomplete.
 
-    Returns up to 20 results, excluding the current user.
+    Returns up to 20 results, excluding the caller.
+
+    **Tenant-gated.** This is the only plain-``user``-tier route that reads other
+    accounts' identities, and it carried no tenant scope at all — not even the
+    ``UNSCOPED`` sentinel, because no ``RequestContext`` reached it. In an org
+    deployment that made it a cross-tenant directory: any authenticated member of
+    any tenant could page every *other* tenant's active accounts — email plus
+    full name — out of it, 20 at a time, from a two-character query, with no
+    admin privilege and nothing in the response to say the rows came from
+    somewhere else.
+
+    The gate mirrors ``scope_to_context``: in org context only members of THAT
+    org are candidates; in personal scope only accounts with no org membership
+    are. Community-edition invariance holds exactly — the membership table is
+    empty there, so every account is in personal scope and the result set is
+    unchanged.
     """
+    from sqlalchemy import exists
     from sqlalchemy import or_
+
+    from app.models.organization import OrganizationMembership
+
+    # Correlated EXISTS against the outer `user` row, so the tenant gate is one
+    # subquery rather than a join that could duplicate rows per membership.
+    caller_org_member = exists().where(
+        OrganizationMembership.user_id == User.id,
+        OrganizationMembership.organization_id == ctx.org_id,
+    )
+    any_org_member = exists().where(OrganizationMembership.user_id == User.id)
+    tenant_gate = caller_org_member if ctx.is_org_context else ~any_org_member
 
     pattern = f"%{q}%"
     users = (
         db.query(User)
         .filter(
-            User.id != current_user.id,
+            User.id != ctx.user.id,
             User.is_active == True,  # noqa: E712
+            tenant_gate,
             or_(
                 User.email.ilike(pattern),
                 User.full_name.ilike(pattern),

@@ -117,6 +117,7 @@ const sidebars: SidebarsConfig = {
         'developer-guide/diarization-boundary-correction',
         'developer-guide/watch-sources',
         'developer-guide/rag-chat',
+        'developer-guide/rag-evaluation',
         'developer-guide/contributing',
         'developer-guide/testing',
         'developer-guide/releasing',

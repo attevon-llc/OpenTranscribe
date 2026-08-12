@@ -304,10 +304,11 @@ def get_audit_log(
         offset=offset,
     )
 
-    # Resolve the actors in one query rather than per row. `changed_by` is a NOT
-    # NULL FK, but the referenced account may have been deleted since, so a miss
-    # is rendered as unknown rather than dropping the entry — losing the record
-    # of a change because its author left is the opposite of an audit trail.
+    # Resolve the actors in one query rather than per row. Since v387 `changed_by` is
+    # nullable and ON DELETE SET NULL, so it is genuinely NULL once the author's
+    # account is deleted — this None branch used to be unreachable. Either way a miss
+    # renders as unknown rather than dropping the entry: losing the record of a change
+    # because its author left is the opposite of an audit trail.
     actor_ids = {audit.changed_by for audit in audits if audit.changed_by is not None}
     actor_emails: dict[int, str] = {}
     if actor_ids:

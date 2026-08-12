@@ -259,6 +259,36 @@ def test_the_audit_column_became_nullable(db_session):
     assert nullable["change_type"] is False
 
 
+def test_the_orm_mirrors_the_nullability_the_migration_created(db_session):
+    """The half of a SET NULL change that no existing gate covers.
+
+    ``test_schema_drift.py`` compares tables and columns, **not nullability**, so a
+    column the migration made nullable while the model still says ``nullable=False``
+    passes every check in the repo — right up until SQLAlchemy loads a NULL into a
+    non-Optional attribute, or an ORM insert re-asserts NOT NULL against a database
+    that no longer has it. That is exactly what ``AuthConfigAudit.changed_by`` was.
+
+    Derived from the same ``_ACTOR_FKS`` list the FK rules are, so a sixth actor FK
+    added to the revision is checked here without editing this test.
+    """
+    from app.db.base import Base
+
+    mismatches = []
+    for table, column, _fk in _ACTOR_FKS:
+        live = {
+            col["name"]: col["nullable"]
+            for col in inspect(db_session.connection()).get_columns(table)
+        }
+        model_table = Base.metadata.tables[table]
+        model_nullable = model_table.columns[column].nullable
+        if model_nullable != live[column]:
+            mismatches.append(
+                f"{table}.{column}: model nullable={model_nullable}, database={live[column]}"
+            )
+
+    assert not mismatches, "ORM and database disagree on nullability:\n  " + "\n  ".join(mismatches)
+
+
 def test_deleting_the_admin_blanks_the_audit_actor_and_keeps_the_row(db_session):
     """The behaviour, not just the rule: the audit entry outlives its author.
 

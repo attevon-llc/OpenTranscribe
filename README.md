@@ -1036,6 +1036,39 @@ pytest backend/tests/e2e/test_a11y.py -v     # axe-core accessibility
 pytest backend/tests/e2e/test_visual_regression.py -v   # screenshot baselines
 ```
 
+**Tools that keep the suite honest.** A test that cannot fail is worse than no test — it
+buys false confidence and hides the defect it was written to catch. These four exist
+because this repo had shipped every one of those failure modes: an assertion that passed
+against an empty index, a marker that selected no tests, 240 security tests gated off
+behind stale environment variables, and an endpoint returning a hardcoded value that no
+test referenced.
+
+```bash
+python3 scripts/audit-tests.py backend/tests   # 7 AST detectors, exits 1 on new offenders
+cd frontend && npm run test:audit              # the vitest sibling, 10 detectors
+npm run test:audit:selftest                    #   ...and ITS self-test — not optional
+python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
+./scripts/run-mutation-tests.sh --module spans # opt-in; never in the gate or CI
+```
+
+- The auditors' allowlists require a **written reason**, keyed by `file::test::category` —
+  keyed by test alone, one entry once exempted a test from every detector at once.
+- **Run the self-test after touching any detector.** It caught two detectors in each
+  auditor that matched *nothing*: they reported zero findings, which is indistinguishable
+  from a clean suite.
+- `analyze-test-timing.py` finds **barriers**, not just slow tests. Unrelated tests from
+  many files sharing a sub-second duration band is a released lock queue, not a
+  coincidence — that is how one worker was found owning 81% of the wall clock.
+- **Coverage says a line ran; mutation testing says the suite would notice if it were
+  wrong.** A surviving mutant is a finding: add the missing assertion, or conclude the line
+  is dead and delete it. Never loosen a test to kill one.
+- Profile before theorising about test speed. `python -m cProfile -o out.prof -m pytest
+  <test>` settled in one pass what two plausible hypotheses had cost two full measurement
+  cycles.
+
+Current: backend **5,329 passed / 62 skipped / 113 s** (from 4,752 / 458 / 511 s), zero
+barrier clusters; frontend **481 passed / ~11 s**; e2e 341 collected.
+
 ### **Contributing**
 We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 

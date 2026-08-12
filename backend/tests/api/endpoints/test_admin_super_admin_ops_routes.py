@@ -64,11 +64,20 @@ def issued_token(client, super_admin_token_headers) -> dict:
 # ---------------------------------------------------------------------------
 # Privilege tier — all four are super_admin
 # ---------------------------------------------------------------------------
+#: A FIXED uuid, never `uuid4()`. A parametrize argument is evaluated at import time and
+#: becomes part of the test ID, and under `-n auto` every xdist worker imports this module
+#: separately — so a random value gives each worker a different ID, xdist reports
+#: "Different tests were collected between gw1 and gw0", and **the entire suite fails
+#: collection**, not just this file. It passes when the file is run alone, which is exactly
+#: why it reached the shared suite. Any UUID works here: the assertion is that a plain admin
+#: is refused before the handler ever looks the token up.
+_ABSENT_TOKEN_UUID = "00000000-0000-4000-8000-000000000000"
+
 _ROUTES = [
     ("GET", f"{WIZARD}/status"),
     ("POST", f"{WIZARD}/complete"),
     ("POST", REINDEX),
-    ("DELETE", f"{TOKENS}/{uuid_pkg.uuid4()}"),
+    ("DELETE", f"{TOKENS}/{_ABSENT_TOKEN_UUID}"),
 ]
 
 

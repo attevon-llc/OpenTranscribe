@@ -29,6 +29,18 @@ logger = logging.getLogger(__name__)
 _REDIS_LOCK_KEY = "data_integrity_running"
 _REDIS_LAST_RUN_KEY = "data_integrity_last_run"
 
+#: Fraction of an index's documents one sweep may delete without an explicit
+#: ``force``. A sweep wanting more than this has almost certainly lost the
+#: PostgreSQL side of the comparison rather than found that much real garbage —
+#: which is exactly the June 2026 incident shape (Postgres restored EMPTY,
+#: OpenSearch intact) and this task runs from beat four times a day.
+_ORPHAN_DELETE_RATIO_LIMIT = 0.10
+
+#: Deletions at or below this many documents skip the ratio guard: in a
+#: three-document index a single genuine orphan is 33% of it, and a guard that
+#: blocks routine cleanup forever would just be turned off.
+_ORPHAN_DELETE_FLOOR_DOCS = 25
+
 
 # ---------------------------------------------------------------------------
 # Orphan cleanup helpers
@@ -70,26 +82,89 @@ def _get_all_speaker_uuids_from_db() -> set[str]:
         return {str(row[0]) for row in rows}
 
 
+def _coerce_bucket_key(key: Any, key_type: type[int] | type[str]) -> int | str | None:
+    """Coerce an aggregation bucket key to the index's own identifier type.
+
+    Args:
+        key: Raw bucket key as OpenSearch returned it.
+        key_type: The type this index's identifier field holds, taken from the
+            index config — never inferred from an arbitrary member of the valid
+            set, which is unknowable when that set is empty.
+
+    Returns:
+        The coerced key, or **None** when it cannot be coerced. None means
+        "cannot be compared", and an uncomparable document is never an orphan.
+    """
+    try:
+        return key_type(key)
+    except (TypeError, ValueError):
+        return None
+
+
+def _exceeds_delete_ratio(total_docs: int, orphaned_docs: int) -> bool:
+    """True when this deletion is too large a share of the index to do unforced.
+
+    Args:
+        total_docs: Documents in the index carrying the identifier field.
+        orphaned_docs: Documents this sweep considers orphaned.
+
+    Returns:
+        True when the sweep needs an explicit force. A total of 0 with orphans
+        found means the count call did not answer, so the ratio is unknowable and
+        the answer is True — fail closed.
+    """
+    if orphaned_docs <= _ORPHAN_DELETE_FLOOR_DOCS:
+        return False
+    if total_docs <= 0:
+        return True
+    return (orphaned_docs / total_docs) > _ORPHAN_DELETE_RATIO_LIMIT
+
+
 def _cleanup_index_by_field(
     client: Any,
     index_name: str,
     field_name: str,
     valid_values: set,
+    key_type: type[int] | type[str],
     dry_run: bool = False,
-) -> dict[str, int]:
+    force: bool = False,
+) -> dict[str, Any]:
     """Remove documents from an OpenSearch index where field_name is not in valid_values.
+
+    Two refusals stand between this function and a full index wipe, because the
+    "valid" set comes from PostgreSQL and the deletion is unrecoverable:
+
+    1. **Empty valid set.** If the query returned nothing, every document in the
+       index is an orphan by this rule. A database restored empty and an install
+       with no files are indistinguishable from here, so the sweep refuses and
+       says so rather than acting on the guess.
+    2. **Ratio guard.** Deleting more than :data:`_ORPHAN_DELETE_RATIO_LIMIT` of
+       the index needs ``force=True`` — the same "name it, then confirm it"
+       double opt-in as ``DELETE /tags/cleanup?scope=all_users&confirm=true``.
+       Deletions of at most :data:`_ORPHAN_DELETE_FLOOR_DOCS` documents are
+       exempt so ordinary cleanup on a small index still works.
 
     Args:
         client: OpenSearch client.
         index_name: Index to scan.
         field_name: Document field containing the file identifier.
         valid_values: Set of valid values (file IDs or UUIDs that exist in DB).
-        dry_run: If True, count orphans without deleting.
+        key_type: ``int`` or ``str`` — the identifier type this index uses, from
+            the caller's index config.
+        dry_run: If True, count orphans without deleting. The refusals are still
+            evaluated and reported, so a dry run shows what a real run would do.
+        force: Override the ratio guard. Never overrides the empty-set refusal.
 
     Returns:
-        Dict with total_docs, orphaned_docs, deleted_docs.
+        Dict with total_docs, orphaned_docs, deleted_docs, and ``refused`` —
+        None, ``"empty_valid_set"`` or ``"ratio_guard"``.
     """
-    result: dict[str, int] = {"total_docs": 0, "orphaned_docs": 0, "deleted_docs": 0}
+    result: dict[str, Any] = {
+        "total_docs": 0,
+        "orphaned_docs": 0,
+        "deleted_docs": 0,
+        "refused": None,
+    }
 
     if not client.indices.exists(index=index_name):
         return result
@@ -102,6 +177,16 @@ def _cleanup_index_by_field(
             body={"query": {"exists": {"field": field_name}}},
         )
         result["total_docs"] = count_resp.get("count", 0)
+
+    # Refusal 1: nothing to compare against. Every document would be an orphan.
+    if not valid_values:
+        result["refused"] = "empty_valid_set"
+        logger.error(
+            f"Refusing to sweep '{index_name}.{field_name}': the PostgreSQL side of the "
+            f"comparison is EMPTY, which would make all {result['total_docs']} document(s) "
+            "orphans. An empty database and a lost database look identical from here."
+        )
+        return result
 
     # Use terms aggregation to find all unique file identifiers in the index
     try:
@@ -122,15 +207,44 @@ def _cleanup_index_by_field(
         return result
 
     orphan_values: list[Any] = []
+    uncomparable = 0
     for bucket in buckets:
         key = bucket["key"]
-        # Coerce to the same type as valid_values for comparison
-        comparable_key = str(key) if isinstance(next(iter(valid_values), None), str) else int(key)
+        # Coerce to the identifier type THIS INDEX uses. Reading the type off an
+        # arbitrary member of valid_values used to make an empty set mean "int",
+        # which wiped the int-keyed summary index and raised ValueError out of
+        # this loop for the UUID-keyed ones — aborting the run mid-way, after
+        # earlier indices had already been deleted from.
+        comparable_key = _coerce_bucket_key(key, key_type)
+        if comparable_key is None:
+            uncomparable += 1
+            continue
         if comparable_key not in valid_values:
             orphan_values.append(key)
             result["orphaned_docs"] += bucket["doc_count"]
 
-    if not orphan_values or dry_run:
+    if uncomparable:
+        logger.error(
+            f"{index_name}.{field_name}: {uncomparable} distinct key(s) are not "
+            f"{key_type.__name__} and were left alone — the index may hold documents "
+            "written under a different schema."
+        )
+
+    if not orphan_values:
+        return result
+
+    # Refusal 2: too large a share of the index to delete without being asked twice.
+    if _exceeds_delete_ratio(result["total_docs"], result["orphaned_docs"]) and not force:
+        result["refused"] = "ratio_guard"
+        logger.error(
+            f"Refusing to delete {result['orphaned_docs']} of {result['total_docs']} "
+            f"document(s) from '{index_name}': that exceeds the "
+            f"{_ORPHAN_DELETE_RATIO_LIMIT:.0%} single-sweep limit. Verify PostgreSQL is "
+            "intact, then re-run with force=True if the orphans are real."
+        )
+        return result
+
+    if dry_run:
         return result
 
     # Delete orphaned documents in batches
@@ -149,7 +263,30 @@ def _cleanup_index_by_field(
     return result
 
 
-def run_orphan_cleanup(dry_run: bool = False) -> dict[str, Any]:
+def _notify(user_id: int | None, event_type: str, payload: dict[str, Any]) -> None:
+    """Send a data-integrity event to the admin who asked for this run.
+
+    Args:
+        user_id: The requesting admin, or None for the beat-scheduled sweep that
+            nobody is watching (it is logged instead).
+        event_type: Notification type constant.
+        payload: Event body.
+
+    The recipient used to be a hardcoded ``1``, so every progress and completion
+    event went to whichever account happens to hold id 1 — not necessarily an
+    admin, and never the admin who started the run, who therefore waited forever.
+    """
+    if user_id is None:
+        logger.debug(f"{event_type}: no requesting user for this run, logging only")
+        return
+    send_ws_event(user_id, event_type, payload)
+
+
+def run_orphan_cleanup(
+    dry_run: bool = False,
+    force: bool = False,
+    user_id: int | None = None,
+) -> dict[str, Any]:
     """Scan all OpenSearch indices and remove orphaned documents.
 
     Speaker indices are checked at the speaker UUID level (not file level)
@@ -158,9 +295,14 @@ def run_orphan_cleanup(dry_run: bool = False) -> dict[str, Any]:
 
     Args:
         dry_run: If True, count orphans without deleting them.
+        force: Override the per-index ratio guard (see
+            :func:`_cleanup_index_by_field`). The empty-set refusal is not
+            overridable at all.
+        user_id: Admin to send progress notifications to, or None to log only.
 
     Returns:
-        Per-index stats: {index_name: {total_docs, orphaned_docs, deleted_docs}}.
+        Per-index stats: ``{index_name: {total_docs, orphaned_docs, deleted_docs,
+        refused}}`` plus a ``summary`` carrying the refusals.
     """
     from app.services.opensearch_service import get_opensearch_client
 
@@ -172,32 +314,39 @@ def run_orphan_cleanup(dry_run: bool = False) -> dict[str, Any]:
     valid_file_uuids = _get_all_file_uuids_from_db()
     valid_speaker_uuids = _get_all_speaker_uuids_from_db()
 
-    # Index configs: (index_name, field_name, valid_set)
+    # Index configs: (index_name, field_name, valid_set, key_type)
     # Speaker indices use speaker_uuid (not media_file_id) so that orphans from
     # speaker merges and reprocessing (where the file still exists but the specific
     # speaker was deleted) are also caught — not just orphans from deleted files.
-    index_configs: list[tuple[str, str, set]] = [
-        (get_speaker_index(), "speaker_uuid", valid_speaker_uuids),
-        (get_speaker_index_v4(), "speaker_uuid", valid_speaker_uuids),
-        (settings.OPENSEARCH_TRANSCRIPT_INDEX, "file_uuid", valid_file_uuids),
-        (settings.OPENSEARCH_CHUNKS_INDEX, "file_uuid", valid_file_uuids),
-        (settings.OPENSEARCH_SUMMARY_INDEX, "file_id", valid_file_ids),
+    # The key type is declared here, per index, because it is a property of the
+    # index mapping — not something to infer from whatever the DB query returned.
+    index_configs: list[tuple[str, str, set, type[int] | type[str]]] = [
+        (get_speaker_index(), "speaker_uuid", valid_speaker_uuids, str),
+        (get_speaker_index_v4(), "speaker_uuid", valid_speaker_uuids, str),
+        (settings.OPENSEARCH_TRANSCRIPT_INDEX, "file_uuid", valid_file_uuids, str),
+        (settings.OPENSEARCH_CHUNKS_INDEX, "file_uuid", valid_file_uuids, str),
+        (settings.OPENSEARCH_SUMMARY_INDEX, "file_id", valid_file_ids, int),
     ]
 
     results: dict[str, Any] = {}
     total_orphans = 0
     total_deleted = 0
+    refusals: dict[str, str] = {}
 
-    for idx, (index_name, field_name, valid_set) in enumerate(index_configs):
+    for idx, (index_name, field_name, valid_set, key_type) in enumerate(index_configs):
         logger.info(f"Scanning index {index_name} for orphans...")
-        stats = _cleanup_index_by_field(client, index_name, field_name, valid_set, dry_run)
+        stats = _cleanup_index_by_field(
+            client, index_name, field_name, valid_set, key_type, dry_run, force
+        )
         results[index_name] = stats
         total_orphans += stats["orphaned_docs"]
         total_deleted += stats["deleted_docs"]
+        if stats["refused"]:
+            refusals[index_name] = stats["refused"]
 
         # Send progress notification
-        send_ws_event(
-            1,
+        _notify(
+            user_id,
             NOTIFICATION_TYPE_DATA_INTEGRITY_PROGRESS,
             {
                 "current_index": index_name,
@@ -212,7 +361,11 @@ def run_orphan_cleanup(dry_run: bool = False) -> dict[str, Any]:
         "total_orphans_found": total_orphans,
         "total_deleted": total_deleted,
         "dry_run": dry_run,
+        "force": force,
+        "refused_indices": refusals,
     }
+    if refusals:
+        logger.error(f"Orphan cleanup refused deletion in {len(refusals)} index/indices")
 
     action = "Found" if dry_run else "Cleaned"
     logger.info(
@@ -224,10 +377,18 @@ def run_orphan_cleanup(dry_run: bool = False) -> dict[str, Any]:
 
 
 @celery_app.task(name="opensearch_orphan_cleanup", priority=CPUPriority.MAINTENANCE)
-def opensearch_orphan_cleanup_task() -> dict[str, Any]:
+def opensearch_orphan_cleanup_task(
+    user_id: int | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
     """Celery task: scan all OpenSearch indices and remove orphaned documents.
 
     Guarded by a Redis lock to prevent concurrent runs.
+
+    Args:
+        user_id: Admin who requested the run; receives the progress and
+            completion notifications. None (the beat schedule) logs instead.
+        force: Override the per-index deletion ratio guard.
 
     Returns:
         Per-index cleanup stats.
@@ -241,7 +402,7 @@ def opensearch_orphan_cleanup_task() -> dict[str, Any]:
 
     start_time = time.time()
     try:
-        results = run_orphan_cleanup(dry_run=False)
+        results = run_orphan_cleanup(dry_run=False, force=force, user_id=user_id)
 
         # Store last run results
         last_run_data = {
@@ -252,8 +413,8 @@ def opensearch_orphan_cleanup_task() -> dict[str, Any]:
         r.set(_REDIS_LAST_RUN_KEY, json.dumps(last_run_data), ex=86400 * 7)  # Keep 7 days
 
         # Send completion notification
-        send_ws_event(
-            1,
+        _notify(
+            user_id,
             NOTIFICATION_TYPE_DATA_INTEGRITY_COMPLETE,
             {
                 "status": "completed",
@@ -266,8 +427,8 @@ def opensearch_orphan_cleanup_task() -> dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Orphan cleanup task failed: {e}", exc_info=True)
-        send_ws_event(
-            1,
+        _notify(
+            user_id,
             NOTIFICATION_TYPE_DATA_INTEGRITY_COMPLETE,
             {"status": "error", "error": str(e)},
         )

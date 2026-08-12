@@ -107,7 +107,22 @@ def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
     return False
 
 
-def rebuild_speaker_index(db: "Any") -> dict[str, Any]:
+def _drop_rebuild_index(rebuild_index: str) -> None:
+    """Delete the temporary rebuild index. Only safe while ``speakers`` still exists.
+
+    Args:
+        rebuild_index: Name of the temporary index.
+    """
+    try:
+        if _client.opensearch_client and _client.opensearch_client.indices.exists(
+            index=rebuild_index
+        ):
+            _client.opensearch_client.indices.delete(index=rebuild_index)
+    except Exception as cleanup_err:  # noqa: BLE001 - cleanup must not mask the real error
+        logger.debug("Failed to clean up rebuild index: %s", cleanup_err)
+
+
+def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[str, Any]:
     """Rebuild the speakers index from PostgreSQL + speakers_v4 data.
 
     Creates a temporary index, copies valid speaker data from the working
@@ -115,11 +130,24 @@ def rebuild_speaker_index(db: "Any") -> dict[str, Any]:
     the nuclear option for when the speakers index has corrupted kNN segments
     that cannot be repaired via close/reopen or force-merge.
 
+    **The corrupted index is the only other copy of those voiceprints**, and
+    embeddings cannot be recomputed without the original media. So it is deleted
+    only after the rebuild index has been counted and found to hold every
+    document that was loaded into it, and never at all when there is nothing to
+    restore — a missing ``speakers_v4`` used to mean "delete everything and
+    create an empty index", turning an unreadable index into an erased one.
+    Likewise the temporary index is retained (and named in the result) when the
+    copy back is short, because at that point it holds the only complete copy.
+
     Args:
         db: SQLAlchemy Session for querying Speaker rows.
+        allow_empty_rebuild: Delete and recreate the speakers index even when no
+            embeddings could be recovered. Restores service at the cost of every
+            voiceprint; an operator with a snapshot wants the default.
 
     Returns:
-        Dict with rebuild status and count of speakers indexed.
+        Dict with rebuild status and count of speakers indexed. ``status`` is
+        ``rebuilt``, ``refused`` (nothing was destroyed) or ``error``.
     """
     from sqlalchemy.orm import Session as SASession
 
@@ -290,6 +318,50 @@ def rebuild_speaker_index(db: "Any") -> dict[str, Any]:
 
         logger.info(f"Rebuild: indexed {indexed_count} speakers into {rebuild_index}")
 
+        # Step 5b: verify the rebuild index BEFORE the corrupted one is deleted.
+        try:
+            _client.opensearch_client.indices.refresh(index=rebuild_index)
+            rebuild_count = int(_client.opensearch_client.count(index=rebuild_index)["count"])
+        except Exception as count_err:
+            _drop_rebuild_index(rebuild_index)
+            logger.error(f"Rebuild: could not verify {rebuild_index}: {count_err}")
+            return {
+                "status": "error",
+                "message": f"Rebuild index could not be verified: {count_err}",
+                "speakers_indexed": 0,
+            }
+
+        if rebuild_count < len(docs_to_index):
+            _drop_rebuild_index(rebuild_index)
+            logger.error(
+                f"Rebuild: {rebuild_index} holds {rebuild_count} of {len(docs_to_index)} "
+                f"expected document(s); leaving '{speaker_index}' untouched."
+            )
+            return {
+                "status": "error",
+                "message": (
+                    f"Rebuild incomplete: {rebuild_count} of {len(docs_to_index)} documents "
+                    f"loaded. '{speaker_index}' was not deleted."
+                ),
+                "speakers_indexed": 0,
+            }
+
+        if rebuild_count == 0 and not allow_empty_rebuild:
+            _drop_rebuild_index(rebuild_index)
+            logger.error(
+                f"Rebuild: nothing to restore for '{speaker_index}' — refusing to delete it. "
+                "Recover from a snapshot, or pass allow_empty_rebuild=True to accept the "
+                "loss of every voiceprint."
+            )
+            return {
+                "status": "refused",
+                "message": (
+                    "No embeddings could be recovered, so rebuilding would erase every "
+                    f"voiceprint. '{speaker_index}' was left in place."
+                ),
+                "speakers_indexed": 0,
+            }
+
         # Step 6: Delete the corrupted speakers index
         if _client.opensearch_client.indices.exists(index=speaker_index):
             _client.opensearch_client.indices.delete(index=speaker_index)
@@ -300,10 +372,10 @@ def rebuild_speaker_index(db: "Any") -> dict[str, Any]:
         logger.info(f"Rebuild: created fresh index {speaker_index}")
 
         # Step 8: Copy data from rebuild index to new speakers index
-        if indexed_count > 0:
+        copy_count = 0
+        if rebuild_count > 0:
             # Read all docs from rebuild index and bulk-index into new speakers index
             search_after = None
-            copy_count = 0
             while True:
                 query = {
                     "size": 500,
@@ -338,22 +410,45 @@ def rebuild_speaker_index(db: "Any") -> dict[str, Any]:
 
             logger.info(f"Rebuild: copied {copy_count} docs to new {speaker_index}")
 
-        # Step 9: Clean up rebuild index
-        if _client.opensearch_client.indices.exists(index=rebuild_index):
-            _client.opensearch_client.indices.delete(index=rebuild_index)
-            logger.info(f"Rebuild: deleted temporary index {rebuild_index}")
+        # Step 9: Clean up rebuild index — ONLY once the copy is known complete.
+        # Deleting it after a short copy would discard the only full copy that
+        # exists, since the corrupted original is already gone by now.
+        if copy_count < rebuild_count:
+            logger.error(
+                f"Rebuild: copied only {copy_count} of {rebuild_count} docs into "
+                f"'{speaker_index}'. KEEPING '{rebuild_index}' — it holds the only "
+                "complete copy of these embeddings."
+            )
+            return {
+                "status": "error",
+                "message": (
+                    f"Copy back incomplete: {copy_count} of {rebuild_count} documents. "
+                    f"The complete set is preserved in '{rebuild_index}'."
+                ),
+                "speakers_indexed": copy_count,
+                "recovery_index": rebuild_index,
+            }
 
-        logger.info(f"Speaker index rebuild complete: {indexed_count} speakers re-indexed")
+        _drop_rebuild_index(rebuild_index)
+        logger.info(f"Speaker index rebuild complete: {copy_count} speakers re-indexed")
         return {
             "status": "rebuilt",
-            "speakers_indexed": indexed_count,
+            "speakers_indexed": copy_count,
         }
 
     except Exception as e:
-        # Clean up rebuild index on failure
+        # Clean up the rebuild index only while the original still exists. Once
+        # the corrupted speakers index has been deleted, this temporary index is
+        # the last copy of every recovered embedding and deleting it on the way
+        # out of an error path is the data loss, not the cleanup.
         try:
-            if _client.opensearch_client.indices.exists(index=rebuild_index):
-                _client.opensearch_client.indices.delete(index=rebuild_index)
+            if _client.opensearch_client.indices.exists(index=speaker_index):
+                _drop_rebuild_index(rebuild_index)
+            else:
+                logger.error(
+                    f"Speaker index rebuild failed after '{speaker_index}' was deleted. "
+                    f"KEEPING '{rebuild_index}': it holds the recovered embeddings."
+                )
         except Exception as cleanup_err:
             logger.debug("Failed to clean up rebuild index: %s", cleanup_err)
         logger.error(f"Speaker index rebuild failed: {e}")

@@ -86,10 +86,18 @@ declare -A MODULE_PATH=(
 
 declare -A MODULE_TESTS=(
     [spans]="tests/redaction/test_apply_redactions.py tests/redaction/test_span_merge_boundaries.py tests/redaction/test_word_offset_alignment.py"
-    [password_policy]="tests/unit/test_auth_config_behaviour.py tests/test_fedramp_compliance.py"
-    [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py"
+    [password_policy]="tests/unit/test_auth_config_behaviour.py tests/test_fedramp_compliance.py tests/unit/test_account_lifecycle.py tests/unit/test_auth_policy_source_of_truth.py"
+    [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py tests/unit/test_bcrypt_test_rounds.py tests/unit/test_local_auth_policy.py"
     [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py"
     [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py"
+    # ⚠️ EXPECT ~EVERY OIDCStateStore MUTANT TO SURVIVE, and do not read that as a
+    # harness fault. app/auth/session.py's session-timeout code moved to
+    # token_service.py, so test_session_lifetime.py (which imports token_service)
+    # exercises almost none of this module. `store_state` appears in the whole test
+    # tree exactly once -- as a STRING in test_handler_blocking_io.py's offload
+    # assertion -- and `get_state`/`delete_state` appear nowhere, so the single-use
+    # state deletion that prevents OIDC state/PKCE replay has no test at all.
+    # Tracked as #33; until it is written, this target measures absence, not weakness.
     [session]="tests/unit/test_session_lifetime.py tests/unit/test_auth_state_degradation.py"
 )
 
@@ -195,7 +203,10 @@ with open(sys.argv[1], "rb") as fh:
     cfg = tomllib.load(fh)["tool"]["mutmut"]
 for path in cfg["only_mutate"]:
     print(f"  {path}")
-print(f"\n  runner: {cfg['runner']}")
+# NOT cfg['runner'] -- that key does not exist and must not come back (see the
+# comment on it in pyproject.toml). Reading it made --list crash with KeyError.
+print(f"\n  source_paths: {cfg['source_paths']}")
+print(f"  timeout_constant: {cfg.get('timeout_constant', 'unset')}s")
 PY
     echo
     echo -e "${BLUE}Module aliases and the tests each one runs${NC}"

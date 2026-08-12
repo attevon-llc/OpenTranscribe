@@ -31,6 +31,7 @@
  * - All Svelte stores holding user data (files, searches, shares, etc.)
  * - WebSocket connection & notifications
  * - Upload queue (in-flight + persisted)
+ * - API response cache (apiCache: file pages, tags, speakers, collections, groups)
  * - Thumbnail cache (blob URLs)
  * - Presigned media URL cache
  * - In-memory notification panel
@@ -72,6 +73,13 @@ export async function clearUserState(): Promise<void> {
     }),
 
     // ── Caches outside stores ──
+    // apiCache holds the previous user's DATA, not just derived assets, and its keys
+    // are not user-scoped ('tags:all', 'collections:all', 'status:summary',
+    // files:page:N:hash, prefetch:file:<uuid>, ...). Until this line existed,
+    // apiCache.clear() had zero call sites: User B logging in in the same tab saw
+    // User A's file list, speakers, collections, tags and groups for up to the 5 min
+    // TTL, because an SPA login does not reload the module holding the Map.
+    import('$lib/apiCache').then(({ apiCache }) => apiCache.clear()),
     import('$lib/thumbnailCache').then(({ clearThumbnailCache }) => clearThumbnailCache()),
     import('$lib/api/mediaUrl').then(({ clearMediaUrlCache }) => clearMediaUrlCache()),
     import('$stores/speakerColors').then(({ clearSpeakerColorMappings }) =>

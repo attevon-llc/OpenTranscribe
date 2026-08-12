@@ -24,6 +24,7 @@ from __future__ import annotations
 import pytest
 
 from app.services import download_events
+from tests.helpers import does_not_raise
 
 
 class _FakeRedis:
@@ -99,7 +100,11 @@ def test_a_redis_failure_during_release_is_swallowed(monkeypatch):
 
     monkeypatch.setattr(download_events, "get_redis", lambda: _Broken())
 
-    download_events.release_download_prep_guard(1, "audio_mp3")  # must not raise
+    # does_not_raise, not a bare call: "it did not raise" is only an assertion when
+    # written as one, and the reason is mandatory there so it cannot decay into a
+    # silent pass. scripts/audit-tests.py flagged the bare version as no-assertion.
+    with does_not_raise("a guard-release failure must not fail an already-successful task"):
+        download_events.release_download_prep_guard(1, "audio_mp3")
 
 
 def test_the_prepare_task_releases_the_guard_even_when_it_fails(fake_redis, monkeypatch):

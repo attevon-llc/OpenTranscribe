@@ -21,7 +21,11 @@ check_docker() {
     echo ""
     echo "❌ Error: Permission denied accessing Docker."
     echo ""
-    echo "Your user ($USER) is not in the 'docker' group."
+    # `${USER:-$(id -un)}`: USER is not maintained by bash, so it is unset under `env -i`,
+    # in a bare container and in some cron/systemd units — and this is the message whose
+    # whole job is to EXPLAIN a permission failure, so under `set -u` the explanation was
+    # itself the crash.
+    echo "Your user (${USER:-$(id -un)}) is not in the 'docker' group."
     echo "Run the following commands, then log out and back in:"
     echo ""
     echo "  sudo usermod -aG docker \$USER"

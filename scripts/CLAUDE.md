@@ -32,7 +32,7 @@ this file is for.
   would otherwise delete the entire screenshot suite from the gate in silence).
 - **Test-suite quality tooling** (issue #431) — four scripts whose job is to stop a test that
   cannot fail from looking like a passing one:
-  - `audit-tests.py <dir>` — **14** AST detectors. The original seven (permissive-status,
+  - `audit-tests.py <dir>` — **16** AST detectors. The original seven (permissive-status,
     conditional-only, conditional-skip, no-assertion, failure-masking, mock-heavy,
     fixture-named-test) missed 17 of 18 known evasion shapes, so seven more landed:
     `negated-status` (`assert r.status_code != 403` — **a 500 passes**), `status-guarded-assert`
@@ -41,11 +41,50 @@ this file is for.
     runtime iterable — an empty result is a green run; **27** of these, incl. seven in
     `test_search_quality.py`, down from a raw 38 once single-assignment resolution stopped
     counting table-driven tests), `unfalsifiable`, `weak-only`, `mock-only`, and
-    `error-swallowed` (`except ...: pass`, failure-masking's untested twin).
-    **`--selftest` is not optional.** 20 must-fire fixtures + 16 must-stay-clean, run in-memory;
-    `backend/tests/unit/test_audit_tests_selftest.py` runs the same cases under pytest so a dead
-    detector fails the ordinary suite too, and the tree scan refuses to be trusted (prints
-    `SELF-TEST BROKEN`) when a fixture stops firing.
+    `error-swallowed` (`except ...: pass`, failure-masking's untested twin). Two more came from
+    the #403 RAG work using the overhaul as its first real consumer:
+    - `external-service-mock` — **a test whose id claims integration with a service it
+      substitutes.** The decided convention: *"ran against the real engine" and "ran against a
+      stand-in" must be different test ids.* Twelve tests for an OpenSearch `delete_by_query`
+      body were green having never reached OpenSearch. A claim only counts where the test
+      DECLARES one — marker/env gate (`@pytest.mark.integration`, `needs_*`,
+      `skipif(SKIP_OPENSEARCH, …)`, module `pytestmark`), a realness word in the test's own name,
+      or the module path. **The service's own name is NOT a claim** — it names the subject, and
+      counting that tier fired on 20 honestly-named unit tests such as
+      `test_blacklist_token_redis_unavailable_fail_secure`.
+      ⚠️ **Substitution is resolved through the FIXTURE GRAPH, and it has to be.** The real suite
+      installs its stand-in in a fixture called `fake_index` — which names no service — so the
+      test body has no `patch` call and the parameter name says nothing. The first draft read
+      only those two places, fired on its own synthetic `fake_opensearch` fixture, and **missed
+      the real file even when deliberately mislabelled into `tests/integration/`**: a detector
+      calibrated to its own fixture. `_fixture_services` resolves each fixture's own
+      `patch`/`monkeypatch` targets and inherits them transitively (fixpoint iteration, not
+      recursion — conftest override chains contain cycles). 388 tests in this tree substitute a
+      service; **264 are visible only that way**. Currently **0 findings** — and that is a
+      measured claim, not an absent one: the real suite fires under all three claim tiers when
+      mislabelled, and stays clean as written.
+    - `readiness-probe-target` — **a health/readiness probe whose target is hardcoded rather
+      than derived from the stack under test.** `wait_for_bench_backend_health` polled
+      `opentranscribe-backend` (the *dev* stack), so the bench stack's readiness wait reported
+      healthy whenever dev was up — green-lighting a benchmark against a stack that may not
+      exist. Fires only when **every** argument of the probe call is fixed at parse time (single
+      assignments resolved, so `f"{BASE_URL}/health"` counts); one derived argument means the
+      target follows the stack under test, which is why `_reachable("127.0.0.1", port)` against
+      an allocated port stays clean. 3 real findings, all `BACKLOG` — see below.
+    **`--selftest` is not optional.** 29 must-fire + 24 must-stay-clean + 1 fires-exactly-once,
+    run in-memory; `backend/tests/unit/test_audit_tests_selftest.py` runs the same cases under
+    pytest so a dead detector fails the ordinary suite too, and the tree scan refuses to be
+    trusted (prints `SELF-TEST BROKEN`) when a fixture stops firing. Three case tiers, and the
+    last two exist because the fires/clean pair could not express what they check:
+    `SELFTEST_PATH_CASES` supplies a module path (`external-service-mock`'s weakest claim tier is
+    *positional* — `tests/integration/`, `tests/e2e/` — and a fixture scanned as `fixture.py`
+    cannot reach it), and `SELFTEST_ONCE` asserts a category fires **exactly once**: a probe
+    inside a test *method* was reported twice, once under the method and once under `<module>`,
+    because `scan_source` scans every function `ast.walk` reaches and then scans module scope
+    separately. A must-fire case and a must-stay-clean case both pass happily while that is
+    broken. **Verify a new detector by mutation**, not by reading it: disabling each claim tier
+    and the fixture resolution in turn must break the self-test, and every one of those
+    mutations was caught only after the cases above were added.
     **`tests/e2e` is now in the DEFAULT scan** (`--no-e2e` opts out). Excluding it hid 21
     findings in the only suite that drives a real browser.
     **The mock-heavy count was wrong by 2×**: `_patch_refs` matched both `Name('patch')` and
@@ -57,9 +96,18 @@ this file is for.
     purpose** — an entry keyed by test alone exempted one test from all six detectors at once.
     Two allowlist rules that make it safe to run as a gate over a pre-existing backlog:
     a reason starting `BACKLOG` marks **deferred work**, counted and printed loudly on every
-    run (`163 finding(s) are DEFERRED WORK, not accepted patterns`) so a green gate is never
+    run (`165 finding(s) are DEFERRED WORK, not accepted patterns`) so a green gate is never
     mistaken for a clean tree; and a **stale** entry — one whose finding no longer exists —
     **fails the run**, so the file can only shrink and an exemption cannot outlive its subject.
+    The three `readiness-probe-target` entries are all live bugs, deferred because they sit in
+    files outside the change that added the detector: `fixtures/mock_llm.py` hardcodes
+    `CONTAINER_PORT = 5199` (twice) and `test_selective_reprocess.py` hardcodes
+    `BASE_URL = "http://localhost:5174/api"`. **Both ports are ones `--fresh --port-offset N`
+    MOVES** (`BACKEND_PORT` in `FRESH_PORT_VARS`, `MOCK_LLM_PORT` in
+    `FRESH_MOCK_LLM_PORT_VARS`), so against an isolated stack these probe whichever stack owns
+    the base port — and because each failure path is a `skip`, the tests disappear rather than
+    fail. The fix is the shape the root conftest already uses for Postgres/MinIO/OpenSearch:
+    `os.environ.get("<SVC>_PORT", "<default>")`.
     Wired into `.pre-commit-config.yaml` (`audit-tests-selftest` then `audit-tests`,
     `language: system` + `python3` because the auditor is stdlib-only and the CI runner
     installs only `pre-commit`) and into the `backend-tests` CI job. It was in neither before —
@@ -122,6 +170,26 @@ this file is for.
   `test-pki-auth.sh`.
 - `common.sh` is sourced **only by `opentr.sh`** (docker checks, model-cache chown, OpenSearch model
   bootstrap). `offline-common.sh` is sourced only by the two offline/Windows builders.
+- ⚠️ **Every `$VAR` in `opentr.sh` + `common.sh` must be defaulted — enforced by
+  `backend/tests/unit/test_shell_expansion_guards.py`** (static, fast unit suite, no execution).
+  Both run under `set -uo pipefail`, so an unguarded optional `.env` variable is a hard abort,
+  not a style nit: `common.sh` read a bare `[ -n "$GPU_DEVICE_ID" ]` while `opentr.sh` defaulted
+  five *other* optional variables and not that one, so `./opentr.sh` died with
+  `GPU_DEVICE_ID: unbound variable` in **any checkout without a `.env`** — i.e. every git
+  worktree (`.env` is gitignored and never comes along), which blocked exactly the
+  isolated-worktree workflow. Guard at the use site (`${VAR:-default}`) or add
+  `: "${VAR:=}"` to the `opentr.sh` prologue block; the prologue runs at top level before any
+  function, which is why it also covers references inside `common.sh`. Exemptions are a
+  `_ALLOWLIST` dict keyed `<script>::<VAR>` with a mandatory reason, and a **stale entry fails**.
+  Three live offenders are allowlisted as `BACKLOG` right now, all in `common.sh`:
+  `GPU_DEVICE_ID` (:231-232), `ENVIRONMENT` (:283 — set only inside `opentr.sh` *functions*, so
+  any path reaching the helper another way aborts), and `USER` (:24 — not bash-maintained, so the
+  error path that *explains* a docker-permission problem is itself what crashes).
+  **An assignment inside a function of the other file does not count as a guard** — that is
+  precisely how `ENVIRONMENT` slipped past a first draft that pooled assignments across both
+  files. `${#VAR}` and `${VAR%…}` are **not** guards (both still abort); escaped `\$VAR` in help
+  text, single-quoted `'$VAR'`, and `$VAR` in a comment are not expansions and must not be
+  reported — all three were false positives in a draft, and each now has a must-stay-clean case.
 
 ## Fresh deployments (`opentr.sh --fresh`, state in `.fresh/`)
 

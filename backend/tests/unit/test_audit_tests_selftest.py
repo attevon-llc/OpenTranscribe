@@ -55,6 +55,45 @@ def test_detector_fires(category: str, source: str) -> None:
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
+    ("category", "rel", "source"),
+    auditor.SELFTEST_PATH_CASES,
+    ids=[f"{c}-{rel}" for c, rel, _ in auditor.SELFTEST_PATH_CASES],
+)
+def test_detector_fires_on_path_dependent_fixture(category: str, rel: str, source: str) -> None:
+    """Must-fire cases whose verdict depends on the MODULE PATH.
+
+    ``external-service-mock``'s weakest claim tier is positional — ``tests/integration/``,
+    ``tests/e2e/`` — and a fixture scanned as ``fixture.py`` cannot express it. Without these
+    that tier is unreachable from the self-test and could stop matching in silence.
+    """
+    fired = {f.category for f in auditor.scan_source(source, rel)}
+    assert category in fired, (
+        f"detector `{category}` did not fire on {rel}; got {sorted(fired) or 'nothing'}"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("category", "rel", "source"),
+    auditor.SELFTEST_ONCE,
+    ids=[f"{c}-once" for c, _, _ in auditor.SELFTEST_ONCE],
+)
+def test_detector_reports_one_defect_once(category: str, rel: str, source: str) -> None:
+    """One defect must cost one finding, not two.
+
+    ``scan_source`` scans every function ``ast.walk`` reaches — methods and nested functions
+    included — and then scans module scope separately. A probe inside a test **method** was
+    therefore reported twice, once under the method and once under ``<module>``: two allowlist
+    entries and two apparent problems for one defect. A must-fire case and a must-stay-clean
+    case both pass while that is broken, which is why this tier exists.
+    """
+    hits = [f for f in auditor.scan_source(source, rel) if f.category == category]
+    where = ", ".join(f"{f.test}:{f.line}" for f in hits) or "nothing"
+    assert len(hits) == 1, f"`{category}` fired {len(hits)}x on {rel} ({where}), expected once"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
     "source",
     auditor.SELFTEST_CLEAN,
     ids=[f"clean-{i}" for i in range(len(auditor.SELFTEST_CLEAN))],
@@ -66,11 +105,43 @@ def test_clean_fixture_produces_no_finding(source: str) -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("rel", "source"),
+    auditor.SELFTEST_PATH_CLEAN,
+    ids=[rel for rel, _ in auditor.SELFTEST_PATH_CLEAN],
+)
+def test_clean_path_fixture_produces_no_finding(rel: str, source: str) -> None:
+    """The other half of the "different ids" convention, made executable.
+
+    The same test body that fires under ``integration/`` must stay silent under ``unit/``:
+    a stand-in honestly located and claiming nothing is correct, not a finding.
+    """
+    findings = auditor.scan_source(source, rel)
+    assert not findings, "; ".join(f"{f.category}: {f.detail}" for f in findings)
+
+
+@pytest.mark.unit
 def test_every_category_has_a_must_fire_case() -> None:
     """A detector with no fixture is a detector nobody would notice going blind."""
     covered = {category for category, _ in auditor.SELFTEST_CASES}
+    covered |= {category for category, _, _ in auditor.SELFTEST_PATH_CASES}
     missing = sorted(set(auditor.CATEGORIES) - covered)
     assert not missing, f"detectors with no --selftest case: {missing}"
+
+
+@pytest.mark.unit
+def test_selftest_cases_name_real_categories() -> None:
+    """A fixture keyed to a renamed detector asserts nothing and reports nothing.
+
+    ``test_detector_fires`` only checks that its category appears in the findings, so a case
+    naming a category that no longer exists would fail loudly — but a case naming a *different*
+    live category would pass while covering the wrong detector.
+    """
+    named = {c for c, _ in auditor.SELFTEST_CASES}
+    named |= {c for c, _, _ in auditor.SELFTEST_PATH_CASES}
+    named |= {c for c, _, _ in auditor.SELFTEST_ONCE}
+    unknown = sorted(named - set(auditor.CATEGORIES))
+    assert not unknown, f"self-test cases naming a detector that does not exist: {unknown}"
 
 
 @pytest.mark.unit
@@ -78,7 +149,7 @@ def test_allowlist_reasons_are_present_and_categorised() -> None:
     """Every allowlist entry needs three key segments and a non-empty reason.
 
     The category being part of the key is what stops one exemption covering every detector;
-    an entry that lost it would silently widen to all fourteen.
+    an entry that lost it would silently widen to all sixteen.
     """
     root = Path(__file__).resolve().parents[1]
     allowed = auditor.load_allowlist(root)

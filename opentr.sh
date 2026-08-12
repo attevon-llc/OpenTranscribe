@@ -29,6 +29,15 @@ fi
 : "${POSTGRES_DATA_PATH:=}"
 : "${OPENSEARCH_DATA_PATH:=}"
 : "${COMPOSE_PROFILES:=}"
+# GPU_DEVICE_ID is read by common.sh's benchmark helper via `[ -n "$GPU_DEVICE_ID" ]`,
+# which aborts under `set -u` in any checkout whose .env omits it — i.e. every fresh
+# worktree. Empty means "no specific device", which that helper already handles.
+: "${GPU_DEVICE_ID:=}"
+# ENVIRONMENT is assigned only inside opentr.sh's own subcommand functions
+# (`ENVIRONMENT=${1:-dev}`), so any path reaching a common.sh helper without going
+# through start/reset first aborted before it could print anything. `dev` matches the
+# default those functions use, so defaulting here cannot change a real invocation.
+: "${ENVIRONMENT:=dev}"
 
 # Export APP_VERSION so docker compose can pass it through to containers
 # (used instead of ./VERSION file bind-mount to avoid OCI stub creation in dev mode)

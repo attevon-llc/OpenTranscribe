@@ -110,7 +110,13 @@ repos:
     hooks:
       - id: bandit
         files: ^backend/
-        args: [-c, pyproject.toml, -r, backend/]
+        # --exclude on the CLI, not just [tool.bandit] exclude_dirs: the pyproject
+        # glob does NOT reliably match here (the hook runs from the repo root, so paths
+        # are `backend/mutants/...`), and bandit walks the FILESYSTEM, so gitignoring
+        # mutmut's generated tree is not enough. Without this, a mutation run left ~330k
+        # lines of deliberately corrupted source that failed the commit on a finding
+        # inside a mutant.
+        args: [-c, pyproject.toml, -x, backend/mutants, -r, backend/]
         additional_dependencies: ["bandit[toml]"]
 
   # Import-linter — enforce the cloud seam direction: the open-source core

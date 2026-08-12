@@ -16,6 +16,7 @@ from app.core.constants import DownloadPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.download_events import publish_download_event
+from app.services.download_events import release_download_prep_guard
 from app.services.minio_service import MinIOService
 from app.services.video_processing_service import NoAudioTrackError
 from app.services.video_processing_service import VideoProcessingService
@@ -111,6 +112,12 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
                 file_uuid, status="error", mode=mode, message="Failed to prepare download."
             )
         return {"status": "error", "message": str(e)}
+    finally:
+        # Release the dispatch guard on EVERY path. Its 900 s expiry is only a
+        # backstop: while the guard outlived the task, a download whose readiness
+        # could not be resolved was unrecoverable for 15 minutes -- NX refused to
+        # re-dispatch, so the SSE stream waited on an event nobody would publish.
+        release_download_prep_guard(file_id, mode)
 
 
 @celery_app.task(

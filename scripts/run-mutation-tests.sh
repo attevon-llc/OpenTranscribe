@@ -85,7 +85,7 @@ declare -A MODULE_PATH=(
 )
 
 declare -A MODULE_TESTS=(
-    [spans]="tests/redaction/test_apply_redactions.py"
+    [spans]="tests/redaction/test_apply_redactions.py tests/redaction/test_span_merge_boundaries.py tests/redaction/test_word_offset_alignment.py"
     [password_policy]="tests/unit/test_auth_config_behaviour.py tests/test_fedramp_compliance.py"
     [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py"
     [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py"

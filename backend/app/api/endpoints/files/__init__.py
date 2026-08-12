@@ -694,9 +694,12 @@ def _ensure_prepare_enqueued(db_file: MediaFile, user_id: int, mode: str) -> Non
     ready path short-circuits before reaching here.
     """
     from app.core.redis import get_redis
+    from app.services.download_events import download_prep_guard_key
     from app.tasks.media_download import prepare_media_download_task
 
-    guard_key = f"download:prep:{db_file.id}:{mode}"
+    # Shared with the worker, which RELEASES this key when it finishes -- the expiry
+    # below is only a backstop. See release_download_prep_guard().
+    guard_key = download_prep_guard_key(db_file.id, mode)
     try:
         first = get_redis().set(guard_key, "1", nx=True, ex=900)
     except Exception:

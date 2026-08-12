@@ -41,9 +41,20 @@ describe('buildSettingsSearchItems', () => {
     );
   });
 
-  it('indexes real setting labels', () => {
-    expect(items.find((i) => i.label === 'Transcriber backend')).toBeTruthy();
-    expect(items.find((i) => i.label === 'LDAP server URL')).toBeTruthy();
+  it('indexes real setting labels into the right section', () => {
+    // `toBeTruthy()` on a `.find()` proved the row existed but nothing about it — a row
+    // indexed under the wrong section is unreachable from the search results, which is the
+    // failure this test is named for. Assert the row's identity.
+    expect(items.find((i) => i.label === 'Transcriber backend')).toMatchObject({
+      sectionId: 'engine-settings',
+      sectionLabel: 'Engine Configuration',
+      anchorText: 'Transcriber backend',
+      isSectionTitle: false,
+    });
+    expect(items.find((i) => i.label === 'LDAP server URL')).toMatchObject({
+      sectionId: 'authentication',
+      isSectionTitle: false,
+    });
   });
 
   it('folds settings.ldap.* into the authentication section', () => {
@@ -52,9 +63,16 @@ describe('buildSettingsSearchItems', () => {
   });
 
   it('excludes chrome leaves (save/saveFailed/toast)', () => {
-    expect(items.find((i) => i.label === 'Save')).toBeFalsy();
-    expect(items.find((i) => i.label === 'Save failed')).toBeFalsy();
-    expect(items.find((i) => i.label === 'Saved!')).toBeFalsy();
+    // Three `toBeFalsy()` assertions on `.find()` all pass when `items` is EMPTY, so this
+    // test reported green for any bug that broke index building outright — the exact
+    // vacuous-exclusion trap. Asserting the complete set of indexed settings proves the
+    // exclusions AND that there is something to exclude from.
+    const settingLabels = items.filter((i) => !i.isSectionTitle).map((i) => i.label);
+    expect(settingLabels).toEqual([
+      'Transcriber backend',
+      'LDAP server URL',
+      'Personal information',
+    ]);
   });
 
   it('folds Help text into its base setting as keywords, not a separate row', () => {
@@ -65,12 +83,18 @@ describe('buildSettingsSearchItems', () => {
   });
 
   it('includes enumerated option labels sourced from the key tree', () => {
-    expect(items.find((i) => i.label === 'Personal information')).toBeTruthy();
+    expect(items.find((i) => i.label === 'Personal information')).toMatchObject({
+      sectionId: 'content-redaction',
+      isSectionTitle: false,
+    });
   });
 
   it('respects capability gating — hidden sections are not indexed', () => {
-    expect(items.find((i) => i.sectionId === 'backup')).toBeFalsy();
-    expect(items.find((i) => i.label === 'Retention days')).toBeFalsy();
+    // Positive control first: without it, both exclusions below pass on an empty index.
+    expect(items.map((i) => i.sectionId)).toContain('engine-settings');
+    expect(items.map((i) => i.sectionId)).not.toContain('backup');
+    expect(items.map((i) => i.label)).not.toContain('Retention days');
+    expect(items.map((i) => i.label)).not.toContain('Backups');
   });
 
   it('is empty for an empty dictionary', () => {

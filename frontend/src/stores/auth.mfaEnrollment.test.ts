@@ -93,9 +93,17 @@ describe('setupMfaEnrollment', () => {
       data: { secret: 'S3CR3T', provisioning_uri: 'otpauth://x', qr_code_base64: 'AAA' },
     } as never);
 
-    await setupMfaEnrollment();
+    const result = await setupMfaEnrollment();
 
     expect(mockedPost).toHaveBeenCalledWith('/auth/mfa/setup', undefined, {});
+    // The request shape was the only thing asserted here, so the cookie-session path could
+    // have returned a failure — or dropped the enrollment payload the QR code renders from —
+    // and this test still passed. The sibling bearer-token test checks both halves; so does
+    // this one now.
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.secret).toBe('S3CR3T');
+    expect(result.data.provisioning_uri).toBe('otpauth://x');
   });
 
   it('classifies an external-IdP account as unavailable, not retryable', async () => {

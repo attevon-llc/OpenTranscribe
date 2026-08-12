@@ -36,19 +36,24 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,js}'],
     exclude: ['node_modules/**', '.svelte-kit/**'],
-    // Coverage via `npm run test:coverage`. Thresholds are RATCHET FLOORS set
-    // just below the measured baseline (~2% lines, 2026-06-04) — raise them as
-    // component test coverage grows, never lower them.
+    // Coverage via `npm run test:coverage`. Thresholds are RATCHET FLOORS set just below
+    // the measured baseline — raise them as component test coverage grows, never lower them.
+    //
+    // RATCHETED 2026-08-11: the floors were still the 2026-06-04 values (1.5% lines) while
+    // measured coverage had reached 11.99%. A floor 8x below actual is a gate that cannot
+    // fail: coverage could have regressed by seven eighths and still reported green. Floors
+    // now sit ~1.5 points under measured (lines 11.99, statements 11.79, functions 11.68,
+    // branches 10.37), which absorbs normal drift without excusing a real regression.
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'lcov'],
       include: ['src/**/*.{ts,svelte}'],
       exclude: ['src/**/*.{test,spec}.ts', 'src/**/*.d.ts', 'src/test-setup.ts'],
       thresholds: {
-        lines: 1.5,
-        statements: 1.5,
-        functions: 1,
-        branches: 2,
+        lines: 10.5,
+        statements: 10.5,
+        functions: 10,
+        branches: 9,
       },
     },
   },

@@ -59,23 +59,33 @@ describe('tag list + file attachment', () => {
     expect(tags).toEqual([{ uuid: UUID_A, name: 'ops', usage_count: 2 }]);
   });
 
-  it('pushes the filters to the server as query params', async () => {
-    await listTags({ colliding: true, unused: false });
+  it('pushes the filters to the server as query params, dropping the false ones', async () => {
+    mockInstance.get.mockResolvedValue({ data: [{ uuid: UUID_A, name: 'ops', usage_count: 9 }] });
+    const tags = await listTags({ colliding: true, unused: false });
     expect(mockInstance.get).toHaveBeenCalledWith('/tags', {
       params: { colliding: true },
     });
+    // Asserting only the request shape left the whole return path untested: a client that
+    // built a perfect query and then dropped `response.data` passed every one of these.
+    expect(tags).toEqual([{ uuid: UUID_A, name: 'ops', usage_count: 9 }]);
   });
 
-  it('creates a tag by name', async () => {
-    await createTag('Q3 Review');
+  it('creates a tag by name and returns the server row', async () => {
+    mockInstance.post.mockResolvedValue({ data: { uuid: UUID_A, name: 'Q3 Review' } });
+    const tag = await createTag('Q3 Review');
     expect(mockInstance.post).toHaveBeenCalledWith('/tags', { name: 'Q3 Review' });
+    // The endpoint may return an EXISTING tag the name resolved to, so the caller needs the
+    // server's row (its uuid), not the name it sent.
+    expect(tag).toEqual({ uuid: UUID_A, name: 'Q3 Review' });
   });
 
-  it('attaches a tag to a file by name', async () => {
-    await addTagToFile('file-uuid', 'Q3 Review');
+  it('attaches a tag to a file by name and returns the resolved tag', async () => {
+    mockInstance.post.mockResolvedValue({ data: { uuid: UUID_B, name: 'Q3 Review' } });
+    const tag = await addTagToFile('file-uuid', 'Q3 Review');
     expect(mockInstance.post).toHaveBeenCalledWith('/tags/files/file-uuid/tags', {
       name: 'Q3 Review',
     });
+    expect(tag).toEqual({ uuid: UUID_B, name: 'Q3 Review' });
   });
 
   it('url-encodes the tag name when detaching', async () => {
@@ -85,9 +95,14 @@ describe('tag list + file attachment', () => {
 });
 
 describe('collision + unused discovery', () => {
-  it('reads collision clusters from the server', async () => {
-    await listTagCollisions();
+  it('reads collision clusters from the server and returns them unchanged', async () => {
+    const clusters = [
+      { normalized_name: 'ops', members: [], suggested_survivor_uuid: UUID_A, suggestions: [] },
+    ];
+    mockInstance.get.mockResolvedValue({ data: clusters });
+    const result = await listTagCollisions();
     expect(mockInstance.get).toHaveBeenCalledWith('/tags/collisions');
+    expect(result).toEqual(clusters);
   });
 });
 
@@ -116,27 +131,55 @@ describe('impact previews', () => {
 });
 
 describe('mutations', () => {
-  it('renames with an explicit confirm_merge default of false', async () => {
-    await renameTag(UUID_A, { name: 'Ops' });
+  it('renames with an explicit confirm_merge default of false, surfacing the merge prompt', async () => {
+    // The rename-is-a-merge handshake: the first call must send `confirm_merge: false` and
+    // hand `requires_confirmation` BACK to the caller, which is what stops the UI applying a
+    // silent merge. Asserting only the request half left the return half untested, so a
+    // client that swallowed `requires_confirmation` would have passed.
+    mockInstance.patch.mockResolvedValue({
+      data: { tag: null, merged: false, requires_confirmation: true, deleted_uuids: [] },
+    });
+    const result = await renameTag(UUID_A, { name: 'Ops' });
     expect(mockInstance.patch).toHaveBeenCalledWith(`/tags/${UUID_A}`, {
       name: 'Ops',
       confirm_merge: false,
     });
+    expect(result.requires_confirmation).toBe(true);
+    expect(result.merged).toBe(false);
   });
 
   it('passes confirm_merge through when the caller accepts the merge', async () => {
-    await renameTag(UUID_A, { name: 'Ops', confirm_merge: true });
+    mockInstance.patch.mockResolvedValue({
+      data: {
+        tag: { uuid: UUID_A, name: 'Ops' },
+        merged: true,
+        requires_confirmation: false,
+        deleted_uuids: [UUID_B],
+      },
+    });
+    const result = await renameTag(UUID_A, { name: 'Ops', confirm_merge: true });
     expect(mockInstance.patch).toHaveBeenCalledWith(`/tags/${UUID_A}`, {
       name: 'Ops',
       confirm_merge: true,
     });
+    expect(result.merged).toBe(true);
+    expect(result.deleted_uuids).toEqual([UUID_B]);
   });
 
-  it('merges sources into the target in the path', async () => {
-    await mergeTags(UUID_A, [UUID_B]);
+  it('merges sources into the target in the path and reports what it deleted', async () => {
+    mockInstance.post.mockResolvedValue({
+      data: {
+        tag: { uuid: UUID_A, name: 'ops' },
+        merged: true,
+        requires_confirmation: false,
+        deleted_uuids: [UUID_B],
+      },
+    });
+    const result = await mergeTags(UUID_A, [UUID_B]);
     expect(mockInstance.post).toHaveBeenCalledWith(`/tags/${UUID_A}/merge`, {
       source_uuids: [UUID_B],
     });
+    expect(result.deleted_uuids).toEqual([UUID_B]);
   });
 
   it('deletes via repeated tag_uuids query params', async () => {

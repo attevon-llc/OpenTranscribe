@@ -21,8 +21,40 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
 - `npm run build` — production build (catches Vite-only issues svelte-check misses).
 - `npm run check` — `svelte-check` (type + a11y). `npm run lint` / `lint:fix` — ESLint.
 - `npm run test` / `test:watch` — Vitest unit/component tests (jsdom).
+- `npm run test:audit` — finds tests that pass whether the code works or not (below).
 - **Before committing**: lint + svelte-check + build + test must be green (pre-commit enforces
   it via `scripts/frontend-check.sh`).
+
+## Test quality gate — `npm run test:audit`
+
+`scripts/audit-frontend-tests.mjs` is the vitest counterpart of `scripts/audit-tests.py`
+(pytest). It parses every `src/**/*.{test,spec}.{ts,js}` with the **TypeScript compiler API**
+(already a devDependency — do not swap it for a regex or a new parser) and exits non-zero on
+any un-allowlisted finding, so it can gate a commit. Detectors: `only-leak`, `skipped-test`,
+`no-assertion`, `unfalsifiable`, `weak-only`, `conditional-only`, `conditional-skip`,
+`floating-async-assertion`, `mock-heavy`, `mock-only`.
+
+- **Allowlist**: `frontend/test-audit-allowlist.txt`, one
+  `<file>::<full test name>::<category>  # reason` per line. The **category is required** —
+  an entry keyed only by test would exempt that test from every detector at once. So is the
+  reason. Never allowlist `only-leak`; delete the `.only`.
+- **`npm run test:audit:selftest` runs the auditor against in-memory fixtures** — 14 cases
+  that must fire and 7 clean cases that must not. Run it after touching any detector: it
+  already caught `conditional-skip` silently matching nothing (it only looked at the `then`
+  branch, and `.pos` vs `.getStart()` made the early-return variant a no-op). A detector that
+  cannot fire is indistinguishable from a clean suite.
+- Two calibration traps, both load-bearing: Testing Library's `getBy*`/`findBy*` **throw**, so
+  they are assertions (ignore that and a third of the component suite reads as assertion-free),
+  and `expect.arrayContaining(...)` is a matcher **argument**, not an assertion head.
+- The auditor counts source-level tests, so its total is lower than vitest's whenever
+  `it.each` is used (one source test → N cases). That is the only legitimate difference; any
+  other gap means it is blind to a file.
+
+**Vitest environment is `jsdom` for every file, deliberately.** Switching the ~25 pure-logic
+files to `environment: 'node'` measures ~1.3 s faster, and was rejected: this is a
+client-only SPA, several modules under test branch on `typeof window === 'undefined'`
+(`$lib/utils/url`, `$lib/axios`), and a test running the SSR branch of code that has no SSR
+in production passes while proving nothing. Correctness over 1.3 s.
 
 ## Path aliases (never use `../../`)
 

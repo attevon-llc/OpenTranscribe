@@ -685,7 +685,15 @@ class TaskDetectionService:
         age_threshold = timedelta(hours=self.config.FILE_RECOVERY_AGE_THRESHOLD)
 
         for media_file in problem_files:
-            assert media_file.upload_time is not None  # server_default=now()
+            # `server_default=now()` is NOT a NOT NULL constraint — the premise this
+            # assert rested on is the one the retry_count bug disproved (issue #431).
+            # The query above filters only on status and user_id, and this loop has no
+            # try/except, so a single NULL upload_time aborted the whole sweep with an
+            # AssertionError (and vanished entirely under `python -O`). A row with no
+            # upload time cannot be aged, so it is not yet old enough to recover.
+            if media_file.upload_time is None:
+                logger.warning("File %s has no upload_time; skipping age check", media_file.id)
+                continue
             file_age = datetime.now(UTC) - media_file.upload_time
             if file_age > age_threshold:
                 aged_files.append(media_file)

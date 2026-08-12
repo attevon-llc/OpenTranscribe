@@ -441,7 +441,11 @@ def _build_speaker_dict(
         else None
     )
 
-    assert speaker.created_at is not None  # server_default=now()
+    # `speaker.created_at` is nullable — a server_default fills the column only for an
+    # INSERT that omits it, so a raw-SQL insert, a backfill or an explicit UPDATE can leave
+    # NULL. This response is a plain dict, so an unknown creation time is reported as null
+    # rather than raising AssertionError (which is also a no-op under `python -O`, leaving
+    # the AttributeError on `.isoformat()` as the real failure mode).
     speaker_dict: dict[str, Any] = {
         "uuid": str(speaker.uuid),
         "name": speaker.name,
@@ -451,7 +455,7 @@ def _build_speaker_dict(
         "user_id": str(current_user.uuid),  # Use user UUID
         "confidence": speaker.confidence,
         "suggestion_source": suggestion_source,
-        "created_at": speaker.created_at.isoformat(),
+        "created_at": speaker.created_at.isoformat() if speaker.created_at else None,
         "media_file_id": str(speaker.media_file.uuid)
         if speaker.media_file
         else speaker.media_file_id,

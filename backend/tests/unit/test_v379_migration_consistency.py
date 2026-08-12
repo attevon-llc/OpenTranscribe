@@ -110,10 +110,25 @@ def test_detection_arm_returns_v379_or_later_on_current_schema(db_session):
 
 
 def test_a_legacy_config_row_makes_detection_stamp_lower(db_session):
-    """A database still holding the old keys is not v379 and must receive the DDL."""
+    """A database still holding the old keys is not v379 and must receive the DDL.
+
+    Asserted as a **band** — at or after v378, strictly before v379 — rather than
+    ``== "v378_idp_group_mapping"``. What this test is for is that the ladder stamps *low
+    enough for the rename to run*; the exact identity of the stamp is a fact about
+    everything below v379 and changes whenever that part of the ladder does. The equality
+    form would then go red (or, worse, stay green for the wrong reason) without anything
+    about v379 having changed — the same failure that made three of these suites red as
+    each new revision landed, and the reason ``_migration_detection`` compares chain
+    positions.
+
+    ``_chain_order`` is imported for the strict upper bound; ``assert_detected_at_or_after``
+    covers the lower one, and a single helper cannot express "below this revision" without
+    inverting its own name.
+    """
     from sqlalchemy import inspect
 
     from app.db.migrations import _detect_schema_version
+    from tests.unit._migration_detection import _chain_order
 
     conn = db_session.connection()
     conn.execute(
@@ -125,11 +140,14 @@ def test_a_legacy_config_row_makes_detection_stamp_lower(db_session):
     )
     tables = inspect(conn).get_table_names()
     detected = _detect_schema_version(conn, tables)
-    assert detected == "v378_idp_group_mapping", (
-        "a database still holding the retired config keys has not had v379 applied, so "
-        f"it must stamp at its predecessor and receive the rename; got {detected!r}"
-    )
     db_session.rollback()
+
+    assert detected is not None, "the ladder matched no revision at all"
+    order = _chain_order()
+    assert order.index("v378_idp_group_mapping") <= order.index(detected) < order.index(REVISION), (
+        "a database still holding the retired config keys has not had v379 applied, so it "
+        f"must stamp below {REVISION} and receive the rename; got {detected!r}"
+    )
 
 
 def test_ciphertext_survives_the_rename_undecrypted(db_session):

@@ -1,6 +1,8 @@
 """API endpoints for user groups (CRUD + membership management)."""
 
 import logging
+from datetime import UTC
+from datetime import datetime
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -35,6 +37,19 @@ from app.utils.websocket_notify import send_ws_event
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+#: Substituted for a NULL ``created_at`` / ``joined_at`` / ``updated_at``.
+#:
+#: ``user_group.created_at``, ``user_group.updated_at`` and ``user_group_member.joined_at``
+#: are all ``nullable`` in Postgres: a ``server_default`` fills a column only for an INSERT
+#: that omits it, so a raw-SQL insert naming the column, a migration backfill or an explicit
+#: ``UPDATE ... SET created_at = NULL`` leaves NULL behind. The response schemas
+#: (``Group.created_at``, ``GroupDetail.updated_at``, ``GroupMember.joined_at``) require a
+#: non-null ``datetime``, so a NULL has to become *some* timestamp or the whole listing
+#: fails validation with a 500. The epoch is used rather than ``datetime.now(UTC)``
+#: precisely because it is obviously not a real value: "now" would silently claim the row
+#: was just created and would sort a timestamp-less group to the top of every list.
+UNKNOWN_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _get_membership(db: Session, group_id: int, user_id: int) -> UserGroupMember | None:
@@ -100,7 +115,6 @@ def _build_group_response(db: Session, group: UserGroup, current_user_id: int) -
         email=group.owner.email,
     )
 
-    assert group.created_at is not None  # server_default=now()
     return GroupSchema(
         uuid=group.uuid,
         name=group.name,
@@ -108,7 +122,7 @@ def _build_group_response(db: Session, group: UserGroup, current_user_id: int) -
         member_count=member_count,
         my_role=my_role or "member",
         owner=owner_brief,
-        created_at=group.created_at,
+        created_at=group.created_at or UNKNOWN_TIMESTAMP,
     )
 
 
@@ -153,7 +167,6 @@ def list_groups(
 
     results = []
     for group in groups:
-        assert group.created_at is not None  # server_default=now()
         owner_brief = UserBrief(
             uuid=group.owner.uuid,
             full_name=group.owner.full_name,
@@ -167,7 +180,7 @@ def list_groups(
                 member_count=counts.get(group.id, 0),
                 my_role=roles.get(group.id, "member"),
                 owner=owner_brief,
-                created_at=group.created_at,
+                created_at=group.created_at or UNKNOWN_TIMESTAMP,
             )
         )
 
@@ -247,7 +260,6 @@ def get_group(
 
     members = []
     for m in members_db:
-        assert m.joined_at is not None  # server_default=now()
         members.append(
             GroupMember(
                 uuid=m.uuid,
@@ -255,7 +267,7 @@ def get_group(
                 email=m.user.email,
                 full_name=m.user.full_name,
                 role=m.role,
-                joined_at=m.joined_at,
+                joined_at=m.joined_at or UNKNOWN_TIMESTAMP,
             )
         )
 
@@ -266,8 +278,6 @@ def get_group(
         email=group.owner.email,
     )
 
-    assert group.created_at is not None  # server_default=now()
-    assert group.updated_at is not None  # server_default=now()
     return GroupDetail(
         uuid=group.uuid,
         name=group.name,
@@ -275,8 +285,8 @@ def get_group(
         member_count=member_count,
         my_role=my_membership.role,
         owner=owner_brief,
-        created_at=group.created_at,
-        updated_at=group.updated_at,
+        created_at=group.created_at or UNKNOWN_TIMESTAMP,
+        updated_at=group.updated_at or UNKNOWN_TIMESTAMP,
         members=members,
     )
 
@@ -395,14 +405,13 @@ def add_member(
         },
     )
 
-    assert member.joined_at is not None  # server_default=now()
     return GroupMember(
         uuid=member.uuid,
         user_uuid=target_user.uuid,
         email=target_user.email,
         full_name=target_user.full_name,
         role=member.role,
-        joined_at=member.joined_at,
+        joined_at=member.joined_at or UNKNOWN_TIMESTAMP,
     )
 
 
@@ -450,14 +459,13 @@ def update_member_role(
     # Reindex files in collections shared with this group
     _reindex_group_shared_files(db, group.id)
 
-    assert target_membership.joined_at is not None  # server_default=now()
     return GroupMember(
         uuid=target_membership.uuid,
         user_uuid=target_user.uuid,
         email=target_user.email,
         full_name=target_user.full_name,
         role=target_membership.role,
-        joined_at=target_membership.joined_at,
+        joined_at=target_membership.joined_at or UNKNOWN_TIMESTAMP,
     )
 
 

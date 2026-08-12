@@ -393,7 +393,11 @@ def task_system_health(
                 {
                     "uuid": str(file.uuid),
                     "filename": file.filename,
-                    "status": file.status.value,
+                    # `MediaFile.status` is nullable with a Python-side default, so a row
+                    # written by raw SQL or an explicit UPDATE holds NULL; guarded like the
+                    # sibling read in endpoints/speakers.py rather than raising
+                    # AttributeError and 500-ing the whole health report.
+                    "status": file.status.value if file.status else None,
                     "user_id": str(file.user.uuid) if file.user else None,
                     "upload_time": file.upload_time,
                     "age_seconds": calculate_age_seconds(file.upload_time),
@@ -690,7 +694,8 @@ def fix_inconsistent_file(
             "success": success,
             "file_id": str(media_file.uuid),  # Use UUID for frontend
             "message": "File fixed successfully" if success else "Failed to fix file",
-            "new_status": media_file.status.value,
+            # Nullable status: a fix that could not determine a status leaves it as it was.
+            "new_status": media_file.status.value if media_file.status else None,
         }
     except HTTPException:
         raise
@@ -773,11 +778,14 @@ def retry_file_processing(
 
         file_id = media_file.id
 
-        # Check if the file is in a state where retry makes sense
+        # Check if the file is in a state where retry makes sense. A NULL status fails this
+        # membership test and lands here, where `.status.value` would raise AttributeError
+        # and downgrade a deliberate 400 into an opaque 500.
         if media_file.status not in [FileStatus.ERROR, FileStatus.PROCESSING]:
+            current_status = media_file.status.value if media_file.status else "unknown"
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot retry file in {media_file.status.value} status",
+                detail=f"Cannot retry file in {current_status} status",
             )
 
         # Reset the file status to PENDING

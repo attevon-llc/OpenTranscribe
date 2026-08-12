@@ -64,13 +64,19 @@ referenced them (detection arms, consistency tests, this file).
 
 ## Gotchas
 
-- **The `pg_advisory_lock(42)` guard is present but does not actually cover the migration.**
-  It is taken inside a `with engine.connect()` block that then exits, and the same engine is
-  `dispose()`d at the top of the run — closing the pooled session **releases the
-  session-scoped lock before `command.upgrade()` runs**. The `finally` block unlocks on a
-  *different* engine/session that never held it. Concurrent backend replicas starting
-  together can still race. Treat this as unfixed; if you touch it, hold one dedicated
-  connection open for the whole run.
+- **The `pg_advisory_lock(42)` guard covers the migration — keep it that way.** Fixed in
+  issue #284 A1.4: `run_migrations()` takes the lock on a **dedicated `lock_engine` /
+  `lock_conn`** held open across `command.upgrade()`, and the `finally` unlocks on that same
+  session (`migrations.py:1058-1074`, `1128-1134`). The bug it replaced is the reason the
+  shape matters: `pg_advisory_lock` is **session-scoped**, so taking it inside a
+  `with engine.connect()` block — or on a connection returned to a pool that
+  `engine.dispose()` then closes — drops the lock *before* the upgrade runs, and unlocking
+  from a fresh connection is a no-op because a session cannot release a lock it never held.
+  Concurrent replicas then race Alembic. Pinned by
+  `tests/unit/test_celery_reliability.py:109` (lock acquired before the upgrade, on
+  `lock_conn`, with the `engine.dispose()` ordered so it cannot touch the lock engine) and
+  `:124` (no second engine for the unlock). If you refactor the runner, do not move the
+  acquire into a context manager and do not introduce an `unlock_engine`.
 - **`_detect_schema_version()` legitimately names the pre-`v380` column spellings.**
   Those probes describe the schema *as it was* at v031 and v170; they are the only
   possible fingerprints for those revisions. This file and `core/legacy_auth_env.py`

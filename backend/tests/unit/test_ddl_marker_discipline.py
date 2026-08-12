@@ -15,15 +15,28 @@ It also enforces the *converse*, because the marker is expensive: an EXCLUSIVE a
 drains every other worker, so a suite that applies ``ddl_exclusive`` at module scope to
 tests that merely *read* the schema turns each of them into a full-suite barrier. That is
 what made ``migration_ddl`` 414 s of a 511 s wall clock.
+
+Whether a test runs DDL is decided by *where its SQL comes from*, and the sources are not
+interchangeable: a literal in the test, a module-level constant in the test, a constant read
+off an ``alembic/versions`` revision (``conn.execute(text(module.UPGRADE_SQL))`` — the shape
+this scanner was blind to, which left v381's double replay of ``ALTER TABLE "user"``
+unmarked), and a call to a revision's own ``upgrade()``/``downgrade()``.
+``test_ddl_marker_discipline_selftest.py`` holds a must-fire and a must-stay-clean case for
+each: a detector that silently matches nothing is indistinguishable from a clean suite.
 """
 
 from __future__ import annotations
 
 import ast
+import functools
 import re
 from pathlib import Path
 
 _TESTS_ROOT = Path(__file__).resolve().parents[1]
+
+#: The revision files a migration-consistency suite replays. Their ``*_SQL`` constants are
+#: the DDL those suites execute, so the scanner has to read them to see it at all.
+_VERSIONS_DIR = _TESTS_ROOT.parent / "alembic" / "versions"
 
 #: Statements that take ACCESS EXCLUSIVE. ``CREATE INDEX`` (without CONCURRENTLY) and
 #: ``TRUNCATE`` are included because they block DML on the target just as hard.
@@ -41,6 +54,20 @@ _TEMP_TABLE = re.compile(r"\bCREATE\s+(GLOBAL\s+|LOCAL\s+)?TEMP(ORARY)?\s+TABLE\
 #: A test that opens its own connection can still be protected — by taking the same lock
 #: explicitly. ``tests/db_locks.py`` exposes the helpers; naming one is the opt-in.
 _EXPLICIT_LOCK_HELPERS = frozenset({"acquire_ddl_lock_exclusive", "acquire_ddl_lock_exclusive_raw"})
+
+#: Calling a revision's own entry point runs every statement in it. ``module.downgrade()``
+#: (``test_v386_migration_consistency.py``) and ``command.upgrade(config, "head")`` execute
+#: real DDL with no SQL string anywhere in the test file, so the string-based rules below
+#: cannot see them.
+_MIGRATION_ENTRYPOINTS = frozenset({"upgrade", "downgrade"})
+
+#: File-level pre-filter companion to ``_DDL``: a module whose DDL arrives entirely through
+#: a revision entry point contains no DDL keyword of its own.
+_MIGRATION_CALL = re.compile(r"\.(upgrade|downgrade)\s*\(")
+
+#: ``REVISION = "v381_approval_state"`` — the revision a consistency suite replays, and so
+#: the file its ``*_SQL`` attributes resolve against.
+_REVISION_ID = re.compile(r"^v\d+_[a-z0-9_]+$")
 
 #: Tests that execute DDL with no isolation at all, and the reason it is accepted. Empty is
 #: the correct state: an entry here says "I accept a deadlock that can wedge the suite".
@@ -89,19 +116,107 @@ def _ddl_constants(tree: ast.Module) -> set[str]:
     return found
 
 
-def _executes_ddl(fn: ast.AST, ddl_consts: set[str]) -> bool:
-    """True when a DDL string is *passed to* ``.execute(...)``.
+def _resolve_string(node: ast.AST, known: dict[str, str]) -> str | None:
+    """Best-effort static value of a string expression in a revision module.
+
+    Covers the three shapes the revisions actually use: a literal, an f-string, and
+    ``CONSTRAINT_SQL = _CONSTRAINT_TEMPLATE.format(statuses=…)`` (v381) — a ``.format``
+    call whose *template* carries the ``ALTER TABLE … ADD CONSTRAINT``. Missing the last
+    one would leave ``module.CONSTRAINT_SQL`` invisible even after the attribute lookup
+    below was fixed.
+    """
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else None
+    if isinstance(node, ast.JoinedStr):
+        return "".join(
+            v.value for v in node.values if isinstance(v, ast.Constant) and isinstance(v.value, str)
+        )
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _resolve_string(node.left, known)
+        right = _resolve_string(node.right, known)
+        return None if left is None or right is None else left + right
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        if node.func.attr == "format":
+            return _resolve_string(node.func.value, known)
+        return None
+    if isinstance(node, ast.Name):
+        return known.get(node.id)
+    return None
+
+
+@functools.cache
+def _revision_ddl_constants(revision: str) -> frozenset[str]:
+    """``*_SQL`` constants in one ``alembic/versions`` revision whose value is DDL."""
+    path = _VERSIONS_DIR / f"{revision}.py"
+    if not path.exists():
+        return frozenset()
+    values: dict[str, str] = {}
+    ddl: set[str] = set()
+    for node in ast.parse(path.read_text()).body:
+        if not isinstance(node, ast.Assign):
+            continue
+        resolved = _resolve_string(node.value, values)
+        if resolved is None:
+            continue
+        for target in node.targets:
+            if not isinstance(target, ast.Name):
+                continue
+            values[target.id] = resolved
+            if (
+                target.id.endswith("_SQL")
+                and _DDL.search(resolved)
+                and not _TEMP_TABLE.search(resolved)
+            ):
+                ddl.add(target.id)
+    return frozenset(ddl)
+
+
+@functools.cache
+def _any_revision_ddl_constants() -> frozenset[str]:
+    """The union across every revision — the fallback for a suite that names none."""
+    names: set[str] = set()
+    for path in sorted(_VERSIONS_DIR.glob("v*.py")):
+        names |= _revision_ddl_constants(path.stem)
+    return frozenset(names)
+
+
+def _ddl_attributes(tree: ast.Module) -> frozenset[str]:
+    """``*_SQL`` attribute names that hold DDL, e.g. ``module.UPGRADE_SQL``.
+
+    A consistency suite loads its revision by path and replays a constant from it, so the
+    SQL is nowhere in the test file. Resolution prefers the module-level ``REVISION``
+    constant, which is exact; a suite that names no revision falls back to the union over
+    all revisions, because guessing wrong in *that* direction only costs a marker,
+    while missing the DDL costs a wedged suite.
+    """
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "REVISION" for t in node.targets):
+            continue
+        value = _resolve_string(node.value, {})
+        if value is not None and _REVISION_ID.match(value):
+            return _revision_ddl_constants(value)
+    return _any_revision_ddl_constants()
+
+
+def _executes_ddl(fn: ast.AST, ddl_consts: set[str], ddl_attrs: frozenset[str]) -> bool:
+    """True when a DDL string is *passed to* ``.execute(...)``, or a revision is replayed.
 
     The distinction matters. Three suites assert on the migration file's *source text*
     (``assert 'CREATE TABLE IF NOT EXISTS chat_project' in source``) and one passes
     ``"'; DROP TABLE media_file; --"`` as a SQL-injection payload expecting a 422. None of
     those execute anything, and marking them would reintroduce the barrier this guards
-    against.
+    against. By the same token ``module.RENAME_SQL`` (v379) and
+    ``module.RETIRED_AUTH_CONFIG_KEYS_SQL`` (v377) are UPDATE/DELETE, so resolving an
+    attribute has to read the constant's *value* rather than assume ``_SQL`` means DDL.
     """
     for node in ast.walk(fn):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
+        if isinstance(func, ast.Attribute) and func.attr in _MIGRATION_ENTRYPOINTS:
+            return True
         if not (isinstance(func, ast.Attribute) and func.attr == "execute"):
             continue
         for arg in node.args:
@@ -117,7 +232,11 @@ def _executes_ddl(fn: ast.AST, ddl_consts: set[str]) -> bool:
                     )
                     if _DDL.search(joined) and not _TEMP_TABLE.search(joined):
                         return True
-                elif isinstance(inner, ast.Name) and inner.id in ddl_consts:
+                # A local constant (``_GUARD_SQL``) or one read off a revision module
+                # (``module.UPGRADE_SQL``). Both are already known to hold DDL.
+                elif (isinstance(inner, ast.Name) and inner.id in ddl_consts) or (
+                    isinstance(inner, ast.Attribute) and inner.attr in ddl_attrs
+                ):
                     return True
     return False
 
@@ -150,7 +269,7 @@ def _collect() -> tuple[list[str], list[str], list[str]]:
 
     for path in _iter_test_modules():
         source = path.read_text()
-        if not _DDL.search(source):
+        if not (_DDL.search(source) or _MIGRATION_CALL.search(source)):
             continue
         try:
             tree = ast.parse(source)
@@ -160,6 +279,7 @@ def _collect() -> tuple[list[str], list[str], list[str]]:
         rel = path.relative_to(_TESTS_ROOT).as_posix()
         module_markers = _module_marker_names(tree)
         ddl_consts = _ddl_constants(tree)
+        ddl_attrs = _ddl_attributes(tree)
 
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
@@ -169,7 +289,7 @@ def _collect() -> tuple[list[str], list[str], list[str]]:
 
             ident = f"{rel}::{node.name}"
             marked = "ddl_exclusive" in (module_markers | _decorator_names(node))
-            runs_ddl = _executes_ddl(node, ddl_consts)
+            runs_ddl = _executes_ddl(node, ddl_consts, ddl_attrs)
 
             if not runs_ddl:
                 if marked:

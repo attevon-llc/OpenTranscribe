@@ -337,7 +337,12 @@ def get_topic_suggestions(
         user_id=UUID(str(current_user.uuid)),
         suggested_tags=suggested_tags,
         suggested_collections=suggested_collections,
-        status=str(suggestion.status),
+        # `TopicSuggestion.status` is annotated `Mapped[str]` with `nullable=False`, but the
+        # live column is `is_nullable = YES DEFAULT 'pending'` — the model and the DDL
+        # disagree, and the DDL wins. `str(None)` produced the literal string "None" on such
+        # a row and shipped it to the client as a status value; fall back on the DEFAULT the
+        # column itself declares.
+        status=suggestion.status or "pending",
         auto_applied_tags=suggestion.auto_applied_tags or [],
         auto_applied_collections=suggestion.auto_applied_collections or [],
         auto_apply_completed_at=suggestion.auto_apply_completed_at,

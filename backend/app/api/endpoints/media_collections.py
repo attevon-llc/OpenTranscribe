@@ -11,6 +11,7 @@ genuinely gains an ``await``.
 """
 
 import logging
+from datetime import UTC
 from datetime import datetime
 from uuid import UUID
 
@@ -73,6 +74,17 @@ from app.utils.websocket_notify import send_ws_event
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+#: Substituted for a NULL ``created_at`` on a share or a collection.
+#:
+#: ``collection_share.created_at`` and ``collection.created_at`` are both ``nullable`` in
+#: Postgres — a ``server_default`` only fills a column an INSERT omits, so a raw-SQL insert
+#: naming it, a backfill or an explicit ``UPDATE ... SET created_at = NULL`` leaves NULL.
+#: ``Share.created_at`` and ``SharedCollectionInfo.shared_at`` are required ``datetime``
+#: fields, so a NULL must become some timestamp or Pydantic fails the whole response.
+#: The epoch, not ``datetime.now(UTC)``: "now" would claim the share was just created and
+#: would sort a timestamp-less share to the top of the shared-with-me list.
+UNKNOWN_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _visible_media_counts(
@@ -206,7 +218,6 @@ def _build_share_response(db: Session, share: CollectionShare) -> Share:
     else:
         raise HTTPException(status_code=500, detail="Invalid share target")
 
-    assert share.created_at is not None  # server_default=now()
     return Share(
         uuid=share.uuid,
         target_type=share.target_type,
@@ -216,7 +227,7 @@ def _build_share_response(db: Session, share: CollectionShare) -> Share:
         member_count=member_count,
         permission=share.permission,
         shared_by=shared_by_brief,
-        created_at=share.created_at,
+        created_at=share.created_at or UNKNOWN_TIMESTAMP,
     )
 
 
@@ -294,8 +305,9 @@ def list_shared_collections(
             full_name=coll.user.full_name,
             email=coll.user.email,
         )
-        shared_at = coll_share.created_at if coll_share else coll.created_at
-        assert shared_at is not None  # both created_at columns have server_default=now()
+        # Both source columns are nullable, so this falls through to the sentinel rather
+        # than asserting on a premise a server_default does not establish.
+        shared_at = (coll_share.created_at if coll_share else coll.created_at) or UNKNOWN_TIMESTAMP
         if coll_share and coll_share.shared_by:
             shared_by_brief = UserBrief(
                 uuid=coll_share.shared_by.uuid,

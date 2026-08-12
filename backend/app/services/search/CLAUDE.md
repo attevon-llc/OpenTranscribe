@@ -81,9 +81,15 @@ custom only, label style).
 - Availability, index, and pipeline checks are cached in module globals behind `_state_lock`.
   After recreating an index call `reset_infrastructure_state()` / `reset_neural_search_state()`,
   or the worker keeps trusting stale state (neural-failure TTL is only 30 s, success 120 s).
-- `SEARCH_RRF_RANK_CONSTANT` defaults to **30** (`core/config.py:328`); the docstring in
-  `_build_hybrid_search_pipeline` still says 40. A mismatch against a live pipeline triggers
-  automatic pipeline recreation on startup.
+- `SEARCH_RRF_RANK_CONSTANT` defaults to **30** — grep the symbol in `core/config.py`; a line
+  number cited here has already rotted once. A mismatch against the live **search** pipeline
+  triggers automatic recreation on startup (`ensure_search_pipeline_exists`). Since #401 the
+  **ingest** pipeline self-heals the same way: `_check_existing_pipeline_config` compares
+  `model_id`, `field_map` and `batch_size` against `_build_neural_ingest_pipeline`, so
+  repointing what gets embedded reaches upgraded deployments and not only fresh installs.
+  `batch_size` is compared only when the live pipeline has one (the creation path drops it on
+  OpenSearch versions that reject it, and treating that as drift is a boot loop), and a
+  `field_map` change still needs a **reindex** before existing documents embed the new field.
 - **Every delete against the chunks index goes through `chunk_plane_query`** (issue #400).
   Re-indexing overwrites `{file_uuid}_{chunk_index}` in place, so a shorter re-chunk used to
   orphan the tail — stale text, stale speakers, stale timestamps, still returned by search and

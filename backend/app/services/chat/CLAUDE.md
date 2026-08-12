@@ -29,9 +29,16 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 That is correct for search — you should find your own words in your own
 recordings — but it means `retrieve_chunks()` hands back raw text. **Every path
 that sends chunk content to an LLM must go through `redactor.mask_chunks()`
-first.** The gate is identical to summarization's (`tasks/summarization.py`):
-apply when `cfg.enabled and cfg.redact_before_llm`, with the admin force floor
-already folded in by `resolve_effective_config`.
+first.** The gate *condition* is identical to summarization's
+(`tasks/summarization.py`): apply when `cfg.enabled and cfg.redact_before_llm`,
+with the admin force floor already folded in by `resolve_effective_config`.
+
+The **subject** is not. Summarization resolves the *file owner's* config
+(`redaction/llm_guard.py` reads `media_file.user_id`); chat resolves the
+*requesting user's*, because one turn retrieves across a library of shared
+recordings with no single owner. Anything layering summaries onto chat retrieval
+(#383) must pick a subject deliberately rather than inherit whichever the
+surrounding code used.
 
 Masking **fails closed**. If the policy cannot be resolved, or a chunk cannot be
 masked, the chunk's content becomes `""` and contributes nothing — never the raw

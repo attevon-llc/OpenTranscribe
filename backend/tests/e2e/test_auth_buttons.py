@@ -50,6 +50,13 @@ ADMIN_PASSWORD = "password"
 LDAP_USERNAME = "ldap-admin"
 LDAP_PASSWORD = "admin_password"
 
+# Identifiers that resolve to NO account, local or LDAP. Failing logins must target
+# these: account lockout is per-account and progressive (app/auth/lockout.py keys the
+# counter on the resolved account's email via canonical_identifier), so a wrong password
+# aimed at a real account poisons every later test that logs in as it.
+NO_SUCH_LOCAL_ACCOUNT = "nosuchuser-e2e@example.com"
+NO_SUCH_LDAP_ACCOUNT = "ldap-nosuchuser-e2e"
+
 
 def _login_local(page: Page, email: str, password: str):
     """Helper: log in with email/password via the local auth form."""
@@ -218,11 +225,22 @@ class TestLocalLogin:
         assert body_text is not None
 
     def test_local_login_invalid_password(self, page: Page, base_url: str):
-        """Invalid password shows error message."""
+        """Bad local credentials are rejected.
+
+        Targets a NONEXISTENT account, not ``admin@example.com``. Both take the identical
+        401 path, but a failure against the real admin account increments its progressive
+        per-account lockout counter (threshold 5 with prod values), which would break every
+        later e2e test that logs in as admin — the hazard
+        ``backend/tests/CLAUDE.md`` calls out by name, and which this test violated.
+
+        The wrong-password-for-a-real-account branch is covered where it can be, under
+        savepoint rollback:
+        ``tests/api/endpoints/test_auth_comprehensive.py::test_login_wrong_password``.
+        """
         page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
-        _login_local(page, ADMIN_EMAIL, "wrong_password")
+        _login_local(page, NO_SUCH_LOCAL_ACCOUNT, "wrong_password")
 
         # Should stay on login page with an error
         # Deterministic settle rather than a guessed duration (issue #431).
@@ -328,14 +346,25 @@ class TestLDAPLogin:
         assert body_text is not None
 
     def test_ldap_invalid_password(self, page: Page, base_url: str):
-        """Wrong LDAP password shows error."""
+        """Bad LDAP credentials are rejected.
+
+        Targets an LDAP uid that exists nowhere. Aiming this at ``ldap-admin`` — which
+        ``test_ldap_login_success`` above provisions as a real local account on its first
+        successful login — put failed attempts into that account's lockout bucket
+        (``canonical_identifier`` resolves an ``ldap_uid`` to the account's email), so a
+        run of this class could lock out the account the class itself logs in with.
+
+        The real-user-wrong-password bind rejection is covered by
+        ``test_ldap_oidc.py::test_ldap_wrong_password_rejected``, which owns the LLDAP
+        fixture and can use an account reserved for exactly that.
+        """
         page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
         if not self._is_ldap_enabled(page):
             pytest.skip("LDAP is not enabled")
 
-        _login_local(page, LDAP_USERNAME, "wrong_ldap_password")
+        _login_local(page, NO_SUCH_LDAP_ACCOUNT, "wrong_ldap_password")
 
         # Deterministic settle rather than a guessed duration (issue #431).
         page.wait_for_load_state("networkidle")

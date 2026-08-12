@@ -312,3 +312,10 @@ test-results/
 
 # Release orchestrator ledger (scripts/release.sh) — per-release stage state
 .release/
+
+# Mutation testing (scripts/run-mutation-tests.sh). mutmut 3 copies the source tree
+# into backend/mutants/ and mutates the copy; both it and the older cache are
+# regenerated on every run and must never be committed.
+backend/mutants/
+backend/.mutmut-cache
+.mutmut-cache

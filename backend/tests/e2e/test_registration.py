@@ -16,15 +16,27 @@ Run with:
 
 import re
 import uuid
+from collections.abc import Iterator
 
+import pytest
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
+#: Every address the tests in this file register begins with one of these. The cleanup
+#: helper deletes ONLY matching addresses, so it can never reach a pre-existing dev
+#: account — notably not the shared admin, which the duplicate-email test deliberately
+#: submits. A positive rule rather than a hand-maintained never-delete list: the latter
+#: is how ``test@example.com`` came to sit on ``scripts/cleanup-test-users.py``'s
+#: keep-list, read as a legitimate dev account when it was in fact the leak.
+_TEST_CREATED_PREFIXES = ("reg-e2e-", "shortname-", "testuser_", "newuser_")
+
 
 def _delete_user_by_email(api_helper, email: str) -> None:
     """Best-effort cleanup of a user this test registered (dev data hygiene)."""
+    if not email.strip().lower().startswith(_TEST_CREATED_PREFIXES):
+        return
     try:
         api_helper.login(TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD)
         users = api_helper.get("/api/admin/users")
@@ -35,6 +47,27 @@ def _delete_user_by_email(api_helper, email: str) -> None:
                 return
     except Exception:
         pass  # cleanup is best-effort; scripts/cleanup-test-users.py catches strays
+
+
+@pytest.fixture
+def registration_email(api_helper) -> Iterator[str]:
+    """A run-unique address for a registration attempt, removed on the way out.
+
+    Every test in this file submits the REAL register form against the live dev stack,
+    so any payload the server happens to accept creates a real account. A fixed
+    ``test@example.com`` is how one of those accounts ended up in the dev database and
+    had to be deleted by hand — and ``scripts/cleanup-test-users.py`` still carries that
+    exact address on its keep-list, so a sweep would not have caught it either.
+
+    Teardown runs whichever way the test exits, and is a no-op when nothing was created.
+    That matters for the many tests here that *expect* a rejection: whether a given
+    payload is rejected depends on the password policy, which is DB-backed and
+    admin-editable (``core/auth_settings.py``), so it is not a property this file can
+    guarantee — which is precisely the assumption that produced the leak.
+    """
+    email = f"reg-e2e-{uuid.uuid4().hex[:8]}@example.com"
+    yield email
+    _delete_user_by_email(api_helper, email)
 
 
 class TestRegistrationFormValidation:
@@ -51,13 +84,13 @@ class TestRegistrationFormValidation:
         page.wait_for_load_state("networkidle")
         expect(page.locator("#username")).to_be_visible()
 
-    def test_username_required(self, page: Page, base_url: str):
+    def test_username_required(self, page: Page, base_url: str, registration_email: str):
         """Test username field is required."""
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
         # Fill all except username
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "ValidPassword123!")
         page.fill("#confirmPassword", "ValidPassword123!")
 
@@ -80,26 +113,26 @@ class TestRegistrationFormValidation:
         page.wait_for_load_state("networkidle")
         expect(page.locator("#email")).to_be_visible()
 
-    def test_password_required(self, page: Page, base_url: str):
+    def test_password_required(self, page: Page, base_url: str, registration_email: str):
         """Test password field is required."""
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
 
         page.click("button:has-text('Create Account')")
         # Deterministic settle rather than a guessed duration (issue #431).
         page.wait_for_load_state("networkidle")
         expect(page.locator("#password")).to_be_visible()
 
-    def test_confirm_password_required(self, page: Page, base_url: str):
+    def test_confirm_password_required(self, page: Page, base_url: str, registration_email: str):
         """Test confirm password field is required."""
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
@@ -145,14 +178,14 @@ class TestUsernameValidation:
             # persist changes. The old version never got this far, so it never had to.
             _delete_user_by_email(api_helper, email)
 
-    def test_username_special_characters(self, page: Page, base_url: str):
+    def test_username_special_characters(self, page: Page, base_url: str, registration_email: str):
         """Test username doesn't allow special characters."""
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
         # Try username with special characters
         page.fill("#username", "test@user!")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "ValidPassword123!")
         page.fill("#confirmPassword", "ValidPassword123!")
 
@@ -163,14 +196,14 @@ class TestUsernameValidation:
         # Just verify form processed without crash
         assert page.is_visible("body")
 
-    def test_username_whitespace(self, page: Page, base_url: str):
+    def test_username_whitespace(self, page: Page, base_url: str, registration_email: str):
         """Test username handles whitespace correctly."""
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
         # Try username with spaces
         page.fill("#username", "test user")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "ValidPassword123!")
         page.fill("#confirmPassword", "ValidPassword123!")
 
@@ -237,13 +270,13 @@ class TestEmailValidation:
 class TestPasswordValidation:
     """Test password field constraints and requirements."""
 
-    def test_password_too_short(self, page: Page, base_url: str):
+    def test_password_too_short(self, page: Page, base_url: str, registration_email: str):
         """Test password minimum length (typically 8+ characters)."""
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "Short1!")
         page.fill("#confirmPassword", "Short1!")
 
@@ -253,13 +286,13 @@ class TestPasswordValidation:
         still_on_register = "register" in page.url or page.locator("#password").is_visible()
         assert still_on_register, "Should enforce minimum password length"
 
-    def test_password_no_uppercase(self, page: Page, base_url: str):
+    def test_password_no_uppercase(self, page: Page, base_url: str, registration_email: str):
         """Test password requires uppercase letter."""
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "lowercase123!")
         page.fill("#confirmPassword", "lowercase123!")
 
@@ -269,13 +302,13 @@ class TestPasswordValidation:
         # This may or may not be required depending on policy
         assert page.is_visible("body")
 
-    def test_password_no_lowercase(self, page: Page, base_url: str):
+    def test_password_no_lowercase(self, page: Page, base_url: str, registration_email: str):
         """Test password requires lowercase letter."""
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "UPPERCASE123!")
         page.fill("#confirmPassword", "UPPERCASE123!")
 
@@ -284,13 +317,13 @@ class TestPasswordValidation:
         page.wait_for_load_state("networkidle")
         assert page.is_visible("body")
 
-    def test_password_no_numbers(self, page: Page, base_url: str):
+    def test_password_no_numbers(self, page: Page, base_url: str, registration_email: str):
         """Test password requires numbers."""
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "NoNumbersHere!")
         page.fill("#confirmPassword", "NoNumbersHere!")
 
@@ -299,13 +332,13 @@ class TestPasswordValidation:
         page.wait_for_load_state("networkidle")
         assert page.is_visible("body")
 
-    def test_password_no_special_chars(self, page: Page, base_url: str):
+    def test_password_no_special_chars(self, page: Page, base_url: str, registration_email: str):
         """Test password requires special characters."""
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "NoSpecialChars123")
         page.fill("#confirmPassword", "NoSpecialChars123")
 
@@ -314,13 +347,13 @@ class TestPasswordValidation:
         page.wait_for_load_state("networkidle")
         assert page.is_visible("body")
 
-    def test_password_mismatch(self, page: Page, base_url: str):
+    def test_password_mismatch(self, page: Page, base_url: str, registration_email: str):
         """Test passwords must match."""
         page.goto(f"{base_url}/register")
         page.wait_for_selector("#username", timeout=10000)
 
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "ValidPassword123!")
         page.fill("#confirmPassword", "DifferentPassword123!")
 

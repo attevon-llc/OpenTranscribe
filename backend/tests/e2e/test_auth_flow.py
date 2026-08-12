@@ -12,15 +12,25 @@ Run with visible browser:
 """
 
 import uuid
+from collections.abc import Iterator
 
+import pytest
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
+#: Every address the tests in this file register begins with one of these; the cleanup
+#: helper deletes ONLY matching addresses. Positively scoped for the same reason as the
+#: identical list in ``test_registration.py``: the duplicate-email test deliberately
+#: submits the shared admin address, which must survive its own teardown.
+_TEST_CREATED_PREFIXES = ("reg-e2e-", "testuser_")
+
 
 def _delete_user_by_email(api_helper, email: str) -> None:
     """Best-effort cleanup of a user this test registered (dev data hygiene)."""
+    if not email.strip().lower().startswith(_TEST_CREATED_PREFIXES):
+        return
     try:
         api_helper.login(TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD)
         users = api_helper.get("/api/admin/users")
@@ -31,6 +41,20 @@ def _delete_user_by_email(api_helper, email: str) -> None:
                 return
     except Exception:
         pass  # cleanup is best-effort; scripts/cleanup-test-users.py catches strays
+
+
+@pytest.fixture
+def registration_email(api_helper) -> Iterator[str]:
+    """A run-unique address for a registration attempt, removed on the way out.
+
+    Mirrors ``test_registration.py``'s fixture of the same name, for the same reason: a
+    fixed address submitted to the live register endpoint is how a real account ended up
+    in the dev database. Teardown always runs and is a no-op when nothing was created,
+    so it is correct even on the tests here that expect the submission to be rejected.
+    """
+    email = f"reg-e2e-{uuid.uuid4().hex[:8]}@example.com"
+    yield email
+    _delete_user_by_email(api_helper, email)
 
 
 class TestLoginFlow:
@@ -200,7 +224,9 @@ class TestRegistrationFlow:
         finally:
             _delete_user_by_email(api_helper, email)
 
-    def test_registration_password_mismatch(self, page: Page, base_url: str):
+    def test_registration_password_mismatch(
+        self, page: Page, base_url: str, registration_email: str
+    ):
         """Test registration fails when passwords don't match."""
         page.goto(f"{base_url}/login")
         page.wait_for_selector("a[href*=register]")
@@ -210,7 +236,7 @@ class TestRegistrationFlow:
 
         # Fill form with mismatched passwords
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "Password123!")
         page.fill("#confirmPassword", "DifferentPassword123!")
 
@@ -221,7 +247,7 @@ class TestRegistrationFlow:
         still_on_register = "register" in page.url or page.locator("#confirmPassword").is_visible()
         assert still_on_register, "Should not proceed with mismatched passwords"
 
-    def test_registration_weak_password(self, page: Page, base_url: str):
+    def test_registration_weak_password(self, page: Page, base_url: str, registration_email: str):
         """Test registration validates password strength."""
         page.goto(f"{base_url}/login")
         page.wait_for_selector("a[href*=register]")
@@ -231,7 +257,7 @@ class TestRegistrationFlow:
 
         # Fill form with weak password
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "weak")
         page.fill("#confirmPassword", "weak")
 

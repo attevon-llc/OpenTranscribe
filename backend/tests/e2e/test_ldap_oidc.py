@@ -75,6 +75,21 @@ LDAP_REGULAR_USER = "ldap-user"
 LDAP_REGULAR_EMAIL = "ldap-user@example.com"
 LDAP_REGULAR_PASSWORD = "LdapUser123"
 
+# A real LLDAP account that is NEVER logged in successfully, reserved for the
+# wrong-password test. Rejecting a bad bind for a user that exists is a different branch
+# from rejecting an unknown user, so the coverage has to keep a real account — but
+# pointing it at ldap-admin fed failures into that account's lockout bucket
+# (canonical_identifier resolves an ldap_uid to the local account's email), and lockout is
+# progressive. Because this uid never authenticates successfully, the app never provisions
+# a local User for it, so its bucket belongs to no account and locking it costs nothing.
+LDAP_NEGATIVE_USER = "ldap-negative"
+LDAP_NEGATIVE_EMAIL = "ldap-negative@example.com"
+# Deliberately not this account's password — the test asserts the bind is REJECTED, so any
+# value that is wrong will do. Spelled out rather than made to look like a credential: a
+# realistic-looking string here is both a secret-scanner finding and a standing invitation
+# for someone to "fix" it into a working password, which would silently invert the test.
+LDAP_NEGATIVE_PASSWORD = "wrong-password-on-purpose"  # noqa: S105
+
 KC_ADMIN_USER = "kc-admin"
 KC_ADMIN_EMAIL = "kc-admin@example.com"
 KC_ADMIN_PASSWORD = "KcAdmin123"
@@ -227,6 +242,7 @@ def ensure_lldap_running():
     for uid, email, name in [
         (LDAP_ADMIN_USER, LDAP_ADMIN_EMAIL, "LDAP Admin"),
         (LDAP_REGULAR_USER, LDAP_REGULAR_EMAIL, "LDAP Regular User"),
+        (LDAP_NEGATIVE_USER, LDAP_NEGATIVE_EMAIL, "LDAP Negative Fixture"),
     ]:
         try:
             _lldap_graphql(
@@ -240,6 +256,7 @@ def ensure_lldap_running():
     for uid, pw in [
         (LDAP_ADMIN_USER, LDAP_ADMIN_PASSWORD),
         (LDAP_REGULAR_USER, LDAP_REGULAR_PASSWORD),
+        (LDAP_NEGATIVE_USER, LDAP_NEGATIVE_PASSWORD),
     ]:
         subprocess.run(
             [
@@ -598,12 +615,22 @@ class TestLDAPLogin:
         page.close()
 
     def test_ldap_wrong_password_rejected(self, browser_context, base_url: str):
-        """Wrong password should be rejected for LDAP users."""
+        """Wrong password should be rejected for LDAP users.
+
+        Uses ``LDAP_NEGATIVE_USER``, not ``LDAP_ADMIN_USER``. The account is real in LLDAP
+        — which is the point, since a bad bind for an existing user is a different code
+        path from an unknown user — but it is never logged in successfully anywhere in this
+        suite, so the app never provisions a local ``User`` row for it and its lockout
+        bucket belongs to no account. Aimed at ``ldap-admin``, these failures landed in the
+        bucket of the account ``test_ldap_admin_login`` needs (``canonical_identifier``
+        collapses an ``ldap_uid`` onto the resolved account's email), and lockout is
+        progressive — see the rule in ``backend/tests/CLAUDE.md``.
+        """
         page = browser_context.new_page()
         page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
-        page.fill("#email", LDAP_ADMIN_USER)
+        page.fill("#email", LDAP_NEGATIVE_USER)
         page.fill("#password", "wrongpassword")
         page.click("button[type=submit]")
         # Settle on the rejected login request; the assertion is that we did NOT

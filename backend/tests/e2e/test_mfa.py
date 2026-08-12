@@ -50,13 +50,42 @@ PROFILE_NAV_LABEL = "Profile & Security"
 # ===== Session fixtures =====
 
 
+def _delete_user_by_email(backend_url: str, headers: dict[str, str], email: str) -> None:
+    """Best-effort removal of the account this file registered (dev data hygiene).
+
+    Never given anything but this session's unique address, so it cannot reach a real
+    dev account. Failures are swallowed: a teardown that raises would mask the test
+    result, and a stray account is reported by ``scripts/cleanup-test-users.py``.
+    """
+    try:
+        listing = requests.get(f"{backend_url}/api/admin/users", headers=headers, timeout=30)
+        if listing.status_code != 200:
+            return
+        payload = listing.json()
+        users = payload if isinstance(payload, list) else payload.get("items", [])
+        for user in users:
+            if user.get("email") == email:
+                requests.delete(
+                    f"{backend_url}/api/admin/users/{user['uuid']}", headers=headers, timeout=30
+                )
+                return
+    except requests.RequestException:
+        pass
+
+
 @pytest.fixture(scope="session", autouse=True)
 def mfa_test_user(backend_url: str):
-    """Create a dedicated user for MFA tests via the admin API.
+    """Create a dedicated user for MFA tests, and DELETE it when the session ends.
 
-    Uses a unique email per session to avoid conflicts. The user is created
-    at the start of the test session and used for all MFA setup/login tests,
-    keeping the admin account clean and unlocked.
+    A unique email per session keeps the admin account clean and unlocked — enrolling
+    MFA on ``admin@example.com`` would lock every other e2e suite out of the stack.
+
+    The teardown is the part that was missing. This fixture used to ``return``, so every
+    run of this file left a permanent ``mfa-e2e-<hex>@example.com`` account behind in the
+    dev database, **with MFA configured** — accumulating one per run, and matched by none
+    of ``scripts/cleanup-test-users.py``'s patterns, so no sweep would ever have found
+    them. Deleting here is the only thing that can: the address is unique per session, so
+    nothing else can identify it afterwards.
     """
     # Get admin token
     resp = requests.post(
@@ -84,7 +113,9 @@ def mfa_test_user(backend_url: str):
         # 409 = already exists (from previous run with same email)
         pytest.skip(f"Cannot create MFA test user: {reg_resp.status_code} {reg_resp.text}")
 
-    return {"email": MFA_TEST_EMAIL, "password": MFA_TEST_PASSWORD}
+    yield {"email": MFA_TEST_EMAIL, "password": MFA_TEST_PASSWORD}
+
+    _delete_user_by_email(backend_url, headers, MFA_TEST_EMAIL)
 
 
 # ===== API helpers =====

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 import socket
+import uuid as uuid_pkg
 
 import pytest
 import requests
@@ -91,6 +92,20 @@ MOCK_LLM_PORT = 5199
 MOCK_LLM_URL_FOR_BACKEND = f"http://mock-llm:{MOCK_LLM_PORT}/v1"
 
 
+def _unique(label: str) -> str:
+    """Suffix a display name so it cannot collide with, or outlive, another run.
+
+    Two distinct problems, both real here. An LLM config **name is unique per user**, so a
+    fixed one 409s against the leftovers of any run killed before its teardown — the same
+    trap ``test_chat_grounding.py``'s ``llm_config_factory`` already documents. A
+    conversation **title is not** unique, which is worse for the browser side: the sidebar
+    is addressed with ``filter(has_text=<title>)``, so a leftover row with the same title
+    makes the locator match twice and Playwright's strict mode fails on a test that is
+    working correctly.
+    """
+    return f"{label} {uuid_pkg.uuid4().hex[:8]}"
+
+
 def _mock_llm_running() -> bool:
     """Whether the docker-compose mock LLM is up on the host."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -121,7 +136,7 @@ def ensure_llm_provider(api_session: requests.Session, backend_url: str):
         response = api_session.post(
             f"{backend_url}/api/llm-settings",
             json={
-                "name": "Mock LLM (e2e)",
+                "name": _unique("Mock LLM (e2e)"),
                 "provider": "custom",
                 "model_name": "mock-gpt",
                 "base_url": MOCK_LLM_URL_FOR_BACKEND,
@@ -387,9 +402,10 @@ def test_conversation_appears_in_sidebar_and_can_be_deleted(
     gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
     """Create via API, verify it lists, then delete it through the UI."""
+    title = _unique("E2E temporary conversation")
     response = api_session.post(
         f"{backend_url}/api/chat/conversations",
-        json={"title": "E2E temporary conversation"},
+        json={"title": title},
         timeout=20,
     )
     assert response.status_code == 201, response.text
@@ -399,11 +415,9 @@ def test_conversation_appears_in_sidebar_and_can_be_deleted(
         _open_chat(gallery_page, base_url)
         sidebar = gallery_page.locator('[data-testid="chat-sidebar"]')
         expect(sidebar).to_be_visible()
-        expect(sidebar.get_by_text("E2E temporary conversation")).to_be_visible(timeout=15_000)
+        expect(sidebar.get_by_text(title)).to_be_visible(timeout=15_000)
 
-        item = gallery_page.locator('[data-testid="chat-conversation-item"]').filter(
-            has_text="E2E temporary conversation"
-        )
+        item = gallery_page.locator('[data-testid="chat-conversation-item"]').filter(has_text=title)
         item.hover()
         item.locator('[data-testid="chat-delete"]').click()
         # The confirm prompt REPLACES the row's title, so `item` — which is
@@ -411,7 +425,7 @@ def test_conversation_appears_in_sidebar_and_can_be_deleted(
         # confirm button directly; only one row can be confirming at a time.
         gallery_page.locator('[data-testid="chat-delete-confirm"]').click()
 
-        expect(sidebar.get_by_text("E2E temporary conversation")).to_have_count(0, timeout=15_000)
+        expect(sidebar.get_by_text(title)).to_have_count(0, timeout=15_000)
     finally:
         # Idempotent: already deleted via the UI in the happy path.
         api_session.delete(f"{backend_url}/api/chat/conversations/{uuid}", timeout=15)
@@ -498,9 +512,10 @@ def test_context_can_be_turned_off(
     gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
     """Context-off mode is visibly distinct — no transcripts, no citations."""
+    title = _unique("E2E context toggle")
     response = api_session.post(
         f"{backend_url}/api/chat/conversations",
-        json={"title": "E2E context toggle"},
+        json={"title": title},
         timeout=20,
     )
     assert response.status_code == 201, response.text
@@ -527,9 +542,10 @@ def test_chat_controls_persist_across_reload(
     gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
     """Per-conversation settings are stored server-side, not just in the tab."""
+    title = _unique("E2E persistence")
     response = api_session.post(
         f"{backend_url}/api/chat/conversations",
-        json={"title": "E2E persistence"},
+        json={"title": title},
         timeout=20,
     )
     assert response.status_code == 201, response.text
@@ -655,9 +671,10 @@ def test_export_downloads_the_conversation(
     gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
     """Export produces a Markdown file the user can keep."""
+    title = _unique("E2E export")
     response = api_session.post(
         f"{backend_url}/api/chat/conversations",
-        json={"title": "E2E export"},
+        json={"title": title},
         timeout=20,
     )
     assert response.status_code == 201, response.text
@@ -680,9 +697,10 @@ def test_archive_and_restore_a_conversation(
     gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
     """Archiving hides a conversation; the archived view brings it back."""
+    title = _unique("E2E archive target")
     response = api_session.post(
         f"{backend_url}/api/chat/conversations",
-        json={"title": "E2E archive target"},
+        json={"title": title},
         timeout=20,
     )
     assert response.status_code == 201, response.text
@@ -691,18 +709,16 @@ def test_archive_and_restore_a_conversation(
     try:
         _open_chat(gallery_page, base_url)
         sidebar = gallery_page.locator('[data-testid="chat-sidebar"]')
-        item = gallery_page.locator('[data-testid="chat-conversation-item"]').filter(
-            has_text="E2E archive target"
-        )
+        item = gallery_page.locator('[data-testid="chat-conversation-item"]').filter(has_text=title)
         expect(item).to_be_visible(timeout=15_000)
 
         item.hover()
         item.locator('[data-testid="chat-archive"]').click()
-        expect(sidebar.get_by_text("E2E archive target")).to_have_count(0, timeout=15_000)
+        expect(sidebar.get_by_text(title)).to_have_count(0, timeout=15_000)
 
         # It is not gone — it moved.
         gallery_page.locator('[data-testid="chat-toggle-archived"]').click()
-        expect(sidebar.get_by_text("E2E archive target")).to_be_visible(timeout=15_000)
+        expect(sidebar.get_by_text(title)).to_be_visible(timeout=15_000)
     finally:
         api_session.delete(f"{backend_url}/api/chat/conversations/{uuid}", timeout=15)
 

@@ -39,6 +39,13 @@ def _setting(name: str, default: str) -> str:
 
 # Fixture email patterns from backend/tests/conftest.py and the e2e suite.
 # SQL LIKE patterns — '%' wildcard, '_' escaped where it's literal.
+#
+# Keep in step with the prefixes the e2e suite mints. Every address the suite registers
+# must match one of these, or a run killed before its teardown leaves an account no sweep
+# can find — which is what happened to `mfa-e2e-<hex>@example.com`: test_mfa.py created one
+# per session with no teardown at all and no pattern here matched it.
+# `tests/unit/test_e2e_data_hygiene.py` is the gate that stops a NEW unswept prefix
+# appearing; this list is the backstop for runs that died mid-flight.
 ORPHAN_PATTERNS = [
     r"testuser\_%@example.com",
     r"testadmin\_%@example.com",
@@ -47,6 +54,9 @@ ORPHAN_PATTERNS = [
     r"unique\_%@example.com",
     r"newuser\_%@example.com",
     "test-%@example.com",  # test-<uuid>@example.com
+    "reg-e2e-%@example.com",  # e2e registration attempts (test_registration, test_auth_flow)
+    "shortname-%@example.com",  # e2e display-name registration test
+    "mfa-e2e-%@example.com",  # e2e MFA enrolment user (test_mfa.py session fixture)
 ]
 
 # Real dev-stack accounts that must never be touched, even if a pattern drifts.

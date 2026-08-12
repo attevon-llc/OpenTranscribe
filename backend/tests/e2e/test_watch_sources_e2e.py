@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import uuid
 
 import pytest
 import requests
@@ -65,6 +66,60 @@ def require_local_watch(local_watch_capability: bool) -> None:
             "local watch capability not enabled — start the stack with "
             "./opentr.sh start dev --with-watch"
         )
+
+
+#: Every watch source this file types a name into carries this prefix, so the teardown
+#: below can sweep by name even when a test aborted before its own UI delete.
+SOURCE_PREFIX = "e2e-watch-"
+
+
+def _unique_source_name() -> str:
+    return f"{SOURCE_PREFIX}{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def watch_source_names(backend_url: str):
+    """Hand out run-unique watch-source names and delete anything left behind.
+
+    Two hygiene problems this closes, both real:
+
+    * The names were fixed (``"E2E Created Source"``), so a run interrupted before its
+      UI delete left a row that the next run could not tell from its own — and a watch
+      source is not inert, it is a configured ingestion path against a host directory.
+    * The delete lived at the END of the test, on the happy path. The assertion that the
+      new card appears is the one most likely to fail, and it fires *after* Save has
+      already created the row — precisely the case where cleanup was skipped.
+
+    Teardown sweeps by prefix through the API rather than by remembered ids, so it also
+    reaps rows from earlier aborted runs.
+    """
+    names: list[str] = []
+
+    def _make() -> str:
+        name = _unique_source_name()
+        names.append(name)
+        return name
+
+    yield _make
+
+    try:
+        token = requests.post(
+            f"{backend_url}/api/auth/token",
+            data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
+            timeout=15,
+        ).json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        listing = requests.get(f"{backend_url}/api/watch-sources", headers=headers, timeout=15)
+        payload = listing.json() if listing.status_code == 200 else {}
+        sources = payload if isinstance(payload, list) else payload.get("items", [])
+        for source in sources:
+            if str(source.get("name", "")).startswith(SOURCE_PREFIX):
+                requests.delete(
+                    f"{backend_url}/api/watch-sources/{source['uuid']}", headers=headers, timeout=15
+                )
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        # A teardown must not mask the test result; report and move on.
+        print(f"watch-source teardown failed (leaves orphan {SOURCE_PREFIX}* sources): {exc}")
 
 
 BENIGN_CONSOLE_SUBSTRINGS = (
@@ -158,15 +213,22 @@ class TestWatchSourcesPanel:
         # The "Add Watch Source" button should be present.
         expect(app_page.get_by_role("button", name="Add Watch Source")).to_be_visible(timeout=8000)
 
-    def test_stepper_walks_all_steps(self, app_page: Page, require_local_watch: None) -> None:
-        """The Add editor is a guided stepper: Next walks every step to Save."""
+    def test_stepper_walks_all_steps(
+        self, app_page: Page, require_local_watch: None, watch_source_names
+    ) -> None:
+        """The Add editor is a guided stepper: Next walks every step to Save.
+
+        Stops at Save without clicking it, so nothing is created — but the name still
+        comes from ``watch_source_names``, because "this walkthrough never saves" is a
+        property of today's assertions, not of the form.
+        """
         _open_watch_sources(app_page)
         app_page.get_by_role("button", name="Add Watch Source").click()
         expect(app_page.get_by_text("Add Watch Source").first).to_be_visible(timeout=8000)
 
         dialog = app_page.locator(".modal-container")
         # Name is required before the connection step can advance.
-        app_page.fill("#ws-name", "E2E Stepper Source")
+        app_page.fill("#ws-name", watch_source_names())
 
         # Walk Connection → Processing → Advanced → Organize via Next.
         for _ in range(3):
@@ -189,11 +251,16 @@ class TestWatchSourcesPanel:
         assert not unexpected, f"Unexpected console errors: {unexpected}"
 
     def test_create_and_delete_local_source(
-        self, app_page: Page, require_local_watch: None
+        self, app_page: Page, require_local_watch: None, watch_source_names
     ) -> None:
-        """Create a local watch source through the stepper, see it listed, delete it."""
+        """Create a local watch source through the stepper, see it listed, delete it.
+
+        The UI delete below is the behaviour under test. ``watch_source_names``'s teardown
+        is the safety net for the case the UI path never reaches — a failure between Save
+        and the delete click used to leave a live watch source configured on the stack.
+        """
         _open_watch_sources(app_page)
-        name = "E2E Created Source"
+        name = watch_source_names()
         app_page.get_by_role("button", name="Add Watch Source").click()
         dialog = app_page.locator(".modal-container")
         app_page.fill("#ws-name", name)

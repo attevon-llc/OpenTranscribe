@@ -133,3 +133,35 @@ show_missing = true
 skip_empty = true
 precision = 1
 fail_under = 37
+
+# ---------------------------------------------------------------------------
+# Mutation testing (opt-in — NEVER part of the default gate or CI).
+#
+# Coverage says a line RAN. Mutation testing says a line MATTERS: it edits the
+# source (flips a comparison, drops a condition, changes a constant) and asks
+# whether any test notices. A surviving mutant is a line the suite executes but
+# does not actually check — for a security predicate that means the control can
+# be silently removed with the suite still green.
+#
+# Scoped to security-critical modules ONLY. A whole-codebase run on ~40k lines is
+# hours of GPU-idle CPU and is not what this is for; the point is a small set where
+# a survivor is unambiguously a bug. `scripts/run-mutation-tests.sh` reads
+# `paths_to_mutate` from here, so this list is the single source of truth.
+#
+# `runner` deliberately carries NO test paths and NO -n: the script supplies both
+# through PYTEST_ADDOPTS, which pytest prepends to the command line. That is how a
+# per-module test subset is selected, and how the project's `-n auto` is overridden
+# to `-n0` — a mutant run that forks 24 xdist workers per mutant is slower than
+# serial and, against this repo's single shared Postgres, deadlock-prone
+# (the advisory-lock/system_settings collisions of issues #389 and #431).
+[tool.mutmut]
+paths_to_mutate = [
+    "app/services/redaction/spans.py",
+    "app/auth/password_policy.py",
+    "app/core/security.py",
+    "app/api/endpoints/auth/dependencies.py",
+    "app/auth/lockout.py",
+    "app/auth/session.py",
+]
+tests_dir = "tests/"
+runner = "python -m pytest -x -q --timeout=120"

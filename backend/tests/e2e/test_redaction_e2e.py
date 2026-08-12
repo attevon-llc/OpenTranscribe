@@ -88,16 +88,23 @@ def test_system_defaults_expose_locked_set(api_helper, token):
 
 
 def test_admin_policy_force_pii(api_helper, backend_url, token):
-    # Enable force_pii, verify it reflects in policy + user defaults locked set, then clear.
+    """Enabling force_pii locks the PII category for every user — and must be undone.
+
+    ``force_pii`` is a stack-wide admin policy, not per-test state: left ON it changes
+    what every other user and every later test sees in the transcript, which is a
+    persistent change to dev data. The clear used to sit at the end of the happy path, so
+    the ``locked_categories`` assertion in the middle — the one most likely to fail —
+    would leave the whole dev stack force-redacting PII.
+    """
     resp = api_helper.post("/api/admin/redaction-policy/update", {"force_pii": True})
     assert resp.get("force_pii") is True
 
-    defaults = api_helper.get("/api/user-settings/redaction/defaults")
-    assert "pii" in defaults["locked_categories"]
-
-    # Clear the force flag (cleanup).
-    resp = api_helper.post("/api/admin/redaction-policy/update", {"force_pii": False})
-    assert resp.get("force_pii") is False
+    try:
+        defaults = api_helper.get("/api/user-settings/redaction/defaults")
+        assert "pii" in defaults["locked_categories"]
+    finally:
+        cleared = api_helper.post("/api/admin/redaction-policy/update", {"force_pii": False})
+        assert cleared.get("force_pii") is False
 
 
 def test_transcript_redact_toggle_if_file_exists(api_helper):

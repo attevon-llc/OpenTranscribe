@@ -46,13 +46,40 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
   `localhost:5180`, then points the clients at those host ports; an explicit shell value wins.
   Stack down → those suites **skip silently**, so a green local run proves less than it looks.
 
-## Safety rules (non-negotiable)
+## Safety rules (non-negotiable) — enforced by `unit/test_e2e_data_hygiene.py`
+
+These three rules used to be prose only, and had already been broken: a registration test
+with a hard-coded `test@example.com` created a real account on the live stack that had to be
+deleted by hand. `unit/test_e2e_data_hygiene.py` now enforces all three by AST over
+`tests/e2e/*.py`, in the **fast unit suite** — before any browser touches the stack. Each
+check has an allow-list requiring a **written reason** (the `test_ddl_marker_discipline.py`
+pattern), and six "guard the guard" tests so a scanner that silently matches nothing cannot
+pass everything — one of which caught exactly that: the UI-creation half matched by string
+equality against selectors that embed the label (`"button:has-text('Create Account')"`), so it
+was finding nothing at all.
 
 - **E2E must never persist changes to dev data.** Upload tests delete what they create (API
   delete, falling back to `/force`); transcript-edit tests use the **cancel path only**.
-- **Negative-login tests must use a nonexistent account** (`nonexistent@example.com`), never a
-  wrong password for `admin@example.com` — progressive per-account lockout poisons every later
-  test in the suite.
+  Cleanup must be in a `finally`, a fixture teardown that deletes, or an `addfinalizer` — **a
+  delete on the happy path does not count**, because the assertion most likely to fail is the
+  one *after* the object was created. A fixture's `page.close()`/`context.close()` teardown is
+  explicitly not accepted as data cleanup.
+- **Never name a persistent object with a fixed identity.** Emails, created-object
+  `name`/`title` payloads, and values typed into a name field all need a `uuid4`/random
+  suffix. `admin@example.com` / `password`, `nonexistent@example.com`,
+  `nosuchuser-e2e@example.com` and the `ldap-*`/`kc-*` IdP fixtures are the allow-listed
+  shared identities. `scripts/cleanup-test-users.py`'s `ORPHAN_PATTERNS` is the backstop for
+  runs that die mid-flight — **add your prefix there in the same commit** (`mfa-e2e-` was
+  missing for as long as `test_mfa.py` leaked one account per run).
+- **Negative-login tests must use a nonexistent account** (`nonexistent@example.com`,
+  `nosuchuser-e2e@example.com`, `ldap-nosuchuser-e2e`), never a wrong password for
+  `admin@example.com` — lockout is keyed on the **resolved account** (`canonical_identifier`
+  collapses an `ldap_uid` onto the account's email) and escalates, so one such test poisons
+  every later test that logs in as that account. Where the real-user branch genuinely differs
+  — an LDAP bind rejection — use an account that never authenticates successfully anywhere in
+  the suite (`test_ldap_oidc.py`'s `LDAP_NEGATIVE_USER`), so no local `User` is ever
+  provisioned and its lockout bucket belongs to nothing. Registration forms are exempt from
+  this check: they have `#email`/`#password` fields but submitting one is not a login.
 - Dev relaxes auth limits (`docker-compose.override.yml`: `RATE_LIMIT_AUTH_PER_MINUTE=120`,
   `ACCOUNT_LOCKOUT_THRESHOLD=100`, `DEV_*`-tunable). **Prod never loads that overlay** — don't
   write a test that only passes under the relaxed values. `shared_auth_state`/`gallery_page`
@@ -103,6 +130,60 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
   `unit/test_uuid7_migration_guard.py` does for the raw v368 guard block.
 - E2E runs from the repo root against `backend/tests/e2e/`, so `e2e/pytest.ini` becomes the
   rootdir config — pyproject `addopts` (`-n auto`, `-m 'not integration'`) do **not** apply.
+
+## Mutation testing (opt-in, never in the gate or CI)
+
+**What it is for.** Coverage says a line *ran*. It cannot say the suite would *notice* if the
+line were wrong — and this repo has already shipped tests that could not fail (an `or` chain
+ending in `"register" in page.url`; a `gpu` marker that selected nothing). Mutation testing
+answers the question directly: edit the source (flip `<` to `<=`, drop an `and` clause, change
+a constant, return `None`) and re-run the tests. A mutant that **dies** proves a test really
+checked that behaviour. A mutant that **SURVIVES** is the finding: the suite executes that line
+and asserts nothing about it, so the line could be deleted with the suite still green. For an
+auth predicate that is a removable security control.
+
+**Tool: `mutmut`** (`backend/requirements-dev.txt` — deliberately *not* `requirements-ci.txt`,
+which CI installs and must stay fast). Chosen over `cosmic-ray` because it needs no session
+database or job queue (config is `[tool.mutmut]` in `backend/pyproject.toml`, entry point is one
+script), and because cosmic-ray's main advantage — distributed parallel execution — is exactly
+what must **not** happen here: every mutant's tests share the one live Postgres, and
+cross-worker concurrency on it is this repo's known deadlock shape (the advisory lock and
+`system_settings` collisions of issues #389/#431). Serial is correct, not a limitation.
+
+**Scope: six security-critical modules only** (`[tool.mutmut] paths_to_mutate`) —
+`redaction/spans.py` (masking off-by-one leaks the character it should hide),
+`auth/password_policy.py` (five independent `require_*` predicates), `core/security.py`
+(JWT/bcrypt), `api/endpoints/auth/dependencies.py` (the privilege gates — an inverted role
+comparison is privilege escalation), `auth/lockout.py`, `auth/session.py`. A whole-codebase run
+is hours and is not the point.
+
+```bash
+./scripts/run-mutation-tests.sh --check            # preconditions, mutates nothing
+./scripts/run-mutation-tests.sh --list             # targets + the tests each one runs
+./scripts/run-mutation-tests.sh --module spans     # START HERE (~1-3 min)
+./scripts/run-mutation-tests.sh --module spans --dry-run
+./scripts/run-mutation-tests.sh --results          # re-report, no re-run
+./scripts/run-mutation-tests.sh --show <id>        # the diff for one survivor
+```
+
+**Runtime** (per module, serial): `spans` ~1-3 min · `password_policy` ~5-15 min · `security`
+~10-30 min (each mutant pays a bcrypt round) · `dependencies` ~20-60 min (each mutant boots the
+test client) · `lockout` ~30-90 min · `session` ~15-45 min · `--all` is **hours**. Needs
+Postgres (5176) and, for lockout/session, Redis (5177). CPU-only — it never touches the GPU,
+but it will saturate every core, so don't start one beside a benchmark.
+
+**Two traps the script handles, and you must not undo.** `-n0` is appended via
+`PYTEST_ADDOPTS` to override pyproject's `-n auto`: without it every mutant forks one xdist
+worker per core against the shared DB. And the `RUN_*` gates are exported, because three of the
+selected test files are behind a module-level `skipif` and **a skipped test kills no mutant** —
+an ungated run reports false survivors that look exactly like real findings.
+
+**Reading a surviving mutant.** `--results` lists ids; `--show <id>` prints the diff.
+`killed` = genuinely checked. `survived` = the finding; add the missing assertion, or conclude
+the line is dead and delete it. `timeout` counts as killed but check it is not a real infinite
+loop the tests were papering over. `suspicious` = far slower than baseline, usually a mutated
+retry/sleep bound. Survivors in *log lines and error strings* are noise — judge by whether a
+real caller could observe the difference.
 
 ## Running DB-backed tests without the dev stack
 

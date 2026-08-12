@@ -750,6 +750,15 @@ def delete_admin_user(
         # Validate deletion is allowed
         _validate_user_deletion(user, current_user)
 
+        # The last-super_admin guard lives here rather than in
+        # _validate_user_deletion because that helper takes no Session. Its sibling
+        # DELETE /users/{uuid} has always had it; this route did not (issue #431), so
+        # the deployment refused to DEMOTE the last super_admin while allowing it to
+        # be deleted outright.
+        from app.api.endpoints.users import _assert_not_last_super_admin
+
+        _assert_not_last_super_admin(db, user, ROLE_USER)
+
         # Delete all user data atomically using a savepoint
         savepoint = db.begin_nested()
         try:
@@ -1873,6 +1882,22 @@ def admin_erase_user(
     target = db.query(User).filter(User.uuid == user_uuid).first()
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Same two guards the sibling delete routes carry. This route had NEITHER
+    # (issue #431): it is the most destructive account operation in the app, and it
+    # was the only one that would let a super_admin erase themselves, or erase the
+    # last super_admin. `PUT /admin/users/{uuid}/role` already refuses to DEMOTE the
+    # last one, so without this the deployment blocked the reversible operation and
+    # permitted the irreversible one — recovery means hand-editing the database.
+    if int(target.id) == int(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot erase your own account",
+        )
+
+    from app.api.endpoints.users import _assert_not_last_super_admin
+
+    _assert_not_last_super_admin(db, target, ROLE_USER)
 
     from app.services.gdpr_erasure_service import erase_user
 

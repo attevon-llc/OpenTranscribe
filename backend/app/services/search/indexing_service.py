@@ -383,37 +383,94 @@ def _get_model_id_from_service() -> str | None:
         return None
 
 
-def _check_existing_pipeline_model(pipeline_id: str, expected_model_id: str) -> bool | None:
-    """Check if existing pipeline has the expected model.
+def _build_neural_ingest_pipeline(model_id: str) -> dict[str, Any]:
+    """Build the neural ingest pipeline body for a model.
+
+    The single definition of what the ingest pipeline should look like — both the
+    creation path and the drift check below read it, so the two can never disagree
+    about what "correct" is.
+
+    Args:
+        model_id: OpenSearch ML model ID that generates the embeddings.
+
+    Returns:
+        The pipeline body to PUT.
+    """
+    return {
+        "description": f"Neural embedding pipeline for transcript search (model: {model_id})",
+        "processors": [
+            {
+                "text_embedding": {
+                    "model_id": model_id,
+                    "field_map": {"content": "embedding"},
+                    "batch_size": settings.SEARCH_NEURAL_BATCH_SIZE,
+                    "ignore_failure": False,
+                }
+            }
+        ],
+    }
+
+
+def _check_existing_pipeline_config(pipeline_id: str, expected: dict[str, Any]) -> bool | None:
+    """Check whether the live ingest pipeline matches the config we would write.
+
+    Compares ``model_id``, ``field_map`` **and** ``batch_size`` — not just the model
+    (issue #401). Comparing only the model meant a release that repointed
+    ``field_map`` (say ``content`` → ``embedding_text``) took effect on fresh installs
+    only: an upgraded deployment kept the old pipeline and silently kept embedding the
+    old field, with no error, no log and no metric to show for it. This mirrors what
+    ``ensure_search_pipeline_exists`` already does for the *search* pipeline, and
+    recreating an ingest pipeline is cheap and non-destructive (existing documents keep
+    their embeddings; only future ingests change — a ``field_map`` change still needs a
+    reindex for old documents to pick up the new source field).
+
+    ``batch_size`` is compared **only when the live pipeline carries one**: the creation
+    path drops it and retries on OpenSearch versions that reject the parameter, and
+    treating that absence as drift would recreate the pipeline on every single boot.
+
+    ``ignore_failure`` is deliberately not compared — OpenSearch may or may not echo a
+    false-valued flag back, and a spurious mismatch there would be the same boot loop.
 
     Args:
         pipeline_id: Pipeline ID to check.
-        expected_model_id: Expected model ID.
+        expected: The ``text_embedding`` processor config we would write.
 
     Returns:
-        True if pipeline exists with correct model, False if model mismatch, None if not found.
+        True if the live pipeline matches, False if it has drifted, None if not found.
     """
     if not opensearch_client:
         return None
 
     try:
         response = opensearch_client.ingest.get_pipeline(id=pipeline_id)
-        current_pipeline = response.get(pipeline_id, {})
-        processors = current_pipeline.get("processors", [])
-
-        for processor in processors:
-            if "text_embedding" in processor:
-                current_model = processor["text_embedding"].get("model_id")
-                if current_model == expected_model_id:
-                    return True
-                logger.info(
-                    f"Neural pipeline model mismatch: {current_model} vs {expected_model_id}, updating"
-                )
-                return False
-        return None
     except Exception:
         logger.debug(f"Neural ingest pipeline {pipeline_id} not found, will create it")
         return None
+
+    current_pipeline = response.get(pipeline_id, {})
+    processors = current_pipeline.get("processors", [])
+
+    for processor in processors:
+        if "text_embedding" not in processor:
+            continue
+
+        live = processor["text_embedding"]
+        drift = [
+            f"{key}: {live.get(key)!r} != {expected.get(key)!r}"
+            for key in ("model_id", "field_map")
+            if live.get(key) != expected.get(key)
+        ]
+        if "batch_size" in live and live["batch_size"] != expected.get("batch_size"):
+            drift.append(f"batch_size: {live['batch_size']!r} != {expected.get('batch_size')!r}")
+
+        if drift:
+            logger.info(
+                f"Neural ingest pipeline {pipeline_id} has drifted, recreating ({'; '.join(drift)})"
+            )
+            return False
+        return True
+
+    return None
 
 
 def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
@@ -449,30 +506,19 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
         return False
 
     try:
-        # Check if pipeline exists with correct model
-        pipeline_check = _check_existing_pipeline_model(pipeline_id, model_id)
+        pipeline_body = _build_neural_ingest_pipeline(model_id)
+        text_embedding_config: dict[str, Any] = pipeline_body["processors"][0]["text_embedding"]
+        batch_size = text_embedding_config["batch_size"]
+
+        # Check whether the live pipeline still matches the whole config, not just
+        # the model id (issue #401).
+        pipeline_check = _check_existing_pipeline_config(pipeline_id, text_embedding_config)
         if pipeline_check is True:
             _neural_pipeline_verified = True
             _neural_pipeline_available = True
             return True
 
         # Create or update pipeline (try with batch_size first, fall back without)
-        batch_size = settings.SEARCH_NEURAL_BATCH_SIZE
-        text_embedding_config: dict[str, Any] = {
-            "model_id": model_id,
-            "field_map": {"content": "embedding"},
-            "batch_size": batch_size,
-            "ignore_failure": False,
-        }
-        pipeline_body: dict[str, Any] = {
-            "description": f"Neural embedding pipeline for transcript search (model: {model_id})",
-            "processors": [
-                {
-                    "text_embedding": text_embedding_config,
-                }
-            ],
-        }
-
         try:
             opensearch_client.ingest.put_pipeline(id=pipeline_id, body=pipeline_body)
             logger.info(

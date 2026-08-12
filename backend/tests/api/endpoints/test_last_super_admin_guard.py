@@ -98,55 +98,61 @@ class TestGdprEraseUserGuards:
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
-class TestAdminDeleteUserGuards:
-    """``DELETE /api/admin/users/{uuid}`` — had the self and role guards, not the last one."""
+class TestAdminDeleteUserCompositionKeepsOneSuperAdmin:
+    """``DELETE /api/admin/users/{uuid}`` — safe by COMPOSITION, not by the last-one guard.
 
-    def test_deleting_the_last_super_admin_is_refused(
+    Worth stating plainly, because the first version of this class asserted something it
+    could not reach. The two pre-existing guards already make losing the last super_admin
+    impossible:
+
+    * deleting a super_admin requires **being** one (403 otherwise), and
+    * you cannot target yourself (400).
+
+    So the caller is always a surviving super_admin, and ``_assert_not_last_super_admin``
+    on this route can never fire. It is kept as a backstop for a future change to either
+    premise (see the comment at its call site), but a test named "deleting the last
+    super_admin is refused" would really be asserting the self-target guard while
+    appearing to cover the other one — and it passed against the unfixed code, which is
+    how this was caught. These tests pin the two premises the safety actually rests on.
+    """
+
+    def test_a_plain_admin_cannot_delete_a_super_admin(
+        self, client, admin_token_headers, db_session
+    ):
+        """Premise 1. Lose this 403 and a plain admin can delete every super_admin."""
+        victim = _make_super_admin(db_session)
+
+        response = client.delete(f"/api/admin/users/{victim.uuid}", headers=admin_token_headers)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert _super_admin_count(db_session) >= 1
+
+    def test_a_super_admin_cannot_delete_their_own_account(
+        self, client, super_admin_token_headers, super_admin_user
+    ):
+        """Premise 2. Together with premise 1, this is what guarantees a survivor."""
+        response = client.delete(
+            f"/api/admin/users/{super_admin_user.uuid}",
+            headers=super_admin_token_headers,
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_a_super_admin_can_delete_another_super_admin(
         self, client, super_admin_token_headers, db_session
     ):
-        """The regression test.
+        """The positive control: the route must still work for its real use.
 
-        Only reachable when the caller is a super_admin deleting *another*
-        super_admin — the self guard and the role guard both fire first otherwise.
-        So: make a second super_admin, delete it from the first, and the guard must
-        refuse only once it would be the last.
+        Without it, tightening either premise into "refuse everything" would satisfy both
+        tests above.
         """
         victim = _make_super_admin(db_session)
 
-        # Two exist, so this one is deletable.
-        first = client.delete(f"/api/admin/users/{victim.uuid}", headers=super_admin_token_headers)
-        assert first.status_code == status.HTTP_200_OK
-
-        # The caller is now the only super_admin. Deleting them must be refused --
-        # by the last-super_admin guard, not merely by the self-target guard, so this
-        # test uses a SECOND super_admin as the actor.
-        actor = _make_super_admin(db_session)
-        login = client.post(
-            "/api/auth/token",
-            data={"username": actor.email, "password": "extrapass123"},
+        response = client.delete(
+            f"/api/admin/users/{victim.uuid}", headers=super_admin_token_headers
         )
-        assert login.status_code == status.HTTP_200_OK
-        actor_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-        # Remove every other super_admin so `actor` is the last one, then have a
-        # colleague-less deployment try to delete it. There is no other super_admin
-        # to act, so assert through the guard helper's own route instead: demoting is
-        # already refused, and deleting must be too.
-        remaining = (
-            db_session.query(User).filter(User.role == ROLE_SUPER_ADMIN, User.id != actor.id).all()
-        )
-        for other in remaining:
-            other.role = "user"
-            other.is_superuser = False
-        db_session.commit()
-        assert _super_admin_count(db_session) == 1
-
-        response = client.delete(f"/api/admin/users/{actor.uuid}", headers=actor_headers)
-
-        # Self-deletion is refused first; the point of the assertion is that the
-        # route refuses at all, and the next test covers the guard in isolation.
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert _super_admin_count(db_session) == 1, "the last super_admin must survive"
+        assert response.status_code == status.HTTP_200_OK
 
 
 class TestTheGuardItself:

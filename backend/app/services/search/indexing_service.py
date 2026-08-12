@@ -152,10 +152,16 @@ def _invalidate_chat_retrieval_cache() -> None:
         logger.debug("Could not bump chat corpus version", exc_info=True)
 
 
-def chunk_plane_query(file_uuid: str, *, from_chunk_index: int | None = None) -> dict[str, Any]:
+def chunk_plane_query(
+    file_uuid: str,
+    *,
+    from_chunk_index: int | None = None,
+    extra_filters: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Build the query that selects the CHUNK-plane documents of one file.
 
-    **Every delete against the chunks index is built here, and nowhere else.**
+    **Every delete and every targeted rewrite against the chunks index is built
+    here, and nowhere else.**
     #383 Phase 3 adds non-chunk documents (per-file digests, discriminated by a
     ``doc_type`` field) to this same index. A delete that only matches on
     ``file_uuid`` would take the digests with it. Keeping the predicate in one
@@ -163,13 +169,19 @@ def chunk_plane_query(file_uuid: str, *, from_chunk_index: int | None = None) ->
 
         filters.append({"term": {"doc_type": "chunk"}})
 
-    Do not write a ``delete_by_query`` against ``OPENSEARCH_CHUNKS_INDEX``
-    anywhere else — a scattered copy is exactly what this function prevents.
+    Do not write a ``delete_by_query`` or an ``update_by_query`` against
+    ``OPENSEARCH_CHUNKS_INDEX`` anywhere else — a scattered copy is exactly what
+    this function prevents. ``extra_filters`` exists so a caller that needs to
+    narrow *within* the chunk plane (the rename propagation of issue #405 only
+    wants the docs still carrying the old speaker name) still inherits whatever
+    predicate this function grows.
 
     Args:
         file_uuid: UUID of the media file whose chunks are being selected.
         from_chunk_index: When set, restrict to chunks at or above this index —
             the stale tail left behind by a longer previous chunking.
+        extra_filters: Additional ``filter`` clauses ANDed onto the predicate.
+            Express an OR as one nested ``bool``/``should`` clause.
 
     Returns:
         An OpenSearch query body fragment (the value of ``"query"``).
@@ -177,6 +189,8 @@ def chunk_plane_query(file_uuid: str, *, from_chunk_index: int | None = None) ->
     filters: list[dict[str, Any]] = [{"term": {"file_uuid": file_uuid}}]
     if from_chunk_index is not None:
         filters.append({"range": {"chunk_index": {"gte": from_chunk_index}}})
+    if extra_filters:
+        filters.extend(extra_filters)
     return {"bool": {"filter": filters}}
 
 

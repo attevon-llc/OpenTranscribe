@@ -837,11 +837,20 @@ def update_media_file(
 
     # Update OpenSearch index if title was changed
     if title_updated:
+        new_title = str(db_file.title or db_file.filename)
         try:
-            new_title = str(db_file.title or db_file.filename)
             update_transcript_title(str(db_file.uuid), new_title)  # Use UUID not integer ID
         except Exception as e:
             logger.warning(f"Failed to update OpenSearch title for file {file_id}: {e}")
+        # ...and the chunk plane, which is a separate index feeding search result
+        # cards and chat citations. Without this they keep the pre-rename title
+        # until a full reindex (issue #405).
+        try:
+            from app.tasks.rename_propagation_task import propagate_title_rename
+
+            propagate_title_rename.delay(file_uuid=str(db_file.uuid), new_title=new_title)
+        except Exception as e:
+            logger.warning(f"Failed to queue chunk title propagation for file {file_id}: {e}")
 
     # Invalidate caches so gallery reflects the update
     try:

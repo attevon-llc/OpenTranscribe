@@ -21,6 +21,13 @@ indexing → WebSocket notification.
   in a hook needs a tight timeout.
 - `speaker_tasks.py` — a **re-export shim, NOT dead code**. Keeps legacy task-name routing
   alive; must stay in `celery_app`'s `include=` list.
+- `rename_propagation_task.py` — `propagate_speaker_rename` / `propagate_title_rename`
+  (**cpu** queue, issue #405). Chunk docs snapshot the speaker display name and the file title
+  at index time; renames used to touch only the speaker and full-document indices, so chat's
+  speaker scope (an exact `terms` match on the CURRENT name) silently lost every pre-rename
+  chunk. Dispatch through `dispatch_speaker_rename` — it coalesces `(file_uuid, old_name)` pairs
+  per file — and **capture the old name before the overwrite**: after the commit, Postgres
+  cannot say what the chunks were indexed with.
 - `recovery.py` / `recovery_tasks.py` — `system.startup_recovery` and the periodic
   `cleanup.health_check` reclaim files stuck in PROCESSING with no live Celery task.
 - `directory_sync_task.py` — LDAP reconciliation/deprovisioning, **cpu** queue.

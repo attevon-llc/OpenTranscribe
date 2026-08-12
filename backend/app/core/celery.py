@@ -111,6 +111,7 @@ celery_app = Celery(
         "app.tasks.search_maintenance_task",
         "app.tasks.opensearch_integrity_task",
         "app.tasks.search_indexing_task",
+        "app.tasks.rename_propagation_task",
         "app.tasks.redaction_task",
         "app.tasks.chat_retention",
         "app.tasks.thumbnail",
@@ -247,6 +248,13 @@ celery_app.conf.update(
         "speaker_embedding_consistency_check": {"queue": CeleryQueues.CPU},
         "speaker_embedding_consistency_repair_batch": {"queue": CeleryQueues.GPU},
         "process_speaker_update_background": {"queue": CeleryQueues.CPU},
+        # Rename propagation into the chunk plane (issue #405). Lightweight
+        # update_by_query, but user-visible latency matters (chat and search go
+        # on answering with the old name until it lands), so it rides the CPU
+        # queue next to the speaker update that triggers it rather than the
+        # slower utility queue.
+        "propagate_speaker_rename": {"queue": CeleryQueues.CPU},
+        "propagate_title_rename": {"queue": CeleryQueues.CPU},
         "process_speaker_merge_background": {"queue": CeleryQueues.CPU},
         "extract_speaker_embeddings": {"queue": CeleryQueues.GPU},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)

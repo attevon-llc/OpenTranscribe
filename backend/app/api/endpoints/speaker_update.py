@@ -17,6 +17,7 @@ import uuid
 import numpy as np
 from sqlalchemy.orm import Session
 
+from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerMatch
 from app.models.media import SpeakerProfile
@@ -208,8 +209,32 @@ def _update_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> 
         logger.warning(f"Failed to update profile embedding for speaker {speaker_id}: {e}")
 
 
-def _apply_high_confidence_match(speaker: Speaker, updated_speaker: Speaker, db: Session) -> None:
-    """Apply automatic labeling for high confidence matches (75%+)."""
+def _chunk_rename_for(speaker: Speaker, db: Session) -> tuple[str, str] | None:
+    """The ``(file_uuid, old_name)`` pair a rename of ``speaker`` invalidates.
+
+    Read **before** the display name is overwritten: the chunk plane was indexed
+    with ``display_name or name``, and after the write nothing in Postgres can
+    reconstruct which of the two it was (issue #405).
+    """
+    old_chunk_name = str(speaker.display_name or speaker.name or "")
+    if not old_chunk_name or not speaker.media_file_id:
+        return None
+    row = db.query(MediaFile.uuid).filter(MediaFile.id == speaker.media_file_id).first()
+    return (str(row[0]), old_chunk_name) if row else None
+
+
+def _apply_high_confidence_match(
+    speaker: Speaker, updated_speaker: Speaker, db: Session
+) -> tuple[str, str] | None:
+    """Apply automatic labeling for high confidence matches (75%+).
+
+    Returns:
+        The ``(file_uuid, old_name)`` pair whose chunk documents now carry a stale
+        speaker name, for the caller to coalesce and dispatch; None when there is
+        nothing to rewrite.
+    """
+    chunk_rename = _chunk_rename_for(speaker, db)
+
     speaker.display_name = updated_speaker.display_name  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
 
@@ -221,6 +246,7 @@ def _apply_high_confidence_match(speaker: Speaker, updated_speaker: Speaker, db:
     logger.info(
         f"Auto-applied {updated_speaker.display_name} to {speaker.name} ({speaker.confidence:.1%} confidence)"
     )
+    return chunk_rename
 
 
 def _process_speaker_match(
@@ -228,12 +254,14 @@ def _process_speaker_match(
     updated_speaker: Speaker,
     embedding_array: np.ndarray,
     db: Session,
-) -> tuple[int, int]:
+) -> tuple[int, int, tuple[str, str] | None]:
     """
     Process a single speaker for potential matching.
 
     Returns:
-        Tuple of (auto_applied_increment, suggested_increment)
+        Tuple of (auto_applied_increment, suggested_increment, chunk_rename),
+        where ``chunk_rename`` is the ``(file_uuid, old_name)`` pair an
+        auto-applied label left stale in the chunk index (issue #405).
     """
     # Skip already verified speakers with different names
     if (
@@ -244,13 +272,13 @@ def _process_speaker_match(
         logger.info(
             f"Skipping speaker {speaker.id} ({speaker.name}): already verified as '{speaker.display_name}'"
         )
-        return (0, 0)
+        return (0, 0, None)
 
     # Get embedding for this speaker
     other_embedding = get_speaker_embedding(str(speaker.uuid))
     if not other_embedding:
         logger.warning(f"No embedding found for speaker {speaker.uuid} ({speaker.name})")
-        return (0, 0)
+        return (0, 0, None)
 
     # Calculate similarity
     similarity = calculate_cosine_similarity(embedding_array, np.array(other_embedding))
@@ -259,7 +287,7 @@ def _process_speaker_match(
     )
 
     if similarity < 0.5:
-        return (0, 0)
+        return (0, 0, None)
 
     # Update confidence and suggestion in PostgreSQL
     speaker.confidence = similarity  # type: ignore[assignment]
@@ -268,18 +296,46 @@ def _process_speaker_match(
     store_speaker_match(updated_speaker.id, speaker.id, similarity, db)
 
     if similarity >= 0.75:
-        _apply_high_confidence_match(speaker, updated_speaker, db)
-        return (1, 0)
+        chunk_rename = _apply_high_confidence_match(speaker, updated_speaker, db)
+        return (1, 0, chunk_rename)
 
     # Medium confidence (50-75%): just suggest
     logger.info(
         f"Suggested {updated_speaker.display_name} for {speaker.name} ({similarity:.1%} confidence)"
     )
-    return (0, 1)
+    return (0, 1, None)
+
+
+def _dispatch_chunk_renames(
+    chunk_renames: list[tuple[str | None, str | None]], updated_speaker: Speaker
+) -> None:
+    """Queue chunk-plane propagation for every auto-applied label (issue #405).
+
+    Best-effort: retroactive matching has already committed, and a broker that is
+    down must not turn that into an exception the caller reports as a failed
+    labelling.
+    """
+    new_name = str(updated_speaker.display_name or "")
+    if not chunk_renames or not new_name:
+        return
+    try:
+        from app.tasks.rename_propagation_task import dispatch_speaker_rename
+
+        files = dispatch_speaker_rename(chunk_renames, new_name)
+        logger.info(f"Queued chunk speaker-rename propagation for {files} file(s)")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Could not queue chunk-plane rename propagation: {e}")
 
 
 def _sync_suggestion_speakers_to_opensearch(updated_speaker: Speaker, db: Session) -> None:
-    """Batch sync all suggestion updates to OpenSearch."""
+    """Batch sync all suggestion updates to OpenSearch.
+
+    Note these speakers are the **medium**-confidence tier: ``_process_speaker_match``
+    only wrote ``suggested_name`` on them, so their ``display_name`` — and therefore
+    the value the chunk plane carries — is unchanged and there is nothing to
+    propagate here. The renames come from the high-confidence tier, dispatched by
+    ``_dispatch_chunk_renames`` in :func:`trigger_retroactive_matching`.
+    """
     try:
         suggestion_speakers = (
             db.query(Speaker)
@@ -395,15 +451,23 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
         auto_applied_count = 0
         suggested_count = 0
 
+        chunk_renames: list[tuple[str | None, str | None]] = []
         for speaker in all_speakers:
-            auto_inc, sugg_inc = _process_speaker_match(
+            auto_inc, sugg_inc, chunk_rename = _process_speaker_match(
                 speaker, updated_speaker, embedding_array, db
             )
             auto_applied_count += auto_inc
             suggested_count += sugg_inc
+            if chunk_rename:
+                chunk_renames.append(chunk_rename)
 
         db.commit()
         _sync_suggestion_speakers_to_opensearch(updated_speaker, db)
+        # Auto-applied labels rewrite the chunk plane too, and one recording can
+        # contribute several matched speakers — dispatch_speaker_rename coalesces
+        # them into one update_by_query per file (issue #405). Dispatched after the
+        # commit so a rolled-back match never reaches the index.
+        _dispatch_chunk_renames(chunk_renames, updated_speaker)
 
         logger.info(
             f"Retroactive matching complete: {auto_applied_count} auto-applied, {suggested_count} suggested"

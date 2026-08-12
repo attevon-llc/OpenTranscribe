@@ -90,10 +90,22 @@ custom only, label style).
   `batch_size` is compared only when the live pipeline has one (the creation path drops it on
   OpenSearch versions that reject it, and treating that as drift is a boot loop), and a
   `field_map` change still needs a **reindex** before existing documents embed the new field.
-- **Every delete against the chunks index goes through `chunk_plane_query`** (issue #400).
+- **Every delete AND every targeted rewrite of the chunks index goes through
+  `chunk_plane_query`** (issues #400, #405).
   Re-indexing overwrites `{file_uuid}_{chunk_index}` in place, so a shorter re-chunk used to
   orphan the tail — stale text, stale speakers, stale timestamps, still returned by search and
   by RAG chat. `index_transcript_chunks` now prunes `chunk_index >= len(chunks)` after the bulk
   load, gated by a `count` so the first index after transcription pays no `delete_by_query`.
   When #383 Phase 3 adds digest documents to this index, the `doc_type` predicate goes in
-  `chunk_plane_query` and nowhere else.
+  `chunk_plane_query` and nowhere else. `extra_filters=` lets a caller narrow *within* the
+  chunk plane without forking the predicate — `tasks/rename_propagation_task.py` uses it.
+- **Chunk docs snapshot `speaker` / `speakers` / `title`; renames must be propagated**
+  (issue #405). Chat's speaker axis resolves the display name from **Postgres** and filters the
+  index with an exact `terms` match on `speaker` (`hybrid_search_service:1107`), so an
+  un-propagated rename makes every pre-rename chunk unreachable under the only name the user can
+  ask about — and the model answers from the remainder. `app/tasks/rename_propagation_task.py`
+  owns both rewrites (`propagate_speaker_rename` / `propagate_title_rename`, cpu queue) and
+  every rename path dispatches through its `dispatch_speaker_rename`, which coalesces per file.
+  Both bump the chat corpus version, or chat keeps serving the pre-rename retrieval for the
+  cache TTL. Once #383's digest tier lands, rename joins the digest-regeneration triggers
+  (addendum G1) — the seam is that module's `_finish`.

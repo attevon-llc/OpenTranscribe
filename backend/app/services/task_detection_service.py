@@ -476,8 +476,16 @@ class TaskDetectionService:
 
         eligible_files = []
         for media_file in oom_files:
-            # Calculate exponential backoff delay: 2^retry_count * 10 minutes
-            backoff_minutes = (2**media_file.retry_count) * self.config.OOM_BACKOFF_BASE_MINUTES  # type: ignore[operator]
+            # Calculate exponential backoff delay: 2^retry_count * 10 minutes.
+            # `retry_count` is a nullable Integer whose 0 is a *default*, not a NOT NULL
+            # constraint, so a row can legitimately hold NULL. Every other read of it in
+            # this module and in task_recovery_service normalizes with `or 0`; this one
+            # did not, and `2 ** None` raises TypeError. That exception is uncaught in
+            # `periodic_health_check` step 4, so a single NULL row aborted the whole pass
+            # and silently disabled steps 5-7 (retriable errors, stuck LLM tasks,
+            # false-positive resets, post-transcription recovery) on every cycle.
+            retry_count = int(media_file.retry_count or 0)
+            backoff_minutes = (2**retry_count) * self.config.OOM_BACKOFF_BASE_MINUTES
             backoff_delay = timedelta(minutes=backoff_minutes)
 
             # Check if enough time has passed since last recovery attempt

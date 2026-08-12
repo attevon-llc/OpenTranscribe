@@ -66,7 +66,11 @@ docstring-quotes = "double"
 convention = "google"
 
 [tool.bandit]
-exclude_dirs = ["tests"]
+# `mutants` is mutmut's generated tree (gitignored, but bandit walks the FILESYSTEM,
+# not the index). Without it a mutation run leaves ~330k lines of deliberately
+# corrupted source behind and bandit reports findings in mutated code — the first
+# run failed pre-commit on a `token_algorithm = ""` in mutants/app/core/security.py.
+exclude_dirs = ["tests", "*/mutants/*"]
 # Test files have legitimate use of hardcoded credentials and other security patterns
 # These are flagged by bandit but are appropriate for test fixtures
 

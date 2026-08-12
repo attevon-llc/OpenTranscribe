@@ -585,9 +585,11 @@ class TaskRecoveryService:
                     f"attempt {(media_file.retry_count or 0) + 1}/{media_file.max_retries}"
                 )
 
-                # Update recovery tracking fields
-                media_file.retry_count += 1  # type: ignore[assignment,operator]
-                media_file.recovery_attempts += 1  # type: ignore[assignment,operator]
+                # Update recovery tracking fields. Both counters are nullable Integers
+                # whose 0 is a default rather than a constraint, so `+= 1` on a NULL row
+                # raises TypeError — normalize the same way every other read here does.
+                media_file.retry_count = int(media_file.retry_count or 0) + 1  # type: ignore[assignment]
+                media_file.recovery_attempts = int(media_file.recovery_attempts or 0) + 1  # type: ignore[assignment]
                 media_file.last_recovery_attempt = datetime.now(UTC)  # type: ignore[assignment]
                 db.commit()
 
@@ -618,7 +620,7 @@ class TaskRecoveryService:
 
                     logger.info(
                         f"Successfully scheduled OOM retry for file {media_file.id} - "
-                        f"next backoff delay: {2**media_file.retry_count * 10} minutes"  # type: ignore[operator]
+                        f"next backoff delay: {2 ** int(media_file.retry_count or 0) * 10} minutes"
                     )
                 else:
                     logger.error(f"Failed to schedule OOM retry for file {media_file.id}")

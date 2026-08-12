@@ -36,6 +36,13 @@
 #   do not start one while a transcription benchmark is running.
 # - It writes only to backend/mutants/ (mutmut's working copy, gitignored) and to
 #   $OT_MUTATION_OUT_DIR (default /tmp/ot-mutation).
+# - backend/mutants/ is left in place on purpose: --results and --show read it, and
+#   mutmut reuses it as a cache across runs. It is ~330k lines of DELIBERATELY
+#   CORRUPTED source, so nothing may scan it. bandit is the one that bit us — it walks
+#   the filesystem, not the git index, so gitignoring was not enough and pre-commit
+#   failed on a finding inside a mutant. It is excluded in backend/pyproject.toml
+#   ([tool.bandit] exclude_dirs). Add any new repo-wide scanner to that list too, and
+#   use --clean when you are done with a run.
 #
 # Usage:
 #   ./scripts/run-mutation-tests.sh --check              # preconditions only, mutate nothing
@@ -107,6 +114,7 @@ while [[ $# -gt 0 ]]; do
         --list)    MODE=list ;;
         --all)     MODE=run; MODULE=ALL ;;
         --results) MODE=results ;;
+        --clean)   MODE=clean ;;
         --show)    MODE=show; SHOW_ID="${2:-}"; shift ;;
         --module)  MODE=run; MODULE="${2:-}"; shift ;;
         --dry-run) DRY_RUN=true ;;
@@ -213,6 +221,23 @@ fi
 if [[ "$MODE" == show ]]; then
     [[ -n "$SHOW_ID" ]] || { echo -e "${RED}--show needs a mutant id (see --results)${NC}" >&2; exit 2; }
     exec "$VENV_BIN/mutmut" show "$SHOW_ID"
+fi
+
+if [[ "$MODE" == clean ]]; then
+    # Deletes ONLY backend/mutants/ and the mutmut cache, both generated and
+    # gitignored. Deliberately not automatic after a run: --results and --show read
+    # that tree, and mutmut reuses it as a cache. Run this when you are done, so
+    # ~330k lines of deliberately corrupted source are not left for the next
+    # filesystem-walking tool to trip over.
+    for target in "$BACKEND/mutants" "$BACKEND/.mutmut-cache"; do
+        if [[ -e "$target" ]]; then
+            rm -rf "$target"
+            echo -e "${GREEN}✓ removed $target${NC}"
+        else
+            echo -e "${BLUE}  already absent: $target${NC}"
+        fi
+    done
+    exit 0
 fi
 
 # ---------------------------------------------------------------------------

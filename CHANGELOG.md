@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An unreachable Redis made every cached request pay retry sleeps.** The cache service never
+  remembered a failed connection — it re-dialled on every call, and each attempt paid redis-py's
+  default exponential backoff. So with Redis down, a degraded cache presented as a dead API:
+  tag lists, file listings and status summaries each slept through several retries. Now a failed
+  attempt opens a 30-second circuit and the client is built with retries disabled, since the
+  cooldown is the retry policy. Measured on one request path: 75.2s → 0.16s.
 - **The task progress bar was frozen at 50%.** `GET /api/tasks` and `GET /api/tasks/{task_id}`
   synthesized their response from the media file's status instead of reading the `task` table,
   so `progress` was hardcoded to `0.5` for every in-progress file and the Task Status bar never

@@ -218,6 +218,43 @@ Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]
 
 MinIO/OpenSearch-backed tests **auto-enable** when the dev stack is reachable (conftest TCP-probes localhost:5178/5180) and skip otherwise. Coverage is configured report-only (`pytest --cov=app`, `npm run test:coverage`).
 
+### Four tools that keep the suite honest (issue #431)
+
+A test that cannot fail is worse than no test: it buys false confidence and hides the defect it
+was written to catch. These exist because this repo had shipped all four failure modes — an
+assertion that passed against an empty index, a `gpu` marker that selected nothing, 240 security
+tests gated off behind stale env vars, and a progress endpoint returning a hardcoded value that
+no test referenced.
+
+```bash
+python3 scripts/audit-tests.py backend/tests        # 7 AST detectors, exits 1 on new offenders
+cd frontend && npm run test:audit                   # the vitest sibling, 10 detectors
+npm run test:audit:selftest                         #   ...and ITS 21-case self-test
+python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
+./scripts/run-mutation-tests.sh --module spans      # opt-in, never in the gate or CI
+```
+
+- **The auditors are allowlist-gated**, keyed `<file>::<test>::<category>` with a mandatory
+  written reason. The category is part of the key on purpose: an entry keyed by test alone once
+  exempted a test from all six detectors at once.
+- **`--selftest` is not optional ceremony.** It caught two detectors in each auditor that matched
+  *nothing* — silently reporting 0 findings, which is indistinguishable from a clean suite. Any
+  new detector needs a must-fire case and a must-stay-clean case.
+- **`analyze-test-timing.py` finds barriers, not just slow tests.** Unrelated tests from many
+  files sharing a sub-second duration band is a released lock queue, not a coincidence; that is
+  how one worker was found owning 81% of the wall clock.
+- **Coverage says a line RAN; mutation testing says the suite would NOTICE if it were wrong.**
+  Scoped to six security-critical modules. A surviving mutant is a finding — add the missing
+  assertion, or conclude the line is dead and delete it. Never loosen a test to kill one.
+- **Profile before theorising about test speed.** Two plausible hypotheses cost two full
+  measurement cycles on the Redis-retry bug; `python -m cProfile -o out.prof -m pytest <test>`
+  found it in one.
+
+Current: backend **5,329 passed / 62 skipped / 113 s** (from 4,752 / 458 / 511 s), zero barrier
+clusters; frontend **481 passed / ~11 s**; e2e 341 collected. Regenerate the timing baseline with
+`./scripts/run-backend-tests.sh && cp /tmp/ot-backend-tests/last.xml baseline.xml` — it is
+gitignored, because a committed measurement rots.
+
 ### E2E (pytest + Playwright)
 
 Tests in `backend/tests/e2e/` (auth, gallery, upload, search, settings, transcript editing, visual). Requires dev environment running (`./opentr.sh start dev`).

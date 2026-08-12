@@ -15,6 +15,27 @@ this file is for.
   then `-m integration`.
 - **E2E** — `e2e/run-e2e.sh`: two phases, non-visual in parallel (`E2E_WORKERS`, default 3) then
   `-m visual` serially. `e2e/run-e2e-smoke.sh` is a 4-file subset of it.
+- **Test-suite quality tooling** (issue #431) — four scripts whose job is to stop a test that
+  cannot fail from looking like a passing one:
+  - `audit-tests.py <dir>` — 7 AST detectors (permissive-status, conditional-only,
+    conditional-skip, no-assertion, failure-masking, mock-heavy, fixture-named-test). Exits 1 on
+    any finding not in `backend/tests/audit-allowlist.txt`, whose keys are
+    `<file>::<test>::<category>` with a mandatory reason. **The category is part of the key on
+    purpose** — an entry keyed by test alone exempted one test from all six detectors at once.
+  - `analyze-test-timing.py <junit.xml> [--baseline b.xml]` — wall clock vs Σ durations,
+    effective parallelism, per-`xdist_group` totals, and the **duration-cluster detector**:
+    unrelated tests from ≥3 files inside a sub-second band are a released lock queue, not a
+    coincidence. Cluster chaining must cap total band width — chaining on gap alone runs away
+    into a single false 13 s "cluster" that is really just dense work.
+  - `run-mutation-tests.sh` — see the mutation section in `backend/tests/CLAUDE.md`. Opt-in,
+    never in the gate or CI. **`--clean` when you are done**: it leaves ~330k lines of
+    deliberately corrupted source in `backend/mutants/`, which is gitignored but which
+    filesystem-walking tools still see (bandit failed a commit on a finding inside a mutant, and
+    needs the `*/mutants/*` exclusion because the hook runs `bandit -r backend/` from the root).
+  - `frontend/scripts/audit-frontend-tests.mjs` (`npm run test:audit`) — the vitest sibling,
+    10 detectors, TypeScript compiler API. Run `test:audit:selftest` after ANY detector change:
+    its 21 cases caught two detectors matching **nothing**, which reports 0 findings and reads
+    exactly like a clean suite.
 - **Fake LLM** — `mock-llm-server.py`: OpenAI-compatible server so chat/AI features work
   without a GPU or API key. Run it via `./opentr.sh start dev --with-mock-llm` (compose
   service `mock-llm`, in-network `http://mock-llm:5199/v1`) rather than by hand — a bare

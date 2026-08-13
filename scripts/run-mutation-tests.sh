@@ -573,7 +573,26 @@ check_baseline() {
     # score and invite lowering the baseline to 0 — after which nothing is ratcheting anything.
     # Observed: `--check-baseline` reported "improved (77 -> 0)" for session and "(10 -> 0)" for
     # spans from logs left behind by earlier runs.
-    if ! grep -q -- "--- mutating ${MODULE_PATH[$key]} ---" "$log"; then
+    #
+    # The BINDING IS THE .meta SIDECAR, not a string in the log. `tee` captures mutmut's stdout
+    # only — the script's own "--- mutating <path> ---" banner is printed by this script and
+    # never reaches the log file. Greping the log for that banner therefore rejected every log
+    # the run path produces, which would have pinned the ratchet at NOT MEASURED forever: a
+    # false negative that looks exactly like the true one it was written to catch. It matched
+    # historically only because those logs were captured from the whole script's stdout rather
+    # than by this tee. `.meta` records `path=` explicitly and is written only on completion.
+    local meta="${log%.log}.meta" meta_path=""
+    if [[ -f "$meta" ]]; then
+        meta_path=$(sed -n 's/^path=//p' "$meta" | head -1)
+    fi
+    if [[ -n "$meta_path" ]]; then
+        if [[ "$meta_path" != "${MODULE_PATH[$key]}" ]]; then
+            echo -e "${YELLOW}$key: $meta records a run of $meta_path, not ${MODULE_PATH[$key]} — NOT MEASURED.${NC}" >&2
+            echo -e "${YELLOW}  Re-run: --clean then --module $key.${NC}" >&2
+            return 4
+        fi
+    elif ! grep -q -- "--- mutating ${MODULE_PATH[$key]} ---" "$log"; then
+        # No sidecar: a pre-#37 log. Fall back to the banner, which those logs do carry.
         echo -e "${YELLOW}$key: $log is not a run of ${MODULE_PATH[$key]} — NOT MEASURED.${NC}" >&2
         echo -e "${YELLOW}  Re-run: --clean then --module $key. A count of 0 from the wrong log${NC}" >&2
         echo -e "${YELLOW}  looks like a perfect score.${NC}" >&2

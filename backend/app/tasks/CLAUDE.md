@@ -82,6 +82,21 @@ transaction, so:
 no timeout, so a per-future `result(timeout=30)` is decorative — one wedged child holds the
 block, and the transaction, indefinitely.
 
+**The gate: `scripts/audit-session-lifetime.py`.** Nine AST detectors (subprocess/ffmpeg,
+object storage, OpenSearch, HTTP, LLM, model load, SMTP, thread pool, plus the
+interprocedural one), an allowlist at `scripts/session-lifetime-allowlist.txt` keyed
+`<file>::<scope>::<category>` with a **mandatory** reason, count-aware so one line buys one
+finding, and a **stale entry fails the run** — the file can only shrink. `--selftest` after
+touching a detector; `backend/tests/unit/test_session_lifetime_audit.py` runs the same cases
+under pytest *and* mutation-checks every rule, because a detector that matches nothing
+reports zero findings and reads exactly like a clean codebase.
+
+> **The interprocedural rule exists because a body-scan is not enough.** `scan_single`'s
+> `session_scope` wrapped `_perform_scan(db, ...)`; the remote listing, the per-file download
+> and the MinIO upload were all one frame further down, so the first AST sweep — which only
+> looked *inside* `with` bodies — reported it clean. The rule therefore also flags any
+> function that both **accepts a `Session`** and does slow work, whichever end the leak is at.
+
 **Testing it**: `tests/unit/test_task_session_lifetime.py` swaps the module's `session_scope`
 for a depth-tracking stand-in and has each slow-call stub report the open-scope depth at the
 moment it runs. Assert `>= 2` scopes opened, so a task that never touches the DB cannot pass.

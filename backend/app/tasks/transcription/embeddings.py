@@ -167,41 +167,62 @@ def _process_speaker_embeddings_native(
     )
 
 
-def _collect_v4_profile_embeddings(
-    profile_id: int,
+def _load_v4_profile_batch(
+    touched_profile_ids: set[int],
     native_embeddings: dict,
     speaker_mapping: dict[str, int],
-    current_file_speaker_uuids: set[str],
-    db,
-) -> list:
-    """Collect 256-dim embeddings for a profile from current file and existing v4 docs.
+) -> list[dict]:
+    """Phase 1 — read every profile's identity + current-file embeddings.
 
-    Args:
-        profile_id: Profile to collect embeddings for.
-        native_embeddings: Current file's native centroid dict.
-        speaker_mapping: Speaker label -> DB ID mapping.
-        current_file_speaker_uuids: UUIDs of speakers from the current file (to avoid double-counting).
-        db: Active database session.
-
-    Returns:
-        List of numpy arrays (256-dim embeddings).
+    One short session for the whole batch, returning **plain data**: the
+    OpenSearch phase that follows must run with no transaction open, and an
+    escaping ``SpeakerProfile`` instance would lazy-load and silently reopen one.
     """
     import numpy as np
 
     from app.models.media import Speaker
+    from app.models.media import SpeakerProfile
 
-    v4_embeddings = []
+    batch: list[dict] = []
+    with session_scope() as db:
+        for profile_id in touched_profile_ids:
+            profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
+            if not profile:
+                logger.warning(f"v4 staging: Profile {profile_id} not found")
+                continue
 
-    # Embeddings from current file's speakers assigned to this profile
-    profile_speakers = db.query(Speaker).filter(Speaker.profile_id == profile_id).all()
-    for ps in profile_speakers:
-        for label, db_id in speaker_mapping.items():
-            if db_id == ps.id and label in native_embeddings:
-                emb = native_embeddings[label]
-                v4_embeddings.append(np.array(emb) if not isinstance(emb, np.ndarray) else emb)
-                break
+            # Embeddings from current file's speakers assigned to this profile
+            current: list = []
+            speaker_ids = {
+                int(row[0])
+                for row in db.query(Speaker.id).filter(Speaker.profile_id == profile_id).all()
+            }
+            for label, db_id in speaker_mapping.items():
+                if db_id in speaker_ids and label in native_embeddings:
+                    emb = native_embeddings[label]
+                    current.append(np.array(emb) if not isinstance(emb, np.ndarray) else emb)
 
-    # Existing v4 speaker docs for this profile from other files
+            batch.append(
+                {
+                    "profile_id": int(profile.id),
+                    "profile_uuid": str(profile.uuid),
+                    "profile_name": str(profile.name),
+                    "user_id": int(profile.user_id),
+                    "organization_id": profile.organization_id,
+                    "current_file_embeddings": current,
+                }
+            )
+    return batch
+
+
+def _fetch_existing_v4_embeddings(profile_id: int, current_file_speaker_uuids: set[str]) -> list:
+    """Existing v4 speaker docs for this profile from other files (OpenSearch).
+
+    Called with **no DB session open** — it is an OpenSearch search per profile.
+    """
+    import numpy as np
+
+    found: list = []
     try:
         from app.services.opensearch_service import get_opensearch_client
 
@@ -225,11 +246,11 @@ def _collect_v4_profile_embeddings(
         for hit in resp.get("hits", {}).get("hits", []):
             existing_emb = hit["_source"].get("embedding")
             if existing_emb and hit["_id"] not in current_file_speaker_uuids:
-                v4_embeddings.append(np.array(existing_emb))
+                found.append(np.array(existing_emb))
     except Exception as e:
         logger.debug(f"v4 staging: Could not fetch existing v4 docs for profile {profile_id}: {e}")
 
-    return v4_embeddings
+    return found
 
 
 def _update_v4_profile_embeddings(
@@ -240,54 +261,54 @@ def _update_v4_profile_embeddings(
 ) -> int:
     """Update consolidated profile embeddings in v4 for touched profiles.
 
+    Two phases: one short read session for the whole batch, then the OpenSearch
+    work — a search **and** a ``store_profile_embedding_v4`` write per profile —
+    with **no DB session held**. Previously one session wrapped the loop, so N
+    profiles meant 2N OpenSearch round trips inside a single open transaction.
+
     Returns:
         Number of profiles successfully updated.
     """
     import numpy as np
 
-    from app.models.media import SpeakerProfile
     from app.services.opensearch_service import store_profile_embedding_v4
 
+    # Phase 1 — read (short session, Postgres only).
+    batch = _load_v4_profile_batch(touched_profile_ids, native_embeddings, speaker_mapping)
+
+    # Phase 2 — OpenSearch. NO DB session is held here.
     update_count = 0
-    with session_scope() as db:
-        for profile_id in touched_profile_ids:
-            try:
-                profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
-                if not profile:
-                    logger.warning(f"v4 staging: Profile {profile_id} not found")
-                    continue
+    for entry in batch:
+        profile_id = entry["profile_id"]
+        try:
+            v4_embeddings = list(entry["current_file_embeddings"])
+            v4_embeddings.extend(
+                _fetch_existing_v4_embeddings(profile_id, current_file_speaker_uuids)
+            )
+            if not v4_embeddings:
+                logger.debug(f"v4 staging: No v4 embeddings for profile {profile_id}")
+                continue
 
-                v4_embeddings = _collect_v4_profile_embeddings(
-                    profile_id,
-                    native_embeddings,
-                    speaker_mapping,
-                    current_file_speaker_uuids,
-                    db,
-                )
-                if not v4_embeddings:
-                    logger.debug(f"v4 staging: No v4 embeddings for profile {profile_id}")
-                    continue
+            # Average and L2-normalize for consistent cosine similarity
+            avg_vec = np.mean(v4_embeddings, axis=0)
+            norm = np.linalg.norm(avg_vec)
+            if norm < 1e-8:
+                logger.warning(f"v4 staging: Zero-norm profile embedding for {profile_id}")
+                continue
+            avg_embedding = (avg_vec / norm).tolist()
+            store_profile_embedding_v4(
+                profile_id=profile_id,
+                profile_uuid=entry["profile_uuid"],
+                profile_name=entry["profile_name"],
+                embedding=avg_embedding,
+                speaker_count=len(v4_embeddings),
+                user_id=entry["user_id"],
+                organization_id=entry["organization_id"],
+            )
+            update_count += 1
 
-                # Average and L2-normalize for consistent cosine similarity
-                avg_vec = np.mean(v4_embeddings, axis=0)
-                norm = np.linalg.norm(avg_vec)
-                if norm < 1e-8:
-                    logger.warning(f"v4 staging: Zero-norm profile embedding for {profile_id}")
-                    continue
-                avg_embedding = (avg_vec / norm).tolist()
-                store_profile_embedding_v4(
-                    profile_id=profile_id,
-                    profile_uuid=str(profile.uuid),
-                    profile_name=str(profile.name),
-                    embedding=avg_embedding,
-                    speaker_count=len(v4_embeddings),
-                    user_id=int(profile.user_id),
-                    organization_id=profile.organization_id,
-                )
-                update_count += 1
-
-            except Exception as e:
-                logger.warning(f"v4 staging: Error updating profile {profile_id}: {e}")
+        except Exception as e:
+            logger.warning(f"v4 staging: Error updating profile {profile_id}: {e}")
 
     return update_count
 

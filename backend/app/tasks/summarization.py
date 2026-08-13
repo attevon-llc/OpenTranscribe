@@ -1,9 +1,31 @@
+"""LLM summarization task.
+
+**Three phases, and the split is load-bearing.** The DB session is open only for
+the two short DB-only phases (read the transcript + settings, write the result)
+and is **closed** across the slow middle phase: an LLM completion over a whole
+transcript plus the OpenSearch index write. That middle phase is multi-minute on
+a long file and, if the provider stalls, is bounded only by the HTTP timeout.
+
+Before the split, one ``session_scope`` wrapped the entire task body, so Postgres
+sat ``idle in transaction`` for the whole provider round trip with its last
+statement being the full ``transcript_segment`` SELECT below. Such a transaction
+holds ACCESS SHARE on ``transcript_segment``, so every ``ALTER TABLE`` — i.e. any
+Alembic upgrade, which dev runs automatically on backend startup — queues behind
+it; it pins the vacuum horizon on the largest table in the product; and it
+consumes a pool connection for its whole life. Measured: an NLP worker held one
+for 1 h 26 m.
+
+See ``app/tasks/CLAUDE.md`` ("The session-lifetime rule") and
+``speaker_attribute_task.py`` for the worked example this follows.
+"""
+
 import logging
 import time
 from typing import Any
 
 from celery.exceptions import Retry
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
 
 from app.core.celery import celery_app
 from app.core.constants import NLPPriority
@@ -22,28 +44,23 @@ from app.utils.user_settings_helpers import get_user_llm_output_language
 logger = logging.getLogger(__name__)
 
 
-def _handle_force_regeneration(media_file: MediaFile, db: Session) -> None:
-    """Handle force regeneration by clearing existing summaries."""
-    logger.info(
-        f"Force regenerate requested - clearing existing summaries for file {int(media_file.id)}"
-    )
+def _clear_stale_opensearch_summary(document_id: str | None) -> None:
+    """Drop the previous OpenSearch summary doc for a forced regeneration.
 
-    # Clear OpenSearch summary if it exists
-    if media_file.summary_opensearch_id:
-        try:
-            summary_service = OpenSearchSummaryService()
-            summary_service.delete_summary(str(media_file.summary_opensearch_id))
-            logger.info(f"Cleared OpenSearch document {media_file.summary_opensearch_id}")
-        except Exception as e:
-            logger.warning(f"Could not clear OpenSearch summary: {e}")
-
-    # Clear PostgreSQL summary fields
-    media_file.summary_data = None  # type: ignore[assignment]
-    media_file.summary_opensearch_id = None  # type: ignore[assignment]
+    Runs with **no DB session open** — it is an OpenSearch round trip. The
+    matching PostgreSQL columns are cleared in the read phase.
+    """
+    if not document_id:
+        return
+    try:
+        OpenSearchSummaryService().delete_summary(document_id)
+        logger.info(f"Cleared OpenSearch document {document_id}")
+    except Exception as e:
+        logger.warning(f"Could not clear OpenSearch summary: {e}")
 
 
 def _handle_no_llm_configured(
-    media_file: MediaFile, file_id: int, task_id: str, db: Session
+    file_id: int, user_id: int, filename: str, task_id: str
 ) -> dict[str, Any]:
     """Handle case when no LLM provider is configured."""
     from app.utils.task_utils import update_task_status
@@ -56,15 +73,14 @@ def _handle_no_llm_configured(
     # so flagging it per file buries real failures under noise the user cannot
     # act on from a notification. A configured provider that errors or returns
     # nothing still notifies, which is the case worth surfacing.
-    media_file.summary_status = "not_configured"  # type: ignore[assignment]
-    media_file.summary_data = None  # type: ignore[assignment]
-    db.commit()
+    with session_scope() as db:
+        db.query(MediaFile).filter(MediaFile.id == file_id).update(
+            {"summary_status": "not_configured", "summary_data": None},
+            synchronize_session=False,
+        )
+        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
-    update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-
-    logger.info(
-        f"Transcription completed for file {str(media_file.filename)} (no LLM summary generated)"
-    )
+    logger.info(f"Transcription completed for file {filename} (no LLM summary generated)")
     return {
         "status": "success",
         "file_id": file_id,
@@ -85,30 +101,40 @@ def _create_user_friendly_error(error_msg: str) -> str:
     return error_msg
 
 
+def _mark_summary_failed(file_id: int) -> None:
+    """Flip ``summary_status`` to ``failed`` in its own short transaction."""
+    with session_scope() as db:
+        db.query(MediaFile).filter(MediaFile.id == file_id).update(
+            {"summary_status": "failed"}, synchronize_session=False
+        )
+
+
 def _handle_llm_error(
     e: Exception,
-    media_file: MediaFile,
     file_id: int,
+    user_id: int,
     full_transcript: str,
     llm_provider: str | None,
     llm_model: str | None,
-    db: Session,
 ) -> None:
-    """Handle LLM summarization errors."""
+    """Handle LLM summarization errors.
+
+    Opens its **own** short session rather than borrowing the caller's: the
+    caller is mid-provider-call and holds no session by design.
+    """
     error_type = type(e).__name__
     error_msg = str(e)
     logger.error(f"LLM summarization failed with {error_type}: {error_msg}")
     logger.error(f"Full error details: {repr(e)}")
     logger.error(f"Transcript length: {len(full_transcript)} chars")
     logger.error(f"Provider: {llm_provider or 'unknown'}, Model: {llm_model or 'unknown'}")
-    logger.error(f"User ID: {int(media_file.user_id)}")
+    logger.error(f"User ID: {user_id}")
 
-    media_file.summary_status = "failed"  # type: ignore[assignment]
-    db.commit()
+    _mark_summary_failed(file_id)
 
     detailed_error = _create_user_friendly_error(error_msg)
     send_summary_notification(
-        int(media_file.user_id),
+        user_id,
         file_id,
         "failed",
         f"AI summary generation failed: {detailed_error}",
@@ -121,20 +147,23 @@ def _handle_llm_error(
 
 
 def _store_summary_to_opensearch(
-    summary_data: dict[str, Any], media_file: MediaFile, file_id: int
+    summary_data: dict[str, Any], file_id: int, user_id: int
 ) -> str | None:
-    """Store summary to OpenSearch and return document ID."""
+    """Store summary to OpenSearch and return document ID.
+
+    Called with **no DB session open** — two OpenSearch round trips.
+    """
     summary_service = OpenSearchSummaryService()
 
     # Get the latest version number for proper versioning
-    max_version = summary_service.get_max_version(file_id, int(media_file.user_id))
+    max_version = summary_service.get_max_version(file_id, user_id)
 
     # Make a copy for OpenSearch indexing with tracking fields
     opensearch_data = summary_data.copy()
     opensearch_data.update(
         {
             "file_id": file_id,
-            "user_id": int(media_file.user_id),
+            "user_id": user_id,
             "summary_version": max_version + 1,
             "provider": summary_data["metadata"].get("provider", "unknown"),
             "model": summary_data["metadata"].get("model", "unknown"),
@@ -148,7 +177,7 @@ def _store_summary_to_opensearch(
 
 
 def _send_completion_notification(
-    media_file: MediaFile,
+    user_id: int,
     file_id: int,
     summary_data: dict[str, Any],
     document_id: str | None,
@@ -161,7 +190,7 @@ def _send_completion_notification(
         or "Summary generated successfully"
     )
     send_summary_notification(
-        int(media_file.user_id),
+        user_id,
         file_id,
         "completed",
         message,
@@ -171,67 +200,28 @@ def _send_completion_notification(
     )
 
 
-def _finalize_summary_storage(
-    summary_data: dict[str, Any], media_file: MediaFile, file_id: int, db: Session
-) -> str | None:
-    """Store summary to OpenSearch and handle all completion scenarios."""
+def _index_summary(
+    summary_data: dict[str, Any], file_id: int, user_id: int
+) -> tuple[str | None, str]:
+    """Index the summary in OpenSearch. Returns ``(document_id, message)``.
+
+    Phase 2 work: **no DB session is open** while this runs. Indexing failure is
+    not fatal — the summary still lands in PostgreSQL — so the message explains
+    which of the three outcomes happened.
+    """
     try:
-        document_id = _store_summary_to_opensearch(summary_data, media_file, file_id)
-
-        if document_id:
-            media_file.summary_opensearch_id = document_id  # type: ignore[assignment]
-            logger.info(f"Summary indexed in OpenSearch: {document_id}")
-            media_file.summary_status = "completed"  # type: ignore[assignment]
-            db.commit()
-            _send_completion_notification(
-                media_file,
-                file_id,
-                summary_data,
-                document_id,
-                "AI summary generation completed successfully",
-            )
-        else:
-            logger.warning("OpenSearch client not available, summary saved to PostgreSQL only")
-            media_file.summary_status = "completed"  # type: ignore[assignment]
-            db.commit()
-            _send_completion_notification(
-                media_file,
-                file_id,
-                summary_data,
-                None,
-                "AI summary generation completed (search not available)",
-            )
-        return document_id
-
+        document_id = _store_summary_to_opensearch(summary_data, file_id, user_id)
     except Exception as e:
         logger.error(f"Failed to store summary in OpenSearch: {e}")
         logger.info("Summary generated successfully but OpenSearch indexing failed")
-        media_file.summary_status = "completed"  # type: ignore[assignment]
-        db.commit()
-        _send_completion_notification(
-            media_file,
-            file_id,
-            summary_data,
-            None,
-            "AI summary generation completed (search indexing failed)",
-        )
-        return None
+        return None, "AI summary generation completed (search indexing failed)"
 
+    if document_id:
+        logger.info(f"Summary indexed in OpenSearch: {document_id}")
+        return document_id, "AI summary generation completed successfully"
 
-def _log_error_context(media_file: MediaFile | None) -> None:
-    """Log additional context for debugging errors."""
-    try:
-        if media_file:
-            logger.error(
-                f"Media file details: ID={int(media_file.id)}, filename={str(media_file.filename)}, "
-                f"user_id={int(media_file.user_id)}"
-            )
-            if hasattr(media_file, "duration"):
-                logger.error(
-                    f"Media duration: {getattr(media_file, 'duration', 'unknown')} seconds"
-                )
-    except Exception as ctx_e:
-        logger.error(f"Error logging context: {ctx_e}")
+    logger.warning("OpenSearch client not available, summary saved to PostgreSQL only")
+    return None, "AI summary generation completed (search not available)"
 
 
 def send_summary_notification(
@@ -351,45 +341,170 @@ def _get_organization_context(db: Session, user_id: int) -> str:
     return context_text
 
 
+def _load_summarization_inputs(
+    file_uuid: str, task_id: str, force_regenerate: bool
+) -> dict[str, Any]:
+    """Phase 1 — read everything the LLM phase needs, then release the session.
+
+    Returns **plain data only**; no ORM instance escapes. An escaping instance
+    would lazy-load during the provider call and silently reopen a transaction,
+    reintroducing the very leak this split exists to remove.
+
+    ``{"early_result": ...}`` means the task is finished (file has summaries
+    disabled) and the caller should return it verbatim.
+
+    Raises:
+        ValueError: File or transcript missing, or the redaction policy could not
+            be resolved (fail closed — never send an unmasked transcript).
+        RedactionNotReadyError: Detection has not cached spans yet; the caller
+            defers the task.
+    """
+    from app.utils.task_utils import create_task_record
+    from app.utils.task_utils import update_task_status
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    with session_scope() as db:
+        media_file = get_file_by_uuid(db, file_uuid)
+        if not media_file:
+            raise ValueError(f"Media file with UUID {file_uuid} not found")
+
+        file_id = int(media_file.id)
+        user_id = int(media_file.user_id)
+        filename = str(media_file.filename)
+
+        create_task_record(db, task_id, user_id, file_id, "summarization")
+
+        # Safety net: skip if file was marked disabled (per-upload flag
+        # or system/user setting). Manual trigger endpoint resets status
+        # before dispatching, so this only blocks zombie tasks.
+        if str(media_file.summary_status) == "disabled":
+            logger.info(f"Summary task skipped — file {file_id} has disabled status")
+            update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+            return {
+                "early_result": {
+                    "status": "skipped",
+                    "file_id": file_id,
+                    "message": "Summary generation is disabled for this file",
+                }
+            }
+
+        update_task_status(db, task_id, "in_progress", progress=0.1)
+
+        stale_opensearch_id: str | None = None
+        if force_regenerate:
+            logger.info(
+                f"Force regenerate requested - clearing existing summaries for file {file_id}"
+            )
+            if media_file.summary_opensearch_id:
+                stale_opensearch_id = str(media_file.summary_opensearch_id)
+            media_file.summary_data = None  # type: ignore[assignment]
+            media_file.summary_opensearch_id = None  # type: ignore[assignment]
+
+        media_file.summary_status = "processing"  # type: ignore[assignment]
+        db.commit()
+
+        # ``joinedload`` rather than letting ``segment.speaker`` lazy-load per
+        # row: the builders below read it for every segment.
+        transcript_segments = (
+            db.query(TranscriptSegment)
+            .options(joinedload(TranscriptSegment.speaker))
+            .filter(TranscriptSegment.media_file_id == file_id)
+            .order_by(
+                TranscriptSegment.start_time,
+                TranscriptSegment.end_time,
+                TranscriptSegment.id,
+            )
+            .all()
+        )
+        if not transcript_segments:
+            raise ValueError(f"No transcript segments found for file {file_id}")
+
+        # Redact PII/profanity before sending to the LLM provider when the
+        # owner's (or admin-forced) policy requires it (don't leak to third parties).
+        # Errors are NOT swallowed: an unresolvable policy or missing detection
+        # spans must defer or abort, never fall through to sending raw text.
+        try:
+            redaction_cfg = resolve_llm_masking(db, media_file)
+        except RedactionNotReadyError:
+            # Detection hasn't cached spans yet, so masking would be a no-op.
+            # The caller defers — ``defer_for_redaction`` needs the bound task and
+            # must not run with this session open.
+            raise
+        except Exception as _redact_err:
+            # FAIL CLOSED. Leaving redaction_cfg as None made mask_segment_text
+            # take its "redaction disabled" early return, so the full unredacted
+            # transcript was posted to an EXTERNAL LLM provider — defeating both
+            # `redact_before_llm` and the admin `force_redact_before_llm` floor,
+            # and it was logged at debug so the leak was silent. We cannot prove
+            # redaction is unnecessary, so we do not send the transcript at all.
+            logger.exception(
+                "Could not resolve the redaction policy; aborting summarization rather "
+                "than sending a possibly unredacted transcript to an external provider"
+            )
+            raise ValueError(
+                "Redaction policy unavailable; summarization aborted to avoid "
+                "sending unredacted content to an external provider"
+            ) from _redact_err
+
+        # Masking + formatting is pure CPU over rows already fetched, but it
+        # reads ``segment.speaker``/``segment.words``, so it stays inside the
+        # read scope. What leaves is a string and a dict.
+        full_transcript, speaker_stats = build_transcript_and_stats(
+            transcript_segments, redaction_cfg
+        )
+
+        update_task_status(db, task_id, "in_progress", progress=0.3)
+
+        output_language = get_user_llm_output_language(db, user_id)
+        organization_context = _get_organization_context(db, user_id)
+        if organization_context:
+            logger.info(f"Organization context loaded ({len(organization_context)} chars)")
+
+    return {
+        "file_id": file_id,
+        "user_id": user_id,
+        "filename": filename,
+        "full_transcript": full_transcript,
+        "speaker_stats": speaker_stats,
+        "output_language": output_language,
+        "organization_context": organization_context,
+        "stale_opensearch_id": stale_opensearch_id,
+    }
+
+
 def _generate_llm_summary(
-    media_file: MediaFile,
-    file_id: int,
-    full_transcript: str,
-    speaker_stats: dict[str, Any],
-    task_id: str,
-    db: Session,
+    inputs: dict[str, Any],
     prompt_uuid: str | None = None,
 ) -> dict[str, Any] | None:
-    """Generate LLM summary and return summary data."""
+    """Phase 2 — generate the LLM summary. **No DB session is held here.**
+
+    ``LLMService.create_from_user_settings`` opens (and closes) its own short
+    session internally, which is exactly the shape the rule asks for: a callee
+    that needs the DB opens its own scope rather than borrowing one that then
+    spans the provider round trip.
+
+    Returns the summary payload, or ``None`` when no LLM provider is configured.
+    """
     start_time = time.time()
     llm_provider: str | None = None
     llm_model: str | None = None
 
-    # Log transcript details for debugging
+    file_id = inputs["file_id"]
+    user_id = inputs["user_id"]
+    full_transcript = inputs["full_transcript"]
+    output_language = inputs["output_language"]
+
     transcript_length = len(full_transcript)
-    speaker_count = len(speaker_stats) if speaker_stats else 0
+    speaker_count = len(inputs["speaker_stats"]) if inputs["speaker_stats"] else 0
     logger.info(
         f"Starting LLM summary generation: {transcript_length} chars, {speaker_count} speakers"
     )
     logger.info(f"Estimated input tokens: {transcript_length // 3}")
-
-    # Get user's LLM output language preference
-    output_language = "en"
-    if media_file.user_id:
-        output_language = get_user_llm_output_language(db, int(media_file.user_id))
     logger.info(f"LLM output language: {output_language}")
 
-    # Get user's organization context if configured
-    organization_context = ""
-    if media_file.user_id:
-        organization_context = _get_organization_context(db, int(media_file.user_id))
-        if organization_context:
-            logger.info(f"Organization context loaded ({len(organization_context)} chars)")
-
-    # Create LLM service using user settings or system settings
-    if media_file.user_id:
-        llm_service = LLMService.create_from_user_settings(int(media_file.user_id))
-        logger.info(f"Attempted to load user LLM settings for user {int(media_file.user_id)}")
+    if user_id:
+        llm_service = LLMService.create_from_user_settings(user_id)
+        logger.info(f"Attempted to load user LLM settings for user {user_id}")
     else:
         llm_service = LLMService.create_from_system_settings()
         logger.info("Attempted to load system LLM settings")
@@ -405,15 +520,15 @@ def _generate_llm_summary(
     try:
         summary_data = llm_service.generate_summary(
             transcript=full_transcript,
-            speaker_data=speaker_stats,
-            user_id=int(media_file.user_id),
+            speaker_data=inputs["speaker_stats"],
+            user_id=user_id,
             output_language=output_language,
-            organization_context=organization_context,
+            organization_context=inputs["organization_context"],
             prompt_uuid=prompt_uuid,
         )
     except Exception as e:
-        _handle_llm_error(e, media_file, file_id, full_transcript, llm_provider, llm_model, db)
-        return None  # This line won't be reached due to the raise in _handle_llm_error, but satisfies type checker
+        _handle_llm_error(e, file_id, user_id, full_transcript, llm_provider, llm_model)
+        return None  # unreachable — _handle_llm_error always raises
     finally:
         llm_service.close()
 
@@ -427,38 +542,87 @@ def _generate_llm_summary(
     return summary_data
 
 
-def _handle_task_error(
-    e: Exception, media_file: MediaFile | None, file_id: int, task_id: str, db: Session
-) -> dict[str, Any]:
-    """Handle task-level errors and return error result."""
+def _persist_summary(
+    file_id: int,
+    user_id: int,
+    task_id: str,
+    summary_data: dict[str, Any],
+    document_id: str | None,
+    prompt_uuid: str | None,
+) -> None:
+    """Phase 3 — write (short session, Postgres only)."""
     from app.utils.task_utils import update_task_status
+
+    with session_scope() as db:
+        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+        if media_file is None:
+            raise ValueError(f"Media file {file_id} disappeared during summarization")
+
+        media_file.summary_data = summary_data  # type: ignore[assignment]
+        media_file.summary_schema_version = 1  # type: ignore[assignment]
+        media_file.summary_opensearch_id = document_id  # type: ignore[assignment]
+        media_file.summary_status = "completed"  # type: ignore[assignment]
+
+        # Bump usage_count on the prompt actually used (best-effort; never
+        # fail the task). Makes the shared library's usage ordering and the
+        # "most used prompts" metric meaningful.
+        try:
+            from app.utils.prompt_manager import increment_prompt_usage
+            from app.utils.prompt_manager import resolve_active_prompt_record
+
+            used_prompt = resolve_active_prompt_record(user_id or None, db, prompt_uuid)
+            if used_prompt is not None:
+                increment_prompt_usage(db, int(used_prompt.id))
+        except Exception as usage_err:  # noqa: BLE001
+            logger.warning(f"Could not increment prompt usage_count: {usage_err}")
+
+        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+
+
+def _handle_task_error(
+    e: Exception, file_uuid: str, file_id: int | None, task_id: str
+) -> dict[str, Any]:
+    """Handle task-level errors in a short session of its own."""
+    from app.utils.task_utils import update_task_status
+    from app.utils.uuid_helpers import get_file_by_uuid
 
     error_type = type(e).__name__
     error_msg = str(e)
     logger.error(f"Error summarizing file {file_id}: {error_type}: {error_msg}")
     logger.error("Full error traceback:", exc_info=True)
 
-    _log_error_context(media_file)
-
-    # Set summary status to failed if not already set
+    notify: tuple[int, int, str] | None = None
     try:
-        if media_file and str(media_file.summary_status) != "failed":
-            user_error_msg = _create_user_friendly_error(error_msg)
-            send_summary_notification(
-                int(media_file.user_id),
-                file_id,
-                "failed",
-                f"AI summary generation failed: {user_error_msg}",
-                0,
-            )
-            media_file.summary_status = "failed"  # type: ignore[assignment]
-            db.commit()
+        with session_scope() as db:
+            media_file = get_file_by_uuid(db, file_uuid)
+            if media_file is not None:
+                logger.error(
+                    f"Media file details: ID={int(media_file.id)}, "
+                    f"filename={str(media_file.filename)}, user_id={int(media_file.user_id)}"
+                )
+                if str(media_file.summary_status) != "failed":
+                    notify = (
+                        int(media_file.user_id),
+                        int(media_file.id),
+                        _create_user_friendly_error(error_msg),
+                    )
+                    media_file.summary_status = "failed"  # type: ignore[assignment]
+            update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
     except Exception as cleanup_e:
         logger.error(
             f"Error during cleanup: {type(cleanup_e).__name__}: {cleanup_e}", exc_info=True
         )
 
-    update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+    if notify is not None:
+        user_id, notify_file_id, friendly = notify
+        send_summary_notification(
+            user_id,
+            notify_file_id,
+            "failed",
+            f"AI summary generation failed: {friendly}",
+            0,
+        )
+
     return {"status": "error", "message": error_msg}
 
 
@@ -479,168 +643,82 @@ def summarize_transcript_task(
         file_uuid: UUID of the MediaFile to summarize
         force_regenerate: If True, clear existing summaries before regenerating
     """
-    from app.utils.task_utils import create_task_record
-    from app.utils.task_utils import update_task_status
-    from app.utils.uuid_helpers import get_file_by_uuid
-
     task_id = self.request.id
-    media_file: MediaFile | None = None
     file_id: int | None = None
+    start_time = time.time()
 
-    with session_scope() as db:
+    try:
+        # Phase 1 — read (DB session open, Postgres only).
+        inputs = _load_summarization_inputs(file_uuid, task_id, force_regenerate)
+        if "early_result" in inputs:
+            return inputs["early_result"]
+
+        file_id = inputs["file_id"]
+        user_id = inputs["user_id"]
+
+        # Phase 2 — the slow phase. NO DB session is held from here until the
+        # write below: an LLM completion over the whole transcript, plus the
+        # OpenSearch delete/index round trips.
+        _clear_stale_opensearch_summary(inputs["stale_opensearch_id"])
+
+        action = "regeneration" if force_regenerate else "generation"
+        send_summary_notification(
+            user_id, file_id, "processing", f"AI summary {action} started", 10
+        )
+        send_summary_notification(
+            user_id, file_id, "processing", "Analyzing speakers and content", 30
+        )
+        logger.info(
+            f"Generating LLM summary for file {inputs['filename']} "
+            f"(length: {len(inputs['full_transcript'])} chars)"
+        )
+        send_summary_notification(
+            user_id, file_id, "processing", "Generating AI summary with LLM", 50
+        )
+
+        summary_data = _generate_llm_summary(inputs, prompt_uuid)
+        if summary_data is None:
+            return _handle_no_llm_configured(file_id, user_id, inputs["filename"], task_id)
+
+        document_id, completion_message = _index_summary(summary_data, file_id, user_id)
+
+        # Phase 3 — write (DB session reopened, Postgres only).
+        _persist_summary(file_id, user_id, task_id, summary_data, document_id, prompt_uuid)
+
+        _send_completion_notification(
+            user_id, file_id, summary_data, document_id, completion_message
+        )
+
+        logger.info("=== Summarization Task Completed Successfully ===")
+        logger.info(f"Total processing time: {int((time.time() - start_time) * 1000)}ms")
+        logger.info(f"Final summary data keys: {list(summary_data.keys())}")
+        logger.info(f"Successfully generated comprehensive summary for file {inputs['filename']}")
+
+        return {
+            "status": "success",
+            "file_id": file_id,
+            "summary_data": {
+                "bluf": summary_data.get("bluf", ""),
+                "speakers_analyzed": len(inputs["speaker_stats"]),
+                "processing_time_ms": summary_data["metadata"].get("processing_time_ms"),
+                "opensearch_document_id": document_id,
+            },
+        }
+
+    except Retry:
+        # Celery signals deferral with an exception that subclasses Exception, so
+        # the broad handler below would "handle" it and mark the summary failed.
+        raise
+    except RedactionNotReadyError as not_ready:
+        # Detection hasn't cached spans yet. ``defer_for_redaction`` re-queues the
+        # task (raising Retry) or, when waiting cannot help, re-raises — in which
+        # case this is a terminal failure like any other.
         try:
-            media_file = get_file_by_uuid(db, file_uuid)
-            if not media_file:
-                raise ValueError(f"Media file with UUID {file_uuid} not found")
-
-            file_id = int(media_file.id)
-            create_task_record(db, task_id, int(media_file.user_id), file_id, "summarization")
-
-            # Safety net: skip if file was marked disabled (per-upload flag
-            # or system/user setting). Manual trigger endpoint resets status
-            # before dispatching, so this only blocks zombie tasks.
-            if str(media_file.summary_status) == "disabled":
-                logger.info(f"Summary task skipped — file {file_id} has disabled status")
-                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-                return {
-                    "status": "skipped",
-                    "file_id": file_id,
-                    "message": "Summary generation is disabled for this file",
-                }
-
-            update_task_status(db, task_id, "in_progress", progress=0.1)
-
-            if force_regenerate:
-                _handle_force_regeneration(media_file, db)
-
-            media_file.summary_status = "processing"  # type: ignore[assignment]
-            db.commit()
-
-            action = "regeneration" if force_regenerate else "generation"
-            send_summary_notification(
-                int(media_file.user_id), file_id, "processing", f"AI summary {action} started", 10
-            )
-
-            # Get and validate transcript segments
-            transcript_segments = (
-                db.query(TranscriptSegment)
-                .filter(TranscriptSegment.media_file_id == file_id)
-                .order_by(
-                    TranscriptSegment.start_time,
-                    TranscriptSegment.end_time,
-                    TranscriptSegment.id,
-                )
-                .all()
-            )
-            if not transcript_segments:
-                raise ValueError(f"No transcript segments found for file {file_id}")
-
-            # Redact PII/profanity before sending to the LLM provider when the
-            # owner's (or admin-forced) policy requires it (don't leak to third parties).
-            # Errors are NOT swallowed: an unresolvable policy or missing detection
-            # spans must defer or abort, never fall through to sending raw text.
-            try:
-                redaction_cfg = resolve_llm_masking(db, media_file)
-            except RedactionNotReadyError as not_ready:
-                # Detection hasn't cached spans yet, so masking would be a no-op.
-                defer_for_redaction(self, not_ready)
-                raise  # unreachable — defer_for_redaction always raises
-            except Exception as _redact_err:
-                # FAIL CLOSED. Leaving redaction_cfg as None made mask_segment_text
-                # take its "redaction disabled" early return, so the full unredacted
-                # transcript was posted to an EXTERNAL LLM provider — defeating both
-                # `redact_before_llm` and the admin `force_redact_before_llm` floor,
-                # and it was logged at debug so the leak was silent. We cannot prove
-                # redaction is unnecessary, so we do not send the transcript at all.
-                logger.exception(
-                    "Could not resolve the redaction policy; aborting summarization rather "
-                    "than sending a possibly unredacted transcript to an external provider"
-                )
-                raise ValueError(
-                    "Redaction policy unavailable; summarization aborted to avoid "
-                    "sending unredacted content to an external provider"
-                ) from _redact_err
-
-            full_transcript, speaker_stats = build_transcript_and_stats(
-                transcript_segments, redaction_cfg
-            )
-
-            update_task_status(db, task_id, "in_progress", progress=0.3)
-            send_summary_notification(
-                int(media_file.user_id), file_id, "processing", "Analyzing speakers and content", 30
-            )
-
-            logger.info(
-                f"Generating LLM summary for file {str(media_file.filename)} "
-                f"(length: {len(full_transcript)} chars)"
-            )
-            send_summary_notification(
-                int(media_file.user_id), file_id, "processing", "Generating AI summary with LLM", 50
-            )
-
-            start_time = time.time()
-            summary_data = _generate_llm_summary(
-                media_file, file_id, full_transcript, speaker_stats, task_id, db, prompt_uuid
-            )
-
-            if summary_data is None:
-                return _handle_no_llm_configured(media_file, file_id, task_id, db)
-
-            update_task_status(db, task_id, "in_progress", progress=0.7)
-            media_file.summary_data = summary_data  # type: ignore[assignment]
-            media_file.summary_schema_version = 1  # type: ignore[assignment]
-
-            _finalize_summary_storage(summary_data, media_file, file_id, db)
-
-            # Bump usage_count on the prompt actually used (best-effort; never
-            # fail the task). Makes the shared library's usage ordering and the
-            # "most used prompts" metric meaningful.
-            try:
-                from app.utils.prompt_manager import increment_prompt_usage
-                from app.utils.prompt_manager import resolve_active_prompt_record
-
-                used_prompt = resolve_active_prompt_record(
-                    int(media_file.user_id) if media_file.user_id else None, db, prompt_uuid
-                )
-                if used_prompt is not None:
-                    increment_prompt_usage(db, int(used_prompt.id))
-            except Exception as usage_err:  # noqa: BLE001
-                logger.warning(f"Could not increment prompt usage_count: {usage_err}")
-
-            logger.info("=== Summarization Task Completed Successfully ===")
-            logger.info(f"Total processing time: {int((time.time() - start_time) * 1000)}ms")
-
-            # Get summary_data for logging (with type handling)
-            summary_data_value = media_file.summary_data
-            if summary_data_value and isinstance(summary_data_value, dict):
-                logger.info(f"Final summary data keys: {list(summary_data_value.keys())}")
-            else:
-                logger.info("Final summary data keys: None")
-
-            logger.info(f"Summary status: {str(media_file.summary_status)}")
-
-            update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-            logger.info(
-                f"Successfully generated comprehensive summary for file {str(media_file.filename)}"
-            )
-
-            return {
-                "status": "success",
-                "file_id": file_id,
-                "summary_data": {
-                    "bluf": summary_data.get("bluf", ""),
-                    "speakers_analyzed": len(speaker_stats),
-                    "processing_time_ms": summary_data["metadata"].get("processing_time_ms"),
-                    "opensearch_document_id": getattr(media_file, "summary_opensearch_id", None),
-                },
-            }
-
+            defer_for_redaction(self, not_ready)
         except Retry:
-            # Celery signals deferral with an exception that subclasses Exception, so
-            # the broad handler below would "handle" it and mark the summary failed.
             raise
-        except Exception as e:
-            # file_id might be None if error occurred before it was set
-            return _handle_task_error(
-                e, media_file, file_id if file_id is not None else 0, task_id, db
-            )
+        except Exception as fatal:
+            return _handle_task_error(fatal, file_uuid, file_id, task_id)
+        raise  # unreachable — defer_for_redaction always raises
+    except Exception as e:
+        return _handle_task_error(e, file_uuid, file_id, task_id)

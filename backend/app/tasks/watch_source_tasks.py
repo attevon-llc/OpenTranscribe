@@ -104,7 +104,18 @@ def scan_all(self) -> dict:
 # --------------------------------------------------------------------------- #
 @celery_app.task(name="watch_source.scan_single", bind=True, priority=CPUPriority.USER_TRIGGERED)
 def scan_single(self, source_id: int) -> dict:
-    """Scan one source: list, age-skip, import standalone, stitch multi-part."""
+    """Scan one source: list, age-skip, import standalone, stitch multi-part.
+
+    **Phased so that no DB session is open across the scan itself.** Previously
+    one ``session_scope`` wrapped ``_perform_scan``, which runs
+    ``client.list_files()`` against a remote share and then imports up to
+    ``watch.max_imports_per_scan`` files *serially inline* — a download AND a
+    MinIO upload each. Postgres spent all of it "idle in transaction": ACCESS
+    SHARE held (so any ``ALTER TABLE``, i.e. an Alembic upgrade, queues behind
+    it), the vacuum horizon pinned, and a pool connection consumed. This was
+    larger than the ``stitch_and_import`` leak already fixed below, and an AST
+    body-scan missed it because the slow calls are one frame down.
+    """
     summary = {"found": 0, "imported": 0, "skipped": 0, "errors": 0, "stitch_groups": 0}
     lock_key = f"watch_source:scan:{source_id}"
 
@@ -114,180 +125,279 @@ def scan_single(self, source_id: int) -> dict:
 
         scan_started = datetime.now(UTC)
         start_perf = time.perf_counter()
-        with session_scope() as db:
-            source = db.query(WatchSource).filter(WatchSource.id == source_id).first()
-            if not source or not source.is_enabled:
-                return {"skipped": True, "reason": "source missing or disabled"}
 
-            source.last_scan_status = "running"
-            db.flush()
+        # Phase 1 — read + claim (short session). ``create_client`` happens here and
+        # can refuse (unknown type, blocked private endpoint, missing optional
+        # dependency); that used to land inside ``_perform_scan``'s try block and be
+        # recorded as a scan error, so it still must be — otherwise the source is
+        # left reading "running" forever.
+        try:
+            plan = _load_scan_plan(source_id)
+        except Exception as e:  # noqa: BLE001 - record and continue
+            logger.error("Watch scan setup failed for source %s: %s", source_id, e, exc_info=True)
+            summary["errors"] += 1
+            _record_scan_result(
+                source_id,
+                summary,
+                scan_started,
+                round(time.perf_counter() - start_perf, 2),
+                "error",
+                str(e)[:1000],
+            )
+            return summary
 
-            try:
-                _perform_scan(db, source, summary, scan_started)
-                source.last_scan_status = "success"
-                source.last_scan_message = (
-                    f"Found {summary['found']}, imported {summary['imported']}, "
-                    f"skipped {summary['skipped']}"
-                )
-            except Exception as e:  # noqa: BLE001 - record and continue
-                logger.error("Watch scan failed for source %s: %s", source_id, e, exc_info=True)
-                source.last_scan_status = "error"
-                source.last_scan_message = str(e)[:1000]
-                summary["errors"] += 1
+        if plan is None:
+            return {"skipped": True, "reason": "source missing or disabled"}
 
-            source.last_scan_at = scan_started
-            source.last_scan_files_found = summary["found"]
-            source.last_scan_files_imported = summary["imported"]
-            source.last_scan_files_skipped = summary["skipped"]
-            source.last_scan_duration_seconds = round(time.perf_counter() - start_perf, 2)
-            db.commit()
+        # Phase 2 — the scan. NO DB session is held across it; each DB touch
+        # inside opens its own short scope.
+        try:
+            with plan["client"] as client:
+                _perform_scan(source_id, plan, client, summary, scan_started)
+            status = "success"
+            message = (
+                f"Found {summary['found']}, imported {summary['imported']}, "
+                f"skipped {summary['skipped']}"
+            )
+        except Exception as e:  # noqa: BLE001 - record and continue
+            logger.error("Watch scan failed for source %s: %s", source_id, e, exc_info=True)
+            status = "error"
+            message = str(e)[:1000]
+            summary["errors"] += 1
 
-            _notify_scan_complete(int(source.user_id), source, summary)
-            has_email = bool(source.email_links)
+        # Phase 3 — write (short session).
+        outcome = _record_scan_result(
+            source_id,
+            summary,
+            scan_started,
+            round(time.perf_counter() - start_perf, 2),
+            status,
+            message,
+        )
+        if outcome is None:
+            return summary
 
-        if has_email:
+        _notify_scan_complete(outcome["user_id"], outcome["source_uuid"], status, summary)
+        if outcome["has_email"]:
             send_notification.apply_async(args=[source_id, summary], countdown=30)
     return summary
 
 
-def _perform_scan(db, source: WatchSource, summary: dict, scan_started: datetime) -> None:
-    """List the source, apply filters/dedup, import standalone, stitch groups.
+def _load_scan_plan(source_id: int) -> dict | None:
+    """Phase 1 — snapshot the scan's inputs and mark the source ``running``.
 
-    Mutates ``summary`` in place. Raises on connection/list failure so the
-    caller records ``last_scan_status='error'``.
+    Returns plain scalars plus the client. The ``WatchSource`` row is
+    ``expunge``d rather than merely referenced: ``LocalWatchClient`` keeps a
+    reference to it (it reads ``resolved_local_path``/``recursive``), and a
+    detached instance with its columns already loaded outlives the session while
+    turning any stray RELATIONSHIP load into a loud ``DetachedInstanceError``
+    instead of a silent second transaction mid-scan.
     """
-    max_imports = watch_settings_service.max_imports_per_scan(db)
-    extensions = parse_extensions(source.file_extensions)
-    age_cutoff = None
-    if source.skip_files_older_than_days is not None:
-        age_cutoff = scan_started - timedelta(days=source.skip_files_older_than_days)
+    with session_scope() as db:
+        source = db.query(WatchSource).filter(WatchSource.id == source_id).first()
+        if not source or not source.is_enabled:
+            return None
 
-    with create_client(source) as client:
-        files = client.list_files(extensions=extensions, recursive=bool(source.recursive))
-        summary["found"] = len(files)
+        source.last_scan_status = "running"
+        plan = {
+            "extensions": parse_extensions(source.file_extensions),
+            "recursive": bool(source.recursive),
+            "skip_files_older_than_days": source.skip_files_older_than_days,
+            "multipart_enabled": bool(source.multipart_enabled),
+            "multipart_regex": source.multipart_regex,
+            "multipart_time_window_hours": source.multipart_time_window_hours,
+            "multipart_wait_scans": source.multipart_wait_scans,
+            "max_imports": watch_settings_service.max_imports_per_scan(db),
+            "client": create_client(source),
+        }
+        # Flush BEFORE expunging: expunging a dirty instance would discard the
+        # pending ``last_scan_status`` update.
+        db.flush()
+        db.expunge(source)
+    return plan
 
-        # Drop files already in a terminal tracking state.
-        terminal_paths = {
-            r.remote_path
-            for r in db.query(WatchSourceFile.remote_path, WatchSourceFile.status)
+
+def _record_scan_result(
+    source_id: int,
+    summary: dict,
+    scan_started: datetime,
+    duration_seconds: float,
+    status: str,
+    message: str,
+) -> dict | None:
+    """Phase 3 — persist scan status/counters and report what to notify."""
+    with session_scope() as db:
+        source = db.query(WatchSource).filter(WatchSource.id == source_id).first()
+        if source is None:
+            return None
+        source.last_scan_status = status
+        source.last_scan_message = message
+        source.last_scan_at = scan_started
+        source.last_scan_files_found = summary["found"]
+        source.last_scan_files_imported = summary["imported"]
+        source.last_scan_files_skipped = summary["skipped"]
+        source.last_scan_duration_seconds = duration_seconds
+        return {
+            "user_id": int(source.user_id),
+            "source_uuid": str(source.uuid),
+            "has_email": bool(source.email_links),
+        }
+
+
+def _load_terminal_paths(source_id: int) -> set[str]:
+    """Remote paths already in a terminal tracking state (short session)."""
+    with session_scope() as db:
+        return {
+            row[0]
+            for row in db.query(WatchSourceFile.remote_path)
             .filter(
-                WatchSourceFile.watch_source_id == source.id,
+                WatchSourceFile.watch_source_id == source_id,
                 WatchSourceFile.status.in_(_TERMINAL),
             )
             .all()
         }
-        candidates = [f for f in files if f.path not in terminal_paths]
 
-        # Record age-skips (so the user can see them), then drop them.
-        if age_cutoff is not None:
-            kept = []
-            for f in candidates:
-                if f.modified_time and f.modified_time < age_cutoff:
-                    _record_age_skip(db, source, f)
-                    summary["skipped"] += 1
-                else:
-                    kept.append(f)
-            candidates = kept
 
-        # Multi-part grouping (optional).
-        standalone = candidates
-        if source.multipart_enabled:
-            from app.services.watch_sources import multipart
+def _perform_scan(
+    source_id: int,
+    plan: dict,
+    client,
+    summary: dict,
+    scan_started: datetime,
+) -> None:
+    """List the source, apply filters/dedup, import standalone, stitch groups.
 
-            groups, standalone = multipart.detect_groups(
-                candidates, source.multipart_regex, source.multipart_time_window_hours
+    Mutates ``summary`` in place. Raises on connection/list failure so the
+    caller records ``last_scan_status='error'``.
+
+    **No DB session is open on entry or across the slow calls here.** Every DB
+    touch below opens its own short scope; ``client.list_files()`` and the
+    per-file ``import_single_file`` transfers run with none.
+    """
+    age_cutoff = None
+    if plan["skip_files_older_than_days"] is not None:
+        age_cutoff = scan_started - timedelta(days=plan["skip_files_older_than_days"])
+
+    files = client.list_files(extensions=plan["extensions"], recursive=plan["recursive"])
+    summary["found"] = len(files)
+
+    # Drop files already in a terminal tracking state.
+    terminal_paths = _load_terminal_paths(source_id)
+    candidates = [f for f in files if f.path not in terminal_paths]
+
+    # Record age-skips (so the user can see them), then drop them.
+    if age_cutoff is not None:
+        too_old = [f for f in candidates if f.modified_time and f.modified_time < age_cutoff]
+        if too_old:
+            _record_age_skips(source_id, too_old)
+            summary["skipped"] += len(too_old)
+        candidates = [
+            f for f in candidates if not (f.modified_time and f.modified_time < age_cutoff)
+        ]
+
+    # Multi-part grouping (optional).
+    standalone = candidates
+    if plan["multipart_enabled"]:
+        from app.services.watch_sources import multipart
+
+        groups, standalone = multipart.detect_groups(
+            candidates, plan["multipart_regex"], plan["multipart_time_window_hours"]
+        )
+        for group in groups:
+            if _handle_group(source_id, group, plan["multipart_wait_scans"]):
+                summary["stitch_groups"] += 1
+
+    # Import standalone files inline, bounded per scan.
+    for fi in standalone[: plan["max_imports"]]:
+        status = import_single_file(source_id, fi, client)
+        if status is None:
+            continue
+        if status == "imported":
+            summary["imported"] += 1
+        elif status.startswith("skipped"):
+            summary["skipped"] += 1
+        elif status == "error":
+            summary["errors"] += 1
+
+
+def _record_age_skips(source_id: int, files: list[RemoteFileInfo]) -> None:
+    """Persist one-time ``skipped_old`` rows for too-old files (one short session)."""
+    with session_scope() as db:
+        for fi in files:
+            exists = (
+                db.query(WatchSourceFile.id)
+                .filter(
+                    WatchSourceFile.watch_source_id == source_id,
+                    WatchSourceFile.remote_path == fi.path,
+                )
+                .first()
             )
-            for group in groups:
-                if _handle_group(db, source, group, max_imports):
-                    summary["stitch_groups"] += 1
-
-        # Import standalone files inline, bounded per scan.
-        for fi in standalone[:max_imports]:
-            row = import_single_file(db, source, fi, client)
-            if row is None:
+            if exists:
                 continue
-            if row.status == "imported":
-                summary["imported"] += 1
-            elif row.status.startswith("skipped"):
-                summary["skipped"] += 1
-            elif row.status == "error":
-                summary["errors"] += 1
+            db.add(
+                WatchSourceFile(
+                    uuid=uuid_pkg.uuid4(),
+                    watch_source_id=source_id,
+                    remote_path=fi.path,
+                    filename=fi.name,
+                    file_size=fi.size,
+                    file_modified_at=fi.modified_time,
+                    status="skipped_old",
+                    skip_reason="too_old",
+                    processed_at=datetime.now(UTC),
+                )
+            )
+            db.flush()
 
 
-def _record_age_skip(db, source: WatchSource, fi: RemoteFileInfo) -> None:
-    """Persist a one-time ``skipped_old`` row for a too-old file."""
-    exists = (
-        db.query(WatchSourceFile.id)
-        .filter(
-            WatchSourceFile.watch_source_id == source.id,
-            WatchSourceFile.remote_path == fi.path,
-        )
-        .first()
-    )
-    if exists:
-        return
-    db.add(
-        WatchSourceFile(
-            uuid=uuid_pkg.uuid4(),
-            watch_source_id=source.id,
-            remote_path=fi.path,
-            filename=fi.name,
-            file_size=fi.size,
-            file_modified_at=fi.modified_time,
-            status="skipped_old",
-            skip_reason="too_old",
-            processed_at=datetime.now(UTC),
-        )
-    )
-    db.flush()
-
-
-def _handle_group(db, source: WatchSource, group, max_imports: int) -> bool:
+def _handle_group(source_id: int, group, wait_scans: int) -> bool:
     """Dispatch stitch for a complete group, or age the wait counter for an incomplete one.
 
-    Returns True if a stitch was dispatched this scan.
+    Returns True if a stitch was dispatched this scan. The tracking upserts run
+    in a short session; the dispatch happens after it closes.
     """
     # Upsert waiting rows for each part and track how many scans we've waited.
     waited = 0
-    for part_num, fi in group.parts:
-        row = (
-            db.query(WatchSourceFile)
-            .filter(
-                WatchSourceFile.watch_source_id == source.id,
-                WatchSourceFile.remote_path == fi.path,
+    with session_scope() as db:
+        for part_num, fi in group.parts:
+            row = (
+                db.query(WatchSourceFile)
+                .filter(
+                    WatchSourceFile.watch_source_id == source_id,
+                    WatchSourceFile.remote_path == fi.path,
+                )
+                .first()
             )
-            .first()
-        )
-        if row is None:
-            row = WatchSourceFile(
-                uuid=uuid_pkg.uuid4(),
-                watch_source_id=source.id,
-                remote_path=fi.path,
-                filename=fi.name,
-                file_size=fi.size,
-                file_modified_at=fi.modified_time,
-                status="waiting_for_parts",
-                part_group=group.base_name,
-                part_number=part_num,
-                retry_count=0,
-            )
-            db.add(row)
-        elif row.status in _TERMINAL:
-            continue
-        else:
-            row.status = "waiting_for_parts"
-            row.part_group = group.base_name
-            row.part_number = part_num
-            row.retry_count = (row.retry_count or 0) + 1
-        waited = max(waited, row.retry_count or 0)
-    db.flush()
+            if row is None:
+                row = WatchSourceFile(
+                    uuid=uuid_pkg.uuid4(),
+                    watch_source_id=source_id,
+                    remote_path=fi.path,
+                    filename=fi.name,
+                    file_size=fi.size,
+                    file_modified_at=fi.modified_time,
+                    status="waiting_for_parts",
+                    part_group=group.base_name,
+                    part_number=part_num,
+                    retry_count=0,
+                )
+                db.add(row)
+            elif row.status in _TERMINAL:
+                continue
+            else:
+                row.status = "waiting_for_parts"
+                row.part_group = group.base_name
+                row.part_number = part_num
+                row.retry_count = (row.retry_count or 0) + 1
+            waited = max(waited, row.retry_count or 0)
+        db.flush()
 
-    ready = group.is_complete or (waited + 1) >= source.multipart_wait_scans
+    ready = group.is_complete or (waited + 1) >= wait_scans
     if not ready:
         return False
 
     stitch_and_import.delay(
-        source.id,
+        source_id,
         group.base_name,
         group.extension,
         [_file_to_dict(fi) for fi in group.ordered_files],
@@ -531,8 +641,12 @@ def cleanup_temp(self, max_age_hours: int = 2) -> dict:
     return {"removed": removed}
 
 
-def _notify_scan_complete(user_id: int, source: WatchSource, summary: dict) -> None:
-    """Best-effort WS event so the UI refreshes scan status live."""
+def _notify_scan_complete(user_id: int, source_uuid: str, status: str, summary: dict) -> None:
+    """Best-effort WS event so the UI refreshes scan status live.
+
+    Takes plain scalars, not the ``WatchSource`` row: an ORM instance reaching
+    here would lazy-load after its session closed.
+    """
     try:
         from app.utils.websocket_notify import send_ws_event
 
@@ -540,8 +654,8 @@ def _notify_scan_complete(user_id: int, source: WatchSource, summary: dict) -> N
             user_id,
             "watch_source_scan",
             {
-                "source_uuid": str(source.uuid),
-                "status": source.last_scan_status,
+                "source_uuid": source_uuid,
+                "status": status,
                 "summary": summary,
             },
         )

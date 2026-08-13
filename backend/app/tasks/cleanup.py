@@ -403,6 +403,105 @@ def _scheduled_retention_hour(run_time: Any) -> int:
     return hour
 
 
+def _select_expired_files(
+    db,
+    config: dict,
+    cutoff: datetime,
+    query_cutoff: datetime,
+    resolve_retention_days,
+) -> list[tuple[int, str]]:
+    """Return ``(file_id, file_uuid)`` for every file past its effective retention.
+
+    Plain tuples, never ``MediaFile`` instances: the deletion phase runs with no
+    session open, and an escaping instance would lazy-load (reopening a
+    transaction) the moment ``purge_media_file`` touched it.
+    """
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+
+    eligible_statuses = [FileStatus.COMPLETED.value]
+    if config["delete_error_files"]:
+        eligible_statuses.append(FileStatus.ERROR.value)
+
+    candidates = (
+        db.query(
+            MediaFile.id,
+            MediaFile.uuid,
+            MediaFile.organization_id,
+            MediaFile.completed_at,
+            MediaFile.upload_time,
+        )
+        .filter(
+            MediaFile.status.in_(eligible_statuses),
+            ((MediaFile.completed_at.isnot(None)) & (MediaFile.completed_at < query_cutoff))
+            | ((MediaFile.completed_at.is_(None)) & (MediaFile.upload_time < query_cutoff)),
+        )
+        .all()
+    )
+    logger.info(f"cleanup_expired_files: found {len(candidates)} candidate file(s)")
+
+    expired: list[tuple[int, str]] = []
+    for file_id, file_uuid, organization_id, completed_at, upload_time in candidates:
+        # Per-file expiry against the file's EFFECTIVE retention: the per-org
+        # override when present (cloud), else the global cutoff. Lets
+        # longer-retention tenants keep files past the global window and
+        # free-tier tenants expire them sooner — all from one candidate query.
+        override = resolve_retention_days(organization_id)
+        file_cutoff = cutoff if override is None else datetime.now(UTC) - timedelta(days=override)
+        ref = completed_at or upload_time
+        if ref is not None and ref < file_cutoff:
+            expired.append((int(file_id), str(file_uuid)))
+    return expired
+
+
+def _purge_expired_files(expired: list[tuple[int, str]]) -> tuple[int, int]:
+    """Delete each expired file in its **own short session**. Returns (deleted, failed).
+
+    ``purge_media_file`` deletes from object storage and OpenSearch before it
+    commits the row, so it needs a session — but it needs it for ONE file. The
+    previous shape held a single transaction across the whole pass, i.e. across
+    every one of those round trips for every expired file at once.
+    """
+    from app.models.media import MediaFile
+    from app.services.file_cleanup_service import auto_delete_media_file
+
+    deleted = 0
+    failed = 0
+    for file_id, file_uuid in expired:
+        try:
+            with session_scope() as db:
+                # Eager-load speakers to avoid N+1 queries when
+                # auto_delete_media_file iterates file.speakers.
+                from sqlalchemy.orm import selectinload
+
+                media_file = (
+                    db.query(MediaFile)
+                    .options(selectinload(MediaFile.speakers))
+                    .filter(MediaFile.id == file_id)
+                    .first()
+                )
+                if media_file is None:
+                    continue
+                result = auto_delete_media_file(db, media_file)
+        except Exception as e:  # noqa: BLE001 - one bad file must not abort the pass
+            failed += 1
+            logger.error(
+                f"cleanup_expired_files: failed to delete file id={file_id} uuid={file_uuid}: {e}"
+            )
+            continue
+
+        if result["deleted"]:
+            deleted += 1
+            logger.info(f"cleanup_expired_files: deleted file id={file_id} uuid={file_uuid}")
+        else:
+            failed += 1
+            logger.error(
+                f"cleanup_expired_files: failed to delete file id={file_id} "
+                f"uuid={file_uuid}: {result.get('error')}"
+            )
+    return deleted, failed
+
+
 @celery_app.task(name="cleanup_expired_files", priority=UtilityPriority.ROUTINE)
 def cleanup_expired_files(force: bool = False):
     """
@@ -436,13 +535,13 @@ def cleanup_expired_files(force: bool = False):
             Celery records as SUCCESS — a permanently broken retention job then
             looked healthy on every one of its hourly runs.
     """
-    from app.models.media import FileStatus
-    from app.models.media import MediaFile
-    from app.services.file_cleanup_service import auto_delete_media_file
     from app.services.system_settings_service import get_retention_config
     from app.services.system_settings_service import set_setting
 
     try:
+        # Phase 1 — read (short session, Postgres only). Everything that leaves
+        # is plain data: the deletions below are MinIO + OpenSearch round trips
+        # and must not run with this session open.
         with session_scope() as db:
             config = get_retention_config(db)
 
@@ -501,73 +600,28 @@ def cleanup_expired_files(force: bool = False):
             )
             query_cutoff = datetime.now(UTC) - timedelta(days=query_days)
 
-            # Determine which statuses are eligible for deletion
-            eligible_statuses = [FileStatus.COMPLETED.value]
-            if config["delete_error_files"]:
-                eligible_statuses.append(FileStatus.ERROR.value)
-
-            # Query files that have aged out; eager-load speakers to avoid N+1 queries
-            # when auto_delete_media_file iterates file.speakers for embedding cleanup.
-            from sqlalchemy.orm import selectinload
-
-            eligible_files = (
-                db.query(MediaFile)
-                .options(selectinload(MediaFile.speakers))
-                .filter(
-                    MediaFile.status.in_(eligible_statuses),
-                    ((MediaFile.completed_at.isnot(None)) & (MediaFile.completed_at < query_cutoff))
-                    | ((MediaFile.completed_at.is_(None)) & (MediaFile.upload_time < query_cutoff)),
-                )
-                .all()
+            expired = _select_expired_files(
+                db, config, cutoff, query_cutoff, resolve_retention_days
             )
 
-            logger.info(
-                f"cleanup_expired_files: found {len(eligible_files)} candidate file(s) "
-                f"(query_cutoff={query_cutoff.isoformat()}, global_days={global_retention_days})"
-            )
+        logger.info(
+            f"cleanup_expired_files: {len(expired)} file(s) past their effective retention "
+            f"(query_cutoff={query_cutoff.isoformat()}, global_days={global_retention_days})"
+        )
 
-            def _is_expired(mf: MediaFile) -> bool:
-                """Per-file expiry against the file's EFFECTIVE retention.
+        # Phase 2 — delete. One SHORT session PER FILE, so a pass over hundreds
+        # of files no longer holds a single transaction across hundreds of MinIO
+        # and OpenSearch round trips.
+        deleted, failed = _purge_expired_files(expired)
 
-                Uses the per-org override when present (cloud), else the global
-                cutoff. Lets longer-retention tenants keep files past the global
-                window and free-tier tenants expire them sooner — all from one
-                candidate query.
-                """
-                override = resolve_retention_days(getattr(mf, "organization_id", None))
-                if override is None:
-                    file_cutoff = cutoff
-                else:
-                    file_cutoff = datetime.now(UTC) - timedelta(days=override)
-                ref = mf.completed_at or mf.upload_time
-                return ref is not None and ref < file_cutoff
-
-            deleted = 0
-            failed = 0
-
-            for media_file in eligible_files:
-                if not _is_expired(media_file):
-                    continue
-                result = auto_delete_media_file(db, media_file)
-                if result["deleted"]:
-                    deleted += 1
-                    logger.info(
-                        f"cleanup_expired_files: deleted file id={media_file.id} "
-                        f"uuid={media_file.uuid}"
-                    )
-                else:
-                    failed += 1
-                    logger.error(
-                        f"cleanup_expired_files: failed to delete file "
-                        f"id={media_file.id} uuid={media_file.uuid}: {result.get('error')}"
-                    )
-
-            # Persist run metadata to system settings — store with explicit UTC offset
-            # so the already_ran_today guard parses correctly on any server timezone.
-            # A FORCED run deliberately does not claim the day: retention_last_run is
-            # the already-ran-today guard's input, so stamping it from a manual run
-            # suppressed that day's scheduled pass, which is the one that respects the
-            # configured window.
+        # Phase 3 — write (short session, Postgres only).
+        # Persist run metadata to system settings — store with explicit UTC offset
+        # so the already_ran_today guard parses correctly on any server timezone.
+        # A FORCED run deliberately does not claim the day: retention_last_run is
+        # the already-ran-today guard's input, so stamping it from a manual run
+        # suppressed that day's scheduled pass, which is the one that respects the
+        # configured window.
+        with session_scope() as db:
             if not force:
                 run_timestamp = datetime.now(UTC).isoformat()
                 set_setting(
@@ -583,8 +637,8 @@ def cleanup_expired_files(force: bool = False):
                 "Number of files deleted in the most recent retention cleanup run",
             )
 
-            logger.info(f"cleanup_expired_files: completed — deleted={deleted}, failed={failed}")
-            return {"status": "completed", "deleted": deleted, "failed": failed}
+        logger.info(f"cleanup_expired_files: completed — deleted={deleted}, failed={failed}")
+        return {"status": "completed", "deleted": deleted, "failed": failed}
 
     except Exception as exc:
         # Re-raise: an hourly task that deletes user media must report a failure AS a

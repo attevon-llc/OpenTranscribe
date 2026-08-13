@@ -48,6 +48,94 @@ HS512_SECRET = "fips-suite-hs512-secret-padded-to-sixty-four-bytes-exactly-01234
 SUBJECT = "019ec90a-1b2c-7def-8000-00000000fa17"
 
 
+class TestTheFipsGateIsFipsMode:
+    """``settings.fips_140_3_active`` is the ONE gate, and ``FIPS_MODE`` is what it reads.
+
+    Consequence prevented: a non-FIPS deployment silently running FIPS-profile
+    credentials. ``FIPS_VERSION`` defaults to ``"140-3"`` on **every** deployment
+    (``config.py``), so ``FIPS_VERSION == "140-3"`` is a condition that can never be
+    false — and this repo shipped it three separate times:
+
+    * ``token_service.create_refresh_token`` — every install signed refresh tokens
+      HS512 while its access tokens were HS256,
+    * ``token_service.token_needs_upgrade`` — reported "re-issue this" for tokens it
+      had just issued,
+    * previously ``auth/mfa.py`` and ``token_service.create_token``, both since fixed
+      (CHANGELOG: "Non-FIPS deployments issued FIPS-profile credentials").
+
+    Each of those was caught only by reading the line. These assert the property
+    directly, so the fourth occurrence fails a test instead.
+    """
+
+    @pytest.mark.parametrize(("fips_mode", "fips_version"), FIPS_MODE_MATRIX)
+    def test_the_gate_is_false_unless_fips_mode_is_on(self, monkeypatch, fips_mode, fips_version):
+        monkeypatch.setattr(settings, "FIPS_MODE", fips_mode)
+        monkeypatch.setattr(settings, "FIPS_VERSION", fips_version)
+
+        assert settings.fips_140_3_active is (fips_mode and fips_version == "140-3")
+
+    def test_the_default_deployment_is_not_in_the_fips_profile(self, monkeypatch):
+        """The exact shipped default, spelled out: FIPS off, version 140-3."""
+        monkeypatch.setattr(settings, "FIPS_MODE", False)
+        monkeypatch.setattr(settings, "FIPS_VERSION", "140-3")
+
+        assert not settings.fips_140_3_active
+
+    def test_password_hashing_does_not_use_the_fips_iteration_count(self, monkeypatch):
+        """Consequence for the password plane: 600k iterations on a non-FIPS install."""
+        from app.core.security import _get_pbkdf2_iterations
+
+        monkeypatch.setattr(settings, "FIPS_MODE", False)
+        monkeypatch.setattr(settings, "FIPS_VERSION", "140-3")
+
+        assert _get_pbkdf2_iterations() == settings.PBKDF2_ITERATIONS
+        assert _get_pbkdf2_iterations() != settings.PBKDF2_ITERATIONS_V3
+
+    def test_a_token_is_not_reported_stale_on_a_non_fips_deployment(self, monkeypatch):
+        """Consequence for the token plane.
+
+        The token is signed with something OTHER than ``JWT_ALGORITHM`` on purpose:
+        that is the only condition ``token_needs_upgrade`` checks once past the gate,
+        so the gate is the sole thing that can produce ``False`` here.
+        """
+        from app.auth.token_service import TokenService
+
+        monkeypatch.setattr(settings, "JWT_SECRET_KEY", HS512_SECRET)
+        monkeypatch.setattr(settings, "FIPS_MODE", False)
+        monkeypatch.setattr(settings, "FIPS_VERSION", "140-3")
+        monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
+        other = jwt.encode(
+            {"sub": SUBJECT, "exp": 9999999999}, settings.JWT_SECRET_KEY, algorithm="HS512"
+        )
+
+        assert not TokenService().token_needs_upgrade(other)
+
+    def test_the_migration_mode_is_not_consulted_outside_fips(self, monkeypatch):
+        """``FIPS_MIGRATION_MODE=strict`` is a FIPS control; it must not narrow a
+        non-FIPS deployment's accept set behind the operator's back."""
+        from app.core.security import accepted_algorithms
+
+        monkeypatch.setattr(settings, "FIPS_MODE", False)
+        monkeypatch.setattr(settings, "FIPS_VERSION", "140-3")
+        monkeypatch.setattr(settings, "FIPS_MIGRATION_MODE", "strict")
+        monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
+        monkeypatch.setattr(settings, "JWT_ALGORITHM_V3", "HS512")
+
+        assert accepted_algorithms() == ["HS256", "HS512"]
+
+    def test_the_migration_mode_is_consulted_under_fips(self, monkeypatch):
+        """The control for the test above: strict is not simply dead."""
+        from app.core.security import accepted_algorithms
+
+        monkeypatch.setattr(settings, "FIPS_MODE", True)
+        monkeypatch.setattr(settings, "FIPS_VERSION", "140-3")
+        monkeypatch.setattr(settings, "FIPS_MIGRATION_MODE", "strict")
+        monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
+        monkeypatch.setattr(settings, "JWT_ALGORITHM_V3", "HS512")
+
+        assert accepted_algorithms() == ["HS256"]
+
+
 class TestFIPS140_3PasswordHashing:
     """Test FIPS 140-3 password hashing compliance."""
 
@@ -695,38 +783,73 @@ class TestFIPS140_3TokenService:
         payload = token_service.verify_token_with_fallback(token)
         assert payload["sub"] == "test-user"
 
-    def test_token_needs_upgrade(self):
-        """Test token upgrade detection for FIPS 140-3 migration."""
+    def test_token_needs_upgrade_on_a_migrated_fips_deployment(self, monkeypatch):
+        """A token signed with something other than the current algorithm needs re-issue.
+
+        The configuration is published, not read from the ambient environment, and
+        the gate is ``FIPS_MODE`` — not ``FIPS_VERSION``, which defaults to
+        ``"140-3"`` on every deployment and so made the old form of this test assert
+        "needs upgrade" for perfectly current tokens on ordinary non-FIPS installs.
+        """
         from app.auth.token_service import TokenService
 
-        token_service = TokenService()
+        monkeypatch.setattr(settings, "JWT_SECRET_KEY", HS512_SECRET)
+        monkeypatch.setattr(settings, "FIPS_MODE", True)
+        monkeypatch.setattr(settings, "FIPS_VERSION", "140-3")
+        monkeypatch.setattr(settings, "FIPS_MIGRATION_MODE", "compatible")
+        monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS512")
 
-        # Create a legacy HS256 token
         legacy_token = jwt.encode(
-            {"sub": "test", "exp": 9999999999}, settings.JWT_SECRET_KEY, algorithm="HS256"
+            {"sub": SUBJECT, "exp": 9999999999}, settings.JWT_SECRET_KEY, algorithm="HS256"
+        )
+        current_token = jwt.encode(
+            {"sub": SUBJECT, "exp": 9999999999}, settings.JWT_SECRET_KEY, algorithm="HS512"
         )
 
-        # In FIPS 140-3 mode, this should need upgrade
-        needs_upgrade = token_service.token_needs_upgrade(legacy_token)
+        assert TokenService().token_needs_upgrade(legacy_token)
+        # The control: "needs upgrade" must mean something, not be returned for
+        # every token that happens to verify.
+        assert not TokenService().token_needs_upgrade(current_token)
 
-        if settings.FIPS_VERSION == "140-3":
-            assert needs_upgrade
-        else:
-            assert not needs_upgrade
+    @pytest.mark.parametrize(("fips_mode", "fips_version"), FIPS_MODE_MATRIX)
+    def test_no_token_needs_upgrade_outside_fips(self, monkeypatch, fips_mode, fips_version):
+        """The defect, pinned: FIPS_VERSION alone must not make this true.
 
-    def test_create_token_algorithm(self):
-        """Test that token creation uses correct algorithm."""
+        ``FIPS_VERSION`` is ``"140-3"`` by default, so the pre-fix implementation
+        answered "yes, re-issue" on every non-FIPS deployment for the tokens it had
+        just issued.
+        """
         from app.auth.token_service import TokenService
 
-        token_service = TokenService()
-        token = token_service.create_token({"sub": "test"})
+        monkeypatch.setattr(settings, "JWT_SECRET_KEY", HS512_SECRET)
+        monkeypatch.setattr(settings, "FIPS_MODE", fips_mode)
+        monkeypatch.setattr(settings, "FIPS_VERSION", fips_version)
+        monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
+        current_token = jwt.encode(
+            {"sub": SUBJECT, "exp": 9999999999}, settings.JWT_SECRET_KEY, algorithm="HS256"
+        )
 
-        header = jwt.get_unverified_header(token)
+        assert not TokenService().token_needs_upgrade(current_token)
 
-        if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3":
-            assert header["alg"] == "HS512"
-        else:
-            assert header["alg"] == "HS256"
+    @pytest.mark.parametrize(("fips_mode", "fips_version"), FIPS_MODE_MATRIX)
+    def test_create_token_signs_with_the_deployment_algorithm(
+        self, monkeypatch, fips_mode, fips_version
+    ):
+        """``create_token`` delegates to ``core.security.signing_algorithm``.
+
+        It used to carry its own inline FIPS branch — one of five copies of the
+        decision, and the reason ``create_refresh_token``'s divergent copy went
+        unnoticed. The answer is ``settings.JWT_ALGORITHM`` in every mode; see
+        ``TestAccessTokenAlgorithmInvariant`` above for why FIPS does not move it.
+        """
+        from app.auth.token_service import TokenService
+
+        monkeypatch.setattr(settings, "FIPS_MODE", fips_mode)
+        monkeypatch.setattr(settings, "FIPS_VERSION", fips_version)
+
+        token = TokenService().create_token({"sub": SUBJECT})
+
+        assert jwt.get_unverified_header(token)["alg"] == settings.JWT_ALGORITHM
 
 
 class TestFIPS140_3Migration:

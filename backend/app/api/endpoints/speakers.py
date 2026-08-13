@@ -670,13 +670,19 @@ def list_speakers(
         if file_id is not None and speaker_ids:
             all_timestamps = _get_first_segment_timestamps_for_speakers(speaker_ids, file_id, db)
 
-        # Batch-fetch all speaker suggestions (3 OS calls total vs 3N before)
+        # Batch-fetch all speaker suggestions (3 OS calls total vs 3N before).
+        # The tenant scope each suggestion query is gated by is resolved HERE,
+        # against the request session, and handed over as plain data — the batch
+        # helper deliberately takes no ``Session`` so its three OpenSearch round
+        # trips cannot be reached with a transaction one frame up.
         from app.services.smart_speaker_suggestion_service import SmartSpeakerSuggestionService
+        from app.services.smart_speaker_suggestion_service import _media_file_org_ids
 
+        file_org_map = _media_file_org_ids(db, {int(s.media_file_id) for s in speakers})
         batch_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions_batch(
             speakers=speakers,
             user_id=current_user.id,
-            db=db,
+            file_org_map=file_org_map,
             confidence_threshold=SPEAKER_SUGGESTION_MIN_CONFIDENCE,
             max_suggestions=SPEAKER_SUGGESTION_MAX_COUNT,
         )
@@ -738,6 +744,89 @@ def cleanup_orphaned_embeddings(
     except Exception as e:
         logger.exception(f"Error during cleanup: {e}")
         raise ErrorHandler.internal_error() from e
+
+
+def _collect_index_debug_documents(user_id: int) -> dict[str, Any]:
+    """Read the speaker and profile documents for ``user_id`` out of the search index.
+
+    **Takes no ``Session``.** Two OpenSearch searches (100 hits each) used to run on
+    the request session in ``debug_cross_media_data``, so a slow or unreachable
+    cluster held the request's Postgres transaction — and therefore ACCESS SHARE on
+    every table it had read — for the whole round trip. Returns plain dicts;
+    the caller merges them into its report.
+
+    The diagnostic contract is unchanged: a failure is reported in the payload
+    (``opensearch_error``) rather than failing the endpoint.
+    """
+    section: dict[str, Any] = {"opensearch_speakers": [], "opensearch_profiles": []}
+    try:
+        from app.core.constants import get_speaker_index
+        from app.services.opensearch_service import opensearch_client
+
+        if not opensearch_client:
+            return section
+
+        speaker_index = get_speaker_index()
+        # Query all speaker documents for this user
+        query = {
+            "size": 100,
+            "query": {
+                "bool": {
+                    "must": [{"term": {"user_id": user_id}}],
+                    "must_not": [
+                        {"exists": {"field": "document_type"}}
+                    ],  # Only speakers, not profiles
+                }
+            },
+        }
+
+        response = opensearch_client.search(index=speaker_index, body=query)
+        for hit in response["hits"]["hits"]:
+            source = hit["_source"]
+            section["opensearch_speakers"].append(
+                {
+                    "opensearch_id": hit["_id"],
+                    "speaker_id": source.get("speaker_id"),
+                    "display_name": source.get("display_name"),
+                    "profile_id": source.get("profile_id"),
+                    "media_file_id": source.get("media_file_id"),
+                    "user_id": source.get("user_id"),
+                }
+            )
+
+        # Query profile documents
+        profile_query = {
+            "size": 100,
+            "query": {
+                "bool": {
+                    "must": [
+                        {"term": {"user_id": user_id}},
+                        {"term": {"document_type": "profile"}},
+                    ]
+                }
+            },
+        }
+
+        profile_response = opensearch_client.search(index=speaker_index, body=profile_query)
+        for hit in profile_response["hits"]["hits"]:
+            source = hit["_source"]
+            section["opensearch_profiles"].append(
+                {
+                    "opensearch_id": hit["_id"],
+                    "profile_id": source.get("profile_id"),
+                    "profile_name": source.get("profile_name"),
+                    "speaker_count": source.get("speaker_count"),
+                    "user_id": source.get("user_id"),
+                }
+            )
+
+    except Exception as e:
+        # Diagnostic endpoint: the OpenSearch section is optional, and the
+        # error is surfaced in the payload rather than failing the report.
+        logger.exception("OpenSearch section of the speaker debug report failed")
+        section["opensearch_error"] = str(e)
+
+    return section
 
 
 @router.get("/debug/cross-media-data", response_model=dict[str, Any])
@@ -815,71 +904,16 @@ def debug_cross_media_data(
                 }
             )
 
-        # Get OpenSearch speaker documents
-        try:
-            from app.core.constants import get_speaker_index
-            from app.services.opensearch_service import opensearch_client
+        # Every Postgres read is done. End the request's transaction BEFORE the
+        # search-index round trips below: a plain SELECT holds ACCESS SHARE for the
+        # life of its transaction, so waiting on a slow cluster here would queue
+        # ALTER TABLE (an Alembic upgrade) and pin the vacuum horizon for nothing.
+        # This handler performs no writes, so the commit only closes the read.
+        db.commit()
 
-            if opensearch_client:
-                speaker_index = get_speaker_index()
-                # Query all speaker documents for this user
-                query = {
-                    "size": 100,
-                    "query": {
-                        "bool": {
-                            "must": [{"term": {"user_id": current_user.id}}],
-                            "must_not": [
-                                {"exists": {"field": "document_type"}}
-                            ],  # Only speakers, not profiles
-                        }
-                    },
-                }
-
-                response = opensearch_client.search(index=speaker_index, body=query)
-                for hit in response["hits"]["hits"]:
-                    source = hit["_source"]
-                    debug_info["opensearch_speakers"].append(
-                        {
-                            "opensearch_id": hit["_id"],
-                            "speaker_id": source.get("speaker_id"),
-                            "display_name": source.get("display_name"),
-                            "profile_id": source.get("profile_id"),
-                            "media_file_id": source.get("media_file_id"),
-                            "user_id": source.get("user_id"),
-                        }
-                    )
-
-                # Query profile documents
-                profile_query = {
-                    "size": 100,
-                    "query": {
-                        "bool": {
-                            "must": [
-                                {"term": {"user_id": current_user.id}},
-                                {"term": {"document_type": "profile"}},
-                            ]
-                        }
-                    },
-                }
-
-                profile_response = opensearch_client.search(index=speaker_index, body=profile_query)
-                for hit in profile_response["hits"]["hits"]:
-                    source = hit["_source"]
-                    debug_info["opensearch_profiles"].append(
-                        {
-                            "opensearch_id": hit["_id"],
-                            "profile_id": source.get("profile_id"),
-                            "profile_name": source.get("profile_name"),
-                            "speaker_count": source.get("speaker_count"),
-                            "user_id": source.get("user_id"),
-                        }
-                    )
-
-        except Exception as e:
-            # Diagnostic endpoint: the OpenSearch section is optional, and the
-            # error is surfaced in the payload rather than failing the report.
-            logger.exception("OpenSearch section of the speaker debug report failed")
-            debug_info["opensearch_error"] = str(e)
+        # Get the index-side view. No session is held across it — the helper does
+        # not take one.
+        debug_info.update(_collect_index_debug_documents(current_user.id))
 
         # Add summary analysis
         debug_info["analysis"] = {
@@ -1346,16 +1380,26 @@ def _update_opensearch_speaker_name(speaker_uuid: str, display_name: str) -> Non
 
 
 def _handle_speaker_labeling_workflow(
-    speaker: Speaker, display_name: str, db: Session
+    db: Session, speaker_id: int, display_name: str
 ) -> dict[str, int]:
     """
     Handle auto-creation of profiles and retroactive matching when speaker is labeled.
+
+    Takes ``speaker_id`` rather than a ``Speaker``: the caller's read phase has
+    already closed, so the row is re-read here against the session that will write
+    it. An instance carried over from a closed session would lazy-load — silently
+    opening a second transaction — on the first attribute the callees touch.
 
     Returns:
         dict with 'auto_applied_count' and 'suggested_count' keys
     """
     # Auto-create profile if needed and assign speaker to it
     from app.api.endpoints.speaker_update import auto_create_or_assign_profile
+
+    speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+    if not speaker:
+        logger.warning(f"Speaker {speaker_id} disappeared before retroactive matching")
+        return {"auto_applied_count": 0, "suggested_count": 0}
 
     auto_create_or_assign_profile(speaker, display_name, db)
 
@@ -1369,15 +1413,31 @@ def _handle_speaker_labeling_workflow(
     return trigger_retroactive_matching(speaker, db)
 
 
-def _clear_video_cache_for_speaker(db: Session, media_file_id: int) -> None:
-    """Clear video cache since speaker labels have changed (affects subtitles)."""
+def _clear_video_cache_for_speaker(media_file_id: int) -> None:
+    """Clear video cache since speaker labels have changed (affects subtitles).
+
+    **Takes no caller-owned ``Session``.** This runs from
+    ``process_speaker_update_background``, which used to hold ONE transaction across
+    its whole body — including the storage client construction and the five object
+    deletes underneath. It now opens its own session, and only for the single
+    filename SELECT that ``clear_cache_for_media_file`` needs; the storage client is
+    built before that session exists.
+
+    A residual remains one frame down: ``VideoProcessingService.clear_cache_for_media_file``
+    still takes a session and issues its deletes through it (it is allowlisted under
+    its own key, and its signature is shared with request handlers this change does
+    not own). What changed is that the window is now that one call rather than the
+    entire task.
+    """
     try:
+        from app.db.session_utils import session_scope
         from app.services.minio_service import MinIOService
         from app.services.video_processing_service import VideoProcessingService
 
         minio_service = MinIOService()
         video_processing_service = VideoProcessingService(minio_service)
-        video_processing_service.clear_cache_for_media_file(db, media_file_id)
+        with session_scope() as db:
+            video_processing_service.clear_cache_for_media_file(db, media_file_id)
     except Exception as e:
         logger.exception(f"Warning: Failed to clear video cache after speaker update: {e}")
 
@@ -1447,6 +1507,32 @@ def _handle_update_profile_action(
     return renames
 
 
+def _load_profile_speaker_names(db: Session, profile_id: int) -> list[tuple[str, str]]:
+    """Read ``(speaker_uuid, display_name)`` for every speaker linked to a profile.
+
+    Plain data only — no ORM instances — so the caller can close its session before
+    pushing the names to the search index. Speakers with no display name are skipped
+    here rather than in the push loop, so the returned length is the number of
+    documents that will actually be written.
+    """
+    rows = (
+        db.query(Speaker.uuid, Speaker.display_name).filter(Speaker.profile_id == profile_id).all()
+    )
+    return [(str(uuid_), str(name)) for uuid_, name in rows if name]
+
+
+def _push_speaker_display_names(rows: list[tuple[str, str]]) -> None:
+    """Write ``(speaker_uuid, display_name)`` pairs to the search index.
+
+    **Takes no ``Session``.** One round trip per linked speaker — a dozen for a
+    well-used profile — so this must never run with a transaction open. Callers do
+    the read in a short session, close it, then call this.
+    """
+    for speaker_uuid, display_name in rows:
+        _update_opensearch_speaker_name(speaker_uuid, display_name)
+    logger.info(f"Synced renamed profile to OpenSearch for {len(rows)} speakers")
+
+
 def _sync_profile_rename_to_opensearch(db: Session, profile_id: int) -> None:
     """Replay a profile rename onto every linked speaker's OpenSearch document.
 
@@ -1454,20 +1540,20 @@ def _sync_profile_rename_to_opensearch(db: Session, profile_id: int) -> None:
     request path. Names are re-read from Postgres rather than passed in, so a rename
     that landed while the task was queued still wins.
 
+    Read, **release the transaction**, then push: the fan-out is one OpenSearch write
+    per linked speaker, and holding the caller's transaction across them queues every
+    ALTER TABLE for as long as the cluster takes. ``db.commit()`` is safe here because
+    the only statement this function issues is the SELECT above. The task calls the two
+    halves directly so that no session exists at all during the push.
+
     The profile's consolidated embedding is deliberately NOT recomputed here:
     ``_handle_profile_embedding_updates`` case 4 (display name changed, same profile)
     already calls ``ProfileEmbeddingService.update_profile_embedding`` earlier in the
     same task, and a profile rename always satisfies that case.
     """
-    linked_speakers = (
-        db.query(Speaker.uuid, Speaker.display_name).filter(Speaker.profile_id == profile_id).all()
-    )
-    for speaker_uuid, display_name in linked_speakers:
-        if display_name:
-            _update_opensearch_speaker_name(str(speaker_uuid), str(display_name))
-    logger.info(
-        f"Synced renamed profile {profile_id} to OpenSearch for {len(linked_speakers)} speakers"
-    )
+    rows = _load_profile_speaker_names(db, profile_id)
+    db.commit()
+    _push_speaker_display_names(rows)
 
 
 def _handle_create_new_profile_action(
@@ -1535,24 +1621,41 @@ def _get_profile_uuid(speaker: Speaker, db: Session) -> str | None:
     return str(profile.uuid) if profile else None
 
 
-def _update_opensearch_profile_info(
-    speaker: Speaker, old_profile_id: int | None, display_name_changed: bool, db: Session
-) -> None:
-    """Update OpenSearch with profile information changes."""
-    new_profile_id = speaker.profile_id
+def _load_speaker_profile_sync_payload(
+    db: Session, speaker: Speaker, old_profile_id: int | None, display_name_changed: bool
+) -> dict[str, Any] | None:
+    """Resolve the profile fields a speaker's search document needs, as plain data.
+
+    Returns ``None`` when nothing changed and no write is due — the same early
+    return the pre-split ``_update_opensearch_profile_info`` made. Everything the
+    write needs (including the profile UUID, which may require a second SELECT) is
+    materialised here so the caller can close its session before writing.
+    """
+    new_profile_id = int(speaker.profile_id) if speaker.profile_id else None
 
     if old_profile_id == new_profile_id and not display_name_changed:
+        return None
+
+    return {
+        "speaker_uuid": str(speaker.uuid),
+        "profile_id": new_profile_id,
+        "profile_uuid": _get_profile_uuid(speaker, db),
+        "verified": bool(speaker.verified),
+    }
+
+
+def _push_speaker_profile_info(payload: dict[str, Any] | None) -> None:
+    """Write a speaker's profile fields to the search index.
+
+    **Takes no ``Session``.** ``None`` means the read phase decided there was
+    nothing to sync.
+    """
+    if payload is None:
         return
 
     from app.services.opensearch_service import update_speaker_profile
 
-    profile_uuid = _get_profile_uuid(speaker, db)
-    update_speaker_profile(
-        speaker_uuid=str(speaker.uuid),
-        profile_id=int(speaker.profile_id) if speaker.profile_id else None,
-        profile_uuid=profile_uuid,
-        verified=bool(speaker.verified),
-    )
+    update_speaker_profile(**payload)
 
 
 def _get_media_file_uuid(speaker: Speaker, db: Session) -> str | None:
@@ -2015,7 +2118,7 @@ def _dispatch_verify_action(
 # --- Helper functions for merge_speakers ---
 
 
-def _merge_speaker_embeddings(source_speaker_uuid: str, target_speaker: Speaker) -> None:
+def _merge_speaker_embeddings(source_speaker_uuid: str, target: dict[str, Any]) -> None:
     """Merge and average speaker embeddings in OpenSearch.
 
     Takes the source speaker's UUID rather than the ORM row: this now runs in
@@ -2023,6 +2126,11 @@ def _merge_speaker_embeddings(source_speaker_uuid: str, target_speaker: Speaker)
     Speaker row has already been deleted from Postgres. Only its OpenSearch document
     is still needed, and that is removed later in the same task by
     ``_update_opensearch_speaker_merge`` — so the read here still precedes the delete.
+
+    ``target`` is the surviving speaker as **plain data** (see
+    ``speaker_merge_task._load_merge_plan``), not a ``Speaker``. Two OpenSearch reads
+    and one write run here; a live ORM instance would lazy-load mid-flight and open a
+    transaction underneath them, which is the leak this split exists to remove.
     """
     try:
         import numpy as np
@@ -2032,7 +2140,7 @@ def _merge_speaker_embeddings(source_speaker_uuid: str, target_speaker: Speaker)
 
         # Get embeddings for both speakers
         source_embedding = get_speaker_embedding(str(source_speaker_uuid))
-        target_embedding = get_speaker_embedding(str(target_speaker.uuid))
+        target_embedding = get_speaker_embedding(target["uuid"])
 
         if source_embedding and target_embedding:
             # Average the embeddings
@@ -2041,40 +2149,33 @@ def _merge_speaker_embeddings(source_speaker_uuid: str, target_speaker: Speaker)
 
             # Store the averaged embedding in OpenSearch
             add_speaker_embedding(
-                speaker_uuid=str(target_speaker.uuid),
-                speaker_id=target_speaker.id,
-                user_id=int(target_speaker.user_id),
-                name=str(target_speaker.name),
+                speaker_uuid=target["uuid"],
+                speaker_id=target["id"],
+                user_id=target["user_id"],
+                name=target["name"],
                 embedding=averaged_embedding,
-                profile_id=int(target_speaker.profile_id) if target_speaker.profile_id else None,
-                media_file_id=int(target_speaker.media_file_id)
-                if target_speaker.media_file_id
-                else None,
-                display_name=str(target_speaker.display_name)
-                if target_speaker.display_name
-                else None,
+                profile_id=target["profile_id"],
+                media_file_id=target["media_file_id"],
+                display_name=target["display_name"],
                 segment_count=2,  # Merged from 2 speakers
             )
-            logger.info(f"Updated target speaker {target_speaker.id} with averaged embedding")
+            logger.info(f"Updated target speaker {target['id']} with averaged embedding")
         else:
             logger.warning("Could not retrieve embeddings for speaker merge")
     except Exception as e:
         logger.exception(f"Error averaging speaker embeddings during merge: {e}")
 
 
-def _clear_speaker_video_cache(db: Session, affected_media_files: set[int]) -> None:
-    """Clear video cache for affected media files after speaker merge."""
-    try:
-        from app.services.minio_service import MinIOService
-        from app.services.video_processing_service import VideoProcessingService
+def _clear_speaker_video_cache(affected_media_files: set[int]) -> None:
+    """Clear video cache for affected media files after speaker merge.
 
-        minio_service = MinIOService()
-        video_processing_service = VideoProcessingService(minio_service)
-
-        for media_file_id in affected_media_files:
-            video_processing_service.clear_cache_for_media_file(db, media_file_id)
-    except Exception as e:
-        logger.exception(f"Warning: Failed to clear video cache after speaker merge: {e}")
+    **Takes no caller-owned ``Session``.** One short session per file (via
+    ``_clear_video_cache_for_speaker``) rather than one transaction spanning the
+    merge task, which previously stayed open across every object delete for both
+    sides of the merge.
+    """
+    for media_file_id in sorted(affected_media_files):
+        _clear_video_cache_for_speaker(media_file_id)
 
 
 def _update_opensearch_speaker_merge(source_speaker_uuid: str, target_speaker_uuid: str) -> None:

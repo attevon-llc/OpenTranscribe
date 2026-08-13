@@ -5,6 +5,16 @@ Handles heavy operations after a speaker's display_name is updated:
 profile embedding updates, OpenSearch synchronization, retroactive
 cross-media speaker matching, video cache clearing, and WebSocket
 notification.
+
+**Session lifetime.** This task used to wrap its entire body — three OpenSearch
+fan-outs, a MinIO cache purge and the retroactive-matching pass — in ONE
+``session_scope``. A plain SELECT holds ACCESS SHARE for the life of its
+transaction, so that single hold queued every ``ALTER TABLE`` (i.e. an Alembic
+upgrade, which dev runs on backend startup), pinned the vacuum horizon on
+``transcript_segment``, and burned a pool connection for the whole run. It is now
+a sequence of short DB phases with the network work between them, holding
+nothing. ``tasks/speaker_attribute_task.py`` is the worked example of the pattern
+and ``tasks/CLAUDE.md`` documents the rule.
 """
 
 import logging
@@ -14,6 +24,57 @@ from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
 
 logger = logging.getLogger(__name__)
+
+
+def _load_update_plan(
+    speaker_uuid: str, old_profile_id: int | None, display_name_changed: bool
+) -> dict | None:
+    """Read everything the OpenSearch phases need, then release the session.
+
+    Returns **plain data only** — no ORM instances. An instance escaping the scope
+    can lazy-load later and silently reopen a transaction underneath a network
+    call, which is the bug this split removes. ``None`` means the speaker is gone.
+
+    The display name and profile id are re-read here rather than trusted from the
+    task arguments, exactly as the pre-split code did, so a second edit that landed
+    while this task was queued still wins. ``profile_sync`` is ``None`` when the
+    search document needs no profile write — the same early return the pre-split
+    ``_update_opensearch_profile_info`` made.
+    """
+    from app.api.endpoints.speakers import _load_speaker_profile_sync_payload
+    from app.utils.uuid_helpers import get_speaker_by_uuid
+
+    with session_scope() as db:
+        speaker = get_speaker_by_uuid(db, speaker_uuid)
+        if not speaker:
+            return None
+
+        return {
+            "display_name": str(speaker.display_name) if speaker.display_name else "",
+            "profile_id": int(speaker.profile_id) if speaker.profile_id else None,
+            # Resolved while the session is still open; pushed after it closes.
+            "profile_sync": _load_speaker_profile_sync_payload(
+                db, speaker, old_profile_id, display_name_changed
+            ),
+        }
+
+
+def _load_completion_notification(speaker_uuid: str) -> dict:
+    """Read the identifiers the completion WebSocket event carries.
+
+    Runs after the labeling workflow, which can assign a profile, so the profile
+    UUID has to be re-read rather than reused from the plan.
+    """
+    from app.utils.uuid_helpers import get_speaker_by_uuid
+
+    with session_scope() as db:
+        speaker = get_speaker_by_uuid(db, speaker_uuid)
+        if not speaker:
+            return {"profile_uuid": None, "media_file_uuid": None}
+        return {
+            "profile_uuid": str(speaker.profile.uuid) if speaker.profile else None,
+            "media_file_uuid": str(speaker.media_file.uuid) if speaker.media_file else None,
+        }
 
 
 @celery_app.task(
@@ -45,6 +106,10 @@ def process_speaker_update_background(
     The speaker update endpoint returns immediately after saving to PostgreSQL,
     and this task runs in the background to complete the processing.
 
+    Each numbered step below either opens its OWN short session or holds none at
+    all; steps 2, 3 and 3b are OpenSearch round trips and run with zero sessions
+    open. See the module docstring for why.
+
     Args:
         speaker_uuid: UUID of the speaker being updated
         user_id: ID of the user who owns the speaker
@@ -64,31 +129,33 @@ def process_speaker_update_background(
     from app.api.endpoints.speakers import _clear_video_cache_for_speaker
     from app.api.endpoints.speakers import _handle_profile_embedding_updates
     from app.api.endpoints.speakers import _handle_speaker_labeling_workflow
-    from app.api.endpoints.speakers import _sync_profile_rename_to_opensearch
-    from app.api.endpoints.speakers import _update_opensearch_profile_info
+    from app.api.endpoints.speakers import _load_profile_speaker_names
+    from app.api.endpoints.speakers import _push_speaker_display_names
+    from app.api.endpoints.speakers import _push_speaker_profile_info
     from app.api.endpoints.speakers import _update_opensearch_speaker_name
-    from app.utils.uuid_helpers import get_speaker_by_uuid
     from app.utils.websocket_notify import send_ws_event
 
-    with session_scope() as db:
-        try:
-            logger.info(
-                f"Starting background processing for speaker {speaker_uuid} "
-                f"(display_name: {display_name})"
-            )
+    try:
+        logger.info(
+            f"Starting background processing for speaker {speaker_uuid} "
+            f"(display_name: {display_name})"
+        )
 
-            # Get the speaker from the database (fresh state in case it was updated again)
-            speaker = get_speaker_by_uuid(db, speaker_uuid)
-            if not speaker:
-                logger.error(f"Speaker {speaker_uuid} not found in background task")
-                return {"status": "error", "message": "Speaker not found"}
+        # Phase 1 — read (short session, Postgres only). Plain data out.
+        plan = _load_update_plan(speaker_uuid, old_profile_id, display_name_changed)
+        if plan is None:
+            logger.error(f"Speaker {speaker_uuid} not found in background task")
+            return {"status": "error", "message": "Speaker not found"}
 
-            # Use the current display_name from DB in case user updated again before task ran
-            display_name = str(speaker.display_name) if speaker.display_name else ""
-            new_profile_id = int(speaker.profile_id) if speaker.profile_id else None
+        # Use the current display_name from DB in case user updated again before task ran
+        display_name = plan["display_name"]
+        new_profile_id = plan["profile_id"]
+        profile_sync = plan["profile_sync"]
 
-            # 1. Handle profile embedding updates
-            logger.debug(f"Updating profile embeddings for speaker {speaker_uuid}")
+        # 1. Handle profile embedding updates (Postgres writes + OpenSearch reads
+        #    inside ProfileEmbeddingService — its own short session, not the task's).
+        logger.debug(f"Updating profile embeddings for speaker {speaker_uuid}")
+        with session_scope() as db:
             _handle_profile_embedding_updates(
                 db,
                 speaker_id,
@@ -98,64 +165,72 @@ def process_speaker_update_background(
                 display_name_changed,
             )
 
-            # 2. Update OpenSearch with speaker name
-            if display_name_changed and display_name:
-                logger.debug(f"Updating OpenSearch speaker name for {speaker_uuid}")
-                _update_opensearch_speaker_name(speaker_uuid, display_name)
+        # 2. Update OpenSearch with speaker name — NO session held.
+        if display_name_changed and display_name:
+            logger.debug(f"Updating OpenSearch speaker name for {speaker_uuid}")
+            _update_opensearch_speaker_name(speaker_uuid, display_name)
 
-            # 3. Update OpenSearch profile info
-            logger.debug(f"Updating OpenSearch profile info for speaker {speaker_uuid}")
-            _update_opensearch_profile_info(speaker, old_profile_id, display_name_changed, db)
+        # 3. Update OpenSearch profile info — NO session held; the payload was
+        #    resolved in the read phase above.
+        logger.debug(f"Updating OpenSearch profile info for speaker {speaker_uuid}")
+        _push_speaker_profile_info(profile_sync)
 
-            # 3b. Replay an in-place profile rename onto every linked speaker's doc
-            if renamed_profile_id:
-                logger.debug(f"Syncing renamed profile {renamed_profile_id} to OpenSearch")
-                _sync_profile_rename_to_opensearch(db, renamed_profile_id)
+        # 3b. Replay an in-place profile rename onto every linked speaker's doc.
+        #     Short read, then the fan-out with NO session held.
+        if renamed_profile_id:
+            logger.debug(f"Syncing renamed profile {renamed_profile_id} to OpenSearch")
+            with session_scope() as db:
+                rename_rows = _load_profile_speaker_names(db, renamed_profile_id)
+            _push_speaker_display_names(rename_rows)
 
-            # 4. Handle speaker labeling workflow (retroactive matching)
-            auto_applied_count = 0
-            suggested_count = 0
-            if display_name_changed and display_name and display_name.strip():
-                logger.debug(f"Running retroactive matching for speaker {speaker_uuid}")
-                result = _handle_speaker_labeling_workflow(speaker, display_name, db)
-                if result:
-                    auto_applied_count = result.get("auto_applied_count", 0)
-                    suggested_count = result.get("suggested_count", 0)
+        # 4. Handle speaker labeling workflow (retroactive matching) — its own
+        #    short session; the matching pass releases it around its OpenSearch phase.
+        auto_applied_count = 0
+        suggested_count = 0
+        if display_name_changed and display_name and display_name.strip():
+            logger.debug(f"Running retroactive matching for speaker {speaker_uuid}")
+            with session_scope() as db:
+                result = _handle_speaker_labeling_workflow(db, speaker_id, display_name)
+            if result:
+                auto_applied_count = result.get("auto_applied_count", 0)
+                suggested_count = result.get("suggested_count", 0)
 
-            # 5. Clear video cache
-            logger.debug(f"Clearing video cache for media file {media_file_id}")
-            _clear_video_cache_for_speaker(db, media_file_id)
+        # 5. Clear video cache — opens its own short session for the one SELECT it
+        #    needs; the storage client is constructed before it.
+        logger.debug(f"Clearing video cache for media file {media_file_id}")
+        _clear_video_cache_for_speaker(media_file_id)
 
-            # 6. Send WebSocket notification that background processing is complete
-            logger.debug(f"Sending WebSocket notification for speaker {speaker_uuid}")
+        # 6. Send WebSocket notification that background processing is complete
+        logger.debug(f"Sending WebSocket notification for speaker {speaker_uuid}")
+        identifiers = _load_completion_notification(speaker_uuid)
 
-            notification_data = {
-                "speaker_uuid": speaker_uuid,
-                "display_name": display_name,
-                "profile_id": str(speaker.profile.uuid) if speaker.profile else None,
-                "auto_applied_count": auto_applied_count,
-                "suggested_count": suggested_count,
-                "processing_status": "complete",
-                "media_file_id": str(speaker.media_file.uuid) if speaker.media_file else None,
-            }
+        notification_data = {
+            "speaker_uuid": speaker_uuid,
+            "display_name": display_name,
+            "profile_id": identifiers["profile_uuid"],
+            "auto_applied_count": auto_applied_count,
+            "suggested_count": suggested_count,
+            "processing_status": "complete",
+            "media_file_id": identifiers["media_file_uuid"],
+        }
 
-            send_ws_event(user_id, "speaker_processing_complete", notification_data)
+        send_ws_event(user_id, "speaker_processing_complete", notification_data)
 
-            logger.info(
-                f"Background processing complete for speaker {speaker_uuid}. "
-                f"Auto-applied: {auto_applied_count}, Suggested: {suggested_count}"
-            )
+        logger.info(
+            f"Background processing complete for speaker {speaker_uuid}. "
+            f"Auto-applied: {auto_applied_count}, Suggested: {suggested_count}"
+        )
 
-            return {
-                "status": "success",
-                "speaker_uuid": speaker_uuid,
-                "auto_applied_count": auto_applied_count,
-                "suggested_count": suggested_count,
-            }
+        return {
+            "status": "success",
+            "speaker_uuid": speaker_uuid,
+            "auto_applied_count": auto_applied_count,
+            "suggested_count": suggested_count,
+        }
 
-        except Exception as e:
-            logger.error(
-                f"Error in background speaker processing for {speaker_uuid}: {type(e).__name__}: {e}"
-            )
-            logger.error("Full traceback:", exc_info=True)
-            return {"status": "error", "message": str(e)}
+    except Exception as e:
+        logger.error(
+            f"Error in background speaker processing for {speaker_uuid}: {type(e).__name__}: {e}"
+        )
+        logger.error("Full traceback:", exc_info=True)
+        return {"status": "error", "message": str(e)}

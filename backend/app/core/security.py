@@ -33,13 +33,127 @@ def _get_pbkdf2_iterations() -> int:
     Returns:
         Number of PBKDF2 iterations to use
     """
-    if (
-        settings.FIPS_MODE
-        and hasattr(settings, "FIPS_VERSION")
-        and settings.FIPS_VERSION == "140-3"
-    ):
+    if settings.fips_140_3_active:
         return settings.PBKDF2_ITERATIONS_V3
     return settings.PBKDF2_ITERATIONS
+
+
+# ── JWT algorithm selection: ONE owner for each of the two questions ────────────
+#
+# Before this pair there were five copies of "which algorithm?" and they disagreed:
+#
+#   * ``token_service.create_refresh_token`` gated on ``FIPS_VERSION`` alone, which
+#     defaults to ``"140-3"`` — so EVERY deployment, FIPS or not, signed refresh
+#     tokens with HS512 while its access tokens were HS256. Nothing noticed because
+#     ``verify_token_with_fallback`` happened to try both.
+#   * ``token_service.create_token`` duplicated the branch inline with a different
+#     (correct) gate.
+#   * ``verify_token`` below accepted HS512-first with a strict mode, while the HTTP
+#     verifiers in ``api/endpoints/auth/dependencies.py`` hardcoded
+#     ``[settings.JWT_ALGORITHM]``. Under FIPS strict that pair means HTTP requests
+#     work and WebSocket handshakes are refused.
+#
+# The rule these two functions encode, and which ``tests/unit/
+# test_jwt_issuer_verifier_agreement.py`` pins for every token type in both FIPS
+# modes:
+#
+#     signing_algorithm(t) ∈ accepted_algorithms(t)     — for all t, in every config.
+#
+# A configuration that violates it is an outage, not a hardening.
+
+#: The algorithm every deployment signed with before any of this was configurable,
+#: and still the default of ``JWT_ALGORITHM`` (asserted by
+#: ``tests/unit/test_jwt_issuer_verifier_agreement.py``).
+#:
+#: It stays in the dual-accept set while the migration window is open, and that is
+#: load-bearing rather than belt-and-braces. Without it, an operator following the
+#: documented route to HS512 (``JWT_ALGORITHM=HS512``) would find that
+#: ``JWT_ALGORITHM`` and ``JWT_ALGORITHM_V3`` now name the SAME algorithm, so the
+#: "compatible" set collapses to one entry and every token in flight is refused on
+#: restart — a migration window that closes itself at the exact moment it is needed.
+HISTORICAL_ALGORITHM = "HS256"  # noqa: S105 - a JWS alg name, not a password  # nosec B105
+
+
+def signing_algorithm(token_type: str = TOKEN_TYPE_ACCESS) -> str:
+    """Return the algorithm that signs a *token_type* token on this deployment.
+
+    **The answer is ``settings.JWT_ALGORITHM`` for every token type, in every FIPS
+    mode.** ``token_type`` is accepted so that call sites read as an explicit
+    question rather than a constant, and so a future divergence has exactly one
+    place to live — but it is deliberately not a divergence today, for two reasons:
+
+    1. **The access-token issuer cannot move.** Every production login goes through
+       ``auth/direct_auth.create_access_token``, which signs with
+       ``settings.JWT_ALGORITHM`` unconditionally; ``api/endpoints/auth/mfa_tokens``
+       does the same for the MFA half-token. Any per-type branch here that those
+       modules do not share would mint tokens their own verifiers reject.
+    2. **HS256 is FIPS-approved**, so there is no compliance reason to branch. HMAC
+       (FIPS 198-1) over SHA-256 (FIPS 180-4) carries 128 bits of security strength
+       under SP 800-57 Pt.1 R5, above the 112-bit floor of SP 800-131A Rev.2.
+
+    ``JWT_ALGORITHM_V3`` is therefore a **verifier** setting only — the other member
+    of the dual-accept migration set — and is never consulted here. Operators who
+    must run HS512 set ``JWT_ALGORITHM=HS512`` (plus a 64-byte ``JWT_SECRET_KEY``),
+    which moves issuance and acceptance together because both read this function.
+
+    Args:
+        token_type: One of ``access``/``refresh``/``mfa``. Documented above.
+
+    Returns:
+        The JWS ``alg`` value to sign with.
+    """
+    # token_type is intentionally not branched on — see the docstring. Referenced
+    # here so a future branch has an obvious seam and linters see it used.
+    del token_type
+    return settings.JWT_ALGORITHM
+
+
+def accepted_algorithms(token_type: str = TOKEN_TYPE_ACCESS) -> list[str]:
+    """Return the algorithms a *token_type* token may be signed with to be accepted.
+
+    Every JWT verifier in this codebase that the algorithm decision reaches must
+    call this — ``verify_token`` below, both request-path verifiers in
+    ``api/endpoints/auth/dependencies.py``, and
+    ``auth/token_service.verify_token_with_fallback``.
+
+    The list always leads with :func:`signing_algorithm`, so what this deployment
+    issues is always accepted. What follows depends on the migration window:
+
+    * **Window open** (the default, and anything outside FIPS 140-3): also accept
+      the other configured algorithm and :data:`HISTORICAL_ALGORITHM`, so changing
+      what is signed does not invalidate tokens already in flight.
+    * **Window closed** (``fips_140_3_active`` and ``FIPS_MIGRATION_MODE=strict``):
+      accept only the signing algorithm.
+
+    Strict used to be spelled ``[JWT_ALGORITHM_V3]`` unconditionally. That is the
+    defect it looks like a hardening of: no issuer in this codebase has ever minted
+    ``JWT_ALGORITHM_V3``, so a strict deployment accepted nothing it could produce —
+    ``verify_token`` is the WebSocket and SAML verifier, so turning strict on
+    refused every WebSocket handshake while HTTP (which decoded with a different,
+    hardcoded list) carried on working. "Only what we sign" is the meaning that both
+    closes the window and leaves the deployment able to authenticate: an operator
+    who needs HS256 refused sets ``JWT_ALGORITHM=HS512``, and strict then accepts
+    HS512 alone.
+
+    Args:
+        token_type: Passed to :func:`signing_algorithm`; see its docstring.
+
+    Returns:
+        Ordered, de-duplicated ``alg`` values, signing algorithm first.
+    """
+    signed = signing_algorithm(token_type)
+    if settings.fips_140_3_active and settings.FIPS_MIGRATION_MODE == "strict":
+        return [signed]
+
+    accepted = [signed]
+    for candidate in (
+        settings.JWT_ALGORITHM,
+        settings.JWT_ALGORITHM_V3,
+        HISTORICAL_ALGORITHM,
+    ):
+        if candidate not in accepted:
+            accepted.append(candidate)
+    return accepted
 
 
 #: Production bcrypt work factor. Never lowered in a real deployment.
@@ -140,14 +254,16 @@ def create_access_token(
     """
     Create a JWT access token with optional additional claims.
 
-    **The algorithm is ``settings.JWT_ALGORITHM`` — never FIPS-branched.** There used
-    to be a ``_get_jwt_algorithm()`` here that returned ``JWT_ALGORITHM_V3`` (HS512)
-    under ``FIPS_MODE`` + ``FIPS_VERSION="140-3"``. It was deleted rather than wired
-    into the real login path, because the access-token *verifiers* on the request path
-    (``api/endpoints/auth/dependencies.py`` — ``get_current_user`` and
-    ``get_optional_current_user``) decode with ``algorithms=[settings.JWT_ALGORITHM]``
-    and nothing else. An issuer that FIPS-branched while those did not would mint
-    tokens no authenticated request could verify.
+    **The algorithm comes from :func:`signing_algorithm` — the one owner of that
+    question.** There used to be a ``_get_jwt_algorithm()`` here that returned
+    ``JWT_ALGORITHM_V3`` (HS512) under ``FIPS_MODE`` + ``FIPS_VERSION="140-3"``. It was
+    deleted rather than wired into the real login path, because the access-token
+    *verifiers* on the request path (``api/endpoints/auth/dependencies.py`` —
+    ``get_current_user`` and ``get_optional_current_user``) decoded with
+    ``algorithms=[settings.JWT_ALGORITHM]`` and nothing else. An issuer that
+    FIPS-branched while those did not would mint tokens no authenticated request
+    could verify. Those verifiers now call :func:`accepted_algorithms`, so the pair
+    can no longer drift apart silently.
 
     **HS256 is FIPS-approved.** HMAC-SHA-256 is an approved algorithm under FIPS 198-1
     with SHS (FIPS 180-4); NIST SP 800-57 Pt.1 R5 puts it at 128 bits of security, above
@@ -173,7 +289,7 @@ def create_access_token(
     else:
         expire = now + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
 
-    algorithm = settings.JWT_ALGORITHM
+    algorithm = signing_algorithm(TOKEN_TYPE_ACCESS)
 
     to_encode = {
         "exp": expire,
@@ -354,41 +470,26 @@ def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> d
             token — both are signed with the same key and, in non-FIPS mode, an
             algorithm this function accepts.
 
-    Supports dual algorithm verification for FIPS 140-3 migration:
-    - In compatible mode: tries HS512 first, falls back to HS256
-    - In strict mode: only accepts the configured algorithm
-    - In non-FIPS mode: accepts HS256 only
+    The accepted algorithms come from :func:`accepted_algorithms` — the one owner of
+    that question, shared with both request-path verifiers in
+    ``api/endpoints/auth/dependencies.py`` and with
+    ``auth/token_service.verify_token_with_fallback``. This function is the
+    WebSocket and SAML verifier; when it kept its own list, a FIPS-strict deployment
+    refused every WebSocket handshake while HTTP kept working.
 
-    This allows seamless migration from FIPS 140-2 (HS256) to FIPS 140-3 (HS512)
-    without invalidating existing tokens during the transition period.
-
-    When a token uses HS256 but FIPS 140-3 mode is active, the fallback is
-    audited for compliance tracking.
+    When a token uses the legacy algorithm but FIPS 140-3 mode is active, the
+    fallback is audited for compliance tracking — that record is how an operator
+    knows the migration window can be closed.
     """
     # Check token header algorithm for audit logging
     token_algorithm = None
     with contextlib.suppress(JoseError):  # unparseable header is handled by decode below
         token_algorithm = extract_compact(token.encode()).headers().get("alg")
 
-    # Determine which algorithms to accept
-    is_fips_140_3 = (
-        settings.FIPS_MODE
-        and hasattr(settings, "FIPS_VERSION")
-        and settings.FIPS_VERSION == "140-3"
-    )
-    if is_fips_140_3:
-        migration_mode = getattr(settings, "FIPS_MIGRATION_MODE", "compatible")
-        if migration_mode == "strict":
-            # Strict mode: only accept HS512
-            allowed_algorithms = [settings.JWT_ALGORITHM_V3]
-        else:
-            # Compatible mode: try HS512 first, then HS256 for migration
-            allowed_algorithms = [settings.JWT_ALGORITHM_V3, settings.JWT_ALGORITHM]
-    else:
-        # Non-FIPS or FIPS 140-2: accept both for backward compatibility
-        allowed_algorithms = [settings.JWT_ALGORITHM]
-        if hasattr(settings, "JWT_ALGORITHM_V3"):
-            allowed_algorithms.append(settings.JWT_ALGORITHM_V3)
+    is_fips_140_3 = settings.fips_140_3_active
+    token_purpose = expected_type or TOKEN_TYPE_ACCESS
+    allowed_algorithms = accepted_algorithms(token_purpose)
+    current_algorithm = signing_algorithm(token_purpose)
 
     try:
         key = OctKey.import_key(settings.JWT_SECRET_KEY)
@@ -405,8 +506,16 @@ def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> d
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Audit log algorithm fallback in FIPS 140-3 mode
-        if token_algorithm == "HS256" and is_fips_140_3:  # noqa: S105 - JWT algorithm name, not a password  # nosec B105
+        # Audit the dual-accept fallback in FIPS 140-3 mode: a token signed with
+        # something OTHER than what this deployment currently signs with is the only
+        # thing keeping the migration window open, so it is the thing worth counting.
+        #
+        # This used to compare against the literal "HS256". On a FIPS deployment left
+        # at the default JWT_ALGORITHM=HS256 that names the CURRENT algorithm, so it
+        # fired on every single verification — an audit stream that says "legacy
+        # fallback" about every request tells an operator nothing about when the
+        # window can close, which is the one question it exists to answer.
+        if is_fips_140_3 and token_algorithm and token_algorithm != current_algorithm:
             from app.auth.audit import AuditEventType
             from app.auth.audit import AuditOutcome
             from app.auth.audit import audit_logger
@@ -416,8 +525,8 @@ def verify_token(token: str, expected_type: str | None = TOKEN_TYPE_ACCESS) -> d
                 outcome=AuditOutcome.SUCCESS,
                 details={
                     "warning": "legacy_algorithm_fallback",
-                    "used_algorithm": "HS256",
-                    "required_algorithm": "HS512",
+                    "used_algorithm": token_algorithm,
+                    "required_algorithm": current_algorithm,
                 },
             )
 

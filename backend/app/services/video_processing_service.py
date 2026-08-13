@@ -1,5 +1,15 @@
 """
 Video processing service for embedding subtitles into video files.
+
+**Session-lifetime note** (``app/tasks/CLAUDE.md``): the ffmpeg/MinIO entry
+points here — ``process_video_with_subtitles``, ``embed_subtitles_in_video`` and
+``extract_audio`` — used to take a caller's ``Session``, query with it, and then
+run a MinIO download plus a full ffmpeg transcode with it still open. A
+transcode is minutes; the transaction held ACCESS SHARE the whole time (queueing
+any ``ALTER TABLE``, i.e. an Alembic upgrade), pinned the vacuum horizon and
+consumed a pool connection. They now take plain arguments and open their **own**
+short sessions for the two reads they need (the filename, and the transcript for
+the SRT), so no transaction spans the slow work.
 """
 
 import asyncio
@@ -15,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.constants import VIDEO_CHUNK_SIZE
+from app.db.session_utils import session_scope
 from app.services.minio_service import MinIOService
 from app.services.subtitle_service import SubtitleService
 
@@ -506,13 +517,33 @@ class VideoProcessingService:
         if user_id:
             self._send_download_progress_sync(user_id, file_id, status, progress, error)
 
+    @staticmethod
+    def _media_filename(file_id: int) -> str:
+        """Read the file's original name in a short session of its own.
+
+        Raises:
+            Exception: If the media file does not exist.
+        """
+        from app.models.media import MediaFile
+
+        with session_scope() as db:
+            row = db.query(MediaFile.filename).filter(MediaFile.id == file_id).first()
+            if not row:
+                raise Exception(f"Media file {file_id} not found")
+            return str(row[0])
+
     def _generate_subtitle_file(
-        self, db: Session, file_id: int, subtitle_path: Path, include_speakers: bool
+        self, file_id: int, subtitle_path: Path, include_speakers: bool
     ) -> None:
-        """Generate subtitle file from transcript segments."""
-        subtitle_content = SubtitleService.generate_srt_content(db, file_id, include_speakers)
-        with open(subtitle_path, "w", encoding="utf-8") as f:
-            f.write(subtitle_content)
+        """Generate subtitle file from transcript segments.
+
+        The transcript read gets its **own** short session, and the file write
+        happens after it closes — this runs between a MinIO download and an
+        ffmpeg transcode, so nothing here may leave a transaction open.
+        """
+        with session_scope() as db:
+            subtitle_content = SubtitleService.generate_srt_content(db, file_id, include_speakers)
+        subtitle_path.write_text(subtitle_content, encoding="utf-8")
 
     def _upload_to_cache(
         self,
@@ -540,7 +571,6 @@ class VideoProcessingService:
 
     def _process_video_in_temp_dir(
         self,
-        db: Session,
         file_id: int,
         original_video_path,
         user_id: int | None,
@@ -555,7 +585,7 @@ class VideoProcessingService:
 
             # Generate subtitle file
             self._notify_progress(user_id, file_id, "processing", 20)
-            self._generate_subtitle_file(db, file_id, subtitle_path, include_speakers)
+            self._generate_subtitle_file(file_id, subtitle_path, include_speakers)
             self._notify_progress(user_id, file_id, "processing", 30)
 
             # Get codecs and normalize format
@@ -588,33 +618,34 @@ class VideoProcessingService:
 
     def embed_subtitles_in_video(
         self,
-        db: Session,
         file_id: int,
         original_video_path,
         user_id: int | None = None,
         include_speakers: bool = True,
         output_format: str = "mp4",
+        original_filename: str | None = None,
     ) -> str:
         """
         Embed subtitles into a video file using ffmpeg.
 
+        Takes no ``Session``: the ffmpeg run below is minutes long and must not
+        share a transaction with anything. The two reads it needs open their own
+        short sessions (see :meth:`_media_filename` / :meth:`_generate_subtitle_file`).
+
         Args:
-            db: Database session
             file_id: Media file ID
             original_video_path: Path to the original video file
+            user_id: Recipient of progress notifications, if any
             include_speakers: Whether to include speaker labels
             output_format: Output video format (mp4, mkv, etc.)
+            original_filename: Pre-read filename, so a caller that already has it
+                does not pay for a second lookup.
 
         Returns:
             Path to the processed video file with embedded subtitles
         """
-        from app.models.media import MediaFile
-
-        filename_row = db.query(MediaFile.filename).filter(MediaFile.id == file_id).first()
-        if not filename_row:
-            raise Exception(f"Media file {file_id} not found")
-
-        cache_key = self.generate_cache_key(file_id, str(filename_row[0]), include_speakers)
+        filename = original_filename or self._media_filename(file_id)
+        cache_key = self.generate_cache_key(file_id, filename, include_speakers)
 
         # Return cached version if available
         if self.is_video_cached(cache_key):
@@ -626,7 +657,6 @@ class VideoProcessingService:
 
         try:
             return self._process_video_in_temp_dir(
-                db,
                 file_id,
                 original_video_path,
                 user_id,
@@ -645,7 +675,6 @@ class VideoProcessingService:
 
     def process_video_with_subtitles(
         self,
-        db: Session,
         file_id: int,
         original_object_name: str,
         user_id: int | None = None,
@@ -655,24 +684,21 @@ class VideoProcessingService:
         """
         Complete workflow to process a video with embedded subtitles.
 
+        Takes no ``Session``. The filename lookup below happens in its own short
+        session which closes **before** the MinIO download and the ffmpeg run.
+
         Args:
-            db: Database session
             file_id: Media file ID
             original_object_name: MinIO object name for the original video
+            user_id: Recipient of progress notifications, if any
             include_speakers: Whether to include speaker labels
             output_format: Output video format
 
         Returns:
             Presigned URL to download the processed video
         """
-        # Get the MediaFile to access original filename
-        from app.models.media import MediaFile
-
-        filename_row = db.query(MediaFile.filename).filter(MediaFile.id == file_id).first()
-        if not filename_row:
-            raise Exception(f"Media file {file_id} not found")
-
-        cache_key = self.generate_cache_key(file_id, str(filename_row[0]), include_speakers)
+        filename = self._media_filename(file_id)
+        cache_key = self.generate_cache_key(file_id, filename, include_speakers)
 
         # Check cache first
         if self.is_video_cached(cache_key):
@@ -693,12 +719,12 @@ class VideoProcessingService:
 
                 # Process video with subtitles
                 return self.embed_subtitles_in_video(
-                    db=db,
                     file_id=file_id,
                     original_video_path=original_path,
                     user_id=user_id,
                     include_speakers=include_speakers,
                     output_format=output_format,
+                    original_filename=filename,
                 )
 
             except Exception as e:
@@ -764,15 +790,16 @@ class VideoProcessingService:
 
     def extract_audio(
         self,
-        db: Session,
         file_id: int,
         original_object_name: str,
         audio_format: str = "mp3",
     ) -> tuple[str, str, str]:
         """Extract the audio track of a media file and cache it.
 
+        Takes no ``Session``: the filename lookup gets its own short session,
+        which closes before the MinIO download and the ffmpeg transcode below.
+
         Args:
-            db: Database session.
             file_id: Media file ID.
             original_object_name: MinIO object name for the original media.
             audio_format: One of ``mp3``, ``wav`` or ``original`` (lossless stream copy).
@@ -784,12 +811,7 @@ class VideoProcessingService:
             NoAudioTrackError: If the source has no audio stream.
             Exception: On ffmpeg/streaming failures.
         """
-        from app.models.media import MediaFile
-
-        filename_row = db.query(MediaFile.filename).filter(MediaFile.id == file_id).first()
-        if not filename_row:
-            raise Exception(f"Media file {file_id} not found")
-        original_filename = str(filename_row[0])
+        original_filename = self._media_filename(file_id)
 
         normalized = audio_format.lower()
         if normalized not in ("mp3", "wav", "original"):
@@ -851,8 +873,68 @@ class VideoProcessingService:
             self._upload_to_cache(output_path, cache_key, ext, content_type=content_type)
             return cache_key, ext, content_type
 
+    def derived_cache_keys(self, file_id: int, filename: str) -> list[str]:
+        """Every derived-cache key a media file can own. Pure — no I/O, no DB.
+
+        Both subtitle-embedded video variants and all three audio-extract
+        variants. Shared by the delete paths so the list cannot drift between
+        them.
+
+        Args:
+            file_id: Internal media file id.
+            filename: The file's ORIGINAL filename, which the keys derive from.
+
+        Returns:
+            Cache keys under ``DERIVED_CACHE_PREFIX``.
+        """
+        return [
+            self.generate_cache_key(file_id, filename, include_speakers=True),
+            self.generate_cache_key(file_id, filename, include_speakers=False),
+            self.audio_cache_key(filename, "mp3"),
+            self.audio_cache_key(filename, "wav"),
+            self.audio_cache_key(filename, "original"),
+        ]
+
+    def clear_derived_cache(self, file_id: int, filename: str) -> None:
+        """Delete a file's derived-cache objects. **Takes no DB session.**
+
+        Five MinIO round trips, so callers must not be holding a transaction:
+        take the filename in the read phase and call this afterwards. Absent
+        objects are not an error — these deletes are idempotent.
+
+        Args:
+            file_id: Internal media file id.
+            filename: The file's original filename.
+        """
+        for cache_key in self.derived_cache_keys(file_id, filename):
+            try:
+                self.minio_service.delete_object(self.cache_bucket, cache_key)
+                logger.info(f"Cleared cache for {cache_key}")
+            except Exception as cache_error:
+                # Cache file might not exist, which is fine, but we should log for debugging
+                logger.debug(
+                    f"Cache file {cache_key} not found or could not be deleted: {cache_error}"
+                )
+
     def clear_cache_for_media_file(self, db: Session, file_id: int):
-        """Clear cached processed videos for a media file."""
+        """Clear cached processed videos for a media file, resolving the name via ``db``.
+
+        ⚠️ **Known session-lifetime leak — do not call this from new code.** The
+        filename is looked up on the CALLER's session, so a caller that is
+        mid-transaction holds it across the five MinIO deletes below. Its
+        remaining callers are the two request handlers in
+        ``api/endpoints/speakers.py``, whose signature this change does not own;
+        it is catalogued in ``scripts/session-lifetime-allowlist.txt`` under its
+        own key until they move. Every other path resolves the filename in its
+        own short read phase and calls :meth:`clear_derived_cache` afterwards.
+
+        The delete loop is **deliberately inline rather than delegated** to
+        :meth:`clear_derived_cache`: delegating would hide the still-open leak
+        from ``scripts/audit-session-lifetime.py``, whose interprocedural rule
+        does not recurse. A gate that reports zero on a live defect is worse
+        than the six duplicated lines. Delete this method — not the duplication —
+        once ``speakers.py`` stops passing a session.
+        """
         try:
             # Get the MediaFile to access original filename
             from app.models.media import MediaFile
@@ -862,16 +944,7 @@ class VideoProcessingService:
                 logger.warning(f"Media file {file_id} not found for cache clearing")
                 return
 
-            filename = str(db_file.filename)
-            # Clear both subtitle-embedded video variants and all audio extract variants.
-            cache_keys = [
-                self.generate_cache_key(file_id, filename, include_speakers=True),
-                self.generate_cache_key(file_id, filename, include_speakers=False),
-                self.audio_cache_key(filename, "mp3"),
-                self.audio_cache_key(filename, "wav"),
-                self.audio_cache_key(filename, "original"),
-            ]
-            for cache_key in cache_keys:
+            for cache_key in self.derived_cache_keys(file_id, str(db_file.filename)):
                 try:
                     self.minio_service.delete_object(self.cache_bucket, cache_key)
                     logger.info(f"Cleared cache for {cache_key}")

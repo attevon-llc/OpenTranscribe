@@ -395,11 +395,16 @@ def _count_surviving(index: str, query: dict[str, Any]) -> int:
         return 0
 
 
-def _cleanup_opensearch_for_file(file: "MediaFile", file_uuid: str) -> list[dict[str, Any]]:
+def _cleanup_opensearch_for_file(target: dict[str, Any], file_uuid: str) -> list[dict[str, Any]]:
     """Remove all OpenSearch documents associated with a media file.
 
     Covers: speaker embeddings (v3 + v4 + alias), the transcript document, the
     ``transcript_chunks`` RAG index, and transcript summaries.
+
+    Takes **plain data, never an ORM instance**: it used to read ``file.speakers``
+    and ``file.id`` off a live row, which lazy-loads — i.e. reopens a transaction
+    — in the middle of half a dozen OpenSearch round trips. The speaker UUIDs are
+    now enumerated in :func:`_load_purge_plan`'s short read session instead.
 
     Best-effort means **one failing store never stops the others** — it does NOT
     mean failures are invisible. Every step that could not prove its documents
@@ -417,8 +422,8 @@ def _cleanup_opensearch_for_file(file: "MediaFile", file_uuid: str) -> list[dict
     surviving-document count — not the helper's return value — is the evidence.
 
     Args:
-        file: The media file whose documents are being removed. Must still be
-            attached (``file.speakers`` and ``file.id`` are read here).
+        target: The purge plan from :func:`_load_purge_plan` — ``file_id``,
+            ``speaker_uuids`` and an optional ``speaker_read_error``.
         file_uuid: The file's UUID, used as the transcript/chunk document key.
 
     Returns:
@@ -431,16 +436,16 @@ def _cleanup_opensearch_for_file(file: "MediaFile", file_uuid: str) -> list[dict
         logger.warning(f"OpenSearch erasure incomplete for file {file_uuid} at '{stage}': {err}")
         residual.append({"stage": stage, "file_uuid": file_uuid, "error": str(err)})
 
-    speaker_uuids: list[str] = []
-    try:
-        speaker_uuids = [str(speaker.uuid) for speaker in list(file.speakers)]
-    except Exception as e:  # noqa: BLE001 — a detached/failed load is itself a miss
-        _fail("speakers", f"could not enumerate the file's speakers: {e}")
+    # A read failure in the DB phase is still a miss: the embeddings it would
+    # have named are unaccounted for, so it must surface as a residual here.
+    read_error = target.get("speaker_read_error")
+    if read_error:
+        _fail("speakers", f"could not enumerate the file's speakers: {read_error}")
 
-    _erase_speaker_docs(speaker_uuids, _fail)
+    _erase_speaker_docs(list(target.get("speaker_uuids") or []), _fail)
     _erase_transcript_doc(file_uuid, _fail)
     _erase_transcript_chunks(file_uuid, _fail)
-    _erase_summary_docs(int(file.id), _fail)
+    _erase_summary_docs(int(target["file_id"]), _fail)
     return residual
 
 
@@ -545,7 +550,7 @@ def _erase_summary_docs(file_id: int, fail: Callable[[str, object], None]) -> No
         fail("transcript_summaries", e)
 
 
-def delete_file_storage_artifacts(db: Session, file: MediaFile) -> bool:
+def delete_file_storage_artifacts(file_id: int, artifacts: dict[str, Any]) -> bool:
     """Delete every object-storage artifact for a media file.
 
     Covers the original, its thumbnail, and the regenerable derived cache
@@ -554,12 +559,18 @@ def delete_file_storage_artifacts(db: Session, file: MediaFile) -> bool:
     retention/auto-delete path so neither can orphan storage. Best-effort per
     artifact — a failure on one never blocks the rest.
 
+    **Takes no DB session.** It used to take the caller's, purely to hand it to
+    ``VideoProcessingService.clear_cache_for_media_file`` for a filename lookup,
+    which put up to seven MinIO round trips inside the caller's transaction.
+    :func:`_load_purge_plan` reads the filename instead.
+
     A missing object is NOT a failure: S3/MinIO deletes are idempotent and do
     not raise for an absent key, so anything that does raise is a real one.
 
     Args:
-        db: Database session (used for the derived-cache lookup).
-        file: The media file whose artifacts are being deleted.
+        file_id: Internal media file id — the derived-cache keys are keyed on it.
+        artifacts: Plain values read in the caller's DB phase —
+            ``filename``, ``storage_path`` and ``thumbnail_path``.
 
     Returns:
         True when every artifact this file has was deleted or was already
@@ -572,8 +583,8 @@ def delete_file_storage_artifacts(db: Session, file: MediaFile) -> bool:
     from app.services.minio_service import delete_file
 
     all_deleted = True
-    for path_attr in ("storage_path", "thumbnail_path"):
-        path = getattr(file, path_attr, None)
+    for path_key in ("storage_path", "thumbnail_path"):
+        path = artifacts.get(path_key)
         if not path:
             continue
         try:
@@ -586,14 +597,16 @@ def delete_file_storage_artifacts(db: Session, file: MediaFile) -> bool:
     # Regenerable derived cache — duplicates that must not outlive the original.
     # "Regenerable" describes how they were made, not what they hold: these are
     # subtitle-burned video and extracted audio, i.e. the media itself.
-    try:
-        from app.services.minio_service import MinIOService
-        from app.services.video_processing_service import VideoProcessingService
+    filename = artifacts.get("filename")
+    if filename:
+        try:
+            from app.services.minio_service import MinIOService
+            from app.services.video_processing_service import VideoProcessingService
 
-        VideoProcessingService(MinIOService()).clear_cache_for_media_file(db, int(file.id))
-    except Exception as cache_err:  # noqa: BLE001
-        all_deleted = False
-        logger.warning(f"Derived-cache cleanup failed for file {file.uuid}: {cache_err}")
+            VideoProcessingService(MinIOService()).clear_derived_cache(int(file_id), str(filename))
+        except Exception as cache_err:  # noqa: BLE001
+            all_deleted = False
+            logger.warning(f"Derived-cache cleanup failed for file {file_id}: {cache_err}")
 
     return all_deleted
 
@@ -639,6 +652,77 @@ def _cleanup_empty_clusters(db: Session, owner_id: int) -> None:
         logger.warning(f"Failed to clean up empty clusters: {e}")
 
 
+def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
+    """Read everything the external destroy needs, then hand back PLAIN DATA.
+
+    No ORM instance leaves this function. ``file.speakers`` in particular is a
+    lazy relationship: reading it from the OpenSearch phase reopened a
+    transaction in the middle of half a dozen cluster round trips, which is the
+    exact back door the three-phase rule exists to close.
+
+    Args:
+        db: The caller's session, used only for the reads below.
+        file: The media file about to be destroyed.
+
+    Returns:
+        ``file_id``, ``file_uuid``, ``owner_id``, ``filename``,
+        ``storage_path``, ``thumbnail_path``, ``speaker_uuids`` and — when the
+        speaker enumeration itself failed — ``speaker_read_error``.
+    """
+    plan: dict[str, Any] = {
+        "file_id": int(file.id),
+        "file_uuid": str(file.uuid),
+        "owner_id": int(file.user_id),
+        "filename": str(file.filename) if file.filename else None,
+        "storage_path": str(file.storage_path) if file.storage_path else None,
+        "thumbnail_path": str(file.thumbnail_path) if file.thumbnail_path else None,
+        "speaker_uuids": [],
+        "speaker_read_error": None,
+    }
+    try:
+        plan["speaker_uuids"] = [str(speaker.uuid) for speaker in list(file.speakers)]
+    except Exception as e:  # noqa: BLE001 — a failed load is itself a miss
+        plan["speaker_read_error"] = str(e)
+    return plan
+
+
+def _purge_external_copies(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """Destroy every copy of a file that lives outside Postgres.
+
+    Object storage first, then OpenSearch. **Takes no session and opens none**,
+    so the caller's transaction is closed for the whole of it.
+
+    Args:
+        plan: The plain-data plan from :func:`_load_purge_plan`.
+
+    Returns:
+        One ``{"stage", "file_uuid", "error"}`` dict per store whose documents
+        or objects may have survived. Empty means every store confirmed them gone.
+    """
+    file_uuid = plan["file_uuid"]
+    residual: list[dict[str, Any]] = []
+
+    storage_ok = delete_file_storage_artifacts(
+        plan["file_id"],
+        {
+            "filename": plan["filename"],
+            "storage_path": plan["storage_path"],
+            "thumbnail_path": plan["thumbnail_path"],
+        },
+    )
+    if not storage_ok:
+        residual.append(
+            {
+                "stage": "storage",
+                "file_uuid": file_uuid,
+                "error": "one or more object-storage artifacts could not be deleted",
+            }
+        )
+
+    residual.extend(_cleanup_opensearch_for_file(plan, file_uuid) or [])
+    return residual
+
+
 def purge_media_file(db: Session, file: MediaFile) -> dict:
     """Canonical destroy for a MediaFile and ALL associated data.
 
@@ -665,22 +749,28 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
     failures are invisible. A caller that treats ``deleted: True`` as "every
     copy is gone" is wrong: the GDPR erasure path must surface
     ``residual_errors`` so an incomplete erasure audits as PARTIAL.
+
+    **Session lifetime.** Three phases: read the plan, destroy the external
+    copies with **no transaction open**, then delete the row. Steps 1 and 2 used
+    to run on the caller's live session — a request session in the interactive
+    and GDPR paths — so a MinIO outage or a slow OpenSearch cluster held
+    ``ACCESS SHARE`` on ``media_file`` for the whole destroy. The ``db.commit()``
+    between phases 1 and 2 is what actually ends that transaction; it is safe
+    because this function already commits (the row delete below), so no caller
+    can be relying on it to leave work pending.
     """
     file_uuid = str(file.uuid)
     residual: list[dict[str, Any]] = []
     try:
-        owner_id = int(file.user_id)
+        # Phase 1 — read (DB session open, Postgres only).
+        plan = _load_purge_plan(db, file)
+        owner_id = plan["owner_id"]
+        db.commit()
 
-        if not delete_file_storage_artifacts(db, file):
-            residual.append(
-                {
-                    "stage": "storage",
-                    "file_uuid": file_uuid,
-                    "error": "one or more object-storage artifacts could not be deleted",
-                }
-            )
-        residual.extend(_cleanup_opensearch_for_file(file, file_uuid) or [])
+        # Phase 2 — object storage + OpenSearch. NO transaction is held here.
+        residual.extend(_purge_external_copies(plan))
 
+        # Phase 3 — write.
         db.delete(file)
         db.commit()
         logger.info(f"purge_media_file: deleted file {file_uuid} from database")

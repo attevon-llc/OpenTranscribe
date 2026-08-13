@@ -163,6 +163,18 @@ run_phase "Model-vs-schema drift" \
     env RUN_SCHEMA_DRIFT_TESTS=true "$VENV_PY" -m pytest tests/unit/test_schema_drift.py \
     -o addopts="" -q --tb=short
 
+# 5b. DB session lifetime. A session held across slow non-DB work keeps a transaction open,
+# and a plain SELECT holds ACCESS SHARE for its life — so it queues ALTER TABLE (an Alembic
+# upgrade hanging mid-release), pins the VACUUM horizon on transcript_segment, and burns a
+# pool connection. Measured live twice in one day on two workers: 48 min and 1h26m
+# idle-in-transaction, found only because the DDL tests started failing with LockNotAvailable.
+#
+# Static and fast (no stack, no DB) — it is a phase here as well as a pre-commit hook because
+# pre-commit only fires on the files a commit touches, and this rule is about a shape that
+# spreads by passing `db` into a callee, i.e. across files a given commit may not include.
+run_phase "DB session lifetime (no transaction across slow work)" \
+    python3 "$SCRIPT_DIR/audit-session-lifetime.py" "$PROJECT_ROOT/backend/app"
+
 # 6. Collection determinism. Two independent processes must collect the SAME test ids.
 #
 # This exists because a single parametrize argument built from `uuid4()` at import time made

@@ -129,16 +129,49 @@ def _assemble_multipart(req: CompleteUploadRequest, object_name: str) -> None:
         ) from e
 
 
+def _fingerprint_object(task_id: str | None, storage_path: str, size: int) -> str | None:
+    """Compute the server-side imohash of an uploaded object.
+
+    Module-level, and called with **no transaction open**: this is a ranged read
+    against MinIO, and it used to run on the request session — holding
+    ``ACCESS SHARE`` on ``media_file`` for the length of a network round trip on
+    every presigned upload (``app/tasks/CLAUDE.md``).
+
+    Args:
+        task_id: Benchmark task id for the timing marker, if any.
+        storage_path: Object key to fingerprint.
+        size: The object's size in bytes, as observed by storage.
+
+    Returns:
+        The fingerprint, or None when it could not be computed (non-fatal).
+    """
+    from app.services.imohash_service import compute_from_minio
+
+    try:
+        with benchmark_timing.stage(task_id, "imohash"):
+            return compute_from_minio(storage_path, size=size)
+    except Exception as e:
+        logger.debug(f"imohash for {storage_path} failed (non-fatal): {e}")
+        return None
+
+
 @router.post("/complete", response_model=dict[str, Any])
 def complete_upload(
     request: CompleteUploadRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict[str, Any]:
-    """Finalize a presigned upload and dispatch the transcription pipeline."""
+    """Finalize a presigned upload and dispatch the transcription pipeline.
+
+    Three phases, and the split is load-bearing: the row is located and its
+    identifying columns are read as **plain data**, the request transaction is
+    then ended, and every object-storage round trip that follows (multipart
+    assembly, existence check, header read, fingerprint) runs with no
+    transaction open. All of it used to sit inside the request's read
+    transaction — multipart assembly of a 15 GB upload included.
+    """
     from app.api.endpoints.files.upload import _update_file_hash
     from app.api.endpoints.files.upload import dispatch_upload_pipeline
-    from app.services.imohash_service import compute_from_minio
     from app.services.minio_service import object_exists_and_size
 
     benchmark_timing.mark(request.task_id, "http_request_received")
@@ -161,15 +194,24 @@ def complete_upload(
             detail="MediaFile has no storage_path (was /prepare called with use_presigned=true?)",
         )
 
+    # Everything the storage phase needs, as plain data — then end the read
+    # transaction. Nothing between here and the write phase touches Postgres
+    # except the two failure paths, which re-open one to drop the orphan row.
+    storage_path = str(db_file.storage_path)
+    filename = str(db_file.filename)
+    declared_content_type = str(db_file.content_type) if db_file.content_type else ""
+    organization_id = db_file.organization_id
+    db.commit()
+
     # Verify the object actually landed in MinIO — trust but verify.
-    minio_size = object_exists_and_size(str(db_file.storage_path))
+    minio_size = object_exists_and_size(storage_path)
 
     # A multipart upload has no object until its parts are assembled. Doing this
     # only when the object is absent makes a retried /complete idempotent: the
     # second call sees the finished object and skips straight to verification.
     if minio_size is None and request.upload_id:
-        _assemble_multipart(request, str(db_file.storage_path))
-        minio_size = object_exists_and_size(str(db_file.storage_path))
+        _assemble_multipart(request, storage_path)
+        minio_size = object_exists_and_size(storage_path)
     if minio_size is None:
         # The presigned PUT never completed, so the prepared row is an orphan.
         # Drop it (parity with the legacy path's failure cleanup) so it doesn't
@@ -179,8 +221,7 @@ def complete_upload(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"No MinIO object at {db_file.storage_path} — presigned PUT "
-                "did not complete successfully"
+                f"No MinIO object at {storage_path} — presigned PUT did not complete successfully"
             ),
         )
     if request.file_size and abs(minio_size - int(request.file_size)) > 0:
@@ -196,7 +237,7 @@ def complete_upload(
     from app.api.endpoints.files.upload import validate_file_size_for_tenant
 
     try:
-        validate_file_size_for_tenant(minio_size, db_file.organization_id)
+        validate_file_size_for_tenant(minio_size, organization_id)
     except HTTPException:
         logger.warning(
             "Rejecting oversized upload %s: %d bytes exceeds the ceiling",
@@ -206,7 +247,7 @@ def complete_upload(
         from app.services.minio_service import delete_file
 
         with contextlib.suppress(Exception):
-            delete_file(str(db_file.storage_path))
+            delete_file(storage_path)
         db.delete(db_file)
         db.commit()
         raise
@@ -222,17 +263,17 @@ def complete_upload(
     try:
         from app.services.minio_service import range_read
 
-        header_bytes = range_read(str(db_file.storage_path), 0, 64)
+        header_bytes = range_read(storage_path, 0, 64)
     except Exception as read_err:
         logger.warning(
             f"header read for validation of {request.file_id} failed "
             f"(non-fatal, proceeding): {read_err}"
         )
-    if header_bytes is not None and db_file.content_type:
+    if header_bytes is not None and declared_content_type:
         from app.utils.file_validation import validate_uploaded_file
 
         is_valid, validation_detail = validate_uploaded_file(
-            header_bytes, str(db_file.content_type), str(db_file.filename)
+            header_bytes, declared_content_type, filename
         )
         benchmark_timing.mark(request.task_id, "http_validation_end")
         if not is_valid:
@@ -240,7 +281,7 @@ def complete_upload(
 
             logger.warning(f"Rejecting presigned upload {request.file_id}: {validation_detail}")
             try:
-                delete_file(str(db_file.storage_path))
+                delete_file(storage_path)
             except Exception as del_err:
                 logger.warning(f"cleanup of rejected object failed (non-fatal): {del_err}")
             db.delete(db_file)
@@ -250,21 +291,18 @@ def complete_upload(
                 detail=f"File content does not match its declared type: {validation_detail}",
             )
 
-    # Update client-supplied hash and compute server-side imohash fingerprint
-    _update_file_hash(db_file, request.file_hash, str(db_file.filename))
-    try:
-        with benchmark_timing.stage(request.task_id, "imohash"):
-            fingerprint = compute_from_minio(str(db_file.storage_path), size=minio_size)
-        if fingerprint:
-            db_file.imohash = fingerprint  # type: ignore[assignment]
-    except Exception as e:
-        logger.debug(f"imohash for {request.file_id} failed (non-fatal): {e}")
+    # Server-side imohash fingerprint — the last object-storage read, and still
+    # outside any transaction.
+    fingerprint = _fingerprint_object(request.task_id, storage_path, minio_size)
 
-    # Update the row to reflect the landed file. The pending attributes
-    # we just set (file_size, status, summary_status, imohash) stay on the
-    # session-managed instance after commit because we don't need any
+    # Write phase. Update the row to reflect the landed file; the pending
+    # attributes set here (file_size, status, summary_status, imohash) stay on
+    # the session-managed instance after commit because we don't need any
     # server-assigned columns — skipping db.refresh() saves one SELECT
     # round-trip per presigned upload.
+    _update_file_hash(db_file, request.file_hash, filename)
+    if fingerprint:
+        db_file.imohash = fingerprint  # type: ignore[assignment]
     db_file.file_size = minio_size  # type: ignore[assignment]
     if request.skip_summary:
         db_file.summary_status = "disabled"  # type: ignore[assignment]

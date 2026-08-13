@@ -1,3 +1,9 @@
+# mypy: disable-error-code="arg-type"
+# This suite passes structural stand-ins (a fake session, a recording Path) to
+# signatures that declare Session/Path. Declared once here rather than as a cast at
+# every call site — a cast buries the thing being asserted, and widening a production
+# signature to suit a test is worse. Same convention as
+# tests/unit/test_proxy_identity_consistency.py.
 """Celery tasks must not hold a DB transaction across their slow phase.
 
 Sibling of ``test_speaker_attribute_session_lifetime.py``, which documents the
@@ -19,7 +25,20 @@ task                                             slow work formerly inside the s
 ``reindex_batch``                                50 OpenSearch re-index round trips
 ``watch_source.stitch_and_import``               SMB/S3 part downloads + ffmpeg concat
 ``watch_source.send_notification``               SMTP send (30 s timeout per config)
+``ai.generate_summary``                          LLM completion over a whole transcript
+``ai.identify_speakers``                         LLM ``identify_speakers`` call
+``watch_source.scan_single``                     remote list + per-file download (**interprocedural**)
+``download.prepare_media``                       MinIO download + full ffmpeg transcode
+``cleanup_expired_files``                        MinIO + OpenSearch deletes, per expired file
+``transcription.embeddings`` (v4 staging)        OpenSearch search + write, per profile
 ===============================================  ====================================
+
+The last six were the second sweep. Two of them were **actively wedging the
+database** when they were found (the NLP worker idle-in-transaction for 1 h 26 m
+on the summarization SELECT), and ``scan_single`` is the one an AST *body* scan
+cannot see: its ``session_scope`` wraps ``_perform_scan``, and the transfers are
+a frame further down. ``scripts/audit-session-lifetime.py`` exists because of
+that case — it has an explicit interprocedural rule.
 
 The tests are behavioural, not structural: each swaps the module's
 ``session_scope`` for a depth-tracking stand-in over the savepointed
@@ -30,10 +49,12 @@ two scopes were opened, so a task that never touches the DB cannot pass.
 
 import contextlib
 import uuid as uuid_mod
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 import pytest
+from celery.exceptions import Retry
 
 from app.models.email_notification_config import EmailNotificationConfig
 from app.models.email_notification_config import WatchSourceEmail
@@ -41,6 +62,7 @@ from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import Task as TaskModel
 from app.models.media import TranscriptSegment
+from app.models.topic import TopicSuggestion
 from app.models.watch_source import WatchSource
 from app.tasks import media_download as mdl
 from app.tasks import reindex_task as rix
@@ -59,6 +81,8 @@ class _ScopeTracker:
         self.opened = 0
         #: (label, depth) reported from inside each slow call.
         self.observations: list[tuple[str, int]] = []
+        #: (label, depth, scopes-opened-so-far) for the same calls.
+        self.timeline: list[tuple[str, int, int]] = []
         #: Per-task payloads the fixtures hang here so a test can assert on what the
         #: slow phase actually received (the aggregated vector, the indexed uuids, ...).
         #: Declared rather than bolted on dynamically so mypy can see them.
@@ -81,6 +105,14 @@ class _ScopeTracker:
 
     def observe(self, label: str) -> None:
         self.observations.append((label, self.depth))
+        #: The scope COUNT at the moment of the call. Two observations sharing a
+        #: count ran inside the same scope; different counts prove they did not.
+        #: Depth alone cannot tell those apart.
+        self.timeline.append((label, self.depth, self.opened))
+
+    def opened_at(self, label: str) -> list[int]:
+        """Scope counts at each occurrence of ``label``."""
+        return [count for name, _depth, count in self.timeline if name == label]
 
     @property
     def seen(self) -> dict[str, int]:
@@ -811,22 +843,17 @@ def test_send_notification_sends_mail_outside_the_session(db_session, normal_use
 
 
 # --------------------------------------------------------------------------- #
-# 2. download.prepare_media — PARTIAL: the residual hold is in the service
+# 2. download.prepare_media — MinIO download + full ffmpeg transcode
+#
+#    The residual this test used to document is gone:
+#    ``VideoProcessingService.extract_audio`` / ``process_video_with_subtitles``
+#    no longer take a ``Session``. They open their own short sessions for the two
+#    reads they need (the filename, and the transcript for the SRT), so the task
+#    holds nothing across the transcode.
 # --------------------------------------------------------------------------- #
-def test_prepare_media_download_read_phase_is_outside_the_service_call(
+def test_prepare_media_download_transcodes_outside_the_session(
     db_session, normal_user, monkeypatch
 ):
-    """The task's own MediaFile read no longer shares a scope with the ffmpeg run.
-
-    This is deliberately a weaker claim than the tests above.
-    ``VideoProcessingService.extract_audio`` /
-    ``process_video_with_subtitles`` take a ``Session`` and hold it across the
-    MinIO download and the whole ffmpeg run, so *one* scope still spans the slow
-    work — that part cannot be fixed from ``app/tasks``. What this asserts is
-    what the task now controls: exactly one scope is open when the service is
-    called (it is no longer nested inside the task's own read), and the read
-    phase itself has closed.
-    """
     tracker = _ScopeTracker(db_session)
     media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
 
@@ -839,7 +866,8 @@ def test_prepare_media_download_read_phase_is_outside_the_service_call(
         def __init__(self, minio):
             pass
 
-        def extract_audio(self, *, db, file_id, original_object_name, audio_format):
+        def extract_audio(self, *, file_id, original_object_name, audio_format):
+            # A MinIO download plus a full ffmpeg transcode: minutes.
             tracker.observe("extract_audio")
             return "cache/key.mp3", "mp3", "audio/mpeg"
 
@@ -854,9 +882,877 @@ def test_prepare_media_download_read_phase_is_outside_the_service_call(
     ).get()
 
     assert result["status"] == "success", result
-    # The service call still runs inside a scope (that is the residual), but it
-    # is its OWN scope: the task's read phase closed first, and nothing nests.
-    assert tracker.seen["extract_audio"] == 1, tracker.observations
+    assert tracker.seen["extract_audio"] == 0, _leak(tracker, "extract_audio")
     assert tracker.seen["presign"] == 0, _leak(tracker, "presign")
-    assert tracker.opened == 2, f"expected a read scope then a service scope, got {tracker.opened}"
+    assert tracker.opened == 1, f"expected exactly the read scope, got {tracker.opened}"
     assert tracker.max_depth == 1, "session scopes must not nest"
+    assert tracker.depth == 0
+
+
+def test_video_service_reads_use_their_own_short_sessions(db_session, normal_user, monkeypatch):
+    """``VideoProcessingService`` opens (and closes) its own scope per read.
+
+    Without this, "the task holds no session" above would be satisfied by the
+    service holding one instead — the leak moved, not removed.
+    """
+    from app.services import video_processing_service as vps
+
+    tracker = _ScopeTracker(db_session)
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+
+    monkeypatch.setattr(vps, "session_scope", tracker.scope)
+
+    filename = vps.VideoProcessingService._media_filename(int(media_file.id))
+
+    assert filename == "meeting.mp4"
+    assert tracker.opened == 1
+    assert tracker.depth == 0, "the filename read left a scope open"
+
+    written: dict = {}
+
+    class _FakeSubtitles:
+        @staticmethod
+        def generate_srt_content(db, file_id, include_speakers):
+            written["depth_during_render"] = tracker.depth
+            return "1\n00:00:00,000 --> 00:00:04,000\nhello there\n"
+
+    monkeypatch.setattr(vps, "SubtitleService", _FakeSubtitles)
+
+    class _RecordingPath:
+        """Reports the open-scope depth at the moment the SRT is written."""
+
+        def write_text(self, content, encoding=None):
+            written["depth_during_write"] = tracker.depth
+            written["content"] = content
+
+    service = vps.VideoProcessingService.__new__(vps.VideoProcessingService)
+    service._generate_subtitle_file(int(media_file.id), _RecordingPath(), True)
+
+    # The transcript read needs a session; the FILE WRITE that follows must not
+    # still be inside it, and neither may the ffmpeg run after that.
+    assert written["depth_during_render"] == 1
+    assert written["depth_during_write"] == 0, _leak(tracker, "srt_write")
+    assert "hello there" in written["content"]
+    assert tracker.depth == 0
+    assert tracker.opened == 2
+    assert tracker.max_depth == 1
+
+
+# --------------------------------------------------------------------------- #
+# 6. ai.generate_summary — an LLM completion over the WHOLE transcript
+#
+#    This is one of the two that were found holding a live transaction: the NLP
+#    worker sat idle-in-transaction for 1 h 26 m with the transcript_segment
+#    SELECT below as its last statement.
+# --------------------------------------------------------------------------- #
+class _FakeLLMConfig:
+    provider = "fake"
+    model = "fake-1"
+
+
+class _FakeLLMService:
+    """Stands in for the provider client. Records what it was actually SENT."""
+
+    user_context_window = 32768
+    config = _FakeLLMConfig()
+
+    def __init__(self, tracker, recorded, *, boom: bool = False):
+        self._tracker = tracker
+        self._recorded = recorded
+        self._boom = boom
+        self.closed = False
+
+    def generate_summary(self, **kwargs):
+        # A multi-minute HTTP round trip against an external provider.
+        self._tracker.observe("llm_generate_summary")
+        self._recorded["summary_kwargs"] = kwargs
+        if self._boom:
+            raise RuntimeError("provider returned 502")
+        return {"bluf": "They agreed.", "brief_summary": "A meeting.", "metadata": {}}
+
+    def identify_speakers(self, **kwargs):
+        self._tracker.observe("llm_identify_speakers")
+        self._recorded["identify_kwargs"] = kwargs
+        if self._boom:
+            raise RuntimeError("provider returned 502")
+        return {
+            "speaker_predictions": [
+                {"speaker_label": "SPEAKER_00", "predicted_name": "Ada", "confidence": 0.9},
+                {"speaker_label": "SPEAKER_01", "predicted_name": "Grace", "confidence": 0.2},
+            ],
+            "overall_confidence": "medium",
+        }
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeSummaryIndex:
+    def __init__(self, tracker, recorded):
+        self._tracker = tracker
+        self._recorded = recorded
+
+    def get_max_version(self, file_id, user_id):
+        self._tracker.observe("opensearch_max_version")
+        return 3
+
+    def index_summary(self, data):
+        self._tracker.observe("opensearch_index_summary")
+        self._recorded["indexed"] = data
+        return "summary-doc-1"
+
+    def delete_summary(self, document_id):
+        self._tracker.observe("opensearch_delete_summary")
+        self._recorded["deleted"] = document_id
+
+
+@pytest.fixture
+def summarization_env(db_session, monkeypatch):
+    """Patch summarization's LLM/OpenSearch/notification seams; keep the DB real."""
+    from app.tasks import summarization as summ
+
+    tracker = _ScopeTracker(db_session)
+    recorded: dict = {}
+
+    monkeypatch.setattr(summ, "session_scope", tracker.scope)
+    monkeypatch.setattr(summ, "resolve_llm_masking", lambda db, media_file: None)
+    monkeypatch.setattr(
+        summ,
+        "send_summary_notification",
+        lambda *a, **kw: recorded.setdefault("notifications", []).append(a),
+    )
+    monkeypatch.setattr(
+        summ, "OpenSearchSummaryService", lambda: _FakeSummaryIndex(tracker, recorded)
+    )
+
+    service = _FakeLLMService(tracker, recorded)
+
+    class _Factory:
+        @staticmethod
+        def create_from_user_settings(user_id):
+            recorded["llm_user_id"] = user_id
+            return service
+
+        @staticmethod
+        def create_from_system_settings():
+            return service
+
+    monkeypatch.setattr(summ, "LLMService", _Factory)
+
+    tracker.recorded = recorded
+    tracker.llm_service = service  # type: ignore[attr-defined]
+    return tracker
+
+
+def test_summarization_calls_the_llm_outside_the_session(
+    db_session, normal_user, summarization_env
+):
+    """The regression: the provider round trip must run with zero scopes open."""
+    from app.tasks import summarization as summ
+
+    tracker = summarization_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user)
+
+    result = summ.summarize_transcript_task.apply(args=[str(media_file.uuid)]).get()
+
+    assert result["status"] == "success", result
+
+    observed = tracker.seen
+    assert observed["llm_generate_summary"] == 0, _leak(tracker, "llm_generate_summary")
+    # OpenSearch is a network hop too, and it no longer shares the write scope.
+    assert observed["opensearch_max_version"] == 0, _leak(tracker, "opensearch_max_version")
+    assert observed["opensearch_index_summary"] == 0, _leak(tracker, "opensearch_index_summary")
+
+    assert tracker.opened >= 2, f"expected a read scope and a write scope, got {tracker.opened}"
+    assert tracker.max_depth == 1, "session scopes must not nest"
+    assert tracker.depth == 0
+
+    # The read phase really did produce the transcript the provider was sent,
+    # so "zero scopes open" cannot be satisfied by sending nothing.
+    sent = tracker.recorded["summary_kwargs"]
+    assert "hello there" in sent["transcript"]
+    assert sent["user_id"] == normal_user.id
+    assert tracker.llm_service.closed is True
+
+    # And the result landed in Postgres.
+    db_session.expire_all()
+    refreshed = db_session.query(MediaFile).filter(MediaFile.id == media_file.id).first()
+    assert refreshed.summary_status == "completed"
+    assert refreshed.summary_opensearch_id == "summary-doc-1"
+    assert refreshed.summary_data["bluf"] == "They agreed."
+
+
+def test_summarization_read_phase_returns_plain_data(db_session, normal_user, summarization_env):
+    """``_load_summarization_inputs`` must not hand back live ORM instances."""
+    from app.tasks import summarization as summ
+
+    tracker = summarization_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+
+    inputs = summ._load_summarization_inputs(
+        str(media_file.uuid), str(uuid_mod.uuid4()), force_regenerate=False
+    )
+
+    assert tracker.depth == 0
+    assert inputs["file_id"] == media_file.id
+    assert inputs["user_id"] == normal_user.id
+    assert isinstance(inputs["full_transcript"], str) and inputs["full_transcript"]
+    assert isinstance(inputs["speaker_stats"], dict) and inputs["speaker_stats"]
+    for value in inputs.values():
+        assert not isinstance(value, (MediaFile, Speaker, TranscriptSegment))
+
+
+def test_summarization_releases_the_scope_when_the_provider_fails(
+    db_session, normal_user, summarization_env, monkeypatch
+):
+    """A provider failure must not leave a scope open — and must mark the file failed."""
+    from app.tasks import summarization as summ
+
+    tracker = summarization_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+    tracker.llm_service._boom = True  # type: ignore[attr-defined]
+
+    result = summ.summarize_transcript_task.apply(args=[str(media_file.uuid)]).get()
+
+    assert result["status"] == "error", result
+    assert tracker.seen["llm_generate_summary"] == 0, _leak(tracker, "llm_generate_summary")
+    assert tracker.depth == 0, "a session scope survived the failure"
+
+    db_session.expire_all()
+    refreshed = db_session.query(MediaFile).filter(MediaFile.id == media_file.id).first()
+    assert refreshed.summary_status == "failed"
+
+
+# --------------------------------------------------------------------------- #
+# 7. ai.identify_speakers — the other one that was actively wedging the DB
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def identification_env(db_session, monkeypatch):
+    from app.tasks import speaker_identification_task as sid
+
+    tracker = _ScopeTracker(db_session)
+    recorded: dict = {}
+
+    monkeypatch.setattr(sid, "session_scope", tracker.scope)
+    monkeypatch.setattr(sid, "resolve_llm_masking", lambda db, media_file: None)
+    monkeypatch.setattr(sid, "send_ws_event", lambda *a, **kw: None)
+
+    service = _FakeLLMService(tracker, recorded)
+    monkeypatch.setattr(sid, "_create_llm_service", lambda user_id: service)
+
+    tracker.recorded = recorded
+    tracker.llm_service = service  # type: ignore[attr-defined]
+    return tracker
+
+
+def test_speaker_identification_calls_the_llm_outside_the_session(
+    db_session, normal_user, identification_env
+):
+    from app.tasks import speaker_identification_task as sid
+
+    tracker = identification_env
+    media_file, speakers = _make_transcribed_file(db_session, normal_user)
+
+    result = sid.identify_speakers_llm_task.apply(args=[str(media_file.uuid)]).get()
+
+    assert result["status"] == "success", result
+    assert result["predictions_count"] == 2
+
+    assert tracker.seen["llm_identify_speakers"] == 0, _leak(tracker, "llm_identify_speakers")
+    assert tracker.opened >= 2, f"expected a read scope and a write scope, got {tracker.opened}"
+    assert tracker.max_depth == 1, "session scopes must not nest"
+    assert tracker.depth == 0
+
+    # The read phase produced real content for the provider.
+    sent = tracker.recorded["identify_kwargs"]
+    assert "hello there" in sent["transcript"]
+    assert len(sent["speaker_segments"]) == 4
+    assert tracker.llm_service.closed is True
+
+    # ...and the confident suggestion was written back, the weak one skipped.
+    db_session.expire_all()
+    rows = {
+        s.name: s.suggested_name
+        for s in db_session.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
+    }
+    assert rows[speakers[0].name] == "Ada"
+    assert rows[speakers[1].name] is None  # confidence 0.2 < 0.5
+
+
+def test_speaker_identification_read_phase_returns_plain_data(
+    db_session, normal_user, identification_env
+):
+    from app.tasks import speaker_identification_task as sid
+
+    tracker = identification_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+
+    inputs = sid._load_identification_inputs(str(media_file.uuid), str(uuid_mod.uuid4()))
+
+    assert tracker.depth == 0
+    assert inputs["file_id"] == media_file.id
+    assert isinstance(inputs["full_transcript"], str) and inputs["full_transcript"]
+    assert all(isinstance(seg, dict) for seg in inputs["speaker_segments"])
+    for value in inputs.values():
+        assert not isinstance(value, (MediaFile, Speaker, TranscriptSegment))
+
+
+# --------------------------------------------------------------------------- #
+# 8. watch_source.scan_single — the INTERPROCEDURAL one
+#
+#    The session wrapped ``_perform_scan``, one frame down from the slow calls:
+#    ``client.list_files()`` against a remote share, then a download AND a MinIO
+#    upload for every file up to ``watch.max_imports_per_scan``.
+# --------------------------------------------------------------------------- #
+class _FakeLock:
+    @contextlib.contextmanager
+    def acquire_lock(self, lock_key, timeout=300, blocking_timeout=0):
+        yield True
+
+
+@pytest.fixture
+def scan_env(db_session, normal_user, monkeypatch, tmp_path):
+    from app.core.config import settings as app_settings
+    from app.services.watch_sources import processing as proc
+    from app.services.watch_sources.base import RemoteFileInfo
+
+    tracker = _ScopeTracker(db_session)
+    recorded: dict = {}
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+
+    # Both modules' scopes are tracked: the leak spans the task AND the service.
+    monkeypatch.setattr(wst, "session_scope", tracker.scope)
+    monkeypatch.setattr(proc, "session_scope", tracker.scope)
+    monkeypatch.setattr(wst, "task_lock_manager", _FakeLock())
+    monkeypatch.setattr(wst, "_notify_scan_complete", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        type(app_settings), "watch_temp_dir", property(lambda self: tmp_path), raising=False
+    )
+
+    discovered = [
+        RemoteFileInfo(path="remote/talk.mp4", name="talk.mp4", size=4, modified_time=None)
+    ]
+
+    class _FakeClient:
+        def __init__(self, source):
+            # ``LocalWatchClient`` really does keep this reference, which is why
+            # the plan must hand over a DETACHED row. Recorded so a test can
+            # check the state it was handed over in.
+            self.source = source
+            recorded["client_source"] = source
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def list_files(self, extensions=None, recursive=True, min_modified=None):
+            # An S3 LIST / SMB directory walk over a remote share.
+            tracker.observe("list_files")
+            return list(discovered)
+
+        def download_file(self, remote_path, local_path):
+            # Gigabytes over SMB/S3, per file.
+            tracker.observe("part_download")
+            with open(local_path, "wb") as fh:
+                fh.write(b"data")
+            return 4
+
+    monkeypatch.setattr(wst, "create_client", _FakeClient)
+
+    class _Row:
+        status = "imported"
+
+    def _ingest(db, source, local_path, *, filename, row, size=None):
+        # The documented RESIDUAL: this still runs a MinIO upload inside a
+        # session, because the object key derives from the MediaFile PK. What
+        # changed is that the scope is now one FILE wide, not one SCAN wide.
+        tracker.observe("ingest_prepared_file")
+        recorded["ingested"] = filename
+        row.status = "imported"
+        row.media_file_id = media_file.id
+        return _Row()
+
+    monkeypatch.setattr(proc, "ingest_prepared_file", _ingest)
+
+    tracker.recorded = recorded
+    return tracker
+
+
+def test_scan_single_lists_and_downloads_outside_the_session(db_session, normal_user, scan_env):
+    from app.models.watch_source import WatchSourceFile
+
+    tracker = scan_env
+    source = _make_watch_source(db_session, normal_user, source_type="s3")
+
+    summary = wst.scan_single.apply(args=[source.id]).get()
+
+    assert summary["found"] == 1, summary
+    assert summary["imported"] == 1, summary
+
+    observed = tracker.seen
+    assert observed["list_files"] == 0, _leak(tracker, "list_files")
+    assert observed["part_download"] == 0, _leak(tracker, "part_download")
+
+    # The per-file ingest legitimately needs a session — but its OWN, opened
+    # after the download closed. Pinning this stops the fix regressing into
+    # "the task stopped touching the DB", which would satisfy the two asserts
+    # above for the wrong reason.
+    assert observed["ingest_prepared_file"] == 1, tracker.observations
+    assert tracker.opened >= 4, (
+        "expected separate scopes for the plan, the terminal-path read, the claim, "
+        f"the ingest and the result write; got {tracker.opened}"
+    )
+    assert tracker.max_depth == 1, "session scopes must not nest"
+    assert tracker.depth == 0
+
+    # The download happened in a LATER scope-generation than the plan read, and
+    # the ingest in a later one still: proof they are not one shared session.
+    assert tracker.opened_at("list_files")[0] >= 1
+    assert tracker.opened_at("part_download")[0] > tracker.opened_at("list_files")[0]
+    assert tracker.opened_at("ingest_prepared_file")[0] > tracker.opened_at("part_download")[0]
+
+    # Real rows: the tracking row was claimed and finalized.
+    db_session.expire_all()
+    row = (
+        db_session.query(WatchSourceFile)
+        .filter(WatchSourceFile.watch_source_id == source.id)
+        .first()
+    )
+    assert row is not None and row.remote_path == "remote/talk.mp4"
+
+    refreshed = db_session.query(WatchSource).filter(WatchSource.id == source.id).first()
+    assert refreshed.last_scan_status == "success"
+    assert refreshed.last_scan_files_found == 1
+
+
+def test_scan_plan_detaches_the_source_row(db_session, normal_user, scan_env):
+    """The plan must not hand a live ORM row to the client.
+
+    ``LocalWatchClient`` keeps a reference to the ``WatchSource``. Expunging it
+    means a stray RELATIONSHIP load raises ``DetachedInstanceError`` instead of
+    quietly opening a second transaction while a remote listing is in flight.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy.orm.exc import DetachedInstanceError
+
+    tracker = scan_env
+    source = _make_watch_source(db_session, normal_user, source_type="s3")
+
+    plan = wst._load_scan_plan(source.id)
+
+    assert tracker.depth == 0
+    assert plan is not None
+    assert plan["recursive"] is True
+    for key, value in plan.items():
+        if key == "client":
+            continue
+        assert not isinstance(value, WatchSource), key
+
+    # The row the CLIENT is holding — the only one that outlives the scope.
+    held = plan["client"].source
+    assert held is not None, "the client never received the source row"
+    assert sa_inspect(held).detached is True, (
+        "the client is holding a session-attached WatchSource: a lazy load during "
+        "the remote listing would silently open a second transaction"
+    )
+    # ...and the detachment is loud, not merely nominal.
+    with pytest.raises(DetachedInstanceError):
+        _ = held.email_links[0]
+
+    # The claim it made still landed, despite the expunge.
+    reloaded = db_session.query(WatchSource).filter(WatchSource.id == source.id).first()
+    assert reloaded.last_scan_status == "running"
+
+
+# --------------------------------------------------------------------------- #
+# 9. cleanup_expired_files — MinIO + OpenSearch deletes, per expired file
+# --------------------------------------------------------------------------- #
+def test_cleanup_expired_files_purges_each_file_in_its_own_session(
+    db_session, normal_user, monkeypatch
+):
+    """One transaction per file, not one across the whole retention pass."""
+    import datetime as dt
+
+    from app.models.media import FileStatus
+    from app.services import file_cleanup_service as fcs
+    from app.services import system_settings_service as sss
+    from app.tasks import cleanup as cl
+
+    tracker = _ScopeTracker(db_session)
+    monkeypatch.setattr(cl, "session_scope", tracker.scope)
+    monkeypatch.setattr(
+        sss,
+        "get_retention_config",
+        lambda db: {
+            "retention_enabled": True,
+            "retention_days": 1,
+            "delete_error_files": False,
+            "timezone": "UTC",
+            "run_time": "02:00",
+            "last_run": None,
+        },
+    )
+    monkeypatch.setattr(sss, "set_setting", lambda db, key, value, desc=None: None)
+
+    old = dt.datetime.now(dt.UTC) - dt.timedelta(days=30)
+    files = []
+    for _ in range(2):
+        mf, _speakers = _make_transcribed_file(db_session, normal_user, speakers=1)
+        mf.status = FileStatus.COMPLETED.value
+        mf.completed_at = old
+        mf.upload_time = old
+        files.append(mf)
+    db_session.flush()
+
+    purged: list[int] = []
+
+    def _purge(db, media_file):
+        # MinIO object deletes + four OpenSearch deletes, per file.
+        tracker.observe("auto_delete_media_file")
+        purged.append(int(media_file.id))
+        db.delete(media_file)
+        return {"deleted": True, "file_uuid": str(media_file.uuid), "error": None}
+
+    monkeypatch.setattr(fcs, "auto_delete_media_file", _purge)
+
+    # The dev database this suite runs against holds unrelated aged files, and
+    # the point of the test is the SESSION SHAPE, not the candidate query (that
+    # has its own test below). Narrow the selection to the two rows this test
+    # created — the real selector still runs, inside the real read scope.
+    ours = {int(f.id) for f in files}
+    real_select = cl._select_expired_files
+    monkeypatch.setattr(
+        cl,
+        "_select_expired_files",
+        lambda *a, **kw: [item for item in real_select(*a, **kw) if item[0] in ours],
+    )
+
+    result = cl.cleanup_expired_files(force=True)
+
+    assert result == {"status": "completed", "deleted": 2, "failed": 0}, result
+    assert sorted(purged) == sorted(int(f.id) for f in files)
+
+    # The purge needs a session (it commits the row delete), so depth 1 is
+    # correct here. What must NOT be shared is the scope: each file gets its
+    # own, which shows up as a DIFFERENT scope count per call.
+    depths = [d for label, d in tracker.observations if label == "auto_delete_media_file"]
+    assert depths == [1, 1], tracker.observations
+    counts = tracker.opened_at("auto_delete_media_file")
+    assert len(set(counts)) == len(counts), (
+        "both files were purged inside the SAME session — one transaction is "
+        f"spanning the whole retention pass: {tracker.timeline}"
+    )
+    assert tracker.opened >= 4, f"expected read + 2 purges + write, got {tracker.opened}"
+    assert tracker.max_depth == 1, "session scopes must not nest"
+
+
+def test_cleanup_expired_selection_returns_plain_data(db_session, normal_user, monkeypatch):
+    import datetime as dt
+
+    from app.models.media import FileStatus
+    from app.tasks import cleanup as cl
+
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+    media_file.status = FileStatus.COMPLETED.value
+    media_file.completed_at = dt.datetime.now(dt.UTC) - dt.timedelta(days=30)
+    db_session.flush()
+
+    cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=1)
+    expired = cl._select_expired_files(
+        db_session,
+        {"delete_error_files": False},
+        cutoff,
+        cutoff,
+        lambda org_id: None,
+    )
+
+    assert (media_file.id, str(media_file.uuid)) in expired
+    for file_id, file_uuid in expired:
+        assert isinstance(file_id, int)
+        assert isinstance(file_uuid, str)
+
+
+# --------------------------------------------------------------------------- #
+# 10. transcription.embeddings v4 staging — OpenSearch search + write per profile
+# --------------------------------------------------------------------------- #
+def test_v4_profile_update_hits_opensearch_outside_the_session(
+    db_session, normal_user, monkeypatch
+):
+    from app.models.media import SpeakerProfile
+    from app.services import opensearch_service as oss
+
+    tracker = _ScopeTracker(db_session)
+    stored: list[dict] = []
+
+    monkeypatch.setattr(temb, "session_scope", tracker.scope)
+
+    media_file, speakers = _make_transcribed_file(db_session, normal_user, speakers=1)
+    profile = SpeakerProfile(
+        uuid=uuid_mod.uuid4(), user_id=normal_user.id, name=f"P-{uuid_mod.uuid4().hex[:6]}"
+    )
+    db_session.add(profile)
+    db_session.flush()
+    speakers[0].profile_id = profile.id
+    db_session.flush()
+
+    class _FakeOSClient:
+        def search(self, index, body):
+            tracker.observe("opensearch_search")
+            return {"hits": {"hits": [{"_id": "other", "_source": {"embedding": [0.0, 0.0, 1.0]}}]}}
+
+    monkeypatch.setattr(oss, "get_opensearch_client", lambda: _FakeOSClient())
+
+    def _store(**kwargs):
+        tracker.observe("store_profile_embedding_v4")
+        stored.append(kwargs)
+
+    monkeypatch.setattr(oss, "store_profile_embedding_v4", _store)
+
+    updated = temb._update_v4_profile_embeddings(
+        {int(profile.id)},
+        {speakers[0].name: np.array([1.0, 0.0, 0.0])},
+        {speakers[0].name: int(speakers[0].id)},
+        set(),
+    )
+
+    assert updated == 1
+    assert tracker.seen["opensearch_search"] == 0, _leak(tracker, "opensearch_search")
+    assert tracker.seen["store_profile_embedding_v4"] == 0, _leak(
+        tracker, "store_profile_embedding_v4"
+    )
+    assert tracker.opened == 1, f"expected exactly one read scope, got {tracker.opened}"
+    assert tracker.depth == 0
+
+    # The read phase supplied the profile identity, so "nothing was sent" cannot
+    # satisfy the assertions above.
+    assert stored[0]["profile_id"] == int(profile.id)
+    assert stored[0]["profile_uuid"] == str(profile.uuid)
+    assert stored[0]["speaker_count"] == 2  # current file + one existing v4 doc
+    assert np.allclose(stored[0]["embedding"], [0.70710678, 0.0, 0.70710678])
+
+
+def test_scan_single_records_a_client_failure_as_a_scan_error(
+    db_session, normal_user, scan_env, monkeypatch
+):
+    """A refused client must still leave the source with an ``error`` status.
+
+    ``create_client`` moved into the read phase with the split, and it can refuse —
+    unknown source type, a blocked private endpoint (SSRF guard), a missing optional
+    dependency. Before the split that refusal happened inside ``_perform_scan``'s try
+    block; if the split let it escape, the source would read ``running`` forever and
+    ``scan_all`` would keep re-dispatching a scan that always dies the same way.
+    """
+    tracker = scan_env
+    source = _make_watch_source(db_session, normal_user, source_type="s3")
+    source_id = int(source.id)
+
+    def _refuse(src):
+        raise ValueError("The configured server address could not be used.")
+
+    monkeypatch.setattr(wst, "create_client", _refuse)
+
+    # ``_record_scan_result`` is observed, not replaced — it still runs and still
+    # writes. The spy exists because the read phase's rollback unwinds the
+    # savepoint this harness creates the fixture rows in, so the persisted row
+    # cannot be read back here; what matters is that the error path REACHES the
+    # writer with status "error" rather than escaping the task.
+    recorded_calls: list[tuple] = []
+    real_record = wst._record_scan_result
+
+    def _spy(source_id_arg, summary_arg, started, duration, status, message):
+        recorded_calls.append((status, message))
+        return real_record(source_id_arg, summary_arg, started, duration, status, message)
+
+    monkeypatch.setattr(wst, "_record_scan_result", _spy)
+
+    summary = wst.scan_single.apply(args=[source_id]).get()
+
+    assert summary["errors"] == 1, summary
+    assert tracker.depth == 0, "a session scope survived the refused client"
+    assert len(recorded_calls) == 1, recorded_calls
+    status, message = recorded_calls[0]
+    assert status == "error"
+    assert "could not be used" in message
+
+
+# --------------------------------------------------------------------------- #
+# 13. ai.extract_topics — the SEVENTH LLM-in-transaction instance
+#
+#     Same shape as ai.generate_summary, and it could not be fixed from
+#     app/tasks alone: ``TopicExtractionService`` was constructed with ``db=``
+#     and both READ the transcript and WROTE the ``TopicSuggestion`` row through
+#     it, so one ``session_scope`` in the task spanned the whole provider round
+#     trip. The split therefore lives in the SERVICE, and this fixture patches
+#     ``session_scope`` in BOTH modules so a scope opened at either end is seen.
+# --------------------------------------------------------------------------- #
+_TOPIC_LLM_JSON = """<thinking>ok</thinking>
+<answer>
+{"suggested_collections": [{"name": "Team Standups", "confidence": 0.9, "rationale": "r"}],
+ "suggested_tags": [{"name": "budget", "confidence": 0.9, "rationale": "r"},
+                    {"name": "hiring", "confidence": 0.8, "rationale": "r"}]}
+</answer>"""
+
+
+class _FakeTopicLLMService:
+    """Stands in for the provider client. Records the prompt it was actually SENT."""
+
+    user_context_window = 32768
+    config = _FakeLLMConfig()
+
+    def __init__(self, tracker, recorded, *, boom: bool = False):
+        self._tracker = tracker
+        self._recorded = recorded
+        self._boom = boom
+
+    def chat_completion(self, messages, **kwargs):
+        # A multi-minute HTTP round trip against an external provider.
+        self._tracker.observe("llm_chat_completion")
+        self._recorded["messages"] = messages
+        if self._boom:
+            raise RuntimeError("provider returned 502")
+        return SimpleNamespace(content=_TOPIC_LLM_JSON)
+
+
+@pytest.fixture
+def topic_extraction_env(db_session, monkeypatch):
+    """Patch topic extraction's LLM/notification seams; keep the DB real."""
+    from app.services import topic_extraction_service as tes
+    from app.tasks import topic_extraction as tex
+
+    tracker = _ScopeTracker(db_session)
+    recorded: dict = {}
+
+    # BOTH ends: the task's identity/masking reads and the service's read+write
+    # phases. Patching only the task would let a service-side scope go unseen.
+    monkeypatch.setattr(tex, "session_scope", tracker.scope)
+    monkeypatch.setattr(tes, "session_scope", tracker.scope)
+    monkeypatch.setattr(tex, "resolve_llm_masking", lambda db, media_file: None)
+    monkeypatch.setattr(
+        tex,
+        "send_topic_extraction_notification",
+        lambda **kw: recorded.setdefault("notifications", []).append(kw),
+    )
+
+    service = _FakeTopicLLMService(tracker, recorded)
+
+    class _Factory:
+        @staticmethod
+        def create_from_settings(user_id=None):
+            recorded["llm_user_id"] = user_id
+            return service
+
+    monkeypatch.setattr(tes, "LLMService", _Factory)
+
+    tracker.recorded = recorded
+    tracker.llm_service = service  # type: ignore[attr-defined]
+    return tracker
+
+
+def test_topic_extraction_calls_the_llm_outside_the_session(
+    db_session, normal_user, topic_extraction_env
+):
+    """The regression: the provider round trip must run with zero scopes open."""
+    from app.tasks import topic_extraction as tex
+
+    tracker = topic_extraction_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user)
+
+    result = tex.extract_topics_task.apply(args=[str(media_file.uuid)]).get()
+
+    assert result["status"] == "completed", result
+    assert result["tag_count"] == 2
+    assert result["collection_count"] == 1
+
+    assert tracker.seen["llm_chat_completion"] == 0, _leak(tracker, "llm_chat_completion")
+    assert tracker.opened >= 2, f"expected a read scope and a write scope, got {tracker.opened}"
+    assert tracker.max_depth == 1, "session scopes must not nest"
+    assert tracker.depth == 0
+
+    # The read phase really did produce the transcript the provider was sent, so
+    # "zero scopes open" cannot be satisfied by sending nothing.
+    prompt = tracker.recorded["messages"][-1]["content"]
+    assert "hello" in prompt
+    assert tracker.recorded["llm_user_id"] == normal_user.id
+
+    # ...and the suggestion landed in Postgres.
+    db_session.expire_all()
+    stored = (
+        db_session.query(TopicSuggestion)
+        .filter(TopicSuggestion.media_file_id == media_file.id)
+        .first()
+    )
+    assert stored is not None
+    assert str(stored.uuid) == result["suggestion_id"]
+    assert {t["name"] for t in stored.suggested_tags} == {"budget", "hiring"}
+
+
+def test_topic_extraction_read_phase_returns_plain_data(
+    db_session, normal_user, topic_extraction_env
+):
+    """``_load_extraction_inputs`` must not hand back live ORM instances."""
+    from app.services.topic_extraction_service import TopicExtractionService
+
+    tracker = topic_extraction_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+
+    inputs = TopicExtractionService()._load_extraction_inputs(
+        int(media_file.id), force_regenerate=False, redaction_cfg=None
+    )
+
+    assert tracker.depth == 0, "the read scope was still open on return"
+    assert tracker.opened == 1
+    assert inputs is not None
+    assert inputs["user_id"] == normal_user.id
+    assert isinstance(inputs["transcript"], str) and "hello there" in inputs["transcript"]
+    for value in inputs.values():
+        assert not isinstance(value, (MediaFile, Speaker, TranscriptSegment, TopicSuggestion))
+
+
+def test_topic_extraction_releases_the_scope_when_the_provider_fails(
+    db_session, normal_user, topic_extraction_env
+):
+    """A provider failure must not leave a scope open — and must report failure."""
+    from app.tasks import topic_extraction as tex
+
+    tracker = topic_extraction_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+    tracker.llm_service._boom = True  # type: ignore[attr-defined]
+
+    result = tex.extract_topics_task.apply(args=[str(media_file.uuid)]).get()
+
+    assert result["status"] == "failed", result
+    assert tracker.seen["llm_chat_completion"] == 0, _leak(tracker, "llm_chat_completion")
+    assert tracker.depth == 0, "a session scope survived the failure"
+    assert tracker.opened >= 1
+
+
+def test_topic_extraction_defers_for_redaction_with_no_session_open(
+    db_session, normal_user, topic_extraction_env, monkeypatch
+):
+    """``defer_for_redaction`` dispatches a Celery task — never inside a transaction."""
+    from app.services.redaction.llm_guard import RedactionNotReadyError
+    from app.tasks import topic_extraction as tex
+
+    tracker = topic_extraction_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+
+    def _not_ready(db, mf):
+        raise RedactionNotReadyError("spans pending", retryable=True, file_id=int(mf.id))
+
+    monkeypatch.setattr(tex, "resolve_llm_masking", _not_ready)
+
+    deferred: list[int] = []
+
+    def _defer(task, exc, **kw):
+        deferred.append(tracker.depth)
+        raise Retry()
+
+    monkeypatch.setattr(tex, "defer_for_redaction", _defer)
+
+    with pytest.raises(Retry):
+        tex.extract_topics_task.apply(args=[str(media_file.uuid)], throw=True).get()
+
+    assert deferred == [0], f"deferral ran with {deferred} scope(s) open"
+    assert tracker.depth == 0

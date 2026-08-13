@@ -72,43 +72,31 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
             )
             return {"status": "error", "message": f"Unsupported mode {mode}"}
 
-        # ⚠️ PARTIAL: the transaction below still spans the ffmpeg run.
+        # Phase 2 — MinIO download + ffmpeg transcode. NO DB session is held.
         #
-        # ``VideoProcessingService`` takes a ``Session`` and uses it in two
-        # places — a ``media_file.filename`` lookup, and (subtitle mode) the
-        # ``transcript_segment`` SELECT inside ``SubtitleService`` — and then
-        # runs the MinIO download and the full ffmpeg transcode with that same
-        # session still open. Scoping the session to the service call (rather
-        # than to the whole task, as before) is as far as this can be fixed from
-        # the task side: it removes the task's own read from the window, but the
-        # transcode remains inside it.
-        #
-        # The complete fix belongs in ``VideoProcessingService``: have
-        # ``process_video_with_subtitles`` / ``extract_audio`` / ``_generate_
-        # subtitle_file`` take the filename + pre-rendered subtitle content as
-        # plain arguments (or open their own short session for each read)
-        # instead of borrowing the caller's for the whole run.
-        with session_scope() as db:
-            if mode == "video_subtitles":
-                cache_key = service.process_video_with_subtitles(
-                    db=db,
-                    file_id=file_id,
-                    original_object_name=storage_path,
-                    user_id=None,  # SSE owns the messaging for this download
-                    include_speakers=True,
-                    output_format="mp4",
-                )
-                content_type = "video/mp4"
-                download_filename = f"{base_name}_with_subtitles.mp4"
-            else:
-                audio_format = mode.split("_", 1)[1]  # mp3 | wav | original
-                cache_key, ext, content_type = service.extract_audio(
-                    db=db,
-                    file_id=file_id,
-                    original_object_name=storage_path,
-                    audio_format=audio_format,
-                )
-                download_filename = f"{base_name}.{ext}"
+        # This used to be wrapped in a ``session_scope`` because
+        # ``VideoProcessingService`` took a ``Session`` and kept it open across
+        # the whole transcode. It now opens its own short sessions for the two
+        # reads it needs (the filename, and the transcript for the SRT), so
+        # nothing here holds a transaction.
+        if mode == "video_subtitles":
+            cache_key = service.process_video_with_subtitles(
+                file_id=file_id,
+                original_object_name=storage_path,
+                user_id=None,  # SSE owns the messaging for this download
+                include_speakers=True,
+                output_format="mp4",
+            )
+            content_type = "video/mp4"
+            download_filename = f"{base_name}_with_subtitles.mp4"
+        else:
+            audio_format = mode.split("_", 1)[1]  # mp3 | wav | original
+            cache_key, ext, content_type = service.extract_audio(
+                file_id=file_id,
+                original_object_name=storage_path,
+                audio_format=audio_format,
+            )
+            download_filename = f"{base_name}.{ext}"
 
         url = service.presigned_download_url(cache_key, download_filename, content_type)
 

@@ -17,12 +17,15 @@ import json
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.core.constants import LLM_OUTPUT_LANGUAGES
+from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.prompt import UserSetting
 from app.models.topic import TopicSuggestion
@@ -33,15 +36,37 @@ from app.services.llm_service import LLMService
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class TopicExtractionResult:
+    """Plain-data outcome of one extraction run.
+
+    Deliberately **not** the ``TopicSuggestion`` row. ``extract_topics`` writes it in
+    a short session that closes before returning, so handing the caller the ORM
+    instance would hand it something that lazy-loads — reopening a transaction in
+    the caller's frame, which is the exact defect the phase split removes.
+    """
+
+    status: str  # "completed" | "existing"
+    suggestion_uuid: str
+    tag_count: int
+    collection_count: int
+
+
 class TopicExtractionService:
     """
     Service for extracting tag and collection suggestions from transcripts using LLM
 
-    Simplified workflow:
-    1. Build XML-structured prompt following best practices
-    2. Call LLM with low temperature for consistency
-    3. Parse and validate JSON response
-    4. Store suggestions in PostgreSQL
+    **Three phases, and the split is load-bearing** (see :meth:`extract_topics`):
+    a short read session, the provider round trip with **no session open**, then a
+    short write session. Before the split, ``extract_topics`` ran entirely on the
+    session the Celery task handed it, so Postgres sat ``idle in transaction`` for
+    the whole LLM call with a full ``transcript_segment`` SELECT as its last
+    statement — the same shape that held an NLP worker's transaction for 1 h 26 m
+    on ``ai.generate_summary``. See ``backend/app/tasks/CLAUDE.md``.
+
+    ``db`` is therefore **optional** and is used only by the request-scoped,
+    DB-only path (:meth:`apply_suggestions`). The extraction phases open their own
+    short scopes and never borrow a caller's.
     """
 
     # System prompt for suggestion extraction (language instruction added dynamically)
@@ -135,21 +160,34 @@ IMPORTANT GUIDELINES:
 </task_instructions>
 """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session | None = None):
         self.db = db
 
-    def _get_user_llm_output_language(self, user_id: int) -> str:
+    def _session(self, db: Session | None) -> Session:
+        """The session a DB-only helper should use: the phase's, else the caller's."""
+        resolved = db if db is not None else self.db
+        if resolved is None:
+            raise ValueError(
+                "TopicExtractionService needs a Session for this operation; "
+                "construct it with one or pass db="
+            )
+        return resolved
+
+    def _get_user_llm_output_language(self, user_id: int, *, db: Session | None = None) -> str:
         """
         Retrieve user's LLM output language setting from the database.
 
         Args:
             user_id: ID of the user
+            db: Session to read through. Defaults to the one this service was
+                constructed with; the extraction phases pass their own short one.
 
         Returns:
             LLM output language code (default: "en")
         """
         setting = (
-            self.db.query(UserSetting)
+            self._session(db)
+            .query(UserSetting)
             .filter(
                 UserSetting.user_id == user_id,
                 UserSetting.setting_key == "transcription_llm_output_language",
@@ -166,13 +204,18 @@ IMPORTANT GUIDELINES:
         return LLM_OUTPUT_LANGUAGES.get(language_code, "English")
 
     @staticmethod
-    def create_from_settings(user_id: int, db: Session) -> Optional["TopicExtractionService"]:
+    def create_from_settings(
+        user_id: int, db: Session | None = None
+    ) -> Optional["TopicExtractionService"]:
         """
         Create AI suggestion service if LLM is configured for the user.
 
         Args:
             user_id: User ID for LLM configuration
-            db: Database session
+            db: Optional caller-owned session, used only by
+                :meth:`apply_suggestions`. The extraction phases open their own,
+                so a Celery caller should pass nothing and hold no transaction
+                across this probe.
 
         Returns:
             TopicExtractionService instance if LLM configured, None otherwise
@@ -189,73 +232,146 @@ IMPORTANT GUIDELINES:
             logger.warning(f"Could not create topic extraction service: {e}")
             return None
 
+    @staticmethod
+    def _as_result(suggestion: TopicSuggestion, status: str) -> TopicExtractionResult:
+        """Snapshot a ``TopicSuggestion`` as plain data, inside the session that loaded it."""
+        return TopicExtractionResult(
+            status=status,
+            suggestion_uuid=str(suggestion.uuid),
+            tag_count=len(suggestion.suggested_tags or []),
+            collection_count=len(suggestion.suggested_collections or []),
+        )
+
+    def _load_extraction_inputs(
+        self,
+        media_file_id: int,
+        force_regenerate: bool,
+        redaction_cfg,
+    ) -> dict[str, Any] | None:
+        """Phase 1 — read (short session, Postgres only).
+
+        Returns **plain data only**; no ORM instance escapes. An escaping instance
+        would lazy-load during the provider call and silently reopen a transaction,
+        reintroducing the very leak this split exists to remove.
+
+        ``{"existing": TopicExtractionResult}`` means a suggestion is already stored
+        and the caller should return it verbatim. ``None`` means there is nothing to
+        extract (missing file or empty transcript).
+        """
+        with session_scope() as db:
+            media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
+            if not media_file:
+                logger.error(f"Media file {media_file_id} not found")
+                return None
+
+            existing = (
+                db.query(TopicSuggestion)
+                .filter(TopicSuggestion.media_file_id == media_file_id)
+                .first()
+            )
+            if existing and not force_regenerate:
+                logger.info(
+                    f"Topic suggestion already exists for file {media_file_id}, "
+                    "use force_regenerate to re-extract"
+                )
+                return {"existing": self._as_result(existing, "existing")}
+
+            transcript = self._get_transcript_text(media_file, redaction_cfg, db=db)
+            if not transcript:
+                logger.error(f"No transcript available for file {media_file_id}")
+                return None
+
+            user_id = int(media_file.user_id)
+            output_language = self._get_user_llm_output_language(user_id, db=db)
+            logger.info(
+                f"Topic extraction output language: {output_language} "
+                f"({self._get_language_name(output_language)})"
+            )
+            return {
+                "user_id": user_id,
+                "duration": float(media_file.duration or 0),
+                "transcript": transcript,
+                "output_language": output_language,
+            }
+
+    def _persist_extraction(
+        self, media_file_id: int, llm_response: LLMSuggestionResponse
+    ) -> TopicExtractionResult | None:
+        """Phase 3 — write (short session, Postgres only)."""
+        with session_scope() as db:
+            media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
+            if media_file is None:
+                logger.error(f"Media file {media_file_id} disappeared during topic extraction")
+                return None
+
+            suggestion = self._store_suggestion(
+                media_file=media_file,
+                llm_response=llm_response,
+                db=db,
+            )
+            if suggestion is None:
+                return None
+            return self._as_result(suggestion, "completed")
+
     def extract_topics(
         self,
         media_file_id: int,
         force_regenerate: bool = False,
         progress_callback: Callable[[str], None] | None = None,
         redaction_cfg=None,
-    ) -> TopicSuggestion | None:
+    ) -> TopicExtractionResult | None:
         """
         Extract tag and collection suggestions from a transcript using LLM
+
+        **Three phases, and the split is load-bearing.** A short read session
+        (transcript + settings), then the provider round trip with **no session
+        open**, then a short write session. This method used to run entirely on the
+        session its Celery caller handed it, so Postgres sat ``idle in transaction``
+        for the whole LLM call with the ``transcript_segment`` SELECT below as its
+        last statement — a plain SELECT holds ACCESS SHARE for the life of its
+        transaction, which queues every ``ALTER TABLE`` (i.e. any Alembic upgrade,
+        which dev runs on backend startup), pins the vacuum horizon on the largest
+        table in the product, and burns a pool connection.
 
         Args:
             media_file_id: Media file ID
             force_regenerate: Force re-extraction even if exists
-            progress_callback: Optional callback function for progress updates
+            progress_callback: Optional callback function for progress updates.
+                Invoked **between** phases, never inside a session scope — it
+                publishes a WebSocket notification over Redis.
             redaction_cfg: Masking config from ``resolve_llm_masking``, or None when
                 the owner's policy does not require pre-LLM masking. Resolved by the
                 caller, not here: deciding what to do when spans are missing means
                 deferring a Celery task, which is not a service's concern.
 
         Returns:
-            TopicSuggestion instance or None
+            A plain :class:`TopicExtractionResult`, or None when there was nothing
+            to extract. **Not** the ``TopicSuggestion`` row — see that class.
         """
-        # Get media file
-        media_file = self.db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
-        if not media_file:
-            logger.error(f"Media file {media_file_id} not found")
-            return None
-
-        # Check if suggestion already exists
-        existing = (
-            self.db.query(TopicSuggestion)
-            .filter(TopicSuggestion.media_file_id == media_file_id)
-            .first()
-        )
-
-        if existing and not force_regenerate:
-            logger.info(
-                f"Topic suggestion already exists for file {media_file_id}, use force_regenerate to re-extract"
-            )
-            return existing  # type: ignore[no-any-return]
-
         # Notify: Reading transcript
         if progress_callback:
             progress_callback("Reading transcript from database...")
 
-        # Get transcript text
-        transcript = self._get_transcript_text(media_file, redaction_cfg)
-        if not transcript:
-            logger.error(f"No transcript available for file {media_file_id}")
+        # Phase 1 — read (DB session open, Postgres only).
+        inputs = self._load_extraction_inputs(media_file_id, force_regenerate, redaction_cfg)
+        if inputs is None:
             return None
+        if "existing" in inputs:
+            return inputs["existing"]  # type: ignore[no-any-return]
 
-        # Create LLM service
-        llm_service = LLMService.create_from_settings(user_id=int(media_file.user_id))
+        # Phase 2 — the slow phase. NO DB session is held from here until the write
+        # below: an LLM completion over the whole transcript.
+        # ``LLMService.create_from_settings`` opens (and closes) its own short
+        # session internally, which is exactly the shape the rule asks for.
+        llm_service = LLMService.create_from_settings(user_id=inputs["user_id"])
         if not llm_service:
-            logger.warning(f"LLM not configured for user {media_file.user_id}")
+            logger.warning(f"LLM not configured for user {inputs['user_id']}")
             return None
-
-        # Get user's LLM output language preference
-        output_language = self._get_user_llm_output_language(int(media_file.user_id))
-        output_language_name = self._get_language_name(output_language)
-        logger.info(f"Topic extraction output language: {output_language} ({output_language_name})")
 
         # Notify: Building AI prompt
         if progress_callback:
             progress_callback("Building AI prompt...")
 
-        # Extract suggestions using LLM
         logger.info(
             f"Extracting suggestions for file {media_file_id} using {llm_service.config.provider}"
         )
@@ -266,10 +382,10 @@ IMPORTANT GUIDELINES:
 
         llm_response = self._call_llm_for_extraction(
             llm_service=llm_service,
-            transcript=transcript,
+            transcript=inputs["transcript"],
             file_id=media_file_id,
-            duration=float(media_file.duration or 0),
-            output_language=output_language,
+            duration=inputs["duration"],
+            output_language=inputs["output_language"],
         )
 
         # Notify: Processing response
@@ -280,13 +396,11 @@ IMPORTANT GUIDELINES:
             logger.error(f"Failed to extract suggestions for file {media_file_id}")
             return None
 
-        # Store suggestions in PostgreSQL
-        suggestion = self._store_suggestion(
-            media_file=media_file,
-            llm_response=llm_response,
-        )
+        if progress_callback:
+            progress_callback("Saving AI suggestions...")
 
-        return suggestion
+        # Phase 3 — write (DB session reopened, Postgres only).
+        return self._persist_extraction(media_file_id, llm_response)
 
     def apply_suggestions(
         self,
@@ -305,10 +419,11 @@ IMPORTANT GUIDELINES:
         Returns:
             True if successful
         """
+        # Request-scoped and DB-only: this one legitimately runs on the caller's session.
+        db = self._session(None)
+
         # Get suggestion
-        suggestion = (
-            self.db.query(TopicSuggestion).filter(TopicSuggestion.id == suggestion_id).first()
-        )
+        suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.id == suggestion_id).first()
         if not suggestion:
             logger.error(f"Topic suggestion {suggestion_id} not found")
             return False
@@ -328,29 +443,34 @@ IMPORTANT GUIDELINES:
 
             suggestion.user_decisions = existing_decisions  # type: ignore[assignment]
 
-            self.db.commit()
+            db.commit()
 
             logger.info(f"Applied suggestions for file {suggestion.media_file_id}")
             return True
 
         except Exception as e:
             logger.error(f"Error applying suggestions: {e}")
-            self.db.rollback()
+            db.rollback()
             return False
 
-    def _get_transcript_text(self, media_file: MediaFile, redaction_cfg=None) -> str | None:
+    def _get_transcript_text(
+        self, media_file: MediaFile, redaction_cfg=None, *, db: Session | None = None
+    ) -> str | None:
         """Extract transcript text from media file, masked per the owner's LLM policy.
 
         Args:
             media_file: File whose transcript to render.
             redaction_cfg: Config from ``resolve_llm_masking``, or None when the
                 owner's policy does not require pre-LLM masking.
+            db: Session to read through. Defaults to the one this service was
+                constructed with; the read phase passes its own short one.
         """
         from app.models.media import TranscriptSegment
         from app.utils.transcript_builders import mask_segment_text
 
         segments = (
-            self.db.query(TranscriptSegment)
+            self._session(db)
+            .query(TranscriptSegment)
             .filter(TranscriptSegment.media_file_id == media_file.id)
             .order_by(
                 TranscriptSegment.start_time,
@@ -522,6 +642,8 @@ IMPORTANT GUIDELINES:
         self,
         media_file: MediaFile,
         llm_response: LLMSuggestionResponse,
+        *,
+        db: Session | None = None,
     ) -> TopicSuggestion | None:
         """
         Store suggestion in PostgreSQL
@@ -529,10 +651,13 @@ IMPORTANT GUIDELINES:
         Args:
             media_file: Media file instance
             llm_response: Parsed LLM response
+            db: Session to write through. Defaults to the one this service was
+                constructed with; the write phase passes its own short one.
 
         Returns:
             TopicSuggestion instance or None
         """
+        session = self._session(db)
         try:
             # Convert Pydantic models to dicts for JSONB storage
             suggested_tags = [tag.dict() for tag in llm_response.suggested_tags]
@@ -540,7 +665,7 @@ IMPORTANT GUIDELINES:
 
             # Check if suggestion already exists
             existing = (
-                self.db.query(TopicSuggestion)
+                session.query(TopicSuggestion)
                 .filter(TopicSuggestion.media_file_id == media_file.id)
                 .first()
             )
@@ -560,10 +685,10 @@ IMPORTANT GUIDELINES:
                     suggested_collections=suggested_collections,
                     status="pending",
                 )
-                self.db.add(suggestion)
+                session.add(suggestion)
 
-            self.db.commit()
-            self.db.refresh(suggestion)
+            session.commit()
+            session.refresh(suggestion)
 
             logger.info(
                 f"Stored {len(suggested_tags)} tags and {len(suggested_collections)} collections for file {media_file.id}"
@@ -573,7 +698,7 @@ IMPORTANT GUIDELINES:
             try:
                 from app.services.auto_label_service import AutoLabelService
 
-                auto_label_service = AutoLabelService(self.db)
+                auto_label_service = AutoLabelService(session)
                 user_settings = auto_label_service.get_user_auto_label_settings(
                     int(media_file.user_id)
                 )
@@ -596,5 +721,5 @@ IMPORTANT GUIDELINES:
 
         except Exception as e:
             logger.error(f"Error storing suggestion: {e}")
-            self.db.rollback()
+            session.rollback()
             return None

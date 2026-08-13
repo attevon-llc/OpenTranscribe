@@ -56,14 +56,44 @@ def test_http_exceptions_are_re_raised(func_name):
 
 @pytest.mark.parametrize("func_name", ["clear_video_cache", "refresh_analytics"])
 def test_file_id_is_assigned_before_the_handler_can_log_it(func_name):
-    """The NameError half: file_id was logged in a handler that could run before it existed."""
+    """The NameError half: file_id was logged in a handler that could run before it existed.
+
+    Matched by AST, not by source text. This asserted
+    ``source.index("file_id = db_file.id")`` and broke the moment the assignment was
+    written ``file_id = int(db_file.id)`` — the invariant was intact, the literal was not.
+    A guard that fails on a cast is a guard people delete.
+    """
+    import ast
+    import textwrap
+
     from app.api.endpoints import files as files_module
 
-    source = inspect.getsource(getattr(files_module, func_name))
-    assign_at = source.index("file_id = db_file.id")
-    handler_at = source.index("\n    except Exception as e:")
+    source = textwrap.dedent(inspect.getsource(getattr(files_module, func_name)))
+    fn = ast.parse(source).body[0]
 
-    assert assign_at < handler_at
+    assigns = [
+        node.lineno
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name) and target.id == "file_id"
+    ]
+    assert assigns, f"{func_name} never assigns file_id, but its error handler logs it"
+
+    handlers = [
+        node.lineno
+        for node in ast.walk(fn)
+        if isinstance(node, ast.ExceptHandler)
+        and isinstance(node.type, ast.Name)
+        and node.type.id == "Exception"
+    ]
+    assert handlers, f"{func_name} has no broad except handler — update this guard"
+
+    assert min(assigns) < min(handlers), (
+        f"{func_name}: file_id is assigned at line {min(assigns)} but the broad handler "
+        f"starts at {min(handlers)} — the handler can run before file_id exists and raise "
+        "NameError while trying to log the real failure"
+    )
 
 
 @pytest.mark.parametrize("func_name", ["clear_video_cache", "refresh_analytics"])

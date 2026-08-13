@@ -15,6 +15,7 @@ Tests are written as synchronous functions accordingly.
 
 import contextlib
 import logging
+import socket
 import time
 from unittest.mock import patch
 
@@ -379,14 +380,26 @@ class TestAPIKeyValidation:
         )
         service = LLMService(config)
         try:
-            with patch.object(
-                service.session,
-                "get",
-                side_effect=AssertionError(
-                    "validate_connection must not make a request when the API key is blank"
-                ),
-            ):
+            # COUNT lookups; never raise inside the stub. TWO earlier versions of this
+            # guard were silently vacuous: patching `service.session.get` (that object has
+            # not been on this code path since the SSRF pinning work), and raising
+            # AssertionError from a getaddrinfo stub (validate_connection wraps its work in
+            # try/except and returns (False, message), so the assertion was SWALLOWED and
+            # the test passed either way). A counter asserted AFTER the call survives both.
+            lookups: list[tuple] = []
+            real_getaddrinfo = socket.getaddrinfo
+
+            def _record(*args, **kwargs):
+                lookups.append(args)
+                return real_getaddrinfo(*args, **kwargs)
+
+            with patch.object(socket, "getaddrinfo", _record):
                 success, message = service.validate_connection()
+
+            assert lookups == [], (
+                f"validate_connection resolved {lookups} with a blank API key — it must "
+                "make no network request at all"
+            )
         finally:
             service.close()
 

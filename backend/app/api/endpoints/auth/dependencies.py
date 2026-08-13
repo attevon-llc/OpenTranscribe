@@ -30,6 +30,7 @@ from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.core.config import settings
+from app.core.security import accepted_algorithms
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import TokenPayload
@@ -580,7 +581,14 @@ def get_current_user(
 
     try:
         key = OctKey.import_key(settings.JWT_SECRET_KEY)
-        token_obj = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM])
+        # ONE owner for "which algorithms are accepted" — core.security.
+        # accepted_algorithms — shared with get_optional_current_user below,
+        # core.security.verify_token (the WebSocket/SAML verifier) and
+        # token_service.verify_token_with_fallback. This site used to hardcode
+        # [settings.JWT_ALGORITHM] while verify_token ran its own FIPS-aware list, so
+        # a FIPS-strict deployment authenticated HTTP requests and refused every
+        # WebSocket handshake.
+        token_obj = jwt.decode(token, key, algorithms=accepted_algorithms(TOKEN_TYPE_ACCESS))
         # joserfc verifies the signature/algorithm only — exp is not checked
         # automatically (unlike python-jose), so it's validated explicitly here.
         JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
@@ -786,7 +794,8 @@ def get_optional_current_user(
 
     try:
         key = OctKey.import_key(settings.JWT_SECRET_KEY)
-        token_obj = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM])
+        # Same single owner as get_current_user — see the comment there.
+        token_obj = jwt.decode(token, key, algorithms=accepted_algorithms(TOKEN_TYPE_ACCESS))
         # joserfc verifies the signature/algorithm only — exp is not checked
         # automatically (unlike python-jose), so it's validated explicitly here.
         JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)

@@ -476,9 +476,11 @@ FIPS_VALIDATE_ENTROPY=true          # Validate entropy sources
 ```
 
 :::caution `FIPS_MODE` is the switch, not `FIPS_VERSION`
-`FIPS_VERSION` defaults to `140-3` on **every** deployment. Setting it alone changes
-nothing: password hashing and MFA backup-code hashing both gate on
-`FIPS_MODE and FIPS_VERSION == "140-3"`. Set `FIPS_MODE=true`.
+`FIPS_VERSION` defaults to `140-3` on **every** deployment, so a condition that reads it
+alone can never be false. Every gate in the codebase therefore goes through one property,
+`settings.fips_140_3_active` (= `FIPS_MODE and FIPS_VERSION == "140-3"`), and
+`tests/unit/test_jwt_algorithm_single_owner.py` fails the build if a module reads
+`FIPS_VERSION` directly. Set `FIPS_MODE=true`.
 :::
 
 ### Algorithm Requirements
@@ -487,28 +489,53 @@ nothing: password hashing and MFA backup-code hashing both gate on
 |-----------|------------------|-------------------------------|-----------|
 | Password Hashing | bcrypt-SHA256 (cost 12) | PBKDF2-SHA256 (600k iter) | Auto-upgrade on login |
 | Symmetric Encryption | AES-256-GCM | AES-256-GCM | Auto-upgrade on access |
-| JWT Signing (access tokens) | HS256 | HS256 | None needed -- see below |
+| JWT Signing (**all** token types) | `JWT_ALGORITHM` (HS256) | `JWT_ALGORITHM` (HS256) | None needed -- see below |
 | Token Hashing | SHA-512 | SHA-512 | n/a |
 | MFA Backup Codes | bcrypt (cost 12) | PBKDF2-SHA256 (600k iter) | Existing bcrypt codes keep working |
 
 #### JWT signing is HS256, and that is FIPS-approved
 
-Access tokens are signed with **HS256 (HMAC-SHA-256) in every mode, FIPS included.**
-This is a compliant configuration, not a gap:
+Access, refresh and MFA tokens are all signed with **`JWT_ALGORITHM` -- HS256 by default,
+in every mode, FIPS included.** This is a compliant configuration, not a gap:
 
 - HMAC is approved by **FIPS 198-1**, and SHA-256 by **FIPS 180-4**.
 - **NIST SP 800-57 Part 1 Rev. 5** rates HMAC-SHA-256 at 128 bits of security --
   comfortably above the 112-bit minimum **SP 800-131A Rev. 2** requires through 2030 and
   beyond.
 
-Earlier revisions of this page claimed FIPS 140-3 mode switched JWT signing to HS512. It
-never did. The FIPS-aware selector existed in `app/core/security.py` but sat on a function
-no login path called, while every real login minted HS256 through
-`app/auth/direct_auth.py`. The dead selector has been removed rather than wired up,
-because the verifiers on the request path (`get_current_user` /
-`get_optional_current_user` in `app/api/endpoints/auth/dependencies.py`) accept
-`settings.JWT_ALGORITHM` **and nothing else** -- a FIPS-branching issuer would have minted
-tokens that authenticate no request.
+:::info Refresh tokens were HS512 until this release, on every deployment
+An earlier revision of this page said FIPS mode switched JWT signing to HS512, and that
+was corrected to "HS256 always" -- but **both statements were wrong about refresh
+tokens**. `token_service.create_refresh_token` selected its algorithm with
+`JWT_ALGORITHM_V3 if FIPS_VERSION == "140-3" else "HS256"`, and since `FIPS_VERSION`
+defaults to `140-3`, *every* install -- FIPS or not -- signed refresh tokens with HS512
+while its access tokens were HS256. Nothing failed visibly, because the refresh verifier
+tried both algorithms.
+
+Refresh tokens now follow `JWT_ALGORITHM` like everything else. **No action is required
+and no session is signed out**: while the migration window is open (the default),
+verification accepts HS256 and HS512, so refresh tokens issued before the upgrade keep
+working until they expire or rotate. One behaviour improves as a side effect --
+`POST /auth/logout` presented with a *refresh* token now actually revokes it, where
+before the HS512 signature failed that handler's HS256-only decode and the token stayed
+valid.
+:::
+
+Two functions in `app/core/security.py` own these decisions, and every issuer and
+verifier delegates to them:
+
+- **`signing_algorithm(token_type)`** -- what gets signed. Returns `settings.JWT_ALGORITHM`
+  for every token type, in every FIPS mode.
+- **`accepted_algorithms(token_type)`** -- what gets accepted. The signing algorithm first,
+  then the other configured algorithm and the historical HS256 default while the migration
+  window is open.
+
+`accepted_algorithms` is what the request-path verifiers (`get_current_user` /
+`get_optional_current_user`), the WebSocket and SAML verifier (`verify_token`) and the
+refresh verifier all call, so acceptance can no longer be wider in one and narrower in
+another. It previously could: under `FIPS_MIGRATION_MODE=strict` the WebSocket verifier
+accepted only `JWT_ALGORITHM_V3`, which **no issuer in the codebase mints**, so a strict
+deployment authenticated HTTP requests normally and refused every WebSocket handshake.
 
 If your authorising official requires HS512 specifically, set it explicitly:
 
@@ -517,16 +544,30 @@ JWT_ALGORITHM=HS512
 JWT_SECRET_KEY=<at least 64 bytes>   # HS512 needs a 512-bit key; startup warns if shorter
 ```
 
-That one setting moves issuance and verification together. Note that changing it
-invalidates every access token already in flight, so users see one 401 and their client
-refreshes; plan it for a maintenance window rather than a rolling restart.
+That one setting moves issuance and verification together, for all three token types.
+While `FIPS_MIGRATION_MODE=compatible`, HS256 tokens issued before the change stay
+verifiable, so a rolling restart does not sign anyone out; `strict` closes that window.
 
 ### Migration Process
 
 1. **Set `FIPS_MIGRATION_MODE=compatible`** -- accepts both legacy and FIPS 140-3 formats
 2. **Restart services** -- `./opentr.sh restart-backend`
-3. **Monitor migration** -- users are upgraded automatically on next login
+3. **Monitor migration** -- users are upgraded automatically on next login. Token-algorithm
+   fallbacks are audited as `legacy_algorithm_fallback` (with the algorithm actually used
+   and the one now expected), which is how you know the window can be closed
 4. **Switch to strict mode** when all users have been upgraded: `FIPS_MIGRATION_MODE=strict`
+
+:::warning What `strict` means, and what it does not
+`strict` narrows acceptance to **exactly the algorithm this deployment signs with** --
+i.e. it closes the migration window. It does **not** mean "HS512 only": a deployment left
+at the default `JWT_ALGORITHM=HS256` signs HS256, so strict accepts HS256 and refuses
+HS512. Refusing what you issue is an outage, not a hardening.
+
+So `strict` only refuses something once you have *also* set `JWT_ALGORITHM=HS512`. Turning
+it on invalidates every token signed with the other algorithm immediately -- including
+refresh tokens, which means active sessions must re-authenticate rather than refresh. Do
+it in a maintenance window, after step 3 shows no more fallbacks.
+:::
 
 ### TOTP Compatibility
 

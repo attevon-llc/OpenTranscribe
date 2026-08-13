@@ -1,10 +1,27 @@
 """FIPS strict mode must refuse the legacy JWT algorithm (algorithm downgrade).
 
-``core/security.verify_token`` decides which signature algorithms it will accept from
-``FIPS_MIGRATION_MODE``:
+``core/security.accepted_algorithms`` — the single owner of "which algorithms are
+accepted", shared by ``verify_token``, both request-path verifiers in
+``api/endpoints/auth/dependencies.py`` and ``token_service.verify_token_with_fallback``
+— decides from ``FIPS_MIGRATION_MODE``:
 
-* ``strict``     → ``[JWT_ALGORITHM_V3]``            (HS512 only)
-* ``compatible`` → ``[JWT_ALGORITHM_V3, JWT_ALGORITHM]`` (HS512, then HS256 for migration)
+* ``strict``     → ``[signing_algorithm()]``  (only what this deployment signs with)
+* ``compatible`` → the signing algorithm, plus the other configured algorithm and the
+  historical default, so the migration window is real
+
+**Strict used to be spelled ``[JWT_ALGORITHM_V3]`` unconditionally, and that was the
+defect it looked like a hardening of.** No issuer in this codebase has ever minted
+``JWT_ALGORITHM_V3``: every access token comes from
+``auth/direct_auth.create_access_token``, which signs with ``settings.JWT_ALGORITHM``.
+So a strict deployment accepted nothing it could produce — and because ``verify_token``
+is the WebSocket and SAML verifier while HTTP decoded with its own hardcoded list,
+turning strict on refused **every WebSocket handshake** while HTTP kept working. The
+tests below therefore describe a deployment that has actually migrated
+(``JWT_ALGORITHM=HS512``, the documented route in
+``docs-site/docs/operations/security-hardening.md``), which is the only configuration
+in which a closed window has anything to refuse. That a strict deployment which never
+migrated still verifies its own tokens is asserted at the bottom of this file and in
+``tests/unit/test_jwt_issuer_verifier_agreement.py``.
 
 Before this file ``FIPS_MIGRATION_MODE`` appeared in the tests exactly once, as an
 assertion that the *configuration value* is one of two strings — which says nothing about
@@ -41,6 +58,13 @@ FIPS_SECRET = "unit-test-hs512-secret-padded-to-sixty-four-bytes-exactly-0123"
 
 SUBJECT = "019ec90a-1b2c-7def-8000-00000000ff01"
 
+#: Named explicitly rather than read back from ``settings``. The fixtures below move
+#: ``JWT_ALGORITHM`` to describe a migrated deployment, so ``_token(settings.
+#: JWT_ALGORITHM)`` would silently start minting the *new* algorithm and every
+#: "legacy is refused" assertion would become "the current algorithm is accepted".
+LEGACY_ALGORITHM = "HS256"
+V3_ALGORITHM = "HS512"
+
 
 def _token(algorithm: str) -> str:
     """Mint an otherwise-valid access token signed with *algorithm*.
@@ -74,10 +98,20 @@ def audited(monkeypatch) -> list[dict]:
 
 @pytest.fixture
 def fips_140_3(monkeypatch) -> None:
-    """A FIPS 140-3 deployment. The migration mode is set per test."""
+    """A FIPS 140-3 deployment that has migrated to HS512.
+
+    ``JWT_ALGORITHM=HS512`` is the documented way to actually run HS512, and it is
+    what makes ``HS256`` *legacy* for this deployment rather than current. Without it
+    these tests would be asking a deployment that signs HS256 to refuse HS256 — which
+    is not a downgrade defence, it is an outage.
+
+    The migration mode is set per test.
+    """
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", FIPS_SECRET)
     monkeypatch.setattr(settings, "FIPS_MODE", True)
     monkeypatch.setattr(settings, "FIPS_VERSION", "140-3")
+    monkeypatch.setattr(settings, "JWT_ALGORITHM", V3_ALGORITHM)
+    monkeypatch.setattr(settings, "JWT_ALGORITHM_V3", V3_ALGORITHM)
 
 
 @pytest.fixture
@@ -91,11 +125,11 @@ def compatible_mode(monkeypatch, fips_140_3) -> None:
 
 
 def _legacy() -> str:
-    return _token(settings.JWT_ALGORITHM)
+    return _token(LEGACY_ALGORITHM)
 
 
 def _v3() -> str:
-    return _token(settings.JWT_ALGORITHM_V3)
+    return _token(V3_ALGORITHM)
 
 
 class TestStrictModeRefusesTheLegacyAlgorithm:
@@ -163,6 +197,8 @@ class TestOutsideFipsBothAlgorithmsVerify:
     def non_fips(self, monkeypatch) -> None:
         monkeypatch.setattr(settings, "JWT_SECRET_KEY", FIPS_SECRET)
         monkeypatch.setattr(settings, "FIPS_MODE", False)
+        monkeypatch.setattr(settings, "JWT_ALGORITHM", LEGACY_ALGORITHM)
+        monkeypatch.setattr(settings, "JWT_ALGORITHM_V3", V3_ALGORITHM)
         # Deliberately left at "strict": outside FIPS 140-3 the migration mode is not
         # consulted at all, and a mutation that read it unconditionally would fail here.
         monkeypatch.setattr(settings, "FIPS_MIGRATION_MODE", "strict")
@@ -205,13 +241,53 @@ class TestPurposeBindingSurvivesEitherMode:
 
     def test_strict_mode_refuses_a_non_access_token(self, strict_mode):
         with pytest.raises(HTTPException) as exc:
-            verify_token(self._mfa_half_token(settings.JWT_ALGORITHM_V3))
+            verify_token(self._mfa_half_token(V3_ALGORITHM))
 
         assert exc.value.status_code == 401
 
     def test_compatible_mode_refuses_a_non_access_token(self, compatible_mode):
         with pytest.raises(HTTPException) as exc:
-            verify_token(self._mfa_half_token(settings.JWT_ALGORITHM))
+            verify_token(self._mfa_half_token(LEGACY_ALGORITHM))
+
+        assert exc.value.status_code == 401
+
+
+class TestStrictModeNeverRefusesWhatTheDeploymentSigns:
+    """The other half of "strict", and the live defect the old spelling caused.
+
+    A deployment that turns on ``FIPS_MODE`` + ``FIPS_MIGRATION_MODE=strict`` without
+    also setting ``JWT_ALGORITHM=HS512`` — the overwhelmingly likely configuration,
+    since ``security-hardening.md`` lists the FIPS block and the HS512 knob as
+    separate steps — is still signing HS256 through ``auth/direct_auth``. Strict must
+    mean "no migration window", not "refuse this deployment's own credentials".
+    """
+
+    @pytest.fixture
+    def strict_but_never_migrated(self, monkeypatch) -> None:
+        monkeypatch.setattr(settings, "JWT_SECRET_KEY", FIPS_SECRET)
+        monkeypatch.setattr(settings, "FIPS_MODE", True)
+        monkeypatch.setattr(settings, "FIPS_VERSION", "140-3")
+        monkeypatch.setattr(settings, "FIPS_MIGRATION_MODE", "strict")
+        monkeypatch.setattr(settings, "JWT_ALGORITHM", LEGACY_ALGORITHM)
+        monkeypatch.setattr(settings, "JWT_ALGORITHM_V3", V3_ALGORITHM)
+
+    def test_the_production_issuers_token_is_accepted(self, strict_but_never_migrated):
+        """``verify_token`` is the WebSocket and SAML verifier. This assertion failing
+        means every WebSocket handshake on a strict deployment is refused."""
+        from app.auth.direct_auth import create_access_token
+
+        payload = verify_token(create_access_token({"sub": SUBJECT, "role": "user"}))
+
+        assert payload["sub"] == SUBJECT
+
+    def test_strict_is_still_narrow(self, strict_but_never_migrated):
+        """The control: acceptance is closed to one algorithm, just not the wrong one.
+
+        Without this, the test above would pass equally against a verifier that had
+        simply stopped enforcing anything.
+        """
+        with pytest.raises(HTTPException) as exc:
+            verify_token(_v3())
 
         assert exc.value.status_code == 401
 
@@ -219,4 +295,8 @@ class TestPurposeBindingSurvivesEitherMode:
 def test_the_two_algorithms_under_test_are_actually_different() -> None:
     """Guard the guard: if V3 ever equalled the legacy algorithm, every test in this
     file would pass while proving nothing about a downgrade."""
-    assert settings.JWT_ALGORITHM != settings.JWT_ALGORITHM_V3
+    assert LEGACY_ALGORITHM != V3_ALGORITHM
+    # And that the names still describe the shipped configuration, so this file does
+    # not quietly become a test of two strings nobody uses.
+    assert settings.JWT_ALGORITHM == LEGACY_ALGORITHM
+    assert settings.JWT_ALGORITHM_V3 == V3_ALGORITHM

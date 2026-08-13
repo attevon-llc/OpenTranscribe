@@ -237,7 +237,17 @@ class TestRetroactiveAutoApply:
         # ``_process_speaker_match`` stamps the similarity before calling this.
         matched = _make_speaker(db_session, normal_user, target_file, "SPEAKER_03", confidence=0.91)
 
-        rename = _apply_high_confidence_match(matched, labelled, db_session)
+        # `trigger` is plain data, never an ORM instance: the session-lifetime rule
+        # (backend/app/tasks/CLAUDE.md) requires the read phase to hand on values,
+        # so an attribute read after the scope closes cannot silently reopen a
+        # transaction. Passing `labelled` itself here is what the pre-merge
+        # signature did, and it is the thing that rule exists to stop.
+        trigger = {
+            "id": labelled.id,
+            "display_name": labelled.display_name,
+            "profile_id": labelled.profile_id,
+        }
+        _, rename = _apply_high_confidence_match(db_session, matched, trigger)
 
         assert rename == (str(target_file.uuid), "SPEAKER_03")
         assert matched.display_name == "Dana"
